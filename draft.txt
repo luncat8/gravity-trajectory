@@ -16,6 +16,26 @@ before lunch - draw calculated trajectory.
 press shift cause 20x slow angle and force change to precision change also slider that do adjust values by add or subtract relative portion line -5%...5% relative
 
 
-limit calculated trajectory to some reasonable value to not took more then ~10-20ms per calculation 
+limit calculated trajectory to some big but reasonable value to not took more then ~10-20ms per calculation. add slider to adjust
+
+
+
+canvas
+draw red + and blue - in gravity body centers depends on gravity sign. update when body gravity change
+
+in case of gravity centers movement - update trajectory.
+
+properly calculate trajectory in case of movable gravity
+
+input
+press without drag should not delete old trajectory
+
+GUI
+select gravity positions: radio group 
+- planets
+- ports
+
+show trajectory length and total time to end
+
 
 
