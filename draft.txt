@@ -1,0 +1,21 @@
+
+look at this 
+https://github.com/luncat8/exec_queue/orbit_trade.html
+
+pick it.
+for this experiment we use it as simulation background. by default fast-forward to t+7:00
+then set slow time 0.5
+
+our new experiment has separate timer and not related to trade so keep it separate.
+
+assign all planets gravity force and possible select and change -2...2 , by default 1.
+
+user send cargo container from planet set direction and initial push like ballistic shot.
+before lunch - draw calculated trajectory.
+
+press shift cause 20x slow angle and force change to precision change also slider that do adjust values by add or subtract relative portion line -5%...5% relative
+
+
+limit calculated trajectory to some reasonable value to not took more then ~10-20ms per calculation 
+
+
