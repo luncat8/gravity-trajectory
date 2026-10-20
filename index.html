@@ -3,11 +3,85 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title></title>
+<title>gravity cargo · ballistic lab</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="app">
-  <canvas id="c"></canvas>
-</div>
+<canvas id="c"></canvas>
+<canvas id="g"></canvas>
+
+<header id="tradeHud" class="panel">
+	<div class="kicker">orbital trade · background</div>
+	<div class="clock" id="tradeClock">t+ 07:00</div>
+	<div class="stats">
+		<div class="stat"><span>ports</span><b id="tradePorts">—</b></div>
+		<div class="stat"><span>ships</span><b id="tradeShips">—</b></div>
+		<div class="stat"><span>delivered</span><b id="tradeDelivered">—</b></div>
+		<div class="stat"><span>colonies</span><b id="tradeColonies">—</b></div>
+		<div class="stat"><span>aim error</span><b id="tradeAim">—</b></div>
+	</div>
+	<div id="tradeLegend">
+		<span class="good ice">ice</span>
+		<span class="good ore">ore</span>
+		<span class="good gas">gas</span>
+	</div>
+</header>
+
+<aside id="cargoHud" class="panel">
+	<div class="kicker">gravity cargo</div>
+	<div class="clock" id="expClock">exp + 00:00.0</div>
+	<div class="stats">
+		<div class="stat"><span>status</span><b id="cargoStatus">ready</b></div>
+		<div class="stat"><span>flight</span><b id="cargoFlight">—</b></div>
+		<div class="stat"><span>aim</span><b id="aimReadout">—</b></div>
+		<div class="stat"><span>path</span><b id="pathReadout">—</b></div>
+		<div class="stat"><span>calc</span><b id="calcReadout">—</b></div>
+	</div>
+
+	<div class="group">
+		<div class="caption"><span>planet gravity</span><span id="planetTag">none selected</span></div>
+		<label class="ctl">g
+			<input id="gravity" type="range" min="-2" max="2" step="0.05" value="1" disabled>
+			<output id="gravityLabel">—</output>
+		</label>
+	</div>
+
+	<div class="group">
+		<div class="caption"><span>relative trim</span><span id="trimTarget">—</span></div>
+		<label class="ctl">±
+			<input id="trim" type="range" min="-5" max="5" step="0.5" value="0" disabled>
+			<output id="trimLabel">0%</output>
+		</label>
+	</div>
+
+	<div class="actions">
+		<button id="launch" class="primary" disabled>launch</button>
+		<button id="clear">clear</button>
+	</div>
+
+	<div id="cargoHint">
+		drag from a planet to aim · release arms · enter / launch fires<br>
+		shift = 1/20 fine aim · click a planet to tune its g · esc cancels
+	</div>
+</aside>
+
+<footer id="tradeControls">
+	<button id="tradePause" title="space">pause</button>
+	<label class="ctl" title="trade simulation minutes per real second">speed
+		<input id="tradeSpeed" type="range" min="0.5" max="12" step="0.5" value="0.5">
+		<output id="tradeSpeedLabel">×0.5</output>
+	</label>
+	<span class="opts">
+		<label><input id="showOrbits" type="checkbox" checked> orbits</label>
+		<label><input id="showLinks" type="checkbox" checked> links</label>
+		<label><input id="showRoutes" type="checkbox" checked> routes</label>
+	</span>
+</footer>
+
+<script src="exec_queue.js"></script>
+<script src="orbit_sim.js"></script>
+<script src="orbit_view.js"></script>
+<script src="gravity_sim.js"></script>
+<script src="gravity_gui.js"></script>
 </body>
 </html>

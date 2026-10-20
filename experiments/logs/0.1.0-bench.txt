@@ -1,0 +1,12 @@
+world: 26 planets, fast-forward to t+07:00 in 13.67 ms
+trade at t+07:00: ports 22, ships 22, delivered 5667, colonies 14
+
+prediction sweep: 5616 runs (36 angles x 6 speeds x 26 planets)
+  avg 0.142 ms, p95 20.00 s flight, worst 1.116 ms
+  avg flight 6.58 s
+  ends: open 0, impact 2754, exit 2262, horizon 600, budget 0
+
+parity: 216 shots, worst live/predicted deviation 0.000068 px (P9 a7 v60)
+repel field: 156 paths, finite bounds x -14.1…1614.0, y -13.7…1013.9
+budget: 10 ms cap, worst 1.116 ms (within budget)
+BENCH OK

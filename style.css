@@ -1,0 +1,360 @@
+:root {
+	color-scheme: dark;
+	--panel: rgba(6, 13, 25, 0.84);
+	--line: rgba(126, 180, 230, 0.16);
+	--text: #d6e7f5;
+	--dim: #728ca6;
+	--accent: #ffcf6e;
+	--ice: #67e0ff;
+	--ore: #ffb26b;
+	--gas: #c58bff;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	height: 100%;
+	overflow: hidden;
+	background: #02060c;
+	color: var(--text);
+	font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+	user-select: none;
+}
+
+#c,
+#g {
+	position: fixed;
+	inset: 0;
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+#c {
+	z-index: 0;
+	cursor: crosshair;
+	touch-action: none;
+}
+
+/* the cargo layer only draws; pointer input still reaches the trade canvas */
+#g {
+	z-index: 1;
+	pointer-events: none;
+}
+
+.panel {
+	position: fixed;
+	z-index: 4;
+	padding: 13px 15px 12px;
+	border: 1px solid var(--line);
+	border-radius: 14px;
+	background: var(--panel);
+	backdrop-filter: blur(10px);
+}
+
+#tradeHud {
+	top: 14px;
+	left: 14px;
+	width: 238px;
+}
+
+#cargoHud {
+	top: 14px;
+	right: 14px;
+	width: 288px;
+}
+
+.kicker {
+	color: var(--accent);
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+}
+
+#tradeHud .kicker {
+	color: var(--dim);
+}
+
+.clock {
+	margin: 2px 0 10px;
+	color: #f3f8fd;
+	font: 600 20px/1.15 ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-variant-numeric: tabular-nums;
+}
+
+#cargoHud .clock {
+	color: var(--accent);
+}
+
+.stats {
+	display: grid;
+	gap: 1px;
+}
+
+.stat {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	color: var(--dim);
+	font-size: 12px;
+}
+
+.stat b {
+	color: var(--text);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+}
+
+#tradeLegend {
+	display: flex;
+	gap: 12px;
+	margin-top: 9px;
+	padding-top: 9px;
+	border-top: 1px solid var(--line);
+}
+
+.good {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	color: var(--dim);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 11px;
+}
+
+.good::before {
+	content: "";
+	width: 7px;
+	height: 7px;
+	border-radius: 2px;
+	background: currentColor;
+}
+
+.good.ice {
+	color: var(--ice);
+}
+
+.good.ore {
+	color: var(--ore);
+}
+
+.good.gas {
+	color: var(--gas);
+}
+
+.group {
+	margin-top: 11px;
+	padding-top: 9px;
+	border-top: 1px solid var(--line);
+}
+
+.caption {
+	display: flex;
+	justify-content: space-between;
+	gap: 10px;
+	margin-bottom: 6px;
+	color: var(--dim);
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.caption span:last-child {
+	max-width: 150px;
+	overflow: hidden;
+	color: var(--text);
+	text-align: right;
+	text-overflow: ellipsis;
+	text-transform: none;
+	letter-spacing: 0;
+}
+
+.ctl {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: var(--dim);
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.ctl input[type="range"] {
+	flex: 1;
+	min-width: 0;
+	accent-color: var(--accent);
+}
+
+#cargoHud .ctl input[type="range"] {
+	width: 136px;
+	flex: none;
+}
+
+.ctl output {
+	min-width: 38px;
+	color: var(--accent);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	text-align: center;
+	letter-spacing: 0;
+	text-transform: none;
+}
+
+.actions {
+	display: flex;
+	gap: 8px;
+	margin-top: 11px;
+}
+
+button {
+	padding: 5px 13px;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	background: transparent;
+	color: var(--dim);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+	border-color: rgba(126, 180, 230, 0.42);
+	color: var(--text);
+}
+
+button.on {
+	border-color: rgba(255, 207, 110, 0.45);
+	background: rgba(255, 207, 110, 0.14);
+	color: var(--accent);
+}
+
+button.primary {
+	border-color: rgba(255, 207, 110, 0.4);
+	background: rgba(255, 207, 110, 0.12);
+	color: var(--accent);
+}
+
+button:disabled,
+input:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
+#cargoHint {
+	margin-top: 10px;
+	padding-top: 9px;
+	border-top: 1px solid var(--line);
+	color: var(--dim);
+	font-size: 10.5px;
+	line-height: 1.55;
+}
+
+#tradeControls {
+	position: fixed;
+	right: auto;
+	bottom: 14px;
+	left: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	max-width: calc(100vw - 24px);
+	padding: 8px 12px;
+	border: 1px solid var(--line);
+	border-radius: 16px;
+	background: var(--panel);
+	backdrop-filter: blur(10px);
+	transform: translateX(-50%);
+	flex-wrap: wrap;
+	z-index: 4;
+}
+
+#tradeControls .ctl input[type="range"] {
+	width: 96px;
+	flex: none;
+}
+
+#tradeControls .ctl output {
+	min-width: 30px;
+}
+
+.opts {
+	display: flex;
+	gap: 10px;
+	padding-left: 8px;
+	border-left: 1px solid var(--line);
+}
+
+.opts label {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--dim);
+	font-size: 11px;
+	cursor: pointer;
+}
+
+.opts input {
+	margin: 0;
+	accent-color: var(--accent);
+}
+
+@media (max-width: 820px) {
+	#tradeHud {
+		top: 8px;
+		left: 8px;
+		width: 174px;
+		padding: 9px 11px;
+	}
+
+	#tradeHud .kicker,
+	#tradeHud .stats,
+	#tradeLegend {
+		display: none;
+	}
+
+	#tradeHud .clock {
+		margin: 0;
+		font-size: 16px;
+	}
+
+	#cargoHud {
+		top: 8px;
+		right: 8px;
+		width: 242px;
+		padding: 10px 12px;
+	}
+
+	#cargoHud .clock {
+		font-size: 17px;
+	}
+
+	#cargoHint {
+		display: none;
+	}
+
+	#cargoHud .ctl input[type="range"] {
+		width: 104px;
+	}
+
+	#tradeControls {
+		right: 8px;
+		bottom: 8px;
+		left: 8px;
+		max-width: none;
+		padding: 8px;
+		transform: none;
+		justify-content: space-between;
+	}
+
+	.opts {
+		display: none;
+	}
+}
