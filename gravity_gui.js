@@ -68,6 +68,9 @@
 	const gravityLabel = $('gravityLabel');
 	const trimSlider = $('trim');
 	const trimLabel = $('trimLabel');
+	const horizonSlider = $('horizon');
+	const horizonLabel = $('horizonLabel');
+	const horizonTagEl = $('horizonTag');
 	const trimTargetEl = $('trimTarget');
 	const launchButton = $('launch');
 	const clearButton = $('clear');
@@ -700,6 +703,14 @@
 	});
 	trimSlider.addEventListener('input', onTrimInput);
 	trimSlider.addEventListener('change', resetTrim);
+	horizonSlider.addEventListener('input', () => {
+		gravity.horizon = Number(horizonSlider.value);
+		const text = gravity.horizon + ' s';
+		horizonLabel.textContent = text;
+		if (horizonTagEl) horizonTagEl.textContent = text;
+		fieldChanged();
+		hudAt = -Infinity;
+	});
 	launchButton.addEventListener('click', launch);
 	clearButton.addEventListener('click', clearCargo);
 	window.addEventListener('pointerdown', onPointerDown);
@@ -726,6 +737,10 @@
 		fine = false;
 		refreshAimLabel();
 	});
+
+	gravity.horizon = Number(horizonSlider.value);
+	horizonLabel.textContent = gravity.horizon + ' s';
+	if (horizonTagEl) horizonTagEl.textContent = gravity.horizon + ' s';
 
 	resizeOverlay();
 	refreshSelected();

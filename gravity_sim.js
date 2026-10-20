@@ -19,10 +19,10 @@
 	const GRIP_MAX = 240;
 	const STRENGTH_MIN = -2;
 	const STRENGTH_MAX = 2;
-	const HORIZON = 20;
+	const HORIZON = 60;
 	const LIVE_LIMIT = 240;
-	const MAX_STEPS = 2450;
-	const PATH_MAX = 2500;
+	const MAX_STEPS = 7350;
+	const PATH_MAX = 7500;
 	const TRAIL_MAX = 4096;
 	const TRAIL_STRIDE = 2;
 	const BUDGET_MS = 10;
@@ -49,6 +49,8 @@
 		this.worldH = worldH;
 		this.strength = new Float64Array(count);
 		this.strength.fill(1);
+
+		this.horizon = HORIZON;
 
 		this.cargo = { x: 0, y: 0, vx: 0, vy: 0 };
 		this.probe = { x: 0, y: 0, vx: 0, vy: 0 };
@@ -168,7 +170,8 @@
 		let steps = 0;
 		let reason = END_OPEN;
 		let hit = NO_PLANET;
-		for (let step = 0; step < MAX_STEPS; step++) {
+		const maxSteps = Math.min(MAX_STEPS, Math.ceil(this.horizon / DT) + 2);
+		for (let step = 0; step < maxSteps; step++) {
 			if ((step & (BUDGET_EVERY - 1)) === 0 && performance.now() - started > BUDGET_MS) {
 				reason = END_TRUNCATED;
 				break;
@@ -181,7 +184,7 @@
 				reason = END_IMPACT;
 				hit = planet;
 			} else if (this.outside(state.x, state.y)) reason = END_EXIT;
-			else if (time >= HORIZON - 1e-9) reason = END_TIME;
+			else if (time >= this.horizon - 1e-9) reason = END_TIME;
 			if (count < PATH_MAX) {
 				pathX[count] = state.x;
 				pathY[count] = state.y;
