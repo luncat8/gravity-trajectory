@@ -4,8 +4,12 @@
  * Launches always start from static planets in every gravity mode; once the
  * ship lands on a planet, the next launch is staged from that landed body.
  * Prediction updates at up to 60 fps when gravity centres move or change (backing
- * off automatically if frame time exceeds 16.7 ms) and continues ahead of the
- * flying container until it lands.
+ * off automatically when the smoothed frame time exceeds 17.5 ms) and continues
+ * ahead of the flying container until it lands.
+ *
+ * Game mode (archive/game.1-plan.md): seeded world, the trade clock advances
+ * only with the cargo's fixed physics steps, the aim snaps to an integer grid,
+ * and a replay link re-flies every recorded shot.
  */
 (function (root) {
 	'use strict';
@@ -14,16 +18,27 @@
 	const SPEED_MIN = GravitySim.SPEED_MIN;
 	const SPEED_MAX = GravitySim.SPEED_MAX;
 	const GRIP_MAX = GravitySim.GRIP_MAX;
+	const STATUS_IDLE = GravitySim.STATUS_IDLE;
 	const STATUS_FLYING = GravitySim.STATUS_FLYING;
 	const STATUS_ENDED = GravitySim.STATUS_ENDED;
 	const END_IMPACT = GravitySim.END_IMPACT;
 	const END_EXIT = GravitySim.END_EXIT;
 	const END_TIME = GravitySim.END_TIME;
 	const END_TRUNCATED = GravitySim.END_TRUNCATED;
+	const END_ABORT = GravitySim.END_ABORT;
+	const DT = GravitySim.DT;
 	const PLANETS = OrbitSim.PLANETS;
 	const NO_PORT = OrbitSim.NO_PORT;
-	const MODE_PLANETS = 0;
-	const MODE_PORTS = 1;
+	const MODE_PLANETS = GravityGame.SRC_PLANETS;
+	const MODE_PORTS = GravityGame.SRC_PORTS;
+	const NO_ABORT = GravityGame.NO_ABORT;
+	const REPLAY_AIM_MS = 700;
+	const REPLAY_GAP_MS = 450;
+	const REPLAY_SPEEDS = [1, 4, 16];
+	const PHASE_AIM = 0;
+	const PHASE_FLY = 1;
+	const PHASE_GAP = 2;
+	const SEED_RANGE = 999999;
 	const PORT_R = 6;
 	const HIT_PX = 18;
 	const HUD_INTERVAL = 100;
@@ -63,19 +78,14 @@
 	const tradeSim = scene.sim;
 	const view = scene.view;
 	const gravity = new GravitySim(OrbitSim.WORLD_W, OrbitSim.WORLD_H);
-	gravity.setPlanets(
-		PLANETS,
-		tradeSim.planetX, tradeSim.planetY, tradeSim.planetR,
-		tradeSim.orbitRX, tradeSim.orbitRY,
-		tradeSim.orbitTiltCos, tradeSim.orbitTiltSin
-	);
 
 	/* per-mode strength kept across switches; port strength keyed by parent planet */
 	const planetStrength = new Float64Array(PLANETS).fill(1);
 	const portPlanetStrength = new Float64Array(PLANETS).fill(1);
 	const portStrength = new Float64Array(OrbitSim.PORTS).fill(1);
 	const portRadius = new Float64Array(OrbitSim.PORTS).fill(PORT_R);
-	const portPlanetsSeen = new Int16Array(OrbitSim.PORTS).fill(-1);
+	/* the field's port → planet roster; a game flight keeps the one taken at launch */
+	const fieldPortPlanet = new Int16Array(OrbitSim.PORTS).fill(-1);
 
 	function fillPlanets(t, outX, outY, count) {
 		for (let i = 0; i < count; i++) {
@@ -87,7 +97,7 @@
 	/* closed-form port positions, keeping strength bound to each port's planet */
 	function fillPorts(t, outX, outY, count) {
 		for (let p = 0; p < count; p++) {
-			const planet = tradeSim.portPlanet[p];
+			const planet = fieldPortPlanet[p];
 			portStrength[p] = portPlanetStrength[planet];
 			const angle = tradeSim.orbitPhase[planet] + tradeSim.orbitOmega[planet] * t;
 			const rx = tradeSim.orbitRX[planet] * Math.cos(angle);
@@ -113,8 +123,8 @@
 		let changed = gravity.setCount(tradeSim.portCount);
 		for (let p = 0; p < tradeSim.portCount; p++) {
 			const planet = tradeSim.portPlanet[p];
-			if (portPlanetsSeen[p] !== planet) {
-				portPlanetsSeen[p] = planet;
+			if (fieldPortPlanet[p] !== planet) {
+				fieldPortPlanet[p] = planet;
 				portStrength[p] = portPlanetStrength[planet];
 				changed = true;
 			}
@@ -162,6 +172,20 @@
 	const goalStoryEl = $('goalStory');
 	const rerollGoalBtn = $('rerollGoal');
 	const tradeCanvas = $('c');
+	const modeTagEl = $('modeTag');
+	const modeLabEl = $('modeLab');
+	const modeGameEl = $('modeGame');
+	const gameBoxEl = $('gameBox');
+	const gameSeedEl = $('gameSeed');
+	const gameScoreEl = $('gameScore');
+	const replayRowEl = $('replayRow');
+	const replayEl = $('replayReadout');
+	const gameRestartBtn = $('gameRestart');
+	const gameNewSeedBtn = $('gameNewSeed');
+	const gameCopyBtn = $('gameCopy');
+	const replaySpeedBtn = $('replaySpeed');
+	const replaySkipBtn = $('replaySkip');
+	const gameLinkEl = $('gameLink');
 
 	let lastWX = 0;
 	let lastWY = 0;
@@ -198,7 +222,7 @@
 	let trimLast = 0;
 	let hudAt = -Infinity;
 	let lastFrame = performance.now();
-	let expStart = performance.now();
+	const expStart = performance.now();
 	let emaFrameMs = 16;
 	let otherWorkMs = 1;
 	let autoSkip = 0;
@@ -212,6 +236,19 @@
 	let hudPredVisitText = '';
 	let hudLengthText = '';
 	let hudPathText = '';
+	let hudSeedText = '';
+	let hudScoreText = '';
+	let hudReplayText = '';
+	let launchState = -1;
+	let linkNote = '';
+
+	/*
+	 * game: steps = finished flight steps, doneSteps = step the 26th system was entered,
+	 * fixedRate = the rate came with a link and must not change
+	 */
+	const game = { on: false, seed: 0, fixedRate: false, shots: [], steps: 0, doneSteps: -1 };
+	/* replay of a link: shots fired in order, aim shown then flown; verdict after the last */
+	const replay = { on: false, shots: null, end: null, index: 0, phase: PHASE_GAP, until: 0, speed: 0, verdict: '' };
 
 	function makeGlow(fill) {
 		const sprite = document.createElement('canvas');
@@ -246,10 +283,14 @@
 
 	function rollPassenger(forceNext) {
 		if (forceNext) {
-			passenger = passenger === PASSENGERS[0] ? PASSENGERS[1] : PASSENGERS[0];
+			setPassenger(passenger === PASSENGERS[0] ? PASSENGERS[1] : PASSENGERS[0]);
 		} else {
-			passenger = Math.random() < 0.5 ? PASSENGERS[0] : PASSENGERS[1];
+			setPassenger(Math.random() < 0.5 ? PASSENGERS[0] : PASSENGERS[1]);
 		}
+	}
+
+	function setPassenger(name) {
+		passenger = name;
 		if (goalRoleEl) goalRoleEl.textContent = passenger + ' · fly through all systems';
 		if (drawerPassengerEl) drawerPassengerEl.textContent = passenger;
 		if (goalStoryEl) {
@@ -332,10 +373,10 @@
 
 	function applyMode() {
 		if (mode === MODE_PORTS) {
-			portPlanetsSeen.fill(-1);
+			fieldPortPlanet.fill(-1);
 			for (let p = 0; p < tradeSim.portCount; p++) {
 				const planet = tradeSim.portPlanet[p];
-				portPlanetsSeen[p] = planet;
+				fieldPortPlanet[p] = planet;
 				portStrength[p] = portPlanetStrength[planet];
 			}
 			gravity.setField(tradeSim.portCount, portRadius, portStrength, fillPorts, false);
@@ -351,8 +392,8 @@
 
 	function setBodyStrength(body, value) {
 		if (!gravity.setStrength(body, value)) return false;
-		if (mode === MODE_PORTS && body >= 0 && body < tradeSim.portCount) {
-			portPlanetStrength[tradeSim.portPlanet[body]] = gravity.strength[body];
+		if (mode === MODE_PORTS && body >= 0 && body < gravity.bodyCount) {
+			portPlanetStrength[fieldPortPlanet[body]] = gravity.strength[body];
 		}
 		syncPlanetGravity();
 		return true;
@@ -375,7 +416,7 @@
 		selectedLabel = bodyName(selected) + ' · g ' + strengthText(selected) +
 			(gravity.strength[selected] < 0 ? ' repel' : '');
 		bodyTagEl.textContent = selectedLabel;
-		gravitySlider.disabled = false;
+		gravitySlider.disabled = game.on;
 		gravitySlider.value = gravity.strength[selected].toFixed(2);
 		gravityLabel.textContent = gravity.strength[selected].toFixed(2);
 	}
@@ -428,12 +469,21 @@
 			gripLen = 0;
 		}
 		aimSpeed = gravity.speedAt(gripLen);
+		snapAim();
 		refreshAimLabel();
+	}
+
+	/* game shots live on an integer grid so the link carries the exact launch inputs */
+	function snapAim() {
+		if (!game.on) return;
+		aimAngle = GravityGame.angleOf(GravityGame.angleUnits(aimAngle));
+		aimSpeed = GravityGame.speedOf(GravityGame.speedUnits(aimSpeed));
 	}
 
 	function placeGripFromSpeed() {
 		const cx = tradeSim.planetX[aimBody];
 		const cy = tradeSim.planetY[aimBody];
+		snapAim();
 		gripLen = gravity.gripLength(aimSpeed);
 		gripX = cx + Math.cos(aimAngle) * gripLen;
 		gripY = cy + Math.sin(aimAngle) * gripLen;
@@ -494,7 +544,12 @@
 	}
 
 	function launch() {
-		if (!armed || !gravity.canLaunchFrom(aimBody)) return;
+		if (!armed || !gravity.canLaunchFrom(aimBody) || gameLocked()) return;
+		fire(NO_ABORT);
+	}
+
+	function fire(abortStep) {
+		if (game.on) recordShot(abortStep);
 		gravity.predict(aimBody, aimAngle, aimSpeed);
 		dirty = false;
 		gravity.launch(aimBody, aimAngle, aimSpeed);
@@ -504,6 +559,18 @@
 		savedArmed = false;
 		blockedPlanet = -1;
 		hudAt = -Infinity;
+		if (game.on) refreshGameUi();
+	}
+
+	/* the launch state must not depend on frame timing, so roster and clock are re-read here */
+	function recordShot(abortStep) {
+		if (mode === MODE_PORTS) syncPortRoster();
+		gravity.fieldT = tradeSim.t;
+		gravity.fieldRate = scene.trade.speed;
+		gravity.stepLimit = abortStep === NO_ABORT ? GravityGame.CAP_STEPS : abortStep;
+		gravity.limitReason = abortStep === NO_ABORT ? END_TIME : END_ABORT;
+		game.shots.push(GravityGame.createShot(mode, aimBody,
+			GravityGame.angleUnits(aimAngle), GravityGame.speedUnits(aimSpeed), abortStep));
 	}
 
 	function clearCargo() {
@@ -521,6 +588,8 @@
 	function setMode(next) {
 		if (next === mode && gravity.fillField) return;
 		mode = next;
+		srcPlanetsEl.checked = mode === MODE_PLANETS;
+		srcPortsEl.checked = mode === MODE_PORTS;
 		cancelAim();
 		hoverBody = -1;
 		refreshHoverLabel();
@@ -534,6 +603,265 @@
 		if (armed || aiming || gravity.status === STATUS_FLYING) dirty = true;
 		else gravity.predCount = 0;
 		hudAt = -Infinity;
+	}
+
+	/* aim edits and launches close while a game flight or replay runs, and after 26 / 26 */
+	function gameLocked() {
+		return game.on && (replay.on || gravity.status === STATUS_FLYING || game.doneSteps >= 0);
+	}
+
+	function gameSteps() {
+		return gravity.status === STATUS_FLYING ? game.steps + gravity.liveSteps : game.steps;
+	}
+
+	function scoreSteps() {
+		return game.doneSteps >= 0 ? game.doneSteps : gameSteps();
+	}
+
+	/* the trade world may have been rebuilt with fresh arrays: re-wire the field, strengths back to 1 */
+	function attachWorld() {
+		gravity.setPlanets(
+			PLANETS,
+			tradeSim.planetX, tradeSim.planetY, tradeSim.planetR,
+			tradeSim.orbitRX, tradeSim.orbitRY,
+			tradeSim.orbitTiltCos, tradeSim.orbitTiltSin
+		);
+		planetStrength.fill(1);
+		portPlanetStrength.fill(1);
+		portStrength.fill(1);
+		cancelAim();
+		hoverBody = -1;
+		hoverPlanet = -1;
+		refreshHoverLabel();
+		setSelected(-1);
+		applyMode();
+	}
+
+	function startGame(seed, fixedRate) {
+		stopReplay();
+		linkNote = '';
+		game.on = true;
+		game.seed = seed;
+		game.fixedRate = fixedRate;
+		game.shots.length = 0;
+		game.steps = 0;
+		game.doneSteps = -1;
+		scene.reset(seed);
+		scene.setGameClock(true);
+		clearCargo();
+		gravity.fieldT = tradeSim.t;
+		gravity.fieldRate = scene.trade.speed;
+		attachWorld();
+		setPassenger(PASSENGERS[seed % PASSENGERS.length]);
+		gameLinkEl.hidden = true;
+		refreshGameUi();
+	}
+
+	/* back to lab: the world stays, the clock returns to real time, a running flight continues */
+	function stopGame() {
+		stopReplay();
+		linkNote = '';
+		game.on = false;
+		scene.setGameClock(false);
+		gravity.stepLimit = Infinity;
+		gravity.limitReason = END_TIME;
+		gameLinkEl.hidden = true;
+		refreshSelected();
+		refreshGameUi();
+	}
+
+	function stepGame(now, dt) {
+		if (replay.on && replay.phase !== PHASE_FLY && now >= replay.until) advanceReplay(now);
+		const runs = replay.on ? REPLAY_SPEEDS[replay.speed] : 1;
+		for (let k = 0; k < runs && gravity.status === STATUS_FLYING; k++) advanceGame(dt);
+	}
+
+	/* the world clock is the cargo's field clock: it moves only with fixed flight steps */
+	function advanceGame(dt) {
+		gravity.step(dt);
+		tradeSim.advanceTo(gravity.flightFieldT);
+		if (gravity.status !== STATUS_FLYING) endGameFlight();
+	}
+
+	function endGameFlight() {
+		if (gravity.visitedCount === PLANETS && game.doneSteps < 0) {
+			game.doneSteps = game.steps + gravity.visitStep;
+		}
+		game.steps += gravity.liveSteps;
+		if (replay.on) {
+			replay.phase = PHASE_GAP;
+			replay.until = performance.now() + REPLAY_GAP_MS / REPLAY_SPEEDS[replay.speed];
+		}
+		refreshGameUi();
+	}
+
+	function abortFlight() {
+		if (replay.on || gravity.status !== STATUS_FLYING) return;
+		game.shots[game.shots.length - 1].abort = gravity.liveSteps;
+		gravity.abort();
+		endGameFlight();
+	}
+
+	function startReplay(shots, end) {
+		replay.on = true;
+		replay.shots = shots;
+		replay.end = end;
+		replay.index = 0;
+		replay.phase = PHASE_GAP;
+		replay.until = performance.now() + REPLAY_GAP_MS;
+		replay.verdict = '';
+		refreshGameUi();
+	}
+
+	function stopReplay() {
+		replay.on = false;
+		replay.verdict = '';
+	}
+
+	/* gap → aim the next shot (or finish) → fire; a flight hands back through endGameFlight */
+	function advanceReplay(now) {
+		if (replay.phase === PHASE_AIM) {
+			const shot = replay.shots[replay.index++];
+			setShotAim(shot);
+			replay.phase = PHASE_FLY;
+			fire(shot.abort);
+			return;
+		}
+		if (replay.index >= replay.shots.length) {
+			finishReplay('');
+			return;
+		}
+		aimReplayShot(replay.shots[replay.index], now);
+	}
+
+	function aimReplayShot(shot, now) {
+		setMode(shot.src);
+		if (!gravity.canLaunchFrom(shot.origin)) {
+			finishReplay('desync · shot ' + (replay.index + 1) + ' from ' + planetName(shot.origin));
+			return;
+		}
+		setShotAim(shot);
+		armed = true;
+		dirty = true;
+		replay.phase = PHASE_AIM;
+		replay.until = now + REPLAY_AIM_MS / REPLAY_SPEEDS[replay.speed];
+		hudAt = -Infinity;
+	}
+
+	function setShotAim(shot) {
+		aimBody = shot.origin;
+		aimAngle = GravityGame.angleOf(shot.angle);
+		aimSpeed = GravityGame.speedOf(shot.speed);
+		placeGripFromSpeed();
+	}
+
+	function finishReplay(problem) {
+		replay.on = false;
+		replay.verdict = problem || verdictText(replay.end);
+		armed = false;
+		refreshGameUi();
+	}
+
+	function verdictText(end) {
+		if (!end) return 'replayed ' + replay.shots.length + ' shots';
+		if (end.visited === gravity.visitedCount && end.steps === scoreSteps()) return 'verified ✓';
+		return 'differs · recorded ' + end.visited + ' / ' + PLANETS + ' · ' +
+			(end.steps * DT).toFixed(2) + ' s';
+	}
+
+	function skipReplay() {
+		const now = performance.now();
+		while (replay.on) {
+			if (gravity.status === STATUS_FLYING) advanceGame(0.1);
+			else advanceReplay(now);
+		}
+	}
+
+	function copyLink() {
+		const url = location.href.split('#')[0] + '#' + GravityGame.encodeLink({
+			seed: game.seed,
+			rate: scene.trade.speed,
+			shots: game.shots,
+			visited: gravity.visitedCount,
+			steps: scoreSteps()
+		});
+		gameLinkEl.value = url;
+		const clipboard = navigator.clipboard;
+		if (!clipboard) {
+			showLink();
+			return;
+		}
+		clipboard.writeText(url).then(() => {
+			gameCopyBtn.textContent = 'copied ✓';
+			setTimeout(() => {
+				gameCopyBtn.textContent = 'copy replay';
+			}, 1600);
+		}, showLink);
+	}
+
+	function showLink() {
+		gameLinkEl.hidden = false;
+		gameLinkEl.focus();
+		gameLinkEl.select();
+	}
+
+	function loadLink() {
+		if (!GravityGame.isGameLink(location.hash)) return false;
+		const link = GravityGame.decodeLink(location.hash);
+		if (!link) {
+			linkNote = 'invalid game link';
+			refreshGameUi();
+			return false;
+		}
+		modeGameEl.checked = true;
+		scene.setSpeed(link.rate);
+		startGame(link.seed, true);
+		if (link.shots.length > 0) startReplay(link.shots, link.end);
+		return true;
+	}
+
+	/* control locks and button states; runs on game state changes, not per frame */
+	function refreshGameUi() {
+		const flying = gravity.status === STATUS_FLYING;
+		const flightLock = game.on && (flying || replay.on);
+		modeTagEl.textContent = linkNote || (game.on ? 'game · clock runs in flight' : 'lab · free clock');
+		gameBoxEl.hidden = !game.on;
+		srcPlanetsEl.disabled = flightLock;
+		srcPortsEl.disabled = flightLock;
+		scene.lockSpeed(game.on && (game.fixedRate || game.shots.length > 0 || replay.on));
+		if (rerollGoalBtn) rerollGoalBtn.disabled = game.on;
+		clearButton.textContent = game.on ? 'abort' : 'clear';
+		clearButton.disabled = game.on && (!flying || replay.on);
+		gameCopyBtn.disabled = flightLock;
+		replaySpeedBtn.hidden = !replay.on;
+		replaySkipBtn.hidden = !replay.on;
+		replaySpeedBtn.textContent = '×' + REPLAY_SPEEDS[replay.speed];
+		replayRowEl.hidden = !replay.on && replay.verdict === '';
+		hudAt = -Infinity;
+	}
+
+	function updateGameHud() {
+		const seedText = 'seed ' + game.seed + ' · ×' + scene.trade.speed;
+		if (seedText !== hudSeedText) {
+			hudSeedText = seedText;
+			gameSeedEl.textContent = seedText;
+		}
+		const shots = game.shots.length;
+		const scoreText = gravity.visitedCount + ' / ' + PLANETS + (game.doneSteps >= 0 ? ' ✓' : '') +
+			' · ' + shots + (shots === 1 ? ' shot' : ' shots') + ' · ' +
+			(scoreSteps() * DT).toFixed(2) + ' s';
+		if (scoreText !== hudScoreText) {
+			hudScoreText = scoreText;
+			gameScoreEl.textContent = scoreText;
+		}
+		const replayText = replay.on
+			? 'shot ' + (replay.index + (replay.phase === PHASE_AIM ? 1 : 0)) + ' / ' +
+				replay.shots.length + ' · ×' + REPLAY_SPEEDS[replay.speed]
+			: replay.verdict;
+		if (replayText !== hudReplayText) {
+			hudReplayText = replayText;
+			replayEl.textContent = replayText;
+		}
 	}
 
 	function onPointerDown(event) {
@@ -550,8 +878,8 @@
 		} else if (mode === MODE_PORTS && tradeSim.planetPort[planet] !== NO_PORT) {
 			setSelected(tradeSim.planetPort[planet]);
 		}
-		const basePlanet = planet >= 0 ? planet : tradeSim.portPlanet[body];
-		if (basePlanet >= 0) {
+		const basePlanet = planet >= 0 ? planet : fieldPortPlanet[body];
+		if (basePlanet >= 0 && !gameLocked()) {
 			if (!gravity.canLaunchFrom(basePlanet)) {
 				blockedPlanet = basePlanet;
 				blockedUntil = performance.now() + 2600;
@@ -635,7 +963,7 @@
 			else if (aimSpeed > SPEED_MAX) aimSpeed = SPEED_MAX;
 			placeGripFromSpeed();
 			dirty = true;
-		} else if (selected >= 0) {
+		} else if (selected >= 0 && !game.on) {
 			setBodyStrength(selected, gravity.strength[selected] * factor);
 			refreshSelected();
 			refreshHoverLabel();
@@ -937,7 +1265,7 @@
 		const t = tradeSim.t;
 		const eps = 0.12;
 		for (let i = 0; i < gravity.bodyCount; i++) {
-			const planet = tradeSim.portPlanet[i];
+			const planet = fieldPortPlanet[i];
 			const a0 = tradeSim.orbitPhase[planet] + tradeSim.orbitOmega[planet] * t;
 			const a1 = tradeSim.orbitPhase[planet] + tradeSim.orbitOmega[planet] * (t + eps);
 			const rx0 = tradeSim.orbitRX[planet] * Math.cos(a0);
@@ -1202,11 +1530,11 @@
 		drawGripLabel();
 	}
 
-	function formatClock(seconds) {
+	function formatClock(label, seconds) {
 		const total = Math.floor(seconds * 10) / 10;
 		const mins = Math.floor(total / 60);
 		const secs = total - mins * 60;
-		return 'exp + ' + (mins < 10 ? '0' : '') + mins + ':' +
+		return label + ' + ' + (mins < 10 ? '0' : '') + mins + ':' +
 			(secs < 10 ? '0' : '') + secs.toFixed(1);
 	}
 
@@ -1215,6 +1543,7 @@
 		if (reason === END_EXIT) return 'left field';
 		if (reason === END_TIME) return 'time cap';
 		if (reason === END_TRUNCATED) return 'budget cap';
+		if (reason === END_ABORT) return 'aborted';
 		return 'open';
 	}
 
@@ -1258,31 +1587,45 @@
 			hudPathText = pText;
 			pathEl.textContent = pText;
 		}
-		trimSlider.disabled = !armed && selected < 0;
-		launchButton.disabled = !armed || !gravity.canLaunchFrom(aimBody);
+		const locked = gameLocked();
+		const trimOff = locked || (!armed && (game.on || selected < 0));
+		if (trimSlider.disabled !== trimOff) trimSlider.disabled = trimOff;
 		const exitWarning = (aiming || armed) && gravity.predCount >= 2 && gravity.predReason === END_EXIT;
+		setLaunchState(locked || !armed || !gravity.canLaunchFrom(aimBody), exitWarning);
+	}
+
+	function setLaunchState(blocked, exitWarning) {
+		const state = (blocked ? 1 : 0) + (exitWarning ? 2 : 0);
+		if (state === launchState) return;
+		launchState = state;
+		launchButton.disabled = blocked;
 		launchButton.classList.toggle('exitWarning', exitWarning);
 		launchButton.textContent = exitWarning ? 'launch · leaves system' : 'launch';
 		launchButton.title = exitWarning ? 'Warning: predicted trajectory ends outside the system' : '';
 	}
 
+	function statusText() {
+		if (replay.on) return gravity.status === STATUS_FLYING ? 'replay · in flight' : 'replay · aiming';
+		if (aiming) return 'aiming ' + planetName(aimBody);
+		if (armed) return 'armed · ' + planetName(aimBody);
+		if (gravity.status === STATUS_FLYING) return game.on ? 'in flight · clock runs' : 'in flight';
+		if (game.on && game.doneSteps >= 0) return 'tour complete';
+		const rest = gravity.status === STATUS_ENDED
+			? endText(gravity.endReason, gravity.endBody)
+			: gravity.landedBody >= 0 ? 'landed ' + planetName(gravity.landedBody) : 'ready';
+		return game.on ? rest + ' · clock paused' : rest;
+	}
+
 	function updateHud(now) {
 		if (now - hudAt < HUD_INTERVAL) return;
 		hudAt = now;
-		expClockEl.textContent = formatClock((now - expStart) / 1000);
+		expClockEl.textContent = game.on
+			? formatClock('game', gameSteps() * DT)
+			: formatClock('exp', (now - expStart) / 1000);
+		statusEl.textContent = statusText();
+		if (game.on) updateGameHud();
 
-		let status = gravity.landedBody >= 0
-			? 'landed ' + planetName(gravity.landedBody)
-			: 'ready';
-		if (aiming) status = 'aiming ' + planetName(aimBody);
-		else if (armed) status = 'armed · ' + planetName(aimBody);
-		else if (gravity.status === STATUS_FLYING) status = 'in flight';
-		else if (gravity.status === STATUS_ENDED) {
-			status = endText(gravity.endReason, gravity.endBody);
-		}
-		statusEl.textContent = status;
-
-		if (gravity.status === GravitySim.STATUS_IDLE) {
+		if (gravity.status === STATUS_IDLE) {
 			flightEl.textContent = '—';
 		} else {
 			flightEl.textContent = gravity.flightTime.toFixed(2) + ' s · ' +
@@ -1298,6 +1641,20 @@
 		else trimTargetEl.textContent = '—';
 	}
 
+	/* field clock and geometry follow the trade world; a game flight keeps its launch roster */
+	function syncField() {
+		gravity.fieldT = tradeSim.t;
+		const rate = game.on ? scene.trade.speed : tradeRate();
+		if (rate !== gravity.fieldRate) {
+			gravity.fieldRate = rate;
+			gravity.stepStale = true;
+			if (!gravity.fieldStatic) fieldChanged();
+		}
+		const rosterLocked = game.on && gravity.status === STATUS_FLYING;
+		if (mode === MODE_PORTS && !rosterLocked && syncPortRoster()) fieldChanged();
+		if (!gravity.fieldStatic) gravity.refreshField();
+	}
+
 	function frame(now) {
 		const frameStart = performance.now();
 		const rawMs = now - lastFrame;
@@ -1307,17 +1664,9 @@
 		const dt = Math.min(0.1, rawMs / 1000);
 		lastFrame = now;
 
-		/* sync the field clock and geometry with the trade world */
-		gravity.fieldT = tradeSim.t;
-		const rate = tradeRate();
-		if (rate !== gravity.fieldRate) {
-			gravity.fieldRate = rate;
-			gravity.stepStale = true;
-			if (!gravity.fieldStatic) fieldChanged();
-		}
-		if (mode === MODE_PORTS && syncPortRoster()) fieldChanged();
-		if (!gravity.fieldStatic) gravity.refreshField();
-		gravity.step(dt);
+		if (game.on) stepGame(now, dt);
+		syncField();
+		if (!game.on) gravity.step(dt);
 
 		/* adaptive 60 fps budget: update every frame at 60 fps, throttle if slower */
 		const interval = emaFrameMs <= FPS_DROP_MS ? 1 : emaFrameMs < 25 ? 2 : 4;
@@ -1381,7 +1730,23 @@
 		hudAt = -Infinity;
 	});
 	launchButton.addEventListener('click', launch);
-	clearButton.addEventListener('click', clearCargo);
+	clearButton.addEventListener('click', () => {
+		if (game.on) abortFlight();
+		else clearCargo();
+	});
+	modeLabEl.addEventListener('change', stopGame);
+	modeGameEl.addEventListener('change', () => startGame(tradeSim.seed, false));
+	gameRestartBtn.addEventListener('click', () => startGame(game.seed, game.fixedRate));
+	gameNewSeedBtn.addEventListener('click', () => {
+		startGame(1 + Math.floor(Math.random() * SEED_RANGE), false);
+	});
+	gameCopyBtn.addEventListener('click', copyLink);
+	replaySpeedBtn.addEventListener('click', () => {
+		replay.speed = (replay.speed + 1) % REPLAY_SPEEDS.length;
+		refreshGameUi();
+	});
+	replaySkipBtn.addEventListener('click', skipReplay);
+	window.addEventListener('hashchange', loadLink);
 	if (helpBtn) {
 		helpBtn.addEventListener('click', () => setHelpOpen(!helpPinned));
 		helpBtn.addEventListener('pointerenter', event => {
@@ -1426,7 +1791,7 @@
 		}
 		if (event.code === 'Escape') {
 			if (helpOpen) setHelpOpen(false);
-			else cancelAim();
+			else if (!replay.on) cancelAim();
 		}
 	});
 	window.addEventListener('keyup', event => {
@@ -1437,6 +1802,9 @@
 
 	root.GravityScene = {
 		sim: gravity,
+		game: game,
+		replay: replay,
+		scoreSteps: scoreSteps,
 		passenger: () => passenger,
 		rollPassenger: rollPassenger,
 		setHelpOpen: setHelpOpen,
@@ -1449,9 +1817,11 @@
 	horizonLabel.textContent = gravity.horizon + ' s';
 	if (horizonTagEl) horizonTagEl.textContent = gravity.horizon + ' s';
 
+	mode = srcPortsEl.checked ? MODE_PORTS : MODE_PLANETS;
 	gravity.fieldT = tradeSim.t;
 	gravity.fieldRate = tradeRate();
-	setMode(srcPortsEl.checked ? MODE_PORTS : MODE_PLANETS);
+	attachWorld();
+	if (!loadLink()) refreshGameUi();
 
 	resizeOverlay();
 	refreshSelected();

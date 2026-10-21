@@ -52,6 +52,29 @@
 	</div>
 
 	<div class="group">
+		<div class="caption"><span>mode</span><span id="modeTag">lab · free clock</span></div>
+		<div class="radioRow" role="radiogroup" aria-label="mode">
+			<label><input id="modeLab" type="radio" name="playMode" value="lab" checked> lab</label>
+			<label><input id="modeGame" type="radio" name="playMode" value="game"> game</label>
+		</div>
+		<div id="gameBox" hidden>
+			<div class="stats">
+				<div class="stat"><span>seed · rate</span><b id="gameSeed">—</b></div>
+				<div class="stat goalStat"><span>score</span><b id="gameScore">—</b></div>
+				<div class="stat" id="replayRow" hidden><span>replay</span><b id="replayReadout">—</b></div>
+			</div>
+			<div class="actions gameActions">
+				<button id="gameRestart" class="miniBtn" title="same seed, fresh start">restart</button>
+				<button id="gameNewSeed" class="miniBtn" title="random world">new seed</button>
+				<button id="gameCopy" class="miniBtn" title="link with seed, rate and every launch">copy replay</button>
+				<button id="replaySpeed" class="miniBtn" title="replay speed" hidden>×1</button>
+				<button id="replaySkip" class="miniBtn" title="re-simulate the rest instantly" hidden>skip</button>
+			</div>
+			<input id="gameLink" type="text" readonly hidden aria-label="replay link">
+		</div>
+	</div>
+
+	<div class="group">
 		<div class="caption"><span>gravity positions</span><span id="sourceTag">planets</span></div>
 		<div class="radioRow" role="radiogroup" aria-label="gravity positions">
 			<label><input id="srcPlanets" type="radio" name="gravitySource" value="planets" checked> planets</label>
@@ -121,6 +144,16 @@
 		</ul>
 	</div>
 	<div class="group">
+		<div class="caption"><span>game mode</span><span>compare runs</span></div>
+		<ul class="helpList">
+			<li><b>same world</b> — the seed builds planets, ports and colonies; everyone opening your link flies the same system.</li>
+			<li><b>clock runs in flight only</b> — trade, ports and moons move only while the cargo flies; after it lands or leaves, everything waits for your next launch.</li>
+			<li><b>fixed rules</b> — gravity stays at 1, no relaunch mid-flight, a flight ends after 120 s or on <i>abort</i>; the speed slider sets the world rate until the first launch.</li>
+			<li><b>score</b> — more systems, then fewer shots, then less flight time; a full tour stops its clock when the 26th system is entered.</li>
+			<li><b>copy replay</b> — a link with seed, rate and every launch; opening it re-flies the run, checks the recorded result, then lets you continue.</li>
+		</ul>
+	</div>
+	<div class="group">
 		<div class="caption"><span>controls</span><span>shortcuts</span></div>
 		<div class="helpGrid">
 			<span>drag planet</span><b>aim direction &amp; speed</b>
@@ -129,7 +162,7 @@
 			<span>g / ± sliders</span><b>attract / repel &amp; ±5% trim</b>
 			<span>enter / esc</span><b>launch / cancel aim</b>
 			<span>h or ?</span><b>toggle help drawer</b>
-			<span>space</span><b>pause background trade</b>
+			<span>space</span><b>pause background trade (lab)</b>
 		</div>
 	</div>
 </aside>
@@ -154,6 +187,7 @@
 <script src="orbit_sim.js"></script>
 <script src="orbit_view.js"></script>
 <script src="gravity_sim.js"></script>
+<script src="gravity_game.js"></script>
 <script src="gravity_gui.js"></script>
 </body>
 </html>

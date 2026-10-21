@@ -1,0 +1,47 @@
+game.1 — game mode: seeded world, flight-only clock, replay links
+
+game bench (new):
+  trade: advanceTo chunks 0-3 min vs one jump, 9 runs identical incl. exact t; reset == new Sim
+  codec: 300 round trips, 10 rejects, ~68.0 chars/shot; grid: 1e5 idempotent, angle snap ≤ 3.00e-6 rad
+  scripted game (seed 31, rate 3, 60 Hz): 26 / 26 ✓ · 8 shots · 50.27 s · ends impact P15, impact P20, impact P3, impact P22, abort, impact P23, impact P17, impact P10 · 6066 steps · 24899 ms
+    link 153 chars: #game=1&seed=31&rate=3&shots=p12.21ns.3aio_p15.68j.3aio_p20.5sib.5hj4_m3.lpm0.5hj4_m22.krwd.5hj4.2i_m22.krwd.5hj4_p23.a07n.5hj4_p17.da7c.5hj4&end=26.6033
+    replay 144 Hz x4: identical · verified ✓ · 2225 frames ·  9296 ms
+    replay jitter 4-45 ms + 120 ms stalls x1: identical · verified ✓ · 2282 frames ·  6725 ms
+    replay 60 Hz x16: identical · verified ✓ · 253 frames ·  1104 ms
+    replay skip: identical · verified ✓ ·  109 ms
+  cross-engine proxy (1 ulp):
+    planets · launch angle: 1872 flights, 0 outcome flips · end drift median 2.7e-13 p99 2.3e-8 max 1.4e-6 px
+    ports x3 · launch angle: 1872 flights, 0 outcome flips · end drift median 2.3e-13 p99 1.5e-10 max 8.0e-9 px
+    ports x3 · every port position: 1872 flights, 0 outcome flips · end drift median 1.1e-13 p99 1.4e-10 max 2.4e-8 px
+  GAME BENCH OK
+
+  notes: frame timings are vm wall time (the stub clock never trips the
+  prediction budget, so in-flight continuations trace the full 240 s);
+  the play and replay states compare cargo x/y, visits, score steps,
+  landed body, end reason, shot count and a trade fingerprint (t, ports,
+  ships, delivered, colonies, queue size, roster, total pop).
+
+dom smoke (game section; lab section unchanged from baseline):
+  adaptive trajectory updates: 60fps 30/30, 33fps 11/24 (interval 4)
+  grand tour verified: 5.0 s · time cap -> 16.8 s · impact P14 | visited 6 / 26 | next base P14
+  game idle: trade t+ 07:00 · clock game + 00:00.0 · seed seed 7 · ×2
+  game flight: aborted at step 57 · trade t+ 0.950 min · clock game + 00:00.4
+  game score: 6 / 26 · 2 shots · 8.41 s · impact P10 · clock paused
+  replay link: #game=1&seed=7&rate=2&shots=p0.0.2mtc.1l_p0.0.2mtc&end=6.1009
+  replay verdict: verified ✓ · cargo end identical, trade t identical
+  challenge link: seed 42 ×1 locked · fallback field ml#game=1&seed=42&rate=1 · invalid link noted
+  SMOKE OK
+
+gravity bench (unchanged: parity 0.000068 px, moving vs frozen 1358.1 px):
+    ends: open 0, impact 3282, exit 2295, horizon 39, budget 0
+  parity: 216 shots, worst live/predicted deviation 0.000068 px (P9 a7 v60)
+  moving ports at x6: parity 60 shots, worst deviation 0.000068 px (port 9 a4 v90)
+    moving vs frozen end point: max 1358.1 px apart
+    moving prediction: 168 runs, avg 0.286 ms, worst 3.330 ms
+  budget: 10 ms cap, worst 4.473 ms (within budget)
+  BENCH OK
+
+colony bench:
+  colony bench: 1622/1622 checks
+    jitter max 0.0600 · map 0.4 µs · advance 0.29 µs/colony-y (22.3 µs/tick for 26 colonies)
+  COLONY BENCH OK

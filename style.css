@@ -15,6 +15,10 @@
 	box-sizing: border-box;
 }
 
+[hidden] {
+	display: none !important;
+}
+
 html,
 body {
 	margin: 0;
@@ -413,6 +417,29 @@ button:disabled,
 input:disabled {
 	opacity: 0.35;
 	cursor: default;
+}
+
+#gameBox {
+	margin-top: 7px;
+}
+
+.gameActions {
+	flex-wrap: wrap;
+	gap: 5px;
+	margin-top: 7px;
+}
+
+#gameLink {
+	width: 100%;
+	margin-top: 6px;
+	padding: 3px 7px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: rgba(2, 8, 16, 0.7);
+	color: var(--text);
+	font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+	user-select: text;
+	pointer-events: auto;
 }
 
 #cargoHint {

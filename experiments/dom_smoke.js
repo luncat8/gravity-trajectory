@@ -1,133 +1,14 @@
 /*
  * Headless smoke test: loads the page scripts in a vm with a stub DOM/canvas,
- * runs frames, aims a shot, edits gravity and checks the clocks stay separate.
+ * runs frames, aims a shot, edits gravity, checks the clocks stay separate and
+ * walks through game mode (frozen clock, locks, abort, replay link).
  * Run: node experiments/dom_smoke.js
  */
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
+const { loadPage } = require('./dom_stub.js');
 
-const root = path.join(__dirname, '..');
-const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-
-function makeContext() {
-	const calls = { fillText: 0, stroke: 0, fill: 0, texts: [] };
-	const paint = {
-		fillStyle: '', strokeStyle: '', globalAlpha: 1, lineWidth: 1,
-		font: '', textAlign: '', textBaseline: '',
-		beginPath() {}, moveTo() {}, lineTo() {}, arc() {}, arcTo() {},
-		ellipse() {}, closePath() {}, strokeRect() {}, fillRect() {},
-		clearRect() {}, drawImage() {}, setTransform() {}, save() {},
-		restore() {}, translate() {}, scale() {}, setLineDash() {},
-		fillText(text) {
-			calls.fillText += 1;
-			if (calls.texts.length < 64) calls.texts.push(String(text));
-		},
-		stroke() { calls.stroke += 1; },
-		fill() { calls.fill += 1; },
-		measureText(text) { return { width: String(text).length * 6.5 }; },
-		createLinearGradient() { return { addColorStop() {} }; },
-		createRadialGradient() { return { addColorStop() {} }; }
-	};
-	const elements = new Map();
-	const ids = [...html.matchAll(/id="([^"]+)"/g)].map(match => match[1]);
-	for (const id of ids) {
-		const checked = new RegExp('id="' + id + '"[^>]*\\bchecked\\b').test(html);
-		const valueMatch = html.match(new RegExp('id="' + id + '"[^>]*value="([^"]*)"'));
-		const isCanvas = id === 'c' || id === 'g';
-		elements.set(id, {
-			id: id,
-			tagName: isCanvas ? 'CANVAS' : id === 'tradePause' || id === 'launch' ||
-				id === 'clear' ? 'BUTTON' : id === 'gravity' || id === 'trim' ||
-				id === 'tradeSpeed' || id === 'horizon' || id === 'srcPlanets' ||
-				id === 'srcPorts' ? 'INPUT' : 'DIV',
-			style: {},
-			textContent: '',
-			value: valueMatch ? valueMatch[1] : '',
-			checked: checked,
-			disabled: false,
-			className: '',
-			listeners: {},
-			classList: { toggle() {}, add() {}, remove() {} },
-			addEventListener(type, fn) {
-				(this.listeners[type] || (this.listeners[type] = [])).push(fn);
-			},
-			getContext() { return paint; },
-			getBoundingClientRect() {
-				return { left: 0, top: 0, width: 1280, height: 800 };
-			},
-			appendChild() {},
-			setPointerCapture() {}
-		});
-	}
-
-	const windowListeners = {};
-	let now = 1000;
-	let rafQueue = [];
-	const context = {
-		console: console,
-		Math: Math,
-		Float64Array: Float64Array,
-		Uint8Array: Uint8Array,
-		Uint32Array: Uint32Array,
-		Infinity: Infinity,
-		performance: { now: () => now },
-		requestAnimationFrame(fn) { rafQueue.push(fn); },
-		addEventListener(type, fn) {
-			(windowListeners[type] || (windowListeners[type] = [])).push(fn);
-		},
-		document: {
-			getElementById(id) { return elements.get(id) || null; },
-			createElement(tag) {
-				return {
-					tagName: String(tag).toUpperCase(),
-					width: 0,
-					height: 0,
-					style: {},
-					getContext() { return paint; }
-				};
-			}
-		},
-		innerWidth: 1280,
-		innerHeight: 800,
-		devicePixelRatio: 1
-	};
-	context.window = context;
-	return {
-		context,
-		elements,
-		windowListeners,
-		paint,
-		calls,
-		fireWindow(type, event) {
-			const list = windowListeners[type] || [];
-			for (const fn of list) fn(event);
-		},
-		fireElement(element, type, event) {
-			const list = element.listeners[type] || [];
-			for (const fn of list) fn(event);
-		},
-		runFrames(count, stepMs) {
-			for (let i = 0; i < count; i++) {
-				now += stepMs || 16.7;
-				const queue = rafQueue;
-				rafQueue = [];
-				for (const fn of queue) fn(now);
-			}
-		},
-		now() { return now; },
-		advance(ms) { now += ms; }
-	};
-}
-
-const env = makeContext();
-vm.createContext(env.context);
-for (const file of ['exec_queue.js', 'orbit_world.js', 'orbit_econ.js', 'orbit_sim.js',
-	'orbit_view.js', 'gravity_sim.js', 'gravity_gui.js']) {
-	vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), env.context, { filename: file });
-}
+const env = loadPage();
 
 const scene = env.context.OrbitScene;
 if (!scene || !scene.sim || !scene.view) throw new Error('OrbitScene missing');
@@ -570,6 +451,134 @@ if (ui.get('visitReadout').textContent !== visitedAfterHop1) {
 }
 console.log('grand tour verified:', cappedBefore, '->', continuedInFlight,
 	'| visited', visitedAfterHop1, '| next base P' + tour.end);
+
+/* game mode: seeded world, clock frozen between flights, locks, abort, replay link */
+function check(ok, message) {
+	if (!ok) throw new Error(message);
+}
+const pageGame = env.context.GravityGame;
+const pageSim = env.context.GravitySim;
+const game = gScene.game;
+const cargo = gScene.sim;
+
+function findShot(accept) {
+	const keep = cargo.horizon;
+	cargo.horizon = 60;
+	for (let p = 0; p < pageWorld.PLANETS; p++) {
+		for (let a = 0; a < 72; a++) {
+			for (const speed of [120, 160, 200]) {
+				const angle = a / 72 * Math.PI * 2;
+				cargo.predict(p, angle, speed);
+				if (!accept(cargo, p)) continue;
+				cargo.horizon = keep;
+				return { p, angle, speed };
+			}
+		}
+	}
+	throw new Error('no shot matched');
+}
+
+function dragShot(shot) {
+	env.dragAim(shot.p, shot.angle, shot.speed);
+	env.runFrames(2, 16.0);
+}
+
+env.choose('modeGame');
+env.runFrames(3, 16.0);
+check(ui.get('modeTag').textContent === 'game · clock runs in flight', 'game mode tag: ' + ui.get('modeTag').textContent);
+check(!ui.get('gameBox').hidden && game.on && game.seed === 7, 'game box / seed');
+check(sim.t === 420 && ui.get('tradeClock').textContent === 't+ 07:00', 'world not rebuilt at t+07:00: ' + sim.t);
+check(ui.get('expClock').textContent === 'game + 00:00.0', 'game clock: ' + ui.get('expClock').textContent);
+check(ui.get('tradePause').disabled && ui.get('gravity').disabled, 'pause / gravity not locked');
+check(ui.get('clear').textContent === 'abort' && ui.get('clear').disabled, 'abort button state');
+check(!ui.get('tradeSpeed').disabled, 'rate locked before the first shot');
+env.setValue('tradeSpeed', 2);
+const idleMoonX = scene.moons.x[0];
+env.runFrames(120, 16.0);
+check(sim.t === 420 && scene.moons.x[0] === idleMoonX, 'world moved while no cargo flies');
+console.log('game idle: trade', ui.get('tradeClock').textContent, '· clock', ui.get('expClock').textContent,
+	'· seed', ui.get('gameSeed').textContent);
+
+const longShot = findShot((g, p) => g.predTime > 4 && g.predReason !== pageSim.END_EXIT);
+dragShot(longShot);
+check(!ui.get('launch').disabled, 'game shot did not arm');
+env.click('launch');
+env.runFrames(30, 16.0);
+const shot0 = game.shots[0];
+check(cargo.status === pageSim.STATUS_FLYING, 'game flight ended too early');
+check(cargo.angle === pageGame.angleOf(shot0.angle) && cargo.speed === pageGame.speedOf(shot0.speed),
+	'launch inputs not on the aim grid');
+check(sim.t === cargo.flightFieldT && sim.t > 420, 'trade clock not locked to the flight clock');
+check(ui.get('tradeSpeed').disabled && ui.get('srcPorts').disabled && ui.get('launch').disabled,
+	'flight locks missing');
+check(!ui.get('clear').disabled && ui.get('cargoStatus').textContent === 'in flight · clock runs',
+	'flight state: ' + ui.get('cargoStatus').textContent);
+check(scene.moons.x[0] !== idleMoonX, 'moons frozen during flight');
+const abortSteps = cargo.liveSteps;
+env.click('clear');
+env.runFrames(3, 16.0);
+check(shot0.abort === abortSteps && cargo.endReason === pageSim.END_ABORT && game.steps === abortSteps,
+	'abort not recorded at step ' + abortSteps);
+check(ui.get('cargoStatus').textContent === 'aborted · clock paused', 'status ' + ui.get('cargoStatus').textContent);
+const pausedT = sim.t;
+env.runFrames(60, 16.0);
+check(sim.t === pausedT, 'world moved after the flight ended');
+console.log('game flight: aborted at step', abortSteps, '· trade t+', (sim.t - 420).toFixed(3),
+	'min · clock', ui.get('expClock').textContent);
+
+const landShot = findShot((g, p) => g.predReason === pageSim.END_IMPACT && g.predBody !== p && g.predTime < 8);
+dragShot(landShot);
+env.click('launch');
+for (let i = 0; i < 2000 && cargo.status === pageSim.STATUS_FLYING; i++) env.runFrames(1, 16.0);
+env.runFrames(2, 16.0);
+check(cargo.status === pageSim.STATUS_ENDED && game.shots.length === 2, 'second game flight did not end');
+check(game.steps === abortSteps + cargo.liveSteps, 'game steps do not add up');
+const endX = cargo.cargo.x;
+const endY = cargo.cargo.y;
+const endT = sim.t;
+const endVisited = cargo.visitedCount;
+const endSteps = gScene.scoreSteps();
+console.log('game score:', ui.get('gameScore').textContent, '·', ui.get('cargoStatus').textContent);
+
+env.click('gameCopy');
+const link = env.clipboardText || '';
+check(link.startsWith(env.context.location.href.split('#')[0] + '#game=1&seed=7&rate=2&shots='), 'link: ' + link);
+const decoded = pageGame.decodeLink(link.slice(link.indexOf('#')));
+check(decoded && decoded.shots.length === 2 && decoded.shots[0].abort === abortSteps &&
+	decoded.end.visited === endVisited && decoded.end.steps === endSteps, 'link does not carry the run');
+console.log('replay link:', link.slice(link.indexOf('#')));
+
+env.setHash(link.slice(link.indexOf('#')));
+env.runFrames(2, 16.0);
+check(gScene.replay.on && ui.get('cargoStatus').textContent.startsWith('replay'), 'link did not start a replay');
+check(!ui.get('replaySkip').hidden && ui.get('tradeSpeed').disabled, 'replay controls');
+env.click('replaySkip');
+env.runFrames(2, 16.0);
+check(ui.get('replayReadout').textContent === 'verified ✓', 'replay verdict: ' + ui.get('replayReadout').textContent);
+check(cargo.cargo.x === endX && cargo.cargo.y === endY && sim.t === endT, 'replayed end state differs');
+check(game.shots.length === 2 && !ui.get('replayRow').hidden, 'replay did not hand over the run');
+console.log('replay verdict:', ui.get('replayReadout').textContent, '· cargo end identical, trade t identical');
+
+env.choose('modeLab');
+env.runFrames(2, 16.0);
+check(ui.get('modeTag').textContent === 'lab · free clock' && ui.get('gameBox').hidden, 'back to lab');
+check(!ui.get('tradePause').disabled && !ui.get('tradeSpeed').disabled, 'lab controls still locked');
+const labT = sim.t;
+env.runFrames(30, 16.0);
+check(sim.t > labT, 'lab clock did not resume');
+
+/* a challenge link (no shots) keeps its rate; without a clipboard the link field shows */
+const challenge = loadPage({ hash: '#game=1&seed=42&rate=1', clipboard: false });
+challenge.runFrames(2, 16.0);
+const cui = challenge.elements;
+check(challenge.context.GravityScene.game.seed === 42 && challenge.context.OrbitScene.sim.seed === 42, 'challenge seed');
+check(cui.get('tradeSpeed').disabled && cui.get('gameSeed').textContent === 'seed 42 · ×1', 'challenge rate not fixed');
+challenge.click('gameCopy');
+check(!cui.get('gameLink').hidden && cui.get('gameLink').value.endsWith('#game=1&seed=42&rate=1'), 'copy fallback');
+challenge.setHash('#game=1&seed=0&rate=1');
+check(cui.get('modeTag').textContent === 'invalid game link', 'invalid link note');
+console.log('challenge link: seed 42 ×1 locked · fallback field', cui.get('gameLink').value.slice(-24),
+	'· invalid link noted');
 
 console.log('paint calls', {
 	fillText: env.calls.fillText,

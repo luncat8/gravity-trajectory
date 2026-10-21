@@ -23,7 +23,6 @@
 	const STRENGTH_MAX = 2;
 	const HORIZON = 60;
 	const FLY_HORIZON = 240;
-	const LIVE_LIMIT = Infinity;
 	const MAX_STEPS = 7350;
 	const PATH_MAX = 28900;
 	const TRAIL_MAX = 8192;
@@ -47,6 +46,7 @@
 	const END_EXIT = 2;
 	const END_TIME = 3;
 	const END_TRUNCATED = 4;
+	const END_ABORT = 5;
 
 	function GravitySim(worldW, worldH) {
 		this.worldW = worldW;
@@ -96,6 +96,9 @@
 		this.flightLength = 0;
 		this.flightFieldT = 0;
 		this.liveSteps = 0;
+		/* a flight reaching stepLimit steps ends with limitReason (game cap, replayed abort) */
+		this.stepLimit = Infinity;
+		this.limitReason = END_TIME;
 		this.acc = 0;
 		this.endReason = END_OPEN;
 		this.endBody = NO_BODY;
@@ -103,6 +106,7 @@
 
 		this.visited = new Uint8Array(MAX_BODIES);
 		this.visitedCount = 0;
+		this.visitStep = 0;
 		this.predVisit = new Uint8Array(MAX_BODIES);
 		this.predVisits = 0;
 		this.predNewVisits = 0;
@@ -451,8 +455,14 @@
 		this.endBody = NO_BODY;
 		this.trailCount = 0;
 		this.trailStride = TRAIL_STRIDE;
-		this.visitedCount += this.markSystemsAt(this.cargo.x, this.cargo.y, this.visited);
+		this.addVisits(this.markSystemsAt(this.cargo.x, this.cargo.y, this.visited));
 		this.recordTrail();
+	};
+
+	GravitySim.prototype.addVisits = function (added) {
+		if (added === 0) return;
+		this.visitedCount += added;
+		this.visitStep = this.liveSteps;
 	};
 
 	GravitySim.prototype.recordTrail = function () {
@@ -479,7 +489,7 @@
 		if (reason === END_IMPACT && body >= 0) {
 			if (this.planetCount > 0 && !this.visited[body]) {
 				this.visited[body] = 1;
-				this.visitedCount += 1;
+				this.addVisits(1);
 			}
 			this.landedBody = body;
 		}
@@ -495,6 +505,11 @@
 		const cargo = this.cargo;
 		let guard = 0;
 		while (this.acc >= DT && this.status === STATUS_FLYING && guard < 24) {
+			/* checked before stepping: an abort recorded at step N replays as N steps */
+			if (this.liveSteps >= this.stepLimit) {
+				this.finish(this.limitReason, NO_BODY);
+				break;
+			}
 			const moving = !this.fieldStatic && this.fieldRate !== 0;
 			const stride = moving ? this.fieldStride() : FIELD_STRIDE;
 			if (this.stepStale || (moving && this.liveSteps % stride === 0)) {
@@ -507,12 +522,12 @@
 			const dx = cargo.x - prevX;
 			const dy = cargo.y - prevY;
 			this.flightLength += Math.sqrt(dx * dx + dy * dy);
-			this.flightTime += DT;
 			this.flightFieldT += DT * this.fieldRate;
 			this.liveSteps += 1;
+			this.flightTime = this.liveSteps * DT;
 			this.acc -= DT;
 			guard += 1;
-			this.visitedCount += this.markSystemsAt(cargo.x, cargo.y, this.visited);
+			this.addVisits(this.markSystemsAt(cargo.x, cargo.y, this.visited));
 			const body = this.impact(cargo.x, cargo.y);
 			if (body >= 0) {
 				this.finish(END_IMPACT, body);
@@ -522,13 +537,13 @@
 				this.finish(END_EXIT, NO_BODY);
 				break;
 			}
-			if (this.flightTime >= LIVE_LIMIT) {
-				this.finish(END_TIME, NO_BODY);
-				break;
-			}
 			if (this.liveSteps % this.trailStride === 0) this.recordTrail();
 		}
 		if (this.acc >= DT) this.acc = 0;
+	};
+
+	GravitySim.prototype.abort = function () {
+		if (this.status === STATUS_FLYING) this.finish(END_ABORT, NO_BODY);
 	};
 
 	GravitySim.prototype.clear = function () {
@@ -543,6 +558,7 @@
 		this.landedBody = NO_BODY;
 		this.visited.fill(0);
 		this.visitedCount = 0;
+		this.visitStep = 0;
 		this.predVisit.fill(0);
 		this.predVisits = 0;
 		this.predNewVisits = 0;
@@ -568,7 +584,6 @@
 	GravitySim.STRENGTH_MAX = STRENGTH_MAX;
 	GravitySim.HORIZON = HORIZON;
 	GravitySim.FLY_HORIZON = FLY_HORIZON;
-	GravitySim.LIVE_LIMIT = LIVE_LIMIT;
 	GravitySim.BUDGET_MS = BUDGET_MS;
 	GravitySim.MAX_BODIES = MAX_BODIES;
 	GravitySim.FIELD_STRIDE = FIELD_STRIDE;
@@ -581,6 +596,7 @@
 	GravitySim.END_EXIT = END_EXIT;
 	GravitySim.END_TIME = END_TIME;
 	GravitySim.END_TRUNCATED = END_TRUNCATED;
+	GravitySim.END_ABORT = END_ABORT;
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = GravitySim;
 	else root.GravitySim = GravitySim;

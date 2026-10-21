@@ -61,12 +61,20 @@
 	const seedRandom = OrbitWorld.seedRandom;
 
 	function Sim(seed) {
+		this.handleEvent = this.handleEvent.bind(this);
+		this.onColonyEvent = this.onColonyEvent.bind(this);
+		this.reset(seed);
+	}
+
+	/*
+	 * (Re)build the world for `seed` at t = 0. Every array is fresh, so a reset
+	 * is identical to a new Sim; holders of array references must re-read them.
+	 */
+	Sim.prototype.reset = function (seed) {
 		this.seed = seed || 1;
 		this.rand = seedRandom(this.seed);
 		this.t = 0;
 		this.events = new ExecQueue(256);
-		this.handleEvent = this.handleEvent.bind(this);
-		this.onColonyEvent = this.onColonyEvent.bind(this);
 		this.partnerN = 4;
 		this.portCount = 0;
 		this.shipCount = 0;
@@ -138,7 +146,7 @@
 		for (let p = 0; p < INITIAL_PORTS; p++) {
 			this.portNext[p] = 10 + this.rand() * 30;
 		}
-	}
+	};
 
 	Sim.prototype.econY = function (time) {
 		return (time === undefined ? this.t : time) * ECON_YEARS_PER_MIN;
@@ -734,8 +742,12 @@
 	};
 
 	Sim.prototype.step = function (minutes) {
-		if (!(minutes > 0)) return;
-		const target = this.t + minutes;
+		this.advanceTo(this.t + minutes);
+	};
+
+	/* Lands on `target` exactly, so an external clock can drive the world in any chunking. */
+	Sim.prototype.advanceTo = function (target) {
+		if (!(target > this.t)) return;
 		this.events.drainUntil(target, this.handleEvent);
 		this.t = target;
 	};

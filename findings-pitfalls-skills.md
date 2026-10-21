@@ -29,6 +29,20 @@ automation work. Three extra details matter on Puppeteer v24+:
 
 Kills the "no visual check possible" dead end.
 
+`@sparticuz/chromium` 153 differences: ESM only (`import chromium from
+'@sparticuz/chromium'`; `require` returns no `executablePath`) and
+`chromium.headless` is undefined, so pass `'shell'` directly. A `file://` page
+works without a server. Costs and traps observed with this page:
+
+- each screenshot of the animating 1440x900 canvas takes ~8 s (JPEG) / ~14 s
+	(PNG) with or without a real `PR_Now`; keep captures few;
+- rAF timestamps are a synthetic 16.7 ms; measure frame cost with `Date.now()`
+	deltas inside `requestAnimationFrame`;
+- `waitForFunction` (rAF polling) hung past its timeout; poll with
+	`page.evaluate` plus a 250 ms sleep;
+- `file://` has no clipboard permission, which conveniently exercises the copy
+	fallback.
+
 ## 60 Hz frame-time guards vs VSync timestamp jitter
 
 Browsers coarsen `performance.now()` / `requestAnimationFrame` timestamps for
@@ -54,6 +68,14 @@ real event handlers (`pointerdown`/`move`/`up`, `input`, `change`, `click`,
 `resize`) and asserts the HUD text. Cheap regression net for interaction
 plumbing that a physics-only benchmark cannot see.
 
+The stub lives in `experiments/dom_stub.js` (`loadPage({ hash, clipboard })`)
+and reads the script list, element ids and initial `disabled` / `hidden` /
+`checked` attributes from `index.html`; hand-kept lists broke as soon as a
+script was added. Its fake `performance.now()` only moves between frames, so
+wall-clock budgets never trip: a flying cargo's continuation traces the full
+240 s every frame. Keep vm flights short and do not read vm timings as
+browser timings.
+
 ## throttled HUD vs pointer feedback
 
 Throttling a whole HUD to ~10 Hz is fine for clocks and stats but hides the
@@ -70,3 +92,37 @@ applied to a 10 px event delta must stay 0.5 px, not be rounded), and always
 update `lastPointer` on every event, also when no aim is active. Verified with a
 real pointer in headless Chromium: 100 px of travel at 1/20 gave ~7 px/s of the
 ~290 px/s full range.
+
+## deterministic replays over a real-time frame loop
+
+- One time base for everything replayed: integer fixed steps. The secondary
+	sim advances to an exact target (`advanceTo(fieldT)`) after each physics call
+	instead of accumulating frame deltas; its event queue drains in time order,
+	so random chunking reaches the same state (check with a fingerprint that
+	includes exact `t`).
+- Quantise inputs before anything uses them (angle `2^-20` turn, speed
+	`2^-10` px/s) so prediction, flight, link and replay see identical doubles.
+- Snapshot mutable inputs at launch (the port roster) and lock edits mid-flight.
+- Prove it by replaying one recorded run at different cadences (144 Hz,
+	4–45 ms jitter with 120 ms stalls, `×16`, synchronous skip) and comparing
+	`String(double)` fingerprints, not rounded readouts.
+
+## cross-engine float determinism
+
+IEEE `+ − × ÷ sqrt` are exactly rounded everywhere; only `Math.sin`/`cos`/…
+may differ by an ulp between engines. Measure instead of vendoring trig: nudge
+inputs with `nextUp` (a `Float64Array` + `BigInt64Array` view, `i64[0] += 1n`)
+and compare live flights. Here: 5 616 flight pairs, 0 outcome flips, max end
+drift 1.4e-6 px. Measure on double state (`cargo.x`); the `Float32Array`
+prediction buffers round away exactly the differences being measured.
+
+## small pitfalls
+
+- An author `display: flex/grid` rule beats the UA `[hidden] { display: none }`;
+	add `[hidden] { display: none !important; }` once.
+- `t += DT` drifts: 801 × `1/120` accumulates to `6.6750000000001215` (`6.68`)
+	while `801 * DT` is `6.675` (`6.67`). Derive displayed times from step counts
+	when they sit next to step-based scores.
+- A greedy search with the page's own predictor finds 26 / 26 tours in two long
+	shots or eight 20 s hops, so in benches scripted with it, assert that each
+	planned shot actually fired: after completion, launches are locked.

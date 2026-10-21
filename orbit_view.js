@@ -41,6 +41,7 @@
 	const TRACK_CAP = 128;
 	const MOON_GRAV_K = 75;
 	const MOON_COLORS = ['#dfeaff', '#ffe3b3', '#9be6ff', '#c9d6e8'];
+	const seedRandom = OrbitWorld.seedRandom;
 
 	const canvas = $('c');
 	const ctx = canvas.getContext('2d');
@@ -104,8 +105,12 @@
 
 	let paused = false;
 	let speed = START_SPEED;
-	/* shared so the cargo layer can extrapolate port positions at the same rate */
-	const tradeState = { speed: START_SPEED, paused: false };
+	/*
+	 * Shared so the cargo layer can extrapolate port positions at the same rate.
+	 * gameClock: the cargo layer advances the world itself, only while it flies.
+	 */
+	const tradeState = { speed: START_SPEED, paused: false, gameClock: false };
+	let moonClockT = sim.t;
 	let showOrbits = orbitsBox.checked;
 	let showLinks = linksBox.checked;
 	let showRoutes = routesBox.checked;
@@ -131,17 +136,6 @@
 		paint.fillStyle = gradient;
 		paint.fillRect(0, 0, 64, 64);
 		return sprite;
-	}
-
-	function seedRandom(value) {
-		let a = value >>> 0;
-		return function () {
-			a = (a + 0x6d2b79f5) >>> 0;
-			let t = a;
-			t = Math.imul(t ^ (t >>> 15), t | 1);
-			t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-			return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-		};
 	}
 
 	function roundedRect(x, y, width, height, radius) {
@@ -943,11 +937,40 @@
 		speedLabel.textContent = '×' + value;
 	}
 
+	function setSpeedValue(value) {
+		speedSlider.value = String(value);
+		setSpeed(value);
+	}
+
+	function setGameClock(on) {
+		tradeState.gameClock = on;
+		pauseButton.disabled = on;
+		pauseButton.title = on ? 'game clock · runs only while the cargo flies' : 'space';
+		moonClockT = sim.t;
+	}
+
+	function lockSpeed(locked) {
+		speedSlider.disabled = locked;
+	}
+
+	/* rebuilds the world in place, so OrbitScene.sim stays the same object */
+	function resetWorld(seed) {
+		sim.reset(seed);
+		sim.step(START_MINUTES);
+		initMoonSystems();
+		moonClockT = sim.t;
+		hoverPort = -1;
+		updateHoverInfo();
+		hudAt = -Infinity;
+	}
+
 	function frame(now) {
 		const dt = Math.min(0.1, (now - lastFrame) / 1000);
 		lastFrame = now;
-		if (!paused && dt > 0) sim.step(dt * speed);
-		if (showMoons && dt > 0) stepMoons(dt);
+		const gameClock = tradeState.gameClock;
+		if (!gameClock && !paused && dt > 0) sim.step(dt * speed);
+		if (showMoons && dt > 0 && (!gameClock || sim.t !== moonClockT)) stepMoons(dt);
+		moonClockT = sim.t;
 		updatePortPositions();
 		updateShipPositions();
 		updateHover();
@@ -990,7 +1013,7 @@
 		const tag = event.target && event.target.tagName;
 		if (tag === 'INPUT' || tag === 'BUTTON' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 		event.preventDefault();
-		setPaused(!paused);
+		if (!tradeState.gameClock) setPaused(!paused);
 	});
 
 	root.OrbitScene = {
@@ -998,6 +1021,10 @@
 		view: view,
 		trade: tradeState,
 		planetG: planetG,
+		reset: resetWorld,
+		setSpeed: setSpeedValue,
+		setGameClock: setGameClock,
+		lockSpeed: lockSpeed,
 		moons: {
 			count: () => moonCount,
 			tracks: () => trackCount,
