@@ -1,0 +1,64 @@
+# 0.3.1 route rule — benches
+
+## route_bench (new)
+route bench — 216000 steps of wall (1800 s)
+1. sliced tracer equals a one-shot tracer
+  static: 200 shots, one call vs 1 ms slices agree point for point (mean 0.1 slices)
+  moving ports x6: 60 shots, one call vs 1 ms slices agree point for point (mean 0.1 slices)
+2. flight length in the static field
+  static field, 6864 shots: flight median 5.7 s, p95 37.1 s, longest 158.3 s · over the 120 s tour cap 4 · reaching the 1 800 s wall 0
+3. point buffer
+  wall trace: 216000 steps, 27001 points, stride 8, end horizon (1800 s)
+  the same wall shot in 4 ms slices: 7 slices, identical path after 8x compaction
+  longest real shot: 158.3 s, 18997 points, stride 1 (every step kept)
+4. slice cost
+  static field: 0.4 ms of work in 1.0 slices, worst slice 2.53 ms, 1269 points
+  moving ports x6: 1.0 ms of work in 1.1 slices, worst slice 4.02 ms, 1649 points
+  wall trace: 28.4 ms of work in 8.0 slices, worst slice 4.01 ms, 27001 points
+5. no allocation
+  probe, path and all field buffers keep their identity across a trace
+ROUTE BENCH OK
+
+## gravity_bench
+
+parity: 216 shots, worst live/predicted deviation 0.000068 px (P9 a7 v60)
+moving ports at x6: parity 60 shots, worst deviation 0.000068 px (port 9 a4 v90)
+  moving vs frozen end point: max 1358.1 px apart
+  moving prediction: 168 runs, avg 0.291 ms, worst 3.387 ms
+repel field: 156 paths, finite bounds x -14.1…1614.0, y -13.7…1013.9
+budget: 10 ms cap, worst 3.273 ms (within budget)
+BENCH OK
+
+## colony_bench
+  jitter max 0.0600 · map 0.4 µs · advance 0.28 µs/colony-y (22.1 µs/tick for 26 colonies)
+COLONY BENCH OK
+
+## game_bench
+trade: advanceTo chunks 0-3 min vs one jump, 9 runs identical incl. exact t; reset == new Sim
+codec: 300 round trips, 10 rejects, ~73.0 chars/shot; grid: 1e5 idempotent, angle snap ≤ 3.00e-6 rad
+scripted game (seed 31, rate 3, 60 Hz): 26 / 26 ✓ · 8 shots · 50.27 s · ends impact P15, impact P20, impact P3, impact P22, abort, impact P23, impact P17, impact P10 · 6066 steps · 25065 ms
+  link 153 chars: #game=1&seed=31&rate=3&shots=p12.21ns.3aio_p15.68j.3aio_p20.5sib.5hj4_m3.lpm0.5hj4_m22.krwd.5hj4.2i_m22.krwd.5hj4_p23.a07n.5hj4_p17.da7c.5hj4&end=26.6033
+  replay 144 Hz x4: identical · verified ✓ · 2225 frames ·  9923 ms
+  replay jitter 4-45 ms + 120 ms stalls x1: identical · verified ✓ · 2282 frames ·  6674 ms
+  replay 60 Hz x16: identical · verified ✓ · 253 frames ·  1140 ms
+  replay skip: identical · verified ✓ ·  101 ms
+route game (seed 31, rate 3, 60 Hz): 13 / 26 · 3093 px · 2 shots · 19.78 s · ends impact P9, impact P12 · 2374 steps · 8851 ms
+  flights 10.2 s / 1614 px · 9.6 s / 1479 px
+  link 78 chars: #game=1&seed=31&rate=3&rule=route&shots=p12.iwh4.3if4_p9.8ln7.3if4&end=13.2374
+  replay 60 Hz x1: identical · verified ✓ · 1349 frames ·  4463 ms
+  replay jitter 4-45 ms + 120 ms stalls x1: identical · verified ✓ · 857 frames ·  2007 ms
+  replay 60 Hz x16: identical · verified ✓ · 110 frames ·  348 ms
+  replay skip: identical · verified ✓ ·  51 ms
+cross-engine proxy (1 ulp):
+  planets · launch angle: 1872 flights, 0 outcome flips · end drift median 2.7e-13 p99 2.3e-8 max 1.4e-6 px
+  ports x3 · launch angle: 1872 flights, 0 outcome flips · end drift median 2.3e-13 p99 1.5e-10 max 8.0e-9 px
+  ports x3 · every port position: 1872 flights, 0 outcome flips · end drift median 1.1e-13 p99 1.4e-10 max 2.4e-8 px
+GAME BENCH OK
+
+## dom_smoke
+replay verdict: verified ✓ · cargo end identical, trade t identical
+route rule: 6 / 26 · 1211 px · 1 shot · 7.93 s · impact P10 · clock paused · traced 7.9 s in 953 points
+route replay: verified ✓ · 58 char link · route rule
+challenge link: seed 42 ×1 locked · fallback field ml#game=1&seed=42&rate=1 · invalid link noted
+paint calls { fillText: 2274, stroke: 653968, fill: 241967 }
+SMOKE OK

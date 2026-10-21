@@ -32,6 +32,12 @@
 	const MODE_PLANETS = GravityGame.SRC_PLANETS;
 	const MODE_PORTS = GravityGame.SRC_PORTS;
 	const NO_ABORT = GravityGame.NO_ABORT;
+	const RULES = GravityGame.RULES;
+	const RULE_TOUR = GravityGame.RULE_TOUR;
+	const RULE_ROUTE = GravityGame.RULE_ROUTE;
+	/* route mode traces a 1 800 s shot in slices: per-frame slice of tracer work */
+	const ROUTE_STEP_MS = 4;
+	const ROUTE_FIELD_DELTA = 4;
 	const REPLAY_AIM_MS = 700;
 	const REPLAY_GAP_MS = 450;
 	/* replay multipliers; index 2 is real time */
@@ -184,6 +190,9 @@
 	const modeLabEl = $('modeLab');
 	const modeGameEl = $('modeGame');
 	const gameBoxEl = $('gameBox');
+	const ruleTourEl = $('ruleTour');
+	const ruleRouteEl = $('ruleRoute');
+	const ruleTagEl = $('ruleTag');
 	const gameSeedEl = $('gameSeed');
 	const gameScoreEl = $('gameScore');
 	const replayRowEl = $('replayRow');
@@ -250,6 +259,7 @@
 	let hudPathText = '';
 	let hudSeedText = '';
 	let hudScoreText = '';
+	let hudRuleText = '';
 	let hudReplayText = '';
 	let launchState = -1;
 	let linkNote = '';
@@ -264,7 +274,8 @@
 	 * game: steps = finished flight steps, doneSteps = step the 26th system was entered,
 	 * fixedRate = the rate came with a link and must not change
 	 */
-	const game = { on: false, seed: 0, fixedRate: false, shots: [], steps: 0, doneSteps: -1 };
+	const game = { on: false, seed: 0, fixedRate: false, rule: RULE_TOUR, shots: [], steps: 0,
+		doneSteps: -1, length: 0 };
 	/* replay of a link: shots fired in order, aim shown then flown; verdict after the last */
 	const replay = { on: false, shots: null, end: null, index: 0, phase: PHASE_GAP, until: 0,
 		speed: REPLAY_DEFAULT, verdict: '' };
@@ -606,7 +617,7 @@
 
 	function fire(abortStep) {
 		if (game.on) recordShot(abortStep);
-		gravity.predict(aimBody, aimAngle, aimSpeed);
+		predictShot();
 		dirty = false;
 		gravity.launch(aimBody, aimAngle, aimSpeed);
 		aiming = false;
@@ -623,7 +634,7 @@
 		if (mode === MODE_PORTS) syncPortRoster();
 		gravity.fieldT = tradeSim.t;
 		gravity.fieldRate = scene.trade.speed;
-		gravity.stepLimit = abortStep === NO_ABORT ? GravityGame.CAP_STEPS : abortStep;
+		gravity.stepLimit = abortStep === NO_ABORT ? ruleSpec().capSteps : abortStep;
 		gravity.limitReason = abortStep === NO_ABORT ? END_TIME : END_ABORT;
 		game.shots.push(GravityGame.createShot(mode, aimBody,
 			GravityGame.angleUnits(aimAngle), GravityGame.speedUnits(aimSpeed), abortStep));
@@ -665,6 +676,39 @@
 		hudAt = -Infinity;
 	}
 
+	function ruleSpec() {
+		return RULES[game.rule];
+	}
+
+	function routeRule() {
+		return game.rule === RULE_ROUTE;
+	}
+
+	/*
+	 * Route mode traces a shot to its end over several frames. The job survives
+	 * field ticks (it is a snapshot), so it is restarted only by an aim edit or
+	 * when the world has moved on enough for the snapshot to be misleading.
+	 */
+	function aimTraceStale(bodiesMoved) {
+		if (!bodiesMoved) return false;
+		if (!routeRule()) return true;
+		return !gravity.routeActive &&
+			Math.abs(gravity.fieldT - gravity.routeT0) > ROUTE_FIELD_DELTA;
+	}
+
+	function startAimTrace(budgetMs) {
+		const spec = ruleSpec();
+		if (spec.horizon) gravity.routeBegin(aimBody, aimAngle, aimSpeed, spec.horizon);
+		else gravity.predict(aimBody, aimAngle, aimSpeed, budgetMs);
+	}
+
+	/* the launch itself always sees a finished path, whatever the preview showed */
+	function predictShot() {
+		const spec = ruleSpec();
+		if (spec.horizon) gravity.predictFull(aimBody, aimAngle, aimSpeed, spec.horizon);
+		else gravity.predict(aimBody, aimAngle, aimSpeed);
+	}
+
 	/* aim edits and launches close while a game flight or replay runs, and after 26 / 26 */
 	function gameLocked() {
 		return game.on && (replay.on || gravity.status === STATUS_FLYING || game.doneSteps >= 0);
@@ -697,14 +741,18 @@
 		applyMode();
 	}
 
-	function startGame(seed, fixedRate) {
+	function startGame(seed, fixedRate, rule) {
 		stopReplay();
 		linkNote = '';
 		game.on = true;
 		game.seed = seed;
 		game.fixedRate = fixedRate;
+		game.rule = rule || game.rule;
+		ruleTourEl.checked = game.rule === RULE_TOUR;
+		ruleRouteEl.checked = game.rule === RULE_ROUTE;
 		game.shots.length = 0;
 		game.steps = 0;
+		game.length = 0;
 		game.doneSteps = -1;
 		scene.reset(seed);
 		scene.setGameClock(true);
@@ -715,6 +763,12 @@
 		setPassenger(PASSENGERS[seed % PASSENGERS.length]);
 		gameLinkEl.hidden = true;
 		refreshGameUi();
+	}
+
+	/* a rule is part of the run, so switching it restarts the same seed */
+	function setRule(next) {
+		if (next === game.rule) return;
+		startGame(game.seed, game.fixedRate, next);
 	}
 
 	/* back to lab: the world stays, the clock returns to real time, a running flight continues */
@@ -767,6 +821,7 @@
 			game.doneSteps = game.steps + gravity.visitStep;
 		}
 		game.steps += gravity.liveSteps;
+		game.length += gravity.flightLength;
 		if (replay.on) {
 			replay.phase = PHASE_GAP;
 			replay.until = performance.now() + REPLAY_GAP_MS / REPLAY_SPEEDS[replay.speed];
@@ -862,6 +917,7 @@
 		const url = location.href.split('#')[0] + '#' + GravityGame.encodeLink({
 			seed: game.seed,
 			rate: scene.trade.speed,
+			rule: game.rule,
 			shots: game.shots,
 			visited: gravity.visitedCount,
 			steps: scoreSteps()
@@ -896,7 +952,7 @@
 		}
 		modeGameEl.checked = true;
 		scene.setSpeed(link.rate);
-		startGame(link.seed, true);
+		startGame(link.seed, true, link.rule);
 		if (link.shots.length > 0) startReplay(link.shots, link.end);
 		return true;
 	}
@@ -909,6 +965,8 @@
 		gameBoxEl.hidden = !game.on;
 		srcPlanetsEl.disabled = flightLock;
 		srcPortsEl.disabled = flightLock;
+		ruleTourEl.disabled = flightLock;
+		ruleRouteEl.disabled = flightLock;
 		scene.lockSpeed(game.on && (game.fixedRate || game.shots.length > 0 || replay.on));
 		if (rerollGoalBtn) rerollGoalBtn.disabled = game.on;
 		clearButton.textContent = game.on ? 'abort' : 'clear';
@@ -921,19 +979,32 @@
 		hudAt = -Infinity;
 	}
 
+	/* route runs rank by length, so the score carries it before the shot count */
+	function scoreText() {
+		const shots = game.shots.length;
+		return gravity.visitedCount + ' / ' + PLANETS + (game.doneSteps >= 0 ? ' ✓' : '') +
+			' · ' + (routeRule() ? Math.round(game.length) + ' px · ' : '') +
+			shots + (shots === 1 ? ' shot' : ' shots') + ' · ' +
+			(scoreSteps() * DT).toFixed(2) + ' s';
+	}
+
 	function updateGameHud() {
+		const ruleText = routeRule()
+			? 'route · ' + Math.round(GravityGame.ROUTE_SECONDS / 60) + ' min wall'
+			: 'tour · ' + GravityGame.CAP_SECONDS + ' s cap';
+		if (ruleText !== hudRuleText) {
+			hudRuleText = ruleText;
+			ruleTagEl.textContent = ruleText;
+		}
 		const seedText = 'seed ' + game.seed + ' · ×' + scene.trade.speed;
 		if (seedText !== hudSeedText) {
 			hudSeedText = seedText;
 			gameSeedEl.textContent = seedText;
 		}
-		const shots = game.shots.length;
-		const scoreText = gravity.visitedCount + ' / ' + PLANETS + (game.doneSteps >= 0 ? ' ✓' : '') +
-			' · ' + shots + (shots === 1 ? ' shot' : ' shots') + ' · ' +
-			(scoreSteps() * DT).toFixed(2) + ' s';
-		if (scoreText !== hudScoreText) {
-			hudScoreText = scoreText;
-			gameScoreEl.textContent = scoreText;
+		const score = scoreText();
+		if (score !== hudScoreText) {
+			hudScoreText = score;
+			gameScoreEl.textContent = score;
 		}
 		const replayText = replay.on
 			? 'shot ' + (replay.index + (replay.phase === PHASE_AIM ? 1 : 0)) + ' / ' +
@@ -1662,7 +1733,9 @@
 			lengthEl.textContent = lenText;
 		}
 		const pText = gravity.predCount >= 2
-			? gravity.predTime.toFixed(1) + ' s · ' + endText(gravity.predReason, gravity.predBody)
+			? gravity.predTime.toFixed(1) + ' s · ' + (gravity.routeActive
+				? 'computing ' + Math.round(gravity.routeProgress() * 100) + ' %'
+				: endText(gravity.predReason, gravity.predBody))
 			: '—';
 		if (pText !== hudPathText) {
 			hudPathText = pText;
@@ -1690,7 +1763,7 @@
 		if (aiming) return 'aiming ' + planetName(aimBody);
 		if (armed) return 'armed · ' + planetName(aimBody);
 		if (gravity.status === STATUS_FLYING) return game.on ? 'in flight · clock runs' : 'in flight';
-		if (game.on && game.doneSteps >= 0) return 'tour complete';
+		if (game.on && game.doneSteps >= 0) return routeRule() ? 'run complete' : 'tour complete';
 		const rest = gravity.status === STATUS_ENDED
 			? endText(gravity.endReason, gravity.endBody)
 			: gravity.landedBody >= 0 ? 'landed ' + planetName(gravity.landedBody) : 'ready';
@@ -1760,14 +1833,16 @@
 
 		const bodiesMoved = !gravity.fieldStatic && gravity.fieldT !== gravity.predFieldT;
 		if (armed || aiming) {
-			if (!dirty && bodiesMoved && autoSkip === 0) {
+			if (!dirty && autoSkip === 0 && aimTraceStale(bodiesMoved)) {
 				dirty = true;
 				autoSkip = interval - 1;
 			}
 			if (dirty) {
-				gravity.predict(aimBody, aimAngle, aimSpeed, budgetMs);
+				startAimTrace(budgetMs);
 				refreshAimLabel();
 				dirty = false;
+			} else if (gravity.routeActive) {
+				gravity.routeStep(ROUTE_STEP_MS);
 			}
 		} else if (gravity.status === STATUS_FLYING) {
 			if (dirty || autoSkip === 0) {
@@ -1816,6 +1891,8 @@
 		if (game.on) abortFlight();
 		else clearCargo();
 	});
+	ruleTourEl.addEventListener('change', () => setRule(RULE_TOUR));
+	ruleRouteEl.addEventListener('change', () => setRule(RULE_ROUTE));
 	modeLabEl.addEventListener('change', stopGame);
 	modeGameEl.addEventListener('change', () => startGame(tradeSim.seed, false));
 	gameRestartBtn.addEventListener('click', () => startGame(game.seed, game.fixedRate));
@@ -1895,6 +1972,8 @@
 		playScale: playScale,
 		playIndex: () => playIndex,
 		scoreSteps: scoreSteps,
+		rule: () => game.rule,
+		routeLength: () => game.length,
 		passenger: () => passenger,
 		rollPassenger: rollPassenger,
 		setHelpOpen: setHelpOpen,

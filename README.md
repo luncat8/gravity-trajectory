@@ -32,6 +32,7 @@ Open `index.html` (`file://` works, no build, no modules).
 | space | pauses the trade background only (lab) |
 | mode `lab` / `game` | game: rebuilds the seeded world at `t+07:00`, freezes it between flights, locks gravity at `1` |
 | `abort` (game) | ends the running flight at the current step (recorded in the replay) |
+| rule `tour` / `route` (game) | tour: 120 s flight cap, score systems → shots → time; route: no cap (1 800 s wall), score systems → route length → shots → time · switching restarts the seed |
 | `restart` / `new seed` | same seed fresh start / random world |
 | `copy replay` | copies a link with seed, rate, every launch and the result |
 | `− slower / + faster`, `×1` | live playback ×0.25…×8; a replay adds ×0.25…×16 on top — only the pacing changes, never the physics steps or the recorded shots |
@@ -49,14 +50,21 @@ Open `index.html` (`file://` works, no build, no modules).
   continues ahead of the vessel until it lands. When centres move or change,
   prediction updates every frame while `>= 60 fps` and throttles automatically if
   frame time rises above `17.5 ms`.
+- **Route rule**: a shot is traced to its end before it is recorded, whatever it
+  costs: the tracer is a resumable job (`GravitySim.routeBegin/routeStep`) that
+  spends 4 ms per frame, so a 160 s preview never drops a frame, and the aim
+  readout shows `computing 43 %` while it runs. Launching drains the job
+  synchronously. The 1 800 s wall is a net, not a routine end — measured: no
+  unedited shot in the shipped world outlives ~160 s.
 - **Game mode**: the world is rebuilt from a seed and advances only with the
   cargo's fixed physics steps (`DT = 1/120 s`, field time `+= DT · rate`), so
   aiming takes any amount of real time. The aim snaps to `2^-20` turn and
   `2^-10` px/s, the port roster is frozen per flight and flights cap at 120 s,
   which makes the run a pure function of `(seed, rate, shots)`. Score: systems,
   then fewer shots, then less flight time (a full tour stops at the entry step
-  of the 26th system). A replay link
-  (`#game=1&seed=…&rate=…&shots=…&end=…`) re-flies every shot and reports
+  of the 26th system); the `route` rule drops the cap and ranks by route length.
+  A replay link
+  (`#game=1&seed=…&rate=…[&rule=route]&shots=…&end=…`) re-flies every shot and reports
   `verified` when it reproduces the recorded result; play continues from there.
 - **Playback**: the flight is watched, not simulated, faster — one multiplier
   scales the wall-clock slice fed to the fixed `DT = 1/120 s` steps, so ×0.25
@@ -87,8 +95,8 @@ Open `index.html` (`file://` works, no build, no modules).
 - `photo_deck.js` — postcard popup: type → file candidates, captions, compact layout
 - `gravity_gui.js` — overlay renderer, aiming, hop lock & arrow, adaptive 60 fps HUD, game mode & replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
-  `game_bench.js`), headless DOM smoke suite (`dom_smoke.js`) on the shared vm
-  page stub (`dom_stub.js`)
+  `game_bench.js`, `route_bench.js`), headless DOM smoke suite (`dom_smoke.js`)
+  on the shared vm page stub (`dom_stub.js`)
 - `photos/` — user art (`space/`, `landed/`), `README.md` (file spec),
   `prompts.md` (14 captions for Krea 2 / MOSS-Image) and `generator/`
   (`comfy_queue.py` queues the captions into ComfyUI and downloads the renders)

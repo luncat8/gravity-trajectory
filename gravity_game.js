@@ -21,6 +21,19 @@
 	const SPEED_UNITS_MAX = GravitySim.SPEED_MAX * SPEED_STEPS;
 	const CAP_SECONDS = 120;
 	const CAP_STEPS = Math.round(CAP_SECONDS / GravitySim.DT);
+	const ROUTE_SECONDS = 1800;
+	const ROUTE_STEPS = Math.round(ROUTE_SECONDS / GravitySim.DT);
+	const RULE_TOUR = 'tour';
+	const RULE_ROUTE = 'route';
+	/*
+	 * One table for everything a rule changes: the flight cap, the preview
+	 * horizon (null = the lab slider) and the score order, which the GUI reads
+	 * in one place. Rule names are what a link carries.
+	 */
+	const RULES = {
+		tour: { name: RULE_TOUR, capSteps: CAP_STEPS, horizon: null },
+		route: { name: RULE_ROUTE, capSteps: ROUTE_STEPS, horizon: ROUTE_SECONDS }
+	};
 	const RATE_MIN = 0.5;
 	const RATE_MAX = 12;
 	const SRC_PLANETS = 0;
@@ -58,13 +71,14 @@
 
 	/* `game` = { seed, rate, shots, visited, steps }; the result rides along for verification */
 	function encodeLink(game) {
-		const head = 'game=' + FORMAT + '&seed=' + game.seed + '&rate=' + game.rate;
+		const head = 'game=' + FORMAT + '&seed=' + game.seed + '&rate=' + game.rate +
+			(game.rule === RULE_ROUTE ? '&rule=' + RULE_ROUTE : '');
 		if (game.shots.length === 0) return head;
 		return head + '&shots=' + game.shots.map(encodeShot).join('_') +
 			'&end=' + game.visited + '.' + game.steps;
 	}
 
-	function decodeShot(text) {
+	function decodeShot(text, capSteps) {
 		const match = SHOT_FORM.exec(text);
 		if (!match) return null;
 		const origin = Number(match[2]);
@@ -72,7 +86,9 @@
 		const speed = parseInt(match[4], 36);
 		const abort = match[5] === undefined ? NO_ABORT : parseInt(match[5], 36);
 		if (origin >= OrbitWorld.PLANETS || angle >= ANGLE_STEPS) return null;
-		if (speed < SPEED_UNITS_MIN || speed > SPEED_UNITS_MAX || abort >= CAP_STEPS) return null;
+		/* an abort is recorded in steps and can never exceed the rule's flight cap */
+		if (speed < SPEED_UNITS_MIN || speed > SPEED_UNITS_MAX) return null;
+		if (abort >= (capSteps || ROUTE_STEPS)) return null;
 		return createShot(SRC_CODES.indexOf(match[1]), origin, angle, speed, abort);
 	}
 
@@ -84,17 +100,20 @@
 		const rate = Number(params.get('rate'));
 		if (!Number.isInteger(seed) || seed < 1 || seed > 0xffffffff) return null;
 		if (!Number.isInteger(rate * 2) || rate < RATE_MIN || rate > RATE_MAX) return null;
+		const ruleText = params.get('rule');
+		const rule = ruleText === null ? RULES.tour : RULES[ruleText];
+		if (!rule) return null;
 		const list = params.get('shots');
 		const parts = list ? list.split('_') : [];
 		const shots = [];
 		for (const part of parts) {
-			const shot = decodeShot(part);
+			const shot = decodeShot(part, rule.capSteps);
 			if (!shot) return null;
 			shots.push(shot);
 		}
 		const endMatch = END_FORM.exec(params.get('end') || '');
 		const end = endMatch ? { visited: Number(endMatch[1]), steps: Number(endMatch[2]) } : null;
-		return { seed: seed, rate: rate, shots: shots, end: end };
+		return { seed: seed, rate: rate, rule: rule.name, shots: shots, end: end };
 	}
 
 	function isGameLink(text) {
@@ -103,6 +122,7 @@
 
 	const GravityGame = {
 		FORMAT, ANGLE_STEPS, SPEED_STEPS, CAP_SECONDS, CAP_STEPS, RATE_MIN, RATE_MAX,
+		ROUTE_SECONDS, ROUTE_STEPS, RULE_TOUR, RULE_ROUTE, RULES,
 		SRC_PLANETS, SRC_PORTS, NO_ABORT,
 		angleUnits, angleOf, speedUnits, speedOf,
 		createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink

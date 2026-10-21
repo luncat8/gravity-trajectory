@@ -58,6 +58,11 @@
 			<label><input id="modeGame" type="radio" name="playMode" value="game"> game</label>
 		</div>
 		<div id="gameBox" hidden>
+			<div class="caption"><span>rule</span><span id="ruleTag">tour</span></div>
+			<div class="radioRow" role="radiogroup" aria-label="game rule">
+				<label><input id="ruleTour" type="radio" name="gameRule" value="tour" checked> tour</label>
+				<label><input id="ruleRoute" type="radio" name="gameRule" value="route"> route</label>
+			</div>
 			<div class="stats">
 				<div class="stat"><span>seed · rate</span><b id="gameSeed">—</b></div>
 				<div class="stat goalStat"><span>score</span><b id="gameScore">—</b></div>
@@ -157,8 +162,9 @@
 		<ul class="helpList">
 			<li><b>same world</b> — the seed builds planets, ports and colonies; everyone opening your link flies the same system.</li>
 			<li><b>clock runs in flight only</b> — trade, ports and moons move only while the cargo flies; after it lands or leaves, everything waits for your next launch.</li>
-			<li><b>fixed rules</b> — gravity stays at 1, no relaunch mid-flight, a flight ends after 120 s or on <i>abort</i>; the speed slider sets the world rate until the first launch.</li>
-			<li><b>score</b> — more systems, then fewer shots, then less flight time; a full tour stops its clock when the 26th system is entered.</li>
+			<li><b>fixed rules</b> — gravity stays at 1, no relaunch mid-flight, a <i>tour</i> flight ends after 120 s or on <i>abort</i>; the speed slider sets the world rate until the first launch.</li>
+			<li><b>score · tour</b> — more systems, then fewer shots, then less flight time; a full tour stops its clock when the 26th system is entered.</li>
+			<li><b>rule · route</b> — no flight cap: a shot runs until it hits, leaves the field or reaches the 1 800 s wall, and the aim traces it to that end in a few ms per frame. Score: systems, then route length, then fewer shots, then less time.</li>
 			<li><b>playback</b> — <i>− slower / + faster</i> changes only how fast you watch; physics steps and the recorded replay stay identical. The world rate slider stays locked once a shot is fired.</li>
 			<li><b>copy replay</b> — a link with seed, rate and every launch; opening it re-flies the run, checks the recorded result, then lets you continue.</li>
 		</ul>

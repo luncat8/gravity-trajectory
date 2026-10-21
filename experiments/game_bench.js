@@ -80,17 +80,21 @@ function benchCodec() {
 	for (let n = 0; n < 300; n++) {
 		const shots = [];
 		const count = Math.floor(rand() * 40);
+		/* every fifth link is a route run: its aborts may pass the tour cap */
+		const rule = n % 5 === 0 ? GravityGame.RULE_ROUTE : GravityGame.RULE_TOUR;
+		const cap = GravityGame.RULES[rule].capSteps;
 		for (let k = 0; k < count; k++) {
 			shots.push(GravityGame.createShot(rand() < 0.5 ? 0 : 1, Math.floor(rand() * PLANETS),
 				GravityGame.angleUnits(rand() * 7 - 3.5),
 				GravityGame.speedUnits(GravitySim.SPEED_MIN + rand() * (GravitySim.SPEED_MAX - GravitySim.SPEED_MIN)),
-				rand() < 0.2 ? Math.floor(rand() * GravityGame.CAP_STEPS) : GravityGame.NO_ABORT));
+				rand() < 0.2 ? Math.floor(rand() * cap) : GravityGame.NO_ABORT));
 		}
-		const game = { seed: 1 + Math.floor(rand() * 4e9), rate: (1 + Math.floor(rand() * 24)) / 2, shots,
-			visited: Math.floor(rand() * 27), steps: Math.floor(rand() * 1e6) };
+		const game = { seed: 1 + Math.floor(rand() * 4e9), rate: (1 + Math.floor(rand() * 24)) / 2,
+			rule, shots, visited: Math.floor(rand() * 27), steps: Math.floor(rand() * 1e6) };
 		const text = GravityGame.encodeLink(game);
 		const back = GravityGame.decodeLink('#' + text);
 		const same = back && back.seed === game.seed && back.rate === game.rate &&
+			back.rule === game.rule &&
 			JSON.stringify(back.shots) === JSON.stringify(shots) &&
 			(count === 0 ? back.end === null : back.end.visited === game.visited && back.end.steps === game.steps);
 		check(same, 'codec round trip ' + text);
@@ -101,6 +105,14 @@ function benchCodec() {
 		'game=1&seed=5&rate=1&shots=p0.0.10', 'game=1&seed=5&rate=1&shots=p0.mzzz.p00',
 		'game=1&seed=5&rate=1&shots=p0.0.p00.ba0', 'game=1&seed=5&rate=1&shots=p0.0.p00_'];
 	for (const text of rejects) check(GravityGame.decodeLink(text) === null, 'accepted bad link ' + text);
+	/* an abort past the tour cap is a route run, not a broken tour link */
+	check(GravityGame.decodeShot('p0.0.3aio.ba0', GravityGame.CAP_STEPS) === null,
+		'a tour link accepted an abort past its 120 s cap');
+	const routeLink = GravityGame.decodeLink('#game=1&seed=5&rate=1&rule=route&shots=p0.0.3aio.ba0');
+	check(routeLink && routeLink.rule === GravityGame.RULE_ROUTE && routeLink.shots[0].abort === 14616,
+		'a route link rejected a 121.8 s abort');
+	check(GravityGame.decodeLink('#game=1&seed=5&rate=1&rule=route&shots=p0.0.3aio.zzzz9') === null,
+		'a route link accepted an abort past the 1 800 s wall');
 	let worst = 0;
 	for (let n = 0; n < 100000; n++) {
 		const angle = rand() * 20 - 10;
@@ -124,7 +136,8 @@ function pageState(page) {
 	const scene = page.context.GravityScene;
 	const cargo = scene.sim;
 	return [cargo.cargo.x, cargo.cargo.y, cargo.visitedCount, scene.scoreSteps(), scene.game.steps,
-		cargo.landedBody, cargo.endReason, scene.game.shots.length, tradeFingerprint(page.context.OrbitScene.sim)].join('|');
+		Math.round(scene.routeLength()), cargo.landedBody, cargo.endReason,
+		scene.game.shots.length, tradeFingerprint(page.context.OrbitScene.sim)].join('|');
 }
 
 /*
@@ -237,6 +250,91 @@ function benchReplay() {
 	}
 }
 
+/* 3b. the route rule: no flight cap, the run scores its own route length */
+function chooseRouteShot(page) {
+	const cargo = page.context.GravityScene.sim;
+	const keep = cargo.horizon;
+	cargo.horizon = 12;
+	let best = null;
+	const origins = cargo.landedBody >= 0 ? [cargo.landedBody] : FIRST_ORIGINS;
+	for (const p of origins) {
+		for (let a = 0; a < 48; a++) {
+			for (const speed of [80, 120, 160]) {
+				const angle = (a + 0.37) / 48 * Math.PI * 2;
+				cargo.predict(p, angle, speed);
+				if (cargo.predReason !== END_IMPACT || cargo.predBody === p) continue;
+				const score = cargo.predLength - cargo.predTime * 6;
+				if (!best || score > best.score) best = { p, angle, speed, score };
+			}
+		}
+	}
+	cargo.horizon = keep;
+	if (!best) throw new Error('no route shot found');
+	return best;
+}
+
+function playRoute() {
+	const page = loadPage({ hash: '#game=1&seed=31&rate=3' });
+	const scene = page.context.GravityScene;
+	const cargo = scene.sim;
+	page.runFrames(2, 16.7);
+	page.choose('ruleRoute');
+	page.runFrames(1, 16.7);
+	if (scene.rule() !== GravityGame.RULE_ROUTE) throw new Error('rule did not switch');
+	const ends = [];
+	const flights = [];
+	for (let n = 0; n < 2; n++) {
+		const shot = chooseRouteShot(page);
+		page.dragAim(shot.p, shot.angle, shot.speed);
+		page.runFrames(2, 16.7);
+		page.click('launch');
+		if (scene.game.shots.length !== n + 1) throw new Error('route shot did not fire');
+		if (cargo.stepLimit !== GravityGame.ROUTE_STEPS) throw new Error('route cap ' + cargo.stepLimit);
+		let frames = 0;
+		while (cargo.status === STATUS_FLYING && frames < 60000) {
+			page.runFrames(1, 16.7);
+			frames += 1;
+		}
+		flights.push({ frames, steps: cargo.liveSteps, length: cargo.flightLength });
+		ends.push(endName(cargo.endReason) +
+			(cargo.endReason === END_IMPACT ? ' P' + cargo.endBody : ''));
+	}
+	page.runFrames(2, 16.7);
+	page.click('gameCopy');
+	return { page, link: page.clipboardText, state: pageState(page), ends, flights,
+		score: page.elements.get('gameScore').textContent, length: scene.routeLength() };
+}
+
+function benchRoute() {
+	const started = Date.now();
+	const played = playRoute();
+	const playMs = Date.now() - started;
+	check(played.link.indexOf('&rule=route&') > 0, 'route link lost its rule: ' + played.link);
+	check(played.score.indexOf(' px · ') > 0, 'route score has no length: ' + played.score);
+	check(played.flights.every(f => f.steps > 0), 'a route flight did not happen');
+	console.log('route game (seed 31, rate 3, 60 Hz):', played.score, '· ends', played.ends.join(', '),
+		'· ' + played.page.context.GravityScene.game.steps + ' steps · ' + playMs + ' ms');
+	console.log('  flights', played.flights.map(f => (f.steps * GravitySim.DT).toFixed(1) + ' s / ' +
+		Math.round(f.length) + ' px').join(' · '));
+	console.log('  link', played.link.slice(played.link.indexOf('#')).length + ' chars:',
+		played.link.slice(played.link.indexOf('#')));
+	const jitter = seededRandom(4321);
+	const cases = [
+		replayAt(played.link, '60 Hz x1', 16.7, 0),
+		replayAt(played.link, 'jitter 4-45 ms + 120 ms stalls x1',
+			() => (jitter() < 0.03 ? 120 : 4 + jitter() * 41), 0),
+		replayAt(played.link, '60 Hz x16', 16.7, 2),
+		replayAt(played.link, 'skip', 'skip', 0)
+	];
+	for (const c of cases) {
+		const same = c.state === played.state;
+		check(same, 'route replay ' + c.label + ' differs:\n  ' + c.state + '\n  ' + played.state);
+		check(c.verdict === 'verified ✓', 'route replay ' + c.label + ' verdict ' + c.verdict);
+		console.log('  replay ' + c.label + ':', same ? 'identical' : 'DIFFERS', '·', c.verdict,
+			'·', c.frames ? c.frames + ' frames · ' : '', c.ms + ' ms');
+	}
+}
+
 /* 4. cross-engine proxy */
 const f64 = new Float64Array(1);
 const i64 = new BigInt64Array(f64.buffer);
@@ -312,6 +410,7 @@ function benchUlp() {
 benchTrade();
 benchCodec();
 benchReplay();
+benchRoute();
 benchUlp();
 console.log(failures === 0 ? 'GAME BENCH OK' : 'GAME BENCH FAILED (' + failures + ')');
 if (failures > 0) process.exitCode = 1;

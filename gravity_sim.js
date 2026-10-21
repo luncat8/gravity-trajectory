@@ -47,6 +47,7 @@
 	const END_TIME = 3;
 	const END_TRUNCATED = 4;
 	const END_ABORT = 5;
+	const FULL_BUDGET_MS = 1e9;
 
 	function GravitySim(worldW, worldH) {
 		this.worldW = worldW;
@@ -125,6 +126,23 @@
 		this.predBody = NO_BODY;
 		this.predSteps = 0;
 		this.predMs = 0;
+
+		/* resumable trace job: a long horizon is computed in per-frame slices */
+		this.routeActive = false;
+		this.routeStartStep = 0;
+		this.routeHorizon = HORIZON;
+		this.routeMaxSteps = 0;
+		this.routeStride = 1;
+		this.routeTime = 0;
+		this.routeLength = 0;
+		this.routeSteps = 0;
+		this.routeT0 = 0;
+		this.routeFieldT = 0;
+		this.routeReason = END_OPEN;
+		this.routeHit = NO_BODY;
+		this.routeCount = 0;
+		this.routeMs = 0;
+		this.routeSliceMs = 0;
 	}
 
 	/* static planet bases + port-orbit ellipses defining each planet system */
@@ -335,58 +353,109 @@
 		this.predRate = this.fieldRate;
 	};
 
-	GravitySim.prototype.traceProbe = function (t0, startStep, horizonSec, maxSteps, budgetMs) {
-		const state = this.probe;
-		const rate = this.fieldRate;
-		const moving = !this.fieldStatic && rate !== 0;
-		const pathX = this.predX;
-		const pathY = this.predY;
+	/*
+	 * Store one traced point. Full resolution until the buffer is full, then the
+	 * path is compacted 2:1 in place and the stride doubles, exactly like the
+	 * trail: real shots (measured: under 160 s here) keep every step, while an
+	 * edited-gravity marathon still cannot overflow the buffer.
+	 */
+	GravitySim.prototype.routePoint = function (x, y) {
+		if (this.routeCount >= PATH_MAX) {
+			const half = PATH_MAX >> 1;
+			for (let i = 0; i < half; i++) {
+				this.predX[i] = this.predX[i * 2];
+				this.predY[i] = this.predY[i * 2];
+			}
+			this.routeCount = half;
+			this.routeStride *= 2;
+		}
+		this.predX[this.routeCount] = x;
+		this.predY[this.routeCount] = y;
+		this.routeCount += 1;
+	};
+
+	/*
+	 * Start a trace job at `state`. The job is resumable: routeStep() advances a
+	 * slice and returns true once the flight has ended (impact, exit, horizon or
+	 * wall), so a 1 800 s preview costs a few ms per frame instead of one stall.
+	 * Every slice commits into the pred* readouts, so a paused job already shows
+	 * its visits, length and time.
+	 */
+	GravitySim.prototype.routeBeginAt = function (state, t0, startStep, horizonSec, maxSteps) {
 		const visit = this.predVisit;
 		visit.fill(0);
 		this.markSystemsAt(state.x, state.y, visit);
+		this.predX[0] = state.x;
+		this.predY[0] = state.y;
+		this.routeStartStep = startStep;
+		this.routeT0 = t0;
+		this.routeHorizon = horizonSec;
+		this.routeMaxSteps = maxSteps;
+		this.routeStride = 1;
+		this.routeCount = 1;
+		this.routeTime = 0;
+		this.routeLength = 0;
+		this.routeSteps = 0;
+		this.routeFieldT = t0;
+		this.routeReason = END_OPEN;
+		this.routeHit = NO_BODY;
+		this.routeMs = 0;
+		this.routeSliceMs = 0;
+		this.routeActive = true;
 
-		let count = 0;
-		pathX[count] = state.x;
-		pathY[count] = state.y;
-		count += 1;
+		this.predCount = 1;
+		this.predTime = 0;
+		this.predLength = 0;
+		this.predSteps = 0;
+		this.predReason = END_OPEN;
+		this.predBody = NO_BODY;
+		this.predVisits = 0;
+		this.predNewVisits = 0;
+	};
 
-		const started = performance.now();
+	/* aim at a static base: the job a preview keeps between frames */
+	GravitySim.prototype.routeBegin = function (origin, angle, speed, horizonSec) {
+		const t0 = this.fieldT;
+		this.spawn(this.probe, origin, angle, speed, t0);
+		this.snapshotField(t0);
+		this.routeBeginAt(this.probe, t0, 0, horizonSec, Math.ceil(horizonSec / DT) + 2);
+	};
+
+	GravitySim.prototype.routeStep = function (budgetMs) {
+		if (!this.routeActive) return true;
+		const state = this.probe;
+		const visit = this.predVisit;
+		const maxSteps = this.routeMaxSteps;
+		const moving = !this.fieldStatic && this.fieldRate !== 0;
+		const fieldStride = moving ? this.fieldStride() : FIELD_STRIDE;
 		const capMs = budgetMs > 0 ? budgetMs : BUDGET_MS;
-		let time = 0;
-		let length = 0;
-		let steps = 0;
-		let simFieldT = t0;
+		const started = performance.now();
 		let reason = END_OPEN;
 		let hit = NO_BODY;
-		const stride = moving ? this.fieldStride() : FIELD_STRIDE;
-		for (let step = 0; step < maxSteps; step++) {
-			if ((step & (BUDGET_EVERY - 1)) === 0 && performance.now() - started > capMs) {
-				reason = END_TRUNCATED;
-				break;
-			}
-			if (moving && step > 0 && (startStep + step) % stride === 0) {
-				this.fillStep(simFieldT);
+
+		while (this.routeSteps < maxSteps) {
+			const step = this.routeSteps;
+			if ((step & (BUDGET_EVERY - 1)) === 0 && performance.now() - started > capMs) break;
+			if (moving && step > 0 && (this.routeStartStep + step) % fieldStride === 0) {
+				this.fillStep(this.routeFieldT);
 			}
 			const prevX = state.x;
 			const prevY = state.y;
 			this.advance(state, DT);
 			const dx = state.x - prevX;
 			const dy = state.y - prevY;
-			length += Math.sqrt(dx * dx + dy * dy);
-			time += DT;
-			simFieldT += DT * rate;
-			steps += 1;
+			this.routeLength += Math.sqrt(dx * dx + dy * dy);
+			this.routeTime += DT;
+			this.routeFieldT += DT * this.fieldRate;
+			this.routeSteps = step + 1;
 			this.markSystemsAt(state.x, state.y, visit);
-			const body = this.impact(state.x, state.y);
-			if (body >= 0) {
-				reason = END_IMPACT;
-				hit = body;
-			} else if (this.outside(state.x, state.y)) reason = END_EXIT;
-			else if (time >= horizonSec - 1e-9) reason = END_TIME;
-			if (count < PATH_MAX) {
-				pathX[count] = state.x;
-				pathY[count] = state.y;
-				count += 1;
+			hit = this.impact(state.x, state.y);
+			if (hit >= 0) reason = END_IMPACT;
+			else if (this.outside(state.x, state.y)) reason = END_EXIT;
+			else if (this.routeTime >= this.routeHorizon - 1e-9) reason = END_TIME;
+			/* the end point is always stored, so a sampled path still lands on the truth */
+			if (reason !== END_OPEN || this.routeSteps % this.routeStride === 0) {
+				this.routePoint(state.x, state.y);
 			}
 			if (reason !== END_OPEN) break;
 		}
@@ -398,15 +467,40 @@
 			totalVisits += 1;
 			if (!this.visited[i]) newVisits += 1;
 		}
+		this.routeReason = reason;
+		this.routeHit = hit;
 		this.predVisits = totalVisits;
 		this.predNewVisits = newVisits;
-		this.predCount = count;
-		this.predTime = time;
-		this.predLength = length;
+		this.predCount = this.routeCount;
+		this.predTime = this.routeTime;
+		this.predLength = this.routeLength;
 		this.predReason = reason;
 		this.predBody = hit;
-		this.predSteps = steps;
-		this.predMs = performance.now() - started;
+		this.predSteps = this.routeSteps;
+		this.routeSliceMs = performance.now() - started;
+		this.routeMs += this.routeSliceMs;
+		this.predMs = this.routeMs;
+		this.routeActive = reason === END_OPEN;
+		return !this.routeActive;
+	};
+
+	/* runs the job to its end under one budget across all slices */
+	GravitySim.prototype.routeDrain = function (budgetMs) {
+		let left = budgetMs > 0 ? budgetMs : BUDGET_MS;
+		while (!this.routeStep(left)) {
+			left -= this.routeSliceMs;
+			if (left <= 0) {
+				this.routeActive = false;
+				this.routeReason = END_TRUNCATED;
+				this.predReason = END_TRUNCATED;
+				return false;
+			}
+		}
+		return true;
+	};
+
+	GravitySim.prototype.routeProgress = function () {
+		return this.routeMaxSteps > 0 ? this.routeSteps / this.routeMaxSteps : 1;
 	};
 
 	GravitySim.prototype.predict = function (origin, angle, speed, budgetMs) {
@@ -414,7 +508,17 @@
 		this.spawn(this.probe, origin, angle, speed, t0);
 		this.snapshotField(t0);
 		const maxSteps = Math.min(MAX_STEPS, Math.ceil(this.horizon / DT) + 2);
-		this.traceProbe(t0, 0, this.horizon, maxSteps, budgetMs);
+		this.routeBeginAt(this.probe, t0, 0, this.horizon, maxSteps);
+		this.routeDrain(budgetMs);
+	};
+
+	/* the whole horizon whatever it costs: launching, the benches, a replay */
+	GravitySim.prototype.predictFull = function (origin, angle, speed, horizonSec) {
+		const t0 = this.fieldT;
+		this.spawn(this.probe, origin, angle, speed, t0);
+		this.snapshotField(t0);
+		this.routeBeginAt(this.probe, t0, 0, horizonSec, Math.ceil(horizonSec / DT) + 2);
+		this.routeDrain(FULL_BUDGET_MS);
 	};
 
 	/* continues trajectory forward from the live flying cargo until it lands */
@@ -434,7 +538,8 @@
 			this.fillStep(t0);
 		}
 		const maxSteps = Math.min(PATH_MAX - 1, Math.ceil(FLY_HORIZON / DT) + 2);
-		this.traceProbe(t0, this.liveSteps, FLY_HORIZON, maxSteps, budgetMs);
+		this.routeBeginAt(this.probe, t0, this.liveSteps, FLY_HORIZON, maxSteps);
+		this.routeDrain(budgetMs);
 		this.stepX.set(this.savedStepX);
 		this.stepY.set(this.savedStepY);
 	};
@@ -572,6 +677,7 @@
 		this.predReason = END_OPEN;
 		this.predBody = NO_BODY;
 		this.predBodyCount = 0;
+		this.routeActive = false;
 	};
 
 	GravitySim.DT = DT;
@@ -585,6 +691,7 @@
 	GravitySim.HORIZON = HORIZON;
 	GravitySim.FLY_HORIZON = FLY_HORIZON;
 	GravitySim.BUDGET_MS = BUDGET_MS;
+	GravitySim.PATH_MAX = PATH_MAX;
 	GravitySim.MAX_BODIES = MAX_BODIES;
 	GravitySim.FIELD_STRIDE = FIELD_STRIDE;
 	GravitySim.NO_BODY = NO_BODY;

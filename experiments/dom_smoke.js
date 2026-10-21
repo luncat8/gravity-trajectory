@@ -640,6 +640,50 @@ check(cargo.cargo.x === endX && cargo.cargo.y === endY && sim.t === endT, 'repla
 check(game.shots.length === 2 && !ui.get('replayRow').hidden, 'replay did not hand over the run');
 console.log('replay verdict:', ui.get('replayReadout').textContent, '· cargo end identical, trade t identical');
 
+/* route rule: no flight cap, and the run scores the length it flew */
+env.choose('ruleRoute');
+env.runFrames(2, 16.0);
+check(game.on && gScene.rule() === 'route' && game.shots.length === 0, 'rule switch did not restart the run');
+check(ui.get('ruleTag').textContent.startsWith('route ·'), 'rule tag: ' + ui.get('ruleTag').textContent);
+const routeShot = findShot((g, p) => g.predReason === pageSim.END_IMPACT && g.predTime > 5);
+dragShot(routeShot);
+check(cargo.routeMaxSteps === pageGame.ROUTE_STEPS + 2 && !cargo.routeActive,
+	'route preview is not the whole 1 800 s horizon: ' + cargo.routeMaxSteps);
+const routeTime = cargo.predTime;
+const routePoints = cargo.predCount;
+check(cargo.predReason === pageSim.END_IMPACT && routePoints > 100, 'route preview did not finish');
+dragShot(routeShot);
+check(cargo.predTime === routeTime && cargo.predCount === routePoints, 'route preview is not repeatable');
+env.click('launch');
+check(cargo.stepLimit === pageGame.ROUTE_STEPS, 'route flight cap ' + cargo.stepLimit);
+for (let i = 0; i < 4000 && cargo.status === pageSim.STATUS_FLYING; i++) env.runFrames(1, 16.0);
+env.runFrames(2, 16.0);
+check(cargo.status === pageSim.STATUS_ENDED, 'route flight did not end');
+const routeScore = ui.get('gameScore').textContent;
+check(routeScore.indexOf(' px · ') > 0, 'route score has no length: ' + routeScore);
+check(Math.round(gScene.routeLength()) === Math.round(cargo.flightLength), 'route length not accumulated');
+console.log('route rule:', routeScore, '·', ui.get('cargoStatus').textContent,
+	'· traced', routeTime.toFixed(1) + ' s in', routePoints, 'points');
+
+env.click('gameCopy');
+const routeLink = env.clipboardText || '';
+check(routeLink.indexOf('&rule=route&') > 0, 'route link: ' + routeLink);
+const routeEndX = cargo.cargo.x;
+const routeEndY = cargo.cargo.y;
+const routeEndT = sim.t;
+const routeSteps = gScene.scoreSteps();
+env.setHash(routeLink.slice(routeLink.indexOf('#')));
+env.runFrames(2, 16.0);
+check(gScene.rule() === 'route' && gScene.replay.on, 'the link did not replay as a route run');
+env.click('replaySkip');
+env.runFrames(2, 16.0);
+check(ui.get('replayReadout').textContent === 'verified ✓',
+	'route replay verdict: ' + ui.get('replayReadout').textContent);
+check(cargo.cargo.x === routeEndX && cargo.cargo.y === routeEndY && sim.t === routeEndT &&
+	gScene.scoreSteps() === routeSteps, 'route replay end state differs');
+console.log('route replay:', ui.get('replayReadout').textContent, '·', routeLink.slice(routeLink.indexOf('#')).length,
+	'char link ·', gScene.rule(), 'rule');
+
 env.choose('modeLab');
 env.runFrames(2, 16.0);
 check(ui.get('modeTag').textContent === 'lab · free clock' && ui.get('gameBox').hidden, 'back to lab');

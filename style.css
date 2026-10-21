@@ -423,6 +423,10 @@ input:disabled {
 	margin-top: 7px;
 }
 
+#gameBox .radioRow {
+	margin-bottom: 7px;
+}
+
 .gameActions {
 	flex-wrap: wrap;
 	gap: 5px;
