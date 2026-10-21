@@ -207,6 +207,29 @@ body {
 	text-transform: none;
 }
 
+.radioRow {
+	display: flex;
+	gap: 14px;
+}
+
+.radioRow label {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	color: var(--dim);
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.radioRow label:has(input:checked) {
+	color: var(--text);
+}
+
+.radioRow input {
+	margin: 0;
+	accent-color: var(--accent);
+}
+
 .actions {
 	display: flex;
 	gap: 8px;

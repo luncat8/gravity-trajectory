@@ -31,15 +31,15 @@ function makeContext() {
 	const elements = new Map();
 	const ids = [...html.matchAll(/id="([^"]+)"/g)].map(match => match[1]);
 	for (const id of ids) {
-		const checked = html.includes('id="' + id + '" type="checkbox" checked') ||
-			html.includes('id="' + id + '" checked');
+		const checked = new RegExp('id="' + id + '"[^>]*\\bchecked\\b').test(html);
 		const valueMatch = html.match(new RegExp('id="' + id + '"[^>]*value="([^"]*)"'));
 		const isCanvas = id === 'c' || id === 'g';
 		elements.set(id, {
 			id: id,
 			tagName: isCanvas ? 'CANVAS' : id === 'tradePause' || id === 'launch' ||
 				id === 'clear' ? 'BUTTON' : id === 'gravity' || id === 'trim' ||
-				id === 'tradeSpeed' ? 'INPUT' : 'DIV',
+				id === 'tradeSpeed' || id === 'horizon' || id === 'srcPlanets' ||
+				id === 'srcPorts' ? 'INPUT' : 'DIV',
 			style: {},
 			textContent: '',
 			value: valueMatch ? valueMatch[1] : '',
@@ -195,6 +195,34 @@ console.log('after drag: status', ui.get('cargoStatus').textContent,
 	'launch disabled', ui.get('launch').disabled);
 if (ui.get('launch').disabled) throw new Error('launch stayed disabled after arming');
 if (ui.get('pathReadout').textContent === '—') throw new Error('no predicted path');
+if (!/^\d+ px$/.test(ui.get('lengthReadout').textContent)) {
+	throw new Error('no trajectory length: ' + ui.get('lengthReadout').textContent);
+}
+console.log('trajectory length', ui.get('lengthReadout').textContent,
+	'time to end', ui.get('pathReadout').textContent);
+
+/* press without drag on another planet: selects it, keeps the armed shot */
+const armedPath = ui.get('pathReadout').textContent;
+const armedLength = ui.get('lengthReadout').textContent;
+const other = screenOfPlanet(1);
+env.fireWindow('pointerdown', {
+	button: 0, clientX: other.x, clientY: other.y, target: canvas, shiftKey: false
+});
+env.fireWindow('pointermove', {
+	clientX: other.x + 2, clientY: other.y + 1, target: canvas, shiftKey: false
+});
+env.fireWindow('pointerup', {
+	clientX: other.x + 2, clientY: other.y + 1, target: canvas, shiftKey: false
+});
+env.runFrames(3);
+console.log('after click (no drag): status', ui.get('cargoStatus').textContent,
+	'path', ui.get('pathReadout').textContent,
+	'launch disabled', ui.get('launch').disabled);
+if (ui.get('launch').disabled) throw new Error('click without drag disarmed the shot');
+if (ui.get('pathReadout').textContent !== armedPath ||
+	ui.get('lengthReadout').textContent !== armedLength) {
+	throw new Error('click without drag deleted the old trajectory');
+}
 
 env.fireElement(ui.get('launch'), 'click', {});
 env.runFrames(5);
@@ -230,9 +258,9 @@ env.fireWindow('pointerup', {
 ui.get('gravity').value = '-1.5';
 env.fireElement(ui.get('gravity'), 'input', {});
 env.runFrames(2);
-console.log('gravity edit:', ui.get('planetTag').textContent,
+console.log('gravity edit:', ui.get('bodyTag').textContent,
 	'slider', ui.get('gravityLabel').textContent);
-if (!ui.get('planetTag').textContent.includes('repel')) throw new Error('repel label missing');
+if (!ui.get('bodyTag').textContent.includes('repel')) throw new Error('repel label missing');
 
 /* relative trim while armed */
 const p3 = screenOfPlanet(planet);
@@ -276,6 +304,61 @@ env.fireElement(ui.get('clear'), 'click', {});
 env.runFrames(2);
 console.log('after clear:', ui.get('cargoStatus').textContent,
 	'flight', ui.get('cargoFlight').textContent);
+
+/* gravity positions = ports: centres move, so an armed trajectory updates */
+env.fireElement(ui.get('tradePause'), 'click', {});
+ui.get('tradeSpeed').value = '12';
+env.fireElement(ui.get('tradeSpeed'), 'input', {});
+ui.get('srcPorts').checked = true;
+env.fireElement(ui.get('srcPorts'), 'change', {});
+env.runFrames(2);
+console.log('gravity source', ui.get('sourceTag').textContent);
+if (ui.get('sourceTag').textContent !== 'ports · moving') {
+	throw new Error('ports source not selected');
+}
+function screenOfPort(index) {
+	return {
+		x: sim.portX(index, sim.t) * view.scale + view.offX,
+		y: sim.portY(index, sim.t) * view.scale + view.offY
+	};
+}
+const sp = screenOfPort(0);
+env.fireWindow('pointerdown', {
+	button: 0, clientX: sp.x, clientY: sp.y, target: canvas, shiftKey: false
+});
+let portMoved = 0;
+for (let i = 1; i <= 12; i++) {
+	portMoved = i * 14;
+	env.fireWindow('pointermove', {
+		clientX: sp.x + portMoved, clientY: sp.y - portMoved * 0.3,
+		target: canvas, shiftKey: false
+	});
+}
+env.fireWindow('pointerup', {
+	clientX: sp.x + portMoved, clientY: sp.y - portMoved * 0.3,
+	target: canvas, shiftKey: false
+});
+env.runFrames(3);
+console.log('ports drag: status', ui.get('cargoStatus').textContent,
+	'selected', ui.get('bodyTag').textContent,
+	'launch disabled', ui.get('launch').disabled);
+if (ui.get('launch').disabled) throw new Error('drag from a port did not arm');
+const portsPath0 = ui.get('pathReadout').textContent + '|' + ui.get('lengthReadout').textContent;
+env.runFrames(90);
+const portsPath1 = ui.get('pathReadout').textContent + '|' + ui.get('lengthReadout').textContent;
+console.log('ports trajectory while centres move:', portsPath0, '->', portsPath1);
+if (portsPath1 === portsPath0) {
+	throw new Error('trajectory did not update while gravity centres moved');
+}
+if (ui.get('launch').disabled) throw new Error('ports shot disarmed while moving');
+
+ui.get('srcPlanets').checked = true;
+env.fireElement(ui.get('srcPlanets'), 'change', {});
+env.runFrames(2);
+console.log('gravity source back to', ui.get('sourceTag').textContent);
+if (ui.get('sourceTag').textContent !== 'planets') {
+	throw new Error('planets source not restored');
+}
 
 /* resize must re-share the camera */
 env.context.innerWidth = 900;

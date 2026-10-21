@@ -34,12 +34,21 @@
 		<div class="stat"><span>status</span><b id="cargoStatus">ready</b></div>
 		<div class="stat"><span>flight</span><b id="cargoFlight">—</b></div>
 		<div class="stat"><span>aim</span><b id="aimReadout">—</b></div>
-		<div class="stat"><span>path</span><b id="pathReadout">—</b></div>
+		<div class="stat"><span>traj length</span><b id="lengthReadout">—</b></div>
+		<div class="stat"><span>time to end</span><b id="pathReadout">—</b></div>
 		<div class="stat"><span>calc</span><b id="calcReadout">—</b></div>
 	</div>
 
 	<div class="group">
-		<div class="caption"><span>planet gravity</span><span id="planetTag">none selected</span></div>
+		<div class="caption"><span>gravity positions</span><span id="sourceTag">planets</span></div>
+		<div class="radioRow" role="radiogroup" aria-label="gravity positions">
+			<label><input id="srcPlanets" type="radio" name="gravitySource" value="planets" checked> planets</label>
+			<label><input id="srcPorts" type="radio" name="gravitySource" value="ports"> ports</label>
+		</div>
+	</div>
+
+	<div class="group">
+		<div class="caption"><span>body gravity</span><span id="bodyTag">none selected</span></div>
 		<label class="ctl">g
 			<input id="gravity" type="range" min="-2" max="2" step="0.05" value="1" disabled>
 			<output id="gravityLabel">—</output>
@@ -68,8 +77,9 @@
 	</div>
 
 	<div id="cargoHint">
-		drag from a planet to aim · release arms · enter / launch fires<br>
-		shift = 1/20 fine aim · click a planet to tune its g · esc cancels
+		drag from a body to aim · release arms · enter / launch fires<br>
+		shift = 1/20 fine aim · click selects to tune g (keeps the shot) · esc cancels<br>
+		ports move with trade time: the shot inherits the port velocity
 	</div>
 </aside>
 

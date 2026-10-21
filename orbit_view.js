@@ -70,6 +70,8 @@
 
 	let paused = false;
 	let speed = START_SPEED;
+	/* shared so the cargo layer can extrapolate port positions at the same rate */
+	const tradeState = { speed: START_SPEED, paused: false };
 	let showOrbits = orbitsBox.checked;
 	let showLinks = linksBox.checked;
 	let showRoutes = routesBox.checked;
@@ -703,12 +705,14 @@
 
 	function setPaused(value) {
 		paused = value;
+		tradeState.paused = value;
 		pauseButton.textContent = paused ? 'play' : 'pause';
 		pauseButton.classList.toggle('on', paused);
 	}
 
 	function setSpeed(value) {
 		speed = value;
+		tradeState.speed = value;
 		speedLabel.textContent = '×' + value;
 	}
 
@@ -756,7 +760,7 @@
 		setPaused(!paused);
 	});
 
-	root.OrbitScene = { sim: sim, view: view };
+	root.OrbitScene = { sim: sim, view: view, trade: tradeState };
 
 	setSpeed(Number(speedSlider.value));
 	resize();

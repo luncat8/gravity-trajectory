@@ -3,8 +3,10 @@
  *
  * 1. measures prediction cost over every planet / angle / speed in the grid
  * 2. checks that the live flight follows the predicted polyline exactly
- * 3. repeats with a negative (repelling) field to catch NaN and runaway paths
- * 4. reports the background fast-forward cost
+ * 3. repeats parity with moving (port) bodies and measures how far a moving
+ *    field prediction lands from a frozen-field one for the same shot
+ * 4. repeats with a negative (repelling) field to catch NaN and runaway paths
+ * 5. reports the background fast-forward cost
  *
  * Run: node experiments/gravity_bench.js
  */
@@ -16,15 +18,53 @@ const GravitySim = require('../gravity_sim.js');
 const REASONS = ['open', 'impact', 'exit', 'horizon', 'budget'];
 const SPEEDS = [40, 80, 120, 180, 240, 320];
 const ANGLES = 36;
+const MOVING_RATE = 6;
 
 function makeWorld() {
 	const sim = new Sim(7);
 	sim.step(420);
-	const gravity = new GravitySim(
-		sim.planetX, sim.planetY, sim.planetR,
-		Sim.PLANETS, Sim.WORLD_W, Sim.WORLD_H
-	);
-	return { sim, gravity };
+	const gravity = new GravitySim(Sim.WORLD_W, Sim.WORLD_H);
+	const world = {
+		sim, gravity,
+		planetStrength: new Float64Array(Sim.PLANETS).fill(1),
+		portStrength: new Float64Array(Sim.PORTS).fill(1),
+		portRadius: new Float64Array(Sim.PORTS).fill(6)
+	};
+	world.fillPlanets = (t, outX, outY, count) => {
+		for (let i = 0; i < count; i++) {
+			outX[i] = sim.planetX[i];
+			outY[i] = sim.planetY[i];
+		}
+	};
+	/* mirrors the single-trig-pair fill in gravity_gui.js */
+	world.fillPorts = (t, outX, outY, count) => {
+		for (let p = 0; p < count; p++) {
+			const planet = sim.portPlanet[p];
+			const angle = sim.orbitPhase[planet] + sim.orbitOmega[planet] * t;
+			const rx = sim.orbitRX[planet] * Math.cos(angle);
+			const ry = sim.orbitRY[planet] * Math.sin(angle);
+			outX[p] = sim.planetX[planet] +
+				rx * sim.orbitTiltCos[planet] - ry * sim.orbitTiltSin[planet];
+			outY[p] = sim.planetY[planet] +
+				rx * sim.orbitTiltSin[planet] + ry * sim.orbitTiltCos[planet];
+		}
+	};
+	usePlanets(world);
+	return world;
+}
+
+function usePlanets(world) {
+	world.gravity.fieldT = world.sim.t;
+	world.gravity.fieldRate = 0;
+	world.gravity.setField(Sim.PLANETS, world.sim.planetR,
+		world.planetStrength, world.fillPlanets, true);
+}
+
+function usePorts(world, rate) {
+	world.gravity.fieldT = world.sim.t;
+	world.gravity.fieldRate = rate;
+	world.gravity.setField(world.sim.portCount, world.portRadius,
+		world.portStrength, world.fillPorts, false);
 }
 
 function predictionSweep(world) {
@@ -44,6 +84,12 @@ function predictionSweep(world) {
 				if (g.predMs > worst) worst = g.predMs;
 				histogram[g.predReason] += 1;
 				durations.push(g.predTime);
+				const last = g.predCount - 1;
+				const chord = Math.sqrt(
+					(g.predX[last] - g.predX[0]) ** 2 + (g.predY[last] - g.predY[0]) ** 2);
+				if (!Number.isFinite(g.predLength) || g.predLength < chord - 1e-3) {
+					throw new Error('trajectory length below its chord');
+				}
 			}
 		}
 	}
@@ -56,19 +102,19 @@ function predictionSweep(world) {
 	};
 }
 
-function parityCheck(world) {
-	const g = world.gravity;
+function parityRun(g, origins, angleCount, speeds, label) {
 	let cases = 0;
 	let maxError = 0;
 	let worstCase = '';
-	for (let planet = 0; planet < Sim.PLANETS; planet += 3) {
-		for (let a = 0; a < 8; a++) {
-			const angle = a / 8 * Math.PI * 2;
-			for (const speed of [60, 150, 260]) {
-				g.predict(planet, angle, speed);
+	for (const origin of origins) {
+		for (let a = 0; a < angleCount; a++) {
+			const angle = a / angleCount * Math.PI * 2;
+			for (const speed of speeds) {
+				g.predict(origin, angle, speed);
 				const points = g.predCount;
 				const reason = g.predReason;
-				g.launch(planet, angle, speed);
+				const hitBody = g.predBody;
+				g.launch(origin, angle, speed);
 				let error = 0;
 				for (let i = 1; i < points; i++) {
 					g.step(GravitySim.DT);
@@ -79,21 +125,62 @@ function parityCheck(world) {
 				}
 				if (error > maxError) {
 					maxError = error;
-					worstCase = 'P' + planet + ' a' + a + ' v' + speed;
+					worstCase = label + origin + ' a' + a + ' v' + speed;
 				}
 				if ((reason === GravitySim.END_IMPACT || reason === GravitySim.END_EXIT) &&
 					g.status !== GravitySim.STATUS_ENDED) {
 					throw new Error('live flight did not end with the prediction');
 				}
-				if (reason === GravitySim.END_IMPACT &&
-					g.endPlanet !== g.predPlanet) {
-					throw new Error('impact planet mismatch in ' + worstCase);
+				if (reason === GravitySim.END_IMPACT && g.endBody !== hitBody) {
+					throw new Error('impact body mismatch in ' + worstCase);
 				}
 				cases += 1;
 			}
 		}
 	}
 	return { cases, maxError, worstCase };
+}
+
+function parityCheck(world) {
+	const origins = [];
+	for (let planet = 0; planet < Sim.PLANETS; planet += 3) origins.push(planet);
+	return parityRun(world.gravity, origins, 8, [60, 150, 260], 'P');
+}
+
+function movingTests(world) {
+	const g = world.gravity;
+	usePorts(world, MOVING_RATE);
+	const origins = [];
+	for (let port = 0; port < world.sim.portCount; port += 3) origins.push(port);
+	const parity = parityRun(g, origins, 6, [90, 220], 'port ');
+
+	/* same shot, moving vs frozen field: end points must actually separate */
+	let divergence = 0;
+	let worst = 0;
+	let total = 0;
+	let runs = 0;
+	for (let port = 0; port < world.sim.portCount; port += 2) {
+		for (let a = 0; a < 12; a++) {
+			const angle = a / 12 * Math.PI * 2;
+			for (const speed of [120, 240]) {
+				g.fieldRate = MOVING_RATE;
+				g.predict(port, angle, speed);
+				total += g.predMs;
+				if (g.predMs > worst) worst = g.predMs;
+				runs += 1;
+				const endX = g.predX[g.predCount - 1];
+				const endY = g.predY[g.predCount - 1];
+				g.fieldRate = 0;
+				g.predict(port, angle, speed);
+				const dx = endX - g.predX[g.predCount - 1];
+				const dy = endY - g.predY[g.predCount - 1];
+				const gap = Math.sqrt(dx * dx + dy * dy);
+				if (gap > divergence) divergence = gap;
+			}
+		}
+	}
+	g.fieldRate = MOVING_RATE;
+	return { parity, divergence, worst, avg: total / runs, runs };
 }
 
 function repelSweep(world) {
@@ -133,6 +220,8 @@ for (let i = 0; i < 30; i++) world.gravity.predict(0, i * 0.3, 200);
 
 const sweep = predictionSweep(world);
 const parity = parityCheck(world);
+const moving = movingTests(world);
+usePlanets(world);
 const repel = repelSweep(world);
 
 console.log('world: 26 planets, fast-forward to t+07:00 in ' + fastForwardMs.toFixed(2) + ' ms');
@@ -150,6 +239,12 @@ console.log('  ends: ' + REASONS.map((name, i) => name + ' ' + sweep.histogram[i
 console.log('');
 console.log('parity: ' + parity.cases + ' shots, worst live/predicted deviation ' +
 	parity.maxError.toFixed(6) + ' px' + (parity.worstCase ? ' (' + parity.worstCase + ')' : ''));
+console.log('moving ports at x' + MOVING_RATE + ': parity ' + moving.parity.cases +
+	' shots, worst deviation ' + moving.parity.maxError.toFixed(6) + ' px' +
+	(moving.parity.worstCase ? ' (' + moving.parity.worstCase + ')' : ''));
+console.log('  moving vs frozen end point: max ' + moving.divergence.toFixed(1) + ' px apart');
+console.log('  moving prediction: ' + moving.runs + ' runs, avg ' + moving.avg.toFixed(3) +
+	' ms, worst ' + moving.worst.toFixed(3) + ' ms');
 console.log('repel field: ' + repel.count + ' paths, finite bounds x ' +
 	repel.minX.toFixed(1) + '…' + repel.maxX.toFixed(1) + ', y ' +
 	repel.minY.toFixed(1) + '…' + repel.maxY.toFixed(1));
@@ -158,7 +253,10 @@ console.log('budget: ' + GravitySim.BUDGET_MS + ' ms cap, worst ' +
 	(sweep.worst <= GravitySim.BUDGET_MS ? 'within budget' : 'OVER BUDGET') + ')');
 
 if (sweep.worst > GravitySim.BUDGET_MS + 1) throw new Error('prediction over budget');
+if (moving.worst > GravitySim.BUDGET_MS + 2) throw new Error('moving prediction over budget');
 if (parity.maxError > 0.01) throw new Error('live flight diverged from prediction');
+if (moving.parity.maxError > 0.01) throw new Error('moving flight diverged from prediction');
+if (moving.divergence < 5) throw new Error('moving field barely changes the trajectory');
 if (!Number.isFinite(repel.minX) || !Number.isFinite(repel.maxY)) {
 	throw new Error('repel sweep produced non-finite bounds');
 }
