@@ -38,6 +38,25 @@ console.log('world traits:', pageWorld.TYPE_NAMES.map((name, i) => name + ' ' + 
 	'| Z', sim.metal.toFixed(4), 'L', sim.lum.toFixed(2), 'belts', sim.beltCount);
 if (typeCount.every(n => n === 0)) throw new Error('no planet types drawn');
 
+/* photo deck: type slugs, captions and file candidates for user art */
+const pagePhoto = env.context.PhotoDeck;
+if (!pagePhoto || pagePhoto.SLUGS.length !== pageWorld.TYPE_COUNT) {
+	throw new Error('photo deck missing or type table mismatch');
+}
+if (pagePhoto.candidates('space', pageWorld.TYPE_TERRAN, 4)[0] !== 'photos/space/terran-2.jpg') {
+	throw new Error('photo candidate order: ' + pagePhoto.candidates('space', pageWorld.TYPE_TERRAN, 4));
+}
+if (!pagePhoto.candidates('landed', pageWorld.TYPE_GAS, 5).includes('photos/landed/gas.png')) {
+	throw new Error('landed png fallback missing');
+}
+if (!pagePhoto.captionFor('landed', pageWorld.TYPE_GAS).includes('platform')) {
+	throw new Error('gas giant must land on an air platform caption');
+}
+if (!pagePhoto.needsCompact(880, 800) || pagePhoto.needsCompact(1280, 800)) {
+	throw new Error('photo compact breakpoint');
+}
+console.log('photo deck:', pagePhoto.LABELS.join(', '), '· candidates', pagePhoto.candidates('space', 1, 4).join(' '));
+
 /* colonies are wired into the sim and advanced to t+07:00 (step 2) */
 if (sim.colonies.length !== sim.portCount || sim.portCount < pageWorld.INITIAL_PORTS) {
 	throw new Error('colonies not wired to ports: ' + sim.colonies.length + ' vs ' + sim.portCount);
@@ -121,6 +140,21 @@ env.fireElement(ui.get('launch'), 'click', {});
 env.runFrames(5);
 console.log('after launch: status', ui.get('cargoStatus').textContent,
 	'flight', ui.get('cargoFlight').textContent);
+if (!pagePhoto.visible()) throw new Error('space photo card did not appear on a new system');
+let photoPlanet = -1;
+for (let i = 0; i < pageWorld.PLANETS; i++) {
+	if (env.context.GravityScene.sim.visited[i] === 1 &&
+		ui.get('photoTitle').textContent === pagePhoto.titleFor(i, sim.planetType[i])) {
+		photoPlanet = i;
+		break;
+	}
+}
+if (photoPlanet < 0) {
+	throw new Error('space photo title is not a visited planet: ' + ui.get('photoTitle').textContent);
+}
+if (!ui.get('photoKicker').textContent.startsWith('from space')) {
+	throw new Error('space photo kicker: ' + ui.get('photoKicker').textContent);
+}
 
 /* shift fine aim: drag a second shot with reduced sensitivity */
 const p1 = screenOfPlanet(planet);
@@ -253,13 +287,28 @@ if (ui.get('sourceTag').textContent !== 'planets') {
 	throw new Error('planets source not restored');
 }
 
-/* resize must re-share the camera */
+/* resize must re-share the camera and fold an open photo card to 256 px */
+env.context.innerWidth = 1280;
+env.context.innerHeight = 800;
+pagePhoto.show('space', pageWorld.TYPE_ICE, 7);
+if (ui.get('photoCard').classList.contains('compact')) {
+	throw new Error('photo card compact on a wide screen');
+}
 env.context.innerWidth = 900;
 env.context.innerHeight = 620;
 env.fireWindow('resize', {});
 env.runFrames(2);
+if (!ui.get('photoCard').classList.contains('compact')) {
+	throw new Error('photo card stayed wide on a small screen');
+}
+pagePhoto.hide();
+env.context.innerWidth = 1280;
+env.context.innerHeight = 800;
+env.fireWindow('resize', {});
+env.runFrames(2);
 console.log('after resize scale', view.scale.toFixed(3), 'offX', view.offX.toFixed(1),
-	'canvas', ui.get('g').width + 'x' + ui.get('g').height);
+	'canvas', ui.get('g').width + 'x' + ui.get('g').height,
+	'· photo compact fold OK');
 
 /* secondary moons & belts: Kepler scaling, gravity sensitivity, zero sim impact */
 const moons = scene.moons;
@@ -430,6 +479,17 @@ if (!ui.get('launch').disabled) {
 if (!env.calls.texts.some(t => t.includes('launch not allowed') && t.includes('P' + tour.end))) {
 	throw new Error('blocked launch tooltip not drawn');
 }
+if (!pagePhoto.visible()) throw new Error('landing photo card missing');
+if (!ui.get('photoKicker').textContent.startsWith('landed')) {
+	throw new Error('landing photo kicker: ' + ui.get('photoKicker').textContent);
+}
+if (!ui.get('photoTitle').textContent.startsWith('P' + tour.end)) {
+	throw new Error('landing photo is for ' + ui.get('photoTitle').textContent + ', landed P' + tour.end);
+}
+if (ui.get('photoCaption').textContent === '') throw new Error('landing photo has no caption');
+env.click('photoClose');
+if (pagePhoto.visible()) throw new Error('photo card did not close');
+console.log('photo cards: space P' + photoPlanet, '-> landed', ui.get('photoTitle').textContent);
 
 /* dragging from landed planet arms next hop and keeps prior visited markings */
 const landPt = screenOfPlanet(tour.end);
@@ -499,6 +559,22 @@ check(sim.t === 420 && scene.moons.x[0] === idleMoonX, 'world moved while no car
 console.log('game idle: trade', ui.get('tradeClock').textContent, '· clock', ui.get('expClock').textContent,
 	'· seed', ui.get('gameSeed').textContent);
 
+/* playback changes only the pace of the flight; physics steps stay identical */
+check(gScene.playScale() === 1 && ui.get('playTag').textContent === '×1', 'playback default');
+env.click('playFaster');
+env.click('playFaster');
+check(gScene.playScale() === 4 && ui.get('playTag').textContent === '×4', 'playback 4x: ' + ui.get('playTag').textContent);
+env.click('playSlower');
+check(gScene.playScale() === 2, 'playback 2x');
+env.click('playSlower');
+env.click('playSlower');
+check(gScene.playScale() === 0.5, 'playback 0.5x');
+check(ui.get('playSlower').disabled === false, 'slower disabled too early');
+env.click('playSlower');
+check(ui.get('playSlower').disabled, 'slower not disabled at 0.25x');
+env.click('playReset');
+check(gScene.playScale() === 1 && !ui.get('playFaster').disabled, 'playback reset');
+
 const longShot = findShot((g, p) => g.predTime > 4 && g.predReason !== pageSim.END_EXIT);
 dragShot(longShot);
 check(!ui.get('launch').disabled, 'game shot did not arm');
@@ -528,9 +604,13 @@ console.log('game flight: aborted at step', abortSteps, '· trade t+', (sim.t - 
 
 const landShot = findShot((g, p) => g.predReason === pageSim.END_IMPACT && g.predBody !== p && g.predTime < 8);
 dragShot(landShot);
+env.click('playFaster');
+env.click('playFaster');
 env.click('launch');
 for (let i = 0; i < 2000 && cargo.status === pageSim.STATUS_FLYING; i++) env.runFrames(1, 16.0);
 env.runFrames(2, 16.0);
+env.click('playReset');
+check(gScene.playScale() === 1, 'playback did not reset after the flight');
 check(cargo.status === pageSim.STATUS_ENDED && game.shots.length === 2, 'second game flight did not end');
 check(game.steps === abortSteps + cargo.liveSteps, 'game steps do not add up');
 const endX = cargo.cargo.x;
@@ -538,7 +618,8 @@ const endY = cargo.cargo.y;
 const endT = sim.t;
 const endVisited = cargo.visitedCount;
 const endSteps = gScene.scoreSteps();
-console.log('game score:', ui.get('gameScore').textContent, '·', ui.get('cargoStatus').textContent);
+console.log('game score:', ui.get('gameScore').textContent, '·', ui.get('cargoStatus').textContent,
+	'· watched at ×4 then reset');
 
 env.click('gameCopy');
 const link = env.clipboardText || '';

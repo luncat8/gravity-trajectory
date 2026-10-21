@@ -126,3 +126,28 @@ prediction buffers round away exactly the differences being measured.
 - A greedy search with the page's own predictor finds 26 / 26 tours in two long
 	shots or eight 20 s hops, so in benches scripted with it, assert that each
 	planned shot actually fired: after completion, launches are locked.
+
+## watching a deterministic sim at any speed
+
+- Change the pace, not the steps: keep the fixed `DT` integrator, accumulate
+	`dt · multiplier` and feed it in capped slices (`1/60 s`). A replay then stays
+	a pure function of its shot list, which is exactly what the verification
+	bench proves at ×0.25 and ×16.
+- Cap the slices per frame (measured: 128 × 1/60 s is under 4 ms for 26 bodies)
+	and clamp the total multiplier (×32) so a stall cannot turn into a catch-up
+	spiral. Drain the accumulator when a flight ends, or the next shot starts
+	with a burst.
+- Keep world-rate and watch-speed separate. The world rate feeds `fieldT` and
+	changes the physics; the watch multiplier must not, or a link recorded at one
+	rate will not replay at another.
+
+## optional user art without a manifest
+
+- Resolve a picture by trying a candidate chain and advancing on the image's own
+	`error` event (variant → plain, jpg → png); a miss costs one failed load and
+	nothing else, and the CSS placeholder stays until a `load` fires.
+- Remember the last URL that loaded and restore it synchronously: otherwise
+	every reopen flashes the placeholder and refetches.
+- Keep the fallback visual in the same element with a type class
+	(`.photoArt.gas`), so the card's height and the layout maths do not depend on
+	whether art exists yet.

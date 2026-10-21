@@ -34,7 +34,8 @@ Open `index.html` (`file://` works, no build, no modules).
 | `abort` (game) | ends the running flight at the current step (recorded in the replay) |
 | `restart` / `new seed` | same seed fresh start / random world |
 | `copy replay` | copies a link with seed, rate, every launch and the result |
-| `×1 / ×4 / ×16`, `skip` | replay speed / re-simulate the rest of a replay instantly |
+| `− slower / + faster`, `×1` | live playback ×0.25…×8; a replay adds ×0.25…×16 on top — only the pacing changes, never the physics steps or the recorded shots |
+| `×1 / ×4 / ×16`, `skip` | replay multiplier / re-simulate the rest of a replay instantly |
 
 ## mechanics & visuals
 
@@ -57,6 +58,17 @@ Open `index.html` (`file://` works, no build, no modules).
   of the 26th system). A replay link
   (`#game=1&seed=…&rate=…&shots=…&end=…`) re-flies every shot and reports
   `verified` when it reproduces the recorded result; play continues from there.
+- **Playback**: the flight is watched, not simulated, faster — one multiplier
+  scales the wall-clock slice fed to the fixed `DT = 1/120 s` steps, so ×0.25
+  and ×8 produce the same step sequence and the same replay. The trade `rate`
+  slider stays locked once a shot is fired, because it *does* change the world.
+- **Planet photos**: entering a system for the first time shows a postcard of
+  that world from space (bottom-left, aspect kept, 256 px overlay on a small
+  screen); landing shows the surface, and a gas giant gets an air platform.
+  Art is optional — `photos/space|landed/<type>[-n].jpg|png`, see
+  `photos/README.md` and the Krea 2 / MOSS-Image captions in
+  `photos/prompts.md`; without a file a CSS postcard of the same planet type is
+  drawn. One card per planet and per landing, per run.
 - **Secondary moons & belts**: coplanar moons and Saturn/rubble belts share each
   planet's orbital inclination, apocenter axis and spin direction, following
   Keplerian orbital speed scaled by planet gravity (`sqrt(|g|) · a^(-3/2)`) with
@@ -72,8 +84,11 @@ Open `index.html` (`file://` works, no build, no modules).
 - `orbit_view.js` — trade renderer, coplanar Kepler moons & belts, camera `OrbitScene`
 - `gravity_sim.js` — gravity field, planet-system visits, live flight & continuation
 - `gravity_game.js` — game rules shared with the benches: aim grid, flight cap, replay link codec
+- `photo_deck.js` — postcard popup: type → file candidates, captions, compact layout
 - `gravity_gui.js` — overlay renderer, aiming, hop lock & arrow, adaptive 60 fps HUD, game mode & replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
   `game_bench.js`), headless DOM smoke suite (`dom_smoke.js`) on the shared vm
   page stub (`dom_stub.js`)
+- `photos/` — user art (`space/`, `landed/`), `README.md` (file spec) and
+  `prompts.md` (14 captions for Krea 2 / MOSS-Image)
 - `archive/` — standalone plans, worklogs and reference page

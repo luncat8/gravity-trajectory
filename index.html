@@ -106,6 +106,15 @@
 		</label>
 	</div>
 
+	<div class="group">
+		<div class="caption"><span>playback</span><span id="playTag">×1</span></div>
+		<div class="actions playActions">
+			<button id="playSlower" class="miniBtn" title="slower · physics unchanged">− slower</button>
+			<button id="playReset" class="miniBtn" title="back to real time">×1</button>
+			<button id="playFaster" class="miniBtn" title="faster · physics unchanged">+ faster</button>
+		</div>
+	</div>
+
 	<div class="actions">
 		<button id="launch" class="primary" disabled>launch</button>
 		<button id="clear">clear</button>
@@ -150,7 +159,16 @@
 			<li><b>clock runs in flight only</b> — trade, ports and moons move only while the cargo flies; after it lands or leaves, everything waits for your next launch.</li>
 			<li><b>fixed rules</b> — gravity stays at 1, no relaunch mid-flight, a flight ends after 120 s or on <i>abort</i>; the speed slider sets the world rate until the first launch.</li>
 			<li><b>score</b> — more systems, then fewer shots, then less flight time; a full tour stops its clock when the 26th system is entered.</li>
+			<li><b>playback</b> — <i>− slower / + faster</i> changes only how fast you watch; physics steps and the recorded replay stay identical. The world rate slider stays locked once a shot is fired.</li>
 			<li><b>copy replay</b> — a link with seed, rate and every launch; opening it re-flies the run, checks the recorded result, then lets you continue.</li>
+		</ul>
+	</div>
+	<div class="group">
+		<div class="caption"><span>photos</span><span>postcards</span></div>
+		<ul class="helpList">
+			<li><b>when</b> — entering a planet’s port orbit shows the system from space; landing shows the surface (a gas giant gets an air platform).</li>
+			<li><b>where</b> — bottom-left, scaled to the free space; on a small screen the card becomes a 256 px overlay.</li>
+			<li><b>art</b> — files in <i>photos/space/</i> and <i>photos/landed/</i>, named by planet type; without art a stylised placeholder of the same type is drawn.</li>
 		</ul>
 	</div>
 	<div class="group">
@@ -163,7 +181,20 @@
 			<span>enter / esc</span><b>launch / cancel aim</b>
 			<span>h or ?</span><b>toggle help drawer</b>
 			<span>space</span><b>pause background trade (lab)</b>
+			<span>− / + playback</span><b>watch the flight 0.25×…8× (physics unchanged)</b>
+			<span>photo card</span><b>new system / landing · click × to close</b>
 		</div>
+	</div>
+</aside>
+
+<aside id="photoCard" class="photoCard" hidden aria-live="polite">
+	<button id="photoClose" class="photoClose" title="close">×</button>
+	<div id="photoArt" class="photoArt" hidden></div>
+	<img id="photoImg" alt="planet photograph" hidden>
+	<div class="photoBody">
+		<div class="photoKicker" id="photoKicker">from space</div>
+		<div class="photoTitle" id="photoTitle">P0 · rock world</div>
+		<div class="photoCaption" id="photoCaption"></div>
 	</div>
 </aside>
 
@@ -188,6 +219,7 @@
 <script src="orbit_view.js"></script>
 <script src="gravity_sim.js"></script>
 <script src="gravity_game.js"></script>
+<script src="photo_deck.js"></script>
 <script src="gravity_gui.js"></script>
 </body>
 </html>

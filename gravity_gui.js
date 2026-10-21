@@ -34,7 +34,15 @@
 	const NO_ABORT = GravityGame.NO_ABORT;
 	const REPLAY_AIM_MS = 700;
 	const REPLAY_GAP_MS = 450;
-	const REPLAY_SPEEDS = [1, 4, 16];
+	/* replay multipliers; index 2 is real time */
+	const REPLAY_SPEEDS = [0.25, 0.5, 1, 4, 16];
+	const REPLAY_DEFAULT = 2;
+	/* live playback: how fast the flight is watched; the physics steps never change */
+	const PLAY_SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
+	const PLAY_DEFAULT = 2;
+	const PLAY_MAX = 32;
+	const GAME_SLICE = 1 / 60;
+	const PLAY_GUARD = 128;
 	const PHASE_AIM = 0;
 	const PHASE_FLY = 1;
 	const PHASE_GAP = 2;
@@ -186,6 +194,10 @@
 	const replaySpeedBtn = $('replaySpeed');
 	const replaySkipBtn = $('replaySkip');
 	const gameLinkEl = $('gameLink');
+	const playTagEl = $('playTag');
+	const playSlowerBtn = $('playSlower');
+	const playResetBtn = $('playReset');
+	const playFasterBtn = $('playFaster');
 
 	let lastWX = 0;
 	let lastWY = 0;
@@ -241,6 +253,12 @@
 	let hudReplayText = '';
 	let launchState = -1;
 	let linkNote = '';
+	let playIndex = PLAY_DEFAULT;
+	/* partial game slice carried between frames, so 0.25x and 32x both stay smooth */
+	let playAcc = 0;
+	/* photo deck: one space view per planet and one surface view per landing, per run */
+	const photoSpace = new Uint8Array(PLANETS);
+	const photoLanded = new Uint8Array(PLANETS);
 
 	/*
 	 * game: steps = finished flight steps, doneSteps = step the 26th system was entered,
@@ -248,7 +266,8 @@
 	 */
 	const game = { on: false, seed: 0, fixedRate: false, shots: [], steps: 0, doneSteps: -1 };
 	/* replay of a link: shots fired in order, aim shown then flown; verdict after the last */
-	const replay = { on: false, shots: null, end: null, index: 0, phase: PHASE_GAP, until: 0, speed: 0, verdict: '' };
+	const replay = { on: false, shots: null, end: null, index: 0, phase: PHASE_GAP, until: 0,
+		speed: REPLAY_DEFAULT, verdict: '' };
 
 	function makeGlow(fill) {
 		const sprite = document.createElement('canvas');
@@ -369,6 +388,43 @@
 
 	function tradeRate() {
 		return scene.trade.paused ? 0 : scene.trade.speed;
+	}
+
+	function playScale() {
+		return PLAY_SPEEDS[playIndex];
+	}
+
+	function refreshPlaybackUi() {
+		if (!playTagEl) return;
+		playTagEl.textContent = '×' + playScale();
+		if (playSlowerBtn) playSlowerBtn.disabled = playIndex === 0;
+		if (playFasterBtn) playFasterBtn.disabled = playIndex === PLAY_SPEEDS.length - 1;
+	}
+
+	function stepPlayback(step) {
+		const next = playIndex + step;
+		if (next < 0 || next >= PLAY_SPEEDS.length) return;
+		playIndex = next;
+		refreshPlaybackUi();
+	}
+
+	function resetPlayback() {
+		playIndex = PLAY_DEFAULT;
+		refreshPlaybackUi();
+	}
+
+	/* one postcard per new system, then the surface card when the cargo lands */
+	function photoTick() {
+		if (!root.PhotoDeck || !tradeSim.planetType) return;
+		for (let i = 0; i < PLANETS; i++) {
+			if (gravity.visited[i] !== 1 || photoSpace[i] === 1) continue;
+			photoSpace[i] = 1;
+			root.PhotoDeck.show('space', tradeSim.planetType[i], i);
+		}
+		if (gravity.status !== STATUS_ENDED || gravity.endReason !== END_IMPACT ||
+			gravity.endBody < 0 || photoLanded[gravity.endBody] === 1) return;
+		photoLanded[gravity.endBody] = 1;
+		root.PhotoDeck.show('landed', tradeSim.planetType[gravity.endBody], gravity.endBody);
 	}
 
 	function applyMode() {
@@ -574,6 +630,10 @@
 	}
 
 	function clearCargo() {
+		photoSpace.fill(0);
+		photoLanded.fill(0);
+		if (root.PhotoDeck) root.PhotoDeck.hide();
+		playAcc = 0;
 		gravity.clear();
 		aiming = false;
 		armed = false;
@@ -670,10 +730,29 @@
 		refreshGameUi();
 	}
 
+	/*
+	 * Playback scales the wall-clock slice fed to the fixed-step physics. A game
+	 * replay is a pure function of its shots, so 0.25x and 32x both reproduce
+	 * the same step sequence, just at a different pace.
+	 */
 	function stepGame(now, dt) {
 		if (replay.on && replay.phase !== PHASE_FLY && now >= replay.until) advanceReplay(now);
-		const runs = replay.on ? REPLAY_SPEEDS[replay.speed] : 1;
-		for (let k = 0; k < runs && gravity.status === STATUS_FLYING; k++) advanceGame(dt);
+		let scale = playScale() * (replay.on ? REPLAY_SPEEDS[replay.speed] : 1);
+		if (scale > PLAY_MAX) scale = PLAY_MAX;
+		if (gravity.status !== STATUS_FLYING) {
+			playAcc = 0;
+			return;
+		}
+		playAcc += dt * scale;
+		let guard = 0;
+		while (gravity.status === STATUS_FLYING && playAcc > 0 && guard < PLAY_GUARD) {
+			const slice = playAcc < GAME_SLICE ? playAcc : GAME_SLICE;
+			advanceGame(slice);
+			playAcc -= slice;
+			guard += 1;
+		}
+		if (playAcc < 1e-9) playAcc = 0;
+		if (gravity.status !== STATUS_FLYING) playAcc = 0;
 	}
 
 	/* the world clock is the cargo's field clock: it moves only with fixed flight steps */
@@ -707,6 +786,7 @@
 		replay.shots = shots;
 		replay.end = end;
 		replay.index = 0;
+		replay.speed = REPLAY_DEFAULT;
 		replay.phase = PHASE_GAP;
 		replay.until = performance.now() + REPLAY_GAP_MS;
 		replay.verdict = '';
@@ -771,6 +851,7 @@
 
 	function skipReplay() {
 		const now = performance.now();
+		playAcc = 0;
 		while (replay.on) {
 			if (gravity.status === STATUS_FLYING) advanceGame(0.1);
 			else advanceReplay(now);
@@ -1666,7 +1747,8 @@
 
 		if (game.on) stepGame(now, dt);
 		syncField();
-		if (!game.on) gravity.step(dt);
+		if (!game.on) gravity.step(dt * playScale());
+		photoTick();
 
 		/* adaptive 60 fps budget: update every frame at 60 fps, throttle if slower */
 		const interval = emaFrameMs <= FPS_DROP_MS ? 1 : emaFrameMs < 25 ? 2 : 4;
@@ -1746,6 +1828,9 @@
 		refreshGameUi();
 	});
 	replaySkipBtn.addEventListener('click', skipReplay);
+	playSlowerBtn.addEventListener('click', () => stepPlayback(-1));
+	playFasterBtn.addEventListener('click', () => stepPlayback(1));
+	playResetBtn.addEventListener('click', resetPlayback);
 	window.addEventListener('hashchange', loadLink);
 	if (helpBtn) {
 		helpBtn.addEventListener('click', () => setHelpOpen(!helpPinned));
@@ -1769,7 +1854,10 @@
 	window.addEventListener('pointermove', onPointerMove);
 	window.addEventListener('pointerup', onPointerUp);
 	window.addEventListener('pointercancel', onPointerUp);
-	window.addEventListener('resize', resizeOverlay);
+	window.addEventListener('resize', () => {
+		resizeOverlay();
+		if (root.PhotoDeck) root.PhotoDeck.layout();
+	});
 	window.addEventListener('keydown', event => {
 		if (event.key === 'Shift') {
 			fine = true;
@@ -1804,6 +1892,8 @@
 		sim: gravity,
 		game: game,
 		replay: replay,
+		playScale: playScale,
+		playIndex: () => playIndex,
 		scoreSteps: scoreSteps,
 		passenger: () => passenger,
 		rollPassenger: rollPassenger,
@@ -1813,6 +1903,7 @@
 	};
 
 	rollPassenger(false);
+	refreshPlaybackUi();
 	gravity.horizon = Number(horizonSlider.value);
 	horizonLabel.textContent = gravity.horizon + ' s';
 	if (horizonTagEl) horizonTagEl.textContent = gravity.horizon + ' s';
