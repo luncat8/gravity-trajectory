@@ -126,7 +126,7 @@
 
 	const canvas = $('g');
 	const ctx = canvas.getContext('2d');
-	const glow = makeGlow('rgba(255, 207, 110, 0.55)');
+	const glow = makeGlow('rgba(92, 255, 139, 0.95)');
 	const impactGlow = makeGlow('rgba(255, 126, 160, 0.5)');
 
 	const expClockEl = $('expClock');
@@ -190,6 +190,7 @@
 	let blockedPlanet = -1;
 	let blockedUntil = -Infinity;
 	let helpOpen = false;
+	let helpPinned = false;
 	let hudFolded = false;
 	let passenger = PASSENGERS[0];
 	let fine = false;
@@ -258,7 +259,8 @@
 		}
 	}
 
-	function setHelpOpen(open) {
+	function setHelpOpen(open, preview = false) {
+		if (!preview) helpPinned = open;
 		helpOpen = open;
 		if (helpDrawer) helpDrawer.classList.toggle('open', open);
 		if (helpBtn) helpBtn.classList.toggle('on', open);
@@ -649,7 +651,7 @@
 		trimLabel.textContent = '0%';
 	}
 
-	/* visited planet systems stay marked in mint; newly predicted ones glow gold */
+	/* Past visits stay dim; current predictions take priority in bright green. */
 	function drawSystemVisits(now) {
 		const px = 1 / view.scale;
 		const activePred = aiming || armed || gravity.status === STATUS_FLYING;
@@ -666,30 +668,28 @@
 			ctx.beginPath();
 			ctx.ellipse(x, y, tradeSim.orbitRX[i], tradeSim.orbitRY[i],
 				tradeSim.orbitTilt[i], 0, TAU);
-			if (wasVisited) {
+			if (!willVisit) {
 				ctx.setLineDash(NO_DASH);
-				ctx.strokeStyle = willVisit
-					? 'rgba(142, 240, 192, 0.44)'
-					: 'rgba(142, 240, 192, 0.25)';
-				ctx.lineWidth = (willVisit ? 1.5 : 1.1) * px;
+				ctx.strokeStyle = 'rgba(142, 240, 192, 0.14)';
+				ctx.lineWidth = 1.1 * px;
 				ctx.stroke();
 
 				ctx.beginPath();
 				ctx.arc(x, y, r + 3.2 * px, 0, TAU);
-				ctx.strokeStyle = 'rgba(142, 240, 192, 0.72)';
+				ctx.strokeStyle = 'rgba(142, 240, 192, 0.38)';
 				ctx.lineWidth = 1.25 * px;
 				ctx.stroke();
 				continue;
 			}
 			ctx.setLineDash(SYS_DASH);
-			ctx.strokeStyle = 'rgba(255, 207, 110, 0.44)';
+			ctx.strokeStyle = 'rgba(92, 255, 139, 0.85)';
 			ctx.lineWidth = 1.35 * px;
 			ctx.stroke();
 			ctx.setLineDash(NO_DASH);
 
 			ctx.beginPath();
 			ctx.arc(x, y, r + (3.5 + pulse * 2.5) * px, 0, TAU);
-			ctx.strokeStyle = 'rgba(255, 207, 110, 0.55)';
+			ctx.strokeStyle = 'rgba(92, 255, 139, 0.95)';
 			ctx.lineWidth = 1.1 * px;
 			ctx.stroke();
 		}
@@ -1260,6 +1260,10 @@
 		}
 		trimSlider.disabled = !armed && selected < 0;
 		launchButton.disabled = !armed || !gravity.canLaunchFrom(aimBody);
+		const exitWarning = (aiming || armed) && gravity.predCount >= 2 && gravity.predReason === END_EXIT;
+		launchButton.classList.toggle('exitWarning', exitWarning);
+		launchButton.textContent = exitWarning ? 'launch · leaves system' : 'launch';
+		launchButton.title = exitWarning ? 'Warning: predicted trajectory ends outside the system' : '';
 	}
 
 	function updateHud(now) {
@@ -1378,7 +1382,15 @@
 	});
 	launchButton.addEventListener('click', launch);
 	clearButton.addEventListener('click', clearCargo);
-	if (helpBtn) helpBtn.addEventListener('click', () => setHelpOpen(!helpOpen));
+	if (helpBtn) {
+		helpBtn.addEventListener('click', () => setHelpOpen(!helpPinned));
+		helpBtn.addEventListener('pointerenter', event => {
+			if (event.pointerType !== 'touch') setHelpOpen(true, true);
+		});
+		helpBtn.addEventListener('pointerleave', () => {
+			if (!helpPinned) setHelpOpen(false, true);
+		});
+	}
 	if (foldBtn && cargoHudEl) {
 		foldBtn.addEventListener('click', () => {
 			hudFolded = !hudFolded;

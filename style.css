@@ -397,6 +397,18 @@ button.primary {
 	color: var(--accent);
 }
 
+button.primary.exitWarning {
+	border-color: rgba(255, 112, 102, 0.65);
+	background: rgba(255, 92, 82, 0.2);
+	color: #ff9b91;
+}
+
+button.primary.exitWarning:hover:not(:disabled) {
+	border-color: #ff9b91;
+	background: rgba(255, 92, 82, 0.3);
+	color: #ffc0b9;
+}
+
 button:disabled,
 input:disabled {
 	opacity: 0.35;

@@ -413,7 +413,15 @@ const firstRole = gScene.passenger();
 if (firstRole !== 'tourist' && firstRole !== 'emperor’s emissary') {
 	throw new Error('unexpected initial passenger: ' + firstRole);
 }
+env.fireElement(ui.get('helpBtn'), 'pointerenter', { pointerType: 'mouse' });
+if (!gScene.helpOpen()) throw new Error('help hover did not open');
+env.fireElement(ui.get('helpBtn'), 'pointerleave', {});
+if (gScene.helpOpen()) throw new Error('hover help did not close on leave');
+env.fireElement(ui.get('helpBtn'), 'pointerenter', { pointerType: 'mouse' });
 env.fireElement(ui.get('helpBtn'), 'click', {});
+env.fireElement(ui.get('helpBtn'), 'pointerleave', {});
+if (!gScene.helpOpen()) throw new Error('clicked help did not stay pinned');
+
 if (!gScene.helpOpen()) throw new Error('help drawer did not open');
 env.fireElement(ui.get('rerollGoal'), 'click', {});
 const secondRole = gScene.passenger();
