@@ -121,7 +121,8 @@ function makeContext() {
 
 const env = makeContext();
 vm.createContext(env.context);
-for (const file of ['exec_queue.js', 'orbit_sim.js', 'orbit_view.js', 'gravity_sim.js', 'gravity_gui.js']) {
+for (const file of ['exec_queue.js', 'orbit_world.js', 'orbit_econ.js', 'orbit_sim.js',
+	'orbit_view.js', 'gravity_sim.js', 'gravity_gui.js']) {
 	vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), env.context, { filename: file });
 }
 
@@ -137,6 +138,29 @@ if (ui.get('tradeClock').textContent !== 't+ 07:00') {
 }
 console.log('trade start', ui.get('tradeClock').textContent,
 	'ports', ui.get('tradePorts').textContent, 'colonies', ui.get('tradeColonies').textContent);
+
+/* the split modules are loaded in the page and the world carries its traits */
+const pageWorld = env.context.OrbitWorld;
+const pageEcon = env.context.OrbitEcon;
+if (!pageWorld || !pageEcon) throw new Error('orbit_world/orbit_econ not loaded by index.html');
+if (sim.planetType.length !== pageWorld.PLANETS) throw new Error('planet types missing');
+for (let i = 0; i < pageWorld.PLANETS; i++) {
+	if (!(sim.planetHabitat[i] > 0)) throw new Error('planet habitat missing at ' + i);
+	if (!(sim.planetLight[i] > 0)) throw new Error('planet light missing at ' + i);
+}
+const typeCount = new Array(pageWorld.TYPE_COUNT).fill(0);
+for (let i = 0; i < pageWorld.PLANETS; i++) typeCount[sim.planetType[i]] += 1;
+console.log('world traits:', pageWorld.TYPE_NAMES.map((name, i) => name + ' ' + typeCount[i]).join(', '),
+	'| Z', sim.metal.toFixed(4), 'L', sim.lum.toFixed(2), 'belts', sim.beltCount);
+if (typeCount.every(n => n === 0)) throw new Error('no planet types drawn');
+
+/* the econ scratch is ready for the colony wiring (step 2) */
+if (!sim.mapOut || sim.mapOut.ease.length !== pageEcon.ALL) throw new Error('map scratch missing');
+pageEcon.resourceMapFor(sim.world, 0, sim.seed, sim.mapOut);
+if (!(sim.mapOut.score > 0)) throw new Error('resource map produced no score');
+console.log('map at planet 0: score', sim.mapOut.score.toFixed(2),
+	'food', sim.mapOut.ease[pageEcon.FOOD].toFixed(2),
+	'rare', sim.mapOut.ease[pageEcon.RARE].toFixed(2));
 
 function screenOfPlanet(index) {
 	return {

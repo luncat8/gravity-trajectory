@@ -32,11 +32,14 @@ with the trade.
 
 - `index.html`, `style.css` — page and panels
 - `exec_queue.js` — binary min-heap event queue (vendored)
+- `orbit_world.js` — planet geometry, stations on their ellipses, natural traits
+- `orbit_econ.js` — the colony economy's laws: goods, resource map, growth
 - `orbit_sim.js` — orbital trade simulation (vendored, trade log removed)
 - `orbit_view.js` — trade renderer and controls, shares its camera as `OrbitScene`
 - `gravity_sim.js` — gravity field, live cargo, capped trajectory prediction
 - `gravity_gui.js` — overlay renderer, aiming, gravity editing, cargo HUD
-- `experiments/` — node benchmarks and a headless DOM smoke test
+- `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`) and a
+  headless DOM smoke test
 - `archive/` — plan, worklog and the vendored reference page
 
 ## physics

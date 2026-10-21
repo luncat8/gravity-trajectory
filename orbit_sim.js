@@ -10,6 +10,9 @@
  *
  * All state changes are events in the shared min-heap, scheduled from event
  * time rather than frame time, so a clock jump produces the same world.
+ *
+ * Geometry and natural traits live in orbit_world.js; the colony economy's laws
+ * live in orbit_econ.js. This file owns the event graph and the ports.
  */
 (function (root) {
 	'use strict';
@@ -17,6 +20,12 @@
 	const ExecQueue = typeof module !== 'undefined' && module.exports
 		? require('./exec_queue.js')
 		: root.ExecQueue;
+	const OrbitWorld = typeof module !== 'undefined' && module.exports
+		? require('./orbit_world.js')
+		: root.OrbitWorld;
+	const OrbitEcon = typeof module !== 'undefined' && module.exports
+		? require('./orbit_econ.js')
+		: root.OrbitEcon;
 
 	const KIND_LOAD = 0;
 	const KIND_ARRIVE = 1;
@@ -25,11 +34,11 @@
 
 	const PORTS = 32;
 	const MAX_LINKS = 6;
-	const PLANETS = 26;
-	const INITIAL_PORTS = 8;
+	const PLANETS = OrbitWorld.PLANETS;
+	const INITIAL_PORTS = OrbitWorld.INITIAL_PORTS;
 	const GOODS = 3;
-	const WORLD_W = 1600;
-	const WORLD_H = 1000;
+	const WORLD_W = OrbitWorld.WORLD_W;
+	const WORLD_H = OrbitWorld.WORLD_H;
 	const STOCK_MAX = 140;
 	const SHIP_CAPACITY = 24;
 	const SHIP_RESERVE = 6;
@@ -46,20 +55,11 @@
 	const NO_GOOD = 255;
 	const TAU = Math.PI * 2;
 	const GOOD_NAMES = ['ice', 'ore', 'gas'];
-
-	function seedRandom(seed) {
-		let a = seed >>> 0;
-		return function () {
-			a = (a + 0x6d2b79f5) >>> 0;
-			let t = a;
-			t = Math.imul(t ^ (t >>> 15), t | 1);
-			t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-			return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-		};
-	}
+	const seedRandom = OrbitWorld.seedRandom;
 
 	function Sim(seed) {
-		this.rand = seedRandom(seed || 1);
+		this.seed = seed || 1;
+		this.rand = seedRandom(this.seed);
 		this.t = 0;
 		this.events = new ExecQueue(256);
 		this.handleEvent = this.handleEvent.bind(this);
@@ -73,20 +73,9 @@
 		this.maxAimError = 0;
 		this.goodCounts = new Uint8Array(GOODS);
 
-		this.planetX = new Float64Array(PLANETS);
-		this.planetY = new Float64Array(PLANETS);
-		this.planetR = new Float64Array(PLANETS);
-		this.orbitRX = new Float64Array(PLANETS);
-		this.orbitRY = new Float64Array(PLANETS);
-		this.orbitPhase = new Float64Array(PLANETS);
-		this.orbitOmega = new Float64Array(PLANETS);
-		this.orbitTiltCos = new Float64Array(PLANETS);
-		this.orbitTiltSin = new Float64Array(PLANETS);
-		this.orbitTilt = new Float64Array(PLANETS);
 		this.planetState = new Uint8Array(PLANETS); // 0 empty, 1 port, 2 colony reserved
 		this.planetPort = new Uint8Array(PLANETS);
 		this.planetPort.fill(NO_PORT);
-		this.initialPlanets = new Uint8Array(INITIAL_PORTS);
 
 		this.portPlanet = new Uint8Array(PORTS);
 		this.portSpec = new Uint8Array(PORTS);
@@ -126,7 +115,13 @@
 		this.shipSpeed = new Float64Array(PORTS);
 		this.shipDockAngle = new Float64Array(PORTS);
 
-		this.placeWorld();
+		/* geometry and traits: the caller's stream, in the historical order */
+		OrbitWorld.attach(this, OrbitWorld.create(this.seed, this.rand));
+		/* colony records, one planet at most (§2 of the economy plan) */
+		this.colonies = [];
+		this.colonyOn = new Uint8Array(PLANETS);
+		this.colonyOn.fill(NO_PORT);
+		this.mapOut = OrbitEcon.createMap();
 		this.refreshPartners();
 		for (let i = 0; i < INITIAL_PORTS; i++) {
 			const progress = 160 + this.rand() * 260;
@@ -139,111 +134,13 @@
 		}
 	}
 
-	/* planets are static; only the station on the ellipse moves */
-	Sim.prototype.placeWorld = function () {
-		const rand = this.rand;
-		for (let i = 0; i < PLANETS; i++) {
-			let placed = false;
-			for (let attempt = 0; attempt < 300 && !placed; attempt++) {
-				const x = 110 + rand() * (WORLD_W - 220);
-				const y = 90 + rand() * (WORLD_H - 180);
-				placed = true;
-				for (let j = 0; j < i; j++) {
-					const dx = x - this.planetX[j];
-					const dy = y - this.planetY[j];
-					if (dx * dx + dy * dy < 165 * 165) {
-						placed = false;
-						break;
-					}
-				}
-				if (placed) {
-					this.planetX[i] = x;
-					this.planetY[i] = y;
-				}
-			}
-			if (placed) continue;
-			/* fallback keeps generation bounded: take the roomiest of a few samples */
-			let bestX = 0;
-			let bestY = 0;
-			let bestGap = -1;
-			for (let sample = 0; sample < 80; sample++) {
-				const x = 110 + rand() * (WORLD_W - 220);
-				const y = 90 + rand() * (WORLD_H - 180);
-				let gap = Infinity;
-				for (let j = 0; j < i; j++) {
-					const dx = x - this.planetX[j];
-					const dy = y - this.planetY[j];
-					const d2 = dx * dx + dy * dy;
-					if (d2 < gap) gap = d2;
-				}
-				if (gap > bestGap) {
-					bestGap = gap;
-					bestX = x;
-					bestY = y;
-				}
-			}
-			this.planetX[i] = bestX;
-			this.planetY[i] = bestY;
-		}
-
-		const chosen = new Uint8Array(PLANETS);
-		let pick = Math.floor(rand() * PLANETS);
-		for (let k = 0; k < INITIAL_PORTS; k++) {
-			this.initialPlanets[k] = pick;
-			chosen[pick] = 1;
-			let best = -1;
-			let bestGap = -1;
-			for (let i = 0; i < PLANETS; i++) {
-				if (chosen[i]) continue;
-				let gap = Infinity;
-				for (let j = 0; j < k + 1; j++) {
-					const other = this.initialPlanets[j];
-					const dx = this.planetX[i] - this.planetX[other];
-					const dy = this.planetY[i] - this.planetY[other];
-					const d2 = dx * dx + dy * dy;
-					if (d2 < gap) gap = d2;
-				}
-				if (gap > bestGap) {
-					bestGap = gap;
-					best = i;
-				}
-			}
-			pick = best;
-		}
-
-		for (let i = 0; i < PLANETS; i++) {
-			const room = Math.min(this.planetX[i], this.planetY[i],
-				WORLD_W - this.planetX[i], WORLD_H - this.planetY[i]) - 24;
-			const maxR = Math.max(58, Math.min(180, room));
-			const tilt = rand() * Math.PI;
-			const period = 160 + rand() * 240;
-			this.planetR[i] = 6 + rand() * 5;
-			this.orbitRX[i] = 46 + rand() * (maxR - 46);
-			this.orbitRY[i] = 46 + rand() * (maxR - 46);
-			this.orbitPhase[i] = rand() * TAU;
-			this.orbitOmega[i] = (rand() < 0.5 ? -1 : 1) * TAU / period;
-			this.orbitTilt[i] = tilt;
-			this.orbitTiltCos[i] = Math.cos(tilt);
-			this.orbitTiltSin[i] = Math.sin(tilt);
-		}
-	};
-
+	/* The station on planet `planet` at trade time `time` — closed form. */
 	Sim.prototype.planetXAt = function (planet, time) {
-		const angle = this.orbitPhase[planet] + this.orbitOmega[planet] * time;
-		const c = Math.cos(angle);
-		const s = Math.sin(angle);
-		const rx = this.orbitRX[planet] * c;
-		const ry = this.orbitRY[planet] * s;
-		return this.planetX[planet] + rx * this.orbitTiltCos[planet] - ry * this.orbitTiltSin[planet];
+		return OrbitWorld.planetXAt(this.world, planet, time);
 	};
 
 	Sim.prototype.planetYAt = function (planet, time) {
-		const angle = this.orbitPhase[planet] + this.orbitOmega[planet] * time;
-		const c = Math.cos(angle);
-		const s = Math.sin(angle);
-		const rx = this.orbitRX[planet] * c;
-		const ry = this.orbitRY[planet] * s;
-		return this.planetY[planet] + rx * this.orbitTiltSin[planet] + ry * this.orbitTiltCos[planet];
+		return OrbitWorld.planetYAt(this.world, planet, time);
 	};
 
 	Sim.prototype.portX = function (port, time) {
@@ -531,6 +428,7 @@
 		this.t = target;
 	};
 
+	Sim.TYPE_NAMES = OrbitWorld.TYPE_NAMES;
 	Sim.PORTS = PORTS;
 	Sim.PLANETS = PLANETS;
 	Sim.INITIAL_PORTS = INITIAL_PORTS;

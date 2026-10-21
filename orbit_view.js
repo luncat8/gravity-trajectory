@@ -663,7 +663,9 @@
 		}
 		const spec = sim.portSpec[hoverPort];
 		const progress = Math.min(1, sim.portProgress[hoverPort] / EXPAND_COST);
-		hoverTitle = 'PORT ' + hoverPort + ' · ' + GOOD_NAMES[spec];
+		const planet = sim.portPlanet[hoverPort];
+		hoverTitle = 'PORT ' + hoverPort + ' · ' + GOOD_NAMES[spec]
+			+ ' · ' + OrbitSim.TYPE_NAMES[sim.planetType[planet]];
 		hoverLine1 = 'trade ' + Math.round(sim.portTrade[hoverPort]) +
 			' · growth ' + Math.round(progress * 100) + '%';
 		if (sim.builderActive[hoverPort] === 1) {

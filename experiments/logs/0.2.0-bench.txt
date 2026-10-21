@@ -1,0 +1,32 @@
+step 1 — world/economy split, no behaviour change
+
+world fingerprint (seeds 1/7/42 at t=0, 420, 2000, 20000 min; a hash over
+planet, orbit, port, stock and ship fields): identical before and after.
+
+colony bench (new):
+  colony bench: 1589/1589 checks
+    jitter max 0.0600 · map 0.3 µs
+  COLONY BENCH OK
+
+gravity bench:
+  world: 26 planets, fast-forward to t+07:00 in 20.25 ms
+  trade at t+07:00: ports 22, ships 22, delivered 5667, colonies 14
+  
+  prediction sweep: 5616 runs (36 angles x 6 speeds x 26 planets)
+    avg 0.213 ms, p95 30.04 s flight, worst 2.773 ms
+    avg flight 7.98 s
+    ends: open 0, impact 3282, exit 2295, horizon 39, budget 0
+  
+  parity: 216 shots, worst live/predicted deviation 0.000068 px (P9 a7 v60)
+  repel field: 156 paths, finite bounds x -14.1…1614.0, y -13.7…1013.9
+  budget: 10 ms cap, worst 2.773 ms (within budget)
+  BENCH OK
+
+dom smoke:
+  trade start t+ 07:00 ports 22 / 26 colonies 14 / 18
+  world traits: rock 7, terran 3, super 4, dwarf 6, mini 3, gas 1, ice giant 2 | Z 0.0122 L 0.77 belts 1
+  map at planet 0: score 0.49 food 0.43 rare 0.45
+  ...
+  after resize scale 0.530 offX 26.0 canvas 900x620
+  paint calls { fillText: 133, stroke: 25834, fill: 7630 }
+  SMOKE OK
