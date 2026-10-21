@@ -41,6 +41,44 @@ image, not on it.
 `prompts.md` holds one ready caption per type and situation for **Krea 2** and
 **MOSS-Image**, plus the settings each model expects and a negative prompt.
 
+## generator
+
+`generator/comfy_queue.py` queues every caption in `prompts.md` into a running
+ComfyUI server and downloads the renders straight into `space/` and `landed/`.
+
+```
+generator/image_krea2_turbo_t2i_int8.json   Krea 2 turbo API graph (exported template)
+generator/image_moss_image_t2i.json         MOSS-Image API graph (exported template)
+generator/comfy_queue.py                    stdlib-only queue + collector
+generator/queue-manifest.json               written when jobs are queued
+```
+
+```sh
+python3 photos/generator/comfy_queue.py --list            # what it will caption
+python3 photos/generator/comfy_queue.py                   # queue the missing ones
+python3 photos/generator/comfy_queue.py --collect         # download when done
+python3 photos/generator/comfy_queue.py --workflow moss --wait
+```
+
+- The exported graphs are **templates**: the script only patches the caption,
+  the seed, the size (`3:2 (Photo)` · 1.5 MP = exactly 1536 × 1024) and the Save
+  Image prefix. Nodes are found by `class_type`, so a re-export does not break
+  it. Re-export from ComfyUI with *Save (API format)* after changing a graph.
+- `--workflow krea|moss|both` picks the template, `--types gas,ice` and
+  `--situation landed` narrow the set, `--variants 2` also writes `-2` files.
+- Already rendered files are skipped; `--force` redoes them. `--seed N` gives
+  one deterministic seed per job, otherwise the template's seed is reused.
+- `--no-refine` sends the caption verbatim (`photos/prompts.md` is already
+  prompt-shaped), `--steps/--cfg/--negative/--size` override the sampler, and
+  `--set NODE.INPUT=VALUE` patches anything else, e.g.
+  `--set 18:24.switch=true` to enable MOSS skip-layer guidance.
+- `--dump DIR` writes each patched graph for inspection, `--dry-run` prints the
+  jobs and queues nothing.
+- The server defaults to `http://127.0.0.1:8188` (override with `--server` or
+  the `COMFYUI` env var). Both models write the same file names, so
+  `--workflow both` is a comparison run: the last finished render wins unless
+  you give each run its own `--out`.
+
 ## checklist
 
 - [ ] rock · space / landed

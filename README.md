@@ -89,6 +89,7 @@ Open `index.html` (`file://` works, no build, no modules).
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
   `game_bench.js`), headless DOM smoke suite (`dom_smoke.js`) on the shared vm
   page stub (`dom_stub.js`)
-- `photos/` — user art (`space/`, `landed/`), `README.md` (file spec) and
-  `prompts.md` (14 captions for Krea 2 / MOSS-Image)
+- `photos/` — user art (`space/`, `landed/`), `README.md` (file spec),
+  `prompts.md` (14 captions for Krea 2 / MOSS-Image) and `generator/`
+  (`comfy_queue.py` queues the captions into ComfyUI and downloads the renders)
 - `archive/` — standalone plans, worklogs and reference page
