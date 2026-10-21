@@ -154,13 +154,22 @@ console.log('world traits:', pageWorld.TYPE_NAMES.map((name, i) => name + ' ' + 
 	'| Z', sim.metal.toFixed(4), 'L', sim.lum.toFixed(2), 'belts', sim.beltCount);
 if (typeCount.every(n => n === 0)) throw new Error('no planet types drawn');
 
-/* the econ scratch is ready for the colony wiring (step 2) */
-if (!sim.mapOut || sim.mapOut.ease.length !== pageEcon.ALL) throw new Error('map scratch missing');
-pageEcon.resourceMapFor(sim.world, 0, sim.seed, sim.mapOut);
-if (!(sim.mapOut.score > 0)) throw new Error('resource map produced no score');
-console.log('map at planet 0: score', sim.mapOut.score.toFixed(2),
-	'food', sim.mapOut.ease[pageEcon.FOOD].toFixed(2),
-	'rare', sim.mapOut.ease[pageEcon.RARE].toFixed(2));
+/* colonies are wired into the sim and advanced to t+07:00 (step 2) */
+if (sim.colonies.length !== sim.portCount || sim.portCount < pageWorld.INITIAL_PORTS) {
+	throw new Error('colonies not wired to ports: ' + sim.colonies.length + ' vs ' + sim.portCount);
+}
+const stageCounts = [0, 0, 0, 0];
+for (let p = 0; p < sim.portCount; p++) {
+	const c = sim.colonies[p];
+	if (!c || sim.colonyAt(c.planet) !== c) throw new Error('colony lookup mismatch at port ' + p);
+	if (!(c.pop >= pageEcon.POP_FLOOR && c.comfort > 0 && c.lastY >= 420)) {
+		throw new Error('colony did not advance to t+07:00 at port ' + p);
+	}
+	stageCounts[c.stage] += 1;
+}
+console.log('colonies at t+07:00:', sim.portCount,
+	'stages', pageEcon.STAGE_NAMES.map((s, i) => s + ' ' + stageCounts[i]).join(', '),
+	'log entries', sim.log.length);
 
 function screenOfPlanet(index) {
 	return {

@@ -45,16 +45,18 @@
 
 	/*
 	 * Production at ease 1 and driver 1, t per colony year (§4 step 1). Migrants
-	 * and colonists are flows (§5): no rate, they move as people.
+	 * and colonists are flows (§5): no rate, they move as people. Intra bulk and
+	 * goods are scaled 1/4 alongside their needs so food stays the dominant term
+	 * in comfort while keeping the same per-capita self-sufficiency thresholds.
 	 */
 	const RATE = new Float64Array([
-		1200, 900, 0,
+		300, 225, 0,
 		800, 800, 400, 2000, 600, 600, 0
 	]);
 
 	/* What 1k persons eat, burn or wear per year (§4 step 2). Food dominates. */
 	const NEED = new Float64Array([
-		12, 6, 0,
+		3, 1.5, 0,
 		0.2, 0.2, 0.05, 20, 0.5, 1.0, 0
 	]);
 
@@ -73,18 +75,23 @@
 	const G_MAX = 1 / 40;            // logistic rate per year, fully fed
 	const FAMINE_RATE = 0.04;        // per year at comfort below the band
 	const FAMINE_COMFORT = 0.4;
+	const FAMINE_RECOVERY = 0.45;    // hysteresis band prevents 0.40 chatter
 	const POP_FLOOR = 0.05;          // k persons; a colony never reaches zero
 	const CAPITAL_FLOOR = 0.1;
 	const CAPITAL_GAIN = 0.02;       // per tonne of surplus per year
 	const CAPITAL_DECAY = 0.01;      // per year
 	const STOCK_YEARS = 150;         // warehouse size in years of need
 	const STOCK_BASE = 50;           // t of slack on top of that
+	const ABANDON_YEARS = 20;        // consecutive years at the pop floor with comfort < 0.4
 
 	/* §4 step 7: the ladder. Only town and city may sponsor an expansion. */
 	const STAGE_OUTPOST = 0, STAGE_SETTLEMENT = 1, STAGE_TOWN = 2, STAGE_CITY = 3;
 	const STAGE_NAMES = ['outpost', 'settlement', 'town', 'city'];
 	const STAGE_MIN_POP = new Float64Array([0, 2, 10, 40]);   // k persons
 	const STAGE_SPONSORS = new Uint8Array([0, 0, 1, 1]);
+
+	/* Step-level transitions emitted to an optional advanceColony callback. */
+	const EVENT_STAGE = 0, EVENT_FAMINE = 1, EVENT_RECOVERY = 2;
 
 	/* §6: the market tags. No money in this stage. */
 	const TAG_SURPLUS = 0, TAG_FAIR = 1, TAG_SCARCE = 2;
@@ -154,7 +161,7 @@
 		ease[RARE] = 0.15 + 0.85 * metalRich * (0.35 + 0.65 * rockyFrac);
 		ease[EXOTIC] = 0.10 + 0.55 * giantFrac + 0.20 * beltFrac + 0.15 * lumNorm;
 		ease[ANTIMATTER] = 0.05 + 0.95 * lumNorm;
-		ease[FOOD] = 0.05 + 0.60 * habitat + 0.20 * lumNorm + 0.15 * terranFrac;
+		ease[FOOD] = 0.05 + habitat * (0.60 + 0.20 * lumNorm + 0.15 * terranFrac);
 		ease[FABRICATORS] = 0.20 + 0.50 * ease[RARE] + 0.30 * lumNorm;
 		ease[INFO] = 0.30;               // culture is population, not geography
 		ease[COLONISTS] = 0.10 + 0.70 * habitat + 0.20 * terranFrac;
@@ -244,6 +251,14 @@
 		return STOCK_YEARS * pop * NEED[r] + STOCK_BASE;
 	}
 
+	function carryingCapacity(colony) {
+		return 40 * (0.4 + 0.6 * colony.ease[FOOD]) * (1 + clamp01(colony.capital / 25));
+	}
+
+	function isAbandoned(colony) {
+		return colony.pop <= POP_FLOOR && colony.starveFor >= ABANDON_YEARS;
+	}
+
 	/* --- §6 the market readout ---------------------------------------------- */
 
 	function marketSupply(colony, r) {
@@ -260,12 +275,17 @@
 		return TAG_FAIR;
 	}
 
+	function goodShortfall(colony, r) {
+		const guard = GUARD_YEARS * colony.pop * NEED[r];
+		return colony.stock[r] < guard ? guard - colony.stock[r] : 0;
+	}
+
 	/* The best export: the highest supply with stock above the two-year guard. */
 	function bestExport(colony) {
 		let best = -1;
 		let bestSupply = 0;
-		for (let r = 0; r < ALL; r++) {
-			if (GOODS_TABLE[r].kind !== KIND_INTRA) continue;
+		for (let r = 0; r < INTRA; r++) {
+			if (!(NEED[r] > 0)) continue;
 			if (colony.stock[r] <= GUARD_YEARS * colony.pop * NEED[r]) continue;
 			const supply = marketSupply(colony, r);
 			if (best < 0 || supply > bestSupply) {
@@ -280,8 +300,8 @@
 	function bestImport(colony) {
 		let worst = -1;
 		let worstSupply = 1;
-		for (let r = 0; r < ALL; r++) {
-			if (GOODS_TABLE[r].kind !== KIND_INTRA) continue;
+		for (let r = 0; r < INTRA; r++) {
+			if (!(NEED[r] > 0)) continue;
 			if (colony.stock[r] >= GUARD_YEARS * colony.pop * NEED[r]) continue;
 			const supply = marketSupply(colony, r);
 			if (worst < 0 || supply < worstSupply) {
@@ -311,14 +331,16 @@
 		BULK, GOODS, MIGRANTS, RARE, EXOTIC, ANTIMATTER, FOOD, FABRICATORS, INFO, COLONISTS,
 		GOODS_TABLE, RATE, NEED, DRIVER,
 		DRIVER_POP_40, DRIVER_POP_50, DRIVER_POP_100, DRIVER_CAPITAL, DRIVER_CAPITAL2, DRIVER_NONE,
-		BASE_DT, MAX_STEPS, G_MAX, FAMINE_RATE, FAMINE_COMFORT, POP_FLOOR, CAPITAL_FLOOR,
-		CAPITAL_GAIN, CAPITAL_DECAY, STOCK_YEARS, STOCK_BASE,
+		BASE_DT, MAX_STEPS, G_MAX, FAMINE_RATE, FAMINE_COMFORT, FAMINE_RECOVERY,
+		POP_FLOOR, CAPITAL_FLOOR, CAPITAL_GAIN, CAPITAL_DECAY,
+		STOCK_YEARS, STOCK_BASE, ABANDON_YEARS,
 		STAGE_OUTPOST, STAGE_SETTLEMENT, STAGE_TOWN, STAGE_CITY, STAGE_NAMES,
 		STAGE_MIN_POP, STAGE_SPONSORS,
+		EVENT_STAGE, EVENT_FAMINE, EVENT_RECOVERY,
 		TAG_SURPLUS, TAG_FAIR, TAG_SCARCE, TAG_NAMES, SURPLUS_SUPPLY, SCARCE_SUPPLY, GUARD_YEARS,
 		clamp01, createMap, systemFractions, resourceMapFor,
-		createColony, advanceColony, stageFor, warehouseCap,
-		marketSupply, marketTag, bestExport, bestImport,
+		createColony, advanceColony, stageFor, warehouseCap, carryingCapacity, isAbandoned,
+		marketSupply, marketTag, goodShortfall, bestExport, bestImport,
 		formatPop, easeBar
 	};
 
@@ -330,18 +352,20 @@
 	 */
 	const PROD = new Float64Array(ALL);
 
-	function advanceColony(colony, toY) {
+	function advanceColony(colony, toY, onEvent) {
 		const span = toY - colony.lastY;
 		if (!(span > 0)) return colony;
 		let steps = Math.ceil(span / BASE_DT);
 		const coarse = steps > MAX_STEPS;
 		if (coarse) steps = MAX_STEPS;
 		const dt = coarse ? span / MAX_STEPS : BASE_DT;
+		const startY = colony.lastY;
 		const ease = colony.ease;
 		const stock = colony.stock;
 		let pop = colony.pop;
 		let capital = colony.capital;
 		let comfort = 1;
+		let stage = colony.stage;
 		let starving = colony.starving;
 		let starveFor = colony.starveFor;
 
@@ -377,20 +401,47 @@
 			}
 			comfort = needSum > 0 ? 1 - shortfallSum / needSum : 1;
 
-			const K = 40 * (0.4 + 0.6 * ease[FOOD]) * (1 + capital / 25);
+			const K = 40 * (0.4 + 0.6 * ease[FOOD]) * (1 + cap);
 			let dPop = G_MAX * comfort * (1 - pop / K) * pop * dt;
+			const stepY = startY + (s + 1) * dt;
 			if (comfort < FAMINE_COMFORT) {
 				dPop -= FAMINE_RATE * pop * dt;
-				starveFor += dt;
-				starving = true;
-			} else {
-				starveFor = 0;
+				if (!starving) {
+					starving = true;
+					colony.pop = pop;
+					colony.comfort = comfort;
+					colony.starving = true;
+					if (onEvent) onEvent(EVENT_FAMINE, colony, stepY, comfort);
+				}
+			} else if (starving && comfort >= FAMINE_RECOVERY) {
 				starving = false;
+				colony.pop = pop;
+				colony.comfort = comfort;
+				colony.starving = false;
+				if (onEvent) onEvent(EVENT_RECOVERY, colony, stepY, comfort);
 			}
 			pop += dPop;
-			if (pop < POP_FLOOR) pop = POP_FLOOR;
+			if (dPop > 0 && pop > K) pop = K;
+			if (pop <= POP_FLOOR) {
+				pop = POP_FLOOR;
+				if (starving) starveFor += dt;
+				else starveFor = 0;
+			} else {
+				starveFor = 0;
+			}
+			if (!starving) {
+				const nextStage = stageFor(pop);
+				while (stage < nextStage) {
+					stage++;
+					colony.pop = pop;
+					colony.comfort = comfort;
+					colony.stage = stage;
+					if (onEvent) onEvent(EVENT_STAGE, colony, stepY, stage);
+				}
+			}
 
-			capital += CAPITAL_GAIN * comfort * surplusSum * dt - CAPITAL_DECAY * capital * dt;
+			/* surplusSum is already scaled by dt (tons produced − needed in this step) */
+			capital += CAPITAL_GAIN * comfort * surplusSum - CAPITAL_DECAY * capital * dt;
 			if (capital < CAPITAL_FLOOR) capital = CAPITAL_FLOOR;
 		}
 
@@ -399,7 +450,7 @@
 		colony.comfort = comfort;
 		colony.starving = starving;
 		colony.starveFor = starveFor;
-		colony.stage = stageFor(pop);
+		colony.stage = stage;
 		colony.coarse = coarse;
 		colony.lastY = toY;
 		colony.advances++;
