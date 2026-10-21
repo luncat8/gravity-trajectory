@@ -67,4 +67,16 @@ end trajectory out of system warning reddish lunch button
 
 new game mode: deterministic seed and time only while ship move. after trajectory end - pause until lunch. this allow compare players results. button to copy replay as url: with lunch parameters.
  
- 
+should be possible to change speed after lunch or in replay - to fast forward faster or slower.
+
+plan add photo popup after fly near new planet or land at surface (at tis stage no need to correspond of colony growth level, just feel free any art landing situation). in case of gas giant land to some air platform. any style, diverse.
+photo placed temporary at left bottom of the screen left from canvas, keep aspect, scale to free space, if no space in current screen size and layout - 256x on top of all also ok..
+make folder for photos of planets from space and landed. make captions for such images - i will generate them in krea2 or MOSS-image (search what prompt type these models expect). So planet types - captions - images (i generate) 
+
+
+new game mode: max route length: calculate trajectory without length limit (probably need split calculation to avoid freeze),
+
+new game mode: lunch cost 1 money, each planet fly-visit give something like 0.1*time from last visit. need calculate good balance.
+
+bot competitor.
+
