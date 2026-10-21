@@ -37,6 +37,8 @@
 	const FIELD_STRIDE = 4;
 	const VEL_EPS = 0.05;
 	const NO_BODY = -1;
+	const STRIDE_FAST = 1;
+	const STRIDE_MID = 2;
 
 	const STATUS_IDLE = 0;
 	const STATUS_FLYING = 1;
@@ -129,6 +131,13 @@
 
 	GravitySim.prototype.fillStep = function (t) {
 		this.fillField(t, this.stepX, this.stepY, this.bodyCount);
+	};
+
+	GravitySim.prototype.fieldStride = function () {
+		const r = this.fieldRate < 0 ? -this.fieldRate : this.fieldRate;
+		if (r > 6) return STRIDE_FAST;
+		if (r > 2) return STRIDE_MID;
+		return FIELD_STRIDE;
 	};
 
 	/* how far the centres travelled since the prediction snapshot, in px */
@@ -271,12 +280,13 @@
 		let reason = END_OPEN;
 		let hit = NO_BODY;
 		const maxSteps = Math.min(MAX_STEPS, Math.ceil(this.horizon / DT) + 2);
+		const stride = moving ? this.fieldStride() : FIELD_STRIDE;
 		for (let step = 0; step < maxSteps; step++) {
 			if ((step & (BUDGET_EVERY - 1)) === 0 && performance.now() - started > BUDGET_MS) {
 				reason = END_TRUNCATED;
 				break;
 			}
-			if (moving && step > 0 && (step & (FIELD_STRIDE - 1)) === 0) {
+			if (moving && step > 0 && step % stride === 0) {
 				this.fillStep(t0 + step * DT * rate);
 			}
 			const prevX = state.x;
@@ -352,7 +362,8 @@
 		let guard = 0;
 		while (this.acc >= DT && this.status === STATUS_FLYING && guard < 24) {
 			const moving = !this.fieldStatic && this.fieldRate !== 0;
-			if (this.stepStale || (moving && (this.liveSteps & (FIELD_STRIDE - 1)) === 0)) {
+			const stride = moving ? this.fieldStride() : FIELD_STRIDE;
+			if (this.stepStale || (moving && this.liveSteps % stride === 0)) {
 				this.fillStep(this.flightFieldT);
 				this.stepStale = false;
 			}

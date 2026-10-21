@@ -13,15 +13,16 @@ Open `index.html` (file:// works, no build, no modules).
 
 | input | action |
 | --- | --- |
-| drag from a planet | aim; direction is planet → grip, push grows with drag length |
+| drag from a body | aim; direction is body → grip, push grows with drag length |
 | hold shift while dragging | aim at 1/20 sensitivity |
-| click a planet | select it and tune its gravity (`-2…2`, default `1`) |
-| `g` slider | gravity of the selected planet; negative values repel |
+| click a body | select it and tune its gravity (`-2…2`, default `1`); keeps the armed shot |
+| `g` slider | gravity of the selected body; negative values repel · red `+` / blue `−` updates at once |
 | `±` trim slider | relative nudge (`-5%…+5%`) of the aim speed, or of the selected gravity when no shot is armed |
 | release drag | arms the shot and draws the full trajectory |
 | enter / launch | fires the container |
 | esc | cancels the aim |
 | clear | removes the cargo and its trail |
+| gravity positions | radio group `planets` (static) / `ports` (moving on ellipses, shot inherits port velocity) |
 | space | pauses the trade background only |
 
 Trade time and experiment time are independent: the background starts at
@@ -50,4 +51,13 @@ MU = 400000 px³/s², SOFT = 60 px, fixed step 1/120 s
 ```
 
 Prediction and live flight run the same `advance()` from the same spawn state,
-capped at 2450 steps, a 20 s horizon and a 10 ms wall-clock budget.
+capped at 7350 steps, a 60 s horizon (slider 5…60 s) and a 10 ms wall-clock
+budget. A moving field (ports) is extrapolated at the trade rate with adaptive
+resampling (stride 4→2→1) and the shot inherits the origin's velocity; the
+drawn path and the flown path share the same integrator. The HUD shows the
+predicted length (`px`) and time to end (`s · reason`) and recomputes when
+centres drift >1.5 px.
+
+Bodies show a red `+` when `g > 0` (attract) and a blue `−` when `g < 0`
+(repel), with a soft glow so a 6 px port stays legible. Press without drag
+only selects; the armed trajectory is kept.

@@ -6,7 +6,9 @@
  * orbit_sim.t is read only as the field clock for moving (port) bodies.
  * Prediction is recomputed when the aim or the field changes, or when moving
  * centres drifted from the snapshot it was computed with, at most once per
- * frame. A press without drag only selects; it never deletes an armed shot.
+ * frame. The moving field is extrapolated at the trade rate with adaptive
+ * resampling so that prediction and live flight share the same field cadence.
+ * A press without drag only selects; it never deletes an armed shot.
  */
 (function (root) {
 	'use strict';
@@ -222,10 +224,13 @@
 	function applyMode() {
 		if (mode === MODE_PORTS) {
 			gravity.setField(tradeSim.portCount, portRadius, portStrength, fillPorts, false);
+			sourceTagEl.textContent = 'ports · moving';
+			sourceTagEl.title = tradeSim.portCount + ' ports';
 		} else {
 			gravity.setField(PLANETS, tradeSim.planetR, planetStrength, fillPlanets, true);
+			sourceTagEl.textContent = 'planets';
+			sourceTagEl.title = PLANETS + ' planets';
 		}
-		sourceTagEl.textContent = mode === MODE_PORTS ? 'ports · moving' : 'planets';
 	}
 
 	function strengthText(index) {
@@ -525,7 +530,6 @@
 	function drawSigns() {
 		const px = 1 / view.scale;
 		ctx.lineCap = 'round';
-		ctx.lineWidth = 1.6 * px;
 		ctx.setLineDash(NO_DASH);
 		for (let i = 0; i < gravity.bodyCount; i++) {
 			const g = gravity.strength[i];
@@ -533,8 +537,12 @@
 			const x = gravity.bodyX[i];
 			const y = gravity.bodyY[i];
 			let arm = gravity.bodyR[i] * 0.6;
-			if (arm < 3.4 * px) arm = 3.4 * px;
-			ctx.strokeStyle = g > 0 ? SIGN_POS : SIGN_NEG;
+			if (arm < 3.2 * px) arm = 3.2 * px;
+			if (arm > 9 * px) arm = 9 * px;
+			const colour = g > 0 ? SIGN_POS : SIGN_NEG;
+			const glow = g > 0 ? 'rgba(255, 95, 87, 0.22)' : 'rgba(87, 168, 255, 0.22)';
+			ctx.strokeStyle = glow;
+			ctx.lineWidth = 6 * px;
 			ctx.beginPath();
 			ctx.moveTo(x - arm, y);
 			ctx.lineTo(x + arm, y);
@@ -543,6 +551,68 @@
 				ctx.lineTo(x, y + arm);
 			}
 			ctx.stroke();
+			ctx.strokeStyle = colour;
+			ctx.lineWidth = 1.7 * px;
+			ctx.beginPath();
+			ctx.moveTo(x - arm, y);
+			ctx.lineTo(x + arm, y);
+			if (g > 0) {
+				ctx.moveTo(x, y - arm);
+				ctx.lineTo(x, y + arm);
+			}
+			ctx.stroke();
+			if (i === selected) {
+				ctx.beginPath();
+				ctx.arc(x, y, gravity.bodyR[i] + 1.5 * px, 0, TAU);
+				ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+				ctx.lineWidth = px;
+				ctx.stroke();
+			}
+		}
+		ctx.lineCap = 'butt';
+	}
+
+	function drawPortVelocities() {
+		if (mode !== MODE_PORTS || gravity.fieldRate === 0) return;
+		const px = 1 / view.scale;
+		if (Math.abs(gravity.fieldRate) < 0.05) return;
+		ctx.lineCap = 'round';
+		ctx.setLineDash(NO_DASH);
+		const t = tradeSim.t;
+		const eps = 0.12;
+		for (let i = 0; i < gravity.bodyCount; i++) {
+			const planet = tradeSim.portPlanet[i];
+			const a0 = tradeSim.orbitPhase[planet] + tradeSim.orbitOmega[planet] * t;
+			const a1 = tradeSim.orbitPhase[planet] + tradeSim.orbitOmega[planet] * (t + eps);
+			const rx0 = tradeSim.orbitRX[planet] * Math.cos(a0);
+			const ry0 = tradeSim.orbitRY[planet] * Math.sin(a0);
+			const rx1 = tradeSim.orbitRX[planet] * Math.cos(a1);
+			const ry1 = tradeSim.orbitRY[planet] * Math.sin(a1);
+			const x0 = tradeSim.planetX[planet] + rx0 * tradeSim.orbitTiltCos[planet] - ry0 * tradeSim.orbitTiltSin[planet];
+			const y0 = tradeSim.planetY[planet] + rx0 * tradeSim.orbitTiltSin[planet] + ry0 * tradeSim.orbitTiltCos[planet];
+			const x1 = tradeSim.planetX[planet] + rx1 * tradeSim.orbitTiltCos[planet] - ry1 * tradeSim.orbitTiltSin[planet];
+			const y1 = tradeSim.planetY[planet] + rx1 * tradeSim.orbitTiltSin[planet] + ry1 * tradeSim.orbitTiltCos[planet];
+			const vx = (x1 - x0) / eps * gravity.fieldRate;
+			const vy = (y1 - y0) / eps * gravity.fieldRate;
+			const speed = Math.sqrt(vx * vx + vy * vy);
+			if (speed < 0.15 / px) continue;
+			const x = gravity.bodyX[i];
+			const y = gravity.bodyY[i];
+			const len = Math.min(18 * px, Math.max(6 * px, speed * 0.18 * px));
+			const angle = Math.atan2(vy, vx);
+			ctx.strokeStyle = 'rgba(180, 200, 220, 0.24)';
+			ctx.lineWidth = 1.0 * px;
+			ctx.beginPath();
+			ctx.moveTo(x, y);
+			ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+			ctx.stroke();
+			ctx.beginPath();
+			ctx.moveTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+			ctx.lineTo(x + Math.cos(angle + 2.6) * 3.2 * px, y + Math.sin(angle + 2.6) * 3.2 * px);
+			ctx.lineTo(x + Math.cos(angle - 2.6) * 3.2 * px, y + Math.sin(angle - 2.6) * 3.2 * px);
+			ctx.closePath();
+			ctx.fillStyle = 'rgba(180, 200, 220, 0.32)';
+			ctx.fill();
 		}
 		ctx.lineCap = 'butt';
 	}
@@ -746,6 +816,7 @@
 		ctx.translate(view.offX, view.offY);
 		ctx.scale(view.scale, view.scale);
 		drawWells();
+		drawPortVelocities();
 		drawPrediction();
 		drawTrail();
 		drawAim();
@@ -847,15 +918,16 @@
 		if (rate !== gravity.fieldRate) {
 			gravity.fieldRate = rate;
 			gravity.stepStale = true;
-			if (armed || aiming) dirty = true;
+			if ((armed || aiming) && !gravity.fieldStatic) dirty = true;
 		}
 		if (mode === MODE_PORTS && gravity.setCount(tradeSim.portCount)) fieldChanged();
-		gravity.refreshField();
+		if (!gravity.fieldStatic) gravity.refreshField();
 		gravity.step(dt);
 		/* moving centres: keep the shown trajectory computed from where the
 		 * bodies are now; the grip follows the origin, angle/speed are kept */
 		if ((armed || aiming) && !dirty && gravity.fieldDrift() > FIELD_DRIFT_PX) {
 			if (armed && !aiming) placeGripFromSpeed();
+			else if (aiming) updateAim();
 			dirty = true;
 		}
 		if ((armed || aiming) && dirty) {
