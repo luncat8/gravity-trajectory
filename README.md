@@ -1,63 +1,59 @@
 # gravity cargo
 
-A ballistic cargo experiment on top of the `orbit_trade` visualisation from
-`luncat8/exec_queue`. The trade world runs as the background; the new experiment
-is a container launched from a planet with direction and push, under the gravity
-of every planet.
+A ballistic grand-tour game and gravity lab on top of the `orbit_trade`
+visualisation from `luncat8/exec_queue`. A `tourist` or `emperor’s emissary`
+wants to fly through as many planet systems as possible: launch from a planet,
+sweep inside planets' port orbits using gravity assists, land cleanly on a
+planet, and stage your next hop from where you landed.
 
 ## run
 
-Open `index.html` (file:// works, no build, no modules).
+Open `index.html` (`file://` works, no build, no modules).
 
 ## controls
 
 | input | action |
 | --- | --- |
-| drag from a body | aim; direction is body → grip, push grows with drag length |
+| drag from a planet | aim; direction is planet → grip, push grows with drag length |
 | hold shift while dragging | aim at 1/20 sensitivity |
-| click a body | select it and tune its gravity (`-2…2`, default `1`); keeps the armed shot |
+| click a body | select planet or moving port to tune its gravity (`-2…2`, default `1`); keeps armed shot |
 | `g` slider | gravity of the selected body; negative values repel · red `+` / blue `−` updates at once |
-| `±` trim slider | relative nudge (`-5%…+5%`) of the aim speed, or of the selected gravity when no shot is armed |
-| release drag | arms the shot and draws the full trajectory |
-| enter / launch | fires the container |
-| esc | cancels the aim |
-| clear | removes the cargo and its trail |
-| gravity positions | radio group `planets` (static) / `ports` (moving on ellipses, shot inherits port velocity) |
+| `±` trim slider | relative nudge (`-5%…+5%`) of the aim speed, or of selected gravity when no shot is armed |
+| release drag | arms the shot and draws the predicted trajectory and system visits |
+| enter / launch | fires the vessel |
+| esc | closes help drawer or cancels the aim |
+| clear | resets vessel, trail, visited systems and launch-base lock |
+| gravity positions | radio group `planets` (static) / `ports` (`ports · moving`); launch base is always a static planet |
+| `? help` / `h` | toggles the mission & guide drawer (`tourist` / `emperor’s emissary`) |
 | space | pauses the trade background only |
 
-Trade time and experiment time are independent: the background starts at
-`t+07:00` and runs at `×0.5`, the cargo clock is real seconds and never pauses
-with the trade.
+## mechanics & visuals
+
+- **Grand tour**: entering inside any planet's port-orbit ellipse marks that
+  planet system as visited (`visited` rings persist across hops). Predicted
+  visit count (`sys · +new`) updates live as your shot or moving orbits change.
+- **Staged hops**: once landed on a planet, the next launch is only allowed from
+  that landed body (marked on canvas); hovering or dragging elsewhere shows a
+  lock tooltip with a directional arrow pointing to the landed location.
+- **Continuous flight & 60 fps cadence**: while flying, the predicted trajectory
+  continues ahead of the vessel until it lands. When centres move or change,
+  prediction updates every frame while `>= 60 fps` and throttles automatically if
+  frame time rises above `17.5 ms`.
+- **Secondary moons & belts**: coplanar moons and Saturn/rubble belts share each
+  planet's orbital inclination, apocenter axis and spin direction, following
+  Keplerian orbital speed scaled by planet gravity (`sqrt(|g|) · a^(-3/2)`) with
+  front/back limb occlusion and zero simulation impact.
 
 ## files
 
-- `index.html`, `style.css` — page and panels
+- `index.html`, `style.css` — page, HUD panels and slide-out help drawer
 - `exec_queue.js` — binary min-heap event queue (vendored)
 - `orbit_world.js` — planet geometry, stations on their ellipses, natural traits
-- `orbit_econ.js` — the colony economy's laws: goods, resource map, growth
-- `orbit_sim.js` — orbital trade simulation (vendored, trade log removed)
-- `orbit_view.js` — trade renderer and controls, shares its camera as `OrbitScene`
-- `gravity_sim.js` — gravity field, live cargo, capped trajectory prediction
-- `gravity_gui.js` — overlay renderer, aiming, gravity editing, cargo HUD
-- `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`) and a
-  headless DOM smoke test
-- `archive/` — plan, worklog and the vendored reference page
-
-## physics
-
-```
-a = Σ s_i · MU · (p_i − p) / (|p_i − p|² + SOFT²)^(3/2)
-MU = 400000 px³/s², SOFT = 60 px, fixed step 1/120 s
-```
-
-Prediction and live flight run the same `advance()` from the same spawn state,
-capped at 7350 steps, a 60 s horizon (slider 5…60 s) and a 10 ms wall-clock
-budget. A moving field (ports) is extrapolated at the trade rate with adaptive
-resampling (stride 4→2→1) and the shot inherits the origin's velocity; the
-drawn path and the flown path share the same integrator. The HUD shows the
-predicted length (`px`) and time to end (`s · reason`) and recomputes when
-centres drift >1.5 px.
-
-Bodies show a red `+` when `g > 0` (attract) and a blue `−` when `g < 0`
-(repel), with a soft glow so a 6 px port stays legible. Press without drag
-only selects; the armed trajectory is kept.
+- `orbit_econ.js` — colony economy laws: goods, resource map, growth
+- `orbit_sim.js` — orbital trade & colony simulation
+- `orbit_view.js` — trade renderer, coplanar Kepler moons & belts, camera `OrbitScene`
+- `gravity_sim.js` — gravity field, planet-system visits, live flight & continuation
+- `gravity_gui.js` — overlay renderer, aiming, hop lock & arrow, adaptive 60 fps HUD
+- `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`) and
+  headless DOM smoke suite (`dom_smoke.js`)
+- `archive/` — standalone plans, worklogs and reference page

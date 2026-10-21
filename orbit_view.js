@@ -37,6 +37,10 @@
 	const VIEW_INSET = 14;
 	const VIEW_FOOT_MAX = 120;
 	const VIEW_FOOT_MIN = 76;
+	const MOON_CAP = 512;
+	const TRACK_CAP = 128;
+	const MOON_GRAV_K = 75;
+	const MOON_COLORS = ['#dfeaff', '#ffe3b3', '#9be6ff', '#c9d6e8'];
 
 	const canvas = $('c');
 	const ctx = canvas.getContext('2d');
@@ -56,17 +60,47 @@
 	const orbitsBox = $('showOrbits');
 	const linksBox = $('showLinks');
 	const routesBox = $('showRoutes');
+	const moonsBox = $('showMoons');
 
 	const portPX = new Float64Array(CAP);
 	const portPY = new Float64Array(CAP);
 	const shipPX = new Float64Array(CAP);
 	const shipPY = new Float64Array(CAP);
 	const shipAngle = new Float64Array(CAP);
+	const planetG = new Float64Array(OrbitSim.PLANETS).fill(1);
+	const planetRootG = new Float64Array(OrbitSim.PLANETS);
+	const sysPXX = new Float64Array(OrbitSim.PLANETS);
+	const sysPXY = new Float64Array(OrbitSim.PLANETS);
+	const sysQXX = new Float64Array(OrbitSim.PLANETS);
+	const sysQXY = new Float64Array(OrbitSim.PLANETS);
+	const sysCosI = new Float64Array(OrbitSim.PLANETS);
+	const sysSinI = new Float64Array(OrbitSim.PLANETS);
+	const sysMajorAngle = new Float64Array(OrbitSim.PLANETS);
+	const moonPlanet = new Uint8Array(MOON_CAP);
+	const moonKind = new Uint8Array(MOON_CAP);
+	const moonTone = new Uint8Array(MOON_CAP);
+	const moonA = new Float64Array(MOON_CAP);
+	const moonE = new Float64Array(MOON_CAP);
+	const moonMinor = new Float64Array(MOON_CAP);
+	const moonMean = new Float64Array(MOON_CAP);
+	const moonOmega = new Float64Array(MOON_CAP);
+	const moonSize = new Float32Array(MOON_CAP);
+	const moonAlpha = new Float32Array(MOON_CAP);
+	const moonWX = new Float64Array(MOON_CAP);
+	const moonWY = new Float64Array(MOON_CAP);
+	const moonWZ = new Float64Array(MOON_CAP);
+	const trackPlanet = new Uint8Array(TRACK_CAP);
+	const trackA = new Float64Array(TRACK_CAP);
+	const trackE = new Float64Array(TRACK_CAP);
+	const trackMinor = new Float64Array(TRACK_CAP);
+	let moonCount = 0;
+	let trackCount = 0;
 	const glows = GOOD_GLOWS.map(makeGlow);
 	const colonyGlow = makeGlow(COLONY_GLOW);
 
 	const sim = new OrbitSim(7);
 	sim.step(START_MINUTES);
+	initMoonSystems();
 
 	let paused = false;
 	let speed = START_SPEED;
@@ -75,6 +109,7 @@
 	let showOrbits = orbitsBox.checked;
 	let showLinks = linksBox.checked;
 	let showRoutes = routesBox.checked;
+	let showMoons = moonsBox ? moonsBox.checked : true;
 	let pointerX = -1;
 	let pointerY = -1;
 	let hoverPort = -1;
@@ -269,6 +304,195 @@
 			hoverPort = hit;
 			updateHoverInfo();
 		}
+	}
+
+	function addMoon(planet, kind, tone, a, e, phase, size, alpha, dir) {
+		if (moonCount >= MOON_CAP) return;
+		const slot = moonCount;
+		moonPlanet[slot] = planet;
+		moonKind[slot] = kind;
+		moonTone[slot] = tone;
+		moonA[slot] = a;
+		moonE[slot] = e;
+		moonMinor[slot] = Math.sqrt(1 - e * e);
+		moonMean[slot] = phase;
+		moonOmega[slot] = dir * MOON_GRAV_K / (a * Math.sqrt(a));
+		moonSize[slot] = size;
+		moonAlpha[slot] = alpha;
+		moonCount = slot + 1;
+	}
+
+	function addTrack(planet, a, e) {
+		if (trackCount >= TRACK_CAP) return;
+		const slot = trackCount;
+		trackPlanet[slot] = planet;
+		trackA[slot] = a;
+		trackE[slot] = e;
+		trackMinor[slot] = Math.sqrt(1 - e * e);
+		trackCount = slot + 1;
+	}
+
+	/*
+	 * Coplanar moons and ring/asteroid belts per planet (visual only).
+	 * All bodies in a system share the port ellipse's plane (major-axis node,
+	 * inclination b/a, prograde spin and apocenter axis) and obey Kepler motion.
+	 */
+	function initMoonSystems() {
+		const rand = seedRandom(sim.seed ^ 0x51a7);
+		moonCount = 0;
+		trackCount = 0;
+		for (let p = 0; p < OrbitSim.PLANETS; p++) {
+			const rx = sim.orbitRX[p];
+			const ry = sim.orbitRY[p];
+			const major = rx >= ry ? rx : ry;
+			const minor = rx >= ry ? ry : rx;
+			const node = rx >= ry ? sim.orbitTilt[p] : sim.orbitTilt[p] + Math.PI * 0.5;
+			const cosI = minor / major;
+			const sinI = Math.sqrt(Math.max(0, 1 - cosI * cosI));
+			const cn = Math.cos(node);
+			const sn = Math.sin(node);
+			sysCosI[p] = cosI;
+			sysSinI[p] = sinI;
+			sysMajorAngle[p] = node;
+			sysPXX[p] = cn;
+			sysPXY[p] = sn;
+			sysQXX[p] = -cosI * sn;
+			sysQXY[p] = cosI * cn;
+
+			const dir = sim.orbitOmega[p] < 0 ? -1 : 1;
+			const type = sim.planetType[p];
+			const r = sim.planetR[p];
+			const ecc = 0.06 + rand() * 0.08;
+
+			if (type === OrbitWorld.TYPE_GAS || type === OrbitWorld.TYPE_ICE) {
+				const tone = type === OrbitWorld.TYPE_GAS ? 1 : 2;
+				const innerCount = type === OrbitWorld.TYPE_GAS ? 24 : 16;
+				const outerCount = type === OrbitWorld.TYPE_GAS ? 18 : 12;
+				for (let k = 0; k < innerCount; k++) {
+					const a = r * (1.45 + 0.55 * (k + rand()) / innerCount);
+					addMoon(p, 1, tone, a, 0.03, rand() * TAU,
+						0.8 + rand() * 0.55, 0.30 + rand() * 0.34, dir);
+				}
+				for (let k = 0; k < outerCount; k++) {
+					const a = r * (2.18 + 0.58 * (k + rand()) / outerCount);
+					addMoon(p, 1, tone, a, 0.03, rand() * TAU,
+						0.75 + rand() * 0.5, 0.22 + rand() * 0.28, dir);
+				}
+				const moons = type === OrbitWorld.TYPE_GAS ? 4 : 3;
+				for (let m = 0; m < moons; m++) {
+					const frac = 0.31 + m * 0.165 + rand() * 0.04;
+					const a = Math.max(r * 3.3 + m * 6, major * frac);
+					if (a > major * 0.9) break;
+					addMoon(p, 0, m === moons - 1 ? 1 : 0, a, ecc, rand() * TAU,
+						1.25 + rand() * 0.85, 0.72 + rand() * 0.22, dir);
+					addTrack(p, a, ecc);
+				}
+				continue;
+			}
+
+			if (type === OrbitWorld.TYPE_TERRAN) {
+				const a1 = Math.max(r * 2.8, major * (0.44 + rand() * 0.14));
+				addMoon(p, 0, 0, a1, ecc, rand() * TAU, 1.7 + rand() * 0.4, 0.88, dir);
+				addTrack(p, a1, ecc);
+				if (rand() < 0.45) {
+					const a2 = Math.min(major * 0.84, a1 * 1.48);
+					addMoon(p, 0, 3, a2, ecc, rand() * TAU, 1.05, 0.62, dir);
+					addTrack(p, a2, ecc);
+				}
+				continue;
+			}
+
+			const ringed = rand() < 0.22;
+			if (ringed) {
+				for (let k = 0; k < 16; k++) {
+					const a = r * (1.55 + 0.6 * (k + rand()) / 16);
+					addMoon(p, 1, 3, a, 0.04, rand() * TAU,
+						0.75 + rand() * 0.4, 0.22 + rand() * 0.24, dir);
+				}
+			} else if (rand() < 0.35) {
+				/* outer asteroid / moonlet rubble belt within the system */
+				for (let k = 0; k < 16; k++) {
+					const a = major * (0.54 + 0.14 * (k + rand()) / 16);
+					addMoon(p, 1, 3, a, ecc, rand() * TAU,
+						0.75 + rand() * 0.45, 0.20 + rand() * 0.22, dir);
+				}
+			}
+			const moons = rand() < 0.2 ? 0 : rand() < 0.62 ? 1 : 2;
+			for (let m = 0; m < moons; m++) {
+				const a = Math.max(r * (2.4 + m * 1.4), major * (0.30 + m * 0.24 + rand() * 0.08));
+				if (a > major * 0.88) break;
+				addMoon(p, 0, m === 0 ? 0 : 3, a, ecc, rand() * TAU,
+					1.1 + rand() * 0.6, 0.68 + rand() * 0.2, dir);
+				addTrack(p, a, ecc);
+			}
+		}
+		stepMoons(0);
+	}
+
+	function stepMoons(dt) {
+		for (let p = 0; p < OrbitSim.PLANETS; p++) {
+			const g = planetG[p];
+			planetRootG[p] = Math.sqrt(g < 0 ? -g : g);
+		}
+		for (let i = 0; i < moonCount; i++) {
+			const p = moonPlanet[i];
+			let M = moonMean[i] + moonOmega[i] * planetRootG[p] * dt;
+			if (M >= TAU || M <= -TAU) M = M % TAU;
+			moonMean[i] = M;
+			const e = moonE[i];
+			let E = M + e * Math.sin(M);
+			E -= (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+			const a = moonA[i];
+			const xo = a * (Math.cos(E) - e);
+			const yo = a * moonMinor[i] * Math.sin(E);
+			moonWX[i] = sim.planetX[p] + xo * sysPXX[p] + yo * sysQXX[p];
+			moonWY[i] = sim.planetY[p] + xo * sysPXY[p] + yo * sysQXY[p];
+			moonWZ[i] = sysSinI[p] * yo;
+		}
+	}
+
+	function drawMoonTracks() {
+		ctx.strokeStyle = '#6f93b5';
+		ctx.globalAlpha = 0.09;
+		ctx.lineWidth = 0.7;
+		ctx.setLineDash(NO_DASH);
+		ctx.beginPath();
+		for (let i = 0; i < trackCount; i++) {
+			const p = trackPlanet[i];
+			const a = trackA[i];
+			const focus = a * trackE[i];
+			ctx.moveTo(
+				sim.planetX[p] + (a - focus) * sysPXX[p],
+				sim.planetY[p] + (a - focus) * sysPXY[p]
+			);
+			ctx.ellipse(
+				sim.planetX[p] - focus * sysPXX[p],
+				sim.planetY[p] - focus * sysPXY[p],
+				a, a * trackMinor[i] * sysCosI[p],
+				sysMajorAngle[p], 0, TAU
+			);
+		}
+		ctx.stroke();
+		ctx.globalAlpha = 1;
+	}
+
+	function drawMoons(front) {
+		for (let i = 0; i < moonCount; i++) {
+			if ((moonWZ[i] >= 0) !== front) continue;
+			const x = moonWX[i];
+			const y = moonWY[i];
+			const size = moonSize[i];
+			ctx.fillStyle = MOON_COLORS[moonTone[i]];
+			ctx.globalAlpha = moonAlpha[i];
+			if (moonKind[i] === 1) {
+				ctx.fillRect(x - size * 0.5, y - size * 0.5, size, size);
+				continue;
+			}
+			ctx.beginPath();
+			ctx.arc(x, y, size, 0, TAU);
+			ctx.fill();
+		}
+		ctx.globalAlpha = 1;
 	}
 
 	function orbitTrail(planet, colour) {
@@ -637,8 +861,11 @@
 		ctx.translate(view.offX, view.offY);
 		ctx.scale(view.scale, view.scale);
 		if (showOrbits) drawOrbits();
+		if (showOrbits && showMoons) drawMoonTracks();
 		if (showLinks) drawLinks();
+		if (showMoons) drawMoons(false);
 		drawPlanets();
+		if (showMoons) drawMoons(true);
 		drawBuilders();
 		if (showRoutes) drawRoutes();
 		drawStations();
@@ -720,6 +947,7 @@
 		const dt = Math.min(0.1, (now - lastFrame) / 1000);
 		lastFrame = now;
 		if (!paused && dt > 0) sim.step(dt * speed);
+		if (showMoons && dt > 0) stepMoons(dt);
 		updatePortPositions();
 		updateShipPositions();
 		updateHover();
@@ -741,6 +969,11 @@
 	routesBox.addEventListener('change', () => {
 		showRoutes = routesBox.checked;
 	});
+	if (moonsBox) {
+		moonsBox.addEventListener('change', () => {
+			showMoons = moonsBox.checked;
+		});
+	}
 	canvas.addEventListener('pointermove', event => {
 		const rect = canvas.getBoundingClientRect();
 		pointerX = event.clientX - rect.left;
@@ -760,7 +993,25 @@
 		setPaused(!paused);
 	});
 
-	root.OrbitScene = { sim: sim, view: view, trade: tradeState };
+	root.OrbitScene = {
+		sim: sim,
+		view: view,
+		trade: tradeState,
+		planetG: planetG,
+		moons: {
+			count: () => moonCount,
+			tracks: () => trackCount,
+			planet: moonPlanet,
+			kind: moonKind,
+			a: moonA,
+			e: moonE,
+			omega: moonOmega,
+			x: moonWX,
+			y: moonWY,
+			z: moonWZ,
+			step: stepMoons
+		}
+	};
 
 	setSpeed(Number(speedSlider.value));
 	resize();

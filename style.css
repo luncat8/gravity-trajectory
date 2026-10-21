@@ -5,6 +5,7 @@
 	--text: #d6e7f5;
 	--dim: #728ca6;
 	--accent: #ffcf6e;
+	--mint: #8ef0c0;
 	--ice: #67e0ff;
 	--ore: #ffb26b;
 	--gas: #c58bff;
@@ -49,23 +50,141 @@ body {
 .panel {
 	position: fixed;
 	z-index: 4;
-	padding: 13px 15px 12px;
+	padding: 12px 15px 11px;
 	border: 1px solid var(--line);
 	border-radius: 14px;
 	background: var(--panel);
 	backdrop-filter: blur(10px);
 }
 
+.panelHead {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.headBtns {
+	display: flex;
+	gap: 5px;
+	flex: none;
+}
+
+.roleTag {
+	margin-top: 1px;
+	color: var(--mint);
+	font-size: 11px;
+	letter-spacing: 0.01em;
+}
+
 #tradeHud {
 	top: 14px;
 	left: 14px;
 	width: 238px;
+	pointer-events: none;
 }
 
 #cargoHud {
 	top: 14px;
 	right: 14px;
-	width: 288px;
+	width: 294px;
+	max-height: calc(100vh - 76px);
+	overflow-y: auto;
+	pointer-events: none;
+}
+
+#cargoHud button,
+#cargoHud input,
+#cargoHud label {
+	pointer-events: auto;
+}
+
+#cargoHud.folded #cargoBody {
+	display: none;
+}
+
+.drawer {
+	top: 14px;
+	right: 320px;
+	width: 318px;
+	max-height: calc(100vh - 84px);
+	overflow-y: auto;
+	z-index: 6;
+	background: rgba(5, 12, 23, 0.94);
+	opacity: 0;
+	pointer-events: none;
+	transform: translateX(14px);
+	transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.drawer.open {
+	opacity: 1;
+	pointer-events: auto;
+	transform: translateX(0);
+}
+
+.goalCard {
+	margin-top: 9px;
+	padding: 9px 10px;
+	border: 1px solid rgba(142, 240, 192, 0.24);
+	border-radius: 10px;
+	background: rgba(14, 30, 42, 0.52);
+}
+
+.goalHeader {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.roleBadge {
+	color: var(--mint);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+}
+
+.goalCard p {
+	margin: 6px 0 0;
+	color: var(--text);
+	font-size: 12px;
+	line-height: 1.48;
+}
+
+.helpList {
+	margin: 0;
+	padding-left: 15px;
+	display: grid;
+	gap: 5px;
+	color: var(--dim);
+	font-size: 11.5px;
+	line-height: 1.45;
+}
+
+.helpList b,
+.helpList i {
+	color: var(--text);
+	font-style: normal;
+}
+
+.helpGrid {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 3px 12px;
+	font-size: 11.5px;
+}
+
+.helpGrid span {
+	color: var(--dim);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.helpGrid b {
+	color: var(--text);
+	font-weight: 500;
+	text-align: right;
 }
 
 .kicker {
@@ -81,9 +200,9 @@ body {
 }
 
 .clock {
-	margin: 2px 0 10px;
+	margin: 2px 0 8px;
 	color: #f3f8fd;
-	font: 600 20px/1.15 ui-monospace, SFMono-Regular, Menlo, monospace;
+	font: 600 19px/1.15 ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -99,7 +218,7 @@ body {
 .stat {
 	display: flex;
 	justify-content: space-between;
-	gap: 12px;
+	gap: 10px;
 	color: var(--dim);
 	font-size: 12px;
 }
@@ -109,6 +228,14 @@ body {
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-variant-numeric: tabular-nums;
 	font-weight: 600;
+}
+
+.stat.goalStat b {
+	color: var(--mint);
+}
+
+#predVisitReadout {
+	color: var(--accent);
 }
 
 #tradeLegend {
@@ -149,8 +276,8 @@ body {
 }
 
 .group {
-	margin-top: 11px;
-	padding-top: 9px;
+	margin-top: 9px;
+	padding-top: 8px;
 	border-top: 1px solid var(--line);
 }
 
@@ -158,7 +285,7 @@ body {
 	display: flex;
 	justify-content: space-between;
 	gap: 10px;
-	margin-bottom: 6px;
+	margin-bottom: 5px;
 	color: var(--dim);
 	font-size: 10px;
 	letter-spacing: 0.08em;
@@ -166,7 +293,7 @@ body {
 }
 
 .caption span:last-child {
-	max-width: 150px;
+	max-width: 155px;
 	overflow: hidden;
 	color: var(--text);
 	text-align: right;
@@ -192,7 +319,7 @@ body {
 }
 
 #cargoHud .ctl input[type="range"] {
-	width: 136px;
+	width: 140px;
 	flex: none;
 }
 
@@ -233,7 +360,7 @@ body {
 .actions {
 	display: flex;
 	gap: 8px;
-	margin-top: 11px;
+	margin-top: 9px;
 }
 
 button {
@@ -245,6 +372,12 @@ button {
 	font: inherit;
 	font-size: 12px;
 	cursor: pointer;
+}
+
+button.miniBtn {
+	padding: 2px 9px;
+	font-size: 11px;
+	flex: none;
 }
 
 button:hover:not(:disabled) {
@@ -271,12 +404,17 @@ input:disabled {
 }
 
 #cargoHint {
-	margin-top: 10px;
-	padding-top: 9px;
+	margin-top: 8px;
+	padding-top: 8px;
 	border-top: 1px solid var(--line);
 	color: var(--dim);
 	font-size: 10.5px;
-	line-height: 1.55;
+	line-height: 1.5;
+}
+
+#cargoHint b {
+	color: var(--accent);
+	font-weight: 500;
 }
 
 #tradeControls {
@@ -329,11 +467,18 @@ input:disabled {
 	accent-color: var(--accent);
 }
 
+@media (max-width: 960px) {
+	.drawer {
+		right: 14px;
+		width: min(320px, calc(100vw - 28px));
+	}
+}
+
 @media (max-width: 820px) {
 	#tradeHud {
 		top: 8px;
 		left: 8px;
-		width: 174px;
+		width: 158px;
 		padding: 9px 11px;
 	}
 
@@ -351,8 +496,14 @@ input:disabled {
 	#cargoHud {
 		top: 8px;
 		right: 8px;
-		width: 242px;
+		width: 248px;
 		padding: 10px 12px;
+	}
+
+	.drawer {
+		top: 8px;
+		right: 8px;
+		width: min(312px, calc(100vw - 16px));
 	}
 
 	#cargoHud .clock {

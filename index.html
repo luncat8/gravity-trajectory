@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>gravity cargo · ballistic lab</title>
+<title>gravity cargo · grand tour</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -28,10 +28,22 @@
 </header>
 
 <aside id="cargoHud" class="panel">
-	<div class="kicker">gravity cargo</div>
+	<div class="panelHead">
+		<div>
+			<div class="kicker">gravity cargo</div>
+			<div id="goalRole" class="roleTag">tourist · fly through all systems</div>
+		</div>
+		<div class="headBtns">
+			<button id="helpBtn" class="miniBtn" title="mission & controls (?)">? help</button>
+			<button id="foldBtn" class="miniBtn" title="minimize panel">−</button>
+		</div>
+	</div>
+	<div id="cargoBody">
 	<div class="clock" id="expClock">exp + 00:00.0</div>
 	<div class="stats">
 		<div class="stat"><span>status</span><b id="cargoStatus">ready</b></div>
+		<div class="stat goalStat"><span>systems visited</span><b id="visitReadout">0 / 26</b></div>
+		<div class="stat goalStat"><span>pred visits</span><b id="predVisitReadout">—</b></div>
 		<div class="stat"><span>flight</span><b id="cargoFlight">—</b></div>
 		<div class="stat"><span>aim</span><b id="aimReadout">—</b></div>
 		<div class="stat"><span>traj length</span><b id="lengthReadout">—</b></div>
@@ -77,9 +89,48 @@
 	</div>
 
 	<div id="cargoHint">
-		drag from a body to aim · release arms · enter / launch fires<br>
-		shift = 1/20 fine aim · click selects to tune g (keeps the shot) · esc cancels<br>
-		ports move with trade time: the shot inherits the port velocity
+		drag from planet to aim · shift = 1/20 fine · enter launches<br>
+		land on a planet to stage next launch · see <b>? help</b> for mission
+	</div>
+	</div>
+</aside>
+
+<aside id="helpDrawer" class="panel drawer">
+	<div class="panelHead">
+		<div class="kicker">mission &amp; guide</div>
+		<button id="helpClose" class="miniBtn">close ×</button>
+	</div>
+	<div class="goalCard">
+		<div class="goalHeader">
+			<span id="drawerPassenger" class="roleBadge">tourist</span>
+			<button id="rerollGoal" class="miniBtn">reroll</button>
+		</div>
+		<p id="goalStory">
+			A tourist aboard your vessel wants to fly through each planet system.
+			Sweep inside as many port orbits as possible and land cleanly to continue your tour.
+		</p>
+	</div>
+	<div class="group">
+		<div class="caption"><span>rules</span><span>grand tour</span></div>
+		<ul class="helpList">
+			<li><b>visit systems</b> — entering inside a planet’s port orbit counts that system as visited and keeps its visited mark across hops.</li>
+			<li><b>predicted visits</b> — updates live at up to 60 fps as your aim, gravity or port orbits change.</li>
+			<li><b>stable launch base</b> — in all modes (<i>planets</i> and <i>ports · moving</i>), launches start from static planets.</li>
+			<li><b>hop from landed body</b> — once landed on a planet, the next launch is only allowed from that landed planet; other planets show a lock tooltip and arrow pointing to your ship.</li>
+			<li><b>continuous flight</b> — while flying, the trajectory continues ahead until landed. <i>clear</i> resets the run.</li>
+		</ul>
+	</div>
+	<div class="group">
+		<div class="caption"><span>controls</span><span>shortcuts</span></div>
+		<div class="helpGrid">
+			<span>drag planet</span><b>aim direction &amp; speed</b>
+			<span>shift + drag</span><b>1/20 precision aim</b>
+			<span>click body</span><b>select for g slider (keeps shot)</b>
+			<span>g / ± sliders</span><b>attract / repel &amp; ±5% trim</b>
+			<span>enter / esc</span><b>launch / cancel aim</b>
+			<span>h or ?</span><b>toggle help drawer</b>
+			<span>space</span><b>pause background trade</b>
+		</div>
 	</div>
 </aside>
 
@@ -91,6 +142,7 @@
 	</label>
 	<span class="opts">
 		<label><input id="showOrbits" type="checkbox" checked> orbits</label>
+		<label><input id="showMoons" type="checkbox" checked> moons</label>
 		<label><input id="showLinks" type="checkbox" checked> links</label>
 		<label><input id="showRoutes" type="checkbox" checked> routes</label>
 	</span>

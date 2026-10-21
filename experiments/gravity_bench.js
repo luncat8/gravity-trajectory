@@ -24,6 +24,12 @@ function makeWorld() {
 	const sim = new Sim(7);
 	sim.step(420);
 	const gravity = new GravitySim(Sim.WORLD_W, Sim.WORLD_H);
+	gravity.setPlanets(
+		Sim.PLANETS,
+		sim.planetX, sim.planetY, sim.planetR,
+		sim.orbitRX, sim.orbitRY,
+		sim.orbitTiltCos, sim.orbitTiltSin
+	);
 	const world = {
 		sim, gravity,
 		planetStrength: new Float64Array(Sim.PLANETS).fill(1),
@@ -110,18 +116,25 @@ function parityRun(g, origins, angleCount, speeds, label) {
 		for (let a = 0; a < angleCount; a++) {
 			const angle = a / angleCount * Math.PI * 2;
 			for (const speed of speeds) {
+				g.clear();
 				g.predict(origin, angle, speed);
 				const points = g.predCount;
 				const reason = g.predReason;
 				const hitBody = g.predBody;
+				const expectedVisits = g.predVisits;
 				g.launch(origin, angle, speed);
 				let error = 0;
+				const mid = points >> 1;
 				for (let i = 1; i < points; i++) {
 					g.step(GravitySim.DT);
-					const dx = g.cargo.x - g.predX[i];
-					const dy = g.cargo.y - g.predY[i];
+					const ref = i <= mid ? i : i - mid;
+					const dx = g.cargo.x - g.predX[ref];
+					const dy = g.cargo.y - g.predY[ref];
 					const dev = Math.sqrt(dx * dx + dy * dy);
 					if (dev > error) error = dev;
+					if (i === mid && g.status === GravitySim.STATUS_FLYING) {
+						g.predictFlight(GravitySim.BUDGET_MS);
+					}
 				}
 				if (error > maxError) {
 					maxError = error;
@@ -134,10 +147,16 @@ function parityRun(g, origins, angleCount, speeds, label) {
 				if (reason === GravitySim.END_IMPACT && g.endBody !== hitBody) {
 					throw new Error('impact body mismatch in ' + worstCase);
 				}
+				if ((reason === GravitySim.END_IMPACT || reason === GravitySim.END_EXIT) &&
+					g.visitedCount !== expectedVisits) {
+					throw new Error('system visit parity mismatch: ' +
+						g.visitedCount + ' vs ' + expectedVisits);
+				}
 				cases += 1;
 			}
 		}
 	}
+	g.clear();
 	return { cases, maxError, worstCase };
 }
 

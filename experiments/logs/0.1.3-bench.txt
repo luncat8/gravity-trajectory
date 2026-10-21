@@ -1,0 +1,30 @@
+0.1.3 — grand tour, coplanar moons & belts, 60 fps adaptive prediction
+
+colony bench:
+  colony bench: 1622/1622 checks
+    jitter max 0.0600 · map 0.3 µs · advance 0.26 µs/colony-y (19.9 µs/tick for 26 colonies)
+  COLONY BENCH OK
+
+gravity bench:
+  world: 26 planets, fast-forward to t+07:00 in 34.03 ms
+  trade at t+07:00: ports 14, ships 14, delivered 1737, colonies 7
+  prediction sweep: 5616 runs (36 angles x 6 speeds x 26 planets)
+    avg 0.276 ms, p95 30.04 s flight, worst 2.330 ms
+    ends: open 0, impact 3282, exit 2295, horizon 39, budget 0
+  parity (pre-launch + mid-flight predictFlight + system visits):
+    static: 216 shots, worst deviation 0.000068 px
+    moving ports x6: 60 shots, worst deviation 0.000068 px, avg 0.240 ms, worst 2.689 ms
+  repel field: 156 paths, finite bounds x -14.1…1614.0, y -13.7…1013.9
+  BENCH OK
+
+dom smoke:
+  moons & belts: 324 points, 34 tracks · Kepler OK
+  help drawer roles: emperor’s emissary -> tourist
+  adaptive trajectory updates: 60fps 30/30, 33fps 11/24 (interval 4)
+  grand tour verified: 5.0 s · time cap -> 16.8 s · impact P14 | visited 6 / 26 | next base P14
+  SMOKE OK
+
+headless chromium (1440x900, 1280x800, 1024x768, 430x860):
+  truncations: 0 across all viewports · page errors: 0
+  while-fly continuation: 5.0 s · time cap (6 sys) -> 9.0 s · impact P23 (9 sys)
+  ports moving live: 60.48 fps · 24/24 frame updates · avg pred 0.033 ms

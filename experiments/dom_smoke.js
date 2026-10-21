@@ -13,7 +13,7 @@ const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 
 function makeContext() {
-	const calls = { fillText: 0, stroke: 0, fill: 0 };
+	const calls = { fillText: 0, stroke: 0, fill: 0, texts: [] };
 	const paint = {
 		fillStyle: '', strokeStyle: '', globalAlpha: 1, lineWidth: 1,
 		font: '', textAlign: '', textBaseline: '',
@@ -21,7 +21,10 @@ function makeContext() {
 		ellipse() {}, closePath() {}, strokeRect() {}, fillRect() {},
 		clearRect() {}, drawImage() {}, setTransform() {}, save() {},
 		restore() {}, translate() {}, scale() {}, setLineDash() {},
-		fillText() { calls.fillText += 1; },
+		fillText(text) {
+			calls.fillText += 1;
+			if (calls.texts.length < 64) calls.texts.push(String(text));
+		},
 		stroke() { calls.stroke += 1; },
 		fill() { calls.fill += 1; },
 		measureText(text) { return { width: String(text).length * 6.5 }; },
@@ -376,5 +379,193 @@ env.fireWindow('resize', {});
 env.runFrames(2);
 console.log('after resize scale', view.scale.toFixed(3), 'offX', view.offX.toFixed(1),
 	'canvas', ui.get('g').width + 'x' + ui.get('g').height);
-console.log('paint calls', env.calls);
+
+/* secondary moons & belts: Kepler scaling, gravity sensitivity, zero sim impact */
+const moons = scene.moons;
+if (!moons || moons.count() < 120 || moons.tracks() < 15) {
+	throw new Error('secondary moons and belts missing: ' + (moons && moons.count()));
+}
+for (let i = 1; i < moons.count(); i++) {
+	if (moons.planet[i] !== moons.planet[i - 1]) continue;
+	const ratioA = Math.pow(moons.a[i - 1] / moons.a[i], 1.5);
+	const ratioW = Math.abs(moons.omega[i]) / Math.abs(moons.omega[i - 1]);
+	if (Math.abs(ratioA - ratioW) > 1e-6) {
+		throw new Error('moon omega violates Kepler third law');
+	}
+}
+scene.planetG.fill(0);
+const frozenX0 = moons.x[0];
+const frozenY0 = moons.y[0];
+moons.step(1.0);
+if (moons.x[0] !== frozenX0 || moons.y[0] !== frozenY0) {
+	throw new Error('moons moved when planet gravity was 0');
+}
+scene.planetG.fill(1);
+moons.step(0.5);
+if (moons.x[0] === frozenX0 && moons.y[0] === frozenY0) {
+	throw new Error('moons stayed frozen when planet gravity returned to 1');
+}
+console.log('moons & belts:', moons.count(), 'points,', moons.tracks(), 'tracks · Kepler OK');
+
+/* help drawer GUI + random(tourist, emperor’s emissary) goal */
+const gScene = env.context.GravityScene;
+const firstRole = gScene.passenger();
+if (firstRole !== 'tourist' && firstRole !== 'emperor’s emissary') {
+	throw new Error('unexpected initial passenger: ' + firstRole);
+}
+env.fireElement(ui.get('helpBtn'), 'click', {});
+if (!gScene.helpOpen()) throw new Error('help drawer did not open');
+env.fireElement(ui.get('rerollGoal'), 'click', {});
+const secondRole = gScene.passenger();
+if (secondRole === firstRole ||
+	(secondRole !== 'tourist' && secondRole !== 'emperor’s emissary') ||
+	!ui.get('goalStory').textContent.includes(secondRole)) {
+	throw new Error('goal reroll mismatch: ' + firstRole + ' -> ' + secondRole);
+}
+env.fireElement(ui.get('helpClose'), 'click', {});
+if (gScene.helpOpen()) throw new Error('help drawer did not close');
+console.log('help drawer roles:', firstRole, '->', secondRole);
+
+/* 60 fps adaptive trajectory cadence vs sub-60 fps throttling */
+env.fireElement(ui.get('clear'), 'click', {});
+ui.get('srcPorts').checked = true;
+env.fireElement(ui.get('srcPorts'), 'change', {});
+env.runFrames(2, 16.0);
+const base0 = screenOfPlanet(0);
+env.fireWindow('pointerdown', {
+	button: 0, clientX: base0.x, clientY: base0.y, target: canvas, shiftKey: false
+});
+env.fireWindow('pointermove', {
+	clientX: base0.x + 110, clientY: base0.y + 40, target: canvas, shiftKey: false
+});
+env.fireWindow('pointerup', {
+	clientX: base0.x + 110, clientY: base0.y + 40, target: canvas, shiftKey: false
+});
+let updates60 = 0;
+let prevT = -1;
+for (let i = 0; i < 30; i++) {
+	env.runFrames(1, 16.0);
+	if (gScene.sim.predFieldT !== prevT) {
+		updates60 += 1;
+		prevT = gScene.sim.predFieldT;
+	}
+}
+if (updates60 !== 30 || gScene.autoInterval() !== 1) {
+	throw new Error('did not update every frame at >=60 fps: ' + updates60);
+}
+let updatesSlow = 0;
+for (let i = 0; i < 24; i++) {
+	env.runFrames(1, 30.0);
+	if (gScene.sim.predFieldT !== prevT) {
+		updatesSlow += 1;
+		prevT = gScene.sim.predFieldT;
+	}
+}
+if (gScene.autoInterval() <= 1 || updatesSlow >= 20) {
+	throw new Error('did not throttle auto recompute below 60 fps: ' + updatesSlow);
+}
+console.log('adaptive trajectory updates: 60fps', updates60 + '/30,',
+	'33fps', updatesSlow + '/24 (interval ' + gScene.autoInterval() + ')');
+
+/* grand tour: continue in flight until landed, persist visited, lock other planets */
+env.fireElement(ui.get('clear'), 'click', {});
+ui.get('srcPlanets').checked = true;
+env.fireElement(ui.get('srcPlanets'), 'change', {});
+ui.get('horizon').value = '5';
+env.fireElement(ui.get('horizon'), 'input', {});
+env.runFrames(2, 16.0);
+
+let tour = null;
+for (let p = 0; p < pageWorld.PLANETS && !tour; p++) {
+	for (let a = 0; a < 90; a++) {
+		const angle = (a / 90) * Math.PI * 2;
+		gScene.sim.horizon = 60;
+		gScene.sim.predict(p, angle, 135);
+		if (gScene.sim.predReason === 1 && gScene.sim.predBody !== p &&
+			gScene.sim.predVisits >= 5 && gScene.sim.predTime > 6.5) {
+			tour = { p, angle, end: gScene.sim.predBody, visits: gScene.sim.predVisits };
+			break;
+		}
+	}
+}
+gScene.sim.horizon = 5;
+const tourOrigin = screenOfPlanet(tour.p);
+const gripDist = gScene.sim.gripLength(135) * view.scale;
+env.fireWindow('pointerdown', {
+	button: 0, clientX: tourOrigin.x, clientY: tourOrigin.y, target: canvas, shiftKey: false
+});
+env.fireWindow('pointermove', {
+	clientX: tourOrigin.x + Math.cos(tour.angle) * gripDist,
+	clientY: tourOrigin.y + Math.sin(tour.angle) * gripDist,
+	target: canvas, shiftKey: false
+});
+env.fireWindow('pointerup', {
+	clientX: tourOrigin.x + Math.cos(tour.angle) * gripDist,
+	clientY: tourOrigin.y + Math.sin(tour.angle) * gripDist,
+	target: canvas, shiftKey: false
+});
+env.runFrames(2, 16.0);
+const cappedBefore = ui.get('pathReadout').textContent;
+if (!cappedBefore.includes('time cap')) {
+	throw new Error('expected 5s pre-launch cap, got: ' + cappedBefore);
+}
+env.fireElement(ui.get('launch'), 'click', {});
+env.runFrames(2, 16.0);
+const continuedInFlight = ui.get('pathReadout').textContent;
+if (!continuedInFlight.includes('impact P' + tour.end)) {
+	throw new Error('trajectory did not continue until landing in flight: ' + continuedInFlight);
+}
+while (gScene.sim.status === 1) env.runFrames(4, 16.0);
+if (gScene.sim.landedBody !== tour.end) {
+	throw new Error('landedBody mismatch: ' + gScene.sim.landedBody + ' vs ' + tour.end);
+}
+const visitedAfterHop1 = ui.get('visitReadout').textContent;
+
+/* dragging from another planet is blocked and renders lock tooltip pointing to landed body */
+const forbidden = tour.end === 0 ? 1 : 0;
+const forbPt = screenOfPlanet(forbidden);
+env.calls.texts.length = 0;
+env.fireWindow('pointerdown', {
+	button: 0, clientX: forbPt.x, clientY: forbPt.y, target: canvas, shiftKey: false
+});
+env.fireWindow('pointermove', {
+	clientX: forbPt.x + 90, clientY: forbPt.y - 30, target: canvas, shiftKey: false
+});
+env.fireWindow('pointerup', {
+	clientX: forbPt.x + 90, clientY: forbPt.y - 30, target: canvas, shiftKey: false
+});
+env.runFrames(2, 16.0);
+if (!ui.get('launch').disabled) {
+	throw new Error('forbidden non-landed planet was allowed to arm a shot');
+}
+if (!env.calls.texts.some(t => t.includes('launch not allowed') && t.includes('P' + tour.end))) {
+	throw new Error('blocked launch tooltip not drawn');
+}
+
+/* dragging from landed planet arms next hop and keeps prior visited markings */
+const landPt = screenOfPlanet(tour.end);
+env.fireWindow('pointerdown', {
+	button: 0, clientX: landPt.x, clientY: landPt.y, target: canvas, shiftKey: false
+});
+env.fireWindow('pointermove', {
+	clientX: landPt.x + 90, clientY: landPt.y - 35, target: canvas, shiftKey: false
+});
+env.fireWindow('pointerup', {
+	clientX: landPt.x + 90, clientY: landPt.y - 35, target: canvas, shiftKey: false
+});
+env.runFrames(2, 16.0);
+if (ui.get('launch').disabled) {
+	throw new Error('launch from landed body failed to arm');
+}
+if (ui.get('visitReadout').textContent !== visitedAfterHop1) {
+	throw new Error('visited count was lost when staging next hop');
+}
+console.log('grand tour verified:', cappedBefore, '->', continuedInFlight,
+	'| visited', visitedAfterHop1, '| next base P' + tour.end);
+
+console.log('paint calls', {
+	fillText: env.calls.fillText,
+	stroke: env.calls.stroke,
+	fill: env.calls.fill
+});
 console.log('SMOKE OK');

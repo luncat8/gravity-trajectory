@@ -1,14 +1,11 @@
 /*
- * Ballistic cargo under the gravity of a set of bodies (planets or ports).
+ * Ballistic cargo under the gravity of planets or moving trade ports.
  *
- * Prediction and live flight share spawn()/advance() and one fixed step, so
- * the drawn path is the path the container follows. Body positions come from
- * a fill callback sampled at a field time (trade minutes): the planets fill
- * is static, the ports fill follows the closed-form ellipse. A moving field
- * is resampled every FIELD_STRIDE steps, extrapolated at the current trade
- * rate, on the same cadence in prediction and flight. A shot from a moving
- * body inherits that body's velocity. Per-body strength is signed; negative
- * values repel.
+ * Launches and landings always use static planet cores so the launch base stays
+ * steady in every gravity mode. Prediction and live flight share advance(),
+ * impact() and markSystemsAt() on one fixed step, so predicted paths, landings
+ * and planet-system visits match live flight. While flying, predictFlight()
+ * continues the path ahead of the cargo until it lands (bounded by frame budget).
  */
 (function (root) {
 	'use strict';
@@ -25,10 +22,11 @@
 	const STRENGTH_MIN = -2;
 	const STRENGTH_MAX = 2;
 	const HORIZON = 60;
-	const LIVE_LIMIT = 240;
+	const FLY_HORIZON = 240;
+	const LIVE_LIMIT = Infinity;
 	const MAX_STEPS = 7350;
-	const PATH_MAX = 7500;
-	const TRAIL_MAX = 4096;
+	const PATH_MAX = 28900;
+	const TRAIL_MAX = 8192;
 	const TRAIL_STRIDE = 2;
 	const BUDGET_MS = 10;
 	const BUDGET_EVERY = 64;
@@ -54,6 +52,16 @@
 		this.worldW = worldW;
 		this.worldH = worldH;
 
+		this.planetCount = 0;
+		this.planetX = null;
+		this.planetY = null;
+		this.planetR = null;
+		this.sysCos = new Float64Array(MAX_BODIES);
+		this.sysSin = new Float64Array(MAX_BODIES);
+		this.sysInvRX = new Float64Array(MAX_BODIES);
+		this.sysInvRY = new Float64Array(MAX_BODIES);
+		this.sysBoundR2 = new Float64Array(MAX_BODIES);
+
 		this.bodyCount = 0;
 		this.bodyR = null;
 		this.strength = null;
@@ -66,6 +74,8 @@
 		this.bodyY = new Float64Array(MAX_BODIES);
 		this.stepX = new Float64Array(MAX_BODIES);
 		this.stepY = new Float64Array(MAX_BODIES);
+		this.savedStepX = new Float64Array(MAX_BODIES);
+		this.savedStepY = new Float64Array(MAX_BODIES);
 		this.velX = new Float64Array(MAX_BODIES);
 		this.velY = new Float64Array(MAX_BODIES);
 		this.predBodyX = new Float64Array(MAX_BODIES);
@@ -89,10 +99,18 @@
 		this.acc = 0;
 		this.endReason = END_OPEN;
 		this.endBody = NO_BODY;
+		this.landedBody = NO_BODY;
+
+		this.visited = new Uint8Array(MAX_BODIES);
+		this.visitedCount = 0;
+		this.predVisit = new Uint8Array(MAX_BODIES);
+		this.predVisits = 0;
+		this.predNewVisits = 0;
 
 		this.trailX = new Float32Array(TRAIL_MAX);
 		this.trailY = new Float32Array(TRAIL_MAX);
 		this.trailCount = 0;
+		this.trailStride = TRAIL_STRIDE;
 
 		this.predX = new Float32Array(PATH_MAX);
 		this.predY = new Float32Array(PATH_MAX);
@@ -105,7 +123,27 @@
 		this.predMs = 0;
 	}
 
-	/* fillField(t, outX, outY, count) writes body positions at field time t */
+	/* static planet bases + port-orbit ellipses defining each planet system */
+	GravitySim.prototype.setPlanets = function (
+		count, px, py, pr, orbitRX, orbitRY, tiltCos, tiltSin
+	) {
+		this.planetCount = count;
+		this.planetX = px;
+		this.planetY = py;
+		this.planetR = pr;
+		for (let i = 0; i < count; i++) {
+			const rx = orbitRX[i];
+			const ry = orbitRY[i];
+			const major = rx >= ry ? rx : ry;
+			this.sysCos[i] = tiltCos[i];
+			this.sysSin[i] = tiltSin[i];
+			this.sysInvRX[i] = 1 / rx;
+			this.sysInvRY[i] = 1 / ry;
+			this.sysBoundR2[i] = major * major;
+		}
+	};
+
+	/* fillField(t, outX, outY, count) writes gravity body positions at field time t */
 	GravitySim.prototype.setField = function (count, bodyR, strength, fillField, fieldStatic) {
 		this.bodyCount = count;
 		this.bodyR = bodyR;
@@ -116,7 +154,6 @@
 		this.refreshField();
 	};
 
-	/* ports appear as colonies are built; the field only ever grows */
 	GravitySim.prototype.setCount = function (count) {
 		if (count === this.bodyCount) return false;
 		this.bodyCount = count;
@@ -140,7 +177,7 @@
 		return FIELD_STRIDE;
 	};
 
-	/* how far the centres travelled since the prediction snapshot, in px */
+	/* how far the gravity centres moved since the last prediction snapshot, in px */
 	GravitySim.prototype.fieldDrift = function () {
 		if (this.predCount < 2) return 0;
 		if (this.predBodyCount !== this.bodyCount) return Infinity;
@@ -152,6 +189,38 @@
 			if (d > worst) worst = d;
 		}
 		return worst;
+	};
+
+	GravitySim.prototype.canLaunchFrom = function (planet) {
+		const limit = this.planetCount > 0 ? this.planetCount : this.bodyCount;
+		if (planet < 0 || planet >= limit) return false;
+		return this.landedBody < 0 || planet === this.landedBody;
+	};
+
+	GravitySim.prototype.markSystemsAt = function (x, y, mask) {
+		const count = this.planetCount;
+		if (count === 0) return 0;
+		const px = this.planetX;
+		const py = this.planetY;
+		const bound = this.sysBoundR2;
+		const cos = this.sysCos;
+		const sin = this.sysSin;
+		const invRX = this.sysInvRX;
+		const invRY = this.sysInvRY;
+		let added = 0;
+		for (let i = 0; i < count; i++) {
+			if (mask[i]) continue;
+			const dx = x - px[i];
+			const dy = y - py[i];
+			if (dx * dx + dy * dy > bound[i]) continue;
+			const u = (dx * cos[i] + dy * sin[i]) * invRX[i];
+			const v = (-dx * sin[i] + dy * cos[i]) * invRY[i];
+			if (u * u + v * v <= 1) {
+				mask[i] = 1;
+				added += 1;
+			}
+		}
+		return added;
 	};
 
 	GravitySim.prototype.setStrength = function (body, value) {
@@ -166,7 +235,6 @@
 		this.strength.fill(1);
 	};
 
-	/* px/s for a grip of `length` px from the body centre */
 	GravitySim.prototype.speedAt = function (length) {
 		let t = length / GRIP_MAX;
 		if (t < 0) t = 0;
@@ -205,10 +273,12 @@
 	};
 
 	GravitySim.prototype.impact = function (x, y) {
-		const px = this.stepX;
-		const py = this.stepY;
-		const pr = this.bodyR;
-		for (let i = 0; i < this.bodyCount; i++) {
+		const usePlanets = this.planetCount > 0;
+		const px = usePlanets ? this.planetX : this.stepX;
+		const py = usePlanets ? this.planetY : this.stepY;
+		const pr = usePlanets ? this.planetR : this.bodyR;
+		const count = usePlanets ? this.planetCount : this.bodyCount;
+		for (let i = 0; i < count; i++) {
 			const dx = px[i] - x;
 			const dy = py[i] - y;
 			const reach = pr[i] + CARGO_R;
@@ -223,15 +293,22 @@
 	};
 
 	/*
-	 * Spawn state at field time t0: clear of the origin body along the aim,
-	 * push along the aim plus the origin's own velocity when the field moves
-	 * (central difference of the closed-form positions, px/min x min/s).
+	 * Spawn state at field time t0: always launches from the static planet core
+	 * when planets are configured (stable base in both planet and moving-port modes).
 	 */
 	GravitySim.prototype.spawn = function (state, origin, angle, speed, t0) {
 		this.fillStep(t0);
 		this.stepStale = false;
 		const ca = Math.cos(angle);
 		const sa = Math.sin(angle);
+		if (this.planetCount > 0) {
+			const gap = this.planetR[origin] + SPAWN_GAP;
+			state.x = this.planetX[origin] + ca * gap;
+			state.y = this.planetY[origin] + sa * gap;
+			state.vx = ca * speed;
+			state.vy = sa * speed;
+			return;
+		}
 		const gap = this.bodyR[origin] + SPAWN_GAP;
 		state.x = this.stepX[origin] + ca * gap;
 		state.y = this.stepY[origin] + sa * gap;
@@ -247,47 +324,44 @@
 		state.vy += (plusY - this.velY[origin]) * k;
 	};
 
-	/*
-	 * Same integrator from the same spawn state, with the field extrapolated
-	 * from fieldT at fieldRate. Stops on impact, on leaving the field, at
-	 * the horizon, or when the wall-clock budget is spent.
-	 */
-	GravitySim.prototype.predict = function (origin, angle, speed) {
-		const state = this.probe;
-		const t0 = this.fieldT;
-		const rate = this.fieldRate;
-		const moving = !this.fieldStatic && rate !== 0;
-		this.spawn(state, origin, angle, speed, t0);
-		for (let i = 0; i < this.bodyCount; i++) {
-			this.predBodyX[i] = this.stepX[i];
-			this.predBodyY[i] = this.stepY[i];
-		}
+	GravitySim.prototype.snapshotField = function (t0) {
+		this.fillField(t0, this.predBodyX, this.predBodyY, this.bodyCount);
 		this.predBodyCount = this.bodyCount;
 		this.predFieldT = t0;
-		this.predRate = rate;
+		this.predRate = this.fieldRate;
+	};
 
+	GravitySim.prototype.traceProbe = function (t0, startStep, horizonSec, maxSteps, budgetMs) {
+		const state = this.probe;
+		const rate = this.fieldRate;
+		const moving = !this.fieldStatic && rate !== 0;
 		const pathX = this.predX;
 		const pathY = this.predY;
+		const visit = this.predVisit;
+		visit.fill(0);
+		this.markSystemsAt(state.x, state.y, visit);
+
 		let count = 0;
 		pathX[count] = state.x;
 		pathY[count] = state.y;
 		count += 1;
 
 		const started = performance.now();
+		const capMs = budgetMs > 0 ? budgetMs : BUDGET_MS;
 		let time = 0;
 		let length = 0;
 		let steps = 0;
+		let simFieldT = t0;
 		let reason = END_OPEN;
 		let hit = NO_BODY;
-		const maxSteps = Math.min(MAX_STEPS, Math.ceil(this.horizon / DT) + 2);
 		const stride = moving ? this.fieldStride() : FIELD_STRIDE;
 		for (let step = 0; step < maxSteps; step++) {
-			if ((step & (BUDGET_EVERY - 1)) === 0 && performance.now() - started > BUDGET_MS) {
+			if ((step & (BUDGET_EVERY - 1)) === 0 && performance.now() - started > capMs) {
 				reason = END_TRUNCATED;
 				break;
 			}
-			if (moving && step > 0 && step % stride === 0) {
-				this.fillStep(t0 + step * DT * rate);
+			if (moving && step > 0 && (startStep + step) % stride === 0) {
+				this.fillStep(simFieldT);
 			}
 			const prevX = state.x;
 			const prevY = state.y;
@@ -296,13 +370,15 @@
 			const dy = state.y - prevY;
 			length += Math.sqrt(dx * dx + dy * dy);
 			time += DT;
+			simFieldT += DT * rate;
 			steps += 1;
+			this.markSystemsAt(state.x, state.y, visit);
 			const body = this.impact(state.x, state.y);
 			if (body >= 0) {
 				reason = END_IMPACT;
 				hit = body;
 			} else if (this.outside(state.x, state.y)) reason = END_EXIT;
-			else if (time >= this.horizon - 1e-9) reason = END_TIME;
+			else if (time >= horizonSec - 1e-9) reason = END_TIME;
 			if (count < PATH_MAX) {
 				pathX[count] = state.x;
 				pathY[count] = state.y;
@@ -310,6 +386,16 @@
 			}
 			if (reason !== END_OPEN) break;
 		}
+
+		let totalVisits = 0;
+		let newVisits = 0;
+		for (let i = 0; i < this.planetCount; i++) {
+			if (!visit[i]) continue;
+			totalVisits += 1;
+			if (!this.visited[i]) newVisits += 1;
+		}
+		this.predVisits = totalVisits;
+		this.predNewVisits = newVisits;
 		this.predCount = count;
 		this.predTime = time;
 		this.predLength = length;
@@ -317,6 +403,36 @@
 		this.predBody = hit;
 		this.predSteps = steps;
 		this.predMs = performance.now() - started;
+	};
+
+	GravitySim.prototype.predict = function (origin, angle, speed, budgetMs) {
+		const t0 = this.fieldT;
+		this.spawn(this.probe, origin, angle, speed, t0);
+		this.snapshotField(t0);
+		const maxSteps = Math.min(MAX_STEPS, Math.ceil(this.horizon / DT) + 2);
+		this.traceProbe(t0, 0, this.horizon, maxSteps, budgetMs);
+	};
+
+	/* continues trajectory forward from the live flying cargo until it lands */
+	GravitySim.prototype.predictFlight = function (budgetMs) {
+		if (this.status !== STATUS_FLYING) return;
+		this.savedStepX.set(this.stepX);
+		this.savedStepY.set(this.stepY);
+		this.probe.x = this.cargo.x;
+		this.probe.y = this.cargo.y;
+		this.probe.vx = this.cargo.vx;
+		this.probe.vy = this.cargo.vy;
+		const t0 = this.flightFieldT;
+		this.snapshotField(t0);
+		const moving = !this.fieldStatic && this.fieldRate !== 0;
+		const stride = moving ? this.fieldStride() : FIELD_STRIDE;
+		if (this.stepStale || (moving && this.liveSteps % stride === 0)) {
+			this.fillStep(t0);
+		}
+		const maxSteps = Math.min(PATH_MAX - 1, Math.ceil(FLY_HORIZON / DT) + 2);
+		this.traceProbe(t0, this.liveSteps, FLY_HORIZON, maxSteps, budgetMs);
+		this.stepX.set(this.savedStepX);
+		this.stepY.set(this.savedStepY);
 	};
 
 	GravitySim.prototype.launch = function (origin, angle, speed) {
@@ -334,12 +450,23 @@
 		this.endReason = END_OPEN;
 		this.endBody = NO_BODY;
 		this.trailCount = 0;
+		this.trailStride = TRAIL_STRIDE;
+		this.visitedCount += this.markSystemsAt(this.cargo.x, this.cargo.y, this.visited);
 		this.recordTrail();
 	};
 
 	GravitySim.prototype.recordTrail = function () {
 		const cargo = this.cargo;
-		if (this.trailCount >= TRAIL_MAX) return;
+		if (this.trailCount >= TRAIL_MAX) {
+			/* compact 2:1 in place so long flights never lose their tail or allocate */
+			const half = TRAIL_MAX >> 1;
+			for (let i = 0; i < half; i++) {
+				this.trailX[i] = this.trailX[i * 2];
+				this.trailY[i] = this.trailY[i * 2];
+			}
+			this.trailCount = half;
+			this.trailStride *= 2;
+		}
 		const slot = this.trailCount;
 		this.trailX[slot] = cargo.x;
 		this.trailY[slot] = cargo.y;
@@ -349,6 +476,13 @@
 	GravitySim.prototype.finish = function (reason, body) {
 		this.endReason = reason;
 		this.endBody = body;
+		if (reason === END_IMPACT && body >= 0) {
+			if (this.planetCount > 0 && !this.visited[body]) {
+				this.visited[body] = 1;
+				this.visitedCount += 1;
+			}
+			this.landedBody = body;
+		}
 		this.status = STATUS_ENDED;
 		this.acc = 0;
 		this.recordTrail();
@@ -378,6 +512,7 @@
 			this.liveSteps += 1;
 			this.acc -= DT;
 			guard += 1;
+			this.visitedCount += this.markSystemsAt(cargo.x, cargo.y, this.visited);
 			const body = this.impact(cargo.x, cargo.y);
 			if (body >= 0) {
 				this.finish(END_IMPACT, body);
@@ -391,7 +526,7 @@
 				this.finish(END_TIME, NO_BODY);
 				break;
 			}
-			if ((this.liveSteps & (TRAIL_STRIDE - 1)) === 0) this.recordTrail();
+			if (this.liveSteps % this.trailStride === 0) this.recordTrail();
 		}
 		if (this.acc >= DT) this.acc = 0;
 	};
@@ -405,7 +540,14 @@
 		this.acc = 0;
 		this.endReason = END_OPEN;
 		this.endBody = NO_BODY;
+		this.landedBody = NO_BODY;
+		this.visited.fill(0);
+		this.visitedCount = 0;
+		this.predVisit.fill(0);
+		this.predVisits = 0;
+		this.predNewVisits = 0;
 		this.trailCount = 0;
+		this.trailStride = TRAIL_STRIDE;
 		this.predCount = 0;
 		this.predTime = 0;
 		this.predLength = 0;
@@ -425,6 +567,7 @@
 	GravitySim.STRENGTH_MIN = STRENGTH_MIN;
 	GravitySim.STRENGTH_MAX = STRENGTH_MAX;
 	GravitySim.HORIZON = HORIZON;
+	GravitySim.FLY_HORIZON = FLY_HORIZON;
 	GravitySim.LIVE_LIMIT = LIVE_LIMIT;
 	GravitySim.BUDGET_MS = BUDGET_MS;
 	GravitySim.MAX_BODIES = MAX_BODIES;
