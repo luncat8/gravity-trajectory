@@ -50,6 +50,10 @@ CAPTION_ROW = re.compile(
 	r'^###\s+\d+\s*·\s*([a-z]+)\s*·\s*(from space|landed)\s*→\s*`([^`]+)`\s*$')
 
 
+class ComfyError(RuntimeError):
+	"""A ComfyUI call failed; the message is the whole diagnosis."""
+
+
 # ---------------------------------------------------------------- prompts.md
 
 def read_prompts(path):
@@ -235,15 +239,36 @@ def request(url, payload=None, timeout=60):
 			detail = json.loads(body)
 		except json.JSONDecodeError:
 			detail = body
-		raise SystemExit(f'{url} failed: HTTP {err.code}\n{json.dumps(detail, indent=2) if not isinstance(detail, str) else detail}')
+		shown = json.dumps(detail, indent=2) if not isinstance(detail, str) else detail
+		raise ComfyError(f'{url} failed: HTTP {err.code}\n{shown}')
 	except urllib.error.URLError as err:
-		raise SystemExit(f'cannot reach ComfyUI at {url}: {err.reason}\n'
+		raise ComfyError(f'cannot reach ComfyUI at {url}: {err.reason}\n'
 			'start ComfyUI or pass --server http://host:port')
 
 
-def queue_job(server, workflow, client_id):
-	reply = json.loads(request(f'{server}/prompt',
-		{'prompt': workflow, 'client_id': client_id}))
+def job_extra_data(job, args):
+	"""The metadata the web UI attaches to a prompt, which queue nodes read.
+
+	Queue Manager (before 2026-10) dereferences
+	extra_data.extra_pnginfo.workflow.workflow_name for every dequeued item, so
+	an API job without it raises KeyError inside the prompt worker and aborts
+	ComfyUI. `workflow_name` is what its queue list shows per job, `id` groups
+	the runs of one template (recent ComfyUI also reports it as workflow_id).
+	"""
+	if args.no_extra_data:
+		return None
+	stem = Path(job['target']).stem
+	return {'extra_pnginfo': {'workflow': {
+		'workflow_name': f'gravity · {job["workflow"]} · {job["situation"]}/{stem}',
+		'id': f'gravity-{job["workflow"]}',
+	}}}
+
+
+def queue_job(server, workflow, client_id, extra_data):
+	payload = {'prompt': workflow, 'client_id': client_id}
+	if extra_data is not None:
+		payload['extra_data'] = extra_data
+	reply = json.loads(request(f'{server}/prompt', payload))
 	return reply['prompt_id']
 
 
@@ -347,7 +372,14 @@ def collect(server, manifest, timeout, only_targets=None):
 	missing = set(j['prompt_id'] for j in pending)
 	while missing and time.time() < deadline:
 		for prompt_id in list(missing):
-			entry = history(server, prompt_id)
+			try:
+				entry = history(server, prompt_id)
+			except ComfyError as err:
+				raise ComfyError(f'{err}\n\nComfyUI stopped answering while jobs were '
+					'pending. If its log ends with KeyError: \'extra_pnginfo\' inside '
+					'a prompt_worker thread, an old Queue Manager build crashed on a job '
+					'without extra_data. This script sends it by default, so check that '
+					'--no-extra-data is not set, restart ComfyUI and run --collect again.')
 			if not entry:
 				continue
 			job = next(j for j in pending if j['prompt_id'] == prompt_id)
@@ -393,7 +425,7 @@ def queue(server, jobs, args, client_id):
 			print(f'  · {job["workflow"]:5} {display(resolve(job["target"])):32} '
 				f'seed={job["seed"] if job["seed"] is not None else "template"}')
 			continue
-		prompt_id = queue_job(server, workflow, client_id)
+		prompt_id = queue_job(server, workflow, client_id, job_extra_data(job, args))
 		key = f'{job["workflow"]}:{job["target"]}'
 		manifest['jobs'] = [j for j in manifest['jobs'] if j.get('key') != key]
 		manifest['jobs'].append({
@@ -450,6 +482,8 @@ def main(argv=None):
 	parser.add_argument('--out', default=str(REPO / 'photos'),
 		help='where photos/space and photos/landed live (default photos/)')
 	parser.add_argument('--force', action='store_true', help='redo captions that already have art')
+	parser.add_argument('--no-extra-data', action='store_true',
+		help='omit extra_data.extra_pnginfo; only for servers without a queue custom node')
 	parser.add_argument('--dry-run', action='store_true', help='print the jobs, queue nothing')
 	parser.add_argument('--dump', default=None, metavar='DIR',
 		help='write each patched workflow to DIR for inspection')
@@ -478,7 +512,10 @@ def main(argv=None):
 		return 0
 
 	if args.collect:
-		return 0 if collect(args.server, load_manifest(), args.timeout) else 1
+		try:
+			return 0 if collect(args.server, load_manifest(), args.timeout) else 1
+		except ComfyError as err:
+			raise SystemExit(str(err))
 
 	workflows = list(WORKFLOWS) if args.workflow == 'both' else [args.workflow]
 	for workflow in workflows:
@@ -489,12 +526,18 @@ def main(argv=None):
 	print(f'{len(jobs)} job(s): {", ".join(workflows)} · {args.aspect} · '
 		f'{args.megapixels} MP{"" if args.size is None else f" · {args.size[0]}x{args.size[1]}"}'
 		f'{" · dry run" if args.dry_run else ""}')
-	manifest, queued = queue(args.server, jobs, args, uuid.uuid4().hex)
+	try:
+		manifest, queued = queue(args.server, jobs, args, uuid.uuid4().hex)
+	except ComfyError as err:
+		raise SystemExit(str(err))
 	if args.dry_run:
 		return 0
 	print(f'queued {queued}')
 	if args.wait and queued:
-		return 0 if collect(args.server, manifest, args.timeout) else 1
+		try:
+			return 0 if collect(args.server, manifest, args.timeout) else 1
+		except ComfyError as err:
+			raise SystemExit(str(err))
 	if queued:
 		print('watch them in the ComfyUI queue; run --collect when done to download')
 	return 0

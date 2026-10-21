@@ -72,6 +72,15 @@ python3 photos/generator/comfy_queue.py --workflow moss --wait
   prompt-shaped), `--steps/--cfg/--negative/--size` override the sampler, and
   `--set NODE.INPUT=VALUE` patches anything else, e.g.
   `--set 18:24.switch=true` to enable MOSS skip-layer guidance.
+- Every job carries `extra_data.extra_pnginfo.workflow` (`workflow_name`
+  `gravity · <model> · <situation>/<type>`, `workflow_id` per model), which the
+  ComfyUI queue custom nodes read — the Queue Manager dereferences
+  `extra_pnginfo.workflow.workflow_name` for every dequeued item, and a job
+  without it raises `KeyError: 'extra_pnginfo'` in its prompt worker and takes
+  ComfyUI down. The field does not affect the render (`--no-extra-data` drops it
+  for servers with no queue node); it only names the job in the queue list.
+  Update Queue Manager if it still errors: API jobs are handled natively since
+  its 2026-10-10 build.
 - `--dump DIR` writes each patched graph for inspection, `--dry-run` prints the
   jobs and queues nothing.
 - The server defaults to `http://127.0.0.1:8188` (override with `--server` or
