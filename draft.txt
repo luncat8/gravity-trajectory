@@ -11,7 +11,7 @@ our new experiment has separate timer and not related to trade so keep it separa
 assign all planets gravity force and possible select and change -2...2 , by default 1.
 
 user send cargo container from planet set direction and initial push like ballistic shot.
-before lunch - draw calculated trajectory.
+before launch - draw calculated trajectory.
 
 press shift cause 20x slow angle and force change to precision change also slider that do adjust values by add or subtract relative portion line -5%...5% relative
 
@@ -48,7 +48,7 @@ add small points as secondary moons around planets and belts as visual design (n
 
 in all:
 planets / ports · moving
-user lunch from planet - for stable launch base
+user launch from planet - for stable launch base
 
 add game goal: visit max planet systems (inside port orbit) and print predicted visit count as orbit change.
 keep visited marking, next launch allow from landed body and visually mark this. and visually mark tooltip that is not allow from other with arrow to position of landed location.
@@ -63,20 +63,30 @@ help drawer open on click and pointer over button (in this case hide on out).
 make visited orbits a bit more dim.
 make current predicted visits as more bright green highlight
 
-end trajectory out of system warning reddish lunch button
+end trajectory out of system warning reddish launch button
 
-new game mode: deterministic seed and time only while ship move. after trajectory end - pause until lunch. this allow compare players results. button to copy replay as url: with lunch parameters.
+new game mode: deterministic seed and time only while ship move. after trajectory end - pause until launch. this allow compare players results. button to copy replay as url: with launch parameters.
  
-should be possible to change speed after lunch or in replay - to fast forward faster or slower.
+should be possible to change speed after launch or in replay - to fast forward faster or slower.
 
 plan add photo popup after fly near new planet or land at surface (at tis stage no need to correspond of colony growth level, just feel free any art landing situation). in case of gas giant land to some air platform. any style, diverse.
 photo placed temporary at left bottom of the screen left from canvas, keep aspect, scale to free space, if no space in current screen size and layout - 256x on top of all also ok..
 make folder for photos of planets from space and landed. make captions for such images - i will generate them in krea2 or MOSS-image (search what prompt type these models expect). So planet types - captions - images (i generate) 
 
 
-new game mode: max route length: calculate trajectory without length limit (probably need split calculation to avoid freeze),
+### game mode: max trajectory length
+calculate and draw trajectory without length limit (probably need split calculation to avoid freeze).
+only single launch.
+max trajectory distance until landed or out of map is win. Because win is deterministic, no need actually launch but gradually show current winner. This is more like planner mode: win by make longest trajectory.
+disallow to select same start planet in this mode (show tip). can choose other but not currently occupied.
 
-new game mode: lunch cost 1 money, each planet fly-visit give something like 0.1*time from last visit. need calculate good balance so money is valuable. show visit profit near planets in this mode.
+### game mode: money per visit
+launch cost 1 money, each planet fly-visit give something like 0.1*time from last visit.
+need calculate good balance so money is valuable.
+show visit profit near planets in this mode and total player's money.
 
-bot competitor.
+
+## bot competitor
+
+possible set player type user/bot
 
