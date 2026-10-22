@@ -60,12 +60,16 @@ python3 photos/generator/comfy_queue.py --collect         # download when done
 python3 photos/generator/comfy_queue.py --workflow moss --wait
 ```
 
+- Every ComfyUI *Save (API format)* json dropped into `generator/` is a
+  template automatically — no script edit needed. `--workflow NAME` takes a
+  file stem (`image_moss_image_t2i`), any unique part of one (`moss`), or `all`;
+  without it the only template present is used, else the krea one.
+- `--types gas,ice` and `--situation landed` narrow the set, `--variants 2`
+  also writes `-2` files.
 - The exported graphs are **templates**: the script only patches the caption,
   the seed, the size (`3:2 (Photo)` · 1.5 MP = exactly 1536 × 1024) and the Save
   Image prefix. Nodes are found by `class_type`, so a re-export does not break
   it. Re-export from ComfyUI with *Save (API format)* after changing a graph.
-- `--workflow krea|moss|both` picks the template, `--types gas,ice` and
-  `--situation landed` narrow the set, `--variants 2` also writes `-2` files.
 - Already rendered files are skipped; `--force` redoes them. `--seed N` gives
   one deterministic seed per job, otherwise the template's seed is reused.
 - `--no-refine` sends the caption verbatim (`photos/prompts.md` is already
@@ -84,8 +88,8 @@ python3 photos/generator/comfy_queue.py --workflow moss --wait
 - `--dump DIR` writes each patched graph for inspection, `--dry-run` prints the
   jobs and queues nothing.
 - The server defaults to `http://127.0.0.1:8188` (override with `--server` or
-  the `COMFYUI` env var). Both models write the same file names, so
-  `--workflow both` is a comparison run: the last finished render wins unless
+  the `COMFYUI` env var). All templates write the same file names, so
+  `--workflow all` is a comparison run: the last finished render wins unless
   you give each run its own `--out`.
 
 ## checklist

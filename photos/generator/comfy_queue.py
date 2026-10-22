@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Queue photos/prompts.md into ComfyUI, then collect the renders into photos/.
 
-The two workflow JSONs next to this file are saved from ComfyUI's "Save (API
-format)" dialog. They are used as templates: the prompt, the seed, the size and
-the Save Image prefix are patched per caption, everything else (models, sampler,
-prompt-refiner chain) stays exactly as exported, so a better graph can be
-dropped in without touching this script.
+The workflow JSONs next to this file are saved from ComfyUI's "Save (API
+format)" dialog; every such json is picked up automatically, so a new graph
+needs no edit here. They are used as templates: the prompt, the seed, the size
+and the Save Image prefix are patched per caption, everything else (models,
+sampler, prompt-refiner chain) stays exactly as exported, so a better graph can
+be dropped in without touching this script.
 
     python3 photos/generator/comfy_queue.py --list             # 14 captions
     python3 photos/generator/comfy_queue.py                    # queue missing ones
@@ -33,11 +34,64 @@ REPO = HERE.parents[1]
 PROMPTS_MD = REPO / 'photos' / 'prompts.md'
 MANIFEST = HERE / 'queue-manifest.json'
 manifest_path = MANIFEST
+MANIFEST_NAME = 'queue-manifest.json'
 
-WORKFLOWS = {
-	'krea': 'image_krea2_turbo_t2i_int8.json',
-	'moss': 'image_moss_image_t2i.json',
-}
+
+def discover_workflows():
+	"""Every API-format workflow json next to this script is a template.
+
+	The queue manifest and any json that is not a ComfyUI "Save (API format)"
+	export (a dict of nodes keyed by id, each with a class_type) are skipped.
+	"""
+	found = {}
+	for path in sorted(HERE.glob('*.json')):
+		if path.name == MANIFEST_NAME:
+			continue
+		try:
+			graph = json.loads(path.read_text(encoding='utf-8'))
+		except (OSError, ValueError):
+			continue
+		if not (isinstance(graph, dict) and graph and
+				all(isinstance(node, dict) and 'class_type' in node
+					for node in graph.values())):
+			continue
+		found[path.stem] = path.name
+	return found
+
+
+WORKFLOWS = discover_workflows()
+
+
+def resolve_workflow(name):
+	"""A template by its file stem, by a unique part of one, or all of them."""
+	if name in ('all', 'both'):
+		return list(WORKFLOWS)
+	if name in WORKFLOWS:
+		return [name]
+	matches = [stem for stem in WORKFLOWS if name in stem]
+	if len(matches) == 1:
+		return matches
+	known = ', '.join(WORKFLOWS) or 'none found'
+	if not matches:
+		raise SystemExit(f'no workflow template {name!r}; available: {known}')
+	raise SystemExit(f'--workflow {name!r} matches several templates: '
+		f'{", ".join(matches)}')
+
+
+def default_workflow():
+	"""Without --workflow: the only template, else the historical krea pick."""
+	if not WORKFLOWS:
+		raise SystemExit(f'no workflow templates in {HERE}; export a graph from '
+			'ComfyUI with "Save (API format)" and drop the json next to this script')
+	if len(WORKFLOWS) == 1:
+		return next(iter(WORKFLOWS))
+	krea = [stem for stem in WORKFLOWS if 'krea' in stem]
+	if len(krea) == 1:
+		return krea[0]
+	print('several templates (' + ', '.join(WORKFLOWS) + '); picking the first, '
+		'pass --workflow to choose')
+	return next(iter(WORKFLOWS))
+
 # ComfyUI ResolutionSelector labels (comfy_extras/nodes_resolution.py)
 ASPECT_3_2 = '3:2 (Photo)'
 # 1.5 MP at 3:2 is exactly 1536 x 1024, the size photos/README.md asks for.
@@ -416,13 +470,17 @@ def queue(server, jobs, args, client_id):
 		if have and not args.force:
 			print(f'  = {display(have[0])} exists (use --force to redo)')
 			continue
-		workflow = build(HERE / WORKFLOWS[job['workflow']], job, args)
+		template = WORKFLOWS.get(job['workflow'])
+		if template is None:
+			raise SystemExit(f'workflow template {job["workflow"]!r} is gone; '
+				f'available: {", ".join(WORKFLOWS) or "(none)"}')
+		workflow = build(HERE / template, job, args)
 		if args.dump:
 			dump = Path(args.dump) / f'{job["workflow"]}_{Path(job["target"]).stem}.json'
 			dump.parent.mkdir(parents=True, exist_ok=True)
 			dump.write_text(json.dumps(workflow, indent='\t') + '\n', encoding='utf-8')
 		if args.dry_run:
-			print(f'  · {job["workflow"]:5} {display(resolve(job["target"])):32} '
+			print(f'  · {job["workflow"]} {display(resolve(job["target"]))} '
 				f'seed={job["seed"] if job["seed"] is not None else "template"}')
 			continue
 		prompt_id = queue_job(server, workflow, client_id, job_extra_data(job, args))
@@ -455,13 +513,14 @@ def main(argv=None):
 		formatter_class=argparse.RawDescriptionHelpFormatter,
 		epilog='examples:\n'
 			'  comfy_queue.py --list\n'
-			'  comfy_queue.py --workflow both --variants 2 --wait\n'
+			'  comfy_queue.py --workflow all --variants 2 --wait\n'
 			'  comfy_queue.py --types gas,ice --situation landed --force\n'
 			'  comfy_queue.py --set 30:3.steps=6 --set 30:24.value=false\n')
 	parser.add_argument('--server', default=DEFAULT_SERVER,
 		help=f'ComfyUI base url (default {DEFAULT_SERVER}, env COMFYUI)')
-	parser.add_argument('--workflow', choices=list(WORKFLOWS) + ['both'], default='krea',
-		help='model template to use (default krea)')
+	parser.add_argument('--workflow', default=None, metavar='NAME',
+		help='template to use: its json file stem, a unique part of one, or all '
+			'(default: the only template, else the krea one)')
 	parser.add_argument('--types', default='all',
 		help='comma list of rock,terran,super,dwarf,mini,gas,ice (default all)')
 	parser.add_argument('--situation', choices=['space', 'landed', 'both'], default='both')
@@ -517,7 +576,8 @@ def main(argv=None):
 		except ComfyError as err:
 			raise SystemExit(str(err))
 
-	workflows = list(WORKFLOWS) if args.workflow == 'both' else [args.workflow]
+	workflows = resolve_workflow(args.workflow if args.workflow is not None
+		else default_workflow())
 	for workflow in workflows:
 		for spec in args.set:
 			apply_override(json.loads((HERE / WORKFLOWS[workflow]).read_text(encoding='utf-8')), spec)
