@@ -137,7 +137,8 @@ function pageState(page) {
 	const cargo = scene.sim;
 	return [cargo.cargo.x, cargo.cargo.y, cargo.visitedCount, scene.scoreSteps(), scene.game.steps,
 		Math.round(scene.routeLength()), cargo.landedBody, cargo.endReason,
-		scene.game.shots.length, tradeFingerprint(page.context.OrbitScene.sim)].join('|');
+		scene.game.shots.length, scene.game.money.purse.toFixed(4),
+		tradeFingerprint(page.context.OrbitScene.sim)].join('|');
 }
 
 /*
@@ -147,10 +148,10 @@ function pageState(page) {
  */
 const FIRST_ORIGINS = [0, 6, 12, 18, 24];
 
-function chooseShot(page) {
+function chooseShot(page, horizon = 20) {
 	const cargo = page.context.GravityScene.sim;
 	const keep = cargo.horizon;
-	cargo.horizon = 20;
+	cargo.horizon = horizon;
 	let best = null;
 	const origins = cargo.landedBody >= 0 ? [cargo.landedBody] : FIRST_ORIGINS;
 	for (const p of origins) {
@@ -244,7 +245,7 @@ function benchReplay() {
 	for (const c of cases) {
 		const same = c.state === played.state;
 		check(same, 'replay ' + c.label + ' differs:\n  ' + c.state + '\n  ' + played.state);
-		check(c.verdict === 'verified ✓', 'replay ' + c.label + ' verdict ' + c.verdict);
+		check(c.verdict.startsWith('verified ✓'), 'replay ' + c.label + ' verdict ' + c.verdict);
 		console.log('  replay ' + c.label + ':', same ? 'identical' : 'DIFFERS', '·', c.verdict,
 			'·', c.frames ? c.frames + ' frames · ' : '', c.ms + ' ms');
 	}
@@ -329,10 +330,106 @@ function benchRoute() {
 	for (const c of cases) {
 		const same = c.state === played.state;
 		check(same, 'route replay ' + c.label + ' differs:\n  ' + c.state + '\n  ' + played.state);
-		check(c.verdict === 'verified ✓', 'route replay ' + c.label + ' verdict ' + c.verdict);
+		check(c.verdict.startsWith('verified ✓'), 'route replay ' + c.label + ' verdict ' + c.verdict);
 		console.log('  replay ' + c.label + ':', same ? 'identical' : 'DIFFERS', '·', c.verdict,
 			'·', c.frames ? c.frames + ' frames · ' : '', c.ms + ' ms');
 	}
+}
+
+/* 3c. money mode (0.3.2): the purse is a pure function of the shot list */
+
+/*
+ * The two greedy tours of the plan's measurement section, seed 31 rate 3,
+ * played at x8 (only the pacing changes). The purse rows are the exact-rule
+ * values: first entries pay from their entry steps, not from flight time, so
+ * they sit above the plan's draft sketch, which paid 0.1 x whole flights.
+ */
+const MONEY_TOURS = [
+	{ horizon: 12, shots: 9, purse: 13.1542 },
+	{ horizon: 60, shots: 6, purse: 17.5950 }
+];
+
+function playMoneyTour(horizon) {
+	const page = loadPage({ hash: '#game=1&seed=31&rate=3' });
+	const scene = page.context.GravityScene;
+	const cargo = scene.sim;
+	page.runFrames(2, 16.7);
+	for (let i = 0; i < 3; i++) page.click('playFaster');
+	const rows = [];
+	while (cargo.visitedCount < PLANETS && scene.game.money.purse >= 1 && rows.length < 30) {
+		const shot = chooseShot(page, horizon);
+		page.dragAim(shot.p, shot.angle, shot.speed);
+		page.runFrames(1, 16.7);
+		page.click('launch');
+		let frames = 0;
+		while (cargo.status === STATUS_FLYING && frames < 200000) {
+			page.runFrames(1, 16.7);
+			frames += 1;
+		}
+		rows.push(cargo.visitLogCount + '/' + (cargo.liveSteps * GravitySim.DT).toFixed(1));
+	}
+	page.runFrames(2, 16.7);
+	page.click('gameCopy');
+	return { page, link: page.clipboardText, rows,
+		purse: scene.game.money.purse, shots: scene.game.shots.length };
+}
+
+function benchMoney() {
+	const started = Date.now();
+	for (const row of MONEY_TOURS) {
+		const tour = playMoneyTour(row.horizon);
+		check(tour.shots === row.shots, 'greedy ' + row.horizon + ' s tour took ' +
+			tour.shots + ' shots, expected ' + row.shots);
+		check(Math.abs(tour.purse - row.purse) <= 0.05, 'greedy ' + row.horizon +
+			' s tour purse ' + tour.purse.toFixed(4) + ', expected ' + row.purse);
+		const replayed = replayAt(tour.link, 'skip', 'skip', 0);
+		check(replayed.state === pageState(tour.page),
+			'money tour ' + row.horizon + ' s replay differs:\n  ' + replayed.state +
+			'\n  ' + pageState(tour.page));
+		check(replayed.verdict.startsWith('verified ✓'),
+			'money tour replay verdict ' + replayed.verdict);
+		console.log('money tour ' + row.horizon + ' s:', tour.rows.join(' · '),
+			'· purse', tour.purse.toFixed(2), '+', (tour.purse - 12).toFixed(2),
+			'· replay', replayed.verdict);
+	}
+	console.log('  both tours replayed the purse exactly ·', Date.now() - started, 'ms');
+}
+
+/*
+ * A run that burns its purse with short aborted shots (an abort keeps only
+ * what it entered, the launch fee is gone): launches are then refused, and the
+ * recorded link still replays and verifies.
+ */
+function benchBroke() {
+	const page = loadPage({ hash: '#game=1&seed=31&rate=3' });
+	const scene = page.context.GravityScene;
+	const cargo = scene.sim;
+	page.runFrames(2, 16.7);
+	while (scene.game.money.purse >= 1 && scene.game.shots.length < 30) {
+		page.dragAim(cargo.landedBody >= 0 ? cargo.landedBody : 0, 0.7, 120);
+		page.runFrames(1, 16.7);
+		const fired = scene.game.shots.length;
+		page.click('launch');
+		if (scene.game.shots.length !== fired + 1) throw new Error('waste shot did not fire');
+		for (let f = 0; f < 45 && cargo.status === STATUS_FLYING; f++) page.runFrames(1, 16.7);
+		page.click('clear');
+		let guard = 0;
+		while (cargo.status === STATUS_FLYING && guard++ < 2000) page.runFrames(1, 16.7);
+	}
+	check(scene.game.money.purse < 1, 'the run did not go broke: ' + scene.game.money.purse);
+	const brokePurse = scene.game.money.purse;
+	page.dragAim(cargo.landedBody >= 0 ? cargo.landedBody : 0, 0.7, 120);
+	page.runFrames(1, 16.7);
+	const fired = scene.game.shots.length;
+	page.click('launch');
+	check(scene.game.shots.length === fired, 'a broke run accepted a launch');
+	page.click('gameCopy');
+	const replayed = replayAt(page.clipboardText, 'skip', 'skip', 0);
+	check(replayed.verdict.startsWith('verified ✓'), 'broke replay verdict ' + replayed.verdict);
+	check(Math.abs(page.context.GravityScene.game.money.purse - brokePurse) < 1e-9,
+		'broke replay purse differs');
+	console.log('broke run:', scene.game.shots.length, 'shots · purse left',
+		brokePurse.toFixed(2), '· launch refused · replay', replayed.verdict);
 }
 
 /* 4. cross-engine proxy */
@@ -411,6 +508,8 @@ benchTrade();
 benchCodec();
 benchReplay();
 benchRoute();
+benchMoney();
+benchBroke();
 benchUlp();
 console.log(failures === 0 ? 'GAME BENCH OK' : 'GAME BENCH FAILED (' + failures + ')');
 if (failures > 0) process.exitCode = 1;

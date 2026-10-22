@@ -36,6 +36,21 @@
 	};
 	const RATE_MIN = 0.5;
 	const RATE_MAX = 12;
+	/*
+	 * Money mode (0.3.2): a launch costs 1, a first entry pays for the flight
+	 * time it took, a landing stages the next launch. The knob names match the
+	 * plan's balance table so it can be retuned against the measured tours
+	 * without re-playing them.
+	 */
+	const MONEY = {
+		cost: 1,       // launch fee; the purse reads as "launches left"
+		k: 0.10,       // first-entry pay per flight-second since the previous one
+		floor: 0.05,   // minimum first-entry pay
+		landing: 0.25, // stevedoring fee, on every landing
+		tour: 3,       // once, when the last system is entered
+		purse0: 12     // starting purse; presets: 6 tight, 20 relaxed
+	};
+	const PURSE_PRESETS = { tight: 6, standard: 12, relaxed: 20 };
 	const SRC_PLANETS = 0;
 	const SRC_PORTS = 1;
 	const SRC_CODES = 'pm';
@@ -120,12 +135,45 @@
 		return new URLSearchParams(String(text).replace(/^#/, '')).has('game');
 	}
 
+	/* the purse ledger; entryStep is the run-cumulative step of the previous first entry */
+	function createLedger(purse0) {
+		return { purse: purse0 === undefined ? MONEY.purse0 : purse0,
+			entryStep: -1, tourPaid: false, last: 0 };
+	}
+
+	/*
+	 * What one finished flight won. The launch cost is deducted when the shot
+	 * is fired (the GUI gates launches on the purse), everything else lands
+	 * here, so a replay re-derives the purse flight by flight. flight =
+	 * { baseStep, visitStep, visitCount, landed, tourStep }: entry steps are
+	 * flight-local, baseStep makes them run-cumulative. A first entry pays for
+	 * the flight time since the previous first entry, the run's first one
+	 * since its launch.
+	 */
+	function earn(ledger, flight) {
+		let entryPay = 0;
+		for (let i = 0; i < flight.visitCount; i++) {
+			const at = flight.baseStep + flight.visitStep[i];
+			const dt = (at - (ledger.entryStep < 0 ? 0 : ledger.entryStep)) * GravitySim.DT;
+			const pay = MONEY.k * dt;
+			entryPay += pay < MONEY.floor ? MONEY.floor : pay;
+			ledger.entryStep = at;
+		}
+		const landing = flight.landed ? MONEY.landing : 0;
+		const tour = !ledger.tourPaid && flight.tourStep >= 0 ? MONEY.tour : 0;
+		if (tour) ledger.tourPaid = true;
+		ledger.purse += entryPay + landing + tour;
+		ledger.last = entryPay + landing + tour - MONEY.cost;
+		return { entryPay: entryPay, landing: landing, tour: tour };
+	}
+
 	const GravityGame = {
 		FORMAT, ANGLE_STEPS, SPEED_STEPS, CAP_SECONDS, CAP_STEPS, RATE_MIN, RATE_MAX,
 		ROUTE_SECONDS, ROUTE_STEPS, RULE_TOUR, RULE_ROUTE, RULES,
-		SRC_PLANETS, SRC_PORTS, NO_ABORT,
+		SRC_PLANETS, SRC_PORTS, NO_ABORT, MONEY, PURSE_PRESETS,
 		angleUnits, angleOf, speedUnits, speedOf,
-		createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink
+		createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
+		createLedger, earn
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = GravityGame;

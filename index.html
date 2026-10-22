@@ -66,6 +66,7 @@
 			<div class="stats">
 				<div class="stat"><span>seed · rate</span><b id="gameSeed">—</b></div>
 				<div class="stat goalStat"><span>score</span><b id="gameScore">—</b></div>
+				<div class="stat"><span>purse</span><b id="gamePurse">—</b></div>
 				<div class="stat" id="replayRow" hidden><span>replay</span><b id="replayReadout">—</b></div>
 			</div>
 			<div class="actions gameActions">
@@ -163,7 +164,8 @@
 			<li><b>same world</b> — the seed builds planets, ports and colonies; everyone opening your link flies the same system.</li>
 			<li><b>clock runs in flight only</b> — trade, ports and moons move only while the cargo flies; after it lands or leaves, everything waits for your next launch.</li>
 			<li><b>fixed rules</b> — gravity stays at 1, no relaunch mid-flight, a <i>tour</i> flight ends after 120 s or on <i>abort</i>; the speed slider sets the world rate until the first launch.</li>
-			<li><b>score · tour</b> — more systems, then fewer shots, then less flight time; a full tour stops its clock when the 26th system is entered.</li>
+				<li><b>score · tour</b> — more systems, then fewer shots, then less flight time; a full tour stops its clock when the 26th system is entered.</li>
+				<li><b>purse</b> — a launch costs 1.00 and is refused below that (the run is over); a first entry pays 0.10 per flight-second since the previous one (min 0.05), a landing +0.25, the full tour +3.00 once. Aborts and exits keep only what they already entered. The score line carries the purse after time, and a replay re-derives it from the shots alone.</li>
 			<li><b>rule · route</b> — no flight cap: a shot runs until it hits, leaves the field or reaches the 1 800 s wall, and the aim traces it to that end in a few ms per frame. Score: systems, then route length, then fewer shots, then less time.</li>
 			<li><b>playback</b> — <i>− slower / + faster</i> changes only how fast you watch; physics steps and the recorded replay stay identical. The world rate slider stays locked once a shot is fired.</li>
 			<li><b>copy replay</b> — a link with seed, rate and every launch; opening it re-flies the run, checks the recorded result, then lets you continue.</li>

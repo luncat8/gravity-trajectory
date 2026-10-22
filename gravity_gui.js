@@ -35,6 +35,7 @@
 	const RULES = GravityGame.RULES;
 	const RULE_TOUR = GravityGame.RULE_TOUR;
 	const RULE_ROUTE = GravityGame.RULE_ROUTE;
+	const MONEY = GravityGame.MONEY;
 	/* route mode traces a 1 800 s shot in slices: per-frame slice of tracer work */
 	const ROUTE_STEP_MS = 4;
 	const ROUTE_FIELD_DELTA = 4;
@@ -195,6 +196,7 @@
 	const ruleTagEl = $('ruleTag');
 	const gameSeedEl = $('gameSeed');
 	const gameScoreEl = $('gameScore');
+	const gamePurseEl = $('gamePurse');
 	const replayRowEl = $('replayRow');
 	const replayEl = $('replayReadout');
 	const gameRestartBtn = $('gameRestart');
@@ -259,6 +261,7 @@
 	let hudPathText = '';
 	let hudSeedText = '';
 	let hudScoreText = '';
+	let hudPurseText = '';
 	let hudRuleText = '';
 	let hudReplayText = '';
 	let launchState = -1;
@@ -272,10 +275,11 @@
 
 	/*
 	 * game: steps = finished flight steps, doneSteps = step the 26th system was entered,
-	 * fixedRate = the rate came with a link and must not change
+	 * fixedRate = the rate came with a link and must not change,
+	 * money = the purse ledger, re-derived flight by flight on a replay
 	 */
 	const game = { on: false, seed: 0, fixedRate: false, rule: RULE_TOUR, shots: [], steps: 0,
-		doneSteps: -1, length: 0 };
+		doneSteps: -1, length: 0, money: null };
 	/* replay of a link: shots fired in order, aim shown then flown; verdict after the last */
 	const replay = { on: false, shots: null, end: null, index: 0, phase: PHASE_GAP, until: 0,
 		speed: REPLAY_DEFAULT, verdict: '' };
@@ -616,7 +620,10 @@
 	}
 
 	function fire(abortStep) {
-		if (game.on) recordShot(abortStep);
+		if (game.on) {
+			recordShot(abortStep);
+			game.money.purse -= MONEY.cost;
+		}
 		predictShot();
 		dirty = false;
 		gravity.launch(aimBody, aimAngle, aimSpeed);
@@ -709,9 +716,11 @@
 		else gravity.predict(aimBody, aimAngle, aimSpeed);
 	}
 
-	/* aim edits and launches close while a game flight or replay runs, and after 26 / 26 */
+	/* aim edits and launches close while a game flight or replay runs, after
+	 * 26 / 26, and once the purse cannot cover a launch (that run is over) */
 	function gameLocked() {
-		return game.on && (replay.on || gravity.status === STATUS_FLYING || game.doneSteps >= 0);
+		return game.on && (replay.on || gravity.status === STATUS_FLYING ||
+			game.doneSteps >= 0 || game.money.purse < MONEY.cost);
 	}
 
 	function gameSteps() {
@@ -754,6 +763,7 @@
 		game.steps = 0;
 		game.length = 0;
 		game.doneSteps = -1;
+		game.money = GravityGame.createLedger();
 		scene.reset(seed);
 		scene.setGameClock(true);
 		clearCargo();
@@ -820,13 +830,49 @@
 		if (gravity.visitedCount === PLANETS && game.doneSteps < 0) {
 			game.doneSteps = game.steps + gravity.visitStep;
 		}
+		/* baseStep is game.steps before the flight's steps are folded in */
+		const won = GravityGame.earn(game.money, {
+			baseStep: game.steps,
+			visitStep: gravity.visitLogStep,
+			visitCount: gravity.visitLogCount,
+			landed: gravity.endReason === END_IMPACT && gravity.landedBody >= 0,
+			tourStep: game.doneSteps
+		});
 		game.steps += gravity.liveSteps;
 		game.length += gravity.flightLength;
 		if (replay.on) {
 			replay.phase = PHASE_GAP;
 			replay.until = performance.now() + REPLAY_GAP_MS / REPLAY_SPEEDS[replay.speed];
 		}
+		moneyToast(won);
 		refreshGameUi();
+	}
+
+	function signedMoney(value) {
+		return (value < 0 ? '−' : '+') + Math.abs(value).toFixed(2);
+	}
+
+	/*
+	 * The shot's money as a 2.5 s text card in the postcard slot. A landing
+	 * card arriving this frame keeps its moment; a still-open entry card holds
+	 * the slot and the toast follows it (a newer card then drops it).
+	 */
+	function moneyToast(won) {
+		if (!root.PhotoDeck) return;
+		if (gravity.endReason === END_IMPACT && gravity.endBody >= 0 &&
+			photoLanded[gravity.endBody] !== 1) return;
+		const parts = [];
+		if (gravity.visitLogCount === 1) {
+			parts.push('P' + gravity.visitLogPlanet[0] + ' entered +' + won.entryPay.toFixed(2));
+		} else if (gravity.visitLogCount > 1) {
+			parts.push(gravity.visitLogCount + ' systems +' + won.entryPay.toFixed(2));
+		}
+		if (won.landing) parts.push('landed +' + won.landing.toFixed(2));
+		if (won.tour) parts.push('tour +' + won.tour.toFixed(2));
+		if (!parts.length) parts.push('cost −' + MONEY.cost.toFixed(2));
+		parts.push('purse ' + game.money.purse.toFixed(2));
+		root.PhotoDeck.toast('purse · shot ' + game.shots.length,
+			signedMoney(game.money.last), parts.join(' · '));
 	}
 
 	function abortFlight() {
@@ -899,7 +945,10 @@
 
 	function verdictText(end) {
 		if (!end) return 'replayed ' + replay.shots.length + ' shots';
-		if (end.visited === gravity.visitedCount && end.steps === scoreSteps()) return 'verified ✓';
+		/* the purse is re-derived by the replay itself, not carried by the link */
+		if (end.visited === gravity.visitedCount && end.steps === scoreSteps()) {
+			return 'verified ✓ · purse ' + game.money.purse.toFixed(2);
+		}
 		return 'differs · recorded ' + end.visited + ' / ' + PLANETS + ' · ' +
 			(end.steps * DT).toFixed(2) + ' s';
 	}
@@ -979,13 +1028,14 @@
 		hudAt = -Infinity;
 	}
 
-	/* route runs rank by length, so the score carries it before the shot count */
+	/* route runs rank by length, so the score carries it before the shot count;
+	 * the purse is the tiebreaker after time */
 	function scoreText() {
 		const shots = game.shots.length;
 		return gravity.visitedCount + ' / ' + PLANETS + (game.doneSteps >= 0 ? ' ✓' : '') +
 			' · ' + (routeRule() ? Math.round(game.length) + ' px · ' : '') +
 			shots + (shots === 1 ? ' shot' : ' shots') + ' · ' +
-			(scoreSteps() * DT).toFixed(2) + ' s';
+			(scoreSteps() * DT).toFixed(2) + ' s · purse ' + game.money.purse.toFixed(2);
 	}
 
 	function updateGameHud() {
@@ -1005,6 +1055,19 @@
 		if (score !== hudScoreText) {
 			hudScoreText = score;
 			gameScoreEl.textContent = score;
+		}
+		const purseText = game.money.purse.toFixed(2) +
+			(game.shots.length ? ' · last ' + signedMoney(game.money.last) : '');
+		if (purseText !== hudPurseText) {
+			hudPurseText = purseText;
+			if (gamePurseEl) {
+				gamePurseEl.textContent = purseText;
+				const loss = game.money.purse < MONEY.cost ||
+					(game.shots.length > 0 && game.money.last < 0);
+				gamePurseEl.classList.toggle('loss', loss);
+				gamePurseEl.classList.toggle('gain', !loss && game.shots.length > 0 &&
+					game.money.last > 0);
+			}
 		}
 		const replayText = replay.on
 			? 'shot ' + (replay.index + (replay.phase === PHASE_AIM ? 1 : 0)) + ' / ' +
@@ -1749,13 +1812,19 @@
 	}
 
 	function setLaunchState(blocked, exitWarning) {
-		const state = (blocked ? 1 : 0) + (exitWarning ? 2 : 0);
+		const broke = game.on && game.money.purse < MONEY.cost;
+		const state = (blocked || broke ? 1 : 0) + (exitWarning ? 2 : 0) + (broke ? 4 : 0);
 		if (state === launchState) return;
 		launchState = state;
-		launchButton.disabled = blocked;
+		launchButton.disabled = blocked || broke;
 		launchButton.classList.toggle('exitWarning', exitWarning);
-		launchButton.textContent = exitWarning ? 'launch · leaves system' : 'launch';
-		launchButton.title = exitWarning ? 'Warning: predicted trajectory ends outside the system' : '';
+		launchButton.textContent = broke
+			? 'purse ' + game.money.purse.toFixed(2) + ' · need ' + MONEY.cost.toFixed(2)
+			: exitWarning ? 'launch · leaves system'
+			: 'launch' + (game.on ? ' · ' + MONEY.cost.toFixed(2) : '');
+		launchButton.title = broke
+			? 'The purse cannot cover a launch; this run is over'
+			: exitWarning ? 'Warning: predicted trajectory ends outside the system' : '';
 	}
 
 	function statusText() {
@@ -1764,6 +1833,7 @@
 		if (armed) return 'armed · ' + planetName(aimBody);
 		if (gravity.status === STATUS_FLYING) return game.on ? 'in flight · clock runs' : 'in flight';
 		if (game.on && game.doneSteps >= 0) return routeRule() ? 'run complete' : 'tour complete';
+		if (game.on && game.money.purse < MONEY.cost) return 'purse empty · run over';
 		const rest = gravity.status === STATUS_ENDED
 			? endText(gravity.endReason, gravity.endBody)
 			: gravity.landedBody >= 0 ? 'landed ' + planetName(gravity.landedBody) : 'ready';

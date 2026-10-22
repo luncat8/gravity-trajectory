@@ -76,7 +76,7 @@ make folder for photos of planets from space and landed. make captions for such 
 
 new game mode: max route length: calculate trajectory without length limit (probably need split calculation to avoid freeze),
 
-new game mode: lunch cost 1 money, each planet fly-visit give something like 0.1*time from last visit. need calculate good balance.
+new game mode: lunch cost 1 money, each planet fly-visit give something like 0.1*time from last visit. need calculate good balance so money is valuable. show visit profit near planets in this mode.
 
 bot competitor.
 

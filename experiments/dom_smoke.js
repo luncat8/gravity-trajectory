@@ -549,6 +549,7 @@ check(ui.get('modeTag').textContent === 'game · clock runs in flight', 'game mo
 check(!ui.get('gameBox').hidden && game.on && game.seed === 7, 'game box / seed');
 check(sim.t === 420 && ui.get('tradeClock').textContent === 't+ 07:00', 'world not rebuilt at t+07:00: ' + sim.t);
 check(ui.get('expClock').textContent === 'game + 00:00.0', 'game clock: ' + ui.get('expClock').textContent);
+check(ui.get('gamePurse').textContent === '12.00', 'purse stat: ' + ui.get('gamePurse').textContent);
 check(ui.get('tradePause').disabled && ui.get('gravity').disabled, 'pause / gravity not locked');
 check(ui.get('clear').textContent === 'abort' && ui.get('clear').disabled, 'abort button state');
 check(!ui.get('tradeSpeed').disabled, 'rate locked before the first shot');
@@ -578,6 +579,7 @@ check(gScene.playScale() === 1 && !ui.get('playFaster').disabled, 'playback rese
 const longShot = findShot((g, p) => g.predTime > 4 && g.predReason !== pageSim.END_EXIT);
 dragShot(longShot);
 check(!ui.get('launch').disabled, 'game shot did not arm');
+check(ui.get('launch').textContent === 'launch · 1.00', 'launch fee label: ' + ui.get('launch').textContent);
 env.click('launch');
 env.runFrames(30, 16.0);
 const shot0 = game.shots[0];
@@ -596,6 +598,26 @@ env.runFrames(3, 16.0);
 check(shot0.abort === abortSteps && cargo.endReason === pageSim.END_ABORT && game.steps === abortSteps,
 	'abort not recorded at step ' + abortSteps);
 check(ui.get('cargoStatus').textContent === 'aborted · clock paused', 'status ' + ui.get('cargoStatus').textContent);
+/* money: the aborted shot paid its launch cost plus what it entered (the
+   origin system alone pays the 0.05 floor), and the toast waits behind the
+   entry card still holding the postcard slot */
+const MINUS = '\u2212';
+const purse1 = game.money.purse;
+const net1 = purse1 - 12;
+check(purse1 >= 11.05, 'abort purse kept no entries: ' + purse1);
+check(ui.get('gamePurse').textContent === purse1.toFixed(2) + ' · last ' +
+	(net1 < 0 ? MINUS : '+') + Math.abs(net1).toFixed(2),
+	'purse stat after abort: ' + ui.get('gamePurse').textContent);
+check(pagePhoto.toastQueued(), 'money toast not queued behind the entry card');
+pagePhoto.hide();
+check(pagePhoto.visible() && ui.get('photoTitle').textContent ===
+	(net1 < 0 ? MINUS : '+') + Math.abs(net1).toFixed(2) &&
+	ui.get('photoKicker').textContent === 'purse · shot 1' &&
+	ui.get('photoCaption').textContent.includes('purse ' + purse1.toFixed(2)),
+	'money toast: ' + ui.get('photoKicker').textContent + ' / ' +
+	ui.get('photoTitle').textContent + ' / ' + ui.get('photoCaption').textContent);
+console.log('money after abort: purse', purse1.toFixed(2), '· toast',
+	ui.get('photoCaption').textContent);
 const pausedT = sim.t;
 env.runFrames(60, 16.0);
 check(sim.t === pausedT, 'world moved after the flight ended');
@@ -613,11 +635,16 @@ env.click('playReset');
 check(gScene.playScale() === 1, 'playback did not reset after the flight');
 check(cargo.status === pageSim.STATUS_ENDED && game.shots.length === 2, 'second game flight did not end');
 check(game.steps === abortSteps + cargo.liveSteps, 'game steps do not add up');
+/* a landing card owns the slot this frame, so no money toast is queued */
+check(!pagePhoto.toastQueued() && pagePhoto.visible(), 'landing card vs money toast');
 const endX = cargo.cargo.x;
 const endY = cargo.cargo.y;
 const endT = sim.t;
 const endVisited = cargo.visitedCount;
 const endSteps = gScene.scoreSteps();
+const endPurse = game.money.purse;
+check(ui.get('gameScore').textContent.endsWith('purse ' + endPurse.toFixed(2)),
+	'score has no purse: ' + ui.get('gameScore').textContent);
 console.log('game score:', ui.get('gameScore').textContent, '·', ui.get('cargoStatus').textContent,
 	'· watched at ×4 then reset');
 
@@ -635,10 +662,27 @@ check(gScene.replay.on && ui.get('cargoStatus').textContent.startsWith('replay')
 check(!ui.get('replaySkip').hidden && ui.get('tradeSpeed').disabled, 'replay controls');
 env.click('replaySkip');
 env.runFrames(2, 16.0);
-check(ui.get('replayReadout').textContent === 'verified ✓', 'replay verdict: ' + ui.get('replayReadout').textContent);
+check(ui.get('replayReadout').textContent === 'verified ✓ · purse ' +
+	game.money.purse.toFixed(2), 'replay verdict: ' + ui.get('replayReadout').textContent);
+check(Math.abs(game.money.purse - endPurse) < 1e-9, 'replay purse differs: ' +
+	game.money.purse + ' vs ' + endPurse);
 check(cargo.cargo.x === endX && cargo.cargo.y === endY && sim.t === endT, 'replayed end state differs');
 check(game.shots.length === 2 && !ui.get('replayRow').hidden, 'replay did not hand over the run');
 console.log('replay verdict:', ui.get('replayReadout').textContent, '· cargo end identical, trade t identical');
+
+/* money: a purse below the launch fee refuses launches and ends the run */
+game.money.purse = 0.4;
+env.runFrames(8, 16.0);
+check(ui.get('launch').disabled && ui.get('launch').textContent === 'purse 0.40 · need 1.00',
+	'broke launch button: ' + ui.get('launch').textContent);
+check(ui.get('cargoStatus').textContent === 'purse empty · run over',
+	'broke status: ' + ui.get('cargoStatus').textContent);
+check(ui.get('gamePurse').classList.contains('loss'), 'broke purse not marked as loss');
+env.dragAim(0, 1.2, 150);
+env.runFrames(2, 16.0);
+env.click('launch');
+check(game.shots.length === 2, 'a broke run accepted a launch');
+console.log('broke run: launch refused,', ui.get('launch').textContent);
 
 /* route rule: no flight cap, and the run scores the length it flew */
 env.choose('ruleRoute');
@@ -677,7 +721,7 @@ env.runFrames(2, 16.0);
 check(gScene.rule() === 'route' && gScene.replay.on, 'the link did not replay as a route run');
 env.click('replaySkip');
 env.runFrames(2, 16.0);
-check(ui.get('replayReadout').textContent === 'verified ✓',
+check(ui.get('replayReadout').textContent.startsWith('verified ✓'),
 	'route replay verdict: ' + ui.get('replayReadout').textContent);
 check(cargo.cargo.x === routeEndX && cargo.cargo.y === routeEndY && sim.t === routeEndT &&
 	gScene.scoreSteps() === routeSteps, 'route replay end state differs');

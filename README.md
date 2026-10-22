@@ -33,6 +33,7 @@ Open `index.html` (`file://` works, no build, no modules).
 | mode `lab` / `game` | game: rebuilds the seeded world at `t+07:00`, freezes it between flights, locks gravity at `1` |
 | `abort` (game) | ends the running flight at the current step (recorded in the replay) |
 | rule `tour` / `route` (game) | tour: 120 s flight cap, score systems → shots → time; route: no cap (1 800 s wall), score systems → route length → shots → time · switching restarts the seed |
+| purse (game) | a launch costs `1.00` and is refused below that (the run is over); a first entry pays `0.10`/flight-second since the previous one (min `0.05`), a landing `+0.25`, the full tour `+3.00` once — the stat shows `13.15 · last +1.15`, the launch button the fee, and a toast per shot where the postcards appear |
 | `restart` / `new seed` | same seed fresh start / random world |
 | `copy replay` | copies a link with seed, rate, every launch and the result |
 | `− slower / + faster`, `×1` | live playback ×0.25…×8; a replay adds ×0.25…×16 on top — only the pacing changes, never the physics steps or the recorded shots |
@@ -61,11 +62,15 @@ Open `index.html` (`file://` works, no build, no modules).
   aiming takes any amount of real time. The aim snaps to `2^-20` turn and
   `2^-10` px/s, the port roster is frozen per flight and flights cap at 120 s,
   which makes the run a pure function of `(seed, rate, shots)`. Score: systems,
-  then fewer shots, then less flight time (a full tour stops at the entry step
-  of the 26th system); the `route` rule drops the cap and ranks by route length.
-  A replay link
+  then fewer shots, then less flight time, then the purse (a full tour stops at
+  the entry step of the 26th system); the `route` rule drops the cap and ranks
+  by route length. Money rides on both rules: a launch costs `1.00`, a first
+  entry pays `0.10` per flight-second since the previous one (min `0.05`), a
+  landing `+0.25`, the full tour `+3.00` once; aborts keep what they entered
+  and lose the fee, and a purse below one launch ends the run. A replay link
   (`#game=1&seed=…&rate=…[&rule=route]&shots=…&end=…`) re-flies every shot and reports
-  `verified` when it reproduces the recorded result; play continues from there.
+  `verified` when it reproduces the recorded result, re-deriving the purse from
+  the shots alone; play continues from there.
 - **Playback**: the flight is watched, not simulated, faster — one multiplier
   scales the wall-clock slice fed to the fixed `DT = 1/120 s` steps, so ×0.25
   and ×8 produce the same step sequence and the same replay. The trade `rate`
@@ -91,8 +96,8 @@ Open `index.html` (`file://` works, no build, no modules).
 - `orbit_sim.js` — orbital trade & colony simulation
 - `orbit_view.js` — trade renderer, coplanar Kepler moons & belts, camera `OrbitScene`
 - `gravity_sim.js` — gravity field, planet-system visits, live flight & continuation
-- `gravity_game.js` — game rules shared with the benches: aim grid, flight cap, replay link codec
-- `photo_deck.js` — postcard popup: type → file candidates, captions, compact layout
+- `gravity_game.js` — game rules shared with the benches: aim grid, flight cap, replay link codec, money mode (`MONEY`, `createLedger`, `earn`)
+- `photo_deck.js` — postcard popup: type → file candidates, captions, compact layout, purse toast
 - `gravity_gui.js` — overlay renderer, aiming, hop lock & arrow, adaptive 60 fps HUD, game mode & replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
   `game_bench.js`, `route_bench.js`), headless DOM smoke suite (`dom_smoke.js`)

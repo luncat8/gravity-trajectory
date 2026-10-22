@@ -108,6 +108,12 @@
 		this.visited = new Uint8Array(MAX_BODIES);
 		this.visitedCount = 0;
 		this.visitStep = 0;
+		/* first-entry log for the purse: planet + step in visit order;
+		 * the log is per flight, the visitLogged mask is per run */
+		this.visitLogged = new Uint8Array(MAX_BODIES);
+		this.visitLogPlanet = new Int32Array(MAX_BODIES);
+		this.visitLogStep = new Int32Array(MAX_BODIES);
+		this.visitLogCount = 0;
 		this.predVisit = new Uint8Array(MAX_BODIES);
 		this.predVisits = 0;
 		this.predNewVisits = 0;
@@ -560,6 +566,7 @@
 		this.endBody = NO_BODY;
 		this.trailCount = 0;
 		this.trailStride = TRAIL_STRIDE;
+		this.visitLogCount = 0;
 		this.addVisits(this.markSystemsAt(this.cargo.x, this.cargo.y, this.visited));
 		this.recordTrail();
 	};
@@ -568,6 +575,16 @@
 		if (added === 0) return;
 		this.visitedCount += added;
 		this.visitStep = this.liveSteps;
+		/* which systems were first-entered and when, for the money ledger;
+		 * visitLogged is run-cumulative, so a system is logged exactly once */
+		const logged = this.visitLogged;
+		for (let i = 0; i < this.planetCount; i++) {
+			if (!this.visited[i] || logged[i]) continue;
+			logged[i] = 1;
+			this.visitLogPlanet[this.visitLogCount] = i;
+			this.visitLogStep[this.visitLogCount] = this.liveSteps;
+			this.visitLogCount += 1;
+		}
 	};
 
 	GravitySim.prototype.recordTrail = function () {
@@ -664,6 +681,8 @@
 		this.visited.fill(0);
 		this.visitedCount = 0;
 		this.visitStep = 0;
+		this.visitLogged.fill(0);
+		this.visitLogCount = 0;
 		this.predVisit.fill(0);
 		this.predVisits = 0;
 		this.predNewVisits = 0;

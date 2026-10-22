@@ -151,3 +151,18 @@ prediction buffers round away exactly the differences being measured.
 - Keep the fallback visual in the same element with a type class
 	(`.photoArt.gas`), so the card's height and the layout maths do not depend on
 	whether art exists yet.
+
+## derived run state that must survive across flights
+
+- When a per-flight log is derived from a run-cumulative mask (the purse from
+  `visited`), keep the "already logged" mask run-cumulative too and reset only
+  the log array at launch. Resetting both re-logs every previously visited
+  system on the flight's first new visit — the money bench caught it as
+  cumulative per-flight rows and an inflated purse in one run.
+- Derive money (or any score side-state) in one place from integer step counts
+  (`Δt = steps · DT`), never from wall time: the purse then replays
+  bit-identically at any playback speed, and the link never has to carry it —
+  recompute and show it in the verdict instead.
+- Deduct a gated cost at the moment of gating (launch), pay the gains at event
+  time; a state bit per condition in the launch-button cache keeps the label
+  truthful when a flight ends while the button is already disabled.

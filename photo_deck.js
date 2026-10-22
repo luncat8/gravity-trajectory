@@ -37,6 +37,7 @@
 	const VARIANTS = 3;
 	const EXTS = ['jpg', 'png'];
 	const HIDE_MS = 9000;
+	const TOAST_MS = 2500;
 	const COMPACT_W = 960;
 	const COMPACT_H = 640;
 
@@ -48,6 +49,11 @@
 	let pendingAt = 0;
 	let loadingSrc = '';
 	let loadedSrc = '';
+	/* the money toast waiting for the open card to hide */
+	let toastPending = false;
+	let toastKicker = '';
+	let toastTitle = '';
+	let toastText = '';
 
 	function $(doc, id) {
 		return doc.getElementById(id);
@@ -104,7 +110,7 @@
 		if (!refs.card || !refs.img || !refs.art) return false;
 		refs.img.addEventListener('load', onLoad);
 		refs.img.addEventListener('error', onError);
-		if (refs.close) refs.close.addEventListener('click', hide);
+		if (refs.close) refs.close.addEventListener('click', dismiss);
 		return true;
 	}
 
@@ -149,10 +155,52 @@
 			clearTimeout(timer);
 			timer = 0;
 		}
+		if (toastPending) {
+			toastPending = false;
+			showToast();
+		}
+	}
+
+	/* the × button also drops a queued toast: a dismissal dismisses */
+	function dismiss() {
+		toastPending = false;
+		hide();
+	}
+
+	/* the money toast: a text-only card, shorter stay, no art */
+	function showToast() {
+		refs.kicker.textContent = toastKicker;
+		refs.title.textContent = toastTitle;
+		refs.caption.textContent = toastText;
+		refs.art.hidden = true;
+		refs.img.hidden = true;
+		pending = null;
+		refs.card.hidden = false;
+		refs.card.classList.toggle('compact',
+			needsCompact(window.innerWidth, window.innerHeight));
+		if (timer) clearTimeout(timer);
+		timer = setTimeout(hide, TOAST_MS);
+	}
+
+	/*
+	 * The postcard slot doubles as the money toast. An open card keeps its
+	 * moment; the toast follows once it hides (a newer card then drops it).
+	 */
+	function toast(kicker, title, text) {
+		if (!refs.card) return;
+		toastKicker = kicker;
+		toastTitle = title;
+		toastText = text;
+		if (refs.card.hidden) {
+			showToast();
+			return;
+		}
+		toastPending = true;
 	}
 
 	function show(kind, type, planet) {
 		if (!refs.card) return;
+		toastPending = false;
 		const landed = kind === 'landed';
 		const cls = slugOf(type);
 		refs.kicker.textContent = landed ? 'landed · surface' : 'from space · new system';
@@ -172,9 +220,10 @@
 	}
 
 	const PhotoDeck = {
-		SLUGS, LABELS, VARIANTS,
+		SLUGS, LABELS, VARIANTS, TOAST_MS,
 		slugOf, captionFor, titleFor, variantOf, candidates, needsCompact,
-		attach, show, layout, hide,
+		attach, show, layout, hide, toast,
+		toastQueued: () => toastPending,
 		visible: () => Boolean(refs.card) && !refs.card.hidden
 	};
 

@@ -7,6 +7,7 @@
 	--accent: #ffcf6e;
 	--mint: #8ef0c0;
 	--ice: #67e0ff;
+	--warn: #ff9478;
 	--ore: #ffb26b;
 	--gas: #c58bff;
 }
@@ -235,6 +236,14 @@ body {
 }
 
 .stat.goalStat b {
+	color: var(--mint);
+}
+
+#gamePurse.loss {
+	color: var(--warn);
+}
+
+#gamePurse.gain {
 	color: var(--mint);
 }
 
