@@ -544,12 +544,20 @@ function dragShot(shot) {
 }
 
 env.choose('modeGame');
-env.runFrames(3, 16.0);
+env.calls.texts.length = 0;
+env.runFrames(1, 16.0);
+check(ui.get('rivalTag').textContent.startsWith('thinking '),
+	'rival did not show sliced thinking tag: ' + ui.get('rivalTag').textContent);
+check(env.calls.texts.includes('+0.25') && env.calls.texts.includes('R1'),
+	'canvas did not draw +0.25 planet profit pills and R1 tag: ' + env.calls.texts.join(' '));
+env.runFrames(8, 16.0);
 check(ui.get('modeTag').textContent === 'game · clock runs in flight', 'game mode tag: ' + ui.get('modeTag').textContent);
 check(!ui.get('gameBox').hidden && game.on && game.seed === 7, 'game box / seed');
+check(gScene.botLevel() === 'normal' && !ui.get('rivalRow').hidden, 'default normal rival not active');
+check(ui.get('rivalTag').textContent === '1 rival · route', 'rival tag after idle pre-think: ' + ui.get('rivalTag').textContent);
 check(sim.t === 420 && ui.get('tradeClock').textContent === 't+ 07:00', 'world not rebuilt at t+07:00: ' + sim.t);
 check(ui.get('expClock').textContent === 'game + 00:00.0', 'game clock: ' + ui.get('expClock').textContent);
-check(ui.get('gamePurse').textContent === '12.00', 'purse stat: ' + ui.get('gamePurse').textContent);
+check(ui.get('gamePurse').textContent === '3.00', 'purse stat: ' + ui.get('gamePurse').textContent);
 check(ui.get('tradePause').disabled && ui.get('gravity').disabled, 'pause / gravity not locked');
 check(ui.get('clear').textContent === 'abort' && ui.get('clear').disabled, 'abort button state');
 check(!ui.get('tradeSpeed').disabled, 'rate locked before the first shot');
@@ -558,7 +566,7 @@ const idleMoonX = scene.moons.x[0];
 env.runFrames(120, 16.0);
 check(sim.t === 420 && scene.moons.x[0] === idleMoonX, 'world moved while no cargo flies');
 console.log('game idle: trade', ui.get('tradeClock').textContent, '· clock', ui.get('expClock').textContent,
-	'· seed', ui.get('gameSeed').textContent);
+	'· seed', ui.get('gameSeed').textContent, '· rival', ui.get('rivalReadout').textContent);
 
 /* playback changes only the pace of the flight; physics steps stay identical */
 check(gScene.playScale() === 1 && ui.get('playTag').textContent === '×1', 'playback default');
@@ -580,6 +588,8 @@ const longShot = findShot((g, p) => g.predTime > 4 && g.predReason !== pageSim.E
 dragShot(longShot);
 check(!ui.get('launch').disabled, 'game shot did not arm');
 check(ui.get('launch').textContent === 'launch · 1.00', 'launch fee label: ' + ui.get('launch').textContent);
+check(/· \+\d+\.\d{2}$/.test(ui.get('predVisitReadout').textContent),
+	'predVisitReadout missing predicted profit: ' + ui.get('predVisitReadout').textContent);
 env.click('launch');
 env.runFrames(30, 16.0);
 const shot0 = game.shots[0];
@@ -598,13 +608,12 @@ env.runFrames(3, 16.0);
 check(shot0.abort === abortSteps && cargo.endReason === pageSim.END_ABORT && game.steps === abortSteps,
 	'abort not recorded at step ' + abortSteps);
 check(ui.get('cargoStatus').textContent === 'aborted · clock paused', 'status ' + ui.get('cargoStatus').textContent);
-/* money: the aborted shot paid its launch cost plus what it entered (the
-   origin system alone pays the 0.05 floor), and the toast waits behind the
-   entry card still holding the postcard slot */
+/* money: the aborted shot paid its 1.00 launch cost and kept any non-launch
+   planets harvested before abort; the toast waits behind the entry postcard */
 const MINUS = '\u2212';
 const purse1 = game.money.purse;
-const net1 = purse1 - 12;
-check(purse1 >= 11.05, 'abort purse kept no entries: ' + purse1);
+const net1 = purse1 - pageGame.MONEY.purse0;
+check(purse1 >= 2.0, 'abort purse dropped below 2.00: ' + purse1);
 check(ui.get('gamePurse').textContent === purse1.toFixed(2) + ' · last ' +
 	(net1 < 0 ? MINUS : '+') + Math.abs(net1).toFixed(2),
 	'purse stat after abort: ' + ui.get('gamePurse').textContent);
@@ -630,7 +639,11 @@ env.click('playFaster');
 env.click('playFaster');
 env.click('launch');
 for (let i = 0; i < 2000 && cargo.status === pageSim.STATUS_FLYING; i++) env.runFrames(1, 16.0);
+env.calls.texts.length = 0;
 env.runFrames(2, 16.0);
+const profitLabels = env.calls.texts.filter(t => /^\+\d+\.\d{2}$/.test(t));
+check(profitLabels.includes('+0.00') && profitLabels.some(t => Number(t) > 0.25),
+	'canvas planet-profit labels did not reset on visit and grow over game time: ' + profitLabels.join(' '));
 env.click('playReset');
 check(gScene.playScale() === 1, 'playback did not reset after the flight');
 check(cargo.status === pageSim.STATUS_ENDED && game.shots.length === 2, 'second game flight did not end');
@@ -650,11 +663,18 @@ console.log('game score:', ui.get('gameScore').textContent, '·', ui.get('cargoS
 
 env.click('gameCopy');
 const link = env.clipboardText || '';
-check(link.startsWith(env.context.location.href.split('#')[0] + '#game=1&seed=7&rate=2&shots='), 'link: ' + link);
+check(link.startsWith(env.context.location.href.split('#')[0] + '#game=1&seed=7&rate=2&bot=normal&shots='), 'link: ' + link);
 const decoded = pageGame.decodeLink(link.slice(link.indexOf('#')));
-check(decoded && decoded.shots.length === 2 && decoded.shots[0].abort === abortSteps &&
+check(decoded && decoded.bot === 'normal' && decoded.shots.length === 2 &&
+	decoded.shots[0].abort === abortSteps &&
 	decoded.end.visited === endVisited && decoded.end.steps === endSteps, 'link does not carry the run');
 console.log('replay link:', link.slice(link.indexOf('#')));
+
+/* copy rival exports Rival 1's own solo trajectory and verifies */
+check(!ui.get('botCopy').disabled, 'copy rival disabled after rival launched');
+env.click('botCopy');
+const rLink = env.clipboardText || '';
+check(rLink.includes('#game=1&seed=7&rate=2&shots='), 'rival link malformed: ' + rLink);
 
 env.setHash(link.slice(link.indexOf('#')));
 env.runFrames(2, 16.0);
@@ -727,6 +747,23 @@ check(cargo.cargo.x === routeEndX && cargo.cargo.y === routeEndY && sim.t === ro
 	gScene.scoreSteps() === routeSteps, 'route replay end state differs');
 console.log('route replay:', ui.get('replayReadout').textContent, '·', routeLink.slice(routeLink.indexOf('#')).length,
 	'char link ·', gScene.rule(), 'rule');
+
+/* money rule + hard rivals (2 rivals on canvas) + solo toggle */
+env.choose('ruleMoney');
+env.choose('botHard');
+env.calls.texts.length = 0;
+env.runFrames(2, 16.0);
+check(gScene.rule() === 'money' && gScene.botLevel() === 'hard', 'money/hard switch failed');
+check(ui.get('ruleTag').textContent === 'money · 10 shots', 'money ruleTag: ' + ui.get('ruleTag').textContent);
+check(ui.get('gameScore').textContent.startsWith('0 / 10 shots · '),
+	'money score format: ' + ui.get('gameScore').textContent);
+check(env.calls.texts.includes('R1') && env.calls.texts.includes('R2'),
+	'hard mode did not draw R1 and R2 tags: ' + env.calls.texts.join(' '));
+env.choose('botOff');
+env.runFrames(2, 16.0);
+check(gScene.botLevel() === 'off' && ui.get('rivalRow').hidden && ui.get('botCopy').hidden &&
+	ui.get('rivalTag').textContent === 'solo', 'botOff UI state');
+console.log('money & rivals UI:', ui.get('ruleTag').textContent, '· hard R1/R2 + solo verified');
 
 env.choose('modeLab');
 env.runFrames(2, 16.0);

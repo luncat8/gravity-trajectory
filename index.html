@@ -62,17 +62,27 @@
 			<div class="radioRow" role="radiogroup" aria-label="game rule">
 				<label><input id="ruleTour" type="radio" name="gameRule" value="tour" checked> tour</label>
 				<label><input id="ruleRoute" type="radio" name="gameRule" value="route"> route</label>
+				<label><input id="ruleMoney" type="radio" name="gameRule" value="money"> money</label>
+			</div>
+			<div class="caption"><span>rivals</span><span id="rivalTag">normal · 1 bot</span></div>
+			<div class="radioRow rivalRadios" role="radiogroup" aria-label="rival difficulty">
+				<label><input id="botOff" type="radio" name="gameBot" value="off"> off</label>
+				<label><input id="botEasy" type="radio" name="gameBot" value="easy"> easy</label>
+				<label><input id="botNormal" type="radio" name="gameBot" value="normal" checked> normal</label>
+				<label><input id="botHard" type="radio" name="gameBot" value="hard"> hard</label>
 			</div>
 			<div class="stats">
 				<div class="stat"><span>seed · rate</span><b id="gameSeed">—</b></div>
 				<div class="stat goalStat"><span>score</span><b id="gameScore">—</b></div>
 				<div class="stat"><span>purse</span><b id="gamePurse">—</b></div>
+				<div class="stat" id="rivalRow" hidden><span>rivals</span><b id="rivalReadout">—</b></div>
 				<div class="stat" id="replayRow" hidden><span>replay</span><b id="replayReadout">—</b></div>
 			</div>
 			<div class="actions gameActions">
 				<button id="gameRestart" class="miniBtn" title="same seed, fresh start">restart</button>
 				<button id="gameNewSeed" class="miniBtn" title="random world">new seed</button>
 				<button id="gameCopy" class="miniBtn" title="link with seed, rate and every launch">copy replay</button>
+				<button id="botCopy" class="miniBtn" title="copy rival shot list as a replay link" hidden>copy rival</button>
 				<button id="replaySpeed" class="miniBtn" title="replay speed" hidden>×1</button>
 				<button id="replaySkip" class="miniBtn" title="re-simulate the rest instantly" hidden>skip</button>
 			</div>
@@ -164,9 +174,11 @@
 			<li><b>same world</b> — the seed builds planets, ports and colonies; everyone opening your link flies the same system.</li>
 			<li><b>clock runs in flight only</b> — trade, ports and moons move only while the cargo flies; after it lands or leaves, everything waits for your next launch.</li>
 			<li><b>fixed rules</b> — gravity stays at 1, no relaunch mid-flight, a <i>tour</i> flight ends after 120 s or on <i>abort</i>; the speed slider sets the world rate until the first launch.</li>
-				<li><b>score · tour</b> — more systems, then fewer shots, then less flight time; a full tour stops its clock when the 26th system is entered.</li>
-				<li><b>purse</b> — a launch costs 1.00 and is refused below that (the run is over); a first entry pays 0.10 per flight-second since the previous one (min 0.05), a landing +0.25, the full tour +3.00 once. Aborts and exits keep only what they already entered. The score line carries the purse after time, and a replay re-derives it from the shots alone.</li>
-			<li><b>rule · route</b> — no flight cap: a shot runs until it hits, leaves the field or reaches the 1 800 s wall, and the aim traces it to that end in a few ms per frame. Score: systems, then route length, then fewer shots, then less time.</li>
+			<li><b>score · tour</b> — more systems, then fewer shots, then less flight time, then purse; a full tour stops when the 26th system is entered.</li>
+			<li><b>purse &amp; planet profit</b> — purse starts at 3.00 and each launch costs 1.00 (refused below 1.00). Every planet displays its current visit profit (+0.25 at start, growing +0.25 per 40 s of game time since last visited up to +0.75). Entering a planet’s port orbit collects that value and resets it to +0.00 — steer through long-unvisited worlds to fund your tour and out-earn rivals.</li>
+			<li><b>rule · route</b> — no 120 s cap (1 800 s wall), traced in per-frame slices; score: systems, route length, fewer shots, less time, purse.</li>
+			<li><b>rule · money</b> — 10-shot contract without stopping at 26 / 26; score: highest purse, then systems, then fewer shots.</li>
+			<li><b>rivals</b> — <i>easy / normal</i> (1 bot) and <i>hard</i> (2 bots with 1-ply lookahead) fly on the same clock and harvest from the same planets, so worlds along their trails reset to +0.00.</li>
 			<li><b>playback</b> — <i>− slower / + faster</i> changes only how fast you watch; physics steps and the recorded replay stay identical. The world rate slider stays locked once a shot is fired.</li>
 			<li><b>copy replay</b> — a link with seed, rate and every launch; opening it re-flies the run, checks the recorded result, then lets you continue.</li>
 		</ul>
@@ -227,6 +239,7 @@
 <script src="orbit_view.js"></script>
 <script src="gravity_sim.js"></script>
 <script src="gravity_game.js"></script>
+<script src="gravity_bot.js"></script>
 <script src="photo_deck.js"></script>
 <script src="gravity_gui.js"></script>
 </body>

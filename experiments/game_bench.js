@@ -77,11 +77,13 @@ function benchTrade() {
 function benchCodec() {
 	const rand = seededRandom(7);
 	let longest = 0;
+	const ruleList = [GravityGame.RULE_TOUR, GravityGame.RULE_ROUTE, GravityGame.RULE_MONEY];
+	const botList = [GravityGame.BOT_OFF, GravityGame.BOT_EASY, GravityGame.BOT_NORMAL, GravityGame.BOT_HARD];
 	for (let n = 0; n < 300; n++) {
 		const shots = [];
 		const count = Math.floor(rand() * 40);
-		/* every fifth link is a route run: its aborts may pass the tour cap */
-		const rule = n % 5 === 0 ? GravityGame.RULE_ROUTE : GravityGame.RULE_TOUR;
+		const rule = ruleList[n % ruleList.length];
+		const bot = botList[(n * 3) % botList.length];
 		const cap = GravityGame.RULES[rule].capSteps;
 		for (let k = 0; k < count; k++) {
 			shots.push(GravityGame.createShot(rand() < 0.5 ? 0 : 1, Math.floor(rand() * PLANETS),
@@ -90,11 +92,11 @@ function benchCodec() {
 				rand() < 0.2 ? Math.floor(rand() * cap) : GravityGame.NO_ABORT));
 		}
 		const game = { seed: 1 + Math.floor(rand() * 4e9), rate: (1 + Math.floor(rand() * 24)) / 2,
-			rule, shots, visited: Math.floor(rand() * 27), steps: Math.floor(rand() * 1e6) };
+			rule, bot, shots, visited: Math.floor(rand() * 27), steps: Math.floor(rand() * 1e6) };
 		const text = GravityGame.encodeLink(game);
 		const back = GravityGame.decodeLink('#' + text);
 		const same = back && back.seed === game.seed && back.rate === game.rate &&
-			back.rule === game.rule &&
+			back.rule === game.rule && back.bot === game.bot &&
 			JSON.stringify(back.shots) === JSON.stringify(shots) &&
 			(count === 0 ? back.end === null : back.end.visited === game.visited && back.end.steps === game.steps);
 		check(same, 'codec round trip ' + text);
@@ -103,7 +105,8 @@ function benchCodec() {
 	const rejects = ['game=2&seed=5&rate=1', 'game=1&seed=0&rate=1', 'game=1&seed=5&rate=0.7',
 		'game=1&seed=5&rate=13', 'game=1&seed=5&rate=1&shots=x0.0.p00', 'game=1&seed=5&rate=1&shots=p26.0.p00',
 		'game=1&seed=5&rate=1&shots=p0.0.10', 'game=1&seed=5&rate=1&shots=p0.mzzz.p00',
-		'game=1&seed=5&rate=1&shots=p0.0.p00.ba0', 'game=1&seed=5&rate=1&shots=p0.0.p00_'];
+		'game=1&seed=5&rate=1&shots=p0.0.p00.ba0', 'game=1&seed=5&rate=1&shots=p0.0.p00_',
+		'game=1&seed=5&rate=1&rule=bogus', 'game=1&seed=5&rate=1&bot=impossible'];
 	for (const text of rejects) check(GravityGame.decodeLink(text) === null, 'accepted bad link ' + text);
 	/* an abort past the tour cap is a route run, not a broken tour link */
 	check(GravityGame.decodeShot('p0.0.3aio.ba0', GravityGame.CAP_STEPS) === null,
@@ -339,14 +342,12 @@ function benchRoute() {
 /* 3c. money mode (0.3.2): the purse is a pure function of the shot list */
 
 /*
- * The two greedy tours of the plan's measurement section, seed 31 rate 3,
- * played at x8 (only the pacing changes). The purse rows are the exact-rule
- * values: first entries pay from their entry steps, not from flight time, so
- * they sit above the plan's draft sketch, which paid 0.1 x whole flights.
+ * Two greedy tours on seed 31 rate 3 under the per-planet growing profit
+ * market (purse0 = 3.00, cost = 1.00, k = 0.00625/s, cap = 0.75), played at x8.
  */
 const MONEY_TOURS = [
-	{ horizon: 12, shots: 9, purse: 13.1542 },
-	{ horizon: 60, shots: 6, purse: 17.5950 }
+	{ horizon: 12, shots: 9, purse: 4.8954 },
+	{ horizon: 60, shots: 6, purse: 10.1067 }
 ];
 
 function playMoneyTour(horizon) {
@@ -366,7 +367,7 @@ function playMoneyTour(horizon) {
 			page.runFrames(1, 16.7);
 			frames += 1;
 		}
-		rows.push(cargo.visitLogCount + '/' + (cargo.liveSteps * GravitySim.DT).toFixed(1));
+		rows.push(scene.game.money.shotVisits + '/' + (cargo.liveSteps * GravitySim.DT).toFixed(1));
 	}
 	page.runFrames(2, 16.7);
 	page.click('gameCopy');
@@ -388,8 +389,9 @@ function benchMoney() {
 			'\n  ' + pageState(tour.page));
 		check(replayed.verdict.startsWith('verified ✓'),
 			'money tour replay verdict ' + replayed.verdict);
+		const net = tour.purse - GravityGame.MONEY.purse0;
 		console.log('money tour ' + row.horizon + ' s:', tour.rows.join(' · '),
-			'· purse', tour.purse.toFixed(2), '+', (tour.purse - 12).toFixed(2),
+			'· purse', tour.purse.toFixed(2), (net >= 0 ? '+' : '') + net.toFixed(2),
 			'· replay', replayed.verdict);
 	}
 	console.log('  both tours replayed the purse exactly ·', Date.now() - started, 'ms');

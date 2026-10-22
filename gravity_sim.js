@@ -48,6 +48,7 @@
 	const END_TRUNCATED = 4;
 	const END_ABORT = 5;
 	const FULL_BUDGET_MS = 1e9;
+	const PRED_LOG_MAX = 64;
 
 	function GravitySim(worldW, worldH) {
 		this.worldW = worldW;
@@ -108,13 +109,12 @@
 		this.visited = new Uint8Array(MAX_BODIES);
 		this.visitedCount = 0;
 		this.visitStep = 0;
-		/* first-entry log for the purse: planet + step in visit order;
-		 * the log is per flight, the visitLogged mask is per run */
-		this.visitLogged = new Uint8Array(MAX_BODIES);
-		this.visitLogPlanet = new Int32Array(MAX_BODIES);
-		this.visitLogStep = new Int32Array(MAX_BODIES);
-		this.visitLogCount = 0;
 		this.predVisit = new Uint8Array(MAX_BODIES);
+		this.predInside = new Uint8Array(MAX_BODIES);
+		this.predEntered = new Int32Array(MAX_BODIES);
+		this.predLogPlanet = new Int32Array(PRED_LOG_MAX);
+		this.predLogStep = new Int32Array(PRED_LOG_MAX);
+		this.predLogCount = 0;
 		this.predVisits = 0;
 		this.predNewVisits = 0;
 
@@ -135,6 +135,7 @@
 
 		/* resumable trace job: a long horizon is computed in per-frame slices */
 		this.routeActive = false;
+		this.routeStorePath = true;
 		this.routeStartStep = 0;
 		this.routeHorizon = HORIZON;
 		this.routeMaxSteps = 0;
@@ -249,6 +250,40 @@
 			}
 		}
 		return added;
+	};
+
+	/*
+	 * Updates `prevInside` in place for (x, y) and writes newly entered planet
+	 * indices into `enteredOut`, returning the number of entries on this step.
+	 */
+	GravitySim.prototype.stepInsideAt = function (x, y, prevInside, enteredOut) {
+		const count = this.planetCount;
+		if (count === 0) return 0;
+		const px = this.planetX;
+		const py = this.planetY;
+		const bound = this.sysBoundR2;
+		const cos = this.sysCos;
+		const sin = this.sysSin;
+		const invRX = this.sysInvRX;
+		const invRY = this.sysInvRY;
+		let entered = 0;
+		for (let i = 0; i < count; i++) {
+			const dx = x - px[i];
+			const dy = y - py[i];
+			if (dx * dx + dy * dy > bound[i]) {
+				prevInside[i] = 0;
+				continue;
+			}
+			const u = (dx * cos[i] + dy * sin[i]) * invRX[i];
+			const v = (-dx * sin[i] + dy * cos[i]) * invRY[i];
+			const inside = u * u + v * v <= 1 ? 1 : 0;
+			if (inside && !prevInside[i]) {
+				enteredOut[entered] = i;
+				entered += 1;
+			}
+			prevInside[i] = inside;
+		}
+		return entered;
 	};
 
 	GravitySim.prototype.setStrength = function (body, value) {
@@ -391,6 +426,9 @@
 		const visit = this.predVisit;
 		visit.fill(0);
 		this.markSystemsAt(state.x, state.y, visit);
+		this.predInside.set(visit);
+		this.predLogCount = 0;
+		this.routeStorePath = true;
 		this.predX[0] = state.x;
 		this.predY[0] = state.y;
 		this.routeStartStep = startStep;
@@ -431,6 +469,9 @@
 		if (!this.routeActive) return true;
 		const state = this.probe;
 		const visit = this.predVisit;
+		const inside = this.predInside;
+		const enteredBuf = this.predEntered;
+		const storePath = this.routeStorePath;
 		const maxSteps = this.routeMaxSteps;
 		const moving = !this.fieldStatic && this.fieldRate !== 0;
 		const fieldStride = moving ? this.fieldStride() : FIELD_STRIDE;
@@ -454,13 +495,32 @@
 			this.routeTime += DT;
 			this.routeFieldT += DT * this.fieldRate;
 			this.routeSteps = step + 1;
-			this.markSystemsAt(state.x, state.y, visit);
+			const entered = this.stepInsideAt(state.x, state.y, inside, enteredBuf);
+			for (let e = 0; e < entered; e++) {
+				const p = enteredBuf[e];
+				visit[p] = 1;
+				if (this.predLogCount < PRED_LOG_MAX) {
+					this.predLogPlanet[this.predLogCount] = p;
+					this.predLogStep[this.predLogCount] = this.routeSteps;
+					this.predLogCount += 1;
+				}
+			}
 			hit = this.impact(state.x, state.y);
-			if (hit >= 0) reason = END_IMPACT;
-			else if (this.outside(state.x, state.y)) reason = END_EXIT;
+			if (hit >= 0) {
+				reason = END_IMPACT;
+				if (this.planetCount > 0 && !inside[hit]) {
+					inside[hit] = 1;
+					visit[hit] = 1;
+					if (this.predLogCount < PRED_LOG_MAX) {
+						this.predLogPlanet[this.predLogCount] = hit;
+						this.predLogStep[this.predLogCount] = this.routeSteps;
+						this.predLogCount += 1;
+					}
+				}
+			} else if (this.outside(state.x, state.y)) reason = END_EXIT;
 			else if (this.routeTime >= this.routeHorizon - 1e-9) reason = END_TIME;
 			/* the end point is always stored, so a sampled path still lands on the truth */
-			if (reason !== END_OPEN || this.routeSteps % this.routeStride === 0) {
+			if (storePath && (reason !== END_OPEN || this.routeSteps % this.routeStride === 0)) {
 				this.routePoint(state.x, state.y);
 			}
 			if (reason !== END_OPEN) break;
@@ -527,6 +587,16 @@
 		this.routeDrain(FULL_BUDGET_MS);
 	};
 
+	/* headless candidate evaluation (no path buffer writes) for bot search */
+	GravitySim.prototype.predictFast = function (origin, angle, speed, horizonSec) {
+		const t0 = this.fieldT;
+		this.spawn(this.probe, origin, angle, speed, t0);
+		this.routeBeginAt(this.probe, t0, 0, horizonSec, Math.ceil(horizonSec / DT) + 2);
+		this.routeStorePath = false;
+		this.routeDrain(FULL_BUDGET_MS);
+		this.routeStorePath = true;
+	};
+
 	/* continues trajectory forward from the live flying cargo until it lands */
 	GravitySim.prototype.predictFlight = function (budgetMs) {
 		if (this.status !== STATUS_FLYING) return;
@@ -566,7 +636,6 @@
 		this.endBody = NO_BODY;
 		this.trailCount = 0;
 		this.trailStride = TRAIL_STRIDE;
-		this.visitLogCount = 0;
 		this.addVisits(this.markSystemsAt(this.cargo.x, this.cargo.y, this.visited));
 		this.recordTrail();
 	};
@@ -575,16 +644,6 @@
 		if (added === 0) return;
 		this.visitedCount += added;
 		this.visitStep = this.liveSteps;
-		/* which systems were first-entered and when, for the money ledger;
-		 * visitLogged is run-cumulative, so a system is logged exactly once */
-		const logged = this.visitLogged;
-		for (let i = 0; i < this.planetCount; i++) {
-			if (!this.visited[i] || logged[i]) continue;
-			logged[i] = 1;
-			this.visitLogPlanet[this.visitLogCount] = i;
-			this.visitLogStep[this.visitLogCount] = this.liveSteps;
-			this.visitLogCount += 1;
-		}
 	};
 
 	GravitySim.prototype.recordTrail = function () {
@@ -620,46 +679,56 @@
 		this.recordTrail();
 	};
 
+	/* one fixed DT physics step; shared by real-time step(dt) and exact-step game races */
+	GravitySim.prototype.stepOne = function () {
+		if (this.status !== STATUS_FLYING) return;
+		/* checked before stepping: an abort recorded at step N replays as N steps */
+		if (this.liveSteps >= this.stepLimit) {
+			this.finish(this.limitReason, NO_BODY);
+			return;
+		}
+		const cargo = this.cargo;
+		const moving = !this.fieldStatic && this.fieldRate !== 0;
+		const stride = moving ? this.fieldStride() : FIELD_STRIDE;
+		if (this.stepStale || (moving && this.liveSteps % stride === 0)) {
+			this.fillStep(this.flightFieldT);
+			this.stepStale = false;
+		}
+		const prevX = cargo.x;
+		const prevY = cargo.y;
+		this.advance(cargo, DT);
+		const dx = cargo.x - prevX;
+		const dy = cargo.y - prevY;
+		this.flightLength += Math.sqrt(dx * dx + dy * dy);
+		this.flightFieldT += DT * this.fieldRate;
+		this.liveSteps += 1;
+		this.flightTime = this.liveSteps * DT;
+		this.addVisits(this.markSystemsAt(cargo.x, cargo.y, this.visited));
+		const body = this.impact(cargo.x, cargo.y);
+		if (body >= 0) {
+			this.finish(END_IMPACT, body);
+			return;
+		}
+		if (this.outside(cargo.x, cargo.y)) {
+			this.finish(END_EXIT, NO_BODY);
+			return;
+		}
+		if (this.liveSteps >= this.stepLimit) {
+			this.finish(this.limitReason, NO_BODY);
+			return;
+		}
+		if (this.liveSteps % this.trailStride === 0) this.recordTrail();
+	};
+
 	GravitySim.prototype.step = function (dt) {
 		if (this.status !== STATUS_FLYING || !(dt > 0)) return;
 		this.acc += dt;
 		if (this.acc > 0.25) this.acc = 0.25;
-		const cargo = this.cargo;
 		let guard = 0;
 		while (this.acc >= DT && this.status === STATUS_FLYING && guard < 24) {
-			/* checked before stepping: an abort recorded at step N replays as N steps */
-			if (this.liveSteps >= this.stepLimit) {
-				this.finish(this.limitReason, NO_BODY);
-				break;
-			}
-			const moving = !this.fieldStatic && this.fieldRate !== 0;
-			const stride = moving ? this.fieldStride() : FIELD_STRIDE;
-			if (this.stepStale || (moving && this.liveSteps % stride === 0)) {
-				this.fillStep(this.flightFieldT);
-				this.stepStale = false;
-			}
-			const prevX = cargo.x;
-			const prevY = cargo.y;
-			this.advance(cargo, DT);
-			const dx = cargo.x - prevX;
-			const dy = cargo.y - prevY;
-			this.flightLength += Math.sqrt(dx * dx + dy * dy);
-			this.flightFieldT += DT * this.fieldRate;
-			this.liveSteps += 1;
-			this.flightTime = this.liveSteps * DT;
+			this.stepOne();
 			this.acc -= DT;
 			guard += 1;
-			this.addVisits(this.markSystemsAt(cargo.x, cargo.y, this.visited));
-			const body = this.impact(cargo.x, cargo.y);
-			if (body >= 0) {
-				this.finish(END_IMPACT, body);
-				break;
-			}
-			if (this.outside(cargo.x, cargo.y)) {
-				this.finish(END_EXIT, NO_BODY);
-				break;
-			}
-			if (this.liveSteps % this.trailStride === 0) this.recordTrail();
 		}
 		if (this.acc >= DT) this.acc = 0;
 	};
@@ -681,9 +750,9 @@
 		this.visited.fill(0);
 		this.visitedCount = 0;
 		this.visitStep = 0;
-		this.visitLogged.fill(0);
-		this.visitLogCount = 0;
 		this.predVisit.fill(0);
+		this.predInside.fill(0);
+		this.predLogCount = 0;
 		this.predVisits = 0;
 		this.predNewVisits = 0;
 		this.trailCount = 0;

@@ -239,11 +239,13 @@ body {
 	color: var(--mint);
 }
 
-#gamePurse.loss {
+#gamePurse.loss,
+#rivalReadout.loss {
 	color: var(--warn);
 }
 
-#gamePurse.gain {
+#gamePurse.gain,
+#rivalReadout.gain {
 	color: var(--mint);
 }
 
@@ -350,6 +352,11 @@ body {
 .radioRow {
 	display: flex;
 	gap: 14px;
+}
+
+.rivalRadios {
+	gap: 10px;
+	flex-wrap: wrap;
 }
 
 .radioRow label {

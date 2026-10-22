@@ -1,0 +1,114 @@
+=== gravity_bench ===
+world: 26 planets, fast-forward to t+07:00 in 43.99 ms
+trade at t+07:00: ports 14, ships 14, delivered 1737, colonies 7
+
+prediction sweep: 5616 runs (36 angles x 6 speeds x 26 planets)
+  avg 0.274 ms, p95 30.04 s flight, worst 2.192 ms
+  avg flight 7.98 s
+  ends: open 0, impact 3282, exit 2295, horizon 39, budget 0
+
+parity: 216 shots, worst live/predicted deviation 0.000068 px (P9 a7 v60)
+moving ports at x6: parity 60 shots, worst deviation 0.000068 px (port 9 a4 v90)
+  moving vs frozen end point: max 1358.1 px apart
+  moving prediction: 168 runs, avg 0.266 ms, worst 3.118 ms
+repel field: 156 paths, finite bounds x -14.1…1614.0, y -13.7…1013.9
+budget: 10 ms cap, worst 2.192 ms (within budget)
+BENCH OK
+
+=== route_bench ===
+route bench — 216000 steps of wall (1800 s)
+1. sliced tracer equals a one-shot tracer
+  static: 200 shots, one call vs 1 ms slices agree point for point (mean 0.1 slices)
+  moving ports x6: 60 shots, one call vs 1 ms slices agree point for point (mean 0.1 slices)
+2. flight length in the static field
+  static field, 6864 shots: flight median 5.7 s, p95 37.1 s, longest 158.3 s · over the 120 s tour cap 4 · reaching the 1 800 s wall 0
+3. point buffer
+  wall trace: 216000 steps, 27001 points, stride 8, end horizon (1800 s)
+  the same wall shot in 4 ms slices: 7 slices, identical path after 8x compaction
+  longest real shot: 158.3 s, 18997 points, stride 1 (every step kept)
+4. slice cost
+  static field: 0.4 ms of work in 1.0 slices, worst slice 2.35 ms, 1269 points
+  moving ports x6: 1.2 ms of work in 1.1 slices, worst slice 4.06 ms, 1649 points
+  wall trace: 31.3 ms of work in 8.0 slices, worst slice 4.01 ms, 27001 points
+5. no allocation
+  probe, path and all field buffers keep their identity across a trace
+ROUTE BENCH OK
+
+=== colony_bench ===
+colony bench: 1622/1622 checks
+  jitter max 0.0600 · map 0.5 µs · advance 0.29 µs/colony-y (22.4 µs/tick for 26 colonies)
+COLONY BENCH OK
+
+=== dom_smoke ===
+trade start t+ 07:00 ports 14 / 26 colonies 7 / 18
+world traits: rock 7, terran 3, super 4, dwarf 6, mini 3, gas 1, ice giant 2 | Z 0.0122 L 0.77 belts 1
+photo deck: rock world, terran world, super-Earth, dwarf world, mini world, gas giant, ice giant · candidates photos/space/terran-2.jpg photos/space/terran-2.png photos/space/terran.jpg photos/space/terran.png
+colonies at t+07:00: 14 stages outpost 0, settlement 0, town 6, city 8 log entries 40
+after drag: status armed · P0 aim 320 px/s · 16.7° · +5 (5 sys) path 4.8 s · left field calc 570 steps · 0.00 ms launch disabled false
+trajectory length 1495 px time to end 4.8 s · left field
+after click (no drag): status armed · P0 path 4.8 s · left field launch disabled false
+after launch: status in flight flight 0.02 s · 5 px
+fine aim: — -> 173 px/s · 0.0° · fine · +3 (5 sys)
+gravity edit: P0 · g -1.50 repel slider -1.50
+trim +5% / -5%: 237 px/s · 9.5° · +4 (6 sys) -> 249 px/s · 9.5° · +4 (6 sys) -> 224 px/s · 9.5° · +3 (5 sys) target aim speed thumb after release 0
+paused trade: t+ 07:00 -> t+ 07:00 | exp: exp + 00:00.4 -> exp + 00:01.2
+after clear: ready flight —
+gravity source ports · moving
+ports drag: status armed · P21 selected port 0 · g +1.00 launch disabled false
+ports trajectory while centres move: 0.5 s · left field|147 px -> 0.5 s · left field|148 px
+gravity source back to planets
+after resize scale 0.710 offX 72.0 canvas 1280x800 · photo compact fold OK
+moons & belts: 324 points, 34 tracks · Kepler OK
+help drawer roles: tourist -> emperor’s emissary
+adaptive trajectory updates: 60fps 30/30, 33fps 11/24 (interval 4)
+photo cards: space P14 -> landed P14 · gas giant
+grand tour verified: 5.0 s · time cap -> 16.8 s · impact P14 | visited 6 / 26 | next base P14
+game idle: trade t+ 07:00 · clock game + 00:00.0 · seed seed 7 · ×2 · rival R1 0/26 · 0 shots · purse 3.00
+money after abort: purse 2.25 · toast P14 +0.25 · cost −1.00 · purse 2.25
+game flight: aborted at step 57 · trade t+ 0.950 min · clock game + 00:00.4
+game score: 6 / 26 · 2 shots · 8.41 s · purse 2.12 · impact P10 · clock paused · watched at ×4 then reset
+replay link: #game=1&seed=7&rate=2&bot=normal&shots=p0.0.2mtc.1l_p0.0.2mtc&end=6.1009
+replay verdict: verified ✓ · purse 2.12 · cargo end identical, trade t identical
+broke run: launch refused, purse 0.40 · need 1.00
+route rule: 6 / 26 · 1211 px · 1 shot · 7.93 s · purse 3.11 · impact P10 · clock paused · traced 7.9 s in 953 points
+route replay: verified ✓ · purse 3.11 · 69 char link · route rule
+money & rivals UI: money · 10 shots · hard R1/R2 + solo verified
+challenge link: seed 42 ×1 locked · fallback field ml#game=1&seed=42&rate=1 · invalid link noted
+paint calls { fillText: 25960, stroke: 663338, fill: 268426 }
+SMOKE OK
+
+=== bot_bench ===
+1a. market curve & parity: 208 flights, max |estimateProfit - stepHarvest| = 0.0e+0
+1b. balance (4 seeds): lazy broke 4/4 · casual broke 4/4 · blind lost money 4/4 · smart won money 4/4 · smart 26/26 tour 4/4
+2. ladder [tour]: hard>easy 4/4, normal>easy 4/4 · s7 E:26/$10.8 N:26/$13.6 H:26/$8.6 | s31 E:26/$5.0 N:26/$15.1 H:26/$7.0 | s42 E:26/$7.5 N:26/$13.8 H:26/$5.1 | s913 E:25/$7.7 N:26/$12.0 H:26/$5.8
+2. ladder [route]: hard>easy 3/4, normal>easy 3/4 · s7 E:25/$9.5 N:26/$17.6 H:26/$13.0 | s31 E:26/$13.7 N:26/$24.8 H:26/$10.3 | s42 E:26/$20.0 N:26/$13.6 H:26/$10.1 | s913 E:26/$11.6 N:26/$23.4 H:26/$16.8
+2. ladder [money]: hard>easy 4/4, normal>easy 4/4 · s7 E:23/$7.1 N:23/$14.0 H:23/$9.1 | s31 E:23/$6.4 N:26/$14.4 H:25/$12.1 | s42 E:23/$7.4 N:25/$17.6 H:25/$11.5 | s913 E:24/$6.9 N:23/$12.1 H:24/$9.1
+3 & 4. slices & perf: 6 exact 1-cand === sync matches · buffers 0-alloc · full decision easy/normal/hard = 6.08/15.53/38.69 ms · worst 64-cand slice 3.98 ms
+5. contested race replay (money + hard 2 rivals): 60 Hz === 144 Hz x16 === jitter === skip · #game=1&seed=31&rate=3&rule=money&bot=hard&shots=p0.dhg.2mtc_p6.ef5w.3u9s_p3.ef5w.3u9s&end=15.3909
+BOT BENCH OK
+
+=== game_bench ===
+trade: advanceTo chunks 0-3 min vs one jump, 9 runs identical incl. exact t; reset == new Sim
+codec: 300 round trips, 12 rejects, ~77.0 chars/shot; grid: 1e5 idempotent, angle snap ≤ 3.00e-6 rad
+scripted game (seed 31, rate 3, 60 Hz): 26 / 26 ✓ · 8 shots · 50.27 s · purse 6.51 · ends impact P15, impact P20, impact P3, impact P22, abort, impact P23, impact P17, impact P10 · 6066 steps · 24337 ms
+  link 153 chars: #game=1&seed=31&rate=3&shots=p12.21ns.3aio_p15.68j.3aio_p20.5sib.5hj4_m3.lpm0.5hj4_m22.krwd.5hj4.2i_m22.krwd.5hj4_p23.a07n.5hj4_p17.da7c.5hj4&end=26.6033
+  replay 144 Hz x4: identical · verified ✓ · purse 6.51 · 2224 frames ·  9551 ms
+  replay jitter 4-45 ms + 120 ms stalls x1: identical · verified ✓ · purse 6.51 · 2282 frames ·  6581 ms
+  replay 60 Hz x16: identical · verified ✓ · purse 6.51 · 253 frames ·  1138 ms
+  replay skip: identical · verified ✓ · purse 6.51 ·  113 ms
+route game (seed 31, rate 3, 60 Hz): 13 / 26 · 3093 px · 2 shots · 19.78 s · purse 5.08 · ends impact P9, impact P12 · 2374 steps · 8608 ms
+  flights 10.2 s / 1614 px · 9.6 s / 1479 px
+  link 78 chars: #game=1&seed=31&rate=3&rule=route&shots=p12.iwh4.3if4_p9.8ln7.3if4&end=13.2374
+  replay 60 Hz x1: identical · verified ✓ · purse 5.08 · 1349 frames ·  4243 ms
+  replay jitter 4-45 ms + 120 ms stalls x1: identical · verified ✓ · purse 5.08 · 857 frames ·  1928 ms
+  replay 60 Hz x16: identical · verified ✓ · purse 5.08 · 110 frames ·  343 ms
+  replay skip: identical · verified ✓ · purse 5.08 ·  47 ms
+money tour 12 s: 8/8.0 · 5/10.6 · 2/3.5 · 5/7.5 · 4/4.4 · 1/1.3 · 5/7.6 · 2/1.9 · 6/3.3 · purse 4.90 +1.90 · replay verified ✓ · purse 4.90
+money tour 60 s: 25/45.3 · 2/2.9 · 1/0.9 · 6/13.8 · 2/6.1 · 1/1.5 · purse 10.11 +7.11 · replay verified ✓ · purse 10.11
+  both tours replayed the purse exactly · 25586 ms
+broke run: 3 shots · purse left 0.00 · launch refused · replay verified ✓ · purse 0.00
+cross-engine proxy (1 ulp):
+  planets · launch angle: 1872 flights, 0 outcome flips · end drift median 2.7e-13 p99 2.3e-8 max 1.4e-6 px
+  ports x3 · launch angle: 1872 flights, 0 outcome flips · end drift median 2.3e-13 p99 1.5e-10 max 8.0e-9 px
+  ports x3 · every port position: 1872 flights, 0 outcome flips · end drift median 1.1e-13 p99 1.4e-10 max 2.4e-8 px
+GAME BENCH OK

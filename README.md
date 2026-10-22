@@ -32,10 +32,11 @@ Open `index.html` (`file://` works, no build, no modules).
 | space | pauses the trade background only (lab) |
 | mode `lab` / `game` | game: rebuilds the seeded world at `t+07:00`, freezes it between flights, locks gravity at `1` |
 | `abort` (game) | ends the running flight at the current step (recorded in the replay) |
-| rule `tour` / `route` (game) | tour: 120 s flight cap, score systems → shots → time; route: no cap (1 800 s wall), score systems → route length → shots → time · switching restarts the seed |
-| purse (game) | a launch costs `1.00` and is refused below that (the run is over); a first entry pays `0.10`/flight-second since the previous one (min `0.05`), a landing `+0.25`, the full tour `+3.00` once — the stat shows `13.15 · last +1.15`, the launch button the fee, and a toast per shot where the postcards appear |
+| rule `tour` / `route` / `money` (game) | tour: 120 s flight cap, score systems → shots → time; route: 1 800 s wall, score systems → route length → shots → time; money: 10 shots, score purse → systems → shots → time · switching restarts the seed |
+| rivals `off` / `easy` / `normal` / `hard` | deterministic shared-market rivals (`normal` default; `hard` fields 2 rivals with 1-ply lookahead) that harvest planet profits in lockstep · switching restarts the seed |
+| purse & planet profits (game) | starts at `3.00`; each launch costs `1.00` (refused below `1.00`); each planet's fly-visit payout grows with unvisited game time (`+0.25` initial, resets to `+0.00` when visited by you or a rival, `+0.00625/s` up to `+0.75` cap) and is drawn as a live pill under every planet |
 | `restart` / `new seed` | same seed fresh start / random world |
-| `copy replay` | copies a link with seed, rate, every launch and the result |
+| `copy replay` / `copy rival` | copies your replay link (with `&rule=` and `&bot=` when active) or Rival 1's solo trajectory link |
 | `− slower / + faster`, `×1` | live playback ×0.25…×8; a replay adds ×0.25…×16 on top — only the pacing changes, never the physics steps or the recorded shots |
 | `×1 / ×4 / ×16`, `skip` | replay multiplier / re-simulate the rest of a replay instantly |
 
@@ -57,20 +58,21 @@ Open `index.html` (`file://` works, no build, no modules).
   readout shows `computing 43 %` while it runs. Launching drains the job
   synchronously. The 1 800 s wall is a net, not a routine end — measured: no
   unedited shot in the shipped world outlives ~160 s.
-- **Game mode**: the world is rebuilt from a seed and advances only with the
-  cargo's fixed physics steps (`DT = 1/120 s`, field time `+= DT · rate`), so
-  aiming takes any amount of real time. The aim snaps to `2^-20` turn and
-  `2^-10` px/s, the port roster is frozen per flight and flights cap at 120 s,
-  which makes the run a pure function of `(seed, rate, shots)`. Score: systems,
-  then fewer shots, then less flight time, then the purse (a full tour stops at
-  the entry step of the 26th system); the `route` rule drops the cap and ranks
-  by route length. Money rides on both rules: a launch costs `1.00`, a first
-  entry pays `0.10` per flight-second since the previous one (min `0.05`), a
-  landing `+0.25`, the full tour `+3.00` once; aborts keep what they entered
-  and lose the fee, and a purse below one launch ends the run. A replay link
-  (`#game=1&seed=…&rate=…[&rule=route]&shots=…&end=…`) re-flies every shot and reports
-  `verified` when it reproduces the recorded result, re-deriving the purse from
-  the shots alone; play continues from there.
+- **Game mode, planet-profit market & rivals**: the world is rebuilt from a seed
+  and advances only with fixed physics steps (`DT = 1/120 s`, field time
+  `+= DT · rate`), so aiming takes any amount of real time. Aim snaps to
+  `2^-20` turn and `2^-10` px/s, locking determinism to `(seed, rate, rule, bot,
+  shots)`. Three rules share a `3.00` starting purse, `1.00` launch fee, and a
+  shared 26-planet market where each planet's fly-visit payout grows while
+  unvisited (`+0.25` at start, `+0.00625/s` up to `+0.75`, drawn beneath every
+  planet and highlighted in green along your predicted trajectory): `tour`
+  (26 systems, 120 s cap), `route` (26 systems, 1 800 s wall, ranked by route
+  length), and `money` (10 shots, ranked by final purse). Optional deterministic
+  rivals (`easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead) fly in
+  integer-step lockstep and compete for the same growing planet values without
+  dropping 60 fps (`3 ms` / 64-candidate background slices). Replay links
+  (`#game=1&seed=…&rate=…[&rule=…][&bot=…]&shots=…&end=…`) re-fly and verify
+  every run (`verified ✓ · purse …`).
 - **Playback**: the flight is watched, not simulated, faster — one multiplier
   scales the wall-clock slice fed to the fixed `DT = 1/120 s` steps, so ×0.25
   and ×8 produce the same step sequence and the same replay. The trade `rate`
@@ -95,13 +97,14 @@ Open `index.html` (`file://` works, no build, no modules).
 - `orbit_econ.js` — colony economy laws: goods, resource map, growth
 - `orbit_sim.js` — orbital trade & colony simulation
 - `orbit_view.js` — trade renderer, coplanar Kepler moons & belts, camera `OrbitScene`
-- `gravity_sim.js` — gravity field, planet-system visits, live flight & continuation
-- `gravity_game.js` — game rules shared with the benches: aim grid, flight cap, replay link codec, money mode (`MONEY`, `createLedger`, `earn`)
+- `gravity_sim.js` — gravity field, planet-system visits, per-pass prediction log, headless `predictFast`, live `stepOne` flight & continuation
+- `gravity_game.js` — game rules (`tour`, `route`, `money`), aim grid, replay link codec (`rule`, `bot`), shared planet-profit market (`MONEY`, `createMarket`, `planetProfit`, `stepHarvest`, `estimateProfit`, `compareScores`)
+- `gravity_bot.js` — deterministic shared-market rival competitors (`off`, `easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead, sliced zero-alloc search, `rivalLink`)
 - `photo_deck.js` — postcard popup: type → file candidates, captions, compact layout, purse toast
-- `gravity_gui.js` — overlay renderer, aiming, hop lock & arrow, adaptive 60 fps HUD, game mode & replays
+- `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game mode & replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
-  `game_bench.js`, `route_bench.js`), headless DOM smoke suite (`dom_smoke.js`)
-  on the shared vm page stub (`dom_stub.js`)
+  `game_bench.js`, `route_bench.js`, `bot_bench.js`), headless DOM smoke suite
+  (`dom_smoke.js`) on the shared vm page stub (`dom_stub.js`)
 - `photos/` — user art (`space/`, `landed/`), `README.md` (file spec),
   `prompts.md` (14 captions for Krea 2 / MOSS-Image) and `generator/`
   (`comfy_queue.py` queues the captions into ComfyUI and downloads the renders)

@@ -35,10 +35,26 @@
 	const RULES = GravityGame.RULES;
 	const RULE_TOUR = GravityGame.RULE_TOUR;
 	const RULE_ROUTE = GravityGame.RULE_ROUTE;
+	const RULE_MONEY = GravityGame.RULE_MONEY;
+	const BOT_OFF = GravityGame.BOT_OFF;
+	const BOT_EASY = GravityGame.BOT_EASY;
+	const BOT_NORMAL = GravityGame.BOT_NORMAL;
+	const BOT_HARD = GravityGame.BOT_HARD;
 	const MONEY = GravityGame.MONEY;
 	/* route mode traces a 1 800 s shot in slices: per-frame slice of tracer work */
 	const ROUTE_STEP_MS = 4;
 	const ROUTE_FIELD_DELTA = 4;
+	/* rival search slice budget per frame so frame work stays well under 16.7 ms */
+	const BOT_STEP_MS = 3;
+	const MAX_GAME_STEPS = 256;
+	const PROFIT_MAX_CENTS = 200;
+	const PROFIT_STRINGS = new Array(PROFIT_MAX_CENTS + 1);
+	for (let c = 0; c <= PROFIT_MAX_CENTS; c++) {
+		PROFIT_STRINGS[c] = '+' + (c / 100).toFixed(2);
+	}
+	const RIVAL_COLOURS = ['#b99aff', '#ff85a8'];
+	const RIVAL_TRAILS = ['rgba(185, 154, 255, 0.48)', 'rgba(255, 133, 168, 0.44)'];
+	const RIVAL_TAGS = ['R1', 'R2'];
 	const REPLAY_AIM_MS = 700;
 	const REPLAY_GAP_MS = 450;
 	/* replay multipliers; index 2 is real time */
@@ -93,6 +109,8 @@
 	const tradeSim = scene.sim;
 	const view = scene.view;
 	const gravity = new GravitySim(OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+	const bot = new GravityBot(OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+	const predHarvestMask = new Uint8Array(PLANETS);
 
 	/* per-mode strength kept across switches; port strength keyed by parent planet */
 	const planetStrength = new Float64Array(PLANETS).fill(1);
@@ -193,15 +211,24 @@
 	const gameBoxEl = $('gameBox');
 	const ruleTourEl = $('ruleTour');
 	const ruleRouteEl = $('ruleRoute');
+	const ruleMoneyEl = $('ruleMoney');
 	const ruleTagEl = $('ruleTag');
+	const rivalTagEl = $('rivalTag');
+	const botOffEl = $('botOff');
+	const botEasyEl = $('botEasy');
+	const botNormalEl = $('botNormal');
+	const botHardEl = $('botHard');
 	const gameSeedEl = $('gameSeed');
 	const gameScoreEl = $('gameScore');
 	const gamePurseEl = $('gamePurse');
+	const rivalRowEl = $('rivalRow');
+	const rivalEl = $('rivalReadout');
 	const replayRowEl = $('replayRow');
 	const replayEl = $('replayReadout');
 	const gameRestartBtn = $('gameRestart');
 	const gameNewSeedBtn = $('gameNewSeed');
 	const gameCopyBtn = $('gameCopy');
+	const botCopyBtn = $('botCopy');
 	const replaySpeedBtn = $('replaySpeed');
 	const replaySkipBtn = $('replaySkip');
 	const gameLinkEl = $('gameLink');
@@ -263,7 +290,10 @@
 	let hudScoreText = '';
 	let hudPurseText = '';
 	let hudRuleText = '';
+	let hudRivalTagText = '';
+	let hudRivalText = '';
 	let hudReplayText = '';
+	let predGain = 0;
 	let launchState = -1;
 	let linkNote = '';
 	let playIndex = PLAY_DEFAULT;
@@ -274,12 +304,13 @@
 	const photoLanded = new Uint8Array(PLANETS);
 
 	/*
-	 * game: steps = finished flight steps, doneSteps = step the 26th system was entered,
-	 * fixedRate = the rate came with a link and must not change,
-	 * money = the purse ledger, re-derived flight by flight on a replay
+	 * game: steps = finished player flight steps, clockSteps = shared market clock step,
+	 * doneSteps = step the 26th system was entered, fixedRate = link rate is locked,
+	 * market = per-planet visit clock shared with rivals, money = player purse ledger
 	 */
-	const game = { on: false, seed: 0, fixedRate: false, rule: RULE_TOUR, shots: [], steps: 0,
-		doneSteps: -1, length: 0, money: null };
+	const game = { on: false, seed: 0, fixedRate: false, rule: RULE_TOUR, bot: BOT_NORMAL,
+		shots: [], steps: 0, clockSteps: 0, doneSteps: -1, length: 0,
+		market: GravityGame.createMarket(), money: GravityGame.createLedger() };
 	/* replay of a link: shots fired in order, aim shown then flown; verdict after the last */
 	const replay = { on: false, shots: null, end: null, index: 0, phase: PHASE_GAP, until: 0,
 		speed: REPLAY_DEFAULT, verdict: '' };
@@ -498,6 +529,12 @@
 		hudAt = -Infinity;
 	}
 
+	function refreshPredGain() {
+		predGain = game.on && gravity.predCount >= 2
+			? GravityGame.estimateProfit(game.market, game.clockSteps, gravity)
+			: 0;
+	}
+
 	function refreshAimLabel() {
 		if (!aiming && !armed) {
 			aimLabel = '';
@@ -505,7 +542,8 @@
 		}
 		const deg = ((-aimAngle * 180 / Math.PI) % 360 + 360) % 360;
 		const visitNote = gravity.predCount >= 2
-			? ' · +' + gravity.predNewVisits + ' (' + gravity.predVisits + ' sys)'
+			? (game.on ? ' · +' + predGain.toFixed(2) : '') +
+				' · +' + gravity.predNewVisits + ' (' + gravity.predVisits + ' sys)'
 			: '';
 		aimLabel = Math.round(aimSpeed) + ' px/s · ' + deg.toFixed(1) + '°' +
 			(fine ? ' · fine' : '') + visitNote;
@@ -620,13 +658,11 @@
 	}
 
 	function fire(abortStep) {
-		if (game.on) {
-			recordShot(abortStep);
-			game.money.purse -= MONEY.cost;
-		}
+		if (game.on) recordShot(abortStep);
 		predictShot();
 		dirty = false;
 		gravity.launch(aimBody, aimAngle, aimSpeed);
+		if (game.on) GravityGame.beginFlight(game.money, gravity);
 		aiming = false;
 		armed = false;
 		pressing = false;
@@ -691,6 +727,10 @@
 		return game.rule === RULE_ROUTE;
 	}
 
+	function moneyRule() {
+		return game.rule === RULE_MONEY;
+	}
+
 	/*
 	 * Route mode traces a shot to its end over several frames. The job survives
 	 * field ticks (it is a snapshot), so it is restarted only by an aim edit or
@@ -707,6 +747,7 @@
 		const spec = ruleSpec();
 		if (spec.horizon) gravity.routeBegin(aimBody, aimAngle, aimSpeed, spec.horizon);
 		else gravity.predict(aimBody, aimAngle, aimSpeed, budgetMs);
+		refreshPredGain();
 	}
 
 	/* the launch itself always sees a finished path, whatever the preview showed */
@@ -714,13 +755,27 @@
 		const spec = ruleSpec();
 		if (spec.horizon) gravity.predictFull(aimBody, aimAngle, aimSpeed, spec.horizon);
 		else gravity.predict(aimBody, aimAngle, aimSpeed);
+		refreshPredGain();
+	}
+
+	function playerGoalDone() {
+		const spec = ruleSpec();
+		if (spec.stopOnTour && game.doneSteps >= 0) return true;
+		if (spec.maxShots > 0 && game.shots.length >= spec.maxShots &&
+			gravity.status !== STATUS_FLYING) return true;
+		return false;
+	}
+
+	function runOver() {
+		return game.on && !replay.on && gravity.status !== STATUS_FLYING &&
+			(playerGoalDone() || game.money.purse < MONEY.cost);
 	}
 
 	/* aim edits and launches close while a game flight or replay runs, after
-	 * 26 / 26, and once the purse cannot cover a launch (that run is over) */
+	 * the rule's goal is met, and once the purse cannot cover a launch */
 	function gameLocked() {
 		return game.on && (replay.on || gravity.status === STATUS_FLYING ||
-			game.doneSteps >= 0 || game.money.purse < MONEY.cost);
+			playerGoalDone() || game.money.purse < MONEY.cost);
 	}
 
 	function gameSteps() {
@@ -728,7 +783,7 @@
 	}
 
 	function scoreSteps() {
-		return game.doneSteps >= 0 ? game.doneSteps : gameSteps();
+		return ruleSpec().stopOnTour && game.doneSteps >= 0 ? game.doneSteps : gameSteps();
 	}
 
 	/* the trade world may have been rebuilt with fresh arrays: re-wire the field, strengths back to 1 */
@@ -739,6 +794,7 @@
 			tradeSim.orbitRX, tradeSim.orbitRY,
 			tradeSim.orbitTiltCos, tradeSim.orbitTiltSin
 		);
+		bot.attachWorld(tradeSim);
 		planetStrength.fill(1);
 		portPlanetStrength.fill(1);
 		portStrength.fill(1);
@@ -750,35 +806,58 @@
 		applyMode();
 	}
 
-	function startGame(seed, fixedRate, rule) {
+	function syncRuleRadios() {
+		ruleTourEl.checked = game.rule === RULE_TOUR;
+		ruleRouteEl.checked = game.rule === RULE_ROUTE;
+		if (ruleMoneyEl) ruleMoneyEl.checked = game.rule === RULE_MONEY;
+	}
+
+	function syncBotRadios() {
+		if (botOffEl) botOffEl.checked = game.bot === BOT_OFF;
+		if (botEasyEl) botEasyEl.checked = game.bot === BOT_EASY;
+		if (botNormalEl) botNormalEl.checked = game.bot === BOT_NORMAL;
+		if (botHardEl) botHardEl.checked = game.bot === BOT_HARD;
+	}
+
+	function startGame(seed, fixedRate, rule, botLevel) {
 		stopReplay();
 		linkNote = '';
 		game.on = true;
 		game.seed = seed;
 		game.fixedRate = fixedRate;
-		game.rule = rule || game.rule;
-		ruleTourEl.checked = game.rule === RULE_TOUR;
-		ruleRouteEl.checked = game.rule === RULE_ROUTE;
+		if (rule) game.rule = rule;
+		if (botLevel) game.bot = botLevel;
+		syncRuleRadios();
+		syncBotRadios();
 		game.shots.length = 0;
 		game.steps = 0;
+		game.clockSteps = 0;
 		game.length = 0;
 		game.doneSteps = -1;
-		game.money = GravityGame.createLedger();
+		predGain = 0;
+		GravityGame.resetMarket(game.market);
+		GravityGame.resetLedger(game.money);
 		scene.reset(seed);
 		scene.setGameClock(true);
 		clearCargo();
 		gravity.fieldT = tradeSim.t;
 		gravity.fieldRate = scene.trade.speed;
 		attachWorld();
+		bot.reset(seed, game.rule, game.bot);
 		setPassenger(PASSENGERS[seed % PASSENGERS.length]);
 		gameLinkEl.hidden = true;
 		refreshGameUi();
 	}
 
-	/* a rule is part of the run, so switching it restarts the same seed */
+	/* rule and rival difficulty are part of the run, so switching either restarts the seed */
 	function setRule(next) {
 		if (next === game.rule) return;
 		startGame(game.seed, game.fixedRate, next);
+	}
+
+	function setBot(next) {
+		if (next === game.bot) return;
+		startGame(game.seed, game.fixedRate, game.rule, next);
 	}
 
 	/* back to lab: the world stays, the clock returns to real time, a running flight continues */
@@ -786,6 +865,7 @@
 		stopReplay();
 		linkNote = '';
 		game.on = false;
+		predGain = 0;
 		scene.setGameClock(false);
 		gravity.stepLimit = Infinity;
 		gravity.limitReason = END_TIME;
@@ -795,56 +875,75 @@
 	}
 
 	/*
-	 * Playback scales the wall-clock slice fed to the fixed-step physics. A game
-	 * replay is a pure function of its shots, so 0.25x and 32x both reproduce
-	 * the same step sequence, just at a different pace.
+	 * Playback scales the wall-clock slice fed to the fixed-step physics. Player
+	 * and rivals step in exact integer DT lockstep against the shared planet
+	 * market; if a rival is searching its next shot, clockSteps pauses for a few
+	 * 3 ms slices and resumes from the exact same step.
 	 */
 	function stepGame(now, dt) {
 		if (replay.on && replay.phase !== PHASE_FLY && now >= replay.until) advanceReplay(now);
-		let scale = playScale() * (replay.on ? REPLAY_SPEEDS[replay.speed] : 1);
-		if (scale > PLAY_MAX) scale = PLAY_MAX;
 		if (gravity.status !== STATUS_FLYING) {
 			playAcc = 0;
+			if (!replay.on && !gameLocked()) {
+				bot.tickIdle(game.clockSteps, game.market, BOT_STEP_MS);
+			}
 			return;
 		}
+		let scale = playScale() * (replay.on ? REPLAY_SPEEDS[replay.speed] : 1);
+		if (scale > PLAY_MAX) scale = PLAY_MAX;
 		playAcc += dt * scale;
-		let guard = 0;
-		while (gravity.status === STATUS_FLYING && playAcc > 0 && guard < PLAY_GUARD) {
-			const slice = playAcc < GAME_SLICE ? playAcc : GAME_SLICE;
-			advanceGame(slice);
-			playAcc -= slice;
-			guard += 1;
+		if (playAcc > PLAY_MAX * 0.1) playAcc = PLAY_MAX * 0.1;
+		const capSteps = ruleSpec().capSteps;
+		let stepsDone = 0;
+		while (gravity.status === STATUS_FLYING && playAcc >= DT && stepsDone < MAX_GAME_STEPS) {
+			if (!bot.prepareStep(game.clockSteps, game.market, capSteps, BOT_STEP_MS, false)) {
+				playAcc = 0;
+				break;
+			}
+			advanceGameOneStep();
+			playAcc -= DT;
+			stepsDone += 1;
 		}
-		if (playAcc < 1e-9) playAcc = 0;
-		if (gravity.status !== STATUS_FLYING) playAcc = 0;
+		tradeSim.advanceTo(gravity.flightFieldT);
+		if (gravity.status !== STATUS_FLYING) {
+			playAcc = 0;
+			endGameFlight();
+		}
 	}
 
-	/* the world clock is the cargo's field clock: it moves only with fixed flight steps */
-	function advanceGame(dt) {
-		gravity.step(dt);
-		tradeSim.advanceTo(gravity.flightFieldT);
-		if (gravity.status !== STATUS_FLYING) endGameFlight();
+	function advanceGameOneStep() {
+		if (gravity.liveSteps >= gravity.stepLimit) {
+			gravity.stepOne();
+			return;
+		}
+		game.clockSteps += 1;
+		gravity.stepOne();
+		GravityGame.stepHarvest(game.money, game.market, gravity, game.clockSteps);
+		if (ruleSpec().stopOnTour && gravity.visitedCount === PLANETS && game.doneSteps < 0) {
+			game.doneSteps = game.steps + gravity.visitStep;
+		}
+		bot.stepOne(game.clockSteps, game.market);
 	}
 
 	function endGameFlight() {
-		if (gravity.visitedCount === PLANETS && game.doneSteps < 0) {
+		const spec = ruleSpec();
+		if (spec.stopOnTour && gravity.visitedCount === PLANETS && game.doneSteps < 0) {
 			game.doneSteps = game.steps + gravity.visitStep;
 		}
-		/* baseStep is game.steps before the flight's steps are folded in */
-		const won = GravityGame.earn(game.money, {
-			baseStep: game.steps,
-			visitStep: gravity.visitLogStep,
-			visitCount: gravity.visitLogCount,
-			landed: gravity.endReason === END_IMPACT && gravity.landedBody >= 0,
-			tourStep: game.doneSteps
-		});
+		GravityGame.endFlight(game.money);
 		game.steps += gravity.liveSteps;
 		game.length += gravity.flightLength;
+		const settleRivals =
+			(game.money.purse < MONEY.cost && !(spec.stopOnTour && game.doneSteps >= 0)) ||
+			(spec.maxShots > 0 && game.shots.length >= spec.maxShots);
+		if (settleRivals && bot.count > 0) {
+			game.clockSteps = bot.settle(game.clockSteps, game.market, spec.capSteps);
+		}
 		if (replay.on) {
 			replay.phase = PHASE_GAP;
 			replay.until = performance.now() + REPLAY_GAP_MS / REPLAY_SPEEDS[replay.speed];
 		}
-		moneyToast(won);
+		moneyToast();
 		refreshGameUi();
 	}
 
@@ -857,22 +956,23 @@
 	 * card arriving this frame keeps its moment; a still-open entry card holds
 	 * the slot and the toast follows it (a newer card then drops it).
 	 */
-	function moneyToast(won) {
+	function moneyToast() {
 		if (!root.PhotoDeck) return;
 		if (gravity.endReason === END_IMPACT && gravity.endBody >= 0 &&
 			photoLanded[gravity.endBody] !== 1) return;
+		const m = game.money;
 		const parts = [];
-		if (gravity.visitLogCount === 1) {
-			parts.push('P' + gravity.visitLogPlanet[0] + ' entered +' + won.entryPay.toFixed(2));
-		} else if (gravity.visitLogCount > 1) {
-			parts.push(gravity.visitLogCount + ' systems +' + won.entryPay.toFixed(2));
+		if (m.shotVisits === 1) {
+			parts.push('P' + m.lastPlanet + ' +' + m.shotGain.toFixed(2));
+		} else if (m.shotVisits > 1) {
+			parts.push(m.shotVisits + ' visits +' + m.shotGain.toFixed(2));
+		} else {
+			parts.push('no harvest');
 		}
-		if (won.landing) parts.push('landed +' + won.landing.toFixed(2));
-		if (won.tour) parts.push('tour +' + won.tour.toFixed(2));
-		if (!parts.length) parts.push('cost −' + MONEY.cost.toFixed(2));
-		parts.push('purse ' + game.money.purse.toFixed(2));
+		parts.push('cost −' + MONEY.cost.toFixed(2));
+		parts.push('purse ' + m.purse.toFixed(2));
 		root.PhotoDeck.toast('purse · shot ' + game.shots.length,
-			signedMoney(game.money.last), parts.join(' · '));
+			signedMoney(m.last), parts.join(' · '));
 	}
 
 	function abortFlight() {
@@ -955,22 +1055,23 @@
 
 	function skipReplay() {
 		const now = performance.now();
+		const capSteps = ruleSpec().capSteps;
 		playAcc = 0;
 		while (replay.on) {
-			if (gravity.status === STATUS_FLYING) advanceGame(0.1);
-			else advanceReplay(now);
+			if (gravity.status === STATUS_FLYING) {
+				while (gravity.status === STATUS_FLYING) {
+					bot.prepareStep(game.clockSteps, game.market, capSteps, 1e9, true);
+					advanceGameOneStep();
+				}
+				tradeSim.advanceTo(gravity.flightFieldT);
+				endGameFlight();
+			} else {
+				advanceReplay(now);
+			}
 		}
 	}
 
-	function copyLink() {
-		const url = location.href.split('#')[0] + '#' + GravityGame.encodeLink({
-			seed: game.seed,
-			rate: scene.trade.speed,
-			rule: game.rule,
-			shots: game.shots,
-			visited: gravity.visitedCount,
-			steps: scoreSteps()
-		});
+	function copyUrlText(url, btn, label) {
 		gameLinkEl.value = url;
 		const clipboard = navigator.clipboard;
 		if (!clipboard) {
@@ -978,11 +1079,32 @@
 			return;
 		}
 		clipboard.writeText(url).then(() => {
-			gameCopyBtn.textContent = 'copied ✓';
+			btn.textContent = 'copied ✓';
 			setTimeout(() => {
-				gameCopyBtn.textContent = 'copy replay';
+				btn.textContent = label;
 			}, 1600);
 		}, showLink);
+	}
+
+	function copyLink() {
+		const url = location.href.split('#')[0] + '#' + GravityGame.encodeLink({
+			seed: game.seed,
+			rate: scene.trade.speed,
+			rule: game.rule,
+			bot: game.bot,
+			shots: game.shots,
+			visited: gravity.visitedCount,
+			steps: scoreSteps()
+		});
+		copyUrlText(url, gameCopyBtn, 'copy replay');
+	}
+
+	function copyBotLink() {
+		if (bot.count === 0 || bot.rivals[0].shots.length === 0) return;
+		const hash = bot.rivalLink(game.seed, scene.trade.speed, 0);
+		if (!hash) return;
+		const url = location.href.split('#')[0] + '#' + hash;
+		copyUrlText(url, botCopyBtn, 'copy rival');
 	}
 
 	function showLink() {
@@ -1001,7 +1123,7 @@
 		}
 		modeGameEl.checked = true;
 		scene.setSpeed(link.rate);
-		startGame(link.seed, true, link.rule);
+		startGame(link.seed, true, link.rule, link.bot);
 		if (link.shots.length > 0) startReplay(link.shots, link.end);
 		return true;
 	}
@@ -1016,11 +1138,21 @@
 		srcPortsEl.disabled = flightLock;
 		ruleTourEl.disabled = flightLock;
 		ruleRouteEl.disabled = flightLock;
+		if (ruleMoneyEl) ruleMoneyEl.disabled = flightLock;
+		if (botOffEl) botOffEl.disabled = flightLock;
+		if (botEasyEl) botEasyEl.disabled = flightLock;
+		if (botNormalEl) botNormalEl.disabled = flightLock;
+		if (botHardEl) botHardEl.disabled = flightLock;
 		scene.lockSpeed(game.on && (game.fixedRate || game.shots.length > 0 || replay.on));
 		if (rerollGoalBtn) rerollGoalBtn.disabled = game.on;
 		clearButton.textContent = game.on ? 'abort' : 'clear';
 		clearButton.disabled = game.on && (!flying || replay.on);
 		gameCopyBtn.disabled = flightLock;
+		if (botCopyBtn) {
+			botCopyBtn.hidden = game.bot === BOT_OFF;
+			botCopyBtn.disabled = flightLock || bot.count === 0 || bot.rivals[0].shots.length === 0;
+		}
+		if (rivalRowEl) rivalRowEl.hidden = game.bot === BOT_OFF;
 		replaySpeedBtn.hidden = !replay.on;
 		replaySkipBtn.hidden = !replay.on;
 		replaySpeedBtn.textContent = '×' + REPLAY_SPEEDS[replay.speed];
@@ -1028,23 +1160,87 @@
 		hudAt = -Infinity;
 	}
 
-	/* route runs rank by length, so the score carries it before the shot count;
-	 * the purse is the tiebreaker after time */
+	/* route runs rank by length, money runs rank by purse over 10 shots */
 	function scoreText() {
 		const shots = game.shots.length;
+		if (moneyRule()) {
+			return shots + ' / ' + GravityGame.MONEY_SHOTS + ' shots · ' +
+				gravity.visitedCount + ' / ' + PLANETS + ' · ' +
+				(scoreSteps() * DT).toFixed(2) + ' s · purse ' + game.money.purse.toFixed(2);
+		}
 		return gravity.visitedCount + ' / ' + PLANETS + (game.doneSteps >= 0 ? ' ✓' : '') +
 			' · ' + (routeRule() ? Math.round(game.length) + ' px · ' : '') +
 			shots + (shots === 1 ? ' shot' : ' shots') + ' · ' +
 			(scoreSteps() * DT).toFixed(2) + ' s · purse ' + game.money.purse.toFixed(2);
 	}
 
+	function rivalTagText() {
+		if (game.bot === BOT_OFF) return 'solo';
+		if (bot.thinking()) {
+			return 'thinking ' + Math.round(bot.progress() * 100) + ' %';
+		}
+		if (game.bot === BOT_HARD) return '2 rivals · 1-ply';
+		if (game.bot === BOT_NORMAL) return '1 rival · route';
+		return '1 rival · greedy';
+	}
+
+	function playerSummary() {
+		return {
+			visited: gravity.visitedCount,
+			done: game.doneSteps >= 0,
+			steps: scoreSteps(),
+			shots: game.shots.length,
+			length: game.length,
+			purse: game.money.purse
+		};
+	}
+
+	function rivalSummaryInfo() {
+		if (bot.count === 0) return { text: '—', outcome: 0 };
+		const parts = [];
+		let bestCmp = -2;
+		const finished = runOver();
+		const player = finished ? playerSummary() : null;
+		for (let i = 0; i < bot.count; i++) {
+			const r = bot.rivals[i];
+			const doneMark = ruleSpec().stopOnTour && r.doneSteps >= 0 ? ' ✓' : '';
+			const shots = r.shots.length;
+			if (bot.count === 1) {
+				parts.push(RIVAL_TAGS[i] + ' ' + r.sim.visitedCount + '/' + PLANETS + doneMark +
+					' · ' + shots + (shots === 1 ? ' shot' : ' shots') +
+					' · purse ' + r.ledger.purse.toFixed(2));
+			} else {
+				parts.push(RIVAL_TAGS[i] + ' ' + r.sim.visitedCount + '/' + PLANETS + doneMark +
+					' ' + r.ledger.purse.toFixed(2));
+			}
+			if (finished) {
+				const cmp = GravityGame.compareScores(game.rule, player, bot.actorSummary(i));
+				if (bestCmp === -2 || cmp < bestCmp) bestCmp = cmp;
+			}
+		}
+		let prefix = '';
+		if (finished && bestCmp !== -2) {
+			prefix = bestCmp > 0 ? 'WIN · ' : bestCmp < 0 ? 'LOSS · ' : 'TIE · ';
+		} else if (bot.thinking()) {
+			prefix = 'thinking ' + Math.round(bot.progress() * 100) + '% · ';
+		}
+		return { text: prefix + parts.join(' · '), outcome: finished ? bestCmp : 0 };
+	}
+
 	function updateGameHud() {
-		const ruleText = routeRule()
+		const ruleText = moneyRule()
+			? 'money · ' + GravityGame.MONEY_SHOTS + ' shots'
+			: routeRule()
 			? 'route · ' + Math.round(GravityGame.ROUTE_SECONDS / 60) + ' min wall'
 			: 'tour · ' + GravityGame.CAP_SECONDS + ' s cap';
 		if (ruleText !== hudRuleText) {
 			hudRuleText = ruleText;
 			ruleTagEl.textContent = ruleText;
+		}
+		const rTag = rivalTagText();
+		if (rTag !== hudRivalTagText) {
+			hudRivalTagText = rTag;
+			if (rivalTagEl) rivalTagEl.textContent = rTag;
 		}
 		const seedText = 'seed ' + game.seed + ' · ×' + scene.trade.speed;
 		if (seedText !== hudSeedText) {
@@ -1055,6 +1251,15 @@
 		if (score !== hudScoreText) {
 			hudScoreText = score;
 			gameScoreEl.textContent = score;
+		}
+		if (game.bot !== BOT_OFF && rivalEl) {
+			const info = rivalSummaryInfo();
+			if (info.text !== hudRivalText) {
+				hudRivalText = info.text;
+				rivalEl.textContent = info.text;
+				rivalEl.classList.toggle('gain', info.outcome > 0);
+				rivalEl.classList.toggle('loss', info.outcome < 0);
+			}
 		}
 		const purseText = game.money.purse.toFixed(2) +
 			(game.shots.length ? ' · last ' + signedMoney(game.money.last) : '');
@@ -1706,6 +1911,143 @@
 		ctx.fillText(aimLabel, x + 10, y + 10.5);
 	}
 
+	function drawRivalsWorld(now) {
+		const px = 1 / view.scale;
+		for (let rIdx = 0; rIdx < bot.count; rIdx++) {
+			const r = bot.rivals[rIdx];
+			const sim = r.sim;
+			const colour = RIVAL_COLOURS[rIdx];
+			/* rival trail */
+			const count = sim.trailCount;
+			if (count >= 2) {
+				const stride = count > 2400 ? 2 : 1;
+				ctx.beginPath();
+				ctx.moveTo(sim.trailX[0], sim.trailY[0]);
+				for (let i = stride; i < count; i += stride) {
+					ctx.lineTo(sim.trailX[i], sim.trailY[i]);
+				}
+				const last = count - 1;
+				if (last % stride !== 0) ctx.lineTo(sim.trailX[last], sim.trailY[last]);
+				ctx.strokeStyle = RIVAL_TRAILS[rIdx];
+				ctx.lineWidth = 1.4 * px;
+				ctx.setLineDash(NO_DASH);
+				ctx.stroke();
+			}
+			/* rival base diamond when parked at a planet */
+			if (sim.status !== STATUS_FLYING && r.basePlanet >= 0) {
+				const bx = tradeSim.planetX[r.basePlanet];
+				const by = tradeSim.planetY[r.basePlanet];
+				const br = tradeSim.planetR[r.basePlanet] + (6 + rIdx * 3.5) * px;
+				ctx.beginPath();
+				ctx.moveTo(bx, by - br);
+				ctx.lineTo(bx + br, by);
+				ctx.lineTo(bx, by + br);
+				ctx.lineTo(bx - br, by);
+				ctx.closePath();
+				ctx.strokeStyle = colour;
+				ctx.globalAlpha = 0.68;
+				ctx.lineWidth = 1.15 * px;
+				ctx.stroke();
+				ctx.globalAlpha = 1;
+			}
+			/* rival ship chevron in flight or ring when ended */
+			if (sim.status === STATUS_FLYING) {
+				const x = sim.cargo.x;
+				const y = sim.cargo.y;
+				const angle = Math.atan2(sim.cargo.vy, sim.cargo.vx);
+				const size = 4.3 * px;
+				ctx.beginPath();
+				ctx.moveTo(x + Math.cos(angle) * size, y + Math.sin(angle) * size);
+				ctx.lineTo(x + Math.cos(angle + 2.4) * size, y + Math.sin(angle + 2.4) * size);
+				ctx.lineTo(x + Math.cos(angle - 2.4) * size, y + Math.sin(angle - 2.4) * size);
+				ctx.closePath();
+				ctx.fillStyle = colour;
+				ctx.fill();
+				ctx.strokeStyle = 'rgba(3, 8, 16, 0.85)';
+				ctx.lineWidth = 0.8 * px;
+				ctx.stroke();
+			} else if (sim.status === STATUS_ENDED) {
+				const pulse = 0.5 + 0.5 * Math.sin(now * 0.005 + rIdx);
+				ctx.beginPath();
+				ctx.arc(sim.cargo.x, sim.cargo.y, (4.2 + pulse * 2.5) * px, 0, TAU);
+				ctx.strokeStyle = colour;
+				ctx.globalAlpha = 0.7;
+				ctx.lineWidth = 1.1 * px;
+				ctx.stroke();
+				ctx.globalAlpha = 1;
+			}
+		}
+	}
+
+	/*
+	 * Per-planet fly-visit profit pills drawn beneath each planet in game mode.
+	 * Uses preallocated cent strings and predHarvestMask so draw() stays 0-alloc.
+	 */
+	function drawPlanetProfits() {
+		const step = game.clockSteps;
+		const activePred = aiming || armed || gravity.status === STATUS_FLYING;
+		predHarvestMask.fill(0);
+		if (activePred) {
+			for (let k = 0; k < gravity.predLogCount; k++) {
+				predHarvestMask[gravity.predLogPlanet[k]] = 1;
+			}
+		}
+		ctx.font = '600 10.5px ui-monospace, SFMono-Regular, Menlo, monospace';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		const maxX = window.innerWidth - 42;
+		const maxY = window.innerHeight - 18;
+		for (let i = 0; i < PLANETS; i++) {
+			const val = GravityGame.planetProfit(game.market, i, step);
+			let cents = Math.round(val * 100);
+			if (cents < 0) cents = 0;
+			else if (cents > PROFIT_MAX_CENTS) cents = PROFIT_MAX_CENTS;
+			const sx = tradeSim.planetX[i] * view.scale + view.offX;
+			const sy = (tradeSim.planetY[i] + tradeSim.planetR[i]) * view.scale + view.offY + 11;
+			let x = sx - 19;
+			let y = sy - 7;
+			if (x < 4) x = 4;
+			else if (x > maxX) x = maxX;
+			if (y < 4) y = 4;
+			else if (y > maxY) y = maxY;
+			const onRoute = predHarvestMask[i] === 1;
+			const border = onRoute ? 'rgba(92, 255, 139, 0.85)'
+				: cents >= 60 ? 'rgba(255, 207, 110, 0.42)'
+				: cents >= 35 ? 'rgba(142, 240, 192, 0.28)'
+				: null;
+			plate(x, y, 38, 14, border);
+			ctx.fillStyle = onRoute ? '#9effbe'
+				: cents >= 60 ? GOLD
+				: cents >= 35 ? MINT
+				: cents >= 14 ? 'rgba(210, 230, 246, 0.86)'
+				: 'rgba(128, 156, 184, 0.52)';
+			ctx.fillText(PROFIT_STRINGS[cents], x + 19, y + 7.5);
+		}
+	}
+
+	function drawRivalTags() {
+		ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		const maxX = window.innerWidth - 26;
+		const maxY = window.innerHeight - 18;
+		for (let rIdx = 0; rIdx < bot.count; rIdx++) {
+			const r = bot.rivals[rIdx];
+			const flying = r.sim.status === STATUS_FLYING;
+			const wx = flying ? r.sim.cargo.x : tradeSim.planetX[r.basePlanet];
+			const wy = flying ? r.sim.cargo.y : tradeSim.planetY[r.basePlanet];
+			let x = wx * view.scale + view.offX + (flying ? 8 : -11 + rIdx * 22);
+			let y = wy * view.scale + view.offY - (flying ? 18 : tradeSim.planetR[r.basePlanet] * view.scale + 19);
+			if (x < 4) x = 4;
+			else if (x > maxX) x = maxX;
+			if (y < 4) y = 4;
+			else if (y > maxY) y = maxY;
+			plate(x, y, 22, 13, RIVAL_COLOURS[rIdx]);
+			ctx.fillStyle = RIVAL_COLOURS[rIdx];
+			ctx.fillText(RIVAL_TAGS[rIdx], x + 11, y + 7);
+		}
+	}
+
 	function draw(now) {
 		const blocked = activeBlockedPlanet(now);
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1717,6 +2059,7 @@
 		drawSystemVisits(now);
 		drawWells();
 		drawPortVelocities();
+		if (game.on && bot.count > 0) drawRivalsWorld(now);
 		drawPrediction();
 		drawTrail();
 		drawLandedBase(now);
@@ -1726,6 +2069,8 @@
 		drawMarkers();
 		drawSigns();
 		ctx.restore();
+		if (game.on) drawPlanetProfits();
+		if (game.on && bot.count > 0) drawRivalTags();
 		if (hoverBody >= 0 && hoverBody !== selected && !aiming) {
 			drawLabel(hoverLabel, gravity.bodyX[hoverBody],
 				gravity.bodyY[hoverBody], ICE);
@@ -1784,7 +2129,8 @@
 		}
 		const predText = gravity.predCount >= 2
 			? gravity.predVisits + ' sys · +' + gravity.predNewVisits +
-				' (' + (gravity.visitedCount + gravity.predNewVisits) + '/' + PLANETS + ')'
+				' (' + (gravity.visitedCount + gravity.predNewVisits) + '/' + PLANETS + ')' +
+				(game.on ? ' · +' + predGain.toFixed(2) : '')
 			: '—';
 		if (predText !== hudPredVisitText) {
 			hudPredVisitText = predText;
@@ -1831,8 +2177,16 @@
 		if (replay.on) return gravity.status === STATUS_FLYING ? 'replay · in flight' : 'replay · aiming';
 		if (aiming) return 'aiming ' + planetName(aimBody);
 		if (armed) return 'armed · ' + planetName(aimBody);
-		if (gravity.status === STATUS_FLYING) return game.on ? 'in flight · clock runs' : 'in flight';
-		if (game.on && game.doneSteps >= 0) return routeRule() ? 'run complete' : 'tour complete';
+		if (gravity.status === STATUS_FLYING) {
+			if (game.on && bot.thinking()) {
+				return 'rival thinking ' + Math.round(bot.progress() * 100) + ' %';
+			}
+			return game.on ? 'in flight · clock runs' : 'in flight';
+		}
+		if (game.on && playerGoalDone()) {
+			return moneyRule() ? GravityGame.MONEY_SHOTS + ' shots complete'
+				: routeRule() ? 'run complete' : 'tour complete';
+		}
 		if (game.on && game.money.purse < MONEY.cost) return 'purse empty · run over';
 		const rest = gravity.status === STATUS_ENDED
 			? endText(gravity.endReason, gravity.endBody)
@@ -1913,15 +2267,19 @@
 				dirty = false;
 			} else if (gravity.routeActive) {
 				gravity.routeStep(ROUTE_STEP_MS);
+				refreshPredGain();
+				refreshAimLabel();
 			}
 		} else if (gravity.status === STATUS_FLYING) {
 			if (dirty || autoSkip === 0) {
 				gravity.predictFlight(budgetMs);
+				refreshPredGain();
 				dirty = false;
 				autoSkip = interval - 1;
 			}
 		} else if (gravity.predCount > 0) {
 			gravity.predCount = 0;
+			predGain = 0;
 		}
 
 		const renderStart = performance.now();
@@ -1963,6 +2321,11 @@
 	});
 	ruleTourEl.addEventListener('change', () => setRule(RULE_TOUR));
 	ruleRouteEl.addEventListener('change', () => setRule(RULE_ROUTE));
+	if (ruleMoneyEl) ruleMoneyEl.addEventListener('change', () => setRule(RULE_MONEY));
+	if (botOffEl) botOffEl.addEventListener('change', () => setBot(BOT_OFF));
+	if (botEasyEl) botEasyEl.addEventListener('change', () => setBot(BOT_EASY));
+	if (botNormalEl) botNormalEl.addEventListener('change', () => setBot(BOT_NORMAL));
+	if (botHardEl) botHardEl.addEventListener('change', () => setBot(BOT_HARD));
 	modeLabEl.addEventListener('change', stopGame);
 	modeGameEl.addEventListener('change', () => startGame(tradeSim.seed, false));
 	gameRestartBtn.addEventListener('click', () => startGame(game.seed, game.fixedRate));
@@ -1970,6 +2333,7 @@
 		startGame(1 + Math.floor(Math.random() * SEED_RANGE), false);
 	});
 	gameCopyBtn.addEventListener('click', copyLink);
+	if (botCopyBtn) botCopyBtn.addEventListener('click', copyBotLink);
 	replaySpeedBtn.addEventListener('click', () => {
 		replay.speed = (replay.speed + 1) % REPLAY_SPEEDS.length;
 		refreshGameUi();
@@ -2037,12 +2401,14 @@
 
 	root.GravityScene = {
 		sim: gravity,
+		bot: bot,
 		game: game,
 		replay: replay,
 		playScale: playScale,
 		playIndex: () => playIndex,
 		scoreSteps: scoreSteps,
 		rule: () => game.rule,
+		botLevel: () => game.bot,
 		routeLength: () => game.length,
 		passenger: () => passenger,
 		rollPassenger: rollPassenger,
@@ -2056,6 +2422,11 @@
 	gravity.horizon = Number(horizonSlider.value);
 	horizonLabel.textContent = gravity.horizon + ' s';
 	if (horizonTagEl) horizonTagEl.textContent = gravity.horizon + ' s';
+
+	if (botOffEl && botOffEl.checked) game.bot = BOT_OFF;
+	else if (botEasyEl && botEasyEl.checked) game.bot = BOT_EASY;
+	else if (botHardEl && botHardEl.checked) game.bot = BOT_HARD;
+	else game.bot = BOT_NORMAL;
 
 	mode = srcPortsEl.checked ? MODE_PORTS : MODE_PLANETS;
 	gravity.fieldT = tradeSim.t;

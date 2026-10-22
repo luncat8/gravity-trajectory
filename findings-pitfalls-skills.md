@@ -166,3 +166,22 @@ prediction buffers round away exactly the differences being measured.
 - Deduct a gated cost at the moment of gating (launch), pay the gains at event
   time; a state bit per condition in the launch-button cache keeps the label
   truthful when a flight ends while the button is already disabled.
+
+## lockstep shared-market rivals and sliced search
+
+- Check `liveSteps >= stepLimit` at the **end** of the `N`-th `stepOne()` (as
+  well as guarding `stepLimit <= 0` at entry): checking only on entry leaves
+  `status === STATUS_FLYING` after step `N` and requires a dummy `(N + 1)`-th
+  loop pass during replay, advancing any external lockstep counter (`clockSteps`,
+  rivals) one step further on replay than on a live `abort()`.
+- Bound background search slices by **both** wall milliseconds (`3 ms`) and
+  candidate count (`SLICE_CANDIDATES = 64`): in a real browser the wall budget
+  protects `emaFrameMs` (`< 16.7 ms`), while in `dom_stub` (`performance.now()`
+  fixed within a frame) the candidate cap prevents draining 1,440 lookahead
+  traces in one tick and exercises multi-frame `thinking N %` paths.
+- In a 26-planet growing market (`k · Δt` per planet), total map accrual scales
+  with `26 · k`: `k >= 0.0125/s` (`0.325/s` across the galaxy) floods 10-shot
+  purses past `$30`, whereas `k = 0.00625/s`, `init = +0.25`, `cap = 0.75`,
+  `purse0 = 3.00` against a `1.00` launch cost forces players to chain 4+ aged
+  planets and steer away from clusters recently harvested by rivals.
+
