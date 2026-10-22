@@ -247,6 +247,27 @@ function benchEconomy() {
 		'/4 · smart 26/26 tour ' + smartFinishedTour + '/4');
 }
 
+/* bot summaries power the player-vs-rival score rows while a ship is in flight */
+function benchScoreSummary() {
+	const { trade } = buildStaticWorld(42);
+	const bot = new GravityBot(Sim.WORLD_W, Sim.WORLD_H);
+	bot.attachWorld(trade);
+	for (const rule of ['tour', 'route', 'money']) {
+		bot.reset(42, rule, GravityGame.BOT_EASY);
+		check(bot.rule === rule && bot.count === 1, 'bot did not bind to ' + rule);
+	}
+	bot.reset(42, GravityGame.RULE_ROUTE, GravityGame.BOT_EASY);
+	const rival = bot.rivals[0];
+	rival.length = 1200;
+	rival.sim.stepLimit = Infinity;
+	rival.sim.launch(rival.basePlanet, 0.7, 180);
+	bot.stepOne(1, GravityGame.createMarket());
+	const summary = bot.actorSummary(0);
+	check(summary.length === rival.length + rival.sim.flightLength && summary.length > 1200,
+		'route score omitted the rival ship\'s live flight length: ' + summary.length);
+	console.log('rule-aware bots: tour, route, money · live route summary', summary.length.toFixed(1), 'px');
+}
+
 /* 2. bot difficulty ladder across rules + rivalLink replay verification */
 function benchLadder() {
 	function runSoloBot(seed, ruleName, level) {
@@ -458,6 +479,7 @@ function benchContestedReplay() {
 }
 
 benchEconomy();
+benchScoreSummary();
 benchLadder();
 benchSlicesAndPerf();
 benchContestedReplay();

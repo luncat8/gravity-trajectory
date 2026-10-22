@@ -10,22 +10,50 @@
 <canvas id="c"></canvas>
 <canvas id="g"></canvas>
 
-<header id="tradeHud" class="panel">
-	<div class="kicker">orbital trade · background</div>
-	<div class="clock" id="tradeClock">t+ 07:00</div>
-	<div class="stats">
-		<div class="stat"><span>ports</span><b id="tradePorts">—</b></div>
-		<div class="stat"><span>ships</span><b id="tradeShips">—</b></div>
-		<div class="stat"><span>delivered</span><b id="tradeDelivered">—</b></div>
-		<div class="stat"><span>colonies</span><b id="tradeColonies">—</b></div>
-		<div class="stat"><span>aim error</span><b id="tradeAim">—</b></div>
-	</div>
-	<div id="tradeLegend">
-		<span class="good ice">ice</span>
-		<span class="good ore">ore</span>
-		<span class="good gas">gas</span>
-	</div>
-</header>
+<div id="leftHud" class="hudStack">
+	<aside id="scoreHud" class="panel scoreHud" hidden aria-label="game scoreboard">
+		<div class="scoreHead">
+			<div>
+				<div class="kicker">game scoreboard</div>
+				<div id="scoreRuleTag" class="scoreRuleTag">tour · 120 s cap</div>
+			</div>
+			<div id="rivalRow" class="scoreStanding" hidden><b id="rivalReadout">—</b></div>
+		</div>
+		<div class="scoreRows">
+			<div class="scoreEntry scorePlayer">
+				<span class="scoreName">YOU</span>
+				<b id="gameScore" class="scoreValue">0 / 26</b>
+				<span id="playerScoreMeta" class="scoreMeta">0 shots · purse 3.00</span>
+			</div>
+			<div id="scoreRival1" class="scoreEntry scoreRival scoreRivalOne" hidden>
+				<span class="scoreName">R1</span>
+				<b id="rivalScore1" class="scoreValue">—</b>
+				<span id="rivalMeta1" class="scoreMeta">—</span>
+			</div>
+			<div id="scoreRival2" class="scoreEntry scoreRival scoreRivalTwo" hidden>
+				<span class="scoreName">R2</span>
+				<b id="rivalScore2" class="scoreValue">—</b>
+				<span id="rivalMeta2" class="scoreMeta">—</span>
+			</div>
+		</div>
+	</aside>
+	<header id="tradeHud" class="panel">
+		<div class="kicker">orbital trade · background</div>
+		<div class="clock" id="tradeClock">t+ 07:00</div>
+		<div class="stats">
+			<div class="stat"><span>ports</span><b id="tradePorts">—</b></div>
+			<div class="stat"><span>ships</span><b id="tradeShips">—</b></div>
+			<div class="stat"><span>delivered</span><b id="tradeDelivered">—</b></div>
+			<div class="stat"><span>colonies</span><b id="tradeColonies">—</b></div>
+			<div class="stat"><span>aim error</span><b id="tradeAim">—</b></div>
+		</div>
+		<div id="tradeLegend">
+			<span class="good ice">ice</span>
+			<span class="good ore">ore</span>
+			<span class="good gas">gas</span>
+		</div>
+	</header>
+</div>
 
 <aside id="cargoHud" class="panel">
 	<div class="panelHead">
@@ -73,9 +101,7 @@
 			</div>
 			<div class="stats">
 				<div class="stat"><span>seed · rate</span><b id="gameSeed">—</b></div>
-				<div class="stat goalStat"><span>score</span><b id="gameScore">—</b></div>
 				<div class="stat"><span>purse</span><b id="gamePurse">—</b></div>
-				<div class="stat" id="rivalRow" hidden><span>rivals</span><b id="rivalReadout">—</b></div>
 				<div class="stat" id="replayRow" hidden><span>replay</span><b id="replayReadout">—</b></div>
 			</div>
 			<div class="actions gameActions">
@@ -178,7 +204,8 @@
 			<li><b>purse &amp; planet profit</b> — purse starts at 3.00 and each launch costs 1.00 (refused below 1.00). Every planet displays its current visit profit (+0.25 at start, growing +0.25 per 40 s of game time since last visited up to +0.75). Entering a planet’s port orbit collects that value and resets it to +0.00 — steer through long-unvisited worlds to fund your tour and out-earn rivals.</li>
 			<li><b>rule · route</b> — no 120 s cap (1 800 s wall), traced in per-frame slices; score: systems, route length, fewer shots, less time, purse.</li>
 			<li><b>rule · money</b> — 10-shot contract without stopping at 26 / 26; score: highest purse, then systems, then fewer shots.</li>
-			<li><b>rivals</b> — <i>easy / normal</i> (1 bot) and <i>hard</i> (2 bots with 1-ply lookahead) fly on the same clock and harvest from the same planets, so worlds along their trails reset to +0.00.</li>
+			<li><b>rivals</b> — bots compete in all three rules: <i>tour</i> hunts systems, <i>route</i> values long flights and distance, and <i>money</i> chases planet profit. Easy / normal field one rival; hard fields two with 1-ply lookahead.</li>
+			<li><b>scoreboard</b> — the upper-left panel compares your rule-specific score with R1 and R2; you are mint, R1 violet, and R2 rose.</li>
 			<li><b>playback</b> — <i>− slower / + faster</i> changes only how fast you watch; physics steps and the recorded replay stay identical. The world rate slider stays locked once a shot is fired.</li>
 			<li><b>copy replay</b> — a link with seed, rate and every launch; opening it re-flies the run, checks the recorded result, then lets you continue.</li>
 		</ul>

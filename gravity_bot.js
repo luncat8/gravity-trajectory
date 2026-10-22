@@ -561,10 +561,12 @@
 
 	GravityBot.prototype.actorSummary = function (index) {
 		const r = this.rivals[index];
+		const flyingLength = r.sim.status === STATUS_FLYING ? r.sim.flightLength : 0;
 		return {
 			purse: r.ledger.purse,
 			visited: r.sim.visitedCount,
-			length: r.length,
+			done: r.doneSteps >= 0,
+			length: r.length + flyingLength,
 			shots: r.shots.length,
 			steps: this.scoreSteps(index)
 		};

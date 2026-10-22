@@ -314,7 +314,7 @@ function benchRoute() {
 	const played = playRoute();
 	const playMs = Date.now() - started;
 	check(played.link.indexOf('&rule=route&') > 0, 'route link lost its rule: ' + played.link);
-	check(played.score.indexOf(' px · ') > 0, 'route score has no length: ' + played.score);
+	check(played.score.endsWith(' px'), 'route scoreboard has no length: ' + played.score);
 	check(played.flights.every(f => f.steps > 0), 'a route flight did not happen');
 	console.log('route game (seed 31, rate 3, 60 Hz):', played.score, '· ends', played.ends.join(', '),
 		'· ' + played.page.context.GravityScene.game.steps + ' steps · ' + playMs + ' ms');

@@ -553,6 +553,10 @@ check(env.calls.texts.includes('+0.25') && env.calls.texts.includes('R1'),
 env.runFrames(8, 16.0);
 check(ui.get('modeTag').textContent === 'game · clock runs in flight', 'game mode tag: ' + ui.get('modeTag').textContent);
 check(!ui.get('gameBox').hidden && game.on && game.seed === 7, 'game box / seed');
+check(!ui.get('scoreHud').hidden, 'game scoreboard should be visible above the trade HUD');
+check(ui.get('scoreRuleTag').textContent.startsWith('tour ·'), 'tour scoreboard rule label');
+check(!ui.get('scoreRival1').hidden && ui.get('scoreRival2').hidden,
+	'normal difficulty should show only R1');
 check(gScene.botLevel() === 'normal' && !ui.get('rivalRow').hidden, 'default normal rival not active');
 check(ui.get('rivalTag').textContent === '1 rival · route', 'rival tag after idle pre-think: ' + ui.get('rivalTag').textContent);
 check(sim.t === 420 && ui.get('tradeClock').textContent === 't+ 07:00', 'world not rebuilt at t+07:00: ' + sim.t);
@@ -656,9 +660,14 @@ const endT = sim.t;
 const endVisited = cargo.visitedCount;
 const endSteps = gScene.scoreSteps();
 const endPurse = game.money.purse;
-check(ui.get('gameScore').textContent.endsWith('purse ' + endPurse.toFixed(2)),
-	'score has no purse: ' + ui.get('gameScore').textContent);
-console.log('game score:', ui.get('gameScore').textContent, '·', ui.get('cargoStatus').textContent,
+check(ui.get('gameScore').textContent.startsWith(endVisited + ' / 26'),
+	'player score does not lead with systems: ' + ui.get('gameScore').textContent);
+check(ui.get('playerScoreMeta').textContent.endsWith('purse ' + endPurse.toFixed(2)),
+	'player score details have no purse: ' + ui.get('playerScoreMeta').textContent);
+check(ui.get('rivalScore1').textContent !== '—' && ui.get('rivalMeta1').textContent.includes('purse '),
+	'R1 score row not populated: ' + ui.get('rivalScore1').textContent + ' · ' + ui.get('rivalMeta1').textContent);
+console.log('game score:', ui.get('gameScore').textContent, '· R1', ui.get('rivalScore1').textContent,
+	'·', ui.get('cargoStatus').textContent,
 	'· watched at ×4 then reset');
 
 env.click('gameCopy');
@@ -724,7 +733,10 @@ for (let i = 0; i < 4000 && cargo.status === pageSim.STATUS_FLYING; i++) env.run
 env.runFrames(2, 16.0);
 check(cargo.status === pageSim.STATUS_ENDED, 'route flight did not end');
 const routeScore = ui.get('gameScore').textContent;
-check(routeScore.indexOf(' px · ') > 0, 'route score has no length: ' + routeScore);
+check(ui.get('scoreRuleTag').textContent.startsWith('route ·'), 'route scoreboard label');
+check(routeScore.endsWith(' px'), 'route score has no length: ' + routeScore);
+check(!ui.get('scoreRival1').hidden && ui.get('rivalScore1').textContent.endsWith(' px'),
+	'route rival score does not include route length: ' + ui.get('rivalScore1').textContent);
 check(Math.round(gScene.routeLength()) === Math.round(cargo.flightLength), 'route length not accumulated');
 console.log('route rule:', routeScore, '·', ui.get('cargoStatus').textContent,
 	'· traced', routeTime.toFixed(1) + ' s in', routePoints, 'points');
@@ -755,19 +767,27 @@ env.calls.texts.length = 0;
 env.runFrames(2, 16.0);
 check(gScene.rule() === 'money' && gScene.botLevel() === 'hard', 'money/hard switch failed');
 check(ui.get('ruleTag').textContent === 'money · 10 shots', 'money ruleTag: ' + ui.get('ruleTag').textContent);
-check(ui.get('gameScore').textContent.startsWith('0 / 10 shots · '),
-	'money score format: ' + ui.get('gameScore').textContent);
+check(ui.get('scoreRuleTag').textContent === 'money · 10 shots', 'money scoreboard rule label');
+check(ui.get('gameScore').textContent === '3.00 purse' &&
+	ui.get('playerScoreMeta').textContent.includes('0 / 10 shots'),
+	'money score format: ' + ui.get('gameScore').textContent + ' · ' + ui.get('playerScoreMeta').textContent);
+check(!ui.get('scoreRival1').hidden && !ui.get('scoreRival2').hidden &&
+	ui.get('rivalScore1').textContent === '3.00 purse' &&
+	ui.get('rivalScore2').textContent === '3.00 purse',
+	'money rule did not show both bot scores');
 check(env.calls.texts.includes('R1') && env.calls.texts.includes('R2'),
 	'hard mode did not draw R1 and R2 tags: ' + env.calls.texts.join(' '));
 env.choose('botOff');
 env.runFrames(2, 16.0);
-check(gScene.botLevel() === 'off' && ui.get('rivalRow').hidden && ui.get('botCopy').hidden &&
+check(gScene.botLevel() === 'off' && ui.get('rivalRow').hidden && ui.get('scoreRival1').hidden &&
+	ui.get('scoreRival2').hidden && ui.get('botCopy').hidden &&
 	ui.get('rivalTag').textContent === 'solo', 'botOff UI state');
 console.log('money & rivals UI:', ui.get('ruleTag').textContent, '· hard R1/R2 + solo verified');
 
 env.choose('modeLab');
 env.runFrames(2, 16.0);
 check(ui.get('modeTag').textContent === 'lab · free clock' && ui.get('gameBox').hidden, 'back to lab');
+check(ui.get('scoreHud').hidden, 'scoreboard should hide in lab mode');
 check(!ui.get('tradePause').disabled && !ui.get('tradeSpeed').disabled, 'lab controls still locked');
 const labT = sim.t;
 env.runFrames(30, 16.0);

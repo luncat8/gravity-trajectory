@@ -1,0 +1,8 @@
+0.3.4 scoreboard + multi-rule rival validation
+
+DOM smoke: scoreboard visible in game, hidden in lab; tour / route / money scores match the active rule; normal shows R1, hard shows R1 + R2, off hides rivals. SMOKE OK.
+Bot bench: tour hard>easy 4/4, normal>easy 4/4; route 3/4, 3/4; money 4/4, 4/4. Live route summary includes active flight length (1201.5 px); sliced decision parity 6/6; contested replay invariant. BOT BENCH OK.
+Gravity: 5616 predictions, avg 0.266 ms, worst 2.824 ms; prediction parity max 0.000068 px. BENCH OK.
+Game: route scoreboard reports `13 / 26 · 3093 px`; seeded replay/cadence parity and money checks pass. GAME BENCH OK.
+Route: one-shot vs sliced traces identical; worst slice 4.01 ms. ROUTE BENCH OK.
+Colony: 1622/1622 checks. COLONY BENCH OK.

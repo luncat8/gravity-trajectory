@@ -213,6 +213,12 @@
 	const ruleRouteEl = $('ruleRoute');
 	const ruleMoneyEl = $('ruleMoney');
 	const ruleTagEl = $('ruleTag');
+	const scoreHudEl = $('scoreHud');
+	const scoreRuleTagEl = $('scoreRuleTag');
+	const playerScoreMetaEl = $('playerScoreMeta');
+	const rivalScoreRows = [$('scoreRival1'), $('scoreRival2')];
+	const rivalScoreEls = [$('rivalScore1'), $('rivalScore2')];
+	const rivalMetaEls = [$('rivalMeta1'), $('rivalMeta2')];
 	const rivalTagEl = $('rivalTag');
 	const botOffEl = $('botOff');
 	const botEasyEl = $('botEasy');
@@ -288,6 +294,9 @@
 	let hudPathText = '';
 	let hudSeedText = '';
 	let hudScoreText = '';
+	let hudPlayerMetaText = '';
+	const hudRivalScoreTexts = ['', ''];
+	const hudRivalMetaTexts = ['', ''];
 	let hudPurseText = '';
 	let hudRuleText = '';
 	let hudRivalTagText = '';
@@ -1134,6 +1143,7 @@
 		const flightLock = game.on && (flying || replay.on);
 		modeTagEl.textContent = linkNote || (game.on ? 'game · clock runs in flight' : 'lab · free clock');
 		gameBoxEl.hidden = !game.on;
+		if (scoreHudEl) scoreHudEl.hidden = !game.on;
 		srcPlanetsEl.disabled = flightLock;
 		srcPortsEl.disabled = flightLock;
 		ruleTourEl.disabled = flightLock;
@@ -1153,6 +1163,9 @@
 			botCopyBtn.disabled = flightLock || bot.count === 0 || bot.rivals[0].shots.length === 0;
 		}
 		if (rivalRowEl) rivalRowEl.hidden = game.bot === BOT_OFF;
+		for (let i = 0; i < rivalScoreRows.length; i++) {
+			if (rivalScoreRows[i]) rivalScoreRows[i].hidden = i >= bot.count;
+		}
 		replaySpeedBtn.hidden = !replay.on;
 		replaySkipBtn.hidden = !replay.on;
 		replaySpeedBtn.textContent = '×' + REPLAY_SPEEDS[replay.speed];
@@ -1160,18 +1173,21 @@
 		hudAt = -Infinity;
 	}
 
-	/* route runs rank by length, money runs rank by purse over 10 shots */
-	function scoreText() {
-		const shots = game.shots.length;
+	function scoreValue(summary) {
+		if (moneyRule()) return summary.purse.toFixed(2) + ' purse';
+		const systems = summary.visited + ' / ' + PLANETS + (summary.done ? ' ✓' : '');
+		if (!routeRule()) return systems;
+		return systems + ' · ' + Math.round(summary.length) + ' px';
+	}
+
+	function scoreMeta(summary) {
+		const time = (summary.steps * DT).toFixed(1) + ' s';
 		if (moneyRule()) {
-			return shots + ' / ' + GravityGame.MONEY_SHOTS + ' shots · ' +
-				gravity.visitedCount + ' / ' + PLANETS + ' · ' +
-				(scoreSteps() * DT).toFixed(2) + ' s · purse ' + game.money.purse.toFixed(2);
+			return summary.visited + ' systems · ' + summary.shots + ' / ' +
+				GravityGame.MONEY_SHOTS + ' shots · ' + time;
 		}
-		return gravity.visitedCount + ' / ' + PLANETS + (game.doneSteps >= 0 ? ' ✓' : '') +
-			' · ' + (routeRule() ? Math.round(game.length) + ' px · ' : '') +
-			shots + (shots === 1 ? ' shot' : ' shots') + ' · ' +
-			(scoreSteps() * DT).toFixed(2) + ' s · purse ' + game.money.purse.toFixed(2);
+		const shots = summary.shots + (summary.shots === 1 ? ' shot' : ' shots');
+		return shots + ' · ' + time + ' · purse ' + summary.purse.toFixed(2);
 	}
 
 	function rivalTagText() {
@@ -1185,46 +1201,37 @@
 	}
 
 	function playerSummary() {
+		const flyingLength = gravity.status === STATUS_FLYING ? gravity.flightLength : 0;
 		return {
 			visited: gravity.visitedCount,
 			done: game.doneSteps >= 0,
 			steps: scoreSteps(),
 			shots: game.shots.length,
-			length: game.length,
+			length: game.length + flyingLength,
 			purse: game.money.purse
 		};
 	}
 
-	function rivalSummaryInfo() {
+	function rivalSummaryInfo(player) {
 		if (bot.count === 0) return { text: '—', outcome: 0 };
-		const parts = [];
-		let bestCmp = -2;
-		const finished = runOver();
-		const player = finished ? playerSummary() : null;
+		let bestCmp = Infinity;
 		for (let i = 0; i < bot.count; i++) {
-			const r = bot.rivals[i];
-			const doneMark = ruleSpec().stopOnTour && r.doneSteps >= 0 ? ' ✓' : '';
-			const shots = r.shots.length;
-			if (bot.count === 1) {
-				parts.push(RIVAL_TAGS[i] + ' ' + r.sim.visitedCount + '/' + PLANETS + doneMark +
-					' · ' + shots + (shots === 1 ? ' shot' : ' shots') +
-					' · purse ' + r.ledger.purse.toFixed(2));
-			} else {
-				parts.push(RIVAL_TAGS[i] + ' ' + r.sim.visitedCount + '/' + PLANETS + doneMark +
-					' ' + r.ledger.purse.toFixed(2));
-			}
-			if (finished) {
-				const cmp = GravityGame.compareScores(game.rule, player, bot.actorSummary(i));
-				if (bestCmp === -2 || cmp < bestCmp) bestCmp = cmp;
-			}
+			const cmp = GravityGame.compareScores(game.rule, player, bot.actorSummary(i));
+			if (cmp < bestCmp) bestCmp = cmp;
 		}
-		let prefix = '';
-		if (finished && bestCmp !== -2) {
-			prefix = bestCmp > 0 ? 'WIN · ' : bestCmp < 0 ? 'LOSS · ' : 'TIE · ';
-		} else if (bot.thinking()) {
-			prefix = 'thinking ' + Math.round(bot.progress() * 100) + '% · ';
+		const finished = runOver();
+		if (finished) {
+			return {
+				text: bestCmp > 0 ? 'WIN' : bestCmp < 0 ? 'LOSS' : 'TIE',
+				outcome: bestCmp
+			};
 		}
-		return { text: prefix + parts.join(' · '), outcome: finished ? bestCmp : 0 };
+		if (bot.thinking()) {
+			return { text: 'THINK ' + Math.round(bot.progress() * 100) + '%', outcome: 0 };
+		}
+		if (bestCmp > 0) return { text: 'AHEAD', outcome: 1 };
+		if (bestCmp < 0) return { text: 'BEHIND', outcome: -1 };
+		return { text: 'EVEN', outcome: 0 };
 	}
 
 	function updateGameHud() {
@@ -1236,6 +1243,7 @@
 		if (ruleText !== hudRuleText) {
 			hudRuleText = ruleText;
 			ruleTagEl.textContent = ruleText;
+			if (scoreRuleTagEl) scoreRuleTagEl.textContent = ruleText;
 		}
 		const rTag = rivalTagText();
 		if (rTag !== hudRivalTagText) {
@@ -1247,13 +1255,32 @@
 			hudSeedText = seedText;
 			gameSeedEl.textContent = seedText;
 		}
-		const score = scoreText();
+		const player = playerSummary();
+		const score = scoreValue(player);
 		if (score !== hudScoreText) {
 			hudScoreText = score;
 			gameScoreEl.textContent = score;
 		}
+		const playerMeta = scoreMeta(player);
+		if (playerMeta !== hudPlayerMetaText) {
+			hudPlayerMetaText = playerMeta;
+			playerScoreMetaEl.textContent = playerMeta;
+		}
+		for (let i = 0; i < bot.count; i++) {
+			const summary = bot.actorSummary(i);
+			const rivalScore = scoreValue(summary);
+			if (rivalScore !== hudRivalScoreTexts[i]) {
+				hudRivalScoreTexts[i] = rivalScore;
+				rivalScoreEls[i].textContent = rivalScore;
+			}
+			const rivalMeta = scoreMeta(summary);
+			if (rivalMeta !== hudRivalMetaTexts[i]) {
+				hudRivalMetaTexts[i] = rivalMeta;
+				rivalMetaEls[i].textContent = rivalMeta;
+			}
+		}
 		if (game.bot !== BOT_OFF && rivalEl) {
-			const info = rivalSummaryInfo();
+			const info = rivalSummaryInfo(player);
 			if (info.text !== hudRivalText) {
 				hudRivalText = info.text;
 				rivalEl.textContent = info.text;
