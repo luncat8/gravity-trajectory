@@ -109,18 +109,46 @@ body {
 	top: 14px;
 	right: 14px;
 	width: 294px;
-	max-height: calc(100vh - 76px);
-	overflow-y: auto;
-	pointer-events: none;
+	max-height: calc(100vh - var(--footReserve, 76px));
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
 }
 
-#cargoHud button,
-#cargoHud input,
-#cargoHud label {
+/* only the content blocks catch the pointer, so the panel padding stays see-through */
+#cargoBody,
+#cargoFoot {
 	pointer-events: auto;
 }
 
-#cargoHud.folded #cargoBody {
+#cargoBody {
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding-right: 2px;
+	scrollbar-width: thin;
+	scrollbar-color: rgba(126, 180, 230, 0.28) transparent;
+}
+
+#cargoBody::-webkit-scrollbar {
+	width: 6px;
+}
+
+#cargoBody::-webkit-scrollbar-thumb {
+	border-radius: 3px;
+	background: rgba(126, 180, 230, 0.28);
+}
+
+/* launch / clear / use best stay visible while the settings above scroll */
+#cargoFoot {
+	flex: none;
+	margin-top: 9px;
+	padding-top: 9px;
+	border-top: 1px solid var(--line);
+}
+
+#cargoHud.folded #cargoBody,
+#cargoHud.folded #cargoFoot {
 	display: none;
 }
 
@@ -191,7 +219,9 @@ body {
 
 .scoreMeta {
 	min-width: 0;
-	overflow-wrap: anywhere;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	color: var(--dim);
 	font-size: 9.5px;
 	line-height: 1.35;
@@ -204,17 +234,13 @@ body {
 	cursor: pointer;
 }
 
-#scorePlayer:has(input:not(:disabled)):hover {
+#scorePlayer:hover {
 	background: rgba(142, 240, 192, 0.08);
 }
 
 #scorePlayer:focus-within {
 	outline: 1px solid rgba(142, 240, 192, 0.45);
 	outline-offset: 2px;
-}
-
-#scorePlayer:has(input:disabled) {
-	cursor: default;
 }
 
 .scorePlayer .scoreName,
@@ -527,13 +553,32 @@ body {
 	margin-top: 9px;
 }
 
+/* launch owns a full row, so its changing label cannot reflow clear / use best */
 .cargoActions {
-	flex-wrap: wrap;
+	display: grid;
+	grid-template-columns: 96px minmax(0, 1fr);
+	gap: 6px 8px;
+	margin-top: 0;
+}
+
+.cargoActions button {
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+#launch {
+	grid-column: 1 / -1;
 }
 
 #routeBest {
-	flex: 0 0 100%;
-	white-space: nowrap;
+	grid-column: 2;
+}
+
+/* without a best slot the clear action keeps the row balanced */
+.cargoActions:not(:has(#routeBest:not([hidden]))) #clear {
+	grid-column: 1 / -1;
 }
 
 button {

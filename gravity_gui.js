@@ -485,6 +485,15 @@
 		canvas.height = Math.round(height * dpr);
 		canvas.style.width = width + 'px';
 		canvas.style.height = height + 'px';
+		reserveTradeFooter();
+	}
+
+	/* the wrapped trade footer grows; the cargo panel stops above it so its launch row stays reachable */
+	function reserveTradeFooter() {
+		const rect = $('tradeControls').getBoundingClientRect();
+		if (!(rect.height > 0) || !cargoHudEl) return;
+		cargoHudEl.style.setProperty('--footReserve',
+			Math.ceil(window.innerHeight - rect.top + 12) + 'px');
 	}
 
 	function worldX(clientX) {
@@ -1580,7 +1589,6 @@
 		if (botEasyEl) botEasyEl.disabled = flightLock;
 		if (botNormalEl) botNormalEl.disabled = flightLock;
 		if (botHardEl) botHardEl.disabled = flightLock;
-		playerBotEl.disabled = flightLock;
 		scene.lockSpeed(game.on && (routeRule() || game.fixedRate ||
 			game.shots.length > 0 || replay.on));
 		clearButton.textContent = routeRule() ? 'clear plan' : game.on ? 'abort' : 'clear';
@@ -1751,6 +1759,7 @@
 		if (playerMeta !== hudPlayerMetaText) {
 			hudPlayerMetaText = playerMeta;
 			playerScoreMetaEl.textContent = playerMeta;
+			playerScoreMetaEl.title = playerMeta;
 		}
 		for (let i = 0; i < bot.count; i++) {
 			const summary = bot.actorSummary(i);
@@ -1763,6 +1772,7 @@
 			if (rivalMeta !== hudRivalMetaTexts[i]) {
 				hudRivalMetaTexts[i] = rivalMeta;
 				rivalMetaEls[i].textContent = rivalMeta;
+				rivalMetaEls[i].title = rivalMeta;
 			}
 		}
 		if (game.bot !== BOT_OFF && rivalEl) {

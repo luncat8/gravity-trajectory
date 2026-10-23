@@ -76,7 +76,7 @@ function makeElement(spec, paint) {
 	return {
 		id: spec.id,
 		tagName: spec.tagName,
-		style: {},
+		style: { setProperty() {} },
 		textContent: '',
 		title: '',
 		value: spec.value,
@@ -136,7 +136,7 @@ function loadPage(options = {}) {
 					tagName: String(tag).toUpperCase(),
 					width: 0,
 					height: 0,
-					style: {},
+					style: { setProperty() {} },
 					getContext() { return paint; }
 				};
 			}

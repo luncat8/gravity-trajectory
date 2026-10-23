@@ -35,7 +35,7 @@ Open `index.html` (`file://` works, no build, no modules).
 | `abort` (game) | ends the running flight at the current step (recorded in the replay) |
 | rule `tour` / `route` / `money` (game) | tour: 120 s flight cap, score systems → shots → time; route: 1 800 s wall, score trajectory length; money: 10 shots, score purse → systems → shots → time · switching restarts the seed |
 | rivals `off` / `easy` / `normal` / `hard` | deterministic shared-market rivals in `tour`, `route` and `money` (`normal` default; `hard` fields 2 rivals with 1-ply lookahead) · switching restarts the seed |
-| scoreboard (upper-left, game only) | compares the player with each rival using the active rule’s score; player is mint, R1 violet and R2 rose · click the YOU row or its `bot` checkbox to switch user/bot control (restarts the run) |
+| scoreboard (upper-left, game only) | compares the player with each rival using the active rule’s score; player is mint, R1 violet and R2 rose · click anywhere on the YOU row or its `bot` checkbox to hand control to the bot and back; the switch stays live for the whole run (including while the bot flies) and always restarts it |
 | purse & planet profits (game) | starts at `3.00`; each launch costs `1.00` (refused below `1.00`); each planet's fly-visit payout grows with unvisited game time (`+0.25` initial, resets to `+0.00` when visited by you or a rival, `+0.00625/s` up to `+0.75` cap) and is drawn as a live pill under every planet |
 | `restart` / `new seed` | same seed fresh start / random world |
 | `copy replay` / `copy rival` | copies your replay link (with `&rule=` and `&bot=` when active) or Rival 1's solo trajectory link |
@@ -78,7 +78,9 @@ Open `index.html` (`file://` works, no build, no modules).
   dropping 60 fps (`3 ms` / 64-candidate background slices). The upper-left
   scoreboard compares player and rival scores under the active rule (route shows
   distance; money leads with purse), using mint for the player, violet for R1
-  and rose for R2. Replay links
+  and rose for R2. The YOU row is also the user/bot switch: it stays
+  clickable during a bot flight, because restarting the run is the only way
+  back to manual control. Replay links
   (`#game=1&seed=…&rate=…[&rule=…][&bot=…]&shots=…&end=…`) re-fly and verify
   every run (`verified ✓ · purse …`).
 - **Playback**: the flight is watched, not simulated, faster — one multiplier
@@ -112,7 +114,9 @@ Open `index.html` (`file://` works, no build, no modules).
 - `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game scoreboard, game mode & replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
   `game_bench.js`, `route_bench.js`, `bot_bench.js`), headless DOM smoke suite
-  (`dom_smoke.js`) on the shared vm page stub (`dom_stub.js`)
+  (`dom_smoke.js`) on the shared vm page stub (`dom_stub.js`), and a real-browser
+  HUD layout check (`layout_check.js`, needs `CHROME_PATH`) that asserts the
+  action row stays reachable and never reflows while aiming
 - `photos/` — user art (`space/`, `landed/`), `README.md` (file spec),
   `prompts.md` (14 captions for Krea 2 / MOSS-Image) and `generator/`
   (`comfy_queue.py` queues the captions into ComfyUI and downloads the renders)

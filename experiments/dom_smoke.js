@@ -879,6 +879,7 @@ env.toggle('playerBot');
 env.runFrames(2, 16.0);
 check(gScene.playerType() === 'bot' && ui.get('playerBot').checked,
 	'YOU=bot was not selected in the scoreboard');
+check(!ui.get('playerBot').disabled, 'the YOU switch locked itself after switching to bot');
 for (let i = 0; i < 1000 && (!gScene.routePlan().ready || cargo.predCount < 2 ||
 	cargo.routeActive); i++) env.runFrames(1, 16.0);
 check(gScene.routePlan().ready && game.shots.length === 1 && cargo.predCount >= 2,
@@ -902,11 +903,15 @@ check(gScene.rule() === 'tour' && gScene.playerType() === 'bot' && game.shots.le
 	'bot-controlled YOU did not auto-launch a tour shot');
 check(ui.get('launch').disabled && ui.get('launch').textContent === 'bot controls YOU',
 	'manual launch stayed available for bot-controlled YOU');
+check(!ui.get('playerBot').disabled && !ui.get('scorePlayer').classList.contains('locked'),
+	'the YOU switch is locked while the bot flies, so user control cannot be taken back');
 console.log('YOU=bot: route planned', Math.round(botRouteLength) + ' px',
 	'· tour auto-launched from P' + game.shots[0].origin);
 env.toggle('playerBot');
 env.runFrames(2, 16.0);
 check(gScene.playerType() === 'user' && !ui.get('playerBot').checked, 'YOU=user was not restored');
+check(!ui.get('playerBot').disabled && cargo.status !== pageSim.STATUS_FLYING,
+	'taking control back mid-bot-flight did not restart the run as a user');
 
 /* money rule + hard rivals (2 rivals on canvas) + solo toggle */
 env.choose('ruleMoney');
