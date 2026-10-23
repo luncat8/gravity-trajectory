@@ -337,32 +337,56 @@ if (moons.x[0] === frozenX0 && moons.y[0] === frozenY0) {
 }
 console.log('moons & belts:', moons.count(), 'points,', moons.tracks(), 'tracks · Kepler OK');
 
-/* help drawer GUI + random(tourist, emperor’s emissary) goal */
+/* help shows only the selected rule and follows the rule radios while pressed */
 const gScene = env.context.GravityScene;
-const firstRole = gScene.passenger();
-if (firstRole !== 'tourist' && firstRole !== 'emperor’s emissary') {
-	throw new Error('unexpected initial passenger: ' + firstRole);
+function allHelpText() {
+	return ui.get('helpRuleName').textContent + '|' + ui.get('helpGoal').textContent + '|' +
+		ui.get('helpScore').textContent + '|' + ui.get('helpDetail').textContent + '|' +
+		ui.get('helpControls').textContent;
 }
 env.fireElement(ui.get('helpBtn'), 'pointerenter', { pointerType: 'mouse' });
-if (!gScene.helpOpen()) throw new Error('help hover did not open');
+if (!gScene.helpOpen() || gScene.helpRule() !== 'tour') {
+	throw new Error('help hover did not open on the selected tour rule');
+}
 env.fireElement(ui.get('helpBtn'), 'pointerleave', {});
 if (gScene.helpOpen()) throw new Error('hover help did not close on leave');
-env.fireElement(ui.get('helpBtn'), 'pointerenter', { pointerType: 'mouse' });
-env.fireElement(ui.get('helpBtn'), 'click', {});
-env.fireElement(ui.get('helpBtn'), 'pointerleave', {});
-if (!gScene.helpOpen()) throw new Error('clicked help did not stay pinned');
-
-if (!gScene.helpOpen()) throw new Error('help drawer did not open');
-env.fireElement(ui.get('rerollGoal'), 'click', {});
-const secondRole = gScene.passenger();
-if (secondRole === firstRole ||
-	(secondRole !== 'tourist' && secondRole !== 'emperor’s emissary') ||
-	!ui.get('goalStory').textContent.includes(secondRole)) {
-	throw new Error('goal reroll mismatch: ' + firstRole + ' -> ' + secondRole);
+gScene.setHelpOpen(true);
+if (!gScene.helpOpen() || gScene.helpRule() !== 'tour' ||
+	ui.get('helpRuleName').textContent !== 'tour' ||
+	!ui.get('helpScore').textContent.startsWith('Most systems.') ||
+	allHelpText().includes('Trajectory length only') ||
+	allHelpText().includes('10-launch contract')) {
+	throw new Error('tour help is not selected-rule-only: ' + allHelpText());
 }
+env.fireElement(ui.get('ruleRoute'), 'pointerenter', { pointerType: 'mouse' });
+if (!gScene.helpOpen() || gScene.helpRule() !== 'route') {
+	throw new Error('hovered route radio did not preview route help');
+}
+env.fireElement(ui.get('ruleRoute'), 'pointerleave', {});
+if (!gScene.helpOpen() || gScene.helpRule() !== 'tour') {
+	throw new Error('pinned help did not return to selected tour after radio hover');
+}
+env.fireElement(ui.get('ruleRoute'), 'pointerdown', { pointerType: 'mouse' });
+if (!gScene.helpOpen() || gScene.helpRule() !== 'route' ||
+	!ui.get('helpRuleName').textContent.startsWith('route') ||
+	!ui.get('helpScore').textContent.startsWith('Trajectory length only') ||
+	allHelpText().includes('Most systems.') ||
+	allHelpText().includes('10-launch contract')) {
+	throw new Error('pressed route radio did not show route help: ' + allHelpText());
+}
+env.fireElement(ui.get('ruleRoute'), 'pointerup', { pointerType: 'mouse' });
+if (!gScene.helpOpen() || gScene.helpRule() !== 'tour') {
+	throw new Error('pinned help did not return to the selected tour rule');
+}
+env.fireElement(ui.get('ruleMoney'), 'pointerdown', { pointerType: 'mouse' });
+if (!gScene.helpOpen() || gScene.helpRule() !== 'money' ||
+	!ui.get('helpScore').textContent.startsWith('Highest purse.')) {
+	throw new Error('pressed money radio did not show money help: ' + allHelpText());
+}
+env.fireElement(ui.get('ruleMoney'), 'pointerup', { pointerType: 'mouse' });
 env.fireElement(ui.get('helpClose'), 'click', {});
-if (gScene.helpOpen()) throw new Error('help drawer did not close');
-console.log('help drawer roles:', firstRole, '->', secondRole);
+if (gScene.helpOpen()) throw new Error('help close failed');
+console.log('help: selected tour only; pressed route/money radios preview their own goal + score');
 
 /* 60 fps adaptive trajectory cadence vs sub-60 fps throttling */
 env.fireElement(ui.get('clear'), 'click', {});
@@ -713,52 +737,128 @@ env.click('launch');
 check(game.shots.length === 2, 'a broke run accepted a launch');
 console.log('broke run: launch refused,', ui.get('launch').textContent);
 
-/* route rule: no flight cap, and the run scores the length it flew */
+/* route rule: one traced plan per player; longest finished trajectory leads */
 env.choose('ruleRoute');
 env.runFrames(2, 16.0);
 check(game.on && gScene.rule() === 'route' && game.shots.length === 0, 'rule switch did not restart the run');
-check(ui.get('ruleTag').textContent.startsWith('route ·'), 'rule tag: ' + ui.get('ruleTag').textContent);
-const routeShot = findShot((g, p) => g.predReason === pageSim.END_IMPACT && g.predTime > 5);
+check(ui.get('ruleTag').textContent === 'route · longest one plan', 'rule tag: ' + ui.get('ruleTag').textContent);
+check(ui.get('scoreRuleTag').textContent === 'route · longest one plan', 'route scoreboard label');
+check(ui.get('launch').disabled && ui.get('launch').textContent.includes('no launch'),
+	'route still offers a launch: ' + ui.get('launch').textContent);
+check(ui.get('purseRow').hidden && ui.get('visitLabel').textContent === 'route score',
+	'route HUD still foregrounds purse/systems');
+for (let i = 0; i < 1000 && !gScene.bot.rivals[0].routeDone; i++) env.runFrames(1, 16.0);
+check(gScene.bot.rivals[0].routeDone && gScene.bot.rivals[0].routeReady,
+	'route rival never finished planning');
+const occupied = gScene.bot.rivals[0].routeOrigin;
+check(occupied >= 0 && gScene.routeOccupiedBy(occupied) === 0,
+	'route rival origin is not reported occupied');
+env.calls.texts.length = 0;
+env.dragAim(occupied, 0.35, 180);
+env.runFrames(2, 16.0);
+check(game.shots.length === 0 && !gScene.routePlan().ready,
+	'occupied route start accepted a player plan');
+check(env.calls.texts.some(t => t.includes('occupied by R1') &&
+	t.includes('choose another start planet')),
+	'occupied route tip missing: ' + env.calls.texts.join(' | '));
+
+const routeShot = findShot((g, p) => p !== occupied &&
+	(g.predReason === pageSim.END_IMPACT || g.predReason === pageSim.END_EXIT) &&
+	g.predTime > 5);
 dragShot(routeShot);
-check(cargo.routeMaxSteps === pageGame.ROUTE_STEPS + 2 && !cargo.routeActive,
-	'route preview is not the whole 1 800 s horizon: ' + cargo.routeMaxSteps);
+for (let i = 0; i < 200 && !gScene.routePlan().ready; i++) env.runFrames(1, 16.0);
+env.runFrames(2, 16.0);
+const routePlan = gScene.routePlan();
 const routeTime = cargo.predTime;
 const routePoints = cargo.predCount;
-check(cargo.predReason === pageSim.END_IMPACT && routePoints > 100, 'route preview did not finish');
+check(routePlan.ready && routePlan.origin === routeShot.p && routePlan.length > 0,
+	'route plan did not become the player entry');
+check(cargo.status !== pageSim.STATUS_FLYING && sim.t === 420,
+	'route planner flew a ship or advanced the world clock');
+check(game.shots.length === 1 && game.shots[0].origin === routeShot.p,
+	'route did not record exactly one plan');
+check(cargo.routeMaxSteps === pageGame.ROUTE_STEPS + 2 && !cargo.routeActive,
+	'route preview is not the full safety horizon: ' + cargo.routeMaxSteps);
+check(routePoints > 100, 'route preview has too few points');
 dragShot(routeShot);
-check(cargo.predTime === routeTime && cargo.predCount === routePoints, 'route preview is not repeatable');
+for (let i = 0; i < 200 && cargo.routeActive; i++) env.runFrames(1, 16.0);
+check(cargo.predTime === routeTime && cargo.predCount === routePoints && game.shots.length === 1,
+	'route plan replacement is not repeatable/one-shot');
 env.click('launch');
-check(cargo.stepLimit === pageGame.ROUTE_STEPS, 'route flight cap ' + cargo.stepLimit);
-for (let i = 0; i < 4000 && cargo.status === pageSim.STATUS_FLYING; i++) env.runFrames(1, 16.0);
-env.runFrames(2, 16.0);
-check(cargo.status === pageSim.STATUS_ENDED, 'route flight did not end');
+env.runFrames(10, 16.0);
+check(cargo.status !== pageSim.STATUS_FLYING && game.shots.length === 1,
+	'route launch button started a flight');
 const routeScore = ui.get('gameScore').textContent;
-check(ui.get('scoreRuleTag').textContent.startsWith('route ·'), 'route scoreboard label');
-check(routeScore.endsWith(' px'), 'route score has no length: ' + routeScore);
+check(routeScore === Math.round(routePlan.length) + ' px',
+	'route score is not the one plan length: ' + routeScore);
 check(!ui.get('scoreRival1').hidden && ui.get('rivalScore1').textContent.endsWith(' px'),
-	'route rival score does not include route length: ' + ui.get('rivalScore1').textContent);
-check(Math.round(gScene.routeLength()) === Math.round(cargo.flightLength), 'route length not accumulated');
-console.log('route rule:', routeScore, '·', ui.get('cargoStatus').textContent,
-	'· traced', routeTime.toFixed(1) + ' s in', routePoints, 'points');
+	'route rival score does not include plan length: ' + ui.get('rivalScore1').textContent);
+check(Math.round(gScene.routeLength()) === Math.round(routePlan.length), 'route length mismatch');
+check(ui.get('cargoStatus').textContent.startsWith('leader ·'),
+	'route leader is not shown live: ' + ui.get('cargoStatus').textContent);
+console.log('route planner:', routeScore, '· rival', ui.get('rivalScore1').textContent,
+	'·', ui.get('cargoStatus').textContent, '· traced', routeTime.toFixed(1) + ' s in',
+	routePoints, 'points · occupied P' + occupied + ' refused');
 
 env.click('gameCopy');
 const routeLink = env.clipboardText || '';
-check(routeLink.indexOf('&rule=route&') > 0, 'route link: ' + routeLink);
-const routeEndX = cargo.cargo.x;
-const routeEndY = cargo.cargo.y;
-const routeEndT = sim.t;
+const routeDecoded = pageGame.decodeLink(routeLink.slice(routeLink.indexOf('#')));
+check(routeLink.indexOf('&rule=route&') > 0 && routeDecoded && routeDecoded.shots.length === 1 &&
+	routeDecoded.length === Math.round(routePlan.length),
+	'route link does not carry one plan + length: ' + routeLink);
+const routeEndX = cargo.predX[cargo.predCount - 1];
+const routeEndY = cargo.predY[cargo.predCount - 1];
 const routeSteps = gScene.scoreSteps();
 env.setHash(routeLink.slice(routeLink.indexOf('#')));
 env.runFrames(2, 16.0);
-check(gScene.rule() === 'route' && gScene.replay.on, 'the link did not replay as a route run');
+check(gScene.rule() === 'route' && gScene.replay.on && gScene.replay.route,
+	'the link did not replay as a route plan');
+check(ui.get('replaySpeed').hidden && ui.get('cargoStatus').textContent === 'replay · tracing plan',
+	'route replay still presents flight playback controls/status');
 env.click('replaySkip');
 env.runFrames(2, 16.0);
-check(ui.get('replayReadout').textContent.startsWith('verified ✓'),
+check(ui.get('replayReadout').textContent === 'verified ✓ · ' + Math.round(routePlan.length) + ' px',
 	'route replay verdict: ' + ui.get('replayReadout').textContent);
-check(cargo.cargo.x === routeEndX && cargo.cargo.y === routeEndY && sim.t === routeEndT &&
-	gScene.scoreSteps() === routeSteps, 'route replay end state differs');
+check(cargo.predX[cargo.predCount - 1] === routeEndX &&
+	cargo.predY[cargo.predCount - 1] === routeEndY && sim.t === 420 &&
+	gScene.scoreSteps() === routeSteps && cargo.status !== pageSim.STATUS_FLYING,
+	'route replay did not retrace the same plan without flying');
 console.log('route replay:', ui.get('replayReadout').textContent, '·', routeLink.slice(routeLink.indexOf('#')).length,
-	'char link ·', gScene.rule(), 'rule');
+	'char link · world stayed at t+07:00');
+
+/* YOU can be a bot: it plans in route mode, then auto-launches under tour */
+env.choose('playerBot');
+env.runFrames(2, 16.0);
+check(gScene.playerType() === 'bot' && ui.get('playerTypeTag').textContent.startsWith('bot ·'),
+	'YOU=bot was not selected/tagged: ' + ui.get('playerTypeTag').textContent);
+for (let i = 0; i < 1000 && (!gScene.routePlan().ready || cargo.predCount < 2 ||
+	cargo.routeActive); i++) env.runFrames(1, 16.0);
+check(gScene.routePlan().ready && game.shots.length === 1 && cargo.predCount >= 2,
+	'bot-controlled YOU did not produce a visible route plan: plan=' +
+	JSON.stringify(gScene.routePlan()) + ' playerActor=' +
+	JSON.stringify({ origin: gScene.bot.player.routeOrigin, ready: gScene.bot.player.routeReady,
+		done: gScene.bot.player.routeDone, version: gScene.bot.player.routeVersion }) +
+	' shots=' + game.shots.length + ' pred=' + cargo.predCount);
+check(gScene.routeOccupiedBy(gScene.routePlan().origin) < 0,
+	'bot-controlled YOU claimed a rival route start');
+const botRouteLength = gScene.routePlan().length;
+env.click('gameCopy');
+const botLink = env.clipboardText || '';
+const botDecoded = pageGame.decodeLink(botLink.slice(botLink.indexOf('#')));
+check(botDecoded && botDecoded.player === 'bot' && botDecoded.shots.length === 1,
+	'YOU=bot route link: ' + botLink);
+env.choose('ruleTour');
+env.runFrames(2, 16.0);
+for (let i = 0; i < 500 && game.shots.length === 0; i++) env.runFrames(1, 16.0);
+check(gScene.rule() === 'tour' && gScene.playerType() === 'bot' && game.shots.length >= 1,
+	'bot-controlled YOU did not auto-launch a tour shot');
+check(ui.get('launch').disabled && ui.get('launch').textContent === 'bot controls YOU',
+	'manual launch stayed available for bot-controlled YOU');
+console.log('YOU=bot: route planned', Math.round(botRouteLength) + ' px',
+	'· tour auto-launched from P' + game.shots[0].origin);
+env.choose('playerUser');
+env.runFrames(2, 16.0);
+check(gScene.playerType() === 'user', 'YOU=user was not restored');
 
 /* money rule + hard rivals (2 rivals on canvas) + solo toggle */
 env.choose('ruleMoney');

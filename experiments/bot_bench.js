@@ -4,8 +4,8 @@
  * 1. per-planet growing profit curve, estimateProfit === stepHarvest parity,
  *    and 4-archetype balance sweep (lazy/casual go broke; blind loses to
  *    profit-aware rivals; smart wins by routing near long-unvisited planets)
- * 2. difficulty ladder (easy < normal < hard) across tour, route, and money,
- *    plus rivalLink solo-replay verification
+ * 2. difficulty ladder across tour and money; route checks same-start
+ *    prefix monotonicity and aggregate search gains, plus rivalLink replay
  * 3. sliced stepJob vs synchronous chooseSync exact identity + zero allocation
  * 4. decision latency & per-slice wall budget
  * 5. contested race cross-cadence replay invariance (144 Hz, jitter, x16, skip)
@@ -247,7 +247,7 @@ function benchEconomy() {
 		'/4 · smart 26/26 tour ' + smartFinishedTour + '/4');
 }
 
-/* bot summaries power the player-vs-rival score rows while a ship is in flight */
+/* bot summaries power the score rows; in route they expose the current plan */
 function benchScoreSummary() {
 	const { trade } = buildStaticWorld(42);
 	const bot = new GravityBot(Sim.WORLD_W, Sim.WORLD_H);
@@ -256,16 +256,42 @@ function benchScoreSummary() {
 		bot.reset(42, rule, GravityGame.BOT_EASY);
 		check(bot.rule === rule && bot.count === 1, 'bot did not bind to ' + rule);
 	}
-	bot.reset(42, GravityGame.RULE_ROUTE, GravityGame.BOT_EASY);
+	bot.reset(42, GravityGame.RULE_ROUTE, GravityGame.BOT_EASY, GravityGame.PLAYER_BOT);
 	const rival = bot.rivals[0];
-	rival.length = 1200;
-	rival.sim.stepLimit = Infinity;
-	rival.sim.launch(rival.basePlanet, 0.7, 180);
-	bot.stepOne(1, GravityGame.createMarket());
-	const summary = bot.actorSummary(0);
-	check(summary.length === rival.length + rival.sim.flightLength && summary.length > 1200,
-		'route score omitted the rival ship\'s live flight length: ' + summary.length);
-	console.log('rule-aware bots: tour, route, money · live route summary', summary.length.toFixed(1), 'px');
+	const player = bot.player;
+	check(bot.routeOccupiedBy(rival.routeOrigin, true) === 0 &&
+		bot.routeOccupiedBy(player.routeOrigin, true) === GravityBot.PLAYER_INDEX &&
+		rival.routeOrigin !== player.routeOrigin,
+		'route bot actors do not claim distinct start planets');
+
+	let ticks = 0;
+	while (!rival.routeReady && ticks < 500) {
+		bot.tickRoute(3);
+		ticks += 1;
+	}
+	let summary = bot.actorSummary(0);
+	check(summary.ready && summary.origin === rival.routeOrigin &&
+		summary.length === rival.routeLength && summary.steps === rival.routeSteps &&
+		summary.shots === 1 && rival.sim.status !== STATUS_FLYING,
+		'route score does not expose the rival current traced plan');
+
+	bot.settle(0, GravityGame.createMarket(), GravityGame.RULES.route.capSteps);
+	summary = bot.actorSummary(0);
+	const playerSummary = bot.actorSummary(GravityBot.PLAYER_INDEX);
+	check(summary.ready && summary.done && summary.length > 1000 &&
+		playerSummary.ready && playerSummary.done && playerSummary.length > 0 &&
+		playerSummary.shots === 1 && player.sim.status !== STATUS_FLYING,
+		'route rivals/YOU-bot did not settle to one finished plan each');
+	check(GravityGame.compareScores('route',
+		{ length: 100, visited: 0, purse: 0, shots: 1, steps: 999 },
+		{ length: 99, visited: 26, purse: 99, shots: 1, steps: 1 }) > 0 &&
+		GravityGame.compareScores('route',
+			{ length: 100.4, visited: 0, purse: 0, shots: 1, steps: 999 },
+			{ length: 100, visited: 26, purse: 99, shots: 1, steps: 1 }) === 0,
+		'route comparison is not trajectory length only');
+	console.log('rule-aware bots: tour, route, money · route plans rival',
+		summary.length.toFixed(1), 'px · YOU-bot', playerSummary.length.toFixed(1),
+		'px · no route flights');
 }
 
 /* 2. bot difficulty ladder across rules + rivalLink replay verification */
@@ -290,6 +316,8 @@ function benchLadder() {
 	for (const ruleName of ['tour', 'route', 'money']) {
 		let hardBeatsEasy = 0;
 		let normalBeatsEasy = 0;
+		let routeMonotonic = 0;
+		let routeTotals = { easy: 0, normal: 0, hard: 0 };
 		const summary = [];
 		for (const seed of SEEDS) {
 			const easy = runSoloBot(seed, ruleName, GravityGame.BOT_EASY);
@@ -297,9 +325,21 @@ function benchLadder() {
 			const hard = runSoloBot(seed, ruleName, GravityGame.BOT_HARD);
 			if (GravityGame.compareScores(ruleName, hard.best, easy.best) > 0) hardBeatsEasy += 1;
 			if (GravityGame.compareScores(ruleName, normal.best, easy.best) > 0) normalBeatsEasy += 1;
-			summary.push('s' + seed + ' E:' + easy.best.visited + '/$' + easy.best.purse.toFixed(1) +
-				' N:' + normal.best.visited + '/$' + normal.best.purse.toFixed(1) +
-				' H:' + hard.best.visited + '/$' + hard.best.purse.toFixed(1));
+			if (ruleName === 'route') {
+				if (easy.r0.origin === normal.r0.origin && normal.r0.origin === hard.r0.origin &&
+					normal.r0.length + 0.5 >= easy.r0.length &&
+					hard.r0.length + 0.5 >= normal.r0.length) routeMonotonic += 1;
+				routeTotals.easy += easy.r0.length;
+				routeTotals.normal += normal.r0.length;
+				routeTotals.hard += hard.best.length;
+				summary.push('s' + seed + ' E:' + Math.round(easy.best.length) + 'px' +
+					' N:' + Math.round(normal.best.length) + 'px' +
+					' H:' + Math.round(hard.best.length) + 'px');
+			} else {
+				summary.push('s' + seed + ' E:' + easy.best.visited + '/$' + easy.best.purse.toFixed(1) +
+					' N:' + normal.best.visited + '/$' + normal.best.purse.toFixed(1) +
+					' H:' + hard.best.visited + '/$' + hard.best.purse.toFixed(1));
+			}
 
 			/* verify rivalLink replays cleanly on seed 7 */
 			if (seed === 7) {
@@ -313,7 +353,14 @@ function benchLadder() {
 			}
 		}
 		check(hardBeatsEasy >= 3, 'hard must beat easy on >=3/4 seeds in ' + ruleName + ' (' + hardBeatsEasy + ')');
-		check(normalBeatsEasy >= 3, 'normal must beat easy on >=3/4 seeds in ' + ruleName + ' (' + normalBeatsEasy + ')');
+		if (ruleName === 'route') {
+			check(routeMonotonic === SEEDS.length,
+				'route levels are not prefix-monotonic for the same start planet (' + routeMonotonic + '/4)');
+			check(routeTotals.normal > routeTotals.easy && routeTotals.hard > routeTotals.normal,
+				'route aggregate lengths do not improve with search depth: ' + JSON.stringify(routeTotals));
+		} else {
+			check(normalBeatsEasy >= 3, 'normal must beat easy on >=3/4 seeds in ' + ruleName + ' (' + normalBeatsEasy + ')');
+		}
 		console.log('2. ladder [' + ruleName + ']: hard>easy ' + hardBeatsEasy + '/4, normal>easy ' +
 			normalBeatsEasy + '/4 · ' + summary.join(' | '));
 	}

@@ -1,14 +1,14 @@
 # gravity cargo
 
 A ballistic grand-tour game and gravity lab on top of the `orbit_trade`
-visualisation from `luncat8/exec_queue`. A `tourist` or `emperor’s emissary`
-wants to fly through as many planet systems as possible: launch from a planet,
-sweep inside planets' port orbits using gravity assists, land cleanly on a
-planet, and stage your next hop from where you landed.
+visualisation from `luncat8/exec_queue`. Launch from a planet, sweep inside
+planets' port orbits using gravity assists, land cleanly, and stage the next
+hop from where you landed. The `route` rule instead plans one longest possible
+trajectory without launching it.
 
 Two modes: **lab** (free clock, editable gravity) and **game** (seeded world,
-the clock runs only while the cargo flies, fixed rules, shareable replay links
-that re-fly and verify a run).
+fixed rules and shareable replay links; under the flown rules the clock runs
+only while cargo flies, while `route` stays a deterministic planner).
 
 ## run
 
@@ -23,10 +23,10 @@ Open `index.html` (`file://` works, no build, no modules).
 | click a body | select planet or moving port to tune its gravity (`-2…2`, default `1`); keeps armed shot |
 | `g` slider | gravity of the selected body; negative values repel · red `+` / blue `−` updates at once |
 | `±` trim slider | relative nudge (`-5%…+5%`) of the aim speed, or of selected gravity when no shot is armed |
-| release drag | arms the shot and draws the predicted trajectory and system visits |
-| enter / launch | fires the vessel |
-| esc | closes help drawer or cancels the aim |
-| clear | resets vessel, trail, visited systems and launch-base lock |
+| release drag | arms the shot/plan and draws the predicted trajectory (and, outside `route`, system visits) |
+| enter / launch | fires the vessel under `tour`/`money`; disabled for a `route` plan or bot-controlled YOU |
+| esc | closes help or cancels the aim/plan |
+| clear / clear plan | resets the vessel, or removes the current `route` plan |
 | gravity positions | radio group `planets` (static) / `ports` (`ports · moving`); launch base is always a static planet |
 | `? help` / `h` | toggles the mission & guide drawer (`tourist` / `emperor’s emissary`) |
 | space | pauses the trade background only (lab) |

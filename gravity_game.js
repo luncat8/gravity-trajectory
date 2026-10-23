@@ -33,9 +33,9 @@
 	 * stops when all 26 systems are visited.
 	 */
 	const RULES = {
-		tour: { name: RULE_TOUR, capSteps: CAP_STEPS, horizon: null, maxShots: 0, stopOnTour: true },
-		route: { name: RULE_ROUTE, capSteps: ROUTE_STEPS, horizon: ROUTE_SECONDS, maxShots: 0, stopOnTour: true },
-		money: { name: RULE_MONEY, capSteps: CAP_STEPS, horizon: null, maxShots: MONEY_SHOTS, stopOnTour: false }
+		tour: { name: RULE_TOUR, capSteps: CAP_STEPS, horizon: null, maxShots: 0, stopOnTour: true, planner: false },
+		route: { name: RULE_ROUTE, capSteps: ROUTE_STEPS, horizon: ROUTE_SECONDS, maxShots: 1, stopOnTour: false, planner: true },
+		money: { name: RULE_MONEY, capSteps: CAP_STEPS, horizon: null, maxShots: MONEY_SHOTS, stopOnTour: false, planner: false }
 	};
 	const BOT_OFF = 'off';
 	const BOT_EASY = 'easy';
@@ -46,6 +46,12 @@
 		easy: BOT_EASY,
 		normal: BOT_NORMAL,
 		hard: BOT_HARD
+	};
+	const PLAYER_USER = 'user';
+	const PLAYER_BOT = 'bot';
+	const PLAYER_TYPES = {
+		user: PLAYER_USER,
+		bot: PLAYER_BOT
 	};
 	const RATE_MIN = 0.5;
 	const RATE_MAX = 12;
@@ -97,15 +103,19 @@
 		return shot.abort === NO_ABORT ? head : head + '.' + shot.abort.toString(36);
 	}
 
-	/* `game` = { seed, rate, rule, bot, shots, visited, steps }; default rule/bot stay omitted */
+	/* `game` = { seed, rate, rule, bot, player, shots, visited, steps, length };
+	 * default rule/bot/player stay omitted; `length` verifies a route plan. */
 	function encodeLink(game) {
 		const rulePart = game.rule && game.rule !== RULE_TOUR ? '&rule=' + game.rule : '';
 		const botPart = game.bot && game.bot !== BOT_OFF ? '&bot=' + game.bot : '';
+		const playerPart = game.player === PLAYER_BOT ? '&you=' + PLAYER_BOT : '';
 		const head = 'game=' + FORMAT + '&seed=' + game.seed + '&rate=' + game.rate +
-			rulePart + botPart;
+			rulePart + botPart + playerPart;
 		if (game.shots.length === 0) return head;
+		const lengthPart = game.rule === RULE_ROUTE && Number.isFinite(game.length)
+			? '&len=' + Math.round(game.length) : '';
 		return head + '&shots=' + game.shots.map(encodeShot).join('_') +
-			'&end=' + game.visited + '.' + game.steps;
+			'&end=' + game.visited + '.' + game.steps + lengthPart;
 	}
 
 	function decodeShot(text, capSteps) {
@@ -121,7 +131,7 @@
 		return createShot(SRC_CODES.indexOf(match[1]), origin, angle, speed, abort);
 	}
 
-	/* Returns { seed, rate, rule, bot, shots, end } or null when not a valid game link. */
+	/* Returns { seed, rate, rule, bot, player, shots, end, length } or null. */
 	function decodeLink(text) {
 		const params = new URLSearchParams(String(text).replace(/^#/, ''));
 		if (params.get('game') !== String(FORMAT)) return null;
@@ -135,17 +145,26 @@
 		const botText = params.get('bot');
 		const bot = botText === null ? BOT_OFF : BOTS[botText];
 		if (!bot) return null;
+		const playerText = params.get('you');
+		const player = playerText === null ? PLAYER_USER : PLAYER_TYPES[playerText];
+		if (!player) return null;
 		const list = params.get('shots');
 		const parts = list ? list.split('_') : [];
+		if (rule.planner && parts.length > 1) return null;
 		const shots = [];
 		for (const part of parts) {
 			const shot = decodeShot(part, rule.capSteps);
-			if (!shot) return null;
+			if (!shot || (rule.planner && shot.abort !== NO_ABORT)) return null;
 			shots.push(shot);
 		}
+		const lengthText = params.get('len');
+		const length = lengthText === null ? null : Number(lengthText);
+		if (lengthText !== null &&
+			(!Number.isInteger(length) || length < 0 || length > 10000000)) return null;
 		const endMatch = END_FORM.exec(params.get('end') || '');
 		const end = endMatch ? { visited: Number(endMatch[1]), steps: Number(endMatch[2]) } : null;
-		return { seed: seed, rate: rate, rule: rule.name, bot: bot, shots: shots, end: end };
+		return { seed: seed, rate: rate, rule: rule.name, bot: bot, player: player,
+			shots: shots, end: end, length: length };
 	}
 
 	function isGameLink(text) {
@@ -262,6 +281,9 @@
 
 	/* > 0 when actor `a` beats `b` under `ruleName` */
 	function compareScores(ruleName, a, b) {
+		if (ruleName === RULE_ROUTE) {
+			return Math.abs(a.length - b.length) > 0.5 ? a.length - b.length : 0;
+		}
 		if (ruleName === RULE_MONEY) {
 			if (Math.abs(a.purse - b.purse) > 1e-9) return a.purse - b.purse;
 			if (a.visited !== b.visited) return a.visited - b.visited;
@@ -269,9 +291,6 @@
 			return b.steps - a.steps;
 		}
 		if (a.visited !== b.visited) return a.visited - b.visited;
-		if (ruleName === RULE_ROUTE && Math.abs(a.length - b.length) > 0.5) {
-			return a.length - b.length;
-		}
 		if (a.shots !== b.shots) return b.shots - a.shots;
 		if (a.steps !== b.steps) return b.steps - a.steps;
 		return a.purse - b.purse;
@@ -282,6 +301,7 @@
 		ROUTE_SECONDS, ROUTE_STEPS, MONEY_SHOTS,
 		RULE_TOUR, RULE_ROUTE, RULE_MONEY, RULES,
 		BOT_OFF, BOT_EASY, BOT_NORMAL, BOT_HARD, BOTS,
+		PLAYER_USER, PLAYER_BOT, PLAYER_TYPES,
 		SRC_PLANETS, SRC_PORTS, NO_ABORT, MONEY, PURSE_PRESETS,
 		angleUnits, angleOf, speedUnits, speedOf,
 		createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,

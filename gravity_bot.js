@@ -23,6 +23,7 @@
 
 	const PLANETS = OrbitWorld.PLANETS;
 	const MAX_RIVALS = 2;
+	const PLAYER_INDEX = 2;
 	const TOP_K = 4;
 	const MAX_BOT_SHOTS = 16;
 	const SLICE_CANDIDATES = 64;
@@ -34,6 +35,31 @@
 	const END_EXIT = GravitySim.END_EXIT;
 	const END_TIME = GravitySim.END_TIME;
 	const MONEY = GravityGame.MONEY;
+	const END_OPEN = GravitySim.END_OPEN;
+	/* Route is a planner contest. One prefix search serves every skill level:
+	 * easy stops after stage 1, normal after stage 3, hard after stage 5, so a
+	 * stronger bot has evaluated every candidate a weaker bot saw, then more. */
+	const ROUTE_SPEEDS = [70, 120, 170, 50, 95, 145, 210, 60, 110, 155, 85, 240];
+	const ROUTE_STAGE_COUNT = [24, 8, 36, 12, 48, 16];
+	const ROUTE_COARSE_START = [0, -1, 24, -1, 60, -1];
+	const ROUTE_REFINE_1 = [
+		[-0.12, 0.92], [-0.12, 1.08], [-0.06, 0.92], [-0.06, 1.08],
+		[0.06, 0.92], [0.06, 1.08], [0.12, 0.92], [0.12, 1.08]
+	];
+	const ROUTE_REFINE_2 = [
+		[-0.045, 1], [0.045, 1], [0, 0.94], [0, 1.06],
+		[-0.03, 0.97], [-0.03, 1.03], [-0.015, 0.97], [-0.015, 1.03],
+		[0.015, 0.97], [0.015, 1.03], [0.03, 0.97], [0.03, 1.03]
+	];
+	const ROUTE_REFINE_3 = [
+		[-0.015, 1], [0.015, 1], [0, 0.98], [0, 1.02],
+		[-0.008, 0.99], [-0.008, 1.01], [-0.004, 0.99], [-0.004, 1.01],
+		[0.004, 0.99], [0.004, 1.01], [0.008, 0.99], [0.008, 1.01],
+		[-0.002, 0.995], [0.002, 1.005], [-0.002, 1.005], [0.002, 0.995]
+	];
+	const ROUTE_REFINES = [null, ROUTE_REFINE_1, null, ROUTE_REFINE_2, null, ROUTE_REFINE_3];
+	const ROUTE_PHI = 0.618033988749895;
+	const ROUTE_SLICE_CANDIDATES = 2;
 
 	const LEVELS = {
 		off: {
@@ -42,7 +68,8 @@
 			angles: 0,
 			speeds: [],
 			horizon: 0,
-			routeHorizon: 0,
+			routeStopStage: -1,
+			routeCandidates: 0,
 			lookahead: 0,
 			stageSteps: 0
 		},
@@ -52,7 +79,8 @@
 			angles: 14,
 			speeds: [140, 220],
 			horizon: 12,
-			routeHorizon: 16,
+			routeStopStage: 1,
+			routeCandidates: 32,
 			lookahead: 0,
 			stageSteps: 180
 		},
@@ -62,7 +90,8 @@
 			angles: 24,
 			speeds: [115, 175, 245],
 			horizon: 18,
-			routeHorizon: 24,
+			routeStopStage: 3,
+			routeCandidates: 80,
 			lookahead: 0,
 			stageSteps: 120
 		},
@@ -72,7 +101,8 @@
 			angles: 32,
 			speeds: [105, 160, 215, 275],
 			horizon: 22,
-			routeHorizon: 30,
+			routeStopStage: 5,
+			routeCandidates: 144,
 			lookahead: 8,
 			stageSteps: 60
 		}
@@ -93,7 +123,24 @@
 			planStamp: -1,
 			planOrigin: 0,
 			planAngleU: 0,
-			planSpeedU: 0
+			planSpeedU: 0,
+			routeOrigin: 0,
+			routeStage: 0,
+			routeIndex: 0,
+			routeDoneCount: 0,
+			routeOffset: 0,
+			routeReady: false,
+			routeDone: true,
+			routeVersion: 0,
+			routeAngleU: 0,
+			routeSpeedU: 0,
+			routeRefineAngleU: 0,
+			routeRefineSpeedU: 0,
+			routeLength: 0,
+			routeSteps: 0,
+			routeVisits: 0,
+			routeReason: END_OPEN,
+			routeBody: -1
 		};
 	}
 
@@ -104,11 +151,20 @@
 		this.probe = new GravitySim(worldW, worldH);
 		this.strength = new Float64Array(PLANETS).fill(1);
 		this.rivals = [createRival(worldW, worldH), createRival(worldW, worldH)];
+		/* the GUI's own actor when YOU is set to bot; its sim mirrors the GUI sim */
+		this.player = createRival(worldW, worldH);
 
 		this.level = GravityGame.BOT_OFF;
+		this.playerType = GravityGame.PLAYER_USER;
+		this.playerLevel = GravityGame.BOT_OFF;
 		this.rule = GravityGame.RULE_TOUR;
 		this.seed = 1;
 		this.count = 0;
+		this.routeSource = GravityGame.SRC_PLANETS;
+		this.routeCandActor = -1;
+		this.routeCandAngleU = 0;
+		this.routeCandSpeedU = 0;
+		this.routeTurn = 0;
 
 		/* preallocated scratch buffers for 1-ply lookahead: zero per-candidate allocs */
 		this.lookMarket = GravityGame.createMarket();
@@ -152,6 +208,7 @@
 		this.strength.fill(1);
 		this.bindSim(this.probe);
 		for (let i = 0; i < MAX_RIVALS; i++) this.bindSim(this.rivals[i].sim);
+		this.bindSim(this.player.sim);
 	};
 
 	GravityBot.prototype.bindSim = function (sim) {
@@ -169,36 +226,103 @@
 		return LEVELS[this.level] || LEVELS.off;
 	};
 
+	GravityBot.prototype.actorAt = function (index) {
+		return index === PLAYER_INDEX ? this.player : this.rivals[index];
+	};
+
+	GravityBot.prototype.specFor = function (index) {
+		if (index === PLAYER_INDEX) return LEVELS[this.playerLevel] || LEVELS.off;
+		return this.spec();
+	};
+
+	/* Route plans must be traced in the player's exact field (planets or ports). */
+	GravityBot.prototype.useField = function (sourceSim, sourceCode) {
+		this.routeSource = sourceCode === GravityGame.SRC_PORTS
+			? GravityGame.SRC_PORTS : GravityGame.SRC_PLANETS;
+		const bind = function (sim) {
+			sim.fieldT = sourceSim.fieldT;
+			sim.fieldRate = sourceSim.fieldRate;
+			sim.setField(sourceSim.bodyCount, sourceSim.bodyR, sourceSim.strength,
+				sourceSim.fillField, sourceSim.fieldStatic);
+		};
+		bind(this.probe);
+		for (let i = 0; i < MAX_RIVALS; i++) bind(this.rivals[i].sim);
+		bind(this.player.sim);
+	};
+
 	GravityBot.prototype.ruleSpec = function () {
 		return GravityGame.RULES[this.rule] || GravityGame.RULES.tour;
 	};
 
-	GravityBot.prototype.reset = function (seed, rule, level) {
+	GravityBot.prototype.resetActor = function (actor, basePlanet) {
+		actor.sim.clear();
+		GravityGame.resetLedger(actor.ledger);
+		actor.shots.length = 0;
+		actor.steps = 0;
+		actor.doneSteps = -1;
+		actor.length = 0;
+		actor.basePlanet = basePlanet;
+		actor.readyStep = 0;
+		actor.planReady = false;
+		actor.planStep = -1;
+		actor.planStamp = -1;
+		actor.planOrigin = basePlanet;
+		actor.routeOrigin = basePlanet;
+		actor.routeStage = 0;
+		actor.routeIndex = 0;
+		actor.routeDoneCount = 0;
+		actor.routeReady = false;
+		actor.routeDone = true;
+		actor.routeVersion = 0;
+		actor.routeAngleU = 0;
+		actor.routeSpeedU = 0;
+		actor.routeRefineAngleU = 0;
+		actor.routeRefineSpeedU = 0;
+		actor.routeLength = 0;
+		actor.routeSteps = 0;
+		actor.routeVisits = 0;
+		actor.routeReason = END_OPEN;
+		actor.routeBody = -1;
+	};
+
+	GravityBot.prototype.reset = function (seed, rule, level, playerType) {
 		this.seed = seed >>> 0;
 		this.rule = GravityGame.RULES[rule] ? rule : GravityGame.RULE_TOUR;
 		this.level = LEVELS[level] ? level : GravityGame.BOT_OFF;
+		this.playerType = playerType === GravityGame.PLAYER_BOT
+			? GravityGame.PLAYER_BOT : GravityGame.PLAYER_USER;
+		this.playerLevel = this.playerType === GravityGame.PLAYER_BOT
+			? (this.level === GravityGame.BOT_OFF ? GravityGame.BOT_NORMAL : this.level)
+			: GravityGame.BOT_OFF;
 		this.count = this.spec().count;
 		this.jobActive = false;
 		this.jobRival = -1;
+		this.routeCandActor = -1;
+		this.routeTurn = 0;
+		this.probe.clear();
 
 		const base0 = (Math.imul(this.seed, 7) + 5) >>> 0;
 		for (let i = 0; i < MAX_RIVALS; i++) {
 			const r = this.rivals[i];
-			r.sim.clear();
-			GravityGame.resetLedger(r.ledger);
-			r.shots.length = 0;
-			r.steps = 0;
-			r.doneSteps = -1;
-			r.length = 0;
-			r.basePlanet = (base0 + i * 13) % PLANETS;
-			r.readyStep = 0;
-			r.planReady = false;
-			r.planStep = -1;
-			r.planStamp = -1;
+			this.resetActor(r, (base0 + i * 13) % PLANETS);
+			r.routeOffset = 0.013 + i * 0.191;
+		}
+		let playerBase = (Math.imul(this.seed, 11) + 3) % PLANETS;
+		if (this.rule === GravityGame.RULE_ROUTE) {
+			while (this.routeOccupiedBy(playerBase, false) >= 0) {
+				playerBase = (playerBase + 1) % PLANETS;
+			}
+		}
+		this.resetActor(this.player, playerBase);
+		this.player.routeOffset = 0.717;
+		if (this.rule === GravityGame.RULE_ROUTE) {
+			for (let i = 0; i < this.count; i++) this.rivals[i].routeDone = false;
+			if (this.playerType === GravityGame.PLAYER_BOT) this.player.routeDone = false;
 		}
 	};
 
 	GravityBot.prototype.rivalDone = function (rival) {
+		if (this.rule === GravityGame.RULE_ROUTE) return rival.routeDone;
 		const rSpec = this.ruleSpec();
 		if (rSpec.stopOnTour && rival.doneSteps >= 0) return true;
 		if (rSpec.maxShots > 0 && rival.shots.length >= rSpec.maxShots) return true;
@@ -208,6 +332,7 @@
 	};
 
 	GravityBot.prototype.needsLaunch = function (rival, runStep) {
+		if (this.rule === GravityGame.RULE_ROUTE) return false;
 		return rival.sim.status !== STATUS_FLYING &&
 			!this.rivalDone(rival) &&
 			runStep >= rival.readyStep;
@@ -217,6 +342,216 @@
 		return rival.planReady &&
 			rival.planStep === runStep &&
 			rival.planStamp === market.stamp;
+	};
+
+	GravityBot.prototype.routeActorActive = function (index) {
+		if (index === PLAYER_INDEX) return this.playerType === GravityGame.PLAYER_BOT;
+		return index >= 0 && index < this.count;
+	};
+
+	/* opponent index, PLAYER_INDEX for a bot-controlled YOU, or -1 when free */
+	GravityBot.prototype.routeOccupiedBy = function (planet, includePlayer) {
+		for (let i = 0; i < this.count; i++) {
+			if (this.rivals[i].routeOrigin === planet) return i;
+		}
+		if (includePlayer !== false &&
+			this.playerType === GravityGame.PLAYER_BOT &&
+			this.player.routeOrigin === planet) return PLAYER_INDEX;
+		return -1;
+	};
+
+	GravityBot.prototype.routeCandidate = function (actor) {
+		const stage = actor.routeStage;
+		if ((stage & 1) === 0) {
+			const seq = ROUTE_COARSE_START[stage] + actor.routeIndex;
+			const turn = (seq * ROUTE_PHI + actor.routeOffset) % 1;
+			this.routeCandAngleU = GravityGame.angleUnits(turn * Math.PI * 2);
+			this.routeCandSpeedU = GravityGame.speedUnits(
+				ROUTE_SPEEDS[seq % ROUTE_SPEEDS.length]);
+			return;
+		}
+		const pair = ROUTE_REFINES[stage][actor.routeIndex];
+		const angle = GravityGame.angleOf(actor.routeRefineAngleU) + pair[0];
+		let speed = GravityGame.speedOf(actor.routeRefineSpeedU) * pair[1];
+		if (speed < GravitySim.SPEED_MIN) speed = GravitySim.SPEED_MIN;
+		else if (speed > GravitySim.SPEED_MAX) speed = GravitySim.SPEED_MAX;
+		this.routeCandAngleU = GravityGame.angleUnits(angle);
+		this.routeCandSpeedU = GravityGame.speedUnits(speed);
+	};
+
+	GravityBot.prototype.beginRouteCandidate = function (index) {
+		const actor = this.actorAt(index);
+		this.routeCandidate(actor);
+		this.routeCandActor = index;
+		this.probe.visited.fill(0);
+		this.probe.visitedCount = 0;
+		this.probe.routeBegin(actor.routeOrigin,
+			GravityGame.angleOf(this.routeCandAngleU),
+			GravityGame.speedOf(this.routeCandSpeedU),
+			GravityGame.ROUTE_SECONDS);
+		this.probe.routeStorePath = false;
+	};
+
+	GravityBot.prototype.routeBetter = function (actor, length, angleU, speedU) {
+		if (!actor.routeReady) return true;
+		if (length > actor.routeLength + 0.5) return true;
+		if (length < actor.routeLength - 0.5) return false;
+		if (angleU !== actor.routeAngleU) return angleU < actor.routeAngleU;
+		return speedU < actor.routeSpeedU;
+	};
+
+	GravityBot.prototype.finishRouteCandidate = function (index) {
+		const actor = this.actorAt(index);
+		const probe = this.probe;
+		probe.routeStorePath = true;
+		actor.routeIndex += 1;
+		actor.routeDoneCount += 1;
+		if ((probe.predReason === END_IMPACT || probe.predReason === END_EXIT) &&
+			this.routeBetter(actor, probe.predLength,
+				this.routeCandAngleU, this.routeCandSpeedU)) {
+			actor.routeReady = true;
+			actor.routeAngleU = this.routeCandAngleU;
+			actor.routeSpeedU = this.routeCandSpeedU;
+			actor.routeLength = probe.predLength;
+			actor.routeSteps = probe.predSteps;
+			actor.routeVisits = probe.predVisits;
+			actor.routeReason = probe.predReason;
+			actor.routeBody = probe.predBody;
+			actor.length = probe.predLength;
+			actor.steps = probe.predSteps;
+			actor.routeVersion += 1;
+			if (actor.shots.length === 0) {
+				actor.shots.push(GravityGame.createShot(this.routeSource,
+					actor.routeOrigin, actor.routeAngleU, actor.routeSpeedU,
+					GravityGame.NO_ABORT));
+			} else {
+				const shot = actor.shots[0];
+				shot.src = this.routeSource;
+				shot.origin = actor.routeOrigin;
+				shot.angle = actor.routeAngleU;
+				shot.speed = actor.routeSpeedU;
+				shot.abort = GravityGame.NO_ABORT;
+			}
+			if (index !== PLAYER_INDEX) {
+				actor.sim.routeBegin(actor.routeOrigin,
+					GravityGame.angleOf(actor.routeAngleU),
+					GravityGame.speedOf(actor.routeSpeedU),
+					GravityGame.ROUTE_SECONDS);
+			}
+		}
+		this.routeCandActor = -1;
+		if (actor.routeIndex < ROUTE_STAGE_COUNT[actor.routeStage]) return;
+		const stopStage = this.specFor(index).routeStopStage;
+		actor.routeStage += 1;
+		actor.routeIndex = 0;
+		while (actor.routeStage <= stopStage &&
+			(actor.routeStage & 1) === 1 && !actor.routeReady) {
+			actor.routeDoneCount += ROUTE_STAGE_COUNT[actor.routeStage];
+			actor.routeStage += 1;
+		}
+		if (actor.routeStage > stopStage) {
+			actor.routeDone = true;
+			return;
+		}
+		if ((actor.routeStage & 1) === 1) {
+			actor.routeRefineAngleU = actor.routeAngleU;
+			actor.routeRefineSpeedU = actor.routeSpeedU;
+		}
+	};
+
+	GravityBot.prototype.nextRouteActor = function () {
+		for (let n = 0; n < 3; n++) {
+			const index = (this.routeTurn + n) % 3;
+			if (!this.routeActorActive(index)) continue;
+			if (this.actorAt(index).routeDone) continue;
+			this.routeTurn = (index + 1) % 3;
+			return index;
+		}
+		return -1;
+	};
+
+	/*
+	 * One sliced planner tick. Opponent display traces and the shared candidate
+	 * trace each resume from their own GravitySim route job, so full-length
+	 * candidates never stall a frame. Returns true when every plan is final.
+	 */
+	GravityBot.prototype.tickRoute = function (budgetMs) {
+		if (this.rule !== GravityGame.RULE_ROUTE) return true;
+		const budget = budgetMs > 0 ? budgetMs : 3;
+		const started = performance.now();
+		for (let i = 0; i < this.count; i++) {
+			const sim = this.rivals[i].sim;
+			if (!sim.routeActive) continue;
+			const left = budget - (performance.now() - started);
+			if (left <= 0) return false;
+			sim.routeStep(left > 1.5 ? 1.5 : left);
+		}
+		let completed = 0;
+		while (completed < ROUTE_SLICE_CANDIDATES) {
+			if (this.routeCandActor < 0) {
+				const next = this.nextRouteActor();
+				if (next < 0) return true;
+				this.beginRouteCandidate(next);
+			}
+			const left = budget - (performance.now() - started);
+			if (left <= 0) return false;
+			if (!this.probe.routeStep(left)) return false;
+			this.finishRouteCandidate(this.routeCandActor);
+			completed += 1;
+		}
+		return this.routeDone();
+	};
+
+	GravityBot.prototype.routeDone = function () {
+		for (let i = 0; i < 3; i++) {
+			if (this.routeActorActive(i) && !this.actorAt(i).routeDone) return false;
+		}
+		return true;
+	};
+
+	GravityBot.prototype.routeThinking = function () {
+		return this.rule === GravityGame.RULE_ROUTE && !this.routeDone();
+	};
+
+	GravityBot.prototype.routeProgress = function () {
+		let done = 0;
+		let total = 0;
+		for (let i = 0; i < 3; i++) {
+			if (!this.routeActorActive(i)) continue;
+			done += this.actorAt(i).routeDoneCount;
+			total += this.specFor(i).routeCandidates;
+		}
+		return total > 0 ? done / total : 1;
+	};
+
+	/* a replayed bot plan becomes the search's current best, not a lost result */
+	GravityBot.prototype.seedPlayerRoutePlan = function (shot, length, steps, visits, reason, body) {
+		const actor = this.player;
+		if (this.playerType !== GravityGame.PLAYER_BOT || !shot ||
+			shot.origin !== actor.routeOrigin ||
+			!this.routeBetter(actor, length, shot.angle, shot.speed)) return;
+		actor.routeReady = true;
+		actor.routeAngleU = shot.angle;
+		actor.routeSpeedU = shot.speed;
+		actor.routeLength = length;
+		actor.routeSteps = steps;
+		actor.routeVisits = visits;
+		actor.routeReason = reason;
+		actor.routeBody = body;
+		actor.length = length;
+		actor.steps = steps;
+		actor.routeVersion += 1;
+		if (actor.shots.length === 0) {
+			actor.shots.push(GravityGame.createShot(shot.src, shot.origin,
+				shot.angle, shot.speed, GravityGame.NO_ABORT));
+		} else {
+			const saved = actor.shots[0];
+			saved.src = shot.src;
+			saved.origin = shot.origin;
+			saved.angle = shot.angle;
+			saved.speed = shot.speed;
+			saved.abort = GravityGame.NO_ABORT;
+		}
 	};
 
 	/* scores the probe result already sitting in `this.probe` */
@@ -237,9 +572,6 @@
 			(timeCap && !completes ? 250 : 0);
 		if (this.rule === GravityGame.RULE_MONEY) {
 			score += profit * 30 + newVisits * 2 - probe.predTime * 0.14;
-		} else if (this.rule === GravityGame.RULE_ROUTE) {
-			score += (completes ? 120 : 0) + newVisits * 18 +
-				profit * 10 + probe.predLength * 0.015;
 		} else {
 			score += (completes ? 80 : 0) + newVisits * 11 +
 				profit * 18 - probe.predTime * 0.16;
@@ -275,8 +607,8 @@
 	};
 
 	GravityBot.prototype.beginJob = function (rivalIdx, runStep, market) {
-		const rival = this.rivals[rivalIdx];
-		const spec = this.spec();
+		const rival = this.actorAt(rivalIdx);
+		const spec = this.specFor(rivalIdx);
 		const origin = rival.sim.landedBody >= 0 ? rival.sim.landedBody : rival.basePlanet;
 		this.jobActive = true;
 		this.jobRival = rivalIdx;
@@ -288,7 +620,7 @@
 		this.jobIndex = 0;
 		this.jobPrimaryTotal = spec.angles * spec.speeds.length;
 		this.jobLookTotal = 0;
-		this.jobHorizon = this.rule === GravityGame.RULE_ROUTE ? spec.routeHorizon : spec.horizon;
+		this.jobHorizon = spec.horizon;
 		this.topCount = 0;
 		this.bestScore = -Infinity;
 		this.bestAngleU = 0;
@@ -316,8 +648,8 @@
 
 	GravityBot.prototype.stepJob = function (budgetMs, maxCands) {
 		if (!this.jobActive) return true;
-		const spec = this.spec();
-		const rival = this.rivals[this.jobRival];
+		const spec = this.specFor(this.jobRival);
+		const rival = this.actorAt(this.jobRival);
 		const started = performance.now();
 		const capMs = budgetMs > 0 ? budgetMs : 3.5;
 		const sliceCap = maxCands > 0 ? maxCands : SLICE_CANDIDATES;
@@ -407,7 +739,7 @@
 	};
 
 	GravityBot.prototype.finishJob = function () {
-		const rival = this.rivals[this.jobRival];
+		const rival = this.actorAt(this.jobRival);
 		rival.planReady = true;
 		rival.planStep = this.jobRunStep;
 		rival.planStamp = this.jobStamp;
@@ -425,7 +757,7 @@
 
 	GravityBot.prototype.progress = function () {
 		if (!this.jobActive) return 1;
-		const spec = this.spec();
+		const spec = this.specFor(this.jobRival);
 		const total = this.jobPrimaryTotal + (spec.lookahead > 0 ? TOP_K * spec.lookahead : 0);
 		if (total <= 0) return 1;
 		const done = this.jobPhase === 0 ? this.jobIndex : this.jobPrimaryTotal + this.jobIndex;
@@ -436,11 +768,56 @@
 		return this.jobActive;
 	};
 
+	/*
+	 * Mirrors the GUI player's flight state into the bot-controlled YOU actor.
+	 * Call once at game start and after each GUI flight; the next tickPlayer()
+	 * then searches from exactly the planet and purse the GUI will launch with.
+	 */
+	GravityBot.prototype.syncPlayer = function (sim, ledger, shots, steps, length, doneSteps, runStep) {
+		const actor = this.player;
+		actor.sim.visited.set(sim.visited);
+		actor.sim.visitedCount = sim.visitedCount;
+		actor.sim.landedBody = sim.landedBody;
+		if (sim.landedBody >= 0) actor.basePlanet = sim.landedBody;
+		actor.ledger.purse = ledger.purse;
+		actor.shots.length = shots;
+		actor.steps = steps;
+		actor.length = length;
+		actor.doneSteps = doneSteps;
+		actor.readyStep = runStep;
+		actor.planReady = false;
+		actor.planStep = -1;
+		actor.planStamp = -1;
+		if (this.jobActive && this.jobRival === PLAYER_INDEX) {
+			this.jobActive = false;
+			this.jobRival = -1;
+		}
+	};
+
+	GravityBot.prototype.tickPlayer = function (runStep, market, budgetMs) {
+		if (this.playerType !== GravityGame.PLAYER_BOT ||
+			this.rule === GravityGame.RULE_ROUTE) return true;
+		const actor = this.player;
+		if (!this.needsLaunch(actor, runStep)) return true;
+		if (this.planValid(actor, runStep, market)) return true;
+		if (!this.jobActive || this.jobRival !== PLAYER_INDEX ||
+			this.jobRunStep !== runStep || this.jobStamp !== market.stamp) {
+			this.beginJob(PLAYER_INDEX, runStep, market);
+		}
+		return this.stepJob(budgetMs, SLICE_CANDIDATES);
+	};
+
+	GravityBot.prototype.playerPlanValid = function (runStep, market) {
+		return this.playerType === GravityGame.PLAYER_BOT &&
+			this.planValid(this.player, runStep, market);
+	};
+
 	/* background pre-thinking while the game clock is paused between flights */
 	GravityBot.prototype.tickIdle = function (runStep, market, budgetMs) {
+		if (this.rule === GravityGame.RULE_ROUTE) return this.tickRoute(budgetMs);
 		if (this.count === 0) return true;
 		if (this.jobActive) {
-			const r = this.rivals[this.jobRival];
+			const r = this.actorAt(this.jobRival);
 			if (this.jobRunStep === runStep && this.jobStamp === market.stamp &&
 				this.needsLaunch(r, runStep)) {
 				return this.stepJob(budgetMs, SLICE_CANDIDATES);
@@ -479,7 +856,7 @@
 	 * playback never stalls a frame; when `sync` is true, drains immediately.
 	 */
 	GravityBot.prototype.prepareStep = function (runStep, market, capSteps, budgetMs, sync) {
-		if (this.count === 0) return true;
+		if (this.rule === GravityGame.RULE_ROUTE || this.count === 0) return true;
 		for (let i = 0; i < this.count; i++) {
 			const rival = this.rivals[i];
 			if (!this.needsLaunch(rival, runStep)) continue;
@@ -498,7 +875,7 @@
 
 	/* advances all flying rivals by one exact DT step at `runStep` */
 	GravityBot.prototype.stepOne = function (runStep, market) {
-		if (this.count === 0) return;
+		if (this.rule === GravityGame.RULE_ROUTE || this.count === 0) return;
 		const stage = this.spec().stageSteps;
 		const stopOnTour = this.ruleSpec().stopOnTour;
 		for (let i = 0; i < this.count; i++) {
@@ -523,7 +900,7 @@
 	GravityBot.prototype.chooseSync = function (rivalIdx, runStep, market) {
 		this.beginJob(rivalIdx, runStep, market);
 		this.drainJob();
-		const r = this.rivals[rivalIdx];
+		const r = this.actorAt(rivalIdx);
 		return { origin: r.planOrigin, angle: r.planAngleU, speed: r.planSpeedU };
 	};
 
@@ -533,6 +910,10 @@
 	 * reflects where their run actually ends.
 	 */
 	GravityBot.prototype.settle = function (startRunStep, market, capSteps) {
+		if (this.rule === GravityGame.RULE_ROUTE) {
+			while (!this.routeDone()) this.tickRoute(1e9);
+			return startRunStep;
+		}
 		if (this.count === 0) return startRunStep;
 		let step = startRunStep;
 		let guard = 0;
@@ -555,12 +936,28 @@
 	};
 
 	GravityBot.prototype.scoreSteps = function (index) {
-		const r = this.rivals[index];
+		const r = this.actorAt(index);
+		if (this.rule === GravityGame.RULE_ROUTE) return r.routeSteps;
 		return r.doneSteps >= 0 ? r.doneSteps : r.steps;
 	};
 
 	GravityBot.prototype.actorSummary = function (index) {
-		const r = this.rivals[index];
+		const r = this.actorAt(index);
+		if (this.rule === GravityGame.RULE_ROUTE) {
+			return {
+				purse: r.ledger.purse,
+				visited: r.routeReady ? r.routeVisits : 0,
+				done: r.routeDone,
+				length: r.routeReady ? r.routeLength : 0,
+				shots: r.routeReady ? 1 : 0,
+				steps: r.routeSteps,
+				origin: r.routeOrigin,
+				reason: r.routeReason,
+				body: r.routeBody,
+				ready: r.routeReady,
+				planning: !r.routeDone
+			};
+		}
 		const flyingLength = r.sim.status === STATUS_FLYING ? r.sim.flightLength : 0;
 		return {
 			purse: r.ledger.purse,
@@ -568,25 +965,35 @@
 			done: r.doneSteps >= 0,
 			length: r.length + flyingLength,
 			shots: r.shots.length,
-			steps: this.scoreSteps(index)
+			steps: this.scoreSteps(index),
+			origin: r.basePlanet,
+			reason: END_OPEN,
+			body: -1,
+			ready: r.shots.length > 0,
+			planning: false
 		};
 	};
 
 	GravityBot.prototype.rivalLink = function (seed, rate, index) {
-		const r = this.rivals[index || 0];
+		const idx = index || 0;
+		const r = this.actorAt(idx);
+		const route = this.rule === GravityGame.RULE_ROUTE;
 		return GravityGame.encodeLink({
 			seed: seed,
 			rate: rate,
 			rule: this.rule,
 			bot: GravityGame.BOT_OFF,
+			player: GravityGame.PLAYER_USER,
 			shots: r.shots,
-			visited: r.sim.visitedCount,
-			steps: this.scoreSteps(index || 0)
+			visited: route ? r.routeVisits : r.sim.visitedCount,
+			steps: this.scoreSteps(idx),
+			length: route ? r.routeLength : undefined
 		});
 	};
 
 	GravityBot.LEVELS = LEVELS;
 	GravityBot.MAX_RIVALS = MAX_RIVALS;
+	GravityBot.PLAYER_INDEX = PLAYER_INDEX;
 	GravityBot.SLICE_CANDIDATES = SLICE_CANDIDATES;
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = GravityBot;

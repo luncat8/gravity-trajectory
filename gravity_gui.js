@@ -40,6 +40,8 @@
 	const BOT_EASY = GravityGame.BOT_EASY;
 	const BOT_NORMAL = GravityGame.BOT_NORMAL;
 	const BOT_HARD = GravityGame.BOT_HARD;
+	const PLAYER_USER = GravityGame.PLAYER_USER;
+	const PLAYER_BOT = GravityGame.PLAYER_BOT;
 	const MONEY = GravityGame.MONEY;
 	/* route mode traces a 1 800 s shot in slices: per-frame slice of tracer work */
 	const ROUTE_STEP_MS = 4;
@@ -103,7 +105,42 @@
 	const REPEL_DASH = [0, 0];
 	const SYS_DASH = [0, 0];
 	const LOCK_DASH = [0, 0];
-	const PASSENGERS = ['tourist', 'emperor’s emissary'];
+	/* Help shows only the selected rule: goal, score, and the one limit that
+	 * changes how that score is earned. Everything else stays out of the drawer. */
+	const RULE_HELP = {
+		lab: {
+			name: 'lab',
+			goal: 'Experiment freely.',
+			score: 'No score.',
+			detailLabel: '',
+			detail: '',
+			controls: 'Drag from a planet to aim · Shift = fine · Enter = launch'
+		},
+		tour: {
+			name: 'tour',
+			goal: 'Enter all ' + PLANETS + ' planet systems.',
+			score: 'Most systems. Ties: fewer launches, less flight time, higher purse.',
+			detailLabel: 'Limit',
+			detail: '120 s per flight. Launch costs 1.00; entering a system collects its shown profit.',
+			controls: 'Drag from a planet to aim · Shift = fine · Enter = launch'
+		},
+		route: {
+			name: 'route · longest trajectory',
+			goal: 'Plan one trajectory with the greatest distance.',
+			score: 'Trajectory length only, until it lands or leaves the map. Systems and purse do not score.',
+			detailLabel: 'Start',
+			detail: 'Choose any free planet. A planet claimed by another player cannot be selected. No launch is needed—the finished traced plan is your entry.',
+			controls: 'Drag from a free planet to plan · Shift = fine · the leader updates live'
+		},
+		money: {
+			name: 'money',
+			goal: 'Finish the 10-launch contract with the largest purse.',
+			score: 'Highest purse. Ties: more systems, fewer launches, less flight time.',
+			detailLabel: 'Money',
+			detail: 'Launch costs 1.00. Entering a system collects its shown profit; profit grows while unvisited, up to +0.75.',
+			controls: 'Drag from a planet to aim · Shift = fine · Enter = launch'
+		}
+	};
 
 	const scene = root.OrbitScene;
 	const tradeSim = scene.sim;
@@ -175,7 +212,9 @@
 	const expClockEl = $('expClock');
 	const statusEl = $('cargoStatus');
 	const visitEl = $('visitReadout');
+	const visitLabelEl = $('visitLabel');
 	const predVisitEl = $('predVisitReadout');
+	const predVisitLabelEl = $('predVisitLabel');
 	const flightEl = $('cargoFlight');
 	const aimEl = $('aimReadout');
 	const pathEl = $('pathReadout');
@@ -195,15 +234,19 @@
 	const trimTargetEl = $('trimTarget');
 	const launchButton = $('launch');
 	const clearButton = $('clear');
-	const goalRoleEl = $('goalRole');
 	const cargoHudEl = $('cargoHud');
 	const helpBtn = $('helpBtn');
 	const foldBtn = $('foldBtn');
 	const helpDrawer = $('helpDrawer');
 	const helpClose = $('helpClose');
-	const drawerPassengerEl = $('drawerPassenger');
-	const goalStoryEl = $('goalStory');
-	const rerollGoalBtn = $('rerollGoal');
+	const helpRuleNameEl = $('helpRuleName');
+	const helpGoalEl = $('helpGoal');
+	const helpScoreEl = $('helpScore');
+	const helpDetailRowEl = $('helpDetailRow');
+	const helpDetailLabelEl = $('helpDetailLabel');
+	const helpDetailEl = $('helpDetail');
+	const helpControlsEl = $('helpControls');
+	const cargoHintEl = $('cargoHint');
 	const tradeCanvas = $('c');
 	const modeTagEl = $('modeTag');
 	const modeLabEl = $('modeLab');
@@ -215,11 +258,15 @@
 	const ruleTagEl = $('ruleTag');
 	const scoreHudEl = $('scoreHud');
 	const scoreRuleTagEl = $('scoreRuleTag');
+	const playerScoreNameEl = $('playerScoreName');
 	const playerScoreMetaEl = $('playerScoreMeta');
 	const rivalScoreRows = [$('scoreRival1'), $('scoreRival2')];
 	const rivalScoreEls = [$('rivalScore1'), $('rivalScore2')];
 	const rivalMetaEls = [$('rivalMeta1'), $('rivalMeta2')];
 	const rivalTagEl = $('rivalTag');
+	const playerTypeTagEl = $('playerTypeTag');
+	const playerUserEl = $('playerUser');
+	const playerBotEl = $('playerBot');
 	const botOffEl = $('botOff');
 	const botEasyEl = $('botEasy');
 	const botNormalEl = $('botNormal');
@@ -227,6 +274,7 @@
 	const gameSeedEl = $('gameSeed');
 	const gameScoreEl = $('gameScore');
 	const gamePurseEl = $('gamePurse');
+	const purseRowEl = $('purseRow');
 	const rivalRowEl = $('rivalRow');
 	const rivalEl = $('rivalReadout');
 	const replayRowEl = $('replayRow');
@@ -269,10 +317,13 @@
 	let savedSpeed = SPEED_MIN;
 	let blockedPlanet = -1;
 	let blockedUntil = -Infinity;
+	let blockedKind = 0;
+	let blockedBy = -1;
+	let helpRule = 'lab';
 	let helpOpen = false;
 	let helpPinned = false;
+	let ruleHelpHold = false;
 	let hudFolded = false;
-	let passenger = PASSENGERS[0];
 	let fine = false;
 	let dirty = false;
 	let trimLast = 0;
@@ -300,6 +351,7 @@
 	let hudPurseText = '';
 	let hudRuleText = '';
 	let hudRivalTagText = '';
+	let hudPlayerTypeText = '';
 	let hudRivalText = '';
 	let hudReplayText = '';
 	let predGain = 0;
@@ -318,11 +370,18 @@
 	 * market = per-planet visit clock shared with rivals, money = player purse ledger
 	 */
 	const game = { on: false, seed: 0, fixedRate: false, rule: RULE_TOUR, bot: BOT_NORMAL,
+		player: PLAYER_USER,
 		shots: [], steps: 0, clockSteps: 0, doneSteps: -1, length: 0,
 		market: GravityGame.createMarket(), money: GravityGame.createLedger() };
+	/* the player's one route entry; `ready` means its trace reached an end */
+	const routePlan = { ready: false, length: 0, steps: 0, visits: 0,
+		reason: GravitySim.END_OPEN, body: -1, origin: -1 };
+	let routeLeader = -2;
+	let routeBotVersion = -1;
+	let playerBotSyncNeeded = true;
 	/* replay of a link: shots fired in order, aim shown then flown; verdict after the last */
 	const replay = { on: false, shots: null, end: null, index: 0, phase: PHASE_GAP, until: 0,
-		speed: REPLAY_DEFAULT, verdict: '' };
+		speed: REPLAY_DEFAULT, verdict: '', route: false, length: null };
 
 	function makeGlow(fill) {
 		const sprite = document.createElement('canvas');
@@ -355,30 +414,67 @@
 		}
 	}
 
-	function rollPassenger(forceNext) {
-		if (forceNext) {
-			setPassenger(passenger === PASSENGERS[0] ? PASSENGERS[1] : PASSENGERS[0]);
-		} else {
-			setPassenger(Math.random() < 0.5 ? PASSENGERS[0] : PASSENGERS[1]);
-		}
+	function selectedHelpRule() {
+		if (ruleMoneyEl && ruleMoneyEl.checked) return RULE_MONEY;
+		if (ruleRouteEl && ruleRouteEl.checked) return RULE_ROUTE;
+		if (ruleTourEl && ruleTourEl.checked) return RULE_TOUR;
+		return game.on ? game.rule : 'lab';
 	}
 
-	function setPassenger(name) {
-		passenger = name;
-		if (goalRoleEl) goalRoleEl.textContent = passenger + ' · fly through all systems';
-		if (drawerPassengerEl) drawerPassengerEl.textContent = passenger;
-		if (goalStoryEl) {
-			goalStoryEl.textContent = passenger === PASSENGERS[0]
-				? 'A tourist aboard your vessel wants to fly through each planet system. Sweep inside as many port orbits as possible and land on a planet to stage your next hop.'
-				: 'The emperor’s emissary aboard your vessel wants to fly through each planet system. Sweep inside every port orbit on a grand tour and land on planets to continue the inspection.';
+	function updateHelp(rule) {
+		helpRule = RULE_HELP[rule] ? rule : selectedHelpRule();
+		const help = RULE_HELP[helpRule];
+		if (helpRuleNameEl) helpRuleNameEl.textContent = help.name;
+		if (helpGoalEl) helpGoalEl.textContent = help.goal;
+		if (helpScoreEl) helpScoreEl.textContent = help.score;
+		if (helpDetailRowEl) helpDetailRowEl.hidden = help.detail === '';
+		if (helpDetailLabelEl) helpDetailLabelEl.textContent = help.detailLabel;
+		if (helpDetailEl) helpDetailEl.textContent = help.detail;
+		if (helpControlsEl) {
+			helpControlsEl.textContent = helpRule === RULE_ROUTE &&
+				game.on && game.player === PLAYER_BOT
+				? 'A bot plans your one trajectory · the leader updates live'
+				: help.controls;
 		}
 	}
 
 	function setHelpOpen(open, preview = false) {
 		if (!preview) helpPinned = open;
+		if (open && !preview) updateHelp(selectedHelpRule());
 		helpOpen = open;
 		if (helpDrawer) helpDrawer.classList.toggle('open', open);
 		if (helpBtn) helpBtn.classList.toggle('on', open);
+	}
+
+	/* pressing, hovering or focusing a rule radio shows that rule at once */
+	function showRuleHelp(rule, pin) {
+		updateHelp(rule);
+		setHelpOpen(true, !pin);
+	}
+
+	function hideRuleHelpPreview() {
+		if (helpPinned) {
+			updateHelp(selectedHelpRule());
+			return;
+		}
+		setHelpOpen(false, true);
+		updateHelp(selectedHelpRule());
+	}
+
+	function updateRuleHelp(rule) {
+		updateHelp(rule || selectedHelpRule());
+	}
+
+	function beginRuleHelpHold(rule) {
+		ruleHelpHold = true;
+		updateRuleHelp(RULE_HELP[rule] ? rule : selectedHelpRule());
+		setHelpOpen(true, true);
+	}
+
+	function endRuleHelpHold() {
+		ruleHelpHold = false;
+		updateRuleHelp(selectedHelpRule());
+		if (!helpPinned) setHelpOpen(false, true);
 	}
 
 	function resizeOverlay() {
@@ -539,7 +635,7 @@
 	}
 
 	function refreshPredGain() {
-		predGain = game.on && gravity.predCount >= 2
+		predGain = game.on && !routeRule() && gravity.predCount >= 2
 			? GravityGame.estimateProfit(game.market, game.clockSteps, gravity)
 			: 0;
 	}
@@ -551,8 +647,11 @@
 		}
 		const deg = ((-aimAngle * 180 / Math.PI) % 360 + 360) % 360;
 		const visitNote = gravity.predCount >= 2
-			? (game.on ? ' · +' + predGain.toFixed(2) : '') +
-				' · +' + gravity.predNewVisits + ' (' + gravity.predVisits + ' sys)'
+			? routeRule()
+				? ' · ' + Math.round(gravity.predLength) + ' px' +
+					(gravity.routeActive ? ' · tracing' : '')
+				: (game.on ? ' · +' + predGain.toFixed(2) : '') +
+					' · +' + gravity.predNewVisits + ' (' + gravity.predVisits + ' sys)'
 			: '';
 		aimLabel = Math.round(aimSpeed) + ' px/s · ' + deg.toFixed(1) + '°' +
 			(fine ? ' · fine' : '') + visitNote;
@@ -618,14 +717,15 @@
 	}
 
 	function takeOverAim(now) {
-		if (!gravity.canLaunchFrom(pressPlanet)) {
+		if (!canAimFrom(pressPlanet)) {
 			pressing = false;
-			blockedPlanet = pressPlanet;
-			blockedUntil = now + 2600;
+			showBlocked(pressPlanet, now);
 			hudAt = -Infinity;
 			return;
 		}
 		blockedPlanet = -1;
+		blockedKind = 0;
+		blockedBy = -1;
 		savedArmed = armed;
 		savedBody = aimBody;
 		savedAngle = aimAngle;
@@ -656,17 +756,20 @@
 		pressing = false;
 		savedArmed = false;
 		dirty = false;
+		if (game.on && routeRule() && !replay.on) resetRoutePlan();
 		if (gravity.status !== STATUS_FLYING) gravity.predCount = 0;
 		else dirty = true;
 		hudAt = -Infinity;
 	}
 
 	function launch() {
-		if (!armed || !gravity.canLaunchFrom(aimBody) || gameLocked()) return;
+		if (routeRule() && game.on) return;
+		if (!armed || !canAimFrom(aimBody) || gameLocked()) return;
 		fire(NO_ABORT);
 	}
 
 	function fire(abortStep) {
+		if (game.on && routeRule()) return;
 		if (game.on) recordShot(abortStep);
 		predictShot();
 		dirty = false;
@@ -713,6 +816,11 @@
 		mode = next;
 		srcPlanetsEl.checked = mode === MODE_PLANETS;
 		srcPortsEl.checked = mode === MODE_PORTS;
+		if (game.on && routeRule() && !replay.on) {
+			/* every route plan is traced in one field; changing it restarts the contest */
+			startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player);
+			return;
+		}
 		cancelAim();
 		hoverBody = -1;
 		refreshHoverLabel();
@@ -733,11 +841,153 @@
 	}
 
 	function routeRule() {
-		return game.rule === RULE_ROUTE;
+		return game.on && game.rule === RULE_ROUTE;
+	}
+
+	function playerIsBot() {
+		return game.on && game.player === PLAYER_BOT;
 	}
 
 	function moneyRule() {
 		return game.rule === RULE_MONEY;
+	}
+
+	function routeOccupiedBy(planet) {
+		if (!routeRule()) return -1;
+		return bot.routeOccupiedBy(planet, false);
+	}
+
+	function canAimFrom(planet) {
+		if (planet < 0) return false;
+		if (playerIsBot()) return false;
+		if (routeRule()) return routeOccupiedBy(planet) < 0;
+		return gravity.canLaunchFrom(planet);
+	}
+
+	function showBlocked(planet, now) {
+		blockedPlanet = planet;
+		blockedUntil = now + 2600;
+		blockedBy = routeOccupiedBy(planet);
+		blockedKind = blockedBy >= 0 ? 1 : 0;
+	}
+
+	function resetRoutePlan() {
+		routePlan.ready = false;
+		routePlan.length = 0;
+		routePlan.steps = 0;
+		routePlan.visits = 0;
+		routePlan.reason = GravitySim.END_OPEN;
+		routePlan.body = -1;
+		routePlan.origin = -1;
+		routeLeader = -2;
+		routeBotVersion = -1;
+		game.length = 0;
+		game.steps = 0;
+		if (routeRule()) game.shots.length = 0;
+	}
+
+	function setRouteShot(origin, angle, speed) {
+		const angleU = GravityGame.angleUnits(angle);
+		const speedU = GravityGame.speedUnits(speed);
+		if (game.shots.length === 0) {
+			game.shots.push(GravityGame.createShot(mode, origin, angleU, speedU, NO_ABORT));
+			return;
+		}
+		const shot = game.shots[0];
+		shot.src = mode;
+		shot.origin = origin;
+		shot.angle = angleU;
+		shot.speed = speedU;
+		shot.abort = NO_ABORT;
+		game.shots.length = 1;
+	}
+
+	/* A route entry exists while it is being planned; it scores only when the
+	 * sliced trace has reached a landing or the edge of the map. */
+	function syncRoutePlan() {
+		if (!routeRule()) return;
+		if (playerIsBot() && !replay.on) {
+			const actor = bot.player;
+			routePlan.ready = actor.routeReady;
+			routePlan.length = actor.routeReady ? actor.routeLength : 0;
+			routePlan.steps = actor.routeSteps;
+			routePlan.visits = actor.routeVisits;
+			routePlan.reason = actor.routeReason;
+			routePlan.body = actor.routeBody;
+			routePlan.origin = actor.routeOrigin;
+			game.length = routePlan.length;
+			game.steps = routePlan.steps;
+			if (actor.routeReady) {
+				setRouteShot(actor.routeOrigin,
+					GravityGame.angleOf(actor.routeAngleU),
+					GravityGame.speedOf(actor.routeSpeedU));
+			} else game.shots.length = 0;
+			refreshRouteLeader();
+			return;
+		}
+		if (!aiming && !armed && !replay.on) {
+			refreshRouteLeader();
+			return;
+		}
+		if (aimBody >= 0) setRouteShot(aimBody, aimAngle, aimSpeed);
+		routePlan.origin = aimBody;
+		const finished = !gravity.routeActive && gravity.predCount >= 2 &&
+			(gravity.predReason === END_IMPACT || gravity.predReason === END_EXIT);
+		routePlan.ready = finished;
+		routePlan.length = finished ? gravity.predLength : 0;
+		routePlan.steps = finished ? gravity.predSteps : 0;
+		routePlan.visits = finished ? gravity.predVisits : 0;
+		routePlan.reason = gravity.predReason;
+		routePlan.body = gravity.predBody;
+		game.length = routePlan.length;
+		game.steps = routePlan.steps;
+		refreshRouteLeader();
+	}
+
+	function refreshRouteLeader() {
+		routeLeader = -2;
+		if (!routeRule()) return;
+		let best = -1;
+		let tie = false;
+		if (routePlan.ready) {
+			best = routePlan.length;
+			routeLeader = -1;
+		}
+		for (let i = 0; i < bot.count; i++) {
+			const actor = bot.rivals[i];
+			if (!actor.routeReady) continue;
+			if (actor.routeLength > best + 0.5) {
+				best = actor.routeLength;
+				routeLeader = i;
+				tie = false;
+			} else if (best >= 0 && Math.abs(actor.routeLength - best) <= 0.5) {
+				tie = true;
+			}
+		}
+		if (tie) routeLeader = -2;
+	}
+
+	function syncPlayerBotAim() {
+		if (!routeRule() || !playerIsBot()) return;
+		const actor = bot.player;
+		if (!actor.routeReady || actor.routeVersion === routeBotVersion) return;
+		routeBotVersion = actor.routeVersion;
+		aimBody = actor.routeOrigin;
+		aimAngle = GravityGame.angleOf(actor.routeAngleU);
+		aimSpeed = GravityGame.speedOf(actor.routeSpeedU);
+		armed = true;
+		aiming = false;
+		placeGripFromSpeed();
+		dirty = true;
+		hudAt = -Infinity;
+	}
+
+	function clearRoutePlan() {
+		if (!routeRule() || playerIsBot() || replay.on) return;
+		cancelAim();
+		gravity.predCount = 0;
+		refreshRouteLeader();
+		hudAt = -Infinity;
 	}
 
 	/*
@@ -753,21 +1003,24 @@
 	}
 
 	function startAimTrace(budgetMs) {
-		const spec = ruleSpec();
-		if (spec.horizon) gravity.routeBegin(aimBody, aimAngle, aimSpeed, spec.horizon);
-		else gravity.predict(aimBody, aimAngle, aimSpeed, budgetMs);
+		if (routeRule()) {
+			gravity.routeBegin(aimBody, aimAngle, aimSpeed, ruleSpec().horizon);
+		} else gravity.predict(aimBody, aimAngle, aimSpeed, budgetMs);
 		refreshPredGain();
+		syncRoutePlan();
 	}
 
-	/* the launch itself always sees a finished path, whatever the preview showed */
+	/* a launch—and a copied route plan—always sees a finished path */
 	function predictShot() {
-		const spec = ruleSpec();
-		if (spec.horizon) gravity.predictFull(aimBody, aimAngle, aimSpeed, spec.horizon);
-		else gravity.predict(aimBody, aimAngle, aimSpeed);
+		if (routeRule()) {
+			gravity.predictFull(aimBody, aimAngle, aimSpeed, ruleSpec().horizon);
+		} else gravity.predict(aimBody, aimAngle, aimSpeed);
 		refreshPredGain();
+		syncRoutePlan();
 	}
 
 	function playerGoalDone() {
+		if (routeRule()) return false;
 		const spec = ruleSpec();
 		if (spec.stopOnTour && game.doneSteps >= 0) return true;
 		if (spec.maxShots > 0 && game.shots.length >= spec.maxShots &&
@@ -776,15 +1029,23 @@
 	}
 
 	function runOver() {
+		if (routeRule()) return false;
 		return game.on && !replay.on && gravity.status !== STATUS_FLYING &&
 			(playerGoalDone() || game.money.purse < MONEY.cost);
 	}
 
-	/* aim edits and launches close while a game flight or replay runs, after
-	 * the rule's goal is met, and once the purse cannot cover a launch */
+	/* Manual aim closes during a flight/replay, when a bot controls YOU, and
+	 * in the flown rules after the goal is met or the purse cannot launch. */
 	function gameLocked() {
-		return game.on && (replay.on || gravity.status === STATUS_FLYING ||
-			playerGoalDone() || game.money.purse < MONEY.cost);
+		if (!game.on) return false;
+		if (replay.on || gravity.status === STATUS_FLYING || playerIsBot()) return true;
+		if (routeRule()) return false;
+		return playerGoalDone() || game.money.purse < MONEY.cost;
+	}
+
+	function flownRunLocked() {
+		return game.on && !routeRule() &&
+			(playerGoalDone() || game.money.purse < MONEY.cost);
 	}
 
 	function gameSteps() {
@@ -792,6 +1053,7 @@
 	}
 
 	function scoreSteps() {
+		if (routeRule()) return routePlan.steps;
 		return ruleSpec().stopOnTour && game.doneSteps >= 0 ? game.doneSteps : gameSteps();
 	}
 
@@ -813,6 +1075,7 @@
 		refreshHoverLabel();
 		setSelected(-1);
 		applyMode();
+		if (routeRule()) bot.useField(gravity, mode);
 	}
 
 	function syncRuleRadios() {
@@ -828,7 +1091,15 @@
 		if (botHardEl) botHardEl.checked = game.bot === BOT_HARD;
 	}
 
-	function startGame(seed, fixedRate, rule, botLevel) {
+	function syncPlayerRadios() {
+		if (playerUserEl) playerUserEl.checked = game.player === PLAYER_USER;
+		if (playerBotEl) playerBotEl.checked = game.player === PLAYER_BOT;
+		if (playerScoreNameEl) {
+			playerScoreNameEl.textContent = game.player === PLAYER_BOT ? 'BOT' : 'YOU';
+		}
+	}
+
+	function startGame(seed, fixedRate, rule, botLevel, playerType) {
 		stopReplay();
 		linkNote = '';
 		game.on = true;
@@ -836,13 +1107,18 @@
 		game.fixedRate = fixedRate;
 		if (rule) game.rule = rule;
 		if (botLevel) game.bot = botLevel;
+		if (playerType) game.player = playerType;
 		syncRuleRadios();
 		syncBotRadios();
+		syncPlayerRadios();
+		updateHelp(game.rule);
 		game.shots.length = 0;
 		game.steps = 0;
 		game.clockSteps = 0;
 		game.length = 0;
 		game.doneSteps = -1;
+		resetRoutePlan();
+		playerBotSyncNeeded = true;
 		predGain = 0;
 		GravityGame.resetMarket(game.market);
 		GravityGame.resetLedger(game.money);
@@ -852,21 +1128,30 @@
 		gravity.fieldT = tradeSim.t;
 		gravity.fieldRate = scene.trade.speed;
 		attachWorld();
-		bot.reset(seed, game.rule, game.bot);
-		setPassenger(PASSENGERS[seed % PASSENGERS.length]);
+		bot.reset(seed, game.rule, game.bot, game.player);
+		if (routeRule()) bot.useField(gravity, mode);
 		gameLinkEl.hidden = true;
 		refreshGameUi();
 	}
 
-	/* rule and rival difficulty are part of the run, so switching either restarts the seed */
+	/* rule, player type and rival difficulty are part of a run; changing one restarts it */
 	function setRule(next) {
-		if (next === game.rule) return;
-		startGame(game.seed, game.fixedRate, next);
+		if (next === game.rule) {
+			showRuleHelp(next, false);
+			return;
+		}
+		startGame(game.seed, game.fixedRate, next, game.bot, game.player);
+		showRuleHelp(next, false);
 	}
 
 	function setBot(next) {
 		if (next === game.bot) return;
-		startGame(game.seed, game.fixedRate, game.rule, next);
+		startGame(game.seed, game.fixedRate, game.rule, next, game.player);
+	}
+
+	function setPlayerType(next) {
+		if (next === game.player) return;
+		startGame(game.seed, game.fixedRate, game.rule, game.bot, next);
 	}
 
 	/* back to lab: the world stays, the clock returns to real time, a running flight continues */
@@ -875,6 +1160,7 @@
 		linkNote = '';
 		game.on = false;
 		predGain = 0;
+		updateRuleHelp(selectedHelpRule());
 		scene.setGameClock(false);
 		gravity.stepLimit = Infinity;
 		gravity.limitReason = END_TIME;
@@ -890,10 +1176,38 @@
 	 * 3 ms slices and resumes from the exact same step.
 	 */
 	function stepGame(now, dt) {
+		if (routeRule()) {
+			playAcc = 0;
+			if (replay.on) {
+				if (!gravity.routeActive && gravity.predCount >= 2) finishRouteReplay();
+				return;
+			}
+			bot.tickRoute(BOT_STEP_MS);
+			syncPlayerBotAim();
+			syncRoutePlan();
+			return;
+		}
 		if (replay.on && replay.phase !== PHASE_FLY && now >= replay.until) advanceReplay(now);
 		if (gravity.status !== STATUS_FLYING) {
 			playAcc = 0;
-			if (!replay.on && !gameLocked()) {
+			if (replay.on) return;
+			if (playerIsBot()) {
+				if (flownRunLocked()) return;
+				if (playerBotSyncNeeded) {
+					bot.syncPlayer(gravity, game.money, game.shots.length,
+						game.steps, game.length, game.doneSteps, game.clockSteps);
+					playerBotSyncNeeded = false;
+				}
+				if (bot.tickPlayer(game.clockSteps, game.market, BOT_STEP_MS) &&
+					bot.playerPlanValid(game.clockSteps, game.market)) {
+					aimBody = bot.player.planOrigin;
+					aimAngle = GravityGame.angleOf(bot.player.planAngleU);
+					aimSpeed = GravityGame.speedOf(bot.player.planSpeedU);
+					placeGripFromSpeed();
+					armed = true;
+					fire(NO_ABORT);
+				}
+			} else if (!gameLocked()) {
 				bot.tickIdle(game.clockSteps, game.market, BOT_STEP_MS);
 			}
 			return;
@@ -942,6 +1256,7 @@
 		GravityGame.endFlight(game.money);
 		game.steps += gravity.liveSteps;
 		game.length += gravity.flightLength;
+		playerBotSyncNeeded = true;
 		const settleRivals =
 			(game.money.purse < MONEY.cost && !(spec.stopOnTour && game.doneSteps >= 0)) ||
 			(spec.maxShots > 0 && game.shots.length >= spec.maxShots);
@@ -991,21 +1306,70 @@
 		endGameFlight();
 	}
 
-	function startReplay(shots, end) {
+	function startReplay(shots, end, length) {
 		replay.on = true;
 		replay.shots = shots;
 		replay.end = end;
+		replay.length = length === undefined ? null : length;
+		replay.route = routeRule();
 		replay.index = 0;
 		replay.speed = REPLAY_DEFAULT;
+		replay.verdict = '';
+		if (replay.route) {
+			const shot = shots[0];
+			replay.phase = PHASE_AIM;
+			replay.until = Infinity;
+			setMode(shot.src);
+			bot.useField(gravity, mode);
+			if (routeOccupiedBy(shot.origin) >= 0) {
+				finishRouteReplay('desync · ' + planetName(shot.origin) + ' is occupied');
+				return;
+			}
+			setShotAim(shot);
+			armed = true;
+			dirty = true;
+			refreshGameUi();
+			return;
+		}
 		replay.phase = PHASE_GAP;
 		replay.until = performance.now() + REPLAY_GAP_MS;
-		replay.verdict = '';
 		refreshGameUi();
 	}
 
 	function stopReplay() {
 		replay.on = false;
+		replay.route = false;
+		replay.length = null;
 		replay.verdict = '';
+	}
+
+	function routeVerdictText() {
+		if (!routePlan.ready) return 'differs · plan did not land or leave the map';
+		const length = Math.round(routePlan.length);
+		if (!replay.end) return 'planned ' + length + ' px';
+		const lengthOk = replay.length === null || replay.length === length;
+		if (lengthOk && replay.end.visited === routePlan.visits &&
+			replay.end.steps === routePlan.steps) {
+			return 'verified ✓ · ' + length + ' px';
+		}
+		return 'differs · recorded ' +
+			(replay.length === null ? '—' : replay.length + ' px') + ' · ' +
+			(replay.end.steps * DT).toFixed(2) + ' s';
+	}
+
+	function finishRouteReplay(problem) {
+		if (!problem) {
+			syncRoutePlan();
+			if (routePlan.ready) {
+				bot.seedPlayerRoutePlan(replay.shots[0], routePlan.length,
+					routePlan.steps, routePlan.visits, routePlan.reason, routePlan.body);
+				routeBotVersion = bot.player.routeVersion;
+			}
+		}
+		replay.on = false;
+		replay.verdict = problem || routeVerdictText();
+		armed = !problem;
+		refreshGameUi();
 	}
 
 	/* gap → aim the next shot (or finish) → fire; a flight hands back through endGameFlight */
@@ -1063,6 +1427,11 @@
 	}
 
 	function skipReplay() {
+		if (routeRule() && replay.on) {
+			predictShot();
+			finishRouteReplay();
+			return;
+		}
 		const now = performance.now();
 		const capSteps = ruleSpec().capSteps;
 		playAcc = 0;
@@ -1096,14 +1465,17 @@
 	}
 
 	function copyLink() {
+		if (routeRule() && (armed || aiming)) predictShot();
 		const url = location.href.split('#')[0] + '#' + GravityGame.encodeLink({
 			seed: game.seed,
 			rate: scene.trade.speed,
 			rule: game.rule,
 			bot: game.bot,
+			player: game.player,
 			shots: game.shots,
-			visited: gravity.visitedCount,
-			steps: scoreSteps()
+			visited: routeRule() ? routePlan.visits : gravity.visitedCount,
+			steps: scoreSteps(),
+			length: routeRule() ? routePlan.length : undefined
 		});
 		copyUrlText(url, gameCopyBtn, 'copy replay');
 	}
@@ -1132,8 +1504,8 @@
 		}
 		modeGameEl.checked = true;
 		scene.setSpeed(link.rate);
-		startGame(link.seed, true, link.rule, link.bot);
-		if (link.shots.length > 0) startReplay(link.shots, link.end);
+		startGame(link.seed, true, link.rule, link.bot, link.player);
+		if (link.shots.length > 0) startReplay(link.shots, link.end, link.length);
 		return true;
 	}
 
@@ -1141,7 +1513,9 @@
 	function refreshGameUi() {
 		const flying = gravity.status === STATUS_FLYING;
 		const flightLock = game.on && (flying || replay.on);
-		modeTagEl.textContent = linkNote || (game.on ? 'game · clock runs in flight' : 'lab · free clock');
+		modeTagEl.textContent = linkNote || (game.on
+			? routeRule() ? 'game · planner · no launch' : 'game · clock runs in flight'
+			: 'lab · free clock');
 		gameBoxEl.hidden = !game.on;
 		if (scoreHudEl) scoreHudEl.hidden = !game.on;
 		srcPlanetsEl.disabled = flightLock;
@@ -1153,10 +1527,14 @@
 		if (botEasyEl) botEasyEl.disabled = flightLock;
 		if (botNormalEl) botNormalEl.disabled = flightLock;
 		if (botHardEl) botHardEl.disabled = flightLock;
-		scene.lockSpeed(game.on && (game.fixedRate || game.shots.length > 0 || replay.on));
-		if (rerollGoalBtn) rerollGoalBtn.disabled = game.on;
-		clearButton.textContent = game.on ? 'abort' : 'clear';
-		clearButton.disabled = game.on && (!flying || replay.on);
+		if (playerUserEl) playerUserEl.disabled = flightLock;
+		if (playerBotEl) playerBotEl.disabled = flightLock;
+		scene.lockSpeed(game.on && (routeRule() || game.fixedRate ||
+			game.shots.length > 0 || replay.on));
+		clearButton.textContent = routeRule() ? 'clear plan' : game.on ? 'abort' : 'clear';
+		clearButton.disabled = routeRule()
+			? replay.on || playerIsBot()
+			: game.on && (!flying || replay.on);
 		gameCopyBtn.disabled = flightLock;
 		if (botCopyBtn) {
 			botCopyBtn.hidden = game.bot === BOT_OFF;
@@ -1166,7 +1544,18 @@
 		for (let i = 0; i < rivalScoreRows.length; i++) {
 			if (rivalScoreRows[i]) rivalScoreRows[i].hidden = i >= bot.count;
 		}
-		replaySpeedBtn.hidden = !replay.on;
+		if (purseRowEl) purseRowEl.hidden = routeRule();
+		if (visitLabelEl) visitLabelEl.textContent = routeRule() ? 'route score' : 'systems visited';
+		if (predVisitLabelEl) predVisitLabelEl.textContent = routeRule() ? 'plan end' : 'pred visits';
+		horizonSlider.disabled = routeRule();
+		if (cargoHintEl) {
+			cargoHintEl.innerHTML = routeRule()
+				? playerIsBot()
+					? 'bot plans your one trajectory · longest finished plan leads'
+					: 'drag from a free planet · longest finished trajectory leads<br>no launch needed · see <b>? help</b> for the selected rule'
+				: 'drag from planet to aim · shift = 1/20 fine · enter launches<br>land on a planet to stage next launch · see <b>? help</b> for the selected rule';
+		}
+		replaySpeedBtn.hidden = !replay.on || replay.route;
 		replaySkipBtn.hidden = !replay.on;
 		replaySpeedBtn.textContent = '×' + REPLAY_SPEEDS[replay.speed];
 		replayRowEl.hidden = !replay.on && replay.verdict === '';
@@ -1174,14 +1563,27 @@
 	}
 
 	function scoreValue(summary) {
+		if (routeRule()) {
+			return summary.ready ? Math.round(summary.length) + ' px' : 'planning…';
+		}
 		if (moneyRule()) return summary.purse.toFixed(2) + ' purse';
-		const systems = summary.visited + ' / ' + PLANETS + (summary.done ? ' ✓' : '');
-		if (!routeRule()) return systems;
-		return systems + ' · ' + Math.round(summary.length) + ' px';
+		return summary.visited + ' / ' + PLANETS + (summary.done ? ' ✓' : '');
 	}
 
 	function scoreMeta(summary) {
 		const time = (summary.steps * DT).toFixed(1) + ' s';
+		if (routeRule()) {
+			if (!summary.ready) {
+				return summary.origin >= 0
+					? planetName(summary.origin) + ' · tracing one plan'
+					: 'no finished plan yet';
+			}
+			const end = summary.reason === END_IMPACT
+				? 'lands ' + planetName(summary.body)
+				: 'leaves map';
+			return planetName(summary.origin) + ' · ' + end + ' · ' + time +
+				(summary.planning ? ' · still planning' : '');
+		}
 		if (moneyRule()) {
 			return summary.visited + ' systems · ' + summary.shots + ' / ' +
 				GravityGame.MONEY_SHOTS + ' shots · ' + time;
@@ -1191,8 +1593,15 @@
 	}
 
 	function rivalTagText() {
+		if (routeRule()) {
+			if (bot.routeThinking()) {
+				return 'planning ' + Math.round(bot.routeProgress() * 100) + ' %';
+			}
+			if (game.bot === BOT_OFF) return playerIsBot() ? 'your bot · ready' : 'solo';
+			return game.bot === BOT_HARD ? '2 rivals · plans ready' : '1 rival · plan ready';
+		}
 		if (game.bot === BOT_OFF) return 'solo';
-		if (bot.thinking()) {
+		if (bot.thinking() && bot.jobRival !== GravityBot.PLAYER_INDEX) {
 			return 'thinking ' + Math.round(bot.progress() * 100) + ' %';
 		}
 		if (game.bot === BOT_HARD) return '2 rivals · 1-ply';
@@ -1200,7 +1609,36 @@
 		return '1 rival · greedy';
 	}
 
+	function playerTypeTagText() {
+		if (!playerIsBot()) return 'user';
+		const level = bot.playerLevel || BOT_NORMAL;
+		if (routeRule()) {
+			return bot.routeThinking()
+				? 'bot · planning ' + Math.round(bot.routeProgress() * 100) + ' %'
+				: 'bot · ' + level;
+		}
+		if (bot.thinking() && bot.jobRival === GravityBot.PLAYER_INDEX) {
+			return 'bot · thinking ' + Math.round(bot.progress() * 100) + ' %';
+		}
+		return 'bot · ' + level;
+	}
+
 	function playerSummary() {
+		if (routeRule()) {
+			return {
+				visited: routePlan.visits,
+				done: playerIsBot() ? bot.player.routeDone : routePlan.ready,
+				steps: routePlan.steps,
+				shots: routePlan.ready ? 1 : 0,
+				length: routePlan.length,
+				purse: game.money.purse,
+				origin: routePlan.origin,
+				reason: routePlan.reason,
+				body: routePlan.body,
+				ready: routePlan.ready,
+				planning: playerIsBot() ? !bot.player.routeDone : gravity.routeActive
+			};
+		}
 		const flyingLength = gravity.status === STATUS_FLYING ? gravity.flightLength : 0;
 		return {
 			visited: gravity.visitedCount,
@@ -1208,7 +1646,12 @@
 			steps: scoreSteps(),
 			shots: game.shots.length,
 			length: game.length + flyingLength,
-			purse: game.money.purse
+			purse: game.money.purse,
+			origin: gravity.landedBody,
+			reason: gravity.endReason,
+			body: gravity.endBody,
+			ready: game.shots.length > 0,
+			planning: false
 		};
 	}
 
@@ -1226,7 +1669,7 @@
 				outcome: bestCmp
 			};
 		}
-		if (bot.thinking()) {
+		if (!routeRule() && bot.thinking() && bot.jobRival !== GravityBot.PLAYER_INDEX) {
 			return { text: 'THINK ' + Math.round(bot.progress() * 100) + '%', outcome: 0 };
 		}
 		if (bestCmp > 0) return { text: 'AHEAD', outcome: 1 };
@@ -1238,7 +1681,7 @@
 		const ruleText = moneyRule()
 			? 'money · ' + GravityGame.MONEY_SHOTS + ' shots'
 			: routeRule()
-			? 'route · ' + Math.round(GravityGame.ROUTE_SECONDS / 60) + ' min wall'
+			? 'route · longest one plan'
 			: 'tour · ' + GravityGame.CAP_SECONDS + ' s cap';
 		if (ruleText !== hudRuleText) {
 			hudRuleText = ruleText;
@@ -1249,6 +1692,15 @@
 		if (rTag !== hudRivalTagText) {
 			hudRivalTagText = rTag;
 			if (rivalTagEl) rivalTagEl.textContent = rTag;
+		}
+		const pTag = playerTypeTagText();
+		if (pTag !== hudPlayerTypeText) {
+			hudPlayerTypeText = pTag;
+			if (playerTypeTagEl) playerTypeTagEl.textContent = pTag;
+		}
+		if (botCopyBtn && game.bot !== BOT_OFF) {
+			botCopyBtn.disabled = replay.on || bot.count === 0 ||
+				bot.rivals[0].shots.length === 0;
 		}
 		const seedText = 'seed ' + game.seed + ' · ×' + scene.trade.speed;
 		if (seedText !== hudSeedText) {
@@ -1302,8 +1754,10 @@
 			}
 		}
 		const replayText = replay.on
-			? 'shot ' + (replay.index + (replay.phase === PHASE_AIM ? 1 : 0)) + ' / ' +
-				replay.shots.length + ' · ×' + REPLAY_SPEEDS[replay.speed]
+			? replay.route
+				? 'tracing one plan · ' + Math.round(gravity.routeProgress() * 100) + ' %'
+				: 'shot ' + (replay.index + (replay.phase === PHASE_AIM ? 1 : 0)) + ' / ' +
+					replay.shots.length + ' · ×' + REPLAY_SPEEDS[replay.speed]
 			: replay.verdict;
 		if (replayText !== hudReplayText) {
 			hudReplayText = replayText;
@@ -1326,11 +1780,13 @@
 			setSelected(tradeSim.planetPort[planet]);
 		}
 		const basePlanet = planet >= 0 ? planet : fieldPortPlanet[body];
+		if (basePlanet >= 0 && routeRule() && routeOccupiedBy(basePlanet) >= 0) {
+			showBlocked(basePlanet, performance.now());
+			hudAt = -Infinity;
+			return;
+		}
 		if (basePlanet >= 0 && !gameLocked()) {
-			if (!gravity.canLaunchFrom(basePlanet)) {
-				blockedPlanet = basePlanet;
-				blockedUntil = performance.now() + 2600;
-			}
+			if (!canAimFrom(basePlanet)) showBlocked(basePlanet, performance.now());
 			beginPress(basePlanet, event, wx, wy);
 		}
 	}
@@ -1428,6 +1884,7 @@
 
 	/* Past visits stay dim; current predictions take priority in bright green. */
 	function drawSystemVisits(now) {
+		if (routeRule()) return;
 		const px = 1 / view.scale;
 		const activePred = aiming || armed || gravity.status === STATUS_FLYING;
 		const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
@@ -1514,7 +1971,22 @@
 	}
 
 	function activeBlockedPlanet(now) {
-		if (gravity.landedBody < 0 || aiming) return -1;
+		if (aiming) return -1;
+		if (routeRule()) {
+			const hoverBy = routeOccupiedBy(hoverPlanet);
+			if (hoverBy >= 0) {
+				blockedKind = 1;
+				blockedBy = hoverBy;
+				return hoverPlanet;
+			}
+			if (blockedKind === 1 && blockedPlanet >= 0 && now < blockedUntil) {
+				return blockedPlanet;
+			}
+			return -1;
+		}
+		if (gravity.landedBody < 0) return -1;
+		blockedKind = 0;
+		blockedBy = -1;
 		if (hoverPlanet >= 0 && hoverPlanet !== gravity.landedBody) return hoverPlanet;
 		if (blockedPlanet >= 0 && blockedPlanet !== gravity.landedBody && now < blockedUntil) {
 			return blockedPlanet;
@@ -1591,7 +2063,50 @@
 		ctx.fill();
 	}
 
+	function drawOccupiedPlanetWorld(src) {
+		const px = 1 / view.scale;
+		const x = tradeSim.planetX[src];
+		const y = tradeSim.planetY[src];
+		const r = tradeSim.planetR[src] + 5 * px;
+		ctx.setLineDash(NO_DASH);
+		ctx.beginPath();
+		ctx.arc(x, y, r, 0, TAU);
+		ctx.strokeStyle = WARN;
+		ctx.lineWidth = 1.5 * px;
+		ctx.stroke();
+		const arm = r * 0.62;
+		ctx.beginPath();
+		ctx.moveTo(x - arm, y - arm);
+		ctx.lineTo(x + arm, y + arm);
+		ctx.moveTo(x + arm, y - arm);
+		ctx.lineTo(x - arm, y + arm);
+		ctx.strokeStyle = WARN;
+		ctx.lineWidth = 1.3 * px;
+		ctx.stroke();
+	}
+
 	function drawBlockedTooltipScreen(src) {
+		if (blockedKind === 1) {
+			const sx = tradeSim.planetX[src] * view.scale + view.offX;
+			const sy = tradeSim.planetY[src] * view.scale + view.offY;
+			const who = blockedBy >= 0 && blockedBy < RIVAL_TAGS.length
+				? RIVAL_TAGS[blockedBy] : 'BOT';
+			const text = planetName(src) + ' occupied by ' + who +
+				' · choose another start planet';
+			const width = 18 + text.length * 6.45;
+			const height = 22;
+			let x = sx + 14;
+			let y = sy + 14;
+			if (x + width > window.innerWidth - 8) x = window.innerWidth - width - 8;
+			if (y + height > window.innerHeight - 10) y = sy - height - 16;
+			plate(x, y, width, height, 'rgba(255, 148, 120, 0.55)');
+			ctx.fillStyle = WARN;
+			ctx.textAlign = 'left';
+			ctx.textBaseline = 'middle';
+			ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+			ctx.fillText(text, x + 9, y + height * 0.5 + 0.5);
+			return;
+		}
 		const dst = gravity.landedBody;
 		const sx = tradeSim.planetX[src] * view.scale + view.offX;
 		const sy = tradeSim.planetY[src] * view.scale + view.offY;
@@ -1762,8 +2277,9 @@
 		for (let i = stride; i < count; i += stride) ctx.lineTo(pathX[i], pathY[i]);
 		const last = count - 1;
 		if (last % stride !== 0) ctx.lineTo(pathX[last], pathY[last]);
-		ctx.strokeStyle = 'rgba(255, 207, 110, 0.78)';
-		ctx.lineWidth = 1.3 * px;
+		ctx.strokeStyle = routeRule() && routeLeader === -1
+			? GOLD : 'rgba(255, 207, 110, 0.78)';
+		ctx.lineWidth = (routeRule() && routeLeader === -1 ? 2.1 : 1.3) * px;
 		ctx.setLineDash(PRED_DASH);
 		ctx.stroke();
 		ctx.setLineDash(NO_DASH);
@@ -1788,6 +2304,13 @@
 			ctx.arc(ex, ey, 2 * px, 0, TAU);
 			ctx.fillStyle = GOLD;
 			ctx.fill();
+		}
+		if (routeRule() && routeLeader === -1) {
+			ctx.beginPath();
+			ctx.arc(ex, ey, 9 * px, 0, TAU);
+			ctx.strokeStyle = GOLD;
+			ctx.lineWidth = 1.1 * px;
+			ctx.stroke();
 		}
 	}
 
@@ -1944,6 +2467,41 @@
 			const r = bot.rivals[rIdx];
 			const sim = r.sim;
 			const colour = RIVAL_COLOURS[rIdx];
+			/* in route, the rival's current best plan is its entry—no ship flies */
+			if (routeRule() && sim.predCount >= 2) {
+				const planCount = sim.predCount;
+				const planStride = planCount > 6000 ? 4 : planCount > 1400 ? 2 : 1;
+				ctx.beginPath();
+				ctx.moveTo(sim.predX[0], sim.predY[0]);
+				for (let i = planStride; i < planCount; i += planStride) {
+					ctx.lineTo(sim.predX[i], sim.predY[i]);
+				}
+				const planLast = planCount - 1;
+				if (planLast % planStride !== 0) {
+					ctx.lineTo(sim.predX[planLast], sim.predY[planLast]);
+				}
+				const leader = routeLeader === rIdx;
+				ctx.strokeStyle = leader ? colour : RIVAL_TRAILS[rIdx];
+				ctx.lineWidth = (leader ? 2.1 : 1.25) * px;
+				PRED_DASH[0] = 6 * px;
+				PRED_DASH[1] = 6 * px;
+				ctx.setLineDash(PRED_DASH);
+				ctx.stroke();
+				ctx.setLineDash(NO_DASH);
+				ctx.beginPath();
+				ctx.arc(sim.predX[planLast], sim.predY[planLast],
+					(leader ? 6 : 4.5) * px, 0, TAU);
+				ctx.strokeStyle = colour;
+				ctx.lineWidth = 1.2 * px;
+				ctx.stroke();
+				if (leader) {
+					ctx.beginPath();
+					ctx.arc(sim.predX[planLast], sim.predY[planLast], 9 * px, 0, TAU);
+					ctx.strokeStyle = GOLD;
+					ctx.lineWidth = 1.1 * px;
+					ctx.stroke();
+				}
+			}
 			/* rival trail */
 			const count = sim.trailCount;
 			if (count >= 2) {
@@ -2090,13 +2648,16 @@
 		drawPrediction();
 		drawTrail();
 		drawLandedBase(now);
-		if (blocked >= 0) drawBlockedArrowWorld(blocked, now);
+		if (blocked >= 0) {
+			if (blockedKind === 1) drawOccupiedPlanetWorld(blocked);
+			else drawBlockedArrowWorld(blocked, now);
+		}
 		drawAim();
 		drawCargo(now);
 		drawMarkers();
 		drawSigns();
 		ctx.restore();
-		if (game.on) drawPlanetProfits();
+		if (game.on && !routeRule()) drawPlanetProfits();
 		if (game.on && bot.count > 0) drawRivalTags();
 		if (hoverBody >= 0 && hoverBody !== selected && !aiming) {
 			drawLabel(hoverLabel, gravity.bodyX[hoverBody],
@@ -2149,15 +2710,20 @@
 			hudTagText = tag;
 			bodyTagEl.textContent = tag;
 		}
-		const visitText = gravity.visitedCount + ' / ' + PLANETS;
+		const visitText = routeRule()
+			? routePlan.ready ? Math.round(routePlan.length) + ' px'
+				: gravity.predCount >= 2 ? 'tracing…' : '—'
+			: gravity.visitedCount + ' / ' + PLANETS;
 		if (visitText !== hudVisitText) {
 			hudVisitText = visitText;
 			if (visitEl) visitEl.textContent = visitText;
 		}
 		const predText = gravity.predCount >= 2
-			? gravity.predVisits + ' sys · +' + gravity.predNewVisits +
-				' (' + (gravity.visitedCount + gravity.predNewVisits) + '/' + PLANETS + ')' +
-				(game.on ? ' · +' + predGain.toFixed(2) : '')
+			? routeRule()
+				? gravity.routeActive ? 'tracing…' : endText(gravity.predReason, gravity.predBody)
+				: gravity.predVisits + ' sys · +' + gravity.predNewVisits +
+					' (' + (gravity.visitedCount + gravity.predNewVisits) + '/' + PLANETS + ')' +
+					(game.on ? ' · +' + predGain.toFixed(2) : '')
 			: '—';
 		if (predText !== hudPredVisitText) {
 			hudPredVisitText = predText;
@@ -2180,39 +2746,78 @@
 		const locked = gameLocked();
 		const trimOff = locked || (!armed && (game.on || selected < 0));
 		if (trimSlider.disabled !== trimOff) trimSlider.disabled = trimOff;
-		const exitWarning = (aiming || armed) && gravity.predCount >= 2 && gravity.predReason === END_EXIT;
-		setLaunchState(locked || !armed || !gravity.canLaunchFrom(aimBody), exitWarning);
+		const exitWarning = !routeRule() && (aiming || armed) &&
+			gravity.predCount >= 2 && gravity.predReason === END_EXIT;
+		setLaunchState(locked || !armed || !canAimFrom(aimBody), exitWarning);
 	}
 
 	function setLaunchState(blocked, exitWarning) {
-		const broke = game.on && game.money.purse < MONEY.cost;
-		const state = (blocked || broke ? 1 : 0) + (exitWarning ? 2 : 0) + (broke ? 4 : 0);
+		const route = routeRule();
+		const botPlayer = playerIsBot();
+		const broke = game.on && !route && game.money.purse < MONEY.cost;
+		const state = (blocked || broke ? 1 : 0) + (exitWarning ? 2 : 0) +
+			(broke ? 4 : 0) + (route ? 8 : 0) + (botPlayer ? 16 : 0) +
+			(route && routePlan.ready ? 32 : 0);
 		if (state === launchState) return;
 		launchState = state;
-		launchButton.disabled = blocked || broke;
+		launchButton.disabled = route || botPlayer || blocked || broke;
 		launchButton.classList.toggle('exitWarning', exitWarning);
-		launchButton.textContent = broke
+		launchButton.textContent = route
+			? routePlan.ready ? 'plan counts · no launch' : 'plan only · no launch'
+			: botPlayer ? 'bot controls YOU'
+			: broke
 			? 'purse ' + game.money.purse.toFixed(2) + ' · need ' + MONEY.cost.toFixed(2)
 			: exitWarning ? 'launch · leaves system'
 			: 'launch' + (game.on ? ' · ' + MONEY.cost.toFixed(2) : '');
-		launchButton.title = broke
+		launchButton.title = route
+			? 'Route is a planner: the finished traced trajectory is the entry'
+			: botPlayer ? 'Set YOU to user to aim and launch manually'
+			: broke
 			? 'The purse cannot cover a launch; this run is over'
 			: exitWarning ? 'Warning: predicted trajectory ends outside the system' : '';
 	}
 
 	function statusText() {
-		if (replay.on) return gravity.status === STATUS_FLYING ? 'replay · in flight' : 'replay · aiming';
+		if (replay.on) {
+			if (replay.route) return 'replay · tracing plan';
+			return gravity.status === STATUS_FLYING ? 'replay · in flight' : 'replay · aiming';
+		}
+		if (routeRule()) {
+			if (aiming) return 'planning · ' + planetName(aimBody);
+			if (gravity.routeActive) {
+				return 'tracing plan · ' + Math.round(gravity.routeProgress() * 100) + ' %';
+			}
+			if (routeLeader === -1 && routePlan.ready) {
+				return 'leader · ' + (playerIsBot() ? 'BOT' : 'YOU') + ' · ' +
+					Math.round(routePlan.length) + ' px';
+			}
+			if (routeLeader >= 0) {
+				return 'leader · ' + RIVAL_TAGS[routeLeader] + ' · ' +
+					Math.round(bot.rivals[routeLeader].routeLength) + ' px';
+			}
+			if (routePlan.ready) return 'tied lead · ' + Math.round(routePlan.length) + ' px';
+			if (bot.routeThinking()) {
+				return 'planning · ' + Math.round(bot.routeProgress() * 100) + ' %';
+			}
+			if (armed) return 'plan has no landing or map exit';
+			return playerIsBot() ? 'bot plan ready' : 'choose a free start planet';
+		}
+		if (playerIsBot() && gravity.status !== STATUS_FLYING) {
+			if (flownRunLocked()) return playerGoalDone() ? 'bot run complete' : 'purse empty · run over';
+			return bot.thinking() && bot.jobRival === GravityBot.PLAYER_INDEX
+				? 'YOU · bot thinking ' + Math.round(bot.progress() * 100) + ' %'
+				: 'YOU · bot ready';
+		}
 		if (aiming) return 'aiming ' + planetName(aimBody);
 		if (armed) return 'armed · ' + planetName(aimBody);
 		if (gravity.status === STATUS_FLYING) {
-			if (game.on && bot.thinking()) {
+			if (game.on && bot.thinking() && bot.jobRival !== GravityBot.PLAYER_INDEX) {
 				return 'rival thinking ' + Math.round(bot.progress() * 100) + ' %';
 			}
 			return game.on ? 'in flight · clock runs' : 'in flight';
 		}
 		if (game.on && playerGoalDone()) {
-			return moneyRule() ? GravityGame.MONEY_SHOTS + ' shots complete'
-				: routeRule() ? 'run complete' : 'tour complete';
+			return moneyRule() ? GravityGame.MONEY_SHOTS + ' shots complete' : 'tour complete';
 		}
 		if (game.on && game.money.purse < MONEY.cost) return 'purse empty · run over';
 		const rest = gravity.status === STATUS_ENDED
@@ -2295,6 +2900,7 @@
 			} else if (gravity.routeActive) {
 				gravity.routeStep(ROUTE_STEP_MS);
 				refreshPredGain();
+				syncRoutePlan();
 				refreshAimLabel();
 			}
 		} else if (gravity.status === STATUS_FLYING) {
@@ -2343,12 +2949,51 @@
 	});
 	launchButton.addEventListener('click', launch);
 	clearButton.addEventListener('click', () => {
-		if (game.on) abortFlight();
+		if (playerIsBot()) return;
+		if (routeRule()) clearRoutePlan();
+		else if (game.on) abortFlight();
 		else clearCargo();
 	});
-	ruleTourEl.addEventListener('change', () => setRule(RULE_TOUR));
-	ruleRouteEl.addEventListener('change', () => setRule(RULE_ROUTE));
-	if (ruleMoneyEl) ruleMoneyEl.addEventListener('change', () => setRule(RULE_MONEY));
+	ruleTourEl.addEventListener('change', () => {
+		updateRuleHelp();
+		setRule(RULE_TOUR);
+	});
+	ruleRouteEl.addEventListener('change', () => {
+		updateRuleHelp();
+		setRule(RULE_ROUTE);
+	});
+	if (ruleMoneyEl) ruleMoneyEl.addEventListener('change', () => {
+		updateRuleHelp();
+		setRule(RULE_MONEY);
+	});
+	const ruleEls = [ruleTourEl, ruleRouteEl, ruleMoneyEl];
+	for (let rIdx = 0; rIdx < ruleEls.length; rIdx++) {
+		const el = ruleEls[rIdx];
+		if (!el) continue;
+		const targets = el.parentElement && el.parentElement !== el
+			? [el, el.parentElement] : [el];
+		for (let tIdx = 0; tIdx < targets.length; tIdx++) {
+			const target = targets[tIdx];
+			target.addEventListener('pointerdown', () => beginRuleHelpHold(el.value));
+			target.addEventListener('pointerup', endRuleHelpHold);
+			target.addEventListener('pointercancel', endRuleHelpHold);
+		}
+		const hoverTarget = targets[targets.length - 1];
+		hoverTarget.addEventListener('pointerenter', event => {
+			if (event.pointerType !== 'touch') showRuleHelp(el.value, false);
+		});
+		hoverTarget.addEventListener('pointerleave', () => {
+			if (helpPinned) updateRuleHelp(selectedHelpRule());
+			else if (!ruleHelpHold) setHelpOpen(false, true);
+		});
+		el.addEventListener('focus', () => showRuleHelp(el.value, false));
+		el.addEventListener('blur', () => {
+			if (helpPinned) updateRuleHelp(selectedHelpRule());
+			else if (!ruleHelpHold) setHelpOpen(false, true);
+		});
+	}
+	if (playerUserEl) playerUserEl.addEventListener('change', () => setPlayerType(PLAYER_USER));
+	if (playerBotEl) playerBotEl.addEventListener('change', () => setPlayerType(PLAYER_BOT));
 	if (botOffEl) botOffEl.addEventListener('change', () => setBot(BOT_OFF));
 	if (botEasyEl) botEasyEl.addEventListener('change', () => setBot(BOT_EASY));
 	if (botNormalEl) botNormalEl.addEventListener('change', () => setBot(BOT_NORMAL));
@@ -2373,7 +3018,7 @@
 	if (helpBtn) {
 		helpBtn.addEventListener('click', () => setHelpOpen(!helpPinned));
 		helpBtn.addEventListener('pointerenter', event => {
-			if (event.pointerType !== 'touch') setHelpOpen(true, true);
+			if (event.pointerType !== 'touch') showRuleHelp(selectedHelpRule(), false);
 		});
 		helpBtn.addEventListener('pointerleave', () => {
 			if (!helpPinned) setHelpOpen(false, true);
@@ -2387,7 +3032,6 @@
 		});
 	}
 	if (helpClose) helpClose.addEventListener('click', () => setHelpOpen(false));
-	if (rerollGoalBtn) rerollGoalBtn.addEventListener('click', () => rollPassenger(true));
 	window.addEventListener('pointerdown', onPointerDown);
 	window.addEventListener('pointermove', onPointerMove);
 	window.addEventListener('pointerup', onPointerUp);
@@ -2434,17 +3078,21 @@
 		playScale: playScale,
 		playIndex: () => playIndex,
 		scoreSteps: scoreSteps,
+		startGame: startGame,
+		stopGame: stopGame,
+		loadLink: loadLink,
 		rule: () => game.rule,
 		botLevel: () => game.bot,
-		routeLength: () => game.length,
-		passenger: () => passenger,
-		rollPassenger: rollPassenger,
+		playerType: () => game.player,
+		routeLength: () => routePlan.length,
+		routePlan: () => routePlan,
+		routeOccupiedBy: routeOccupiedBy,
 		setHelpOpen: setHelpOpen,
 		helpOpen: () => helpOpen,
+		helpRule: () => helpRule,
 		autoInterval: () => lastAutoInterval
 	};
 
-	rollPassenger(false);
 	refreshPlaybackUi();
 	gravity.horizon = Number(horizonSlider.value);
 	horizonLabel.textContent = gravity.horizon + ' s';
@@ -2458,6 +3106,7 @@
 	mode = srcPortsEl.checked ? MODE_PORTS : MODE_PLANETS;
 	gravity.fieldT = tradeSim.t;
 	gravity.fieldRate = tradeRate();
+	updateRuleHelp(selectedHelpRule());
 	attachWorld();
 	if (!loadLink()) refreshGameUi();
 

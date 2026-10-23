@@ -21,7 +21,7 @@
 		</div>
 		<div class="scoreRows">
 			<div class="scoreEntry scorePlayer">
-				<span class="scoreName">YOU</span>
+				<span id="playerScoreName" class="scoreName">YOU</span>
 				<b id="gameScore" class="scoreValue">0 / 26</b>
 				<span id="playerScoreMeta" class="scoreMeta">0 shots · purse 3.00</span>
 			</div>
@@ -59,7 +59,7 @@
 	<div class="panelHead">
 		<div>
 			<div class="kicker">gravity cargo</div>
-			<div id="goalRole" class="roleTag">tourist · fly through all systems</div>
+			<div id="goalRole" class="roleTag">one ship · gravity only</div>
 		</div>
 		<div class="headBtns">
 			<button id="helpBtn" class="miniBtn" title="mission & controls (?)">? help</button>
@@ -70,8 +70,8 @@
 	<div class="clock" id="expClock">exp + 00:00.0</div>
 	<div class="stats">
 		<div class="stat"><span>status</span><b id="cargoStatus">ready</b></div>
-		<div class="stat goalStat"><span>systems visited</span><b id="visitReadout">0 / 26</b></div>
-		<div class="stat goalStat"><span>pred visits</span><b id="predVisitReadout">—</b></div>
+		<div class="stat goalStat"><span id="visitLabel">systems visited</span><b id="visitReadout">0 / 26</b></div>
+		<div class="stat goalStat"><span id="predVisitLabel">pred visits</span><b id="predVisitReadout">—</b></div>
 		<div class="stat"><span>flight</span><b id="cargoFlight">—</b></div>
 		<div class="stat"><span>aim</span><b id="aimReadout">—</b></div>
 		<div class="stat"><span>traj length</span><b id="lengthReadout">—</b></div>
@@ -92,6 +92,11 @@
 				<label><input id="ruleRoute" type="radio" name="gameRule" value="route"> route</label>
 				<label><input id="ruleMoney" type="radio" name="gameRule" value="money"> money</label>
 			</div>
+			<div class="caption"><span>you</span><span id="playerTypeTag">user</span></div>
+			<div class="radioRow" role="radiogroup" aria-label="your player type">
+				<label><input id="playerUser" type="radio" name="playerType" value="user" checked> user</label>
+				<label><input id="playerBot" type="radio" name="playerType" value="bot"> bot</label>
+			</div>
 			<div class="caption"><span>rivals</span><span id="rivalTag">normal · 1 bot</span></div>
 			<div class="radioRow rivalRadios" role="radiogroup" aria-label="rival difficulty">
 				<label><input id="botOff" type="radio" name="gameBot" value="off"> off</label>
@@ -101,7 +106,7 @@
 			</div>
 			<div class="stats">
 				<div class="stat"><span>seed · rate</span><b id="gameSeed">—</b></div>
-				<div class="stat"><span>purse</span><b id="gamePurse">—</b></div>
+				<div class="stat" id="purseRow"><span>purse</span><b id="gamePurse">—</b></div>
 				<div class="stat" id="replayRow" hidden><span>replay</span><b id="replayReadout">—</b></div>
 			</div>
 			<div class="actions gameActions">
@@ -169,69 +174,29 @@
 	</div>
 </aside>
 
-<aside id="helpDrawer" class="panel drawer">
+<aside id="helpDrawer" class="panel drawer" aria-label="selected rule help">
 	<div class="panelHead">
-		<div class="kicker">mission &amp; guide</div>
+		<div>
+			<div class="kicker">selected rule</div>
+			<div id="helpRuleName" class="helpRuleName">lab</div>
+		</div>
 		<button id="helpClose" class="miniBtn">close ×</button>
 	</div>
-	<div class="goalCard">
-		<div class="goalHeader">
-			<span id="drawerPassenger" class="roleBadge">tourist</span>
-			<button id="rerollGoal" class="miniBtn">reroll</button>
+	<dl class="ruleHelp">
+		<div>
+			<dt>Goal</dt>
+			<dd id="helpGoal">Experiment freely. There is no score.</dd>
 		</div>
-		<p id="goalStory">
-			A tourist aboard your vessel wants to fly through each planet system.
-			Sweep inside as many port orbits as possible and land cleanly to continue your tour.
-		</p>
-	</div>
-	<div class="group">
-		<div class="caption"><span>rules</span><span>grand tour</span></div>
-		<ul class="helpList">
-			<li><b>visit systems</b> — entering inside a planet’s port orbit counts that system as visited and keeps its visited mark across hops.</li>
-			<li><b>predicted visits</b> — updates live at up to 60 fps as your aim, gravity or port orbits change.</li>
-			<li><b>stable launch base</b> — in all modes (<i>planets</i> and <i>ports · moving</i>), launches start from static planets.</li>
-			<li><b>hop from landed body</b> — once landed on a planet, the next launch is only allowed from that landed planet; other planets show a lock tooltip and arrow pointing to your ship.</li>
-			<li><b>continuous flight</b> — while flying, the trajectory continues ahead until landed. <i>clear</i> resets the run.</li>
-		</ul>
-	</div>
-	<div class="group">
-		<div class="caption"><span>game mode</span><span>compare runs</span></div>
-		<ul class="helpList">
-			<li><b>same world</b> — the seed builds planets, ports and colonies; everyone opening your link flies the same system.</li>
-			<li><b>clock runs in flight only</b> — trade, ports and moons move only while the cargo flies; after it lands or leaves, everything waits for your next launch.</li>
-			<li><b>fixed rules</b> — gravity stays at 1, no relaunch mid-flight, a <i>tour</i> flight ends after 120 s or on <i>abort</i>; the speed slider sets the world rate until the first launch.</li>
-			<li><b>score · tour</b> — more systems, then fewer shots, then less flight time, then purse; a full tour stops when the 26th system is entered.</li>
-			<li><b>purse &amp; planet profit</b> — purse starts at 3.00 and each launch costs 1.00 (refused below 1.00). Every planet displays its current visit profit (+0.25 at start, growing +0.25 per 40 s of game time since last visited up to +0.75). Entering a planet’s port orbit collects that value and resets it to +0.00 — steer through long-unvisited worlds to fund your tour and out-earn rivals.</li>
-			<li><b>rule · route</b> — no 120 s cap (1 800 s wall), traced in per-frame slices; score: systems, route length, fewer shots, less time, purse.</li>
-			<li><b>rule · money</b> — 10-shot contract without stopping at 26 / 26; score: highest purse, then systems, then fewer shots.</li>
-			<li><b>rivals</b> — bots compete in all three rules: <i>tour</i> hunts systems, <i>route</i> values long flights and distance, and <i>money</i> chases planet profit. Easy / normal field one rival; hard fields two with 1-ply lookahead.</li>
-			<li><b>scoreboard</b> — the upper-left panel compares your rule-specific score with R1 and R2; you are mint, R1 violet, and R2 rose.</li>
-			<li><b>playback</b> — <i>− slower / + faster</i> changes only how fast you watch; physics steps and the recorded replay stay identical. The world rate slider stays locked once a shot is fired.</li>
-			<li><b>copy replay</b> — a link with seed, rate and every launch; opening it re-flies the run, checks the recorded result, then lets you continue.</li>
-		</ul>
-	</div>
-	<div class="group">
-		<div class="caption"><span>photos</span><span>postcards</span></div>
-		<ul class="helpList">
-			<li><b>when</b> — entering a planet’s port orbit shows the system from space; landing shows the surface (a gas giant gets an air platform).</li>
-			<li><b>where</b> — bottom-left, scaled to the free space; on a small screen the card becomes a 256 px overlay.</li>
-			<li><b>art</b> — files in <i>photos/space/</i> and <i>photos/landed/</i>, named by planet type; without art a stylised placeholder of the same type is drawn.</li>
-		</ul>
-	</div>
-	<div class="group">
-		<div class="caption"><span>controls</span><span>shortcuts</span></div>
-		<div class="helpGrid">
-			<span>drag planet</span><b>aim direction &amp; speed</b>
-			<span>shift + drag</span><b>1/20 precision aim</b>
-			<span>click body</span><b>select for g slider (keeps shot)</b>
-			<span>g / ± sliders</span><b>attract / repel &amp; ±5% trim</b>
-			<span>enter / esc</span><b>launch / cancel aim</b>
-			<span>h or ?</span><b>toggle help drawer</b>
-			<span>space</span><b>pause background trade (lab)</b>
-			<span>− / + playback</span><b>watch the flight 0.25×…8× (physics unchanged)</b>
-			<span>photo card</span><b>new system / landing · click × to close</b>
+		<div>
+			<dt>Score</dt>
+			<dd id="helpScore">—</dd>
 		</div>
-	</div>
+		<div id="helpDetailRow" hidden>
+			<dt id="helpDetailLabel">Limit</dt>
+			<dd id="helpDetail"></dd>
+		</div>
+	</dl>
+	<div id="helpControls" class="helpControls">Drag from a planet to aim · Shift = fine · Enter = launch</div>
 </aside>
 
 <aside id="photoCard" class="photoCard" hidden aria-live="polite">
