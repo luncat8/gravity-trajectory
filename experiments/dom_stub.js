@@ -169,6 +169,11 @@ function loadPage(options = {}) {
 			element.checked = true;
 			fire(element.listeners, 'change', {});
 		},
+		toggle(id) {
+			const element = elements.get(id);
+			element.checked = !element.checked;
+			fire(element.listeners, 'change', {});
+		},
 		setValue(id, value) {
 			const element = elements.get(id);
 			element.value = String(value);

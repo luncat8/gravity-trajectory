@@ -130,7 +130,7 @@
 			score: 'Trajectory length only, until it lands or leaves the map. Systems and purse do not score.',
 			detailLabel: 'Start',
 			detail: 'Choose any free planet. A planet claimed by another player cannot be selected. No launch is needed—the finished traced plan is your entry.',
-			controls: 'Drag from a free planet to plan · Shift = fine · the leader updates live'
+			controls: 'Drag from a free planet to plan · Shift = fine · use best restores the longest finished plan'
 		},
 		money: {
 			name: 'money',
@@ -234,6 +234,7 @@
 	const trimTargetEl = $('trimTarget');
 	const launchButton = $('launch');
 	const clearButton = $('clear');
+	const routeBestBtn = $('routeBest');
 	const cargoHudEl = $('cargoHud');
 	const helpBtn = $('helpBtn');
 	const foldBtn = $('foldBtn');
@@ -258,14 +259,11 @@
 	const ruleTagEl = $('ruleTag');
 	const scoreHudEl = $('scoreHud');
 	const scoreRuleTagEl = $('scoreRuleTag');
-	const playerScoreNameEl = $('playerScoreName');
 	const playerScoreMetaEl = $('playerScoreMeta');
 	const rivalScoreRows = [$('scoreRival1'), $('scoreRival2')];
 	const rivalScoreEls = [$('rivalScore1'), $('rivalScore2')];
 	const rivalMetaEls = [$('rivalMeta1'), $('rivalMeta2')];
 	const rivalTagEl = $('rivalTag');
-	const playerTypeTagEl = $('playerTypeTag');
-	const playerUserEl = $('playerUser');
 	const playerBotEl = $('playerBot');
 	const botOffEl = $('botOff');
 	const botEasyEl = $('botEasy');
@@ -351,7 +349,7 @@
 	let hudPurseText = '';
 	let hudRuleText = '';
 	let hudRivalTagText = '';
-	let hudPlayerTypeText = '';
+	let hudRouteBestText = '';
 	let hudRivalText = '';
 	let hudReplayText = '';
 	let predGain = 0;
@@ -376,6 +374,8 @@
 	/* the player's one route entry; `ready` means its trace reached an end */
 	const routePlan = { ready: false, length: 0, steps: 0, visits: 0,
 		reason: GravitySim.END_OPEN, body: -1, origin: -1 };
+	/* the best manual plan is scoped to one start planet and one game run */
+	const routeBest = { ready: false, length: 0, origin: -1, angleU: 0, speedU: 0 };
 	let routeLeader = -2;
 	let routeBotVersion = -1;
 	let playerBotSyncNeeded = true;
@@ -726,6 +726,7 @@
 		blockedPlanet = -1;
 		blockedKind = 0;
 		blockedBy = -1;
+		if (routeRule() && routeBest.ready && pressPlanet !== aimBody) resetRouteBest();
 		savedArmed = armed;
 		savedBody = aimBody;
 		savedAngle = aimAngle;
@@ -886,6 +887,58 @@
 		if (routeRule()) game.shots.length = 0;
 	}
 
+	function refreshRouteBestUi() {
+		const shown = routeRule();
+		routeBestBtn.hidden = !shown;
+		routeBestBtn.disabled = !shown || !routeBest.ready || playerIsBot() || replay.on;
+		const text = routeBest.ready
+			? 'use best · ' + Math.round(routeBest.length) + ' px'
+			: 'use best';
+		if (text !== hudRouteBestText) {
+			hudRouteBestText = text;
+			routeBestBtn.textContent = text;
+		}
+		routeBestBtn.title = routeBest.ready
+			? 'restore ' + Math.round(routeBest.length) + ' px from ' + planetName(routeBest.origin)
+			: 'the longest finished plan for this planet is saved while you adjust aim';
+	}
+
+	function resetRouteBest() {
+		routeBest.ready = false;
+		routeBest.length = 0;
+		routeBest.origin = -1;
+		routeBest.angleU = 0;
+		routeBest.speedU = 0;
+		refreshRouteBestUi();
+	}
+
+	function rememberRouteBest() {
+		if (!routeRule() || playerIsBot() || replay.on || !routePlan.ready) return;
+		if (routePlan.origin !== aimBody || (!aiming && !armed)) return;
+		if (routeBest.ready && routeBest.origin === routePlan.origin &&
+			routeBest.length >= routePlan.length) return;
+		routeBest.ready = true;
+		routeBest.length = routePlan.length;
+		routeBest.origin = routePlan.origin;
+		routeBest.angleU = GravityGame.angleUnits(aimAngle);
+		routeBest.speedU = GravityGame.speedUnits(aimSpeed);
+		refreshRouteBestUi();
+	}
+
+	function restoreRouteBest() {
+		if (!routeRule() || !routeBest.ready || playerIsBot() || replay.on) return;
+		aimBody = routeBest.origin;
+		aimAngle = GravityGame.angleOf(routeBest.angleU);
+		aimSpeed = GravityGame.speedOf(routeBest.speedU);
+		aiming = false;
+		armed = true;
+		pressing = false;
+		savedArmed = false;
+		placeGripFromSpeed();
+		dirty = true;
+		hudAt = -Infinity;
+	}
+
 	function setRouteShot(origin, angle, speed) {
 		const angleU = GravityGame.angleUnits(angle);
 		const speedU = GravityGame.speedUnits(speed);
@@ -1008,6 +1061,7 @@
 		} else gravity.predict(aimBody, aimAngle, aimSpeed, budgetMs);
 		refreshPredGain();
 		syncRoutePlan();
+		rememberRouteBest();
 	}
 
 	/* a launch—and a copied route plan—always sees a finished path */
@@ -1017,6 +1071,7 @@
 		} else gravity.predict(aimBody, aimAngle, aimSpeed);
 		refreshPredGain();
 		syncRoutePlan();
+		rememberRouteBest();
 	}
 
 	function playerGoalDone() {
@@ -1091,12 +1146,8 @@
 		if (botHardEl) botHardEl.checked = game.bot === BOT_HARD;
 	}
 
-	function syncPlayerRadios() {
-		if (playerUserEl) playerUserEl.checked = game.player === PLAYER_USER;
-		if (playerBotEl) playerBotEl.checked = game.player === PLAYER_BOT;
-		if (playerScoreNameEl) {
-			playerScoreNameEl.textContent = game.player === PLAYER_BOT ? 'BOT' : 'YOU';
-		}
+	function syncPlayerControl() {
+		playerBotEl.checked = game.player === PLAYER_BOT;
 	}
 
 	function startGame(seed, fixedRate, rule, botLevel, playerType) {
@@ -1110,7 +1161,7 @@
 		if (playerType) game.player = playerType;
 		syncRuleRadios();
 		syncBotRadios();
-		syncPlayerRadios();
+		syncPlayerControl();
 		updateHelp(game.rule);
 		game.shots.length = 0;
 		game.steps = 0;
@@ -1118,6 +1169,7 @@
 		game.length = 0;
 		game.doneSteps = -1;
 		resetRoutePlan();
+		resetRouteBest();
 		playerBotSyncNeeded = true;
 		predGain = 0;
 		GravityGame.resetMarket(game.market);
@@ -1160,6 +1212,7 @@
 		linkNote = '';
 		game.on = false;
 		predGain = 0;
+		resetRouteBest();
 		updateRuleHelp(selectedHelpRule());
 		scene.setGameClock(false);
 		gravity.stepLimit = Infinity;
@@ -1527,8 +1580,7 @@
 		if (botEasyEl) botEasyEl.disabled = flightLock;
 		if (botNormalEl) botNormalEl.disabled = flightLock;
 		if (botHardEl) botHardEl.disabled = flightLock;
-		if (playerUserEl) playerUserEl.disabled = flightLock;
-		if (playerBotEl) playerBotEl.disabled = flightLock;
+		playerBotEl.disabled = flightLock;
 		scene.lockSpeed(game.on && (routeRule() || game.fixedRate ||
 			game.shots.length > 0 || replay.on));
 		clearButton.textContent = routeRule() ? 'clear plan' : game.on ? 'abort' : 'clear';
@@ -1559,6 +1611,7 @@
 		replaySkipBtn.hidden = !replay.on;
 		replaySpeedBtn.textContent = '×' + REPLAY_SPEEDS[replay.speed];
 		replayRowEl.hidden = !replay.on && replay.verdict === '';
+		refreshRouteBestUi();
 		hudAt = -Infinity;
 	}
 
@@ -1607,20 +1660,6 @@
 		if (game.bot === BOT_HARD) return '2 rivals · 1-ply';
 		if (game.bot === BOT_NORMAL) return '1 rival · route';
 		return '1 rival · greedy';
-	}
-
-	function playerTypeTagText() {
-		if (!playerIsBot()) return 'user';
-		const level = bot.playerLevel || BOT_NORMAL;
-		if (routeRule()) {
-			return bot.routeThinking()
-				? 'bot · planning ' + Math.round(bot.routeProgress() * 100) + ' %'
-				: 'bot · ' + level;
-		}
-		if (bot.thinking() && bot.jobRival === GravityBot.PLAYER_INDEX) {
-			return 'bot · thinking ' + Math.round(bot.progress() * 100) + ' %';
-		}
-		return 'bot · ' + level;
 	}
 
 	function playerSummary() {
@@ -1692,11 +1731,6 @@
 		if (rTag !== hudRivalTagText) {
 			hudRivalTagText = rTag;
 			if (rivalTagEl) rivalTagEl.textContent = rTag;
-		}
-		const pTag = playerTypeTagText();
-		if (pTag !== hudPlayerTypeText) {
-			hudPlayerTypeText = pTag;
-			if (playerTypeTagEl) playerTypeTagEl.textContent = pTag;
 		}
 		if (botCopyBtn && game.bot !== BOT_OFF) {
 			botCopyBtn.disabled = replay.on || bot.count === 0 ||
@@ -2701,6 +2735,7 @@
 		if (text !== hudAimText) {
 			hudAimText = text;
 			aimEl.textContent = text;
+			aimEl.title = text === '—' ? '' : text;
 		}
 		let tag = 'none selected';
 		if (hoverBody >= 0 && !aiming) {
@@ -2771,7 +2806,7 @@
 			: 'launch' + (game.on ? ' · ' + MONEY.cost.toFixed(2) : '');
 		launchButton.title = route
 			? 'Route is a planner: the finished traced trajectory is the entry'
-			: botPlayer ? 'Set YOU to user to aim and launch manually'
+			: botPlayer ? 'Clear bot in the YOU score row to aim and launch manually'
 			: broke
 			? 'The purse cannot cover a launch; this run is over'
 			: exitWarning ? 'Warning: predicted trajectory ends outside the system' : '';
@@ -2901,6 +2936,7 @@
 				gravity.routeStep(ROUTE_STEP_MS);
 				refreshPredGain();
 				syncRoutePlan();
+				rememberRouteBest();
 				refreshAimLabel();
 			}
 		} else if (gravity.status === STATUS_FLYING) {
@@ -2948,6 +2984,7 @@
 		hudAt = -Infinity;
 	});
 	launchButton.addEventListener('click', launch);
+	routeBestBtn.addEventListener('click', restoreRouteBest);
 	clearButton.addEventListener('click', () => {
 		if (playerIsBot()) return;
 		if (routeRule()) clearRoutePlan();
@@ -2992,8 +3029,9 @@
 			else if (!ruleHelpHold) setHelpOpen(false, true);
 		});
 	}
-	if (playerUserEl) playerUserEl.addEventListener('change', () => setPlayerType(PLAYER_USER));
-	if (playerBotEl) playerBotEl.addEventListener('change', () => setPlayerType(PLAYER_BOT));
+	playerBotEl.addEventListener('change', () => {
+		setPlayerType(playerBotEl.checked ? PLAYER_BOT : PLAYER_USER);
+	});
 	if (botOffEl) botOffEl.addEventListener('change', () => setBot(BOT_OFF));
 	if (botEasyEl) botEasyEl.addEventListener('change', () => setBot(BOT_EASY));
 	if (botNormalEl) botNormalEl.addEventListener('change', () => setBot(BOT_NORMAL));
@@ -3086,6 +3124,7 @@
 		playerType: () => game.player,
 		routeLength: () => routePlan.length,
 		routePlan: () => routePlan,
+		routeBest: () => routeBest,
 		routeOccupiedBy: routeOccupiedBy,
 		setHelpOpen: setHelpOpen,
 		helpOpen: () => helpOpen,

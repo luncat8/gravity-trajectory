@@ -780,6 +780,33 @@ check(game.shots.length === 1 && game.shots[0].origin === routeShot.p,
 check(cargo.routeMaxSteps === pageGame.ROUTE_STEPS + 2 && !cargo.routeActive,
 	'route preview is not the full safety horizon: ' + cargo.routeMaxSteps);
 check(routePoints > 100, 'route preview has too few points');
+
+/* a shorter adjustment cannot overwrite the saved best; restore exact snapped inputs */
+const savedBestLength = routePlan.length;
+const savedBestShot = Object.assign({}, game.shots[0]);
+check(gScene.routeBest().ready && gScene.routeBest().origin === routeShot.p &&
+	gScene.routeBest().length === savedBestLength && !ui.get('routeBest').disabled,
+	'finished route plan was not saved as best');
+const shorterRouteShot = findShot((g, p) => p === routeShot.p &&
+	(g.predReason === pageSim.END_IMPACT || g.predReason === pageSim.END_EXIT) &&
+	g.predLength < savedBestLength - 1);
+dragShot(shorterRouteShot);
+for (let i = 0; i < 200 && !gScene.routePlan().ready; i++) env.runFrames(1, 16.0);
+check(gScene.routePlan().ready && gScene.routePlan().length < savedBestLength &&
+	gScene.routeBest().length === savedBestLength &&
+	gScene.routeBest().angleU === savedBestShot.angle &&
+	gScene.routeBest().speedU === savedBestShot.speed,
+	'a weaker route adjustment overwrote the saved best');
+env.click('routeBest');
+env.runFrames(2, 16.0);
+for (let i = 0; i < 200 && !gScene.routePlan().ready; i++) env.runFrames(1, 16.0);
+check(gScene.routePlan().ready && gScene.routePlan().length === savedBestLength &&
+	game.shots[0].origin === savedBestShot.origin && game.shots[0].angle === savedBestShot.angle &&
+	game.shots[0].speed === savedBestShot.speed,
+	'use best did not restore the exact route aim');
+console.log('route best:', Math.round(gScene.routePlan().length) + ' px restored after',
+	Math.round(shorterRouteShot.speed) + ' px/s weaker adjustment');
+
 dragShot(routeShot);
 for (let i = 0; i < 200 && cargo.routeActive; i++) env.runFrames(1, 16.0);
 check(cargo.predTime === routeTime && cargo.predCount === routePoints && game.shots.length === 1,
@@ -826,11 +853,32 @@ check(cargo.predX[cargo.predCount - 1] === routeEndX &&
 console.log('route replay:', ui.get('replayReadout').textContent, '·', routeLink.slice(routeLink.indexOf('#')).length,
 	'char link · world stayed at t+07:00');
 
-/* YOU can be a bot: it plans in route mode, then auto-launches under tour */
-env.choose('playerBot');
+/* best is scoped to the start planet and is invalidated by a fresh run */
+dragShot(routeShot);
+for (let i = 0; i < 200 && !gScene.routePlan().ready; i++) env.runFrames(1, 16.0);
+check(gScene.routeBest().ready && gScene.routeBest().origin === routeShot.p,
+	'manual route did not recreate its best after replay');
+const otherRouteShot = findShot((g, p) => p !== occupied && p !== routeShot.p &&
+	(g.predReason === pageSim.END_IMPACT || g.predReason === pageSim.END_EXIT) && g.predTime > 1);
+env.dragAim(otherRouteShot.p, otherRouteShot.angle, otherRouteShot.speed);
+check(!gScene.routeBest().ready && ui.get('routeBest').disabled,
+	'changing the route start planet kept the old planet best');
 env.runFrames(2, 16.0);
-check(gScene.playerType() === 'bot' && ui.get('playerTypeTag').textContent.startsWith('bot ·'),
-	'YOU=bot was not selected/tagged: ' + ui.get('playerTypeTag').textContent);
+for (let i = 0; i < 200 && !gScene.routePlan().ready; i++) env.runFrames(1, 16.0);
+check(gScene.routeBest().ready && gScene.routeBest().origin === otherRouteShot.p,
+	'new route start did not get its own best');
+env.click('gameRestart');
+env.runFrames(2, 16.0);
+check(!gScene.routeBest().ready && ui.get('routeBest').disabled && game.shots.length === 0,
+	'restart did not clear the saved route best');
+
+/* YOU can be a bot: the scoreboard checkbox plans in route mode, then auto-launches under tour */
+check(ui.get('scorePlayer').tagName === 'LABEL' && !ui.get('playerBot').checked,
+	'YOU score row is not a user/bot switch');
+env.toggle('playerBot');
+env.runFrames(2, 16.0);
+check(gScene.playerType() === 'bot' && ui.get('playerBot').checked,
+	'YOU=bot was not selected in the scoreboard');
 for (let i = 0; i < 1000 && (!gScene.routePlan().ready || cargo.predCount < 2 ||
 	cargo.routeActive); i++) env.runFrames(1, 16.0);
 check(gScene.routePlan().ready && game.shots.length === 1 && cargo.predCount >= 2,
@@ -856,9 +904,9 @@ check(ui.get('launch').disabled && ui.get('launch').textContent === 'bot control
 	'manual launch stayed available for bot-controlled YOU');
 console.log('YOU=bot: route planned', Math.round(botRouteLength) + ' px',
 	'· tour auto-launched from P' + game.shots[0].origin);
-env.choose('playerUser');
+env.toggle('playerBot');
 env.runFrames(2, 16.0);
-check(gScene.playerType() === 'user', 'YOU=user was not restored');
+check(gScene.playerType() === 'user' && !ui.get('playerBot').checked, 'YOU=user was not restored');
 
 /* money rule + hard rivals (2 rivals on canvas) + solo toggle */
 env.choose('ruleMoney');

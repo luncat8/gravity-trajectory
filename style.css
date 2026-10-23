@@ -198,12 +198,53 @@ body {
 }
 
 .scorePlayer {
+	grid-template-columns: 38px minmax(0, 1fr);
 	border-color: var(--mint);
+	pointer-events: auto;
+	cursor: pointer;
+}
+
+#scorePlayer:has(input:not(:disabled)):hover {
+	background: rgba(142, 240, 192, 0.08);
+}
+
+#scorePlayer:focus-within {
+	outline: 1px solid rgba(142, 240, 192, 0.45);
+	outline-offset: 2px;
+}
+
+#scorePlayer:has(input:disabled) {
+	cursor: default;
 }
 
 .scorePlayer .scoreName,
 .scorePlayer .scoreValue {
 	color: var(--mint);
+}
+
+.scorePlayerName {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 3px;
+}
+
+.scoreBotToggle {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	color: var(--dim);
+	font-size: 9px;
+	font-weight: 500;
+	letter-spacing: 0;
+}
+
+.scoreBotToggle input {
+	width: 11px;
+	height: 11px;
+	margin: 0;
+	accent-color: var(--mint);
+	pointer-events: auto;
 }
 
 .scoreRivalOne {
@@ -327,6 +368,15 @@ body {
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-variant-numeric: tabular-nums;
 	font-weight: 600;
+}
+
+#aimReadout {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-align: right;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .stat.goalStat b {
@@ -475,6 +525,15 @@ body {
 	display: flex;
 	gap: 8px;
 	margin-top: 9px;
+}
+
+.cargoActions {
+	flex-wrap: wrap;
+}
+
+#routeBest {
+	flex: 0 0 100%;
+	white-space: nowrap;
 }
 
 button {
@@ -663,6 +722,14 @@ input:disabled {
 		grid-template-columns: 24px minmax(0, 1fr);
 		gap: 0 5px;
 		padding: 3px 0 3px 6px;
+	}
+
+	.scoreEntry.scorePlayer {
+		grid-template-columns: 34px minmax(0, 1fr);
+	}
+
+	.scoreBotToggle {
+		font-size: 8px;
 	}
 
 	.scoreValue {

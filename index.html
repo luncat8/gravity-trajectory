@@ -20,11 +20,14 @@
 			<div id="rivalRow" class="scoreStanding" hidden><b id="rivalReadout">—</b></div>
 		</div>
 		<div class="scoreRows">
-			<div class="scoreEntry scorePlayer">
-				<span id="playerScoreName" class="scoreName">YOU</span>
+			<label id="scorePlayer" class="scoreEntry scorePlayer" title="switch YOU between user and bot · restarts the run">
+				<span class="scoreName scorePlayerName">
+					<span id="playerScoreName">YOU</span>
+					<span class="scoreBotToggle"><input id="playerBot" type="checkbox" aria-label="bot controls YOU"> bot</span>
+				</span>
 				<b id="gameScore" class="scoreValue">0 / 26</b>
 				<span id="playerScoreMeta" class="scoreMeta">0 shots · purse 3.00</span>
-			</div>
+			</label>
 			<div id="scoreRival1" class="scoreEntry scoreRival scoreRivalOne" hidden>
 				<span class="scoreName">R1</span>
 				<b id="rivalScore1" class="scoreValue">—</b>
@@ -92,11 +95,6 @@
 				<label><input id="ruleRoute" type="radio" name="gameRule" value="route"> route</label>
 				<label><input id="ruleMoney" type="radio" name="gameRule" value="money"> money</label>
 			</div>
-			<div class="caption"><span>you</span><span id="playerTypeTag">user</span></div>
-			<div class="radioRow" role="radiogroup" aria-label="your player type">
-				<label><input id="playerUser" type="radio" name="playerType" value="user" checked> user</label>
-				<label><input id="playerBot" type="radio" name="playerType" value="bot"> bot</label>
-			</div>
 			<div class="caption"><span>rivals</span><span id="rivalTag">normal · 1 bot</span></div>
 			<div class="radioRow rivalRadios" role="radiogroup" aria-label="rival difficulty">
 				<label><input id="botOff" type="radio" name="gameBot" value="off"> off</label>
@@ -162,9 +160,10 @@
 		</div>
 	</div>
 
-	<div class="actions">
+	<div class="actions cargoActions">
 		<button id="launch" class="primary" disabled>launch</button>
 		<button id="clear">clear</button>
+		<button id="routeBest" class="miniBtn" title="restore the longest finished plan for this planet" hidden disabled>use best</button>
 	</div>
 
 	<div id="cargoHint">

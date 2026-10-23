@@ -26,15 +26,16 @@ Open `index.html` (`file://` works, no build, no modules).
 | release drag | arms the shot/plan and draws the predicted trajectory (and, outside `route`, system visits) |
 | enter / launch | fires the vessel under `tour`/`money`; disabled for a `route` plan or bot-controlled YOU |
 | esc | closes help or cancels the aim/plan |
-| clear / clear plan | resets the vessel, or removes the current `route` plan |
+| clear / clear plan | resets the vessel, or removes the current `route` plan; the saved best remains available |
+| `use best` (route) | restores the longest finished plan for the current start planet, with its exact snapped angle and speed |
 | gravity positions | radio group `planets` (static) / `ports` (`ports · moving`); launch base is always a static planet |
 | `? help` / `h` | toggles the mission & guide drawer (`tourist` / `emperor’s emissary`) |
 | space | pauses the trade background only (lab) |
 | mode `lab` / `game` | game: rebuilds the seeded world at `t+07:00`, freezes it between flights, locks gravity at `1` |
 | `abort` (game) | ends the running flight at the current step (recorded in the replay) |
-| rule `tour` / `route` / `money` (game) | tour: 120 s flight cap, score systems → shots → time; route: 1 800 s wall, score systems → route length → shots → time; money: 10 shots, score purse → systems → shots → time · switching restarts the seed |
+| rule `tour` / `route` / `money` (game) | tour: 120 s flight cap, score systems → shots → time; route: 1 800 s wall, score trajectory length; money: 10 shots, score purse → systems → shots → time · switching restarts the seed |
 | rivals `off` / `easy` / `normal` / `hard` | deterministic shared-market rivals in `tour`, `route` and `money` (`normal` default; `hard` fields 2 rivals with 1-ply lookahead) · switching restarts the seed |
-| scoreboard (upper-left, game only) | compares the player with each rival using the active rule’s score; player is mint, R1 violet and R2 rose |
+| scoreboard (upper-left, game only) | compares the player with each rival using the active rule’s score; player is mint, R1 violet and R2 rose · click the YOU row or its `bot` checkbox to switch user/bot control (restarts the run) |
 | purse & planet profits (game) | starts at `3.00`; each launch costs `1.00` (refused below `1.00`); each planet's fly-visit payout grows with unvisited game time (`+0.25` initial, resets to `+0.00` when visited by you or a rival, `+0.00625/s` up to `+0.75` cap) and is drawn as a live pill under every planet |
 | `restart` / `new seed` | same seed fresh start / random world |
 | `copy replay` / `copy rival` | copies your replay link (with `&rule=` and `&bot=` when active) or Rival 1's solo trajectory link |
@@ -57,7 +58,10 @@ Open `index.html` (`file://` works, no build, no modules).
   costs: the tracer is a resumable job (`GravitySim.routeBegin/routeStep`) that
   spends 4 ms per frame, so a 160 s preview never drops a frame, and the aim
   readout shows `computing 43 %` while it runs. Launching drains the job
-  synchronously. The 1 800 s wall is a net, not a routine end — measured: no
+  synchronously. The longest finished manual plan is remembered while aiming;
+  `use best` retraces its exact snapped inputs. That best is per start planet and
+  is cleared by a planet switch, restart, new seed, rule/player/field change, or
+  return to the lab. The 1 800 s wall is a net, not a routine end — measured: no
   unedited shot in the shipped world outlives ~160 s.
 - **Game mode, planet-profit market & rivals**: the world is rebuilt from a seed
   and advances only with fixed physics steps (`DT = 1/120 s`, field time
