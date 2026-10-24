@@ -45,7 +45,7 @@ Open `index.html` (`file://` works, no build, no modules).
 | career drawer · shop | one button per gear kind buys the next tier on that planet (`EMC-2 · 6.00`), `all N · …` applies it to every built pad of that kind and shows the total first; the rail and battery rows print the cap they would buy (`92 → 119 px/s`), and the panel row prints `+N kWh · ready in N s` from `light × power` and the pad's full-cap shot energy; below, ship parts (`hold`/`tank`/`engine`) are refitted at HQ only and print the stat they change and the HQ cap it costs (`8 → 24 t · 88 → 78 px/s`), with a free `back` button to the heaviest **owned** tier below the fitted one and `back no engine` to strip the engine (`Δv` of the whole fit is stated on the pad line and in every refit tooltip) |
 | career drawer · task board | delivery offers show `from → to`, good, tons, pay and time left with `accept` (needs a big enough hold and no other contract) / `drop`; the sport slot pays for one landing flight of at least the shown length |
 | career drawer · `copy` | every shop row has a `copy` button (the tier on offer, or the fitted one at max tier) that copies a paste-ready `tech: KIND ID { … }` balance line to the clipboard; on pages without clipboard access (`file://`) the line is shown in the drawer notice instead, and it stays enabled after the career ends |
-| career drawer · science | HQ research panel over the convex knowledge hull: `engine` `(thrust, mass)` and `catapult` `(maxForce, efficiency)` sliders, seeded from the tech tables, with a live preview (`inside hull · recombine` pays the base fee, outside pays base + `k·dist`) and `research` to accept a point into the hull (HQ only, purse-gated, free under `communism`); the accepted point is unlocked as a prototype: an engine joins the refit block (`fit`, free at HQ), a catapult joins the pad rows (`build`, the tech tables' upgrade rule, priced by its rung); hull points and `R#` inventions are listed per family, and `copy` gives every prototype its balance line |
+| career drawer · science | HQ research panel over the convex knowledge hull: `engine` `(thrust, mass)` and `catapult` `(maxForce, efficiency)` sliders, seeded from the tech tables, with a cost-surface plot (dashed box = per-axis researched range) and a live preview (`inside hull · recombine` pays the base fee, outside pays base + `k·(dist + frontier)` in normalized RU). Beyond the researched range each axis has its own `below`/`above` difficulty (`frontier ↓×… ↑×…`), so a light engine is far dearer than a heavy one and high efficiency dearer than low; the surcharge is added to the hull distance, not substituted for it. `copy knobs` copies the family's `frontier: … { below, above }` balance line (or shows it in the drawer notice on `file://`). `research` accepts the point into the hull (HQ only, purse-gated, free under `communism`); the accepted point is unlocked as a prototype: an engine joins the refit block (`fit`, free at HQ), a catapult joins the pad rows (`build`, the tech tables' upgrade rule, priced by its rung); hull points and `R#` inventions are listed per family, and `copy` gives every prototype its balance line |
 | `wait · 30 min` (career) | runs the world clock 30 minutes while nothing flies; a live settlement line and button tooltip state beforehand the exact pad kWh gained, board ageing / rotating offers (or `drops contract!` warning) and galaxy visit-profit growth |
 | `evacuate` (career) | buys the stranded ship a flight home to HQ (fee shown on the button) |
 | `abort` (game) | ends the running flight at the current step (recorded in the replay) |
@@ -110,7 +110,9 @@ Open `index.html` (`file://` works, no build, no modules).
   Art is optional — `photos/space|landed/<type>[-n].jpg|png`, see
   `photos/README.md` and the Krea 2 / MOSS-Image captions in
   `photos/prompts.md`; without a file a CSS postcard of the same planet type is
-  drawn. One card per planet and per landing, per run.
+  drawn. One card per planet and per landing, per run. Career adds three
+  optional scene cards (`photos/career/catapult|delivery|sport.jpg|png`), shown
+  once per run on the first launch, delivery and sport win.
 - **Secondary moons & belts**: coplanar moons and Saturn/rubble belts share each
   planet's orbital inclination, apocenter axis and spin direction, following
   Keplerian orbital speed scaled by planet gravity (`sqrt(|g|) · a^(-3/2)`) with
@@ -125,11 +127,11 @@ Open `index.html` (`file://` works, no build, no modules).
 - `orbit_sim.js` — orbital trade & colony simulation
 - `orbit_view.js` — trade renderer, coplanar Kepler moons & belts, camera `OrbitScene`
 - `orbit_tech.js` — career tech tables (catapults, panels, batteries, holds, engines, tanks, helpers), research prototype records placed on those ladders (`engineRecord`, `catapultRecord`, `interpolate`), and the launch & propulsion models: rail energy / force speed caps (with the optional experimental `forceScale`), ship mass with any slot refitted (`refitMass`), partial-tank rocket-equation `impulseDeltaV`/`impulseFuel`, thrust-capped single-burn `burnLimit`, solar charge, battery leak, bulk upgrade cost
-- `orbit_science.js` — knowledge hull (convex volume of discovered parameter vectors; cheap inside, `k·dist` outside, distance solved exactly by Wolfe's min-norm active set) with per-career hull instances (`createHull`/`previewHull`/`acceptHull`/`statsHull`/`pointsHull`) and a family-only default-hull API; backs the career science panel and the node benches
+- `orbit_science.js` — knowledge hull (convex volume of discovered parameter vectors; cheap inside, `k·dist` outside, distance solved exactly by Wolfe's min-norm active set) plus the directional frontier: per-axis min/max of discovered points and `below`/`above` difficulty weights add `k·frontier` beyond the researched range; per-career hull instances (`createHull`/`previewHull`/`acceptHull`/`statsHull`/`pointsHull`/`rangeHull`/`frontierWork`) and a family-only default-hull API; backs the career science panel and the node benches
 - `gravity_sim.js` — gravity field, planet-system visits, per-pass prediction log, headless `predictFast`/`predictBurnFast`, live `stepOne` flight & continuation (`predictFlight`/`predictBurn`, `burn`), career launch & burn gates (`setLaunchNetwork`, `canFire`, `speedLimit`, `canBurn`, `burnLimit`, `relocate`), the `speedAt`/`gripLength` drag map with optional ceiling and floor, and the experimental `setScales` multipliers
-- `gravity_game.js` — game rules (`tour`, `route`, `money`, `career`), aim grid, replay link codec (`rule`, `bot`, `cheat`, `gs`, `fs`, and `-b<step>.<angle>.<dv>` mid-flight burn suffixes), shared planet-profit market (`MONEY`, `createMarket`, `planetProfit`, `stepHarvest`, `estimateProfit`, `compareScores`), career state (pads, ship fuel & refuel, `careerBurn`, task board from the colony economy, hull-distance science research, evacuation, end condition)
+- `gravity_game.js` — game rules (`tour`, `route`, `money`, `career`), aim grid, replay link codec (`rule`, `bot`, `cheat`, `gs`, `fs`, and `-b<step>.<angle>.<dv>` mid-flight burn suffixes), shared planet-profit market (`MONEY`, `createMarket`, `planetProfit`, `stepHarvest`, `estimateProfit`, `compareScores`), career state (pads, ship fuel & refuel, `careerBurn`, task board from the colony economy, hull + directional frontier science research, evacuation, end condition)
 - `gravity_bot.js` — deterministic shared-market rivals for all game rules (`off`, `easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead, sliced search, `rivalLink`), plus the synchronous headless career controller (`careerPlan`, contract-preserving mid-flight `careerBurnPlan`, dead-end pad repair, task/pad/energy-wait scoring and between-flight shopping), with `setScales` fanning the experimental multipliers into every rival and probe sim
-- `photo_deck.js` — postcard popup: type → file candidates, captions, compact layout, purse toast
+- `photo_deck.js` — postcard popup: planet type and career scene → file candidates, captions, CSS fallback art, compact layout, purse toast
 - `gravity_field.js` — gravity-field backdrop renderer (direction → hue, potential gradient → lightness; WebGL 1 shader with slow-frame 1/4 fallback, automatic context-restore notification, and zero-alloc LUT 1/4-resolution 2D fallback)
 - `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game scoreboard, the flat mode row, career drawer (pad plate, shop, task board), the experimental gravity/force panel and replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
@@ -138,7 +140,9 @@ Open `index.html` (`file://` works, no build, no modules).
   (`dom_smoke.js`) on the shared vm page stub (`dom_stub.js`), and a real-browser
   HUD layout check (`layout_check.js`, needs `CHROME_PATH`) that asserts the
   action row stays reachable and never reflows while aiming
-- `photos/` — user art (`space/`, `landed/`), `README.md` (file spec),
-  `prompts.md` (14 captions for Krea 2 / MOSS-Image) and `generator/`
-  (`comfy_queue.py` queues the captions into ComfyUI and downloads the renders)
+- `photos/` — user art (`space/`, `landed/`, `career/`), `README.md` (file
+  spec), `prompts.md` (17 captions for Krea 2 / MOSS-Image: 14 planet views and
+  3 career scenes) and `generator/` (`comfy_queue.py` queues the captions into
+  ComfyUI and downloads the renders; `--situation career` writes the scene
+  cards)
 - `archive/` — standalone plans, worklogs and reference page

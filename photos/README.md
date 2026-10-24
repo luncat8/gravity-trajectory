@@ -1,24 +1,28 @@
 # planet photos
 
 Art for the postcard popup that appears when the cargo enters a new planet
-system or lands. The game works without any files here — a CSS postcard of the
-same planet type is drawn instead — so **images are optional and can be added
-one at a time**.
+system, lands, or (in career) launches, delivers, or wins a sport task. The
+game works without any files here — a CSS postcard of the same type or scene is
+drawn instead — so **images are optional and can be added one at a time**.
 
 ## drop files here
 
 ```
 photos/space/   <type>.jpg      the world seen from orbit
 photos/landed/  <type>.jpg      the surface, or the air platform on a gas giant
+photos/career/  <scene>.jpg     catapult, delivery, sport
 ```
 
 - `<type>` is one of `rock`, `terran`, `super`, `dwarf`, `mini`, `gas`, `ice`.
   The type comes from the seeded world, so a seed shows the pictures that match
   the worlds it actually generates.
+- `<scene>` is one of `catapult`, `delivery`, `sport`; career shows each scene's
+  card once per run (first launch, first delivery, first sport win).
 - `jpg` is tried first, then `png`. Both work.
-- Optional variants: `<type>-1`, `<type>-2`, `<type>-3` (e.g. `rock-2.jpg`).
-  The deck picks `1 + planetIndex % 3`, then falls back to the plain file, so a
-  texture you generate twice does not repeat on every rock world.
+- Optional variants (planet views only): `<type>-1`, `<type>-2`, `<type>-3`
+  (e.g. `rock-2.jpg`). The deck picks `1 + planetIndex % 3`, then falls back to
+  the plain file, so a texture you generate twice does not repeat on every rock
+  world. Career scenes read one plain file each, no variants.
 - Missing files are skipped without errors: variant → plain → CSS postcard.
 
 ## image spec
@@ -38,13 +42,15 @@ image, not on it.
 
 ## prompts
 
-`prompts.md` holds one ready caption per type and situation for **Krea 2** and
-**MOSS-Image**, plus the settings each model expects and a negative prompt.
+`prompts.md` holds 17 ready captions — 14 planet views and 3 career scenes —
+for **Krea 2** and **MOSS-Image**, plus the settings each model expects and a
+negative prompt.
 
 ## generator
 
 `generator/comfy_queue.py` queues every caption in `prompts.md` into a running
-ComfyUI server and downloads the renders straight into `space/` and `landed/`.
+ComfyUI server and downloads the renders straight into `space/`, `landed/` and
+`career/`.
 
 ```
 generator/image_krea2_turbo_t2i_int8.json   Krea 2 turbo API graph (exported template)
@@ -58,14 +64,16 @@ python3 photos/generator/comfy_queue.py --list            # what it will caption
 python3 photos/generator/comfy_queue.py                   # queue the missing ones
 python3 photos/generator/comfy_queue.py --collect         # download when done
 python3 photos/generator/comfy_queue.py --workflow moss --wait
+python3 photos/generator/comfy_queue.py --situation career --wait
 ```
 
 - Every ComfyUI *Save (API format)* json dropped into `generator/` is a
   template automatically — no script edit needed. `--workflow NAME` takes a
   file stem (`image_moss_image_t2i`), any unique part of one (`moss`), or `all`;
   without it the only template present is used, else the krea one.
-- `--types gas,ice` and `--situation landed` narrow the set, `--variants 2`
-  also writes `-2` files.
+- `--types gas,ice` and `--situation landed|space|career` narrow the set,
+  `--variants 2` also writes `-2` files for planet views. Career scenes always
+  get one file each (`photo_deck.js` reads no `-N` variants for them).
 - The exported graphs are **templates**: the script only patches the caption,
   the seed, the size (`3:2 (Photo)` · 1.5 MP = exactly 1536 × 1024) and the Save
   Image prefix. Nodes are found by `class_type`, so a re-export does not break
@@ -101,3 +109,4 @@ python3 photos/generator/comfy_queue.py --workflow moss --wait
 - [ ] mini · space / landed
 - [ ] gas · space / landed
 - [ ] ice · space / landed
+- [ ] career · catapult / delivery / sport

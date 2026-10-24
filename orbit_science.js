@@ -2,9 +2,13 @@
  * Knowledge volume (career science). Each tech family lives in an N-D
  * parameter space. Discovered items are points; anything inside their convex
  * hull is cheap (a recombination of known tradeoffs), outside costs
- * `k * dist` of new scientific work. Career axes are normalized before the
- * distance is measured, so unlike engineering units do not set the balance by
- * accident. Pure functions, no DOM, node-safe.
+ * `k * dist` of new scientific work. Beyond the per-axis researched range
+ * (min/max of the discovered points) a second, directional surcharge applies:
+ * every family has a `below`/`above` difficulty per axis, so a lighter engine
+ * is much harder to invent than a heavier one while high efficiency is harder
+ * than low. Both terms are measured in normalized research units (RU), so
+ * unlike engineering units do not set the balance by accident.
+ * Pure functions, no DOM, node-safe.
  *
  * A hull is a plain object from createHull(), so every career owns an
  * isolated knowledge volume; the module also keeps a default hull behind the
@@ -44,6 +48,23 @@
 		catapult: [1 / 30, 10.0]
 	};
 
+	/* Directional difficulty of extending the researched range: for each axis,
+	 * `below` weights one RU of overshoot under the smallest discovered value,
+	 * `above` one RU over the largest. Engineering intuition, not geometry:
+	 * shedding mass is hard (3.00) while adding it is cheap (0.20); pushing
+	 * efficiency past its known maximum is hard (2.50). Families or axes not
+	 * listed keep the plain hull price (no frontier surcharge). */
+	var FRONTIER = {
+		engine: [
+			{ below: 0.20, above: 0.90 },  // thrust kN: weaker easy, stronger hard
+			{ below: 3.00, above: 0.20 }   // mass t: lighter hard, heavier easy
+		],
+		catapult: [
+			{ below: 0.20, above: 1.00 },  // maxForce kN
+			{ below: 0.30, above: 2.50 }   // efficiency
+		]
+	};
+
 	function normalizedParams(family, params) {
 		var scale = METRIC_SCALE[family];
 		var out = new Array(params.length);
@@ -63,6 +84,46 @@
 			hull.families[family] = f;
 		}
 		return f;
+	}
+
+	/* per-axis min/max of the discovered points: the researched range whose
+	 * edges the directional surcharge starts from. Null for an empty family. */
+	function rangeHull(hull, family) {
+		var f = hull.families[family];
+		if (!f || f.n === 0) return null;
+		var min = new Array(f.dim);
+		var max = new Array(f.dim);
+		var i, d, v;
+		for (d = 0; d < f.dim; d++) {
+			min[d] = Infinity;
+			max[d] = -Infinity;
+		}
+		for (i = 0; i < f.points.length; i++) {
+			for (d = 0; d < f.dim; d++) {
+				v = f.points[i].params[d];
+				if (v < min[d]) min[d] = v;
+				if (v > max[d]) max[d] = v;
+			}
+		}
+		return { min: min, max: max };
+	}
+
+	/* weighted RU of new work for stepping outside the researched range;
+	 * an unconfigured family is pure hull geometry, as in the early benches. */
+	function frontierWork(hull, family, params) {
+		var dirs = FRONTIER[family];
+		var range = dirs ? rangeHull(hull, family) : null;
+		if (!range) return 0;
+		var scale = METRIC_SCALE[family];
+		var work = 0, d, unit, below, above;
+		for (d = 0; d < params.length && d < dirs.length; d++) {
+			unit = scale ? scale[d] : 1;
+			below = (range.min[d] - params[d]) * unit;
+			above = (params[d] - range.max[d]) * unit;
+			if (below > 0) work += below * dirs[d].below;
+			if (above > 0) work += above * dirs[d].above;
+		}
+		return work;
 	}
 
 	function dot(a, b) {
@@ -225,29 +286,34 @@
 		return { inside: inside, dist: inside ? 0 : dist };
 	}
 
-	/* research fee for one distance result: base fee, plus k·dist outside */
+	/* research fee for one preview: base fee, plus k·(hull distance + frontier
+	 * work) in normalized RU. The `inside` short circuit keeps recombinations
+	 * at exactly the base fee, even at a range edge. */
 	function priceOf(family, t) {
 		var base = BASE_PRICE[family] || 1.00;
-		var scale = TIER_SCALE[family] || 1.00;
-		return base + (t.inside ? 0 : K_DIST * t.dist * scale);
+		var rate = K_DIST * (TIER_SCALE[family] || 1.00);
+		if (t.inside) return base;
+		return base + rate * (t.dist + t.frontier);
 	}
 
 	/* Preview cost of a desired tuple before it is invented. */
 	function previewHull(hull, family, params) {
 		var f = hull.families[family];
 		if (!f || f.n === 0) {
-			return { inside: false, dist: Infinity, cost: Infinity };
+			return { inside: false, dist: Infinity, frontier: 0, cost: Infinity };
 		}
 		var t = distToHull(f, params, METRIC_SCALE[family]);
-		return { inside: t.inside, dist: t.dist, cost: priceOf(family, t) };
+		t.frontier = t.inside ? 0 : frontierWork(hull, family, params);
+		t.cost = priceOf(family, t);
+		return t;
 	}
 
-	/* Accept the invention: add the point, expanding the hull. */
+	/* Accept the invention: add the point, expanding the hull and its range. */
 	function acceptHull(hull, family, params, label) {
 		var f = ensureHull(hull, family, params.length);
 		f.points.push({ params: params.slice(), label: label || '' });
 		f.n = f.points.length;
-		return { inside: true, dist: 0, cost: BASE_PRICE[family] || 1.00 };
+		return { inside: true, dist: 0, frontier: 0, cost: BASE_PRICE[family] || 1.00 };
 	}
 
 	function statsHull(hull, family) {
@@ -287,10 +353,12 @@
 		acceptHull: acceptHull,
 		statsHull: statsHull,
 		pointsHull: pointsHull,
+		rangeHull: rangeHull,
+		frontierWork: frontierWork,
 		distToHull: distToHull,
 		normalizedParams: normalizedParams,
 		ensure: ensure, preview: preview, accept: accept, stats: stats,
-		BASE_PRICE: BASE_PRICE,
+		BASE_PRICE: BASE_PRICE, FRONTIER: FRONTIER,
 		TIER_SCALE: TIER_SCALE, METRIC_SCALE: METRIC_SCALE, K_DIST: K_DIST
 	};
 

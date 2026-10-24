@@ -8,10 +8,11 @@ and the Save Image prefix are patched per caption, everything else (models,
 sampler, prompt-refiner chain) stays exactly as exported, so a better graph can
 be dropped in without touching this script.
 
-    python3 photos/generator/comfy_queue.py --list             # 14 captions
+    python3 photos/generator/comfy_queue.py --list             # 17 captions
     python3 photos/generator/comfy_queue.py                    # queue missing ones
     python3 photos/generator/comfy_queue.py --collect          # download them
     python3 photos/generator/comfy_queue.py --workflow moss --wait
+    python3 photos/generator/comfy_queue.py --situation career --wait
 
 Zero dependencies, stdlib only. Nodes are found by class_type, never by the
 numeric id from the export, so re-exporting a graph does not break the script.
@@ -101,7 +102,7 @@ EXTS = ('.jpg', '.png')
 DEFAULT_SERVER = os.environ.get('COMFYUI', 'http://127.0.0.1:8188')
 
 CAPTION_ROW = re.compile(
-	r'^###\s+\d+\s*·\s*([a-z]+)\s*·\s*(from space|landed)\s*→\s*`([^`]+)`\s*$')
+	r'^###\s+\d+\s*·\s*([a-z]+)\s*·\s*(from space|landed|career)\s*→\s*`([^`]+)`\s*$')
 
 
 class ComfyError(RuntimeError):
@@ -120,7 +121,7 @@ def read_prompts(path):
 		if match:
 			type_, where, target = match.groups()
 			current = {'type': type_,
-				'situation': 'space' if where == 'from space' else 'landed',
+				'situation': 'space' if where == 'from space' else where,
 				'target': target, 'style': '', 'text': ''}
 			items.append(current)
 			continue
@@ -352,7 +353,7 @@ def save_outputs(server, entry, target):
 # --------------------------------------------------------------------- jobs
 
 def target_path(job, out_dir):
-	"""photos/space/rock.jpg -> <out>/space/rock[-N].jpg, matching photo_deck.js."""
+	"""photos/space/rock.jpg -> <out>/space/rock[-N].jpg (also career/), matching photo_deck.js."""
 	named = Path(job['target'])
 	stem = named.stem
 	if job['variant']:
@@ -380,7 +381,9 @@ def make_jobs(items, args, workflows):
 	jobs = []
 	for workflow in workflows:
 		for item in items:
-			for variant in range(args.variants):
+			# career cards have one scene key each; photo_deck.js reads no variants
+			pictures = 1 if item['situation'] == 'career' else args.variants
+			for variant in range(pictures):
 				job = dict(item)
 				job['workflow'] = workflow
 				job['variant'] = variant
@@ -522,8 +525,8 @@ def main(argv=None):
 		help='template to use: its json file stem, a unique part of one, or all '
 			'(default: the only template, else the krea one)')
 	parser.add_argument('--types', default='all',
-		help='comma list of rock,terran,super,dwarf,mini,gas,ice (default all)')
-	parser.add_argument('--situation', choices=['space', 'landed', 'both'], default='both')
+		help='comma list of rock,terran,super,dwarf,mini,gas,ice or catapult,delivery,sport (default all)')
+	parser.add_argument('--situation', choices=['space', 'landed', 'career', 'both'], default='both')
 	parser.add_argument('--variants', type=int, default=1,
 		help='pictures per caption; extra ones are saved as <type>-2, <type>-3')
 	parser.add_argument('--seed', type=int, default=None,

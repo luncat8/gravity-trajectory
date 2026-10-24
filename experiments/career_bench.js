@@ -174,6 +174,14 @@ for (const kind of Object.keys(OrbitTech.TABLES)) {
 		console.log('  ' + spec);
 	}
 }
+/* §10 frontier knobs are balance data too: print them in the same dump */
+for (const family of Object.keys(OrbitScience.FRONTIER)) {
+	const dirs = OrbitScience.FRONTIER[family];
+	for (let d = 0; d < dirs.length; d++) {
+		console.log('  frontier: ' + family.toUpperCase() + ' axis' + d +
+			' { below: ' + dirs[d].below.toFixed(2) + ', above: ' + dirs[d].above.toFixed(2) + ' }');
+	}
+}
 
 /* --- §6 headless career run on the real gravity sim --------------------- */
 
@@ -847,6 +855,22 @@ check('career science: tech tables seed the hull; research grows it for the prev
 	assert.strictEqual(career.research, 0);
 });
 
+check('career science: the purse pays the frontier surcharge and research expands the range', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career } = w;
+	const target = [26, 0.5];
+	const p = OrbitScience.previewHull(career.science, 'engine', target);
+	const hullOnly = OrbitScience.BASE_PRICE.engine + OrbitScience.K_DIST * p.dist;
+	assert.ok(p.frontier > 0 && p.cost > hullOnly + 1, 'frontier fee ' + p.cost + ' vs hull-only ' + hullOnly);
+	assert.strictEqual(GravityGame.researchCost(career, 'engine', target), p.cost);
+	career.ledger.purse = p.cost;
+	assert.ok(GravityGame.researchPoint(career, 'engine', target, 'R-light'));
+	assert.ok(Math.abs(career.ledger.purse) < 1e-9, 'exact fee spent: ' + career.ledger.purse);
+	assert.strictEqual(OrbitScience.rangeHull(career.science, 'engine').min[1], 0.5);
+	assert.strictEqual(OrbitScience.previewHull(career.science, 'engine', target).frontier, 0);
+});
+
 check('career science: research is HQ-only, open-career-only, affordable and a known family', () => {
 	const w = makeWorld(42);
 	startCareer(w, 42);
@@ -924,16 +948,95 @@ check('hull distance: every recombination of the near-collinear tech points is i
 	}
 });
 
-check('hull distance: default slider fees match the exact distances', () => {
+check('hull distance: default slider fees match the exact normalized distances', () => {
 	const h = techHull();
+	/* independent oracle: brute-force distance in the panel's RU metric */
+	const exactDist = (family, target) => {
+		const scale = OrbitScience.METRIC_SCALE[family];
+		const norm = p => p.map((v, d) => v * scale[d]);
+		return bruteHullDist(OrbitScience.pointsHull(h, family).map(p => norm(p.params)), norm(target));
+	};
+	const rate = family => OrbitScience.K_DIST * (OrbitScience.TIER_SCALE[family] || 1);
 	const engine = OrbitScience.previewHull(h, 'engine', [26, 1.8]);
-	assert.ok(!engine.inside && Math.abs(engine.dist - 0.049928) < 1e-6, 'engine dist ' + engine.dist);
-	assert.ok(Math.abs(engine.cost - (2 + 6 * 0.049928)) < 1e-5, 'engine fee ' + engine.cost);
+	const ed = exactDist('engine', [26, 1.8]);
+	assert.ok(!engine.inside && Math.abs(engine.dist - ed) < 1e-9, 'engine dist ' + engine.dist);
+	assert.strictEqual(engine.frontier, 0, 'the engine default is inside the researched range');
+	assert.ok(Math.abs(engine.cost - (OrbitScience.BASE_PRICE.engine + rate('engine') * ed)) < 1e-9,
+		'engine fee ' + engine.cost);
 	assert.ok(OrbitScience.previewHull(h, 'engine', [26, 1.75]).inside, '(26, 1.75) lies on the IMP-1/IMP-3 chord');
 	assert.ok(OrbitScience.previewHull(h, 'catapult', [100, 0.74]).inside, '(100, 0.74) is inside the EMC hull');
 	const cat = OrbitScience.previewHull(h, 'catapult', [100, 0.76]);
-	assert.ok(!cat.inside && Math.abs(cat.dist - 0.006061) < 1e-6, 'catapult dist ' + cat.dist);
-	assert.ok(Math.abs(cat.cost - (3 + 6 * 1.2 * 0.006061)) < 1e-5, 'catapult fee ' + cat.cost);
+	const cd = exactDist('catapult', [100, 0.76]);
+	assert.ok(!cat.inside && Math.abs(cat.dist - cd) < 1e-9, 'catapult dist ' + cat.dist);
+	assert.strictEqual(cat.frontier, 0, 'the catapult default is inside the researched range');
+	assert.ok(Math.abs(cat.cost - (OrbitScience.BASE_PRICE.catapult + rate('catapult') * cd)) < 1e-9,
+		'catapult fee ' + cat.cost);
+});
+
+/* --- §10 directional frontier: difficulty below/above the researched range --- */
+
+check('frontier: researched range is the hull min/max per axis', () => {
+	const h = techHull();
+	assert.deepStrictEqual(OrbitScience.rangeHull(h, 'engine').min, [12, 1]);
+	assert.deepStrictEqual(OrbitScience.rangeHull(h, 'engine').max, [40, 2.5]);
+	assert.deepStrictEqual(OrbitScience.rangeHull(h, 'catapult').min, [15, 0.62]);
+	assert.deepStrictEqual(OrbitScience.rangeHull(h, 'catapult').max, [180, 0.88]);
+	assert.strictEqual(OrbitScience.rangeHull(h, 'ghost'), null);
+	assert.strictEqual(OrbitScience.frontierWork(h, 'ghost', [1, 1]), 0);
+});
+
+check('frontier: a lighter engine is dearer than a heavier one at equal overshoot', () => {
+	const h = techHull();
+	const light = OrbitScience.previewHull(h, 'engine', [26, 0.5]);
+	const heavy = OrbitScience.previewHull(h, 'engine', [26, 3.0]);
+	/* min mass 1.0 / max 2.5: both step 0.5 t = 0.5 RU out of the range */
+	assert.ok(Math.abs(light.frontier - 1.5) < 1e-9, 'light frontier ' + light.frontier);
+	assert.ok(Math.abs(heavy.frontier - 0.1) < 1e-9, 'heavy frontier ' + heavy.frontier);
+	assert.ok(light.cost > heavy.cost * 1.5, 'light ' + light.cost + ' vs heavy ' + heavy.cost);
+	const rate = OrbitScience.K_DIST * OrbitScience.TIER_SCALE.engine;
+	for (const p of [light, heavy]) {
+		assert.ok(Math.abs(p.cost - (OrbitScience.BASE_PRICE.engine + rate * (p.dist + p.frontier))) < 1e-9);
+	}
+});
+
+check('frontier: higher efficiency is dearer than lower at equal overshoot', () => {
+	const h = techHull();
+	const low = OrbitScience.previewHull(h, 'catapult', [100, 0.57]);
+	const high = OrbitScience.previewHull(h, 'catapult', [100, 0.93]);
+	/* 0.05 efficiency = 0.5 RU; below ×0.30, above ×2.50 */
+	assert.ok(Math.abs(low.frontier - 0.15) < 1e-9, 'low frontier ' + low.frontier);
+	assert.ok(Math.abs(high.frontier - 1.25) < 1e-9, 'high frontier ' + high.frontier);
+	assert.ok(high.cost > low.cost, 'high ' + high.cost + ' vs low ' + low.cost);
+});
+
+check('frontier: inside the hull or an unconfigured family keeps the plain fee', () => {
+	const h = techHull();
+	const recomb = OrbitScience.previewHull(h, 'engine', [26, 1.75]);
+	assert.ok(recomb.inside && recomb.frontier === 0 && recomb.cost === OrbitScience.BASE_PRICE.engine);
+	const raw = OrbitScience.createHull();
+	OrbitScience.acceptHull(raw, 'f', [0, 0], 'a');
+	OrbitScience.acceptHull(raw, 'f', [10, 0], 'b');
+	const out = OrbitScience.previewHull(raw, 'f', [5, 4]);
+	assert.strictEqual(out.frontier, 0);
+	assert.ok(Math.abs(out.cost - ((OrbitScience.BASE_PRICE.f || 1) + OrbitScience.K_DIST * out.dist)) < 1e-9,
+		'unconfigured family fee ' + out.cost);
+});
+
+check('frontier: research expands the range so the next point pays less', () => {
+	const h = techHull();
+	const target = [26, 0.5];
+	const before = OrbitScience.previewHull(h, 'engine', target);
+	const afterPoint = [26, 0.7];
+	const beforeNeighbour = OrbitScience.previewHull(h, 'engine', afterPoint);
+	OrbitScience.acceptHull(h, 'engine', target, 'R-light');
+	assert.deepStrictEqual(OrbitScience.rangeHull(h, 'engine').min, [12, 0.5]);
+	const accepted = OrbitScience.previewHull(h, 'engine', target);
+	assert.ok(accepted.inside && accepted.frontier === 0 && accepted.cost === OrbitScience.BASE_PRICE.engine);
+	const after = OrbitScience.previewHull(h, 'engine', afterPoint);
+	assert.strictEqual(after.frontier, 0, '0.7 t is inside the new range');
+	assert.ok(after.cost < beforeNeighbour.cost,
+		'neighbour fee ' + after.cost + ' should fall below ' + beforeNeighbour.cost);
+	assert.ok(before.cost > accepted.cost);
 });
 
 check('hull distance: a thin sliver is classified exactly (regression: normal-equation solver)', () => {

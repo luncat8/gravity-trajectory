@@ -3668,6 +3668,21 @@
 		return '<' + tag + ' class="sciKnownHull" points="' + points.join(' ') + '"/>';
 	}
 
+	/* dashed bounds of the per-axis researched range: outside these lines the
+	 * directional frontier difficulty starts to add research work */
+	function scienceRangeHtml(career, family, axes) {
+		const range = OrbitScience.rangeHull(career.science, family);
+		if (!range) return '';
+		const x0 = sciencePlotX(axes[0], Math.max(axes[0].min, range.min[0]));
+		const x1 = sciencePlotX(axes[0], Math.min(axes[0].max, range.max[0]));
+		const y0 = sciencePlotY(axes[1], Math.min(axes[1].max, range.max[1]));
+		const y1 = sciencePlotY(axes[1], Math.max(axes[1].min, range.min[1]));
+		if (x1 - x0 < 0.5 || y1 - y0 < 0.5) return '';
+		return '<rect class="sciRange" x="' + x0.toFixed(2) + '" y="' + y0.toFixed(2) +
+			'" width="' + (x1 - x0).toFixed(2) + '" height="' + (y1 - y0).toFixed(2) +
+			'"><title>researched range: outside it new work has a directional cost</title></rect>';
+	}
+
 	function scienceCostColor(cost, base, max) {
 		if (max <= base + 1e-9) return SCI_PLOT_COLORS[0];
 		const t = Math.sqrt(Math.max(0, (cost - base) / (max - base)));
@@ -3709,6 +3724,7 @@
 		}
 		html += '<rect class="sciPlotFrame" x="' + SCI_PLOT.left + '" y="' + SCI_PLOT.top +
 			'" width="' + plotWidth + '" height="' + plotHeight + '"/>';
+		html += scienceRangeHtml(career, family, axes);
 		html += scienceHullOutlineHtml(career, family, axes);
 		const known = OrbitScience.pointsHull(career.science, family);
 		for (let i = 0; i < known.length; i++) {
@@ -3734,7 +3750,8 @@
 		html += '<text class="sciPlotLabel" transform="translate(7 67) rotate(-90)" text-anchor="middle">' +
 			axes[1].label + '</text>';
 		html += '</svg><div class="sciPlotLegend"><span><i></i>known ' + costText(base) +
-			'</span><span>max shown ' + costText(max) + '</span><span>◎ draft</span></div></div>';
+			'</span><span>max shown ' + costText(max) + '</span><span>◎ draft</span>' +
+			'<span>┄ researched range</span></div></div>';
 		return html;
 	}
 
@@ -3743,14 +3760,57 @@
 		const axes = family === OrbitTech.KIND_ENGINE
 			? '10 kN thrust = 1 t mass'
 			: '30 kN force = 0.10 efficiency';
-		return 'metric · ' + axes + ' = 1 RU · +' + rate + ' / RU outside';
+		return 'metric · ' + axes + ' = 1 RU · +' + rate + ' / RU of distance or frontier work';
+	}
+
+	/* the balance knobs themselves, so a player sees why one direction is dear */
+	function scienceFrontierText(family) {
+		const dirs = OrbitScience.FRONTIER[family];
+		if (!dirs) return '';
+		const axes = SCIENCE_AXES[family];
+		const parts = new Array(axes.length);
+		for (let i = 0; i < axes.length; i++) {
+			parts[i] = axes[i].key + ' ↓×' + dirs[i].below.toFixed(2) + ' ↑×' + dirs[i].above.toFixed(2);
+		}
+		return 'frontier · ' + parts.join(' · ') + ' · per RU beyond the researched range';
+	}
+
+	/* §11 balance tooling for the frontier knobs themselves: one paste-ready
+	 * line per family, usable in an LLM chat like the tech: spec lines */
+	function scienceSpecText(family) {
+		const dirs = OrbitScience.FRONTIER[family];
+		if (!dirs) return '';
+		const axes = SCIENCE_AXES[family];
+		const parts = new Array(axes.length);
+		for (let i = 0; i < axes.length; i++) {
+			parts[i] = axes[i].key + ': { below: ' + dirs[i].below.toFixed(2) +
+				', above: ' + dirs[i].above.toFixed(2) + ' }';
+		}
+		const scale = OrbitScience.METRIC_SCALE[family].map(v => Number(v.toFixed(4)));
+		return 'frontier: ' + family.toUpperCase() + ' { ' + parts.join(', ') + ' }\n' +
+			'metric: scale [' + scale.join(', ') + '] RU/unit · k ' + OrbitScience.K_DIST.toFixed(2) +
+			' · tier ' + (OrbitScience.TIER_SCALE[family] || 1).toFixed(2);
+	}
+
+	function careerCopyFrontier(family) {
+		const text = scienceSpecText(family);
+		if (!text) return;
+		const clipboard = navigator.clipboard;
+		if (!clipboard) {
+			careerNotice(text);
+			return;
+		}
+		clipboard.writeText(text).then(
+			() => careerNotice('copied ' + family + ' frontier knobs'),
+			() => careerNotice(text));
 	}
 
 	function sciencePreviewText(career, family) {
 		const params = scienceParams(family);
 		const p = GravityGame.researchPreview(career, family, params);
 		const where = p.inside ? 'inside hull · recombine' : 'outside · dist ' + p.dist.toFixed(3) + ' RU';
-		return scienceVectorText(family, params) + ' · ' + where +
+		const frontier = p.frontier > 1e-9 ? ' · frontier +' + p.frontier.toFixed(2) + ' RU' : '';
+		return scienceVectorText(family, params) + ' · ' + where + frontier +
 			' · fee ' + costText(GravityGame.researchCost(career, family, params));
 	}
 
@@ -3806,9 +3866,12 @@
 				'" aria-label="' + a.label + '"><span class="sciVal" id="sciVal' + i + '">' +
 				scienceAxisText(a, v) + '</span></div>';
 		}
-		html += '<div class="careerLine dim sciPreview" id="sciPreview" title="base fee inside the known hull, base + k·normalized distance outside">' +
+		html += '<div class="careerLine dim sciPreview" id="sciPreview" title="base fee inside the known hull; outside, base + k·(hull distance + directional frontier work) in RU">' +
 			sciencePreviewText(career, family) + '</div>';
 		html += '<div class="careerLine dim sciMetric">' + scienceMetricText(family) + '</div>';
+		html += '<div class="careerRow sciKnobsRow"><span class="careerLine dim sciMetric">' +
+			scienceFrontierText(family) + '</span><button class="miniBtn" data-act="sciCopy" data-family="' +
+			family + '" title="copy the frontier difficulty knobs for a balance chat">copy knobs</button></div>';
 		html += '<div class="careerRow sciAcceptRow"><span class="careerBtns">' +
 			scienceAcceptButton(career, family) + '</span></div>';
 		return html + scienceHullText(career);
@@ -4230,6 +4293,7 @@
 		if (act === 'evac') return careerEvacuate();
 		/* balance tooling stays available on a closed career */
 		if (act === 'copy') return careerCopySpec(data);
+		if (act === 'sciCopy') return careerCopyFrontier(data.family);
 		if (career.ended !== GravityGame.CAREER_OPEN) {
 			careerNotice('career over · restart for a new HQ');
 			return;

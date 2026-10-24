@@ -1,9 +1,11 @@
 # photo prompts — MOSS-Image (optimized)
 
-Fourteen captions: seven planet types × (from space, landed). Each caption is
-written as a **finished-image description** for MOSS-Image, which was trained
-on captions — not instructions. The model reads a caption as “this is what the
-finished picture shows.” The same paragraph works for MOSS Base or SFT.
+Seventeen captions: seven planet types × (from space, landed), plus three
+career scenes (catapult launch, cargo delivery, sport competition). Each
+caption is written as a **finished-image description** for MOSS-Image, which
+was trained on captions — not instructions. The model reads a caption as “this
+is what the finished picture shows.” The same paragraph works for MOSS Base or
+SFT.
 
 MOSS-Image is the recommended renderer for this project (superior texture and
 lighting vs Krea 2). The Krea-prompted set is preserved in
@@ -23,8 +25,9 @@ lighting vs Krea 2). The Krea-prompted set is preserved in
 
 Shared notes:
 
-- Save files exactly as `photos/space/<type>.jpg` or `photos/landed/<type>.jpg`
-  — see `README.md` for variant rule (`<type>-2.jpg`).
+- Save files exactly as `photos/space/<type>.jpg`, `photos/landed/<type>.jpg`
+  or `photos/career/<scene>.jpg` — see `README.md` for variant rule
+  (`<type>-2.jpg`, planet views only).
 - Keep the whole planet/platform inside the frame; keep subject clear of the
   extreme bottom edge (title block sits below image).
 - No lettering, logos or watermarks.
@@ -119,6 +122,31 @@ column is varied so a tour through many systems does not look like one filter.
 
 > Art-deco travel poster of a low platform on a frozen methane sea extending flat to a distant horizon. In the centre foreground, geometric white struts and a domed hangar with a cargo lander parked beside it are reflected perfectly in the glossy black ice surface, creating a symmetrical vertical mirror. Above, huge curtains of green aurora arc from the left horizon to the right, rippling in clean geometric folds. A small pale sun sits just above the flat horizon line in the centre distance, casting a thin gold line across the ice. The sky fades from black at the top to deep glacial blue at the horizon. Gold and glacial-blue palette, precise symmetry, bold geometry, subtle engraved line texture, elegant cold stillness.
 
+## career scenes
+
+Three optional cards for the career rule. The deck looks for one plain file per
+scene (`photos/career/<scene>.jpg` or `.png`) and shows a CSS postcard when it
+is missing, so these can be generated in any order. The generator writes them
+with `--situation career` and never makes variants of a career card.
+
+### 15 · catapult · career → `photos/career/catapult.jpg`
+
+*Style: photoreal industrial photograph.*
+
+> Photoreal industrial photograph of a long electromagnetic launch rail crossing a dusty plain on a small airless world. The rail fills the lower third of the frame, running from the lower left foreground toward a vanishing point near the right horizon; paired steel beams and evenly spaced copper coils catch low sunlight. A blunt silver cargo pod sits clamped in a cradle at the near end, and a thin cyan arc of stored charge runs between the coils. In the left middle distance, low solar-panel arrays and stacked battery modules make a dark silhouette in ochre dust. The horizon curves upward on the right, showing how small the world is, and a black sky with a pale white sun fills the top. Hard raking light from the upper right throws long shadows to the left; fine dust haze near the ground, muted rust, steel grey and cyan palette, sharp engineering detail on rails and cradle, no lettering.
+
+### 16 · delivery · career → `photos/career/delivery.jpg`
+
+*Style: warm documentary illustration.*
+
+> Warm documentary illustration of a cargo container being unloaded at a colony landing pad at dusk. In the centre foreground, a scuffed rectangular container hangs from a yellow gantry crane, its clamps open just above the deck of a small cargo lander. Two crew in bulky grey suits stand to the left, one guiding the load with a handheld control box, the other steadying a cable. On the right, low white habitat domes and a squat field of solar panels sit beyond the pad, their windows glowing amber. The concrete surface reflects the last warm light; crates and coiled hoses line the bottom edge. Above, a broad violet sky fades to deep indigo at the top, with two small moons near the upper left. Soft side light from the lower right, dust motes in the air, gentle painterly texture, warm amber and slate palette, quiet everyday mood, clear readable composition, no text.
+
+### 17 · sport · career → `photos/career/sport.jpg`
+
+*Style: retro-futurist race poster.*
+
+> Retro-futurist race poster painting of a timing gate in orbit at the finish of a long gravity-assisted flight. A slim silver cargo racer crosses the centre of the frame from left to right, nose toward the right edge, trailing a thin pale-blue arc of its curved trajectory behind it. A ring-shaped timing gate of weathered white struts and amber lamps frames the right third, with a checkered band painted across its inner rim. Below the gate, the dark blue limb of a planet curves along the bottom edge, a thin atmospheric glow separating it from black space. Small pennant flags and two tiny observer craft float near the upper left; a bright white star sits at the top right. Flat colour fields, subtle screen-print grain, crisp geometric shapes, teal, cream, amber and deep navy palette, generous black space above the racer, celebratory but calm, no lettering.
+
 ## what the deck does with them
 
 The popup appears bottom-left when a new planet system is entered (`space`) and
@@ -126,7 +154,9 @@ again on landing (`landed`); a gas giant landing is the air-platform picture.
 It keeps the aspect ratio and scales to the free space, falls back to a 256 px
 overlay on small screens, closes on × or after nine seconds, and never shows
 the same planet twice in one run. Every missing file simply shows the CSS
-postcard for that type — so generate in any order.
+postcard for that type — so generate in any order. Career shows the same card
+once per run on the first catapult launch, the first completed delivery, and
+the first won sport competition (`photos/career/<scene>.jpg|png`).
 
 ## generator
 
@@ -137,6 +167,7 @@ for usage. The MOSS template is `generator/image_moss_image_t2i.json`.
 python3 photos/generator/comfy_queue.py --list
 python3 photos/generator/comfy_queue.py --workflow moss
 python3 photos/generator/comfy_queue.py --workflow moss --wait
+python3 photos/generator/comfy_queue.py --workflow moss --situation career --wait
 ```
 
 ## references

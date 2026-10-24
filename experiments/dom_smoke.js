@@ -1951,8 +1951,10 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	check(sciBlock().includes('engine hull · 3 points') && sciBlock().includes('catapult hull · 5 points'),
 		'seeded hull summaries: ' + sciBlock());
 	check(sciScience.statsHull(sciCareer.science, 'engine').n === 3, 'career owns an isolated hull');
+	const defaultPreview = sciGame.researchPreview(sciCareer, 'engine', [26, 1.8]);
 	const defaultFee = sciGame.researchCost(sciCareer, 'engine', [26, 1.8]);
-	check(/outside · dist 0\.05 · fee 2\.30/.test(sciBlock()) && defaultFee > 2 && defaultFee < 2.5,
+	check(sciBlock().includes('outside · dist ' + defaultPreview.dist.toFixed(3) +
+		' RU · fee ' + defaultFee.toFixed(2)) && defaultFee > 2 && defaultFee < 2.5,
 		'default near-hull preview fee: ' + /id="sciPreview"[^>]*>([^<]+)/.exec(sciBlock())[1]);
 	check(!/data-act="sciAccept"[^>]*disabled/.test(sciBlock()), 'starter purse funds the first invention');
 
@@ -2088,6 +2090,63 @@ function protoOf(career, family, id) {
 		/<button[^>]*data-act="build" data-kind="catapult" data-item="R3"[^>]*disabled/.test(pShop()),
 		'same-rung prototype offered disabled on the built pad');
 	console.log('0.4.11 verified: research unlocks R1 engine / R2 catapult prototypes · fit free at HQ · build on pad · prototype copy');
+}
+
+/* --- 0.4.12: directional frontier fees and the researched-range plot --- */
+{
+	const fEnv = loadPage({ search: '?rule=career&seed=42&rate=1' });
+	fEnv.runFrames(2, 16.0);
+	const fUi = fEnv.elements;
+	const fScene = fEnv.context.GravityScene;
+	const fGame = fEnv.context.GravityGame;
+	const fSci = fEnv.context.OrbitScience;
+	const fCareer = fScene.career;
+	const fBox = fUi.get('careerBox');
+	const fBlock = () => fUi.get('careerScience').innerHTML;
+	function fClick(data) {
+		fEnv.fireElement(fBox, 'click', { target: { dataset: data } });
+	}
+	function fSlide(axis, value) {
+		fEnv.fireElement(fBox, 'input',
+			{ target: { dataset: { sciFamily: 'engine', sciAxis: axis }, value: value } });
+	}
+
+	check(/class="sciRange"/.test(fBlock()) && /researched range/.test(fBlock()),
+		'researched range drawn and labelled on the cost plot');
+	check(/frontier · thrust ↓×0\.20 ↑×0\.90 · mass ↓×3\.00 ↑×0\.20/.test(fBlock()),
+		'engine frontier rates shown: ' + fBlock().slice(-400));
+	check(/data-act="sciCopy" data-family="engine"/.test(fBlock()), 'frontier copy button');
+	fClick({ act: 'sciCopy', family: 'engine' });
+	check(/^frontier: ENGINE \{ thrust: \{ below: 0\.20, above: 0\.90 \}, mass: \{ below: 3\.00, above: 0\.20 \} \}/.test(fEnv.clipboardText),
+		'frontier knobs copied: ' + fEnv.clipboardText);
+	const light = fGame.researchPreview(fCareer, 'engine', [26, 0.5]);
+	const heavy = fGame.researchPreview(fCareer, 'engine', [26, 3.0]);
+	check(fGame.researchPreview(fCareer, 'engine', [26, 1.8]).frontier === 0 &&
+		light.frontier > 0 && light.cost > heavy.cost,
+		'light engines are dearer: ' + light.cost.toFixed(2) + ' vs ' + heavy.cost.toFixed(2));
+
+	/* dragging mass past the lower researched bound shows its surcharge live */
+	fSlide('mass', '0.5');
+	fScene.refreshCareerPanel();
+	check(/frontier \+1\.50 RU/.test(fBlock()) && /fee 17\.44/.test(fBlock()),
+		'frontier surcharge in the live preview: ' + /id="sciPreview"[^>]*>([^<]+)/.exec(fBlock())[1]);
+
+	fClick({ act: 'sciFamily', family: 'catapult' });
+	check(/efficiency ↓×0\.30 ↑×2\.50/.test(fBlock()), 'catapult frontier rates shown');
+	const low = fGame.researchPreview(fCareer, 'catapult', [100, 0.57]);
+	const high = fGame.researchPreview(fCareer, 'catapult', [100, 0.93]);
+	check(high.frontier > low.frontier && high.cost > low.cost, 'higher efficiency is dearer');
+
+	/* researching the light point expands the range for the next invention */
+	fClick({ act: 'sciFamily', family: 'engine' });
+	fSlide('mass', '0.5');
+	fCareer.ledger.purse = 100;
+	fClick({ act: 'sciAccept', kind: 'engine' });
+	check(fSci.rangeHull(fCareer.science, 'engine').min[1] === 0.5, 'research expands the low-mass frontier');
+	check(fGame.researchPreview(fCareer, 'engine', [26, 0.5]).frontier === 0,
+		'the accepted vertex no longer pays a surcharge');
+	console.log('0.4.12 verified: researched-range outline · frontier rates + copy knobs · ' +
+		'light-vs-heavy fee · live surcharge readout · efficiency direction · range expands on research');
 }
 
 console.log('paint calls', {

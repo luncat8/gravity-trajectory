@@ -914,6 +914,14 @@ input:disabled {
 	pointer-events: none;
 }
 
+.sciRange {
+	fill: none;
+	stroke: rgba(233, 196, 122, 0.7);
+	stroke-width: 0.8;
+	stroke-dasharray: 3 2.5;
+	pointer-events: none;
+}
+
 .sciKnownHull {
 	fill: rgba(142, 240, 192, 0.12);
 	stroke: var(--mint);
@@ -1011,6 +1019,19 @@ polyline.sciKnownHull {
 .sciMetric {
 	font-size: 9px;
 	line-height: 1.35;
+}
+
+.sciKnobsRow {
+	gap: 4px 7px;
+}
+
+.sciKnobsRow .sciMetric {
+	flex: 1 1 220px;
+	min-width: 0;
+}
+
+.sciKnobsRow .miniBtn {
+	margin-left: auto;
 }
 
 .sciHull {

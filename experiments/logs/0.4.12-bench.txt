@@ -1,0 +1,53 @@
+0.4.12 — directional science frontier + career image prompts
+
+node --check *.js experiments/*.js                          OK
+python3 -m py_compile photos/generator/comfy_queue.py      OK
+
+node experiments/gravity_bench.js      BENCH OK (5616 sweeps avg 0.277 ms, worst 2.173 ms)
+node experiments/colony_bench.js       COLONY BENCH OK (1622/1622)
+node experiments/game_bench.js         GAME BENCH OK (0 outcome flips, max drift 1.4e-6 px)
+node experiments/route_bench.js        ROUTE BENCH OK (31.3 ms in 8 slices, worst 4.01 ms)
+node experiments/bot_bench.js          BOT BENCH OK (6.19/15.76/39.38 ms decisions)
+node experiments/career_bench.js       CAREER BENCH OK (47 checks)
+node experiments/career_bot_bench.js   CAREER BOT BENCH OK
+node experiments/dom_smoke.js          SMOKE OK
+node experiments/layout_check.js       SKIPPED (CHROME_PATH unset)
+
+career_bench frontier dump (balance knobs)
+  frontier: ENGINE axis0 { below: 0.20, above: 0.90 }
+  frontier: ENGINE axis1 { below: 3.00, above: 0.20 }
+  frontier: CATAPULT axis0 { below: 0.20, above: 1.00 }
+  frontier: CATAPULT axis1 { below: 0.30, above: 2.50 }
+
+normalized RU fees (seeded tech hull); frontier = 0 inside the researched range
+  engine   (26, 1.8)   dist 0.044074 · fee 2.26
+  engine   (26, 1.75)  inside       · fee 2.00
+  catapult (100, 0.76) dist 0.054792 · fee 3.39
+  catapult (100, 0.74) inside       · fee 3.00
+  engine   (26, 0.5)   dist 1.0733 + frontier 1.50 · fee 17.44  (light, hard)
+  engine   (26, 3.0)   dist 1.1018 + frontier 0.10 · fee  9.21  (heavy, easy)
+  engine   (60, 0.5)   dist 2.8284 + frontier 3.30 · fee 38.77
+  catapult (100, 0.57) dist 1.4301 + frontier 0.15 · fee 14.38
+  catapult (100, 0.93) dist 1.5917 + frontier 1.25 · fee 23.46
+  catapult (220, 0.95) dist 1.5059 + frontier 3.08 · fee 36.04
+
+new checks
+  rangeHull = per-axis min/max of discovered points; empty family = null
+  light vs heavy engine at equal 0.5 RU overshoot: +9.00 vs +0.60 fee
+  efficiency above vs below at equal 0.5 RU overshoot: ×2.50 vs ×0.30
+  inside hull / unconfigured family keeps the plain base + k·dist fee
+  accepting (26, 0.5) moves min mass 1.0 → 0.5 and clears the surcharge
+  default slider fees re-checked against a brute-force oracle in RU metric
+  career researchPoint pays previewHull cost incl. frontier and expands range
+  dom_smoke 0.4.12: range box, frontier line + copy knobs, live surcharge
+    readout, both families' directions, range expands on research
+
+career bot runs unchanged (bot never researches)
+  s7 9.95 · s31 8.72 · s42 6.54 · s913 6.35 · 26 pads, 0 evacuations
+  scaled 10.83 (s42 g0.8 f1.5) · 6.60 (s7) · 6.32 (s42 g1.4 f0.6)
+
+photos/generator/comfy_queue.py --list                     17 captions
+  career rows: catapult/delivery/sport → photos/career/<scene>.jpg
+  --situation career --variants 2 --dry-run → 3 jobs (no -2 variants)
+  --workflow moss --types gas --situation landed --variants 3 --dry-run →
+  gas.jpg exists, gas-2.jpg + gas-3.jpg (planet variant rule unchanged)
