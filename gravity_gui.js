@@ -85,6 +85,10 @@
 		engine: { thrust: 26, mass: 1.8 },
 		catapult: { maxForce: 100, efficiency: 0.76 }
 	};
+	const SCI_PLOT_COLS = 24;
+	const SCI_PLOT_ROWS = 16;
+	const SCI_PLOT = { width: 220, height: 158, left: 28, top: 6, right: 6, bottom: 30 };
+	const SCI_PLOT_COLORS = ['#16453f', '#185061', '#255c70', '#4f5b58', '#75573e', '#965038', '#b44438'];
 	let scienceFamily = OrbitTech.KIND_ENGINE;
 	const scienceValues = {
 		engine: { thrust: SCIENCE_DEFAULTS.engine.thrust, mass: SCIENCE_DEFAULTS.engine.mass },
@@ -313,6 +317,7 @@
 	const clearButton = $('clear');
 	const routeBestBtn = $('routeBest');
 	const cargoHudEl = $('cargoHud');
+	const careerHudEl = $('careerHud');
 	const cargoFootEl = $('cargoFoot');
 	const flightRowEl = $('flightRow');
 	const bodyGroupEl = $('bodyGroup');
@@ -347,6 +352,10 @@
 	const careerPadEl = $('careerPad');
 	const careerShopEl = $('careerShop');
 	const careerScienceEl = $('careerScience');
+	const careerOperationsEl = $('careerOperations');
+	const careerSciencePanelEl = $('careerSciencePanel');
+	const careerOperationsTabEl = $('careerOperationsTab');
+	const careerScienceTabEl = $('careerScienceTab');
 	const careerTaskEl = $('careerTasks');
 	const careerWaitInfoEl = $('careerWaitInfo');
 	const careerWaitBtn = $('careerWait');
@@ -489,6 +498,8 @@
 	/* photo deck: one space view per planet and one surface view per landing, per run */
 	const photoSpace = new Uint8Array(PLANETS);
 	const photoLanded = new Uint8Array(PLANETS);
+	const PHOTO_CAREER = ['catapult', 'delivery', 'sport'];
+	const photoCareer = new Uint8Array(PHOTO_CAREER.length);
 
 	/* user helper tools: background candidate search reusing GravitySim slicing */
 	const helperProbe = new GravitySim(OrbitSim.WORLD_W, OrbitSim.WORLD_H);
@@ -817,6 +828,14 @@
 	function resetPlayback() {
 		playIndex = PLAY_DEFAULT;
 		refreshPlaybackUi();
+	}
+
+	function careerPhoto(kind) {
+		if (!root.PhotoDeck || !root.PhotoDeck.showCareer) return;
+		const index = PHOTO_CAREER.indexOf(kind);
+		if (index < 0 || photoCareer[index] === 1) return;
+		photoCareer[index] = 1;
+		root.PhotoDeck.showCareer(kind);
 	}
 
 	/* one postcard per new system, then the surface card when the cargo lands */
@@ -1333,8 +1352,10 @@
 		dirty = false;
 		sim.launch(aimBody, aimAngle, aimSpeed);
 		if (game.on) {
-			if (careerRule()) GravityGame.careerBeginFlight(game.career, sim);
-			else GravityGame.beginFlight(slotLedger(slot), sim);
+			if (careerRule()) {
+				GravityGame.careerBeginFlight(game.career, sim);
+				careerPhoto('catapult');
+			} else GravityGame.beginFlight(slotLedger(slot), sim);
 			if (slot > 0) bot.rivals[slot - 1].basePlanet = aimBody;
 		}
 		aiming = false;
@@ -1366,6 +1387,7 @@
 	function clearCargo() {
 		photoSpace.fill(0);
 		photoLanded.fill(0);
+		photoCareer.fill(0);
 		if (root.PhotoDeck) root.PhotoDeck.hide();
 		playAcc = 0;
 		gravity.clear();
@@ -2606,7 +2628,12 @@
 			game.doneSteps = game.steps + gravity.visitStep;
 		}
 		if (careerRule()) {
-			GravityGame.careerEndFlight(game.career, gravity, tradeSim, game.clockSteps);
+			const career = game.career;
+			const delivered = career.delivered;
+			const competitions = career.competitions;
+			GravityGame.careerEndFlight(career, gravity, tradeSim, game.clockSteps);
+			if (career.delivered > delivered) careerPhoto('delivery');
+			else if (career.competitions > competitions) careerPhoto('sport');
 			/* the shop follows the ship again after every landing / stranding */
 			careerFollow = true;
 		} else GravityGame.endFlight(game.money);
@@ -3002,6 +3029,7 @@
 		}
 		runBoxEl.hidden = !game.on;
 		if (careerBoxEl) careerBoxEl.hidden = !career;
+	if (careerHudEl) careerHudEl.hidden = !career;
 		if (rivalGroupEl) rivalGroupEl.hidden = !game.on || RULES[game.rule].solo;
 		syncModeRadios();
 		if (scoreHudEl) scoreHudEl.hidden = !game.on;
@@ -3590,10 +3618,138 @@
 		return '[' + parts.join(', ') + ']';
 	}
 
+	function sciencePlotX(axis, value) {
+		const width = SCI_PLOT.width - SCI_PLOT.left - SCI_PLOT.right;
+		return SCI_PLOT.left + (value - axis.min) / (axis.max - axis.min) * width;
+	}
+
+	function sciencePlotY(axis, value) {
+		const height = SCI_PLOT.height - SCI_PLOT.top - SCI_PLOT.bottom;
+		return SCI_PLOT.top + (axis.max - value) / (axis.max - axis.min) * height;
+	}
+
+	function scienceCross(o, a, b) {
+		return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+	}
+
+	/* monotone chain: tech records are chronological, not polygon order */
+	function scienceHullVertices(points) {
+		const sorted = new Array(points.length);
+		for (let i = 0; i < points.length; i++) sorted[i] = points[i].params;
+		sorted.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+		const lower = [];
+		const upper = [];
+		for (let i = 0; i < sorted.length; i++) {
+			while (lower.length >= 2 && scienceCross(lower[lower.length - 2], lower[lower.length - 1], sorted[i]) <= 0) {
+				lower.pop();
+			}
+			lower.push(sorted[i]);
+		}
+		for (let i = sorted.length - 1; i >= 0; i--) {
+			while (upper.length >= 2 && scienceCross(upper[upper.length - 2], upper[upper.length - 1], sorted[i]) <= 0) {
+				upper.pop();
+			}
+			upper.push(sorted[i]);
+		}
+		lower.pop();
+		upper.pop();
+		return lower.concat(upper);
+	}
+
+	function scienceHullOutlineHtml(career, family, axes) {
+		const vertices = scienceHullVertices(OrbitScience.pointsHull(career.science, family));
+		if (vertices.length < 2) return '';
+		const points = new Array(vertices.length);
+		for (let i = 0; i < vertices.length; i++) {
+			points[i] = sciencePlotX(axes[0], vertices[i][0]).toFixed(2) + ',' +
+				sciencePlotY(axes[1], vertices[i][1]).toFixed(2);
+		}
+		const tag = vertices.length === 2 ? 'polyline' : 'polygon';
+		return '<' + tag + ' class="sciKnownHull" points="' + points.join(' ') + '"/>';
+	}
+
+	function scienceCostColor(cost, base, max) {
+		if (max <= base + 1e-9) return SCI_PLOT_COLORS[0];
+		const t = Math.sqrt(Math.max(0, (cost - base) / (max - base)));
+		const index = Math.min(SCI_PLOT_COLORS.length - 1, Math.floor(t * SCI_PLOT_COLORS.length));
+		return SCI_PLOT_COLORS[index];
+	}
+
+	/* x/y are the two engineering parameters; colour is the actual career fee.
+	 * The expensive surface changes only with the hull, not on every slider tick. */
+	function sciencePlotHtml(career, family) {
+		const axes = SCIENCE_AXES[family];
+		const plotWidth = SCI_PLOT.width - SCI_PLOT.left - SCI_PLOT.right;
+		const plotHeight = SCI_PLOT.height - SCI_PLOT.top - SCI_PLOT.bottom;
+		const cellWidth = plotWidth / SCI_PLOT_COLS;
+		const cellHeight = plotHeight / SCI_PLOT_ROWS;
+		const costs = new Array(SCI_PLOT_COLS * SCI_PLOT_ROWS);
+		let max = 0;
+		for (let row = 0; row < SCI_PLOT_ROWS; row++) {
+			const y = axes[1].max - (row + 0.5) / SCI_PLOT_ROWS * (axes[1].max - axes[1].min);
+			for (let col = 0; col < SCI_PLOT_COLS; col++) {
+				const x = axes[0].min + (col + 0.5) / SCI_PLOT_COLS * (axes[0].max - axes[0].min);
+				const cost = GravityGame.researchCost(career, family, [x, y]);
+				costs[row * SCI_PLOT_COLS + col] = cost;
+				if (cost > max) max = cost;
+			}
+		}
+		const base = careerCost(career, OrbitScience.BASE_PRICE[family]);
+		let html = '<div class="sciPlotWrap"><svg id="sciCostPlot" class="sciPlot" viewBox="0 0 ' +
+			SCI_PLOT.width + ' ' + SCI_PLOT.height + '" role="img" aria-label="' + family +
+			' research fee over ' + axes[0].label + ' and ' + axes[1].label + '">';
+		for (let row = 0; row < SCI_PLOT_ROWS; row++) {
+			for (let col = 0; col < SCI_PLOT_COLS; col++) {
+				const cost = costs[row * SCI_PLOT_COLS + col];
+				html += '<rect x="' + (SCI_PLOT.left + col * cellWidth).toFixed(2) + '" y="' +
+					(SCI_PLOT.top + row * cellHeight).toFixed(2) + '" width="' + (cellWidth + 0.08).toFixed(2) +
+					'" height="' + (cellHeight + 0.08).toFixed(2) + '" fill="' +
+					scienceCostColor(cost, base, max) + '"/>';
+			}
+		}
+		html += '<rect class="sciPlotFrame" x="' + SCI_PLOT.left + '" y="' + SCI_PLOT.top +
+			'" width="' + plotWidth + '" height="' + plotHeight + '"/>';
+		html += scienceHullOutlineHtml(career, family, axes);
+		const known = OrbitScience.pointsHull(career.science, family);
+		for (let i = 0; i < known.length; i++) {
+			const p = known[i];
+			html += '<circle class="sciKnownPoint" cx="' + sciencePlotX(axes[0], p.params[0]).toFixed(2) +
+				'" cy="' + sciencePlotY(axes[1], p.params[1]).toFixed(2) + '" r="2"><title>' +
+				p.label + ' ' + scienceVectorText(family, p.params) + '</title></circle>';
+		}
+		const draft = scienceValues[family];
+		html += '<circle id="sciDraft" class="sciDraft" cx="' +
+			sciencePlotX(axes[0], draft[axes[0].key]).toFixed(2) + '" cy="' +
+			sciencePlotY(axes[1], draft[axes[1].key]).toFixed(2) + '" r="3.5"/>';
+		html += '<text class="sciPlotTick" x="' + SCI_PLOT.left + '" y="140">' +
+			scienceAxisText(axes[0], axes[0].min) + '</text>';
+		html += '<text class="sciPlotTick" x="' + (SCI_PLOT.width - SCI_PLOT.right) +
+			'" y="140" text-anchor="end">' + scienceAxisText(axes[0], axes[0].max) + '</text>';
+		html += '<text class="sciPlotTick" x="24" y="9" text-anchor="end">' +
+			scienceAxisText(axes[1], axes[1].max) + '</text>';
+		html += '<text class="sciPlotTick" x="24" y="131" text-anchor="end">' +
+			scienceAxisText(axes[1], axes[1].min) + '</text>';
+		html += '<text class="sciPlotLabel" x="' + (SCI_PLOT.left + plotWidth / 2) +
+			'" y="154" text-anchor="middle">' + axes[0].label + '</text>';
+		html += '<text class="sciPlotLabel" transform="translate(7 67) rotate(-90)" text-anchor="middle">' +
+			axes[1].label + '</text>';
+		html += '</svg><div class="sciPlotLegend"><span><i></i>known ' + costText(base) +
+			'</span><span>max shown ' + costText(max) + '</span><span>◎ draft</span></div></div>';
+		return html;
+	}
+
+	function scienceMetricText(family) {
+		const rate = (OrbitScience.K_DIST * (OrbitScience.TIER_SCALE[family] || 1)).toFixed(2);
+		const axes = family === OrbitTech.KIND_ENGINE
+			? '10 kN thrust = 1 t mass'
+			: '30 kN force = 0.10 efficiency';
+		return 'metric · ' + axes + ' = 1 RU · +' + rate + ' / RU outside';
+	}
+
 	function sciencePreviewText(career, family) {
 		const params = scienceParams(family);
 		const p = GravityGame.researchPreview(career, family, params);
-		const where = p.inside ? 'inside hull · recombine' : 'outside · dist ' + p.dist.toFixed(2);
+		const where = p.inside ? 'inside hull · recombine' : 'outside · dist ' + p.dist.toFixed(3) + ' RU';
 		return scienceVectorText(family, params) + ' · ' + where +
 			' · fee ' + costText(GravityGame.researchCost(career, family, params));
 	}
@@ -3630,8 +3786,9 @@
 	function scienceBlockHtml(career) {
 		const family = scienceFamily;
 		const axes = SCIENCE_AXES[family];
-		let html = '<div class="careerHead">science · hull research · HQ ' + planetName(career.hq) + '</div>';
-		html += '<div class="careerRow"><span class="careerBtns">';
+		let html = '<div class="careerHead">research lab · HQ ' + planetName(career.hq) +
+			' · purse ' + career.ledger.purse.toFixed(2) + '</div>';
+		html += '<div class="careerRow sciFamilyRow"><span class="careerBtns">';
 		for (let i = 0; i < GravityGame.SCIENCE_KINDS.length; i++) {
 			const kind = GravityGame.SCIENCE_KINDS[i];
 			html += '<button class="miniBtn' + (kind === family ? ' on' : '') +
@@ -3639,6 +3796,7 @@
 				'" title="research the ' + kind + ' parameter space">' + kind + '</button>';
 		}
 		html += '</span></div>';
+		html += sciencePlotHtml(career, family);
 		for (let i = 0; i < axes.length; i++) {
 			const a = axes[i];
 			const v = scienceValues[family][a.key];
@@ -3648,15 +3806,16 @@
 				'" aria-label="' + a.label + '"><span class="sciVal" id="sciVal' + i + '">' +
 				scienceAxisText(a, v) + '</span></div>';
 		}
-		html += '<div class="careerLine dim" id="sciPreview" title="base fee inside the known hull, base + k·dist outside">' +
+		html += '<div class="careerLine dim sciPreview" id="sciPreview" title="base fee inside the known hull, base + k·normalized distance outside">' +
 			sciencePreviewText(career, family) + '</div>';
-		html += '<div class="careerRow"><span class="careerBtns">' +
+		html += '<div class="careerLine dim sciMetric">' + scienceMetricText(family) + '</div>';
+		html += '<div class="careerRow sciAcceptRow"><span class="careerBtns">' +
 			scienceAcceptButton(career, family) + '</span></div>';
 		return html + scienceHullText(career);
 	}
 
-	/* sliders stay mounted while dragged, so an input only patches the readout
-	 * and the accept button; the full block re-renders on a family switch */
+	/* sliders stay mounted while dragged: patch the readout, draft marker and
+	 * accept button without resampling the cost surface */
 	function refreshScienceReadout(career) {
 		if (!careerScienceEl || !career) return;
 		const family = scienceFamily;
@@ -3667,6 +3826,12 @@
 		}
 		const previewEl = $('sciPreview');
 		if (previewEl) previewEl.textContent = sciencePreviewText(career, family);
+		const draftEl = $('sciDraft');
+		if (draftEl) {
+			const draft = scienceValues[family];
+			draftEl.setAttribute('cx', sciencePlotX(axes[0], draft[axes[0].key]));
+			draftEl.setAttribute('cy', sciencePlotY(axes[1], draft[axes[1].key]));
+		}
 		const acceptEl = $('sciAccept');
 		if (acceptEl) {
 			const cost = GravityGame.researchCost(career, family, scienceParams(family));
@@ -3904,8 +4069,31 @@
 		}
 	}
 
+	let careerTab = 'operations';
+
+	function refreshCareerTabs() {
+		if (!careerOperationsEl || !careerSciencePanelEl) return;
+		const science = careerTab === 'science';
+		careerOperationsEl.hidden = science;
+		careerSciencePanelEl.hidden = !science;
+		const tabs = [careerOperationsTabEl, careerScienceTabEl];
+		for (let i = 0; i < tabs.length; i++) {
+			const on = (i === 1) === science;
+			tabs[i].classList.toggle('on', on);
+			tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
+			tabs[i].tabIndex = on ? 0 : -1;
+		}
+	}
+
+	function careerSelectTab(tab) {
+		if (tab !== 'operations' && tab !== 'science') return;
+		careerTab = tab;
+		refreshCareerTabs();
+	}
+
 	function refreshCareerPanel() {
 		if (!careerBoxEl) return;
+		refreshCareerTabs();
 		if (!careerRule()) {
 			careerPadEl.innerHTML = '';
 			careerShopEl.innerHTML = '';
@@ -4033,9 +4221,11 @@
 
 	/* every shop / board button carries data-act (and its args) */
 	function careerAct(data) {
-		if (!careerRule() || gravity.status === STATUS_FLYING) return;
-		const career = game.career;
+		if (!careerRule()) return;
 		const act = data.act;
+		if (act === 'careerTab') return careerSelectTab(data.tab);
+		if (gravity.status === STATUS_FLYING) return;
+		const career = game.career;
 		if (act === 'wait') return careerWait();
 		if (act === 'evac') return careerEvacuate();
 		/* balance tooling stays available on a closed career */

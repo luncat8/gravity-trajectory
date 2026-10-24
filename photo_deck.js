@@ -34,6 +34,21 @@
 	];
 	const KINDS = ['space', 'landed'];
 	const CAPTIONS = [SPACE_CAPTIONS, LANDED_CAPTIONS];
+	const CAREER_SCENES = {
+		catapult: {
+			kicker: 'career · launch', title: 'EM-catapult launch',
+			caption: 'the rail releases a cargo ship into a gravity-led trajectory'
+		},
+		delivery: {
+			kicker: 'career · contract complete', title: 'Cargo delivered',
+			caption: 'a colony crew receives the shipment at the landing pad'
+		},
+		sport: {
+			kicker: 'career · competition', title: 'Long trajectory',
+			caption: 'a racing arc carried farther by gravity than by fuel'
+		}
+	};
+	const CAREER_SLUGS = ['catapult', 'delivery', 'sport'];
 	const VARIANTS = 3;
 	const EXTS = ['jpg', 'png'];
 	const HIDE_MS = 9000;
@@ -92,6 +107,13 @@
 		const list = [];
 		for (let i = 0; i < EXTS.length; i++) list.push(dir + variant + '.' + EXTS[i]);
 		for (let i = 0; i < EXTS.length; i++) list.push(dir + slug + '.' + EXTS[i]);
+		return list;
+	}
+
+	function careerCandidates(kind) {
+		if (!CAREER_SCENES[kind]) return [];
+		const list = [];
+		for (let i = 0; i < EXTS.length; i++) list.push('photos/career/' + kind + '.' + EXTS[i]);
 		return list;
 	}
 
@@ -198,18 +220,12 @@
 		toastPending = true;
 	}
 
-	function show(kind, type, planet) {
-		if (!refs.card) return;
+	function openCard(artClass, sources) {
 		toastPending = false;
-		const landed = kind === 'landed';
-		const cls = slugOf(type);
-		refs.kicker.textContent = landed ? 'landed · surface' : 'from space · new system';
-		refs.title.textContent = titleFor(planet, type);
-		refs.caption.textContent = captionFor(kind, type);
-		refs.art.className = 'photoArt ' + cls + (landed ? ' landed' : '');
+		refs.art.className = artClass;
 		refs.art.hidden = false;
 		refs.img.hidden = true;
-		pending = candidates(kind, type, planet);
+		pending = sources;
 		pendingAt = 0;
 		refs.card.hidden = false;
 		refs.card.classList.toggle('compact',
@@ -219,10 +235,32 @@
 		timer = setTimeout(hide, HIDE_MS);
 	}
 
+	function show(kind, type, planet) {
+		if (!refs.card) return;
+		const landed = kind === 'landed';
+		const cls = slugOf(type);
+		refs.kicker.textContent = landed ? 'landed · surface' : 'from space · new system';
+		refs.title.textContent = titleFor(planet, type);
+		refs.caption.textContent = captionFor(kind, type);
+		refs.img.alt = refs.title.textContent;
+		openCard('photoArt ' + cls + (landed ? ' landed' : ''), candidates(kind, type, planet));
+	}
+
+	/* career art has scene keys, not planet types; one optional jpg/png per scene */
+	function showCareer(kind) {
+		const scene = CAREER_SCENES[kind];
+		if (!refs.card || !scene) return;
+		refs.kicker.textContent = scene.kicker;
+		refs.title.textContent = scene.title;
+		refs.caption.textContent = scene.caption;
+		refs.img.alt = scene.title;
+		openCard('photoArt career ' + kind, careerCandidates(kind));
+	}
+
 	const PhotoDeck = {
-		SLUGS, LABELS, VARIANTS, TOAST_MS,
-		slugOf, captionFor, titleFor, variantOf, candidates, needsCompact,
-		attach, show, layout, hide, toast,
+		SLUGS, LABELS, CAREER_SLUGS, VARIANTS, TOAST_MS,
+		slugOf, captionFor, titleFor, variantOf, candidates, careerCandidates, needsCompact,
+		attach, show, showCareer, layout, hide, toast,
 		toastQueued: () => toastPending,
 		visible: () => Boolean(refs.card) && !refs.card.hidden
 	};

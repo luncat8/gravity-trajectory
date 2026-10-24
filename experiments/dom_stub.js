@@ -94,7 +94,9 @@ function makeElement(spec, paint, webglFactory) {
 		width: 0,
 		height: 0,
 		listeners: {},
+		attributes: {},
 		classList: makeClassList(),
+		setAttribute(name, value) { this.attributes[name] = String(value); },
 		addEventListener(type, fn) {
 			(this.listeners[type] || (this.listeners[type] = [])).push(fn);
 		},

@@ -112,6 +112,12 @@ body {
 	pointer-events: none;
 }
 
+#leftHud > #careerHud {
+	pointer-events: auto;
+	max-height: calc(100vh - 28px);
+	overflow-y: auto;
+}
+
 #cargoHud {
 	top: 14px;
 	right: 14px;
@@ -721,7 +727,38 @@ input:disabled {
 	gap: 6px 12px;
 }
 
-/* career drawer: planet picker, pad readout, shop rows, task board */
+/* career drawer: operations / science tabs, pad, shop and research lab */
+.careerTabs {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 3px;
+	margin: 2px 0 6px;
+	padding: 2px;
+	border: 1px solid var(--line);
+	border-radius: 9px;
+	background: rgba(2, 8, 16, 0.42);
+}
+
+.careerTab {
+	min-width: 0;
+	padding: 3px 5px;
+	border-color: transparent;
+	border-radius: 6px;
+	font-size: 10px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.careerTab.on {
+	border-color: rgba(255, 207, 110, 0.24);
+	background: rgba(255, 207, 110, 0.12);
+}
+
+#careerOperations,
+#careerSciencePanel {
+	min-width: 0;
+}
+
 .careerPick {
 	justify-content: space-between;
 	gap: 6px;
@@ -840,7 +877,104 @@ input:disabled {
 	font-size: 10px;
 }
 
-/* science research sliders: fill the row, wrap before the drawer can overflow */
+/* science: the fee surface is an inline SVG so file:// needs no library */
+.sciFamilyRow {
+	border-bottom: 0;
+}
+
+.sciFamilyRow .careerBtns,
+.sciAcceptRow .careerBtns {
+	width: 100%;
+	margin-left: 0;
+}
+
+.sciFamilyRow .miniBtn,
+.sciAcceptRow .miniBtn {
+	flex: 1 1 0;
+}
+
+.sciPlotWrap {
+	min-width: 0;
+	margin: 2px 0 5px;
+}
+
+.sciPlot {
+	display: block;
+	width: 100%;
+	height: auto;
+	min-width: 0;
+	border-radius: 6px;
+	background: rgba(2, 8, 16, 0.5);
+}
+
+.sciPlotFrame {
+	fill: none;
+	stroke: rgba(126, 180, 230, 0.26);
+	stroke-width: 0.7;
+	pointer-events: none;
+}
+
+.sciKnownHull {
+	fill: rgba(142, 240, 192, 0.12);
+	stroke: var(--mint);
+	stroke-width: 1.1;
+	stroke-linejoin: round;
+	pointer-events: none;
+}
+
+polyline.sciKnownHull {
+	fill: none;
+}
+
+.sciKnownPoint {
+	fill: var(--text);
+	stroke: #07101c;
+	stroke-width: 0.8;
+}
+
+.sciDraft {
+	fill: var(--accent);
+	stroke: #fff4d6;
+	stroke-width: 1.2;
+	pointer-events: none;
+}
+
+.sciPlotTick,
+.sciPlotLabel {
+	fill: var(--dim);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 7px;
+}
+
+.sciPlotLabel {
+	font-size: 7.5px;
+}
+
+.sciPlotLegend {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	gap: 1px 6px;
+	margin-top: 2px;
+	color: var(--dim);
+	font-size: 8.5px;
+	line-height: 1.35;
+}
+
+.sciPlotLegend span {
+	white-space: nowrap;
+}
+
+.sciPlotLegend i {
+	display: inline-block;
+	width: 6px;
+	height: 6px;
+	margin-right: 3px;
+	border-radius: 2px;
+	background: #16453f;
+}
+
+/* research sliders: fill the row, wrap before the drawer can overflow */
 .careerRow.sciAxis {
 	gap: 6px;
 }
@@ -859,6 +993,24 @@ input:disabled {
 	text-align: right;
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-size: 10px;
+}
+
+.sciPreview,
+.sciMetric {
+	overflow: visible;
+	white-space: normal;
+	text-overflow: clip;
+}
+
+.sciPreview {
+	margin-top: 3px;
+	color: var(--text);
+	font-size: 10px;
+}
+
+.sciMetric {
+	font-size: 9px;
+	line-height: 1.35;
 }
 
 .sciHull {
@@ -1029,10 +1181,6 @@ input:disabled {
 
 	#leftHud > .panel {
 		padding: 9px 10px;
-	}
-
-	#leftHud > #scoreHud {
-		padding: 8px 9px;
 	}
 
 	.scoreRuleTag {
@@ -1391,4 +1539,72 @@ input:disabled {
 		radial-gradient(ellipse 200px 26px at 50% 74%, rgba(180, 255, 220, 0.22), transparent 70%),
 		linear-gradient(180deg, rgba(120, 255, 190, 0.16) 0%, transparent 42%),
 		linear-gradient(180deg, transparent 63%, rgba(4, 14, 20, 0.5) 63%);
+}
+
+/* career scenes use the same postcard slot, with CSS stand-ins until art exists */
+.photoArt.career {
+	background: radial-gradient(110% 100% at 70% 15%, #182b3d 0%, #050b14 72%);
+}
+
+.photoArt.career.catapult::before {
+	left: 8%;
+	top: 72%;
+	width: 88%;
+	height: 9px;
+	margin: 0;
+	border-radius: 5px;
+	background: linear-gradient(180deg, #8ef0c0, #245f59 45%, #10252c 50%, #071018);
+	box-shadow: 0 0 18px rgba(103, 224, 255, 0.4);
+	transform: rotate(-13deg);
+}
+
+.photoArt.career.catapult::after {
+	background:
+		radial-gradient(ellipse 24px 8px at 68% 38%, #d6e7f5 0 35%, #415a70 42%, transparent 70%),
+		radial-gradient(1.5px 1.5px at 18% 28%, rgba(255, 255, 255, 0.7), transparent),
+		radial-gradient(1.2px 1.2px at 76% 18%, rgba(255, 255, 255, 0.55), transparent),
+		linear-gradient(165deg, transparent 58%, rgba(103, 224, 255, 0.14) 59%, transparent 62%);
+}
+
+.photoArt.career.delivery {
+	background: linear-gradient(180deg, #172c42 0%, #395a68 54%, #181f25 55%, #080d13 100%);
+}
+
+.photoArt.career.delivery::before {
+	left: 50%;
+	top: 62%;
+	width: 94px;
+	height: 62px;
+	margin: -31px 0 0 -47px;
+	border-radius: 16px 16px 5px 5px;
+	background: linear-gradient(135deg, #d6e7f5, #64788a 58%, #263746);
+	box-shadow: -26px 52px 0 -23px #64788a, 26px 52px 0 -23px #64788a;
+}
+
+.photoArt.career.delivery::after {
+	background:
+		linear-gradient(180deg, transparent 70%, rgba(3, 8, 16, 0.78) 70%),
+		repeating-linear-gradient(90deg, transparent 0 16px, rgba(255, 207, 110, 0.24) 16px 27px, transparent 27px 37px);
+}
+
+.photoArt.career.sport::before {
+	left: 50%;
+	top: 61%;
+	width: 238px;
+	height: 142px;
+	margin: -72px 0 0 -119px;
+	border: 2px solid transparent;
+	border-top-color: var(--accent);
+	border-radius: 50%;
+	background: transparent;
+	box-shadow: none;
+	transform: rotate(-12deg);
+}
+
+.photoArt.career.sport::after {
+	background:
+		radial-gradient(circle at 72% 33%, #fff4d6 0 2px, var(--accent) 3px, transparent 6px),
+		radial-gradient(1.5px 1.5px at 18% 28%, rgba(255, 255, 255, 0.7), transparent),
+		radial-gradient(1.2px 1.2px at 76% 18%, rgba(255, 255, 255, 0.55), transparent),
+		radial-gradient(1px 1px at 32% 66%, rgba(255, 255, 255, 0.5), transparent);
 }

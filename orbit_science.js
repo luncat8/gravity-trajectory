@@ -2,7 +2,9 @@
  * Knowledge volume (career science). Each tech family lives in an N-D
  * parameter space. Discovered items are points; anything inside their convex
  * hull is cheap (a recombination of known tradeoffs), outside costs
- * `k * dist` of new scientific work. Pure functions, no DOM, node-safe.
+ * `k * dist` of new scientific work. Career axes are normalized before the
+ * distance is measured, so unlike engineering units do not set the balance by
+ * accident. Pure functions, no DOM, node-safe.
  *
  * A hull is a plain object from createHull(), so every career owns an
  * isolated knowledge volume; the module also keeps a default hull behind the
@@ -23,7 +25,7 @@
 	var INSIDE_EPS = 1e-9; // relative to the target magnitude
 	var WOLFE_EPS = 1e-12;
 	var MAX_CYCLES = 64;
-	var K_DIST = 6.0; // purse per unit distance outside the hull
+	var K_DIST = 6.0; // purse per normalized research unit outside the hull
 
 	var BASE_PRICE = {
 		engine: 2.00, catapult: 3.00, panel: 1.50, battery: 1.00,
@@ -33,6 +35,21 @@
 		engine: 1.00, catapult: 1.20, panel: 0.90, battery: 1.00,
 		hold: 1.10, tank: 1.00
 	};
+
+	/* One normalized research unit is a deliberate invention step, not one
+	 * arbitrary engineering unit: 10 kN thrust ≈ 1 t engine mass, and
+	 * 30 kN rail force ≈ 0.10 efficiency. Unknown families stay unscaled. */
+	var METRIC_SCALE = {
+		engine: [0.1, 1.0],
+		catapult: [1 / 30, 10.0]
+	};
+
+	function normalizedParams(family, params) {
+		var scale = METRIC_SCALE[family];
+		var out = new Array(params.length);
+		for (var d = 0; d < params.length; d++) out[d] = params[d] * (scale ? scale[d] : 1);
+		return out;
+	}
 
 	/* one career's knowledge volume: family -> { points, n, dim } */
 	function createHull() {
@@ -149,17 +166,19 @@
 	/* Distance from the target to conv(points). Vertices are translated so the
 	 * target is the origin; the major cycle adds the vertex most against the
 	 * current nearest point until no vertex improves it (optimality certificate). */
-	function nearestHullDist(points, target) {
+	function nearestHullDist(points, target, scale) {
 		var n = points.length;
 		var dim = target.length;
 		var xs = new Array(n);
 		var idx, lam, x, i, d, pick, pv, v, xx, nn, cycle;
 		var bestNorm = Infinity, best = 0;
-		var absFloor = WOLFE_EPS * (1 + Math.sqrt(dot(target, target)));
+		var absFloor = WOLFE_EPS * (1 + normTarget(target, scale));
 		var absFloor2 = absFloor * absFloor;
 		for (i = 0; i < n; i++) {
 			xs[i] = new Array(dim);
-			for (d = 0; d < dim; d++) xs[i][d] = points[i].params[d] - target[d];
+			for (d = 0; d < dim; d++) {
+				xs[i][d] = (points[i].params[d] - target[d]) * (scale ? scale[d] : 1);
+			}
 			nn = dot(xs[i], xs[i]);
 			if (nn < bestNorm) {
 				bestNorm = nn;
@@ -189,15 +208,20 @@
 		return Math.sqrt(dot(x, x));
 	}
 
-	function normTarget(target) {
-		return Math.sqrt(dot(target, target));
+	function normTarget(target, scale) {
+		var norm = 0;
+		for (var d = 0; d < target.length; d++) {
+			var v = target[d] * (scale ? scale[d] : 1);
+			norm += v * v;
+		}
+		return Math.sqrt(norm);
 	}
 
-	/* distance from target to the family's hull, zero when inside */
-	function distToHull(f, target) {
+	/* distance in normalized research units; omitted scale keeps raw geometry */
+	function distToHull(f, target, scale) {
 		if (f.n === 0) return { inside: false, dist: Infinity };
-		var dist = nearestHullDist(f.points, target);
-		var inside = dist <= INSIDE_EPS * (1 + normTarget(target));
+		var dist = nearestHullDist(f.points, target, scale);
+		var inside = dist <= INSIDE_EPS * (1 + normTarget(target, scale));
 		return { inside: inside, dist: inside ? 0 : dist };
 	}
 
@@ -214,7 +238,7 @@
 		if (!f || f.n === 0) {
 			return { inside: false, dist: Infinity, cost: Infinity };
 		}
-		var t = distToHull(f, params);
+		var t = distToHull(f, params, METRIC_SCALE[family]);
 		return { inside: t.inside, dist: t.dist, cost: priceOf(family, t) };
 	}
 
@@ -264,9 +288,10 @@
 		statsHull: statsHull,
 		pointsHull: pointsHull,
 		distToHull: distToHull,
+		normalizedParams: normalizedParams,
 		ensure: ensure, preview: preview, accept: accept, stats: stats,
 		BASE_PRICE: BASE_PRICE,
-		TIER_SCALE: TIER_SCALE, K_DIST: K_DIST
+		TIER_SCALE: TIER_SCALE, METRIC_SCALE: METRIC_SCALE, K_DIST: K_DIST
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = OrbitScience;

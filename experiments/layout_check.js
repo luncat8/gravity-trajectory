@@ -222,21 +222,22 @@ async function scoreboardStable(page) {
 			await page.waitForSelector('#careerBox');
 			const label = width + 'x' + height + ' career';
 			const layout = await measure(page);
-			const drawer = await page.evaluate(() => {
-				const box = document.getElementById('careerBox');
-				const hud = document.getElementById('cargoHud').getBoundingClientRect();
-				const rect = box.getBoundingClientRect();
-				return {
-					visible: !box.hidden,
-					run: !document.getElementById('runBox').hidden,
-					rivals: document.getElementById('rivalGroup').hidden,
-					scrollWidth: box.scrollWidth,
-					width: rect.width,
-					inside: rect.left >= hud.left - 1 && rect.right <= hud.right + 1,
-					buttons: box.querySelectorAll('button').length,
-					pad: document.getElementById('careerPad').textContent.indexOf('kWh') >= 0
-				};
-			});
+const drawer = await page.evaluate(() => {
+	const box = document.getElementById('careerBox');
+	const panel = document.getElementById('careerHud');
+	const hud = panel.getBoundingClientRect();
+	const rect = box.getBoundingClientRect();
+	return {
+		visible: !box.hidden,
+		run: !document.getElementById('runBox').hidden,
+		rivals: document.getElementById('rivalGroup').hidden,
+		scrollWidth: box.scrollWidth,
+		width: rect.width,
+		inside: rect.left >= hud.left - 1 && rect.right <= hud.right + 1,
+		buttons: box.querySelectorAll('button').length,
+		pad: document.getElementById('careerPad').textContent.indexOf('kWh') >= 0
+	};
+});
 			check(errors.length === 0, label + ': page error ' + errors.join(' / '));
 			check(layout.footBottom <= layout.tradeTop, label + ': foot row overlaps the trade footer');
 			check(drawer.visible && drawer.run && drawer.rivals, label + ': boxes ' + JSON.stringify(drawer));

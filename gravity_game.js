@@ -463,6 +463,7 @@
 			burns: 0,
 			evacuations: 0,
 			delivered: 0,
+			competitions: 0,
 			earned: 0,
 			lastEnergy: 0,
 			lastReward: 0,
@@ -643,6 +644,7 @@
 		career.burns = 0;
 		career.evacuations = 0;
 		career.delivered = 0;
+		career.competitions = 0;
 		career.earned = 0;
 		career.lastEnergy = 0;
 		career.lastReward = 0;
@@ -896,6 +898,7 @@
 			if (task.kind !== TASK_COMPETE || sim.origin !== task.planet) continue;
 			if (sim.flightLength < task.minLength || step > task.deadline) continue;
 			pay(career, task.reward);
+			career.competitions += 1;
 			clearTask(task);
 		}
 		if (career.contract < 0) return;
