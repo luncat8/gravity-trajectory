@@ -1287,8 +1287,8 @@ check(sScene.game.clockSteps === waitSteps + Math.round(30 / (pageSim.DT * waitR
 check(Math.abs(shopEnv.context.OrbitScene.sim.t - (waitTrade + 30)) < 1e-6,
 	'wait moved the world ' + (shopEnv.context.OrbitScene.sim.t - waitTrade) + ' minutes');
 check(shopCareer.pads[far].chargeKwh > 0.1, 'wait did not charge the far pad: ' + shopCareer.pads[far].chargeKwh);
-check(sui.get('careerMsg').textContent.startsWith('waited 30 min'),
-	'wait note: ' + sui.get('careerMsg').textContent);
+check(/^waited 30 min · P\d+ pad (\+\d+\.\d\d kWh|already full|has no catapult)$/.test(
+	sui.get('careerMsg').textContent), 'wait note: ' + sui.get('careerMsg').textContent);
 taskClick(shopEnv, sui, { act: 'drop' });
 check(shopCareer.contract === -1 && shopCareer.ship.cargoTons === 0, 'drop kept the contract');
 console.log('career drawer:', 'built P' + far, '· bulk EMC-2 · hold', shopCareer.ship.hold.id,

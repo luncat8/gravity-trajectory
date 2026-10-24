@@ -3068,8 +3068,10 @@
 		gravity.fieldT = tradeSim.t;
 		gravity.predCount = 0;
 		const after = pad.catapult === null ? 0 : pad.chargeKwh;
-		careerNotice('waited ' + CAREER_WAIT_MIN + ' min · ' + planetName(planet) + ' pad +' +
-			(after - before).toFixed(2) + ' kWh');
+		const gain = after - before;
+		careerNotice('waited ' + CAREER_WAIT_MIN + ' min · ' + planetName(planet) + ' pad ' +
+			(gain > 0.005 ? '+' + gain.toFixed(2) + ' kWh'
+				: pad.catapult === null ? 'has no catapult' : 'already full'));
 		careerChanged();
 	}
 
