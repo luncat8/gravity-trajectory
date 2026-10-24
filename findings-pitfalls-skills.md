@@ -223,8 +223,11 @@ prediction buffers round away exactly the differences being measured.
 	button then cannot disagree, and a slider move only has to re-render.
 - Say what a purchase *changes*: the rail row prints `92 → 119 px/s`, the
 	battery row prints the cap it would add (usually nothing while the rail is
-	the limit), a panel row prints nothing because it moves recharge time, not
-	the cap. A row without a number is a row the player cannot judge.
+	the limit), and the panel row prints `+N kWh · ready in N s` from
+	`solarCharge` and full-cap `launchEnergy`. Any action that advances the
+	world (`wait · 30 min`) should preview its settled numbers from the exact
+	step count and leak/charge/board/market formulas that execute it. A row or
+	action without a number is one the player cannot judge.
 - Put the deciding number before the gear id in a `<select>`: a narrow picker
 	clips the tail, and `P4 · 118 px/s · EMC-2` survives that better than
 	`P4 · EMC-2 · 118 px/s`.
@@ -233,10 +236,10 @@ prediction buffers round away exactly the differences being measured.
 
 - When a control re-maps an input (a pad cap re-mapping the drag length), store
 	the mapping's parameter (`aimCeiling`) next to the derived input and re-place
-	the input whenever that parameter moves — in *both* directions. Clamping only
-	downwards leaves the grip dot pointing at a length the range no longer has
-	after the ceiling grows, and the dot then contradicts the armed shot until
-	the next pointer move.
+	the input whenever that parameter moves — in *both* directions, from *every*
+	path that moves the ceiling (slider input, `wait`, build, ship refit, cargo
+	load/drop). Clamping only downwards or only from the slider leaves the grip
+	dot contradicting the armed shot after a shop or wait edit.
 
 ## any finite plan beats no plan
 
@@ -251,3 +254,15 @@ prediction buffers round away exactly the differences being measured.
 	min-speed shots fall back home, and it went from "never finishes" to 26 pads
 	in 69 flights once the no-op was rejected. The default seeds were
 	bit-identical before and after, so only the scaled run could catch it.
+
+## full-screen WebGL backdrop with a 1/4-res 2D fallback
+
+- `gl_FragCoord.y` runs bottom-to-top while CSS/world `y` runs top-to-bottom:
+	set `uOrigin.y = (cssH - offY) / scale` and `uStep.y = -(cssH / fbH) / scale`
+	so the shader aligns pixel-for-pixel with the 2D canvases above it.
+- Create the WebGL context with `{ alpha: false, preserveDrawingBuffer: true }`
+	when caching static frames: skipping `drawArrays` on unchanged frames then
+	keeps the rendered field intact across compositor frames and screenshots.
+- In `dom_stub.js`, `getContext('webgl')` ignores its argument and returns the
+	2D paint stub; guard WebGL init with `gl && typeof gl.createShader === 'function'`
+	so headless tests exercise the 1/4-resolution 2D fallback cleanly.

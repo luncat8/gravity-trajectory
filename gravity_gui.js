@@ -67,6 +67,8 @@
 	};
 	/* one press of wait runs the world clock: 30 world minutes of sunlight */
 	const CAREER_WAIT_MIN = 30;
+	const VIEW_SPACE = 'space';
+	const VIEW_FIELD = 'field';
 	/* the flat mode row: lab has no rule, every other mode is a game rule */
 	const PLAY_LAB = 'lab';
 	/* route mode traces a 1 800 s shot in slices: per-frame slice of tracer work */
@@ -243,6 +245,8 @@
 
 	const canvas = $('g');
 	const ctx = canvas.getContext('2d');
+	const fieldCanvas = $('f');
+	const fieldRenderer = root.GravityField && fieldCanvas ? root.GravityField.create(fieldCanvas) : null;
 	const glow = makeGlow('rgba(92, 255, 139, 0.95)');
 	const impactGlow = makeGlow('rgba(255, 126, 160, 0.5)');
 
@@ -258,6 +262,9 @@
 	const lengthEl = $('lengthReadout');
 	const calcEl = $('calcReadout');
 	const bodyTagEl = $('bodyTag');
+	const viewTagEl = $('viewTag');
+	const viewSpaceEl = $('viewSpace');
+	const viewFieldEl = $('viewField');
 	const sourceTagEl = $('sourceTag');
 	const srcPlanetsEl = $('srcPlanets');
 	const srcPortsEl = $('srcPorts');
@@ -312,6 +319,7 @@
 	const careerPadEl = $('careerPad');
 	const careerShopEl = $('careerShop');
 	const careerTaskEl = $('careerTasks');
+	const careerWaitInfoEl = $('careerWaitInfo');
 	const careerWaitBtn = $('careerWait');
 	const careerEvacBtn = $('careerEvac');
 	const careerMsgEl = $('careerMsg');
@@ -377,6 +385,7 @@
 	/* the drag range the grip was placed on: a slider move invalidates it */
 	let aimCeiling = SPEED_MAX;
 	let mode = MODE_PLANETS;
+	let viewMode = VIEW_SPACE;
 	let pressing = false;
 	let pressPlanet = -1;
 	let pressClientX = 0;
@@ -571,6 +580,32 @@
 		if (!helpPinned) setHelpOpen(false, true);
 	}
 
+	function refreshViewUi() {
+		if (viewSpaceEl) viewSpaceEl.checked = viewMode === VIEW_SPACE;
+		if (viewFieldEl) viewFieldEl.checked = viewMode === VIEW_FIELD;
+		if (!viewTagEl) return;
+		if (viewMode !== VIEW_FIELD || !fieldRenderer) {
+			viewTagEl.textContent = 'space';
+			viewTagEl.title = 'starfield backdrop and gravity well rings';
+			return;
+		}
+		const gl = fieldRenderer.backend() === 'webgl';
+		const div = fieldRenderer.scaleDiv();
+		viewTagEl.textContent = gl
+			? 'hue · grad · WebGL' + (div > 1 ? ' 1/' + div : '')
+			: 'hue · grad · 1/' + div;
+		viewTagEl.title = 'hue = pull direction · lightness = potential gradient · ' +
+			(gl ? 'WebGL shader' : '1/' + div + ' 2D raster');
+	}
+
+	function setViewMode(next) {
+		viewMode = next === VIEW_FIELD ? VIEW_FIELD : VIEW_SPACE;
+		if (fieldCanvas) fieldCanvas.hidden = viewMode !== VIEW_FIELD;
+		if (scene.setBackdrop) scene.setBackdrop(viewMode !== VIEW_FIELD);
+		if (viewMode === VIEW_FIELD && fieldRenderer) fieldRenderer.invalidate();
+		refreshViewUi();
+	}
+
 	function resizeOverlay() {
 		const width = window.innerWidth;
 		const height = window.innerHeight;
@@ -579,6 +614,11 @@
 		canvas.height = Math.round(height * dpr);
 		canvas.style.width = width + 'px';
 		canvas.style.height = height + 'px';
+		if (fieldCanvas) {
+			fieldCanvas.style.width = width + 'px';
+			fieldCanvas.style.height = height + 'px';
+		}
+		if (fieldRenderer) fieldRenderer.invalidate();
 		reserveTradeFooter();
 		measureHudRects();
 	}
@@ -2587,6 +2627,8 @@
 		if (!search || search === '?') return false;
 		let params;
 		try { params = new URLSearchParams(search); } catch (e) { return false; }
+		const viewParam = params.get('view');
+		if (viewParam === VIEW_FIELD || viewParam === VIEW_SPACE) setViewMode(viewParam);
 		const hasGameHint = params.has('mode') || params.has('game') || params.has('rule') ||
 			params.has('seed') || params.has('rate') || params.has('bot') || params.has('src') ||
 			params.has('source') || params.has('player') || params.has('you') || params.has('shots');
@@ -2870,7 +2912,30 @@
 	 * answer "can this pad lift this cargo?" before the player buys; 0 = no pad */
 	function padCap(career, catapult, battery) {
 		if (catapult === null || battery === null) return 0;
-		return OrbitTech.speedLimit(battery.capacity, career.ship.mass, catapult, gravity.forceScale);
+		const cap = OrbitTech.speedLimit(battery.capacity, career.ship.mass, catapult, gravity.forceScale);
+		return cap > SPEED_MAX ? SPEED_MAX : cap;
+	}
+
+	function panelWaitKwh(career, planet, panel) {
+		return panel ? OrbitTech.solarCharge(panel, career.light[planet], CAREER_WAIT_MIN * 60) : 0;
+	}
+
+	/* kWh one wait adds to that pad's battery (solar over the wait, before the leak) */
+	function waitGain(career, planet, panel) {
+		const item = panel === undefined ? career.pads[planet].panel : panel;
+		return panelWaitKwh(career, planet, item).toFixed(2);
+	}
+
+	/* game-clock seconds of sunlight for `panel` on `planet` to cover one full-cap shot */
+	function panelReadySec(career, planet, pad, panel) {
+		const gain = panelWaitKwh(career, planet, panel);
+		const rate = scene.trade.speed;
+		if (gain <= 0 || rate <= 0) return 0;
+		const cat = pad.catapult || OrbitTech.CATAPULTS[0];
+		const bat = pad.battery || OrbitTech.BATTERIES[0];
+		const cap = padCap(career, cat, bat);
+		const shotKwh = cap > 0 ? OrbitTech.launchEnergy(career.ship.mass, cat, cap) : bat.capacity;
+		return Math.max(1, Math.round(shotKwh / gain * (CAREER_WAIT_MIN / rate)));
 	}
 
 	/* `91 → 132 px/s`: the cap a row's next tier would buy */
@@ -2882,9 +2947,14 @@
 		return from === to ? to + ' px/s' : from + ' → ' + to + ' px/s';
 	}
 
-	/* a rail or a battery moves the cap; a panel only moves the recharge time */
-	function gearCapText(career, pad, kind, next) {
-		if (kind === OrbitTech.KIND_PANEL) return '';
+	/* rails/batteries move the cap; panels move solar kWh/wait and full-shot ready time */
+	function gearCapText(career, planet, pad, kind, next) {
+		if (kind === OrbitTech.KIND_PANEL) {
+			const item = next || pad.panel;
+			if (!item) return '';
+			return '+' + waitGain(career, planet, item) + ' kWh · ready in ' +
+				panelReadySec(career, planet, pad, item) + ' s';
+		}
 		const now = padCap(career, pad.catapult, pad.battery);
 		if (next === null) return now > 0 ? Math.round(now) + ' px/s' : '';
 		/* a first catapult arrives with the starter panel and battery */
@@ -2960,8 +3030,7 @@
 		if (pad.catapult === null) {
 			const first = OrbitTech.CATAPULTS[0];
 			const cost = careerCost(career, first.buildCost);
-			const fresh = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity, ship.mass, first,
-				gravity.forceScale);
+			const fresh = padCap(career, first, OrbitTech.BATTERIES[0]);
 			html += '<div class="careerLine warn">no catapult here · build one or evacuate</div>' +
 				'<div class="careerRow"><span class="careerBtns">' +
 				shopButton('build ' + first.id + ' here · ' + costText(cost), 'build', 'catapult', 0,
@@ -2984,6 +3053,16 @@
 			: ' · full ' + Math.round(full) + ' px/s';
 		html += '<div class="careerLine dim">max ' + Math.round(limit) + ' px/s' + fullNote +
 			' · shot ' + shot.toFixed(2) + ' kWh</div>';
+		if (limit < SPEED_MIN && full >= SPEED_MIN) {
+			const need = OrbitTech.launchEnergy(ship.mass, pad.catapult, SPEED_MIN) - pad.chargeKwh;
+			const gain = panelWaitKwh(career, at, pad.panel);
+			const rate = scene.trade.speed;
+			if (need > 0 && gain > 0 && rate > 0) {
+				const sec = Math.max(1, Math.ceil(need / gain * (CAREER_WAIT_MIN / rate)));
+				html += '<div class="careerLine dim">solar +' + gain.toFixed(2) +
+					' kWh/wait · ready in ' + sec + ' s</div>';
+			}
+		}
 		if (full < GravitySim.SPEED_MIN) {
 			html += '<div class="careerLine warn">cannot lift ' + ship.mass.toFixed(1) +
 				' t · buy a bigger rail below</div>';
@@ -2997,14 +3076,20 @@
 		const next = nextTier(row.table, cur);
 		let html = '<div class="careerRow"><span class="careerKind">' + row.label + '</span>' +
 			'<span class="careerNow">' + (cur ? cur.id : 'none') + '</span>' +
-			capHtml(gearCapText(career, pad, row.kind, next)) + '<span class="careerBtns">';
+			capHtml(gearCapText(career, planet, pad, row.kind, next)) + '<span class="careerBtns">';
 		if (next === null) return html + '<i>max</i></span></div>';
 		if (cur === null && row.kind !== OrbitTech.KIND_CATAPULT) {
 			return html + '<i>needs a catapult</i></span></div>';
 		}
 		const buildCost = careerCost(career, next.buildCost);
+		const btnTitle = row.kind === OrbitTech.KIND_PANEL && cur
+			? 'build ' + next.id + ' on ' + planetName(planet) + ' · +' +
+				waitGain(career, planet, cur) + ' → +' + waitGain(career, planet, next) +
+				' kWh · ready in ' + panelReadySec(career, planet, pad, cur) + ' → ' +
+				panelReadySec(career, planet, pad, next) + ' s'
+			: 'build ' + next.id + ' on ' + planetName(planet);
 		html += shopButton(next.id + ' · ' + costText(buildCost), 'build', row.kind, tierIndex(row.table, next),
-			career.ledger.purse + 1e-9 < buildCost, 'build ' + next.id + ' on ' + planetName(planet));
+			career.ledger.purse + 1e-9 < buildCost, btnTitle);
 		let count = 0;
 		for (let i = 0; i < career.pads.length; i++) {
 			if (OrbitTech.upgrades(career.pads[i], row.kind, next)) count += 1;
@@ -3107,12 +3192,123 @@
 		careerPlanetEl.value = String(picked);
 	}
 
+	/* exact net kWh, board ageing and visit-profit growth one wait will settle */
+	function waitSettlement(career) {
+		const rate = scene.trade.speed;
+		const steps = Math.max(1, Math.round(CAREER_WAIT_MIN / (DT * rate)));
+		const minutes = steps * DT * rate;
+		const seconds = minutes * 60;
+		const gameSec = Math.round(steps * DT);
+		const nextStep = game.clockSteps + steps;
+		const here = career.at >= 0 ? career.at : career.hq;
+		let hereGain = 0;
+		let totalGain = 0;
+		let chargingPads = 0;
+		for (let i = 0; i < career.pads.length; i++) {
+			const pad = career.pads[i];
+			if (pad.catapult === null) continue;
+			const after = Math.min(pad.battery.capacity,
+				OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, minutes) +
+				OrbitTech.solarCharge(pad.panel, career.light[i], seconds));
+			const gain = after > pad.chargeKwh ? after - pad.chargeKwh : 0;
+			if (i === here) hereGain = gain;
+			if (gain > 0.005) {
+				totalGain += gain;
+				chargingPads += 1;
+			}
+		}
+		let rotating = 0;
+		for (let i = 0; i < career.tasks.length; i++) {
+			const task = career.tasks[i];
+			if (task.kind !== GravityGame.TASK_NONE && nextStep > task.deadline) rotating += 1;
+		}
+		const dropsContract = career.contract >= 0 &&
+			nextStep > career.tasks[career.contract].deadline;
+		let profitGain = 0;
+		let growingPlanets = 0;
+		for (let i = 0; i < PLANETS; i++) {
+			const d = GravityGame.planetProfit(game.market, i, nextStep) -
+				GravityGame.planetProfit(game.market, i, game.clockSteps);
+			if (d > 1e-6) {
+				profitGain += d;
+				growingPlanets += 1;
+			}
+		}
+		return {
+			steps,
+			gameSec,
+			here,
+			hereHasPad: career.pads[here].catapult !== null,
+			hereGain,
+			totalGain,
+			chargingPads,
+			rotating,
+			dropsContract,
+			profitGain,
+			growingPlanets
+		};
+	}
+
+	function refreshCareerWaitUi(career, ended) {
+		careerWaitBtn.disabled = ended || gravity.status === STATUS_FLYING;
+		if (ended) {
+			if (careerWaitInfoEl) {
+				careerWaitInfoEl.textContent = '';
+				careerWaitInfoEl.hidden = true;
+			}
+			careerWaitBtn.title = 'career has ended';
+			return;
+		}
+		const s = waitSettlement(career);
+		const hereName = planetName(s.here);
+		const padShort = s.hereGain > 0.005
+			? hereName + ' +' + s.hereGain.toFixed(2) + ' kWh' +
+				(s.chargingPads > 1 ? ' (+' + s.totalGain.toFixed(2) + ' all)' : '')
+			: s.totalGain > 0.005
+			? s.chargingPads + (s.chargingPads === 1 ? ' pad +' : ' pads +') + s.totalGain.toFixed(2) + ' kWh'
+			: s.hereHasPad ? hereName + ' full' : hereName + ' no pad';
+		const boardShort = s.dropsContract ? 'drops contract!'
+			: 'board −' + s.gameSec + ' s' + (s.rotating > 0 ? ' (' + s.rotating + ' exp)' : '');
+		const profitShort = s.profitGain > 0.005 ? 'visits +' + s.profitGain.toFixed(2) : 'visits max';
+		const line = 'wait → ' + padShort + ' · ' + boardShort + ' · ' + profitShort;
+		const padFull = s.hereHasPad
+			? (s.hereGain > 0.005
+				? hereName + ' +' + s.hereGain.toFixed(2) + ' kWh' +
+					(s.chargingPads > 1 ? ' (' + s.chargingPads + ' pads +' + s.totalGain.toFixed(2) + ' kWh)' : '')
+				: hereName + ' full (solar +' + waitGain(career, s.here) + ' kWh)' +
+					(s.totalGain > 0.005 ? ' · ' + s.chargingPads +
+						(s.chargingPads === 1 ? ' pad +' : ' pads +') + s.totalGain.toFixed(2) + ' kWh' : ''))
+			: hereName + ' has no pad' + (s.totalGain > 0.005
+				? ' · ' + s.chargingPads + (s.chargingPads === 1 ? ' pad +' : ' pads +') +
+					s.totalGain.toFixed(2) + ' kWh' : '');
+		const boardFull = s.dropsContract
+			? 'drops active contract!'
+			: 'board −' + s.gameSec + ' s' + (s.rotating > 0
+				? ' (' + s.rotating + (s.rotating === 1 ? ' offer rotates)' : ' offers rotate)') : '');
+		const profitFull = s.profitGain > 0.005
+			? 'planet visits +' + s.profitGain.toFixed(2) + ' (' + s.growingPlanets + ' growing)'
+			: 'planet visits at cap';
+		const title = 'wait ' + CAREER_WAIT_MIN + ' min (' + s.gameSec + ' s): ' +
+			padFull + ' · ' + boardFull + ' · ' + profitFull;
+		careerWaitBtn.title = title;
+		if (careerWaitInfoEl) {
+			careerWaitInfoEl.hidden = false;
+			careerWaitInfoEl.textContent = line;
+			careerWaitInfoEl.title = title;
+			careerWaitInfoEl.className = s.dropsContract ? 'careerLine warn' : 'careerLine dim';
+		}
+	}
+
 	function refreshCareerPanel() {
 		if (!careerBoxEl) return;
 		if (!careerRule()) {
 			careerPadEl.innerHTML = '';
 			careerShopEl.innerHTML = '';
 			careerTaskEl.innerHTML = '';
+			if (careerWaitInfoEl) {
+				careerWaitInfoEl.textContent = '';
+				careerWaitInfoEl.hidden = true;
+			}
 			careerNotice('');
 			return;
 		}
@@ -3123,19 +3319,14 @@
 		careerTaskEl.innerHTML = taskBlockHtml(career);
 		careerShopEl.innerHTML = shopBlockHtml(career);
 		const ended = career.ended !== GravityGame.CAREER_OPEN;
-		careerWaitBtn.disabled = ended || gravity.status === STATUS_FLYING;
-		const here = career.at >= 0 ? career.pads[career.at] : null;
-		careerWaitBtn.title = 'run the world clock ' + CAREER_WAIT_MIN + ' minutes' +
-			(here && here.panel
-				? ' · ' + planetName(career.at) + ' pad gains about ' +
-					waitGain(career, career.at) + ' kWh'
-				: '');
+		refreshCareerWaitUi(career, ended);
 		careerEvacBtn.disabled = ended || !career.stranded || gravity.status === STATUS_FLYING;
 		careerEvacBtn.textContent = 'evacuate · ' + costText(careerCost(career, GravityGame.CAREER.evacFee));
 	}
 
 	/* any career edit can change the armed shot, the clock and the board */
 	function careerChanged() {
+		clampArmedToPad();
 		launchState = -1;
 		dirty = true;
 		refreshGameUi();
@@ -3192,13 +3383,6 @@
 		GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
 		careerNotice('contract dropped');
 		careerChanged();
-	}
-
-	/* kWh one wait adds to that pad's battery (solar over the wait, before the leak) */
-	function waitGain(career, planet) {
-		const pad = career.pads[planet];
-		if (pad.catapult === null) return '0.00';
-		return OrbitTech.solarCharge(pad.panel, career.light[planet], CAREER_WAIT_MIN * 60).toFixed(2);
 	}
 
 	/* let the world clock run so every pad charges (and the board ages) */
@@ -3786,6 +3970,7 @@
 			const mag = g < 0 ? -g : g;
 			if (mag < 0.02) continue;
 			const level = i === selected ? 2 : i === hoverBody ? 1 : 0;
+			if (viewMode === VIEW_FIELD && level === 0) continue;
 			const colours = WELL_COLOURS[g < 0 ? 1 : 0];
 			ctx.beginPath();
 			ctx.arc(gravity.bodyX[i], gravity.bodyY[i],
@@ -4348,6 +4533,12 @@
 	}
 
 	function draw(now) {
+		if (viewMode === VIEW_FIELD && fieldRenderer) {
+			const prevDiv = fieldRenderer.scaleDiv();
+			fieldRenderer.render(gravity, view, window.innerWidth, window.innerHeight,
+				emaFrameMs > FPS_DROP_MS);
+			if (fieldRenderer.scaleDiv() !== prevDiv) refreshViewUi();
+		}
 		const blocked = activeBlockedPlanet(now);
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -4596,6 +4787,7 @@
 			gravity.fieldRate = rate;
 			gravity.stepStale = true;
 			if (!gravity.fieldStatic) fieldChanged();
+			if (careerRule()) refreshCareerPanel();
 		}
 		const rosterLocked = game.on && clockDriverFlying();
 		if (mode === MODE_PORTS && !rosterLocked && syncPortRoster()) fieldChanged();
@@ -4687,6 +4879,16 @@
 			fieldChanged();
 		}
 	});
+	if (viewSpaceEl) {
+		viewSpaceEl.addEventListener('change', () => {
+			if (viewSpaceEl.checked) setViewMode(VIEW_SPACE);
+		});
+	}
+	if (viewFieldEl) {
+		viewFieldEl.addEventListener('change', () => {
+			if (viewFieldEl.checked) setViewMode(VIEW_FIELD);
+		});
+	}
 	srcPlanetsEl.addEventListener('change', () => setSource(MODE_PLANETS));
 	srcPortsEl.addEventListener('change', () => setSource(MODE_PORTS));
 	trimSlider.addEventListener('input', onTrimInput);
@@ -4873,6 +5075,13 @@
 				return;
 			}
 		}
+		if (event.code === 'KeyF' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+			const tag = event.target && event.target.tagName;
+			if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+				setViewMode(viewMode === VIEW_FIELD ? VIEW_SPACE : VIEW_FIELD);
+				return;
+			}
+		}
 		if (event.code === 'Enter') {
 			if (!armed) return;
 			event.preventDefault();
@@ -4915,6 +5124,10 @@
 		careerNotice,
 		careerPickPlanet,
 		refreshCareerPanel,
+		waitSettlement: () => (game.career ? waitSettlement(game.career) : null),
+		viewMode: () => viewMode,
+		setViewMode,
+		fieldRenderer: () => fieldRenderer,
 		playMode: () => (game.on ? game.rule : PLAY_LAB),
 		setPlayMode,
 		speedCeiling,

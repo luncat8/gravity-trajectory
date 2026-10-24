@@ -1525,6 +1525,160 @@ console.log('career gate: stranded P' + bCargo.landedBody, '-> built EMC-1 · re
 console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s · stranded P' + strandedAt,
 	'→ evacuated · shop · wait · endgame cheat link ok');
 
+/* --- 0.4.7: gravity field view, panel shop numbers, pre-wait settlement & armed clamp --- */
+{
+	const fEnv = loadPage({ search: '?view=field' });
+	fEnv.runFrames(2, 16.0);
+	const fui = fEnv.elements;
+	const fScene = fEnv.context.GravityScene;
+	const oScene = fEnv.context.OrbitScene;
+	const fRenderer = fScene.fieldRenderer();
+	check(fScene.viewMode() === 'field' && fui.get('viewField').checked && !fui.get('f').hidden,
+		'?view=field activates field view');
+	check(oScene.backdropVisible() === false, 'field view hides opaque starfield backdrop');
+	check(fRenderer && fRenderer.backend() === '2d' && fRenderer.scaleDiv() === 4,
+		'VM stub uses 1/4-res 2D fallback');
+	check(fui.get('f').width === 320 && fui.get('f').height === 200,
+		'1/4 resolution canvas size: ' + fui.get('f').width + 'x' + fui.get('f').height);
+	check(fui.get('viewTag').textContent === 'hue · grad · 1/4',
+		'viewTag in 2D mode: ' + fui.get('viewTag').textContent);
+	const draws1 = fRenderer.draws();
+	check(draws1 === 1 && fEnv.calls.putImageData === 1, 'initial field frame painted once');
+	fEnv.runFrames(4, 16.0);
+	check(fRenderer.draws() === draws1 && fEnv.calls.putImageData === 1,
+		'static planets field skips redundant redraws');
+	const pix = fRenderer.pixels();
+	let litPixels = 0;
+	for (let i = 0; i < pix.length; i += 4) {
+		if (pix[i] > 10 || pix[i + 1] > 15 || pix[i + 2] > 25) litPixels += 1;
+	}
+	check(litPixels > 10000, 'field raster lights potential gradients: ' + litPixels);
+	fEnv.setValue('expGravity', '0');
+	fEnv.runFrames(2, 16.0);
+	check(fRenderer.draws() === draws1 + 1, 'changing g field invalidates static cache');
+	let darkOk = true;
+	for (let i = 0; i < pix.length; i += 4) {
+		if (pix[i] !== 2 || pix[i + 1] !== 6 || pix[i + 2] !== 12) {
+			darkOk = false;
+			break;
+		}
+	}
+	check(darkOk, 'zero gravity field collapses lightness to dark space base');
+	fEnv.setValue('expGravity', '1');
+	fEnv.fireWindow('keydown', { code: 'KeyF', key: 'f', target: { tagName: 'BODY' } });
+	check(fScene.viewMode() === 'space' && fui.get('f').hidden && oScene.backdropVisible(),
+		'KeyF toggles back to space view');
+	fEnv.choose('viewField');
+	check(fScene.viewMode() === 'field' && !fui.get('f').hidden && !oScene.backdropVisible(),
+		'viewField radio switches to gravity field');
+
+	const pEnv = loadPage({ search: '?mode=career&seed=42&rate=1' });
+	pEnv.runFrames(2, 16.0);
+	const pui = pEnv.elements;
+	const pScene = pEnv.context.GravityScene;
+	const pTech = pEnv.context.OrbitTech;
+	const pGame = pEnv.context.GravityGame;
+	const pCareer = pScene.career;
+	const hq = pCareer.hq;
+	const sp1 = pTech.PANELS[0];
+	const sp2 = pTech.PANELS[1];
+	const hqCap = Math.min(pageSim.SPEED_MAX,
+		pTech.speedLimit(pTech.BATTERIES[0].capacity, pCareer.ship.mass, pTech.CATAPULTS[0], 1));
+	const hqShotKwh = pTech.launchEnergy(pCareer.ship.mass, pTech.CATAPULTS[0], hqCap);
+	const sp2WaitKwh = pTech.solarCharge(sp2, pCareer.light[hq], 1800);
+	const sp2Ready = Math.max(1, Math.round(hqShotKwh / sp2WaitKwh * 30));
+	const expectPanelCap = '+' + sp2WaitKwh.toFixed(2) + ' kWh · ready in ' + sp2Ready + ' s';
+	check(pui.get('careerShop').innerHTML.includes('>' + expectPanelCap + '<'),
+		'panel shop row cap: expected ' + expectPanelCap + ' in ' + pui.get('careerShop').innerHTML);
+	check(pui.get('careerShop').innerHTML.includes('→ +' + sp2WaitKwh.toFixed(2) + ' kWh · ready in '),
+		'panel upgrade button title shows cur → next');
+
+	let dimPlanet = -1;
+	for (let i = 0; i < 26; i++) {
+		if (i !== hq && pCareer.light[i] < pCareer.light[hq] * 0.7) {
+			dimPlanet = i;
+			break;
+		}
+	}
+	check(dimPlanet >= 0, 'found dimmer planet than HQ');
+	pEnv.setValue('careerPlanet', String(dimPlanet));
+	pEnv.fireElement(pui.get('careerPlanet'), 'change');
+	const dimGain = pTech.solarCharge(sp1, pCareer.light[dimPlanet], 1800);
+	const dimReady = Math.max(1, Math.round(hqShotKwh / dimGain * 30));
+	const expectDim = '+' + dimGain.toFixed(2) + ' kWh · ready in ' + dimReady + ' s';
+	check(pui.get('careerShop').innerHTML.includes('>' + expectDim + '<'),
+		'dim planet panel row scales with light: expected ' + expectDim);
+	pEnv.setValue('careerPlanet', String(hq));
+	pEnv.fireElement(pui.get('careerPlanet'), 'change');
+
+	/* drain HQ pad below SPEED_MIN, verify drained solar ready note + exact pre-wait settlement */
+	pCareer.pads[hq].chargeKwh = 0.002;
+	pScene.refreshCareerPanel();
+	check(pui.get('careerPad').innerHTML.includes('kWh/wait · ready in '),
+		'drained pad states solar recharge countdown: ' + pui.get('careerPad').innerHTML);
+
+	pCareer.pads[hq].chargeKwh = 0.40;
+	pScene.refreshCareerPanel();
+	const pre = pScene.waitSettlement();
+	const waitInfo = pui.get('careerWaitInfo').textContent;
+	const waitTitle = pui.get('careerWait').title;
+	check(waitInfo.includes('P' + hq + ' +' + pre.hereGain.toFixed(2) + ' kWh') &&
+		waitInfo.includes('board −' + pre.gameSec + ' s') &&
+		waitInfo.includes('visits +' + pre.profitGain.toFixed(2)),
+		'careerWaitInfo states pad, board, visits before running: ' + waitInfo);
+	check(waitTitle.includes('P' + hq + ' +' + pre.hereGain.toFixed(2) + ' kWh') &&
+		waitTitle.includes('planet visits +' + pre.profitGain.toFixed(2)),
+		'careerWait title states exact settlement: ' + waitTitle);
+
+	/* arm a shot on the partially drained pad, then wait: grip re-clamps to the wider range */
+	pEnv.dragAim(hq, 0, pScene.speedCeiling(hq));
+	pEnv.runFrames(2, 16.0);
+	const beforeAim = pScene.aimState();
+	check(Math.abs(beforeAim.grip - pageSim.GRIP_MAX) < 1e-6, 'armed at rim before wait');
+
+	const chargeBefore = pCareer.pads[hq].chargeKwh;
+	const stepsBefore = pScene.game.clockSteps;
+	let profitBefore = 0;
+	for (let i = 0; i < 26; i++) profitBefore += pGame.planetProfit(pScene.game.market, i, stepsBefore);
+	pEnv.click('careerWait');
+	const settledKwh = pCareer.pads[hq].chargeKwh - chargeBefore;
+	const settledSteps = pScene.game.clockSteps - stepsBefore;
+	let profitAfter = 0;
+	for (let i = 0; i < 26; i++) profitAfter += pGame.planetProfit(pScene.game.market, i, pScene.game.clockSteps);
+	check(Math.abs(settledKwh - pre.hereGain) < 1e-9 && settledSteps === pre.steps &&
+		Math.abs((profitAfter - profitBefore) - pre.profitGain) < 1e-9,
+		'wait settlement preview matches actual settled kWh, steps and visit profit');
+	const afterAim = pScene.aimState();
+	check(afterAim.ceiling > beforeAim.ceiling && afterAim.grip < beforeAim.grip - 5,
+		'careerWait re-places armed grip onto the recharged range');
+
+	/* contract about to expire triggers warning state before wait runs */
+	pCareer.ship.hold = pTech.HOLDS[2];
+	let slot = -1;
+	for (let i = 0; i < pCareer.tasks.length; i++) {
+		if (pCareer.tasks[i].kind === pGame.TASK_DELIVERY) {
+			slot = i;
+			break;
+		}
+	}
+	check(slot >= 0 && pGame.acceptTask(pCareer, slot), 'accepted contract for expiry warning check');
+	pCareer.tasks[slot].deadline = pScene.game.clockSteps + 5;
+	pScene.refreshCareerPanel();
+	check(pui.get('careerWaitInfo').className.includes('warn') &&
+		pui.get('careerWaitInfo').textContent.includes('drops contract') &&
+		pui.get('careerWait').title.includes('drops active contract!'),
+		'expiring contract warns before wait runs: ' + pui.get('careerWaitInfo').textContent);
+
+	/* forceScale x3 on endgame gear never displays > SPEED_MAX (320 px/s) */
+	const cEnv = loadPage({ hash: '#game=1&seed=42&rate=1&rule=career&cheat=endgame&fs=3' });
+	cEnv.runFrames(2, 16.0);
+	check(cEnv.elements.get('careerPad').innerHTML.includes('max 320 px/s') &&
+		cEnv.elements.get('careerShop').innerHTML.includes('>320 px/s<'),
+		'endgame x3 force clamps pad and shop readouts at 320 px/s');
+	console.log('0.4.7 verified: field view 1/4 (' + litPixels + ' lit px), panel ' +
+		expectPanelCap + ', wait settlement & armed clamp ok');
+}
+
 console.log('paint calls', {
 	fillText: env.calls.fillText,
 	stroke: env.calls.stroke,

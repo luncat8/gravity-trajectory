@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<canvas id="f" hidden></canvas>
 <canvas id="c"></canvas>
 <canvas id="g"></canvas>
 
@@ -134,11 +135,20 @@
 		<div id="careerPad" class="careerBlock"></div>
 		<div id="careerTasks" class="careerBlock"></div>
 		<div id="careerShop" class="careerBlock"></div>
+		<div id="careerWaitInfo" class="careerLine dim"></div>
 		<div class="actions careerActions">
 			<button id="careerWait" class="miniBtn" title="run the world clock so every pad charges">wait · 30 min</button>
 			<button id="careerEvac" class="miniBtn" title="fly the ship home to HQ for a fee">evacuate</button>
 		</div>
 		<div id="careerMsg" class="careerMsg" hidden></div>
+	</div>
+
+	<div id="viewGroup" class="group">
+		<div class="caption"><span>view</span><span id="viewTag">space</span></div>
+		<div class="radioRow" role="radiogroup" aria-label="view mode">
+			<label title="starfield and gravity well rings (f)"><input id="viewSpace" type="radio" name="viewMode" value="space" checked> space</label>
+			<label title="hue = pull direction · lightness = potential gradient (f)"><input id="viewField" type="radio" name="viewMode" value="field"> gravity field</label>
+		</div>
 	</div>
 
 	<div class="group">
@@ -282,6 +292,7 @@
 <script src="gravity_game.js"></script>
 <script src="gravity_bot.js"></script>
 <script src="photo_deck.js"></script>
+<script src="gravity_field.js"></script>
 <script src="gravity_gui.js"></script>
 </body>
 </html>

@@ -588,6 +588,14 @@ check('career cheats: communism prices everything 0; endgame fits all and never 
 	e.career.ship.cargoTons = HOLD[2].capacity;
 	e.career.ship.mass = OrbitTech.shipMass(e.career.ship, HOLD[2].capacity);
 	assert.ok(e.sim.speedLimit(e.career.hq) > 100, 'the heaviest delivery still launches in the landing band');
+	/* even when forceScale pushes the rail past 320 px/s, sim.speedLimit caps at SPEED_MAX */
+	e.career.ship.cargoTons = 0;
+	e.career.ship.mass = OrbitTech.shipMass(e.career.ship, 0);
+	e.sim.setScales(1, 3);
+	assert.ok(OrbitTech.speedLimit(BAT[4].capacity, e.career.ship.mass, EMC[4], 3) > GravitySim.SPEED_MAX);
+	assert.strictEqual(e.sim.speedLimit(e.career.hq), GravitySim.SPEED_MAX);
+	assert.ok(e.sim.canFire(e.career.hq, GravitySim.SPEED_MAX));
+	assert.ok(!e.sim.canFire(e.career.hq, GravitySim.SPEED_MAX + 1));
 	assert.ok(sim.canLaunchFrom(career.hq));
 });
 

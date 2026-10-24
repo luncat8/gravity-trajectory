@@ -259,18 +259,41 @@
 		return OrbitTech.launchEnergy(this.ship.mass, this.pads[planet].catapult, speed);
 	};
 
-	/* fastest shot the pad affords now (energy and rail force); SPEED_MAX without a network */
+	/* fastest shot the pad affords now, capped at the world ceiling SPEED_MAX */
 	GravitySim.prototype.speedLimit = function (planet) {
 		if (this.pads === null) return SPEED_MAX;
 		const pad = this.pads[planet];
-		return OrbitTech.speedLimit(pad.chargeKwh, this.ship.mass, pad.catapult, this.forceScale);
+		const limit = OrbitTech.speedLimit(pad.chargeKwh, this.ship.mass, pad.catapult, this.forceScale);
+		return limit > SPEED_MAX ? SPEED_MAX : limit;
 	};
 
 	GravitySim.prototype.canFire = function (planet, speed) {
 		if (!this.canLaunchFrom(planet)) return false;
-		if (this.pads === null) return true;
-		const pad = this.pads[planet];
-		return OrbitTech.canLaunch(pad.chargeKwh, this.ship.mass, pad.catapult, speed, this.forceScale);
+		return speed >= 0 && speed <= this.speedLimit(planet) + 1e-9;
+	};
+
+	/* gravitational acceleration (px/s²) at world point (x, y) into `out` */
+	GravitySim.prototype.fieldAt = function (x, y, out) {
+		const px = this.bodyX;
+		const py = this.bodyY;
+		const strength = this.strength;
+		const count = this.bodyCount;
+		const mu = MU * this.gravityScale;
+		let ax = 0;
+		let ay = 0;
+		for (let i = 0; i < count; i++) {
+			const s = strength[i];
+			if (s === 0) continue;
+			const dx = px[i] - x;
+			const dy = py[i] - y;
+			const inv = 1 / (dx * dx + dy * dy + SOFT2);
+			const a = mu * s * inv * Math.sqrt(inv);
+			ax += dx * a;
+			ay += dy * a;
+		}
+		out.ax = ax;
+		out.ay = ay;
+		return out;
 	};
 
 	/* experimental world knobs; both 1 = the plain game */
@@ -844,6 +867,8 @@
 
 	GravitySim.DT = DT;
 	GravitySim.MU = MU;
+	GravitySim.SOFT = SOFT;
+	GravitySim.SOFT2 = SOFT2;
 	GravitySim.CARGO_R = CARGO_R;
 	GravitySim.SPEED_MIN = SPEED_MIN;
 	GravitySim.SPEED_MAX = SPEED_MAX;

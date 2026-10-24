@@ -31,6 +31,7 @@ Open `index.html` (`file://` works, no build, no modules).
 | esc | closes help or cancels the aim/plan |
 | clear / clear plan | resets the vessel, or removes the current `route` plan; the saved best remains available |
 | `use best` (route) | restores the longest finished plan for the current start planet, with its exact snapped angle and speed |
+| `view` · `space` / `gravity field` (`f`, `?view=field`) | switches between the starfield backdrop and a live gravity-field map where hue encodes pull direction and lightness encodes potential gradient (`|\mathbf{g}|`); uses a WebGL shader when available (dropping 4× in resolution if slow) or a 1/4-resolution 2D raster fallback |
 | gravity positions | radio group `planets` (static) / `ports` (`ports · moving`); launch base is always a static planet |
 | `? help` / `h` | toggles the mission & guide drawer (`tourist` / `emperor’s emissary`) |
 | space | pauses the trade background only (lab) |
@@ -40,9 +41,9 @@ Open `index.html` (`file://` works, no build, no modules).
 | `money` | 10 shots, score purse → systems → shots → time |
 | career | solo catapult network: the vessel starts on a sunlit HQ with the only catapult; a launch fires from the pad under the ship and spends its solar-charged battery (ship + cargo mass caps the speed, the button shows `pad … kWh · shot … · max … px/s`, the pad plate under the planet shows charge and cap) · landing elsewhere strands the ship · `&cheat=communism` (everything free) / `&cheat=endgame` (all pads at top tier, purse 99) · ends `complete` with 26 catapults or `broke` |
 | career drawer · planet select | picks the planet the shop builds on; it follows the ship until you pick another · every entry states that pad's full-battery cap with the ship as loaded now (`P4 · 118 px/s · EMC-2`), `no pad`, or `cannot lift` |
-| career drawer · shop | one button per gear kind buys the next tier on that planet (`EMC-2 · 6.00`), `all N · …` applies it to every built pad of that kind and shows the total first; the rail and battery rows print the cap they would buy (`92 → 119 px/s`), a panel only moves the recharge time; below, ship parts (`hold`/`tank`/`engine`) are bought and fitted at HQ only |
+| career drawer · shop | one button per gear kind buys the next tier on that planet (`EMC-2 · 6.00`), `all N · …` applies it to every built pad of that kind and shows the total first; the rail and battery rows print the cap they would buy (`92 → 119 px/s`), and the panel row prints `+N kWh · ready in N s` from `light × power` and the pad's full-cap shot energy; below, ship parts (`hold`/`tank`/`engine`) are bought and fitted at HQ only |
 | career drawer · task board | delivery offers show `from → to`, good, tons, pay and time left with `accept` (needs a big enough hold and no other contract) / `drop`; the sport slot pays for one landing flight of at least the shown length |
-| `wait · 30 min` (career) | runs the world clock 30 minutes while nothing flies: every pad charges, the board ages, planet profit grows |
+| `wait · 30 min` (career) | runs the world clock 30 minutes while nothing flies; a live settlement line and button tooltip state beforehand the exact pad kWh gained, board ageing / rotating offers (or `drops contract!` warning) and galaxy visit-profit growth |
 | `evacuate` (career) | buys the stranded ship a flight home to HQ (fee shown on the button) |
 | `abort` (game) | ends the running flight at the current step (recorded in the replay) |
 | rivals `off` / `easy` / `normal` / `hard` | deterministic shared-market rivals in `tour`, `route` and `money` (`normal` default; `hard` fields 2 rivals with 1-ply lookahead) · switching restarts the seed |
@@ -126,6 +127,7 @@ Open `index.html` (`file://` works, no build, no modules).
 - `gravity_game.js` — game rules (`tour`, `route`, `money`, `career`), aim grid, replay link codec (`rule`, `bot`, `cheat`, `gs`, `fs`), shared planet-profit market (`MONEY`, `createMarket`, `planetProfit`, `stepHarvest`, `estimateProfit`, `compareScores`), career state (pads, ship, task board from the colony economy, evacuation, end condition)
 - `gravity_bot.js` — deterministic shared-market rivals for all game rules (`off`, `easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead, sliced search, `rivalLink`), plus the synchronous headless career controller (pad-only plans, live speed caps, dead-end pad repair, task/pad/energy-wait scoring and between-flight shopping), with `setScales` fanning the experimental multipliers into every rival and probe sim
 - `photo_deck.js` — postcard popup: type → file candidates, captions, compact layout, purse toast
+- `gravity_field.js` — gravity-field backdrop renderer (direction → hue, potential gradient → lightness; WebGL 1 shader with slow-frame 1/4 fallback and zero-alloc LUT 1/4-resolution 2D fallback)
 - `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game scoreboard, the flat mode row, career drawer (pad plate, shop, task board), the experimental gravity/force panel and replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
   `game_bench.js`, `route_bench.js`, `bot_bench.js`, `career_bench.js`,

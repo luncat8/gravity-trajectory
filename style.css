@@ -31,6 +31,7 @@ body {
 	user-select: none;
 }
 
+#f,
 #c,
 #g {
 	position: fixed;
@@ -40,15 +41,20 @@ body {
 	height: 100%;
 }
 
-#c {
+#f {
 	z-index: 0;
+	pointer-events: none;
+}
+
+#c {
+	z-index: 1;
 	cursor: crosshair;
 	touch-action: none;
 }
 
 /* the cargo layer only draws; pointer input still reaches the trade canvas */
 #g {
-	z-index: 1;
+	z-index: 2;
 	pointer-events: none;
 }
 
@@ -831,6 +837,11 @@ input:disabled {
 .careerBtns i {
 	color: var(--dim);
 	font-style: normal;
+	font-size: 10px;
+}
+
+#careerWaitInfo {
+	margin: 5px 0 3px;
 	font-size: 10px;
 }
 

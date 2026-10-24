@@ -14,6 +14,7 @@
 
 const Sim = require('../orbit_sim.js');
 const GravitySim = require('../gravity_sim.js');
+const GravityField = require('../gravity_field.js');
 
 const REASONS = ['open', 'impact', 'exit', 'horizon', 'budget'];
 const SPEEDS = [40, 80, 120, 180, 240, 320];
@@ -273,6 +274,135 @@ function repelSweep(world) {
 	return { count, minX, maxX, minY, maxY };
 }
 
+function fieldBench(world) {
+	const g = world.gravity;
+	usePlanets(world);
+	g.fillStep(world.sim.t);
+	const out = { ax: 0, ay: 0 };
+	const state = { x: 420, y: 310, vx: 0, vy: 0 };
+	g.fieldAt(state.x, state.y, out);
+	g.advance(state, GravitySim.DT);
+	if (Math.abs(state.vx / GravitySim.DT - out.ax) > 1e-6 ||
+		Math.abs(state.vy / GravitySim.DT - out.ay) > 1e-6) {
+		throw new Error('fieldAt disagrees with advance impulse');
+	}
+	const c0 = GravityField.sampleColor(0, 0, { hue: 0, light: 0, r: 0, g: 0, b: 0 });
+	if (c0.light !== 0 || c0.r !== 2 || c0.g !== 6 || c0.b !== 12) {
+		throw new Error('zero field color mismatch');
+	}
+	const card = [
+		[20, 0, 0],
+		[0, 20, 0.25],
+		[-20, 0, 0.5],
+		[0, -20, 0.75]
+	];
+	let prevL = 0;
+	for (let i = 0; i < card.length; i++) {
+		const c = GravityField.sampleColor(card[i][0], card[i][1], { hue: 0, light: 0, r: 0, g: 0, b: 0 });
+		if (Math.abs(c.hue - card[i][2]) > 1e-9) throw new Error('cardinal hue mismatch');
+	}
+	for (const mag of [4, 15, 40, 90]) {
+		const c = GravityField.sampleColor(mag, 0, { hue: 0, light: 0, r: 0, g: 0, b: 0 });
+		if (!(c.light > prevL && c.light < GravityField.L_MAX)) {
+			throw new Error('non-monotonic gradient lightness');
+		}
+		prevL = c.light;
+	}
+	const cPos = GravityField.sampleColor(18, -11, { hue: 0, light: 0, r: 0, g: 0, b: 0 });
+	const cNeg = GravityField.sampleColor(-18, 11, { hue: 0, light: 0, r: 0, g: 0, b: 0 });
+	const hueDelta = Math.abs(((cNeg.hue - cPos.hue + 1) % 1) - 0.5);
+	if (hueDelta > 1e-9 || Math.abs(cPos.light - cNeg.light) > 1e-12) {
+		throw new Error('repel field must invert hue by 0.5 at equal lightness');
+	}
+
+	const w = 320;
+	const h = 200;
+	const view = { dpr: 1, scale: 0.8, offX: 0, offY: 0 };
+	const pixels = new Uint8ClampedArray(w * h * 4);
+	GravityField.renderBuffer(pixels, w, h, g, view, 1280, 800);
+	const ref = { hue: 0, light: 0, r: 0, g: 0, b: 0 };
+	let maxDiff = 0;
+	let sumDiff = 0;
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const wx = (0.5 * 4 - view.offX) / view.scale + x * (4 / view.scale);
+			const wy = (0.5 * 4 - view.offY) / view.scale + y * (4 / view.scale);
+			g.fieldAt(wx, wy, out);
+			GravityField.sampleColor(out.ax, out.ay, ref);
+			const p = (y * w + x) * 4;
+			const d = Math.max(Math.abs(pixels[p] - ref.r),
+				Math.abs(pixels[p + 1] - ref.g), Math.abs(pixels[p + 2] - ref.b));
+			if (d > maxDiff) maxDiff = d;
+			sumDiff += d;
+		}
+	}
+	const t0 = process.hrtime.bigint();
+	const runs = 12;
+	for (let r = 0; r < runs; r++) GravityField.renderBuffer(pixels, w, h, g, view, 1280, 800);
+	const avgMs = Number(process.hrtime.bigint() - t0) / 1e6 / runs;
+
+	/* WebGL backend + adaptive 1/4 resolution drop + context-loss fallback */
+	const glState = { draws: 0, origin: null, step: null, lostFn: null };
+	const mockGl = {
+		VERTEX_SHADER: 1, FRAGMENT_SHADER: 2, COMPILE_STATUS: 3, LINK_STATUS: 4,
+		ARRAY_BUFFER: 5, STATIC_DRAW: 6, FLOAT: 7, TRIANGLES: 8,
+		createShader: () => ({}),
+		shaderSource() {},
+		compileShader() {},
+		getShaderParameter: () => true,
+		deleteShader() {},
+		createProgram: () => ({}),
+		attachShader() {},
+		linkProgram() {},
+		getProgramParameter: () => true,
+		createBuffer: () => ({}),
+		bindBuffer() {},
+		bufferData() {},
+		getAttribLocation: () => 0,
+		useProgram() {},
+		enableVertexAttribArray() {},
+		vertexAttribPointer() {},
+		getUniformLocation: (_, name) => name,
+		viewport() {},
+		uniform2f(loc, x, y) {
+			if (loc === 'uOrigin') glState.origin = [x, y];
+			if (loc === 'uStep') glState.step = [x, y];
+		},
+		uniform1i() {},
+		uniform3fv() {},
+		drawArrays() { glState.draws += 1; }
+	};
+	const mockCanvas = {
+		width: 0, height: 0,
+		addEventListener(type, fn) { if (type === 'webglcontextlost') glState.lostFn = fn; },
+		getContext(kind) {
+			if (kind === 'webgl') return mockGl;
+			return {
+				createImageData: (cw, ch) => ({ width: cw, height: ch, data: new Uint8ClampedArray(cw * ch * 4) }),
+				putImageData() {}
+			};
+		}
+	};
+	const glField = GravityField.create(mockCanvas);
+	const hiView = { dpr: 2, scale: 0.8, offX: 40, offY: 20 };
+	glField.render(g, hiView, 1280, 800, false);
+	if (glField.backend() !== 'webgl' || glField.scaleDiv() !== 1 ||
+		mockCanvas.width !== 2560 || mockCanvas.height !== 1600 || glState.step[1] >= 0) {
+		throw new Error('WebGL renderer init or top-to-bottom Y step failed');
+	}
+	for (let i = 0; i < 6; i++) glField.render(g, hiView, 1280, 800, true);
+	if (glField.scaleDiv() !== 4 || mockCanvas.width !== 320 || mockCanvas.height !== 200) {
+		throw new Error('WebGL slow-frame 4x resolution fallback failed');
+	}
+	glState.lostFn({ preventDefault() {} });
+	glField.render(g, hiView, 1280, 800, false);
+	if (glField.backend() !== '2d' || glField.scaleDiv() !== 4) {
+		throw new Error('webglcontextlost did not fall back to 1/4 2D');
+	}
+
+	return { w, h, maxDiff, meanDiff: sumDiff / (w * h), avgMs };
+}
+
 const started = process.hrtime.bigint();
 const world = makeWorld();
 const fastForwardMs = Number(process.hrtime.bigint() - started) / 1e6;
@@ -287,6 +417,7 @@ usePlanets(world);
 const scaled = scaleParity(world);
 const repel = repelSweep(world);
 const drop = scaleDrop();
+const field = fieldBench(world);
 
 console.log('world: 26 planets, fast-forward to t+07:00 in ' + fastForwardMs.toFixed(2) + ' ms');
 console.log('trade at t+07:00: ports ' + world.sim.portCount +
@@ -318,6 +449,9 @@ console.log('experimental gravity: one-step pull x0 ' + drop.zero.toFixed(3) +
 console.log('repel field: ' + repel.count + ' paths, finite bounds x ' +
 	repel.minX.toFixed(1) + '…' + repel.maxX.toFixed(1) + ', y ' +
 	repel.minY.toFixed(1) + '…' + repel.maxY.toFixed(1));
+console.log('field raster 1/4 (' + field.w + 'x' + field.h + '): avg ' +
+	field.avgMs.toFixed(2) + ' ms, LUT diff max ' + field.maxDiff +
+	', mean ' + field.meanDiff.toFixed(3));
 console.log('budget: ' + GravitySim.BUDGET_MS + ' ms cap, worst ' +
 	sweep.worst.toFixed(3) + ' ms (' +
 	(sweep.worst <= GravitySim.BUDGET_MS ? 'within budget' : 'OVER BUDGET') + ')');
@@ -330,5 +464,11 @@ if (scaled.maxError > 0.01) throw new Error('scaled flight diverged from predict
 if (moving.divergence < 5) throw new Error('moving field barely changes the trajectory');
 if (!Number.isFinite(repel.minX) || !Number.isFinite(repel.maxY)) {
 	throw new Error('repel sweep produced non-finite bounds');
+}
+if (field.maxDiff > 5 || field.meanDiff > 1) {
+	throw new Error('field 2D LUT drifted from exact field color');
+}
+if (field.avgMs > 16) {
+	throw new Error('field 1/4-res 2D raster exceeded 16 ms budget: ' + field.avgMs.toFixed(2));
 }
 console.log('BENCH OK');

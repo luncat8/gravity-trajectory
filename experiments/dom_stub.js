@@ -68,7 +68,14 @@ function makePaint(calls) {
 		fill() { calls.fill += 1; },
 		measureText(text) { return { width: String(text).length * 6.5 }; },
 		createLinearGradient() { return { addColorStop() {} }; },
-		createRadialGradient() { return { addColorStop() {} }; }
+		createRadialGradient() { return { addColorStop() {} }; },
+		createImageData(w, h) {
+			return { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) };
+		},
+		putImageData(img) {
+			calls.putImageData += 1;
+			calls.lastImageData = img;
+		}
 	};
 }
 
@@ -105,7 +112,7 @@ function makeElement(spec, paint) {
  * options.clipboard: false removes navigator.clipboard (insecure-context fallback)
  */
 function loadPage(options = {}) {
-	const calls = { fillText: 0, stroke: 0, fill: 0, texts: [] };
+	const calls = { fillText: 0, stroke: 0, fill: 0, putImageData: 0, lastImageData: null, texts: [] };
 	const paint = makePaint(calls);
 	const elements = new Map();
 	for (const spec of ELEMENTS) elements.set(spec.id, makeElement(spec, paint));

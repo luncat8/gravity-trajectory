@@ -845,15 +845,22 @@
 		ctx.fillText(hoverLine2, x + 12, y + 58);
 	}
 
+	let showBackdrop = true;
+
 	function draw(now) {
 		framePulse = 0.5 + 0.5 * Math.sin(now * 0.005);
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
-		ctx.drawImage(backdrop, 0, 0);
+		if (showBackdrop) ctx.drawImage(backdrop, 0, 0);
 		ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
 		ctx.save();
 		ctx.translate(view.offX, view.offY);
 		ctx.scale(view.scale, view.scale);
+		if (!showBackdrop) {
+			ctx.strokeStyle = 'rgba(103, 224, 255, 0.16)';
+			ctx.lineWidth = 1;
+			ctx.strokeRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+		}
 		if (showOrbits) drawOrbits();
 		if (showOrbits && showMoons) drawMoonTracks();
 		if (showLinks) drawLinks();
@@ -1025,6 +1032,10 @@
 		setSpeed: setSpeedValue,
 		setGameClock: setGameClock,
 		lockSpeed: lockSpeed,
+		setBackdrop: on => {
+			showBackdrop = Boolean(on);
+		},
+		backdropVisible: () => showBackdrop,
 		moons: {
 			count: () => moonCount,
 			tracks: () => trackCount,
