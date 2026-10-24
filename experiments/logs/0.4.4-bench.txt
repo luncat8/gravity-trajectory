@@ -1,0 +1,18 @@
+0.4.4 weak starter + career-aware headless bot
+
+Starter: EMC-1 maxForce 15 kN; dry 10 t / full BAT-1 cap 91.651514 px/s (rail-limited); 38 t loaded cap 47.016235 px/s. Career DOM smoke shots use 90 px/s; HQ readout 92 px/s.
+
+career_bot_bench.js: 3 focused checks (weak rail, occupied-pad/full+low-charge cap/score terms, idle hold+pad buying+loaded upgrade) plus four real full careers. All 26/26 pads, CAREER_COMPLETE, final purse >= 6.00 baseline.
+  seed 7: purse 9.95 · task earnings 3.38 · flights 24 · deliveries 3 · upgrades 4 · waits 6 · fallbacks 3 · evac 0
+  seed 31: purse 8.72 · task earnings 6.71 · flights 25 · deliveries 2 · upgrades 0 · waits 0 · fallbacks 0 · evac 0
+  seed 42: purse 6.54 · task earnings 14.15 · flights 23 · deliveries 9 · upgrades 4 · waits 10 · fallbacks 1 · evac 0
+  seed 913: purse 6.35 · task earnings 2.19 · flights 21 · deliveries 1 · upgrades 0 · waits 0 · fallbacks 1 · evac 0
+CAREER BOT BENCH OK.
+
+career_bench.js: 26 checks, CAREER BENCH OK.
+dom_smoke.js: SMOKE OK (career gate launch -> strand -> build -> relaunch; HQ limit 92).
+bot_bench.js: BOT BENCH OK (difficulty/replay/allocation/slices); game_bench.js: GAME BENCH OK.
+gravity_bench.js: standalone BENCH OK, worst prediction slice 3.862 ms (parallel-load timing failure did not reproduce standalone).
+route_bench.js: ROUTE BENCH OK; colony_bench.js: 1622/1622 checks, COLONY BENCH OK.
+layout_check.js: skipped, CHROME_PATH unset.
+node --check touched JS and git diff --check: OK.

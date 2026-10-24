@@ -43,18 +43,18 @@ function dry() {
 
 /* --- §1 launch model ---------------------------------------------------- */
 
-check('dry ship launchable by EMC-1 from a full BAT-1 in the 80-120 px/s landing band', () => {
+check('dry ship launchable by weak EMC-1 from a full BAT-1 in the 85-95 px/s band', () => {
 	const limit = OrbitTech.speedLimit(BAT[0].capacity, dry(), EMC[0]);
-	assert.ok(limit > 100 && limit < 125, 'speed limit ' + limit);
-	assert.ok(OrbitTech.canLaunch(BAT[0].capacity, dry(), EMC[0], 100));
-	assert.ok(!OrbitTech.canLaunch(BAT[0].capacity, dry(), EMC[0], 130));
-	assert.ok(OrbitTech.launchEnergy(dry(), EMC[0], 100) <= BAT[0].capacity);
+	assert.ok(limit > 85 && limit < 95, 'speed limit ' + limit);
+	assert.ok(OrbitTech.canLaunch(BAT[0].capacity, dry(), EMC[0], 90));
+	assert.ok(!OrbitTech.canLaunch(BAT[0].capacity, dry(), EMC[0], 100));
+	assert.ok(OrbitTech.launchEnergy(dry(), EMC[0], 90) <= BAT[0].capacity);
 });
 
-check('24 t cargo + HOLD-24 stalls on EMC-1 / BAT-1, flies on EMC-5 / BAT-5', () => {
+check('24 t cargo + HOLD-24 stalls below 50 on EMC-1 / BAT-1, flies on EMC-5 / BAT-5', () => {
 	const mass = OrbitTech.shipMass({ hold: HOLD[2], engine: null, tank: OrbitTech.TANKS[0] }, 24);
 	assert.strictEqual(mass, 38);
-	assert.ok(OrbitTech.speedLimit(BAT[0].capacity, mass, EMC[0]) < 60, 'loaded EMC-1 limit');
+	assert.ok(OrbitTech.speedLimit(BAT[0].capacity, mass, EMC[0]) < 50, 'loaded EMC-1 limit');
 	assert.ok(!OrbitTech.canLaunch(BAT[0].capacity, mass, EMC[0], 100));
 	assert.ok(OrbitTech.canLaunch(BAT[4].capacity, mass, EMC[4], 100));
 });
@@ -224,8 +224,8 @@ check('career start: HQ pad only, sim gates on the network, link codec carries c
 	for (let p = 0; p < PLANETS; p++) {
 		if (p !== career.hq) assert.ok(!sim.canLaunchFrom(p), 'P' + p + ' has no catapult');
 	}
-	assert.ok(sim.canFire(career.hq, 100) && !sim.canFire(career.hq, 130));
-	assert.ok(sim.launchEnergy(career.hq, 100) > 0 && sim.speedLimit(career.hq) < 125);
+	assert.ok(sim.canFire(career.hq, 90) && !sim.canFire(career.hq, 100));
+	assert.ok(sim.launchEnergy(career.hq, 90) > 0 && sim.speedLimit(career.hq) < 95);
 	const link = GravityGame.encodeLink({ seed: 42, rate: 1, rule: 'career', bot: 'off', player: 'user',
 		cheat: 'endgame', shots: [{ src: 0, origin: 0, angle: 0, speed: 40000, abort: -1 }] });
 	assert.strictEqual(link, 'game=1&seed=42&rate=1&rule=career&cheat=endgame', link);
@@ -308,7 +308,7 @@ check('career stranded: building a catapult brings a charged starter pad; the pa
 	assert.ok(!career.stranded && career.padCount === 2);
 	const pad = career.pads[here];
 	assert.ok(pad.panel === SP[0] && pad.battery === BAT[0] && pad.chargeKwh === BAT[0].capacity);
-	assert.ok(sim.canLaunchFrom(here) && sim.canFire(here, 100));
+	assert.ok(sim.canLaunchFrom(here) && sim.canFire(here, 90));
 	assert.ok(!GravityGame.buildGear(career, here, 'catapult', EMC[0]), 'same tier again is a no-op');
 	assert.ok(!GravityGame.buildGear(career, here, 'catapult', EMC[4]), 'cannot afford EMC-5');
 	assert.ok(GravityGame.buildGear(career, here, 'battery', BAT[1]) && pad.battery === BAT[1]);

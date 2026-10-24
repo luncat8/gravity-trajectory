@@ -7,6 +7,10 @@
  * toward long-unvisited systems. Candidate search runs as a sliced background
  * job with zero per-candidate allocations, and drains synchronously when a
  * step boundary requires an immediate launch or replay skip.
+ *
+ * Career uses the separate synchronous controller below: it plans from the
+ * occupied catapult, values tasks and landing pads net of energy recharge
+ * waits, and performs reserve-aware shopping between real headless flights.
  */
 (function (root) {
 	'use strict';
@@ -20,6 +24,9 @@
 	const OrbitWorld = typeof module !== 'undefined' && module.exports
 		? require('./orbit_world.js')
 		: root.OrbitWorld;
+	const OrbitTech = typeof module !== 'undefined' && module.exports
+		? require('./orbit_tech.js')
+		: root.OrbitTech;
 
 	const PLANETS = OrbitWorld.PLANETS;
 	const MAX_RIVALS = 2;
@@ -60,6 +67,23 @@
 	const ROUTE_REFINES = [null, ROUTE_REFINE_1, null, ROUTE_REFINE_2, null, ROUTE_REFINE_3];
 	const ROUTE_PHI = 0.618033988749895;
 	const ROUTE_SLICE_CANDIDATES = 2;
+
+	/* Career is a solo economic controller, not another shared-market rival. */
+	const CAREER_ANGLES = 32;
+	const CAREER_FALLBACK_ANGLES = 72;
+	const CAREER_HORIZON = 45;
+	const CAREER_SPEED_FRACTIONS = [0.38, 0.55, 0.72, 0.86, 1];
+	const CAREER_TARGET_OFFSETS = 4;
+	const CAREER_TARGET_STEP = 0.035;
+	const CAREER_WAIT_SECONDS = 1800;
+	const CAREER_ENERGY_WAIT_COST = 0.04;
+	const CAREER_BUILT_PAD_VALUE = 1;
+	const CAREER_NETWORK_PAD_VALUE = 4;
+	const CAREER_SAME_PAD_VALUE = -1;
+	const CAREER_PICKUP_VALUE = 0.35;
+	const CAREER_REFIT_VALUE = 3;
+	const CAREER_PURSE_RESERVE = 6;
+	const CAREER_LOADED_SPEED = 75;
 
 	const LEVELS = {
 		off: {
@@ -194,6 +218,15 @@
 		this.bestAngleU = 0;
 		this.bestSpeedU = 0;
 
+		this.careerBest = {
+			origin: -1, body: -1, angle: 0, speed: 0, score: -Infinity,
+			taskPay: 0, padValue: 0, energy: 0, wait: 0, steps: 0
+		};
+		this.careerEval = { taskPay: 0, padValue: 0, energy: 0, wait: 0 };
+		this.careerBuilds = 0;
+		this.careerUpgrades = 0;
+		this.careerPlans = 0;
+
 		const self = this;
 		this.fillPlanets = function (t, outX, outY, count) {
 			const sim = self.tradeSim;
@@ -312,6 +345,10 @@
 		this.routeCandActor = -1;
 		this.routeTurn = 0;
 		this.probe.clear();
+		this.careerBest.origin = -1;
+		this.careerBuilds = 0;
+		this.careerUpgrades = 0;
+		this.careerPlans = 0;
 
 		const base0 = (Math.imul(this.seed, 7) + 5) >>> 0;
 		for (let i = 0; i < MAX_RIVALS; i++) {
@@ -1016,10 +1053,291 @@
 		});
 	};
 
+	/* --- solo career controller ---------------------------------------- */
+
+	function careerNextItem(table, current) {
+		for (let i = 0; i < table.length; i++) {
+			if (current === null || table[i].tier > current.tier) return table[i];
+		}
+		return null;
+	}
+
+	function careerPrice(career, item) {
+		return career.cheat === GravityGame.CHEAT_COMMUNISM ? 0 : item.buildCost;
+	}
+
+	GravityBot.prototype.careerBuyGear = function (career, planet, kind, item, reserve) {
+		if (!item || career.ledger.purse + 1e-9 < careerPrice(career, item) + reserve) return false;
+		const fresh = kind === OrbitTech.KIND_CATAPULT && career.pads[planet].catapult === null;
+		if (!GravityGame.buildGear(career, planet, kind, item)) return false;
+		if (fresh) this.careerBuilds += 1;
+		else this.careerUpgrades += 1;
+		return true;
+	};
+
+	GravityBot.prototype.careerNextPad = function (career) {
+		if (career.contract >= 0) {
+			const task = career.tasks[career.contract];
+			const target = task.state === GravityGame.TASK_LOADED ? task.to : task.from;
+			if (target >= 0 && career.pads[target].catapult === null) return target;
+		}
+		let best = -1;
+		for (let p = 0; p < PLANETS; p++) {
+			if (career.pads[p].catapult !== null) continue;
+			if (best < 0 || career.light[p] > career.light[best]) best = p;
+		}
+		return best;
+	};
+
+	GravityBot.prototype.careerAccept = function (career) {
+		if (career.contract >= 0) return false;
+		let best = -1;
+		let bestScore = -Infinity;
+		for (let i = 0; i < GravityGame.BOARD_SIZE; i++) {
+			if (!GravityGame.canAccept(career, i)) continue;
+			const task = career.tasks[i];
+			let score = task.reward - task.tons * 0.02;
+			if (task.from === career.at) score += 0.75;
+			if (career.pads[task.from].catapult !== null) score += 0.25;
+			if (career.pads[task.to].catapult !== null) score += 0.5;
+			if (score > bestScore) {
+				bestScore = score;
+				best = i;
+			}
+		}
+		return best >= 0 && GravityGame.acceptTask(career, best);
+	};
+
+	/* Raise the pad's full-battery cap, not its accidentally low current charge. */
+	GravityBot.prototype.careerUpgrade = function (career, sim, wantedSpeed, reserve) {
+		const planet = career.at;
+		if (planet < 0) return false;
+		const pad = career.pads[planet];
+		if (pad.catapult === null) return false;
+		let upgraded = false;
+		for (let n = 0; n < 8; n++) {
+			const fullLimit = OrbitTech.speedLimit(pad.battery.capacity,
+				career.ship.mass, pad.catapult);
+			if (fullLimit >= wantedSpeed) break;
+			const forceLimit = OrbitTech.maxSpeed(career.ship.mass, pad.catapult);
+			let kind = forceLimit < wantedSpeed ? OrbitTech.KIND_CATAPULT : OrbitTech.KIND_BATTERY;
+			let table = kind === OrbitTech.KIND_CATAPULT ? OrbitTech.CATAPULTS : OrbitTech.BATTERIES;
+			let item = careerNextItem(table, pad[kind]);
+			if (!item) {
+				kind = kind === OrbitTech.KIND_CATAPULT ? OrbitTech.KIND_BATTERY : OrbitTech.KIND_CATAPULT;
+				table = kind === OrbitTech.KIND_CATAPULT ? OrbitTech.CATAPULTS : OrbitTech.BATTERIES;
+				item = careerNextItem(table, pad[kind]);
+			}
+			const needed = fullLimit < GravitySim.SPEED_MIN;
+			if (!this.careerBuyGear(career, planet, kind, item, needed ? 0 : reserve)) break;
+			upgraded = true;
+		}
+		return upgraded;
+	};
+
+	/* All shopping happens while idle: rescue, refit/accept, upgrade, expand. */
+	GravityBot.prototype.careerBetweenFlights = function (career, sim) {
+		if (career.ended !== GravityGame.CAREER_OPEN) return 0;
+		let actions = 0;
+		if (career.stranded && career.at >= 0 && career.pads[career.at].catapult === null) {
+			const lastPad = career.padCount === PLANETS - 1;
+			const reserve = lastPad ? CAREER_PURSE_RESERVE : 0;
+			if (this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
+				OrbitTech.CATAPULTS[0], reserve)) actions += 1;
+		}
+		if (career.stranded) {
+			const evacPrice = career.cheat === GravityGame.CHEAT_COMMUNISM ? 0 : GravityGame.CAREER.evacFee;
+			if (career.ledger.purse + 1e-9 >= evacPrice && GravityGame.evacuate(career, sim)) {
+				actions += 1;
+			} else if (career.at >= 0 && career.pads[career.at].catapult === null &&
+				this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
+					OrbitTech.CATAPULTS[0], 0)) {
+				/* A final-pad reserve must never make the rescue policy deadlock. */
+				actions += 1;
+			}
+		}
+		if (career.ended !== GravityGame.CAREER_OPEN) return actions;
+
+		if (career.at === career.hq && career.ship.hold === OrbitTech.HOLDS[0]) {
+			const hold = OrbitTech.HOLDS[1];
+			if (career.ledger.purse + 1e-9 >= careerPrice(career, hold) + CAREER_PURSE_RESERVE &&
+				GravityGame.installPart(career, OrbitTech.KIND_HOLD, hold)) actions += 1;
+		}
+		if (this.careerAccept(career)) actions += 1;
+
+		if (career.contract >= 0) {
+			const task = career.tasks[career.contract];
+			if (task.state === GravityGame.TASK_LOADED) {
+				if (this.careerUpgrade(career, sim, CAREER_LOADED_SPEED, CAREER_PURSE_RESERVE)) {
+					actions += 1;
+				}
+				const pad = career.pads[career.at];
+				const fullLimit = OrbitTech.speedLimit(pad.battery.capacity,
+					career.ship.mass, pad.catapult);
+				if (fullLimit < GravitySim.SPEED_MIN) {
+					GravityGame.dropContract(career);
+					actions += 1;
+				}
+			}
+		}
+
+		const expansionReserve = CAREER_PURSE_RESERVE +
+			(career.ship.hold === OrbitTech.HOLDS[0] ? OrbitTech.HOLDS[1].buildCost : 0);
+		while (career.ended === GravityGame.CAREER_OPEN && career.padCount < PLANETS) {
+			const planet = this.careerNextPad(career);
+			if (planet < 0 || !this.careerBuyGear(career, planet, OrbitTech.KIND_CATAPULT,
+				OrbitTech.CATAPULTS[0], expansionReserve)) break;
+			actions += 1;
+		}
+		return actions;
+	};
+
+	GravityBot.prototype.careerEnergyWait = function (career, planet, energy) {
+		const pad = career.pads[planet];
+		const gain = OrbitTech.solarCharge(pad.panel, career.light[planet], CAREER_WAIT_SECONDS);
+		return gain > 0 ? energy / gain : Infinity;
+	};
+
+	/* Scores the trace already in `probe`; `careerEval` exposes its money terms. */
+	GravityBot.prototype.careerScoreProbe = function (career, sim, origin, speed, market, runStep) {
+		const probe = this.probe;
+		const body = probe.predBody;
+		if (probe.predReason !== END_IMPACT || body < 0) return -Infinity;
+		const visitPay = GravityGame.estimateProfit(market, runStep, probe);
+		let taskPay = visitPay;
+		let cashPay = visitPay;
+		if (career.contract >= 0) {
+			const task = career.tasks[career.contract];
+			if (task.state === GravityGame.TASK_LOADED && body === task.to) {
+				taskPay += task.reward;
+				cashPay += task.reward;
+			} else if (task.state === GravityGame.TASK_ACCEPTED && body === task.from) {
+				taskPay += task.reward * CAREER_PICKUP_VALUE;
+			}
+		}
+		const compete = career.tasks[GravityGame.COMPETE_SLOT];
+		if (compete.kind === GravityGame.TASK_COMPETE && origin === compete.planet &&
+			probe.predLength >= compete.minLength && runStep + probe.predSteps <= compete.deadline) {
+			taskPay += compete.reward;
+			cashPay += compete.reward;
+		}
+
+		const pad = career.pads[body];
+		let padValue;
+		if (body === origin) padValue = CAREER_SAME_PAD_VALUE;
+		else if (pad.catapult !== null) padValue = CAREER_BUILT_PAD_VALUE + (pad.catapult.tier - 1) * 0.1;
+		else padValue = CAREER_NETWORK_PAD_VALUE - careerPrice(career, OrbitTech.CATAPULTS[0]);
+		if (body === career.hq && career.at !== career.hq &&
+			career.ship.hold === OrbitTech.HOLDS[0] &&
+			career.ledger.purse + cashPay + 1e-9 >=
+				careerPrice(career, OrbitTech.HOLDS[1]) + CAREER_PURSE_RESERVE) {
+			padValue += CAREER_REFIT_VALUE;
+		}
+
+		if (pad.catapult === null && body !== origin) {
+			const buildPrice = careerPrice(career, OrbitTech.CATAPULTS[0]);
+			const reserve = career.padCount === PLANETS - 1 ? CAREER_PURSE_RESERVE : 0;
+			if (career.ledger.purse + cashPay + 1e-9 < buildPrice + reserve) return -Infinity;
+		}
+		const energy = sim.launchEnergy(origin, speed);
+		const wait = this.careerEnergyWait(career, origin, energy);
+		this.careerEval.taskPay = taskPay;
+		this.careerEval.padValue = padValue;
+		this.careerEval.energy = energy;
+		this.careerEval.wait = wait;
+		return taskPay + padValue - energy * wait * CAREER_ENERGY_WAIT_COST;
+	};
+
+	GravityBot.prototype.careerTarget = function (career) {
+		if (career.contract >= 0) {
+			const task = career.tasks[career.contract];
+			return task.state === GravityGame.TASK_LOADED ? task.to : task.from;
+		}
+		if (career.at !== career.hq && career.ship.hold === OrbitTech.HOLDS[0] &&
+			career.ledger.purse + 1e-9 >=
+				careerPrice(career, OrbitTech.HOLDS[1]) + CAREER_PURSE_RESERVE) return career.hq;
+		const compete = career.tasks[GravityGame.COMPETE_SLOT];
+		if (compete.kind === GravityGame.TASK_COMPETE && compete.planet !== career.at &&
+			career.pads[compete.planet].catapult !== null) return compete.planet;
+		return -1;
+	};
+
+	/* Plan only from the ship's built pad; every snapped speed is <= its live cap. */
+	GravityBot.prototype.careerPlan = function (career, sim, market, runStep, fallback) {
+		const best = this.careerBest;
+		best.origin = -1;
+		best.score = -Infinity;
+		if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
+			!sim.canLaunchFrom(career.at)) return null;
+		const origin = career.at;
+		const limit = sim.speedLimit(origin);
+		const capU = Math.floor(limit * GravityGame.SPEED_STEPS + 1e-9);
+		const minU = GravityGame.speedUnits(GravitySim.SPEED_MIN);
+		if (capU < minU) return null;
+
+		this.probe.fieldT = sim.fieldT;
+		this.probe.fieldRate = sim.fieldRate;
+		this.careerPlans += 1;
+		const target = this.careerTarget(career);
+		const refit = target === career.hq && career.at !== career.hq &&
+			career.ship.hold === OrbitTech.HOLDS[0];
+		const requiredBody = career.contract >= 0 || refit ? target : -1;
+		const targetAngle = target >= 0
+			? Math.atan2(sim.planetY[target] - sim.planetY[origin],
+				sim.planetX[target] - sim.planetX[origin]) : 0;
+		const angles = fallback ? CAREER_FALLBACK_ANGLES : CAREER_ANGLES;
+		const horizon = fallback ? GravityGame.CAP_SECONDS : CAREER_HORIZON;
+		const extra = target >= 0 && target !== origin ? CAREER_TARGET_OFFSETS * 2 + 1 : 0;
+		let previousSpeedU = -1;
+		let bestAngleU = 0;
+		let bestSpeedU = 0;
+
+		for (let s = 0; s < CAREER_SPEED_FRACTIONS.length; s++) {
+			let speedU = Math.round(limit * CAREER_SPEED_FRACTIONS[s] * GravityGame.SPEED_STEPS);
+			if (speedU > capU) speedU = capU;
+			if (speedU < minU) speedU = minU;
+			if (speedU > capU || speedU === previousSpeedU) continue;
+			previousSpeedU = speedU;
+			const speed = GravityGame.speedOf(speedU);
+			for (let a = 0; a < angles + extra; a++) {
+				let rawAngle;
+				if (a < angles) rawAngle = (a + 0.5) / angles * Math.PI * 2;
+				else rawAngle = targetAngle + (a - angles - CAREER_TARGET_OFFSETS) * CAREER_TARGET_STEP;
+				const angleU = GravityGame.angleUnits(rawAngle);
+				const angle = GravityGame.angleOf(angleU);
+				this.probe.visited.set(sim.visited);
+				this.probe.visitedCount = sim.visitedCount;
+				this.probe.predictFast(origin, angle, speed, horizon);
+				if (requiredBody >= 0 && this.probe.predBody !== requiredBody) continue;
+				const score = this.careerScoreProbe(career, sim, origin, speed, market, runStep);
+				const better = score > best.score + 1e-12 ||
+					(Math.abs(score - best.score) <= 1e-12 && best.origin >= 0 &&
+						(angleU < bestAngleU || (angleU === bestAngleU && speedU < bestSpeedU)));
+				if (!better) continue;
+				best.origin = origin;
+				best.body = this.probe.predBody;
+				best.angle = angle;
+				best.speed = speed;
+				best.score = score;
+				best.taskPay = this.careerEval.taskPay;
+				best.padValue = this.careerEval.padValue;
+				best.energy = this.careerEval.energy;
+				best.wait = this.careerEval.wait;
+				best.steps = this.probe.predSteps;
+				bestAngleU = angleU;
+				bestSpeedU = speedU;
+			}
+		}
+		return best.origin >= 0 ? best : null;
+	};
+
 	GravityBot.LEVELS = LEVELS;
 	GravityBot.MAX_RIVALS = MAX_RIVALS;
 	GravityBot.PLAYER_INDEX = PLAYER_INDEX;
 	GravityBot.SLICE_CANDIDATES = SLICE_CANDIDATES;
+	GravityBot.CAREER_WAIT_SECONDS = CAREER_WAIT_SECONDS;
+	GravityBot.CAREER_PURSE_RESERVE = CAREER_PURSE_RESERVE;
+	GravityBot.CAREER_ENERGY_WAIT_COST = CAREER_ENERGY_WAIT_COST;
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = GravityBot;
 	else root.GravityBot = GravityBot;

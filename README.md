@@ -122,11 +122,12 @@ Open `index.html` (`file://` works, no build, no modules).
 - `orbit_science.js` — knowledge hull (convex volume of discovered parameter vectors; cheap inside, `k·dist` outside) for the planned research screen, node-only so far
 - `gravity_sim.js` — gravity field, planet-system visits, per-pass prediction log, headless `predictFast`, live `stepOne` flight & continuation, career launch gate (`setLaunchNetwork`, `canFire`, `speedLimit`, `relocate`)
 - `gravity_game.js` — game rules (`tour`, `route`, `money`, `career`), aim grid, replay link codec (`rule`, `bot`, `cheat`), shared planet-profit market (`MONEY`, `createMarket`, `planetProfit`, `stepHarvest`, `estimateProfit`, `compareScores`), career state (pads, ship, task board from the colony economy, evacuation, end condition)
-- `gravity_bot.js` — deterministic shared-market rivals for all game rules (`off`, `easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead, sliced search, `rivalLink`)
+- `gravity_bot.js` — deterministic shared-market rivals for all game rules (`off`, `easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead, sliced search, `rivalLink`), plus the synchronous headless career controller (pad-only plans, live speed caps, task/pad/energy-wait scoring and between-flight shopping)
 - `photo_deck.js` — postcard popup: type → file candidates, captions, compact layout, purse toast
 - `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game scoreboard, the flat mode row, career drawer (pad plate, shop, task board) & replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
-  `game_bench.js`, `route_bench.js`, `bot_bench.js`, `career_bench.js`), headless DOM smoke suite
+  `game_bench.js`, `route_bench.js`, `bot_bench.js`, `career_bench.js`,
+  `career_bot_bench.js`), headless DOM smoke suite
   (`dom_smoke.js`) on the shared vm page stub (`dom_stub.js`), and a real-browser
   HUD layout check (`layout_check.js`, needs `CHROME_PATH`) that asserts the
   action row stays reachable and never reflows while aiming

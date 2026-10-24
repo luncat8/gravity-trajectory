@@ -13,9 +13,9 @@
  * gravity sim, time s. Launch model:
  *   energy  = KWH_PER_T_V2 · m · v² / efficiency   (drawn from the pad battery)
  *   v_max   = sqrt(2 · maxForce / m · RAIL_M)        (force cap of the rail)
- * so EMC-1 + BAT-1 lifts a 10 t ship to ~111 px/s (the 80–120 px/s band where
- * most shots land on another planet) and stalls a 38 t load below 60 px/s,
- * while EMC-5 reaches the sim's top speed with a dry ship.
+ * so EMC-1 + BAT-1 lifts a 10 t ship to ~92 px/s (the weak end of the
+ * 80–120 px/s landing band) and stalls a 38 t load below 50 px/s, while EMC-5
+ * reaches the sim's top speed with a dry ship.
  */
 (function (root) {
 	'use strict';
@@ -28,7 +28,7 @@
 	/* --- planet gear --------------------------------------------------- */
 
 	const CATAPULTS = [
-		{ id: 'EMC-1', tier: 1, maxForce: 45, efficiency: 0.62, buildCost: 3.00 },
+		{ id: 'EMC-1', tier: 1, maxForce: 15, efficiency: 0.62, buildCost: 3.00 },
 		{ id: 'EMC-2', tier: 2, maxForce: 90, efficiency: 0.71, buildCost: 6.00 },
 		{ id: 'EMC-3', tier: 3, maxForce: 135, efficiency: 0.80, buildCost: 10.00 },
 		{ id: 'EMC-4', tier: 4, maxForce: 165, efficiency: 0.85, buildCost: 15.00 },

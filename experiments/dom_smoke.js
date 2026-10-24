@@ -1100,6 +1100,7 @@ check(soloScene.game.money.purse < 1 && soloEnv.elements.get('cargoStatus').text
 console.log('solo money:', soloShots, 'shots · broke flight landed · purse', soloScene.game.money.purse.toFixed(2));
 
 /* career via ?rule=career: ship on HQ, only its pad launches, a landing elsewhere strands */
+const CAREER_TEST_SPEED = 90;
 const careerEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
 careerEnv.runFrames(2, 16.0);
 const kui = careerEnv.elements;
@@ -1128,11 +1129,11 @@ check(kui.get('careerShop').innerHTML.includes('data-act="build"') &&
 check(kui.get('careerTasks').innerHTML.includes('careerRow'), 'career task board empty');
 check(kui.get('gameScore').textContent === '6.00 purse', 'career score is the purse: ' + kui.get('gameScore').textContent);
 const noPad = (career.hq + 3) % pageWorld.PLANETS;
-careerEnv.dragAim(noPad, 0.7, 100);
+careerEnv.dragAim(noPad, 0.7, CAREER_TEST_SPEED);
 careerEnv.runFrames(2, 16.0);
 check(kui.get('launch').disabled && kCargo.status !== kSim.STATUS_FLYING, 'no catapult: drag from P' + noPad + ' must not arm');
 const limit = kCargo.speedLimit(career.hq);
-check(limit > 100 && limit < 125, 'HQ speed limit ' + limit);
+check(limit > 85 && limit < 95, 'HQ speed limit ' + limit);
 careerEnv.dragAim(career.hq, 0.7, 200);
 careerEnv.runFrames(2, 16.0);
 check(kui.get('launch').disabled && kui.get('launch').textContent.startsWith('pad '),
@@ -1142,11 +1143,11 @@ check(kScene.game.career.light[career.hq] > 0 && kScene.game.career.pads[career.
 let landingShot = null;
 for (let a = 0; a < 72 && !landingShot; a++) {
 	const angle = a / 72 * Math.PI * 2;
-	kCargo.predict(career.hq, angle, 100);
+	kCargo.predict(career.hq, angle, CAREER_TEST_SPEED);
 	if (kCargo.predReason === kSim.END_IMPACT && kCargo.predBody !== career.hq) landingShot = angle;
 }
-check(landingShot !== null, 'no landing shot from HQ at 100 px/s');
-careerEnv.dragAim(career.hq, landingShot, 100);
+check(landingShot !== null, 'no landing shot from HQ at ' + CAREER_TEST_SPEED + ' px/s');
+careerEnv.dragAim(career.hq, landingShot, CAREER_TEST_SPEED);
 careerEnv.runFrames(2, 16.0);
 check(!kui.get('launch').disabled && kui.get('launch').textContent === 'launch',
 	'career launch label: ' + kui.get('launch').textContent);
@@ -1314,9 +1315,9 @@ function landingAngle(sim, from, speed) {
 	}
 	return best;
 }
-const firstAngle = landingAngle(bCargo, bCareer.hq, 100);
+const firstAngle = landingAngle(bCargo, bCareer.hq, CAREER_TEST_SPEED);
 check(firstAngle !== null, 'build env: no landing shot from HQ');
-buildEnv.dragAim(bCareer.hq, firstAngle, 100);
+buildEnv.dragAim(bCareer.hq, firstAngle, CAREER_TEST_SPEED);
 buildEnv.runFrames(2, 16.0);
 buildEnv.click('launch');
 for (let i = 0; i < 400 && bCargo.status === pageSim.STATUS_FLYING; i++) buildEnv.runFrames(1, 40.0);
@@ -1332,10 +1333,10 @@ check(!bCareer.stranded && bCareer.pads[bCareer.at].catapult.id === 'EMC-1' && b
 buildEnv.runFrames(2, 16.0);
 check(bui.get('launch').textContent === 'launch',
 	'new pad launch state: ' + bui.get('launch').textContent);
-const secondAngle = landingAngle(bCargo, bCareer.at, 100);
+const secondAngle = landingAngle(bCargo, bCareer.at, CAREER_TEST_SPEED);
 check(secondAngle !== null, 'build env: no second flight from the new pad');
 const padCharge = bCareer.pads[bCareer.at].chargeKwh;
-buildEnv.dragAim(bCareer.at, secondAngle, 100);
+buildEnv.dragAim(bCareer.at, secondAngle, CAREER_TEST_SPEED);
 buildEnv.runFrames(2, 16.0);
 check(!bui.get('launch').disabled, 'an armed shot from the new pad is still disabled');
 buildEnv.click('launch');
