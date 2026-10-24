@@ -10,6 +10,10 @@
  * Launch gate: with `pads` attached (career), a planet can only be launched from
  * when its pad has a catapult, and a shot only fires while the pad battery and
  * rail force cover the ship mass at that speed (OrbitTech launch model).
+ *
+ * Experimental scales (setScales): a system-wide gravity multiplier applied to
+ * every body's strength, and a catapult rail-force multiplier used by the
+ * career launch gate. Both default to 1, so a plain sim is unchanged.
  */
 (function (root) {
 	'use strict';
@@ -117,6 +121,9 @@
 		 * ship = { mass } — null means every planet is a free launch base */
 		this.pads = null;
 		this.ship = null;
+		/* experimental multipliers (see setScales) */
+		this.gravityScale = 1;
+		this.forceScale = 1;
 
 		this.visited = new Uint8Array(MAX_BODIES);
 		this.visitedCount = 0;
@@ -256,14 +263,20 @@
 	GravitySim.prototype.speedLimit = function (planet) {
 		if (this.pads === null) return SPEED_MAX;
 		const pad = this.pads[planet];
-		return OrbitTech.speedLimit(pad.chargeKwh, this.ship.mass, pad.catapult);
+		return OrbitTech.speedLimit(pad.chargeKwh, this.ship.mass, pad.catapult, this.forceScale);
 	};
 
 	GravitySim.prototype.canFire = function (planet, speed) {
 		if (!this.canLaunchFrom(planet)) return false;
 		if (this.pads === null) return true;
 		const pad = this.pads[planet];
-		return OrbitTech.canLaunch(pad.chargeKwh, this.ship.mass, pad.catapult, speed);
+		return OrbitTech.canLaunch(pad.chargeKwh, this.ship.mass, pad.catapult, speed, this.forceScale);
+	};
+
+	/* experimental world knobs; both 1 = the plain game */
+	GravitySim.prototype.setScales = function (gravityScale, forceScale) {
+		this.gravityScale = gravityScale;
+		this.forceScale = forceScale;
 	};
 
 	/* puts the idle vessel on `planet` (career start, evacuation); visits are kept */
@@ -351,15 +364,22 @@
 		this.strength.fill(1);
 	};
 
-	GravitySim.prototype.speedAt = function (length) {
+	/* drag length <-> speed over one full GRIP_MAX; `ceiling` is the pad's real
+	 * fastest shot, so a weak catapult compresses the whole range and every
+	 * drag step gets finer instead of running into a wall at launch time */
+	GravitySim.prototype.speedAt = function (length, ceiling) {
+		const top = ceiling === undefined ? SPEED_MAX : ceiling;
+		const span = top - SPEED_MIN;
 		let t = length / GRIP_MAX;
 		if (t < 0) t = 0;
 		else if (t > 1) t = 1;
-		return SPEED_MIN + t * (SPEED_MAX - SPEED_MIN);
+		return span > 0 ? SPEED_MIN + t * span : SPEED_MIN;
 	};
 
-	GravitySim.prototype.gripLength = function (speed) {
-		let t = (speed - SPEED_MIN) / (SPEED_MAX - SPEED_MIN);
+	GravitySim.prototype.gripLength = function (speed, ceiling) {
+		const top = ceiling === undefined ? SPEED_MAX : ceiling;
+		const span = top - SPEED_MIN;
+		let t = span > 0 ? (speed - SPEED_MIN) / span : 1;
 		if (t < 0) t = 0;
 		else if (t > 1) t = 1;
 		return t * GRIP_MAX;
@@ -370,6 +390,7 @@
 		const py = this.stepY;
 		const strength = this.strength;
 		const count = this.bodyCount;
+		const mu = MU * this.gravityScale;
 		let ax = 0;
 		let ay = 0;
 		for (let i = 0; i < count; i++) {
@@ -378,7 +399,7 @@
 			const dx = px[i] - state.x;
 			const dy = py[i] - state.y;
 			const inv = 1 / (dx * dx + dy * dy + SOFT2);
-			const a = MU * s * inv * Math.sqrt(inv);
+			const a = mu * s * inv * Math.sqrt(inv);
 			ax += dx * a;
 			ay += dy * a;
 		}

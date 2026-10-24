@@ -15,7 +15,8 @@
  *   v_max   = sqrt(2 · maxForce / m · RAIL_M)        (force cap of the rail)
  * so EMC-1 + BAT-1 lifts a 10 t ship to ~92 px/s (the weak end of the
  * 80–120 px/s landing band) and stalls a 38 t load below 50 px/s, while EMC-5
- * reaches the sim's top speed with a dry ship.
+ * reaches the sim's top speed with a dry ship. The optional `forceScale`
+ * argument multiplies only the rail force cap; launch energy is unchanged.
  */
 (function (root) {
 	'use strict';
@@ -119,21 +120,23 @@
 		return KWH_PER_T_V2 * mass * speed * speed / catapult.efficiency;
 	}
 
-	/* speed the rail reaches before its force cap, px/s */
-	function maxSpeed(mass, catapult) {
-		return Math.sqrt(2 * catapult.maxForce * RAIL_M / mass);
+	/* speed the rail reaches before its force cap, px/s; `forceScale` is the
+	 * experimental settings multiplier (absent = the table value) */
+	function maxSpeed(mass, catapult, forceScale) {
+		const force = forceScale === undefined ? catapult.maxForce : catapult.maxForce * forceScale;
+		return Math.sqrt(2 * force * RAIL_M / mass);
 	}
 
 	/* fastest launch the pad affords right now: min of the energy and force caps */
-	function speedLimit(chargeKwh, mass, catapult) {
+	function speedLimit(chargeKwh, mass, catapult, forceScale) {
 		if (!catapult || chargeKwh <= 0) return 0;
 		const byEnergy = Math.sqrt(chargeKwh * catapult.efficiency / (KWH_PER_T_V2 * mass));
-		const byForce = maxSpeed(mass, catapult);
+		const byForce = maxSpeed(mass, catapult, forceScale);
 		return byEnergy < byForce ? byEnergy : byForce;
 	}
 
-	function canLaunch(chargeKwh, mass, catapult, speed) {
-		return speed <= speedLimit(chargeKwh, mass, catapult) + 1e-9;
+	function canLaunch(chargeKwh, mass, catapult, speed, forceScale) {
+		return speed <= speedLimit(chargeKwh, mass, catapult, forceScale) + 1e-9;
 	}
 
 	/* kWh gained over dtSec seconds at relative light (0..1) */

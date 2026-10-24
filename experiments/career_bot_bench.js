@@ -207,6 +207,24 @@ check('career plan uses only the occupied pad, caps speed, and exposes exact sco
 	assert.strictEqual(w.bot.careerPlan(w.career, w.sim, w.market, w.step, false), null);
 });
 
+check('idle controller first repairs a pad its loaded ship cannot lift', () => {
+	const w = makeWorld(42);
+	w.ledger.purse = 40;
+	assert.ok(GravityGame.installPart(w.career, OrbitTech.KIND_HOLD, OrbitTech.HOLDS[2]));
+	w.career.ship.cargoTons = 24;
+	w.career.ship.mass = OrbitTech.shipMass(w.career.ship, 24);
+	w.sim.setScales(1, 0.25);
+	const pad = w.career.pads[w.career.hq];
+	assert.ok(OrbitTech.speedLimit(pad.battery.capacity, w.career.ship.mass,
+		pad.catapult, 0.25) < GravitySim.SPEED_MIN, 'test pad is liftable');
+	const tier0 = pad.catapult.tier;
+	assert.ok(w.bot.careerBetweenFlights(w.career, w.sim) > 0, 'idle controller did nothing');
+	assert.ok(pad.catapult.tier > tier0, 'pad rail not upgraded');
+	assert.ok(OrbitTech.speedLimit(pad.battery.capacity, w.career.ship.mass,
+		pad.catapult, 0.25) >= GravitySim.SPEED_MIN, 'pad still cannot lift the ship');
+	assert.ok(w.bot.careerPlan(w.career, w.sim, w.market, w.step, false), 'no plan after repair');
+});
+
 check('idle controller buys a hold and pads, and upgrades a weak loaded pad', () => {
 	const w = makeWorld(42);
 	w.ledger.purse = 40;

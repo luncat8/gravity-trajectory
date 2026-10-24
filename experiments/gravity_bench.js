@@ -202,6 +202,49 @@ function movingTests(world) {
 	return { parity, divergence, worst, avg: total / runs, runs };
 }
 
+/* experimental scales: a free fall step is exactly linear in the gravity
+ * multiplier, and a halved field still predicts exactly what it flies */
+function scaleDrop() {
+	const sim = new GravitySim(1000, 1000);
+	const strength = new Float64Array(GravitySim.MAX_BODIES).fill(1);
+	const radius = new Float64Array(1).fill(10);
+	const fill = function (t, outX, outY, count) {
+		for (let i = 0; i < count; i++) {
+			outX[i] = 500;
+			outY[i] = 500;
+		}
+	};
+	sim.setField(1, radius, strength, fill, true);
+	sim.fillStep(0);
+	function fall(scale) {
+		sim.setScales(scale, 1);
+		const state = { x: 100, y: 500, vx: 0, vy: 0 };
+		/* one fixed step: a single acceleration, so the pull is exactly linear */
+		sim.advance(state, GravitySim.DT);
+		return state.vx;
+	}
+	const one = fall(1);
+	const half = fall(0.5);
+	const double = fall(2);
+	const zero = fall(0);
+	sim.setScales(1, 1);
+	if (!(one > 0)) throw new Error('gravity scale: no pull');
+	if (zero !== 0) throw new Error('gravity scale 0 pulled the cargo');
+	if (Math.abs(half / one - 0.5) > 1e-9 || Math.abs(double / one - 2) > 1e-9) {
+		throw new Error('gravity scale is not linear: ' + one + ' / ' + half + ' / ' + double);
+	}
+	return { one, half, double, zero };
+}
+
+function scaleParity(world) {
+	const g = world.gravity;
+	usePlanets(world);
+	g.setScales(0.5, 1);
+	const parity = parityRun(g, [0, 7, 14, 21], 6, [90, 180], 'scaled ');
+	g.setScales(1, 1);
+	return parity;
+}
+
 function repelSweep(world) {
 	const g = world.gravity;
 	g.resetField();
@@ -241,7 +284,9 @@ const sweep = predictionSweep(world);
 const parity = parityCheck(world);
 const moving = movingTests(world);
 usePlanets(world);
+const scaled = scaleParity(world);
 const repel = repelSweep(world);
+const drop = scaleDrop();
 
 console.log('world: 26 planets, fast-forward to t+07:00 in ' + fastForwardMs.toFixed(2) + ' ms');
 console.log('trade at t+07:00: ports ' + world.sim.portCount +
@@ -264,6 +309,12 @@ console.log('moving ports at x' + MOVING_RATE + ': parity ' + moving.parity.case
 console.log('  moving vs frozen end point: max ' + moving.divergence.toFixed(1) + ' px apart');
 console.log('  moving prediction: ' + moving.runs + ' runs, avg ' + moving.avg.toFixed(3) +
 	' ms, worst ' + moving.worst.toFixed(3) + ' ms');
+console.log('experimental gravity x0.5: parity ' + scaled.cases +
+	' shots, worst deviation ' + scaled.maxError.toFixed(6) + ' px' +
+	(scaled.worstCase ? ' (' + scaled.worstCase + ')' : ''));
+console.log('experimental gravity: one-step pull x0 ' + drop.zero.toFixed(3) +
+	' · x0.5 ' + drop.half.toFixed(3) + ' · x1 ' + drop.one.toFixed(3) +
+	' · x2 ' + drop.double.toFixed(3));
 console.log('repel field: ' + repel.count + ' paths, finite bounds x ' +
 	repel.minX.toFixed(1) + '…' + repel.maxX.toFixed(1) + ', y ' +
 	repel.minY.toFixed(1) + '…' + repel.maxY.toFixed(1));
@@ -275,6 +326,7 @@ if (sweep.worst > GravitySim.BUDGET_MS + 1) throw new Error('prediction over bud
 if (moving.worst > GravitySim.BUDGET_MS + 2) throw new Error('moving prediction over budget');
 if (parity.maxError > 0.01) throw new Error('live flight diverged from prediction');
 if (moving.parity.maxError > 0.01) throw new Error('moving flight diverged from prediction');
+if (scaled.maxError > 0.01) throw new Error('scaled flight diverged from prediction');
 if (moving.divergence < 5) throw new Error('moving field barely changes the trajectory');
 if (!Number.isFinite(repel.minX) || !Number.isFinite(repel.maxY)) {
 	throw new Error('repel sweep produced non-finite bounds');

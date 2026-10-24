@@ -1,0 +1,20 @@
+0.4.5 drag ceiling + experimental scales
+
+Drag map: speedAt/gripLength stretch GRIP_MAX 240 over SPEED_MIN..ceiling; ceiling = career speedLimit else 320.
+  starter EMC-1 dry 91.651514 px/s -> 0.2569 px/s per drag px (was 1.2083); full drag snaps to the cap.
+  lab/tour/route/money unchanged (30..320).
+Scales: g 0..2, f 0.25..3, 2 dp, optional &gs=&fs= (omitted at 1). Gravity scales mu only; force scales the rail cap only.
+
+career_bot_bench.js: 4 focused checks + 4 full careers; 26/26 pads, CAREER_COMPLETE, purse >= 6.00.
+  seed 7: purse 9.95 · earned 3.38 · flights 24 · deliveries 3 · upgrades 4 · waits 6 · fallbacks 3 · evac 0
+  seed 31: 8.72 · 6.71 · 25 · 2 · 0 · 0 · 0 · 0
+  seed 42: 6.54 · 14.15 · 23 · 9 · 4 · 10 · 1 · 0
+  seed 913: 6.35 · 2.19 · 21 · 1 · 0 · 0 · 1 · 0
+career_bench.js: 26 checks, CAREER BENCH OK (force cap gate + scaled prediction parity).
+dom_smoke.js: SMOKE OK; panel g x0.50 · force x1.50; link gs=0.8&fs=1.5 -> g x0.80 · force x1.50; career drag max 92, force x0.5 -> 64.9.
+gravity_bench.js: BENCH OK; parity 216 shots worst 0.000068 px; ports x6 60 shots 0.000068; experimental x0.5 48 shots 0.000068; one-step pull x0 0.000 x0.5 0.010 x1 0.020 x2 0.040; worst slice 3.011-9.603 ms (10 ms cap).
+game_bench.js: GAME BENCH OK; 300 links round-trip incl gs/fs; cross-engine 1872 flights x3, 0 flips; money 12 s purse 4.90 / 60 s 10.11; broke 0.00.
+bot_bench.js: BOT BENCH OK; decision easy/normal/hard 6.38/15.66/39.74 ms, worst slice 3.73 ms.
+route_bench.js: ROUTE BENCH OK. colony_bench.js: 1622/1622, COLONY BENCH OK.
+layout_check.js: skipped, CHROME_PATH unset.
+node --check touched JS: OK.

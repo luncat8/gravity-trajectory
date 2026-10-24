@@ -179,6 +179,68 @@ function startCareer(w, seed, cheat) {
 	w.step = 0;
 }
 
+check('experimental scales: force shrinks the rail cap and the live pad gate', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42, null);
+	const base = w.sim.speedLimit(w.career.at);
+	const mass = w.career.ship.mass;
+	const half = OrbitTech.speedLimit(BAT[0].capacity, mass, EMC[0], 0.5);
+	assert.ok(Math.abs(half - base * Math.SQRT1_2) < 1e-9, 'force scale ' + half);
+	assert.ok(OrbitTech.canLaunch(BAT[0].capacity, mass, EMC[0], half, 0.5));
+	assert.ok(!OrbitTech.canLaunch(BAT[0].capacity, mass, EMC[0], base, 0.5));
+	/* launch energy is a function of mass, speed and efficiency only */
+	assert.strictEqual(OrbitTech.launchEnergy(mass, EMC[0], base),
+		OrbitTech.launchEnergy(mass, EMC[0], base));
+	w.sim.setScales(1, 0.5);
+	assert.ok(Math.abs(w.sim.speedLimit(w.career.at) - half) < 1e-9);
+	assert.ok(!w.sim.canFire(w.career.at, base));
+	assert.ok(w.sim.canFire(w.career.at, half));
+	w.sim.setScales(1, 1);
+	assert.ok(Math.abs(w.sim.speedLimit(w.career.at) - base) < 1e-9);
+});
+
+check('experimental gravity scales every pull and keeps prediction parity', () => {
+	const probe = new GravitySim(1000, 1000);
+	const strength = new Float64Array(GravitySim.MAX_BODIES).fill(1);
+	const radius = new Float64Array(1).fill(10);
+	probe.setField(1, radius, strength, (t, ox, oy, n) => {
+		for (let i = 0; i < n; i++) {
+			ox[i] = 500;
+			oy[i] = 500;
+		}
+	}, true);
+	probe.fillStep(0);
+	const pull = scale => {
+		probe.setScales(scale, 1);
+		const state = { x: 100, y: 500, vx: 0, vy: 0 };
+		probe.advance(state, DT);
+		return state.vx;
+	};
+	const one = pull(1);
+	assert.ok(one > 0);
+	assert.strictEqual(pull(0), 0);
+	assert.ok(Math.abs(pull(0.5) - one * 0.5) < 1e-12);
+	assert.ok(Math.abs(pull(2) - one * 2) < 1e-12);
+	/* the live flight and the preview share advance(): a scaled field must match */
+	const w = makeWorld(7);
+	startCareer(w, 7, null);
+	w.sim.setScales(0.5, 1);
+	w.sim.predict(0, 1.1, 150, Infinity);
+	const points = w.sim.predCount;
+	assert.ok(points > 2, 'scaled preview has no path');
+	w.sim.launch(0, 1.1, 150);
+	let deviation = 0;
+	for (let i = 1; i < points; i++) {
+		w.sim.stepOne();
+		const dx = w.sim.cargo.x - w.sim.predX[i];
+		const dy = w.sim.cargo.y - w.sim.predY[i];
+		const d = Math.sqrt(dx * dx + dy * dy);
+		if (d > deviation) deviation = d;
+	}
+	assert.ok(deviation < 1e-3, 'scaled prediction parity ' + deviation);
+	w.sim.setScales(1, 1);
+});
+
 /* the fastest affordable shot from `from` that lands on `want` (or any other planet) */
 function findShot(w, from, want) {
 	const sim = w.sim;

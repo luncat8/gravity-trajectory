@@ -174,8 +174,8 @@
 			goal: 'Build a catapult on every planet.',
 			score: 'Purse. The career ends complete with all ' + PLANETS + ' catapults, or broke.',
 			detailLabel: 'Network',
-			detail: 'Only a built catapult launches, drawing its solar-charged battery; ship and cargo mass cap the speed. Landing without a catapult strands the ship: build one there or evacuate to HQ for a fee. wait runs the world clock so pads charge; the drawer builds any planet\'s pad, upgrades every pad at once and takes deliveries.',
-			controls: 'Drag from the pad under the ship to aim · Shift = fine · Enter = launch'
+			detail: 'Only a built catapult launches, drawing its solar-charged battery; ship and cargo mass cap the speed. The drag range ends at that live cap, so an aimed shot can always fire. Landing without a catapult strands the ship: build one there or evacuate to HQ for a fee. wait runs the world clock so pads charge; the drawer builds any planet\'s pad, upgrades every pad at once and takes deliveries.',
+			controls: 'Drag from the pad under the ship to aim (range ends at its live max) · Shift = fine · Enter = launch'
 		}
 	};
 
@@ -269,6 +269,11 @@
 	const horizonLabel = $('horizonLabel');
 	const horizonTagEl = $('horizonTag');
 	const trimTargetEl = $('trimTarget');
+	const expGravityEl = $('expGravity');
+	const expGravityLabelEl = $('expGravityLabel');
+	const expForceEl = $('expForce');
+	const expForceLabelEl = $('expForceLabel');
+	const expTagEl = $('expTag');
 	const launchButton = $('launch');
 	const clearButton = $('clear');
 	const routeBestBtn = $('routeBest');
@@ -392,6 +397,10 @@
 	let fine = false;
 	let dirty = false;
 	let trimLast = 0;
+	/* experimental settings: system-wide gravity and catapult rail force */
+	let gravityScale = 1;
+	let forceScale = 1;
+	let experimentTouched = false;
 	let hudAt = -Infinity;
 	let lastFrame = performance.now();
 	const expStart = performance.now();
@@ -858,6 +867,7 @@
 		}
 		const sim = activeSim();
 		const deg = ((-aimAngle * 180 / Math.PI) % 360 + 360) % 360;
+		const ceiling = aimBody >= 0 ? speedCeiling(aimBody) : SPEED_MAX;
 		const visitNote = sim.predCount >= 2
 			? routeRule()
 				? ' · ' + Math.round(sim.predLength) + ' px' +
@@ -866,7 +876,76 @@
 					' · +' + sim.predNewVisits + ' (' + sim.predVisits + ' sys)'
 			: '';
 		aimLabel = Math.round(aimSpeed) + ' px/s · ' + deg.toFixed(1) + '°' +
-			(fine ? ' · fine' : '') + visitNote;
+			(fine ? ' · fine' : '') +
+			(ceiling < SPEED_MAX - 1e-9 ? ' · max ' + Math.round(ceiling) : '') + visitNote;
+	}
+
+	/* the drag maps all of GRIP_MAX onto SPEED_MIN…this planet's real ceiling:
+	 * a weak rail or a drained career battery shrinks the range instead of
+	 * letting the player aim a shot the pad then refuses to fire */
+	function speedCeiling(planet) {
+		const limit = careerRule() && planet >= 0 ? gravity.speedLimit(planet) : SPEED_MAX;
+		if (limit < SPEED_MIN) return SPEED_MIN;
+		return limit > SPEED_MAX ? SPEED_MAX : limit;
+	}
+
+	/* experimental panel: one world, so the player sim, the auto helpers and
+	 * every rival bot must predict and fly with the same two multipliers */
+	function applyExperiment() {
+		gravity.setScales(gravityScale, forceScale);
+		helperProbe.setScales(gravityScale, forceScale);
+		bot.setScales(gravityScale, forceScale);
+	}
+
+	function refreshExperimentUi() {
+		const gravityText = '×' + gravityScale.toFixed(2);
+		const forceText = '×' + forceScale.toFixed(2);
+		if (expGravityLabelEl) expGravityLabelEl.textContent = gravityText;
+		if (expForceLabelEl) expForceLabelEl.textContent = forceText;
+		if (expTagEl) expTagEl.textContent = 'g ' + gravityText + ' · force ' + forceText;
+	}
+
+	/* one entry point for the sliders and for a link that carries the scales */
+	function setExperimentScales(nextGravity, nextForce) {
+		gravityScale = Math.round(nextGravity * 100) / 100;
+		forceScale = Math.round(nextForce * 100) / 100;
+		if (expGravityEl) expGravityEl.value = String(gravityScale);
+		if (expForceEl) expForceEl.value = String(forceScale);
+		applyExperiment();
+		refreshExperimentUi();
+	}
+
+	/* a pad can lose its ceiling while a shot is armed (drained battery, lowered
+	 * force slider); keep the aim inside what the pad can actually fire */
+	function clampArmedToPad() {
+		if (!armed || aimBody < 0) return;
+		const ceiling = speedCeiling(aimBody);
+		if (aimSpeed <= ceiling) return;
+		aimSpeed = ceiling;
+		placeGripFromSpeed();
+		dirty = true;
+	}
+
+	function onExperimentInput() {
+		const nextGravity = Math.round(Number(expGravityEl.value) * 100) / 100;
+		const nextForce = Math.round(Number(expForceEl.value) * 100) / 100;
+		if (nextGravity !== gravityScale || nextForce !== forceScale) experimentTouched = true;
+		setExperimentScales(nextGravity, nextForce);
+		clampArmedToPad();
+		/* the drawer prints the pad's cap: re-render it or the number goes stale */
+		if (careerRule()) refreshCareerPanel();
+		dirty = true;
+		hudAt = -Infinity;
+	}
+
+	/* the route planner scores traced plans, so its world must not change under
+	 * a half-finished trace: restart the contest on release, like a field switch */
+	function onExperimentChange() {
+		if (!experimentTouched) return;
+		experimentTouched = false;
+		if (game.on && routeRule()) {
+			startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player, game.cheat);
+		}
 	}
 
 	function refreshHoverLabel() {
@@ -897,23 +976,30 @@
 		} else {
 			gripLen = 0;
 		}
-		aimSpeed = gravity.speedAt(gripLen);
+		aimSpeed = gravity.speedAt(gripLen, speedCeiling(aimBody));
 		snapAim();
 		refreshAimLabel();
 	}
 
-	/* game shots live on an integer grid so the link carries the exact launch inputs */
+	/* game shots live on an integer grid so the link carries the exact launch
+	 * inputs; the grid point is floored at the pad ceiling so a maximum drag
+	 * still rounds to a shot the pad can fire */
 	function snapAim() {
 		if (!game.on) return;
 		aimAngle = GravityGame.angleOf(GravityGame.angleUnits(aimAngle));
-		aimSpeed = GravityGame.speedOf(GravityGame.speedUnits(aimSpeed));
+		const maxU = Math.floor(speedCeiling(aimBody) * GravityGame.SPEED_STEPS + 1e-9);
+		const units = GravityGame.speedUnits(aimSpeed);
+		aimSpeed = GravityGame.speedOf(units < maxU ? units : maxU);
 	}
 
 	function placeGripFromSpeed() {
+		const ceiling = speedCeiling(aimBody);
+		if (aimSpeed > ceiling) aimSpeed = ceiling;
+		else if (aimSpeed < SPEED_MIN) aimSpeed = SPEED_MIN;
+		snapAim();
+		gripLen = gravity.gripLength(aimSpeed, ceiling);
 		const cx = tradeSim.planetX[aimBody];
 		const cy = tradeSim.planetY[aimBody];
-		snapAim();
-		gripLen = gravity.gripLength(aimSpeed);
 		gripX = cx + Math.cos(aimAngle) * gripLen;
 		gripY = cy + Math.sin(aimAngle) * gripLen;
 		refreshAimLabel();
@@ -1812,6 +1898,7 @@
 		if (routeRule()) bot.useField(gravity, mode);
 		helperAttachWorld();
 		helperUpdateUi();
+		applyExperiment();
 	}
 
 	function syncModeRadios() {
@@ -2449,6 +2536,8 @@
 			bot: game.bot,
 			player: game.player,
 			cheat: game.cheat,
+			gravityScale: gravityScale,
+			forceScale: forceScale,
 			shots: game.shots,
 			visited: routeRule() ? routePlan.visits : gravity.visitedCount,
 			steps: scoreSteps(),
@@ -2461,7 +2550,7 @@
 		if (bot.count === 0) return;
 		const rIdx = activeSlotIndex() === 1 && bot.count > 1 ? 1 : 0;
 		if (bot.rivals[rIdx].shots.length === 0) return;
-		const hash = bot.rivalLink(game.seed, scene.trade.speed, rIdx);
+		const hash = bot.rivalLink(game.seed, scene.trade.speed, rIdx, gravityScale, forceScale);
 		if (!hash) return;
 		const url = location.href.split('#')[0] + '#' + hash;
 		copyUrlText(url, botCopyBtn, 'copy rival');
@@ -2482,6 +2571,7 @@
 			return false;
 		}
 		scene.setSpeed(link.rate);
+		setExperimentScales(link.gravityScale, link.forceScale);
 		startGame(link.seed, true, link.rule, link.bot, link.player, link.cheat);
 		if (link.shots.length > 0) startReplay(link.shots, link.end, link.length);
 		return true;
@@ -2594,6 +2684,11 @@
 		for (let i = 0; i < bot.count && !anyShots; i++) {
 			if (bot.rivals[i].shots.length > 0) anyShots = true;
 		}
+		/* the scales define the world a link re-flies, so a flown run locks them;
+		 * career has no shot replay and stays tunable while it runs */
+		const experimentLock = game.on && (career ? replay.on : replay.on || anyShots);
+		if (expGravityEl) expGravityEl.disabled = experimentLock;
+		if (expForceEl) expForceEl.disabled = experimentLock;
 		scene.lockSpeed(game.on && (route || game.fixedRate || anyShots || replay.on));
 		clearButton.textContent = route ? 'clear plan' : game.on ? 'abort' : 'clear';
 		clearButton.disabled = route
@@ -2835,7 +2930,7 @@
 				'</span></div>';
 			return html;
 		}
-		const limit = OrbitTech.speedLimit(pad.chargeKwh, ship.mass, pad.catapult);
+		const limit = gravity.speedLimit(at);
 		const shot = OrbitTech.launchEnergy(ship.mass, pad.catapult, limit);
 		const frac = pad.battery.capacity > 0 ? pad.chargeKwh / pad.battery.capacity : 0;
 		html += '<div class="careerLine">' + pad.catapult.id + ' · ' + pad.panel.id + ' · ' +
@@ -3333,9 +3428,10 @@
 		if (delta === 0) return;
 		const factor = 1 + delta / 100;
 		if (armed) {
+			const ceiling = speedCeiling(aimBody);
 			aimSpeed = aimSpeed * factor;
 			if (aimSpeed < SPEED_MIN) aimSpeed = SPEED_MIN;
-			else if (aimSpeed > SPEED_MAX) aimSpeed = SPEED_MAX;
+			else if (aimSpeed > ceiling) aimSpeed = ceiling;
 			placeGripFromSpeed();
 			dirty = true;
 		} else if (selected >= 0 && !game.on) {
@@ -3630,7 +3726,7 @@
 		REPEL_DASH[0] = 4 * px;
 		REPEL_DASH[1] = 7 * px;
 		for (let i = 0; i < gravity.bodyCount; i++) {
-			const g = gravity.strength[i];
+			const g = gravity.strength[i] * gravity.gravityScale;
 			const mag = g < 0 ? -g : g;
 			if (mag < 0.02) continue;
 			const level = i === selected ? 2 : i === hoverBody ? 1 : 0;
@@ -3871,7 +3967,7 @@
 		ctx.lineWidth = 1.2 * px;
 		ctx.stroke();
 
-		const size = (4 + (aimSpeed - SPEED_MIN) / (SPEED_MAX - SPEED_MIN) * 4) * px;
+		const size = (4 + (gripLen > 0 ? gripLen / GRIP_MAX : 0) * 4) * px;
 		ctx.beginPath();
 		ctx.arc(gripX, gripY, size, 0, TAU);
 		ctx.fillStyle = 'rgba(255, 207, 110, 0.16)';
@@ -4101,14 +4197,18 @@
 	}
 
 	/* pad plate under the landed planet: catapult tier, battery charge, speed cap.
-	 * Strings are cached by (planet, tier, 0.01 kWh) so draw() stays 0-alloc. */
+	 * The string is cached so draw() stays 0-alloc; the key covers every input
+	 * of that text, including ship mass and the force scale. */
 	const padPlate = { key: -1, text: '', frac: 0, warn: false };
 
 	function careerPadPlate(career) {
 		const at = career.at;
 		const pad = at >= 0 ? career.pads[at] : null;
 		const tier = pad && pad.catapult ? pad.catapult.tier : 0;
-		const key = at * 1000000 + tier * 100000 + (pad && pad.catapult ? Math.round(pad.chargeKwh * 100) : 0);
+		const mass = career.ship.mass;
+		const key = ((((at + 1) * 16 + tier) * 200000 +
+			(pad && pad.catapult ? Math.round(pad.chargeKwh * 100) : 0)) * 40000 +
+			Math.round(mass * 100)) * 400 + Math.round(gravity.forceScale * 100);
 		if (key === padPlate.key) return padPlate;
 		padPlate.key = key;
 		if (!pad) {
@@ -4123,11 +4223,12 @@
 			padPlate.warn = true;
 			return padPlate;
 		}
-		const mass = career.ship.mass;
+		const limit = gravity.speedLimit(at);
 		padPlate.text = pad.catapult.id + ' · ' + pad.chargeKwh.toFixed(2) + ' kWh · ' +
-			Math.round(OrbitTech.speedLimit(pad.chargeKwh, mass, pad.catapult)) + ' px/s';
+			Math.round(limit) + ' px/s';
 		padPlate.frac = pad.chargeKwh / pad.battery.capacity;
-		padPlate.warn = pad.chargeKwh < OrbitTech.launchEnergy(mass, pad.catapult, 90);
+		/* same rule the bot uses to repair a pad: can the ship even leave? */
+		padPlate.warn = limit < GravitySim.SPEED_MIN + 1e-9;
 		return padPlate;
 	}
 
@@ -4534,6 +4635,14 @@
 	srcPortsEl.addEventListener('change', () => setSource(MODE_PORTS));
 	trimSlider.addEventListener('input', onTrimInput);
 	trimSlider.addEventListener('change', resetTrim);
+	if (expGravityEl) {
+		expGravityEl.addEventListener('input', onExperimentInput);
+		expGravityEl.addEventListener('change', onExperimentChange);
+	}
+	if (expForceEl) {
+		expForceEl.addEventListener('input', onExperimentInput);
+		expForceEl.addEventListener('change', onExperimentChange);
+	}
 	horizonSlider.addEventListener('input', () => {
 		gravity.horizon = Number(horizonSlider.value);
 		const text = gravity.horizon + ' s';
@@ -4752,6 +4861,9 @@
 		refreshCareerPanel,
 		playMode: () => (game.on ? game.rule : PLAY_LAB),
 		setPlayMode,
+		speedCeiling,
+		experimentScales: () => ({ gravity: gravityScale, force: forceScale }),
+		careerPadInfo: () => (game.career ? careerPadPlate(game.career) : null),
 		routeLength: () => activeRoutePlan().length,
 		routePlan: activeRoutePlan,
 		routeBest: activeRouteBest,
@@ -4784,6 +4896,7 @@
 	gravity.fieldRate = tradeRate();
 	updateRuleHelp(selectedHelpRule());
 	attachWorld();
+	refreshExperimentUi();
 	if (!loadSearchParams() && !loadLink()) refreshGameUi();
 
 	resizeOverlay();

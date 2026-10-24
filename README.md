@@ -19,10 +19,12 @@ Open `index.html` (`file://` works, no build, no modules).
 
 | input | action |
 | --- | --- |
-| drag from a planet | aim; direction is planet → grip, push grows with drag length |
+| drag from a planet | aim; direction is planet → grip, push grows with drag length · in career the whole range ends at the pad's live cap, so a full drag is always a shot the rail can fire |
 | hold shift while dragging | aim at 1/20 sensitivity |
 | click a body | select planet or moving port to tune its gravity (`-2…2`, default `1`); keeps armed shot |
 | `g` slider | gravity of the selected body; negative values repel · red `+` / blue `−` updates at once |
+| `experimental` · `g field` slider | system-wide gravity multiplier (`×0…×2`, default `×1`) applied to every body's pull, every rival and every prediction |
+| `experimental` · `catapult` slider | catapult rail-force multiplier (`×0.25…×3`, default `×1`): moves every tier's `maxSpeed`, the career pad cap and the drag range · both sliders stay live in lab and career, and lock at the recorded values while a replay runs (and outside career once a shot is recorded) · replay links carry `&gs=`/`&fs=` only when a scale is not `×1` |
 | `±` trim slider | relative nudge (`-5%…+5%`) of the aim speed, or of selected gravity when no shot is armed |
 | release drag | arms the shot/plan and draws the predicted trajectory (and, outside `route`, system visits) |
 | enter / launch | fires the vessel under `tour`/`money`; disabled for a `route` plan or bot-controlled YOU |
@@ -118,13 +120,13 @@ Open `index.html` (`file://` works, no build, no modules).
 - `orbit_econ.js` — colony economy laws: goods, resource map, growth
 - `orbit_sim.js` — orbital trade & colony simulation
 - `orbit_view.js` — trade renderer, coplanar Kepler moons & belts, camera `OrbitScene`
-- `orbit_tech.js` — career tech tables (catapults, panels, batteries, holds, engines, tanks, helpers) and the launch model: rail energy / force speed caps, solar charge, battery leak, bulk upgrade cost
+- `orbit_tech.js` — career tech tables (catapults, panels, batteries, holds, engines, tanks, helpers) and the launch model: rail energy / force speed caps (with the optional experimental `forceScale`), solar charge, battery leak, bulk upgrade cost
 - `orbit_science.js` — knowledge hull (convex volume of discovered parameter vectors; cheap inside, `k·dist` outside) for the planned research screen, node-only so far
-- `gravity_sim.js` — gravity field, planet-system visits, per-pass prediction log, headless `predictFast`, live `stepOne` flight & continuation, career launch gate (`setLaunchNetwork`, `canFire`, `speedLimit`, `relocate`)
-- `gravity_game.js` — game rules (`tour`, `route`, `money`, `career`), aim grid, replay link codec (`rule`, `bot`, `cheat`), shared planet-profit market (`MONEY`, `createMarket`, `planetProfit`, `stepHarvest`, `estimateProfit`, `compareScores`), career state (pads, ship, task board from the colony economy, evacuation, end condition)
-- `gravity_bot.js` — deterministic shared-market rivals for all game rules (`off`, `easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead, sliced search, `rivalLink`), plus the synchronous headless career controller (pad-only plans, live speed caps, task/pad/energy-wait scoring and between-flight shopping)
+- `gravity_sim.js` — gravity field, planet-system visits, per-pass prediction log, headless `predictFast`, live `stepOne` flight & continuation, career launch gate (`setLaunchNetwork`, `canFire`, `speedLimit`, `relocate`), the `speedAt`/`gripLength` drag map with an optional ceiling, and the experimental `setScales` multipliers
+- `gravity_game.js` — game rules (`tour`, `route`, `money`, `career`), aim grid, replay link codec (`rule`, `bot`, `cheat`, `gs`, `fs`), shared planet-profit market (`MONEY`, `createMarket`, `planetProfit`, `stepHarvest`, `estimateProfit`, `compareScores`), career state (pads, ship, task board from the colony economy, evacuation, end condition)
+- `gravity_bot.js` — deterministic shared-market rivals for all game rules (`off`, `easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead, sliced search, `rivalLink`), plus the synchronous headless career controller (pad-only plans, live speed caps, dead-end pad repair, task/pad/energy-wait scoring and between-flight shopping), with `setScales` fanning the experimental multipliers into every rival and probe sim
 - `photo_deck.js` — postcard popup: type → file candidates, captions, compact layout, purse toast
-- `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game scoreboard, the flat mode row, career drawer (pad plate, shop, task board) & replays
+- `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game scoreboard, the flat mode row, career drawer (pad plate, shop, task board), the experimental gravity/force panel and replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
   `game_bench.js`, `route_bench.js`, `bot_bench.js`, `career_bench.js`,
   `career_bot_bench.js`), headless DOM smoke suite

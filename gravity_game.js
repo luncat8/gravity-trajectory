@@ -81,6 +81,11 @@
 		purse0: 3
 	};
 	const PURSE_PRESETS = { tight: 2, standard: 3, relaxed: 6 };
+	/* experimental settings panel bounds; links carry the two multipliers */
+	const EXPERIMENT = {
+		gravityMin: 0, gravityMax: 2,
+		forceMin: 0.25, forceMax: 3
+	};
 	const SRC_PLANETS = 0;
 	const SRC_PORTS = 1;
 	const SRC_CODES = 'pm';
@@ -115,17 +120,25 @@
 		return shot.abort === NO_ABORT ? head : head + '.' + shot.abort.toString(36);
 	}
 
-	/* `game` = { seed, rate, rule, bot, player, cheat, shots, visited, steps, length };
-	 * default rule/bot/player stay omitted; `length` verifies a route plan. A
-	 * career link starts the same career (seed, rate, cheat) — its builds and
-	 * contracts are not replayed, so it never carries shots. */
+	/* two-decimal multiplier, omitted at the default 1 */
+	function scalePart(name, value) {
+		if (value === undefined || value === 1) return '';
+		return '&' + name + '=' + (Math.round(value * 100) / 100);
+	}
+
+	/* `game` = { seed, rate, rule, bot, player, cheat, gravityScale, forceScale,
+	 * shots, visited, steps, length }; default rule/bot/player/scales stay
+	 * omitted; `length` verifies a route plan. A career link starts the same
+	 * career (seed, rate, cheat, scales) — its builds and contracts are not
+	 * replayed, so it never carries shots. */
 	function encodeLink(game) {
 		const rulePart = game.rule && game.rule !== RULE_TOUR ? '&rule=' + game.rule : '';
 		const botPart = game.bot && game.bot !== BOT_OFF ? '&bot=' + game.bot : '';
 		const playerPart = game.player === PLAYER_BOT ? '&you=' + PLAYER_BOT : '';
 		const cheatPart = game.rule === RULE_CAREER && game.cheat ? '&cheat=' + game.cheat : '';
 		const head = 'game=' + FORMAT + '&seed=' + game.seed + '&rate=' + game.rate +
-			rulePart + botPart + playerPart + cheatPart;
+			rulePart + botPart + playerPart + cheatPart +
+			scalePart('gs', game.gravityScale) + scalePart('fs', game.forceScale);
 		if (game.shots.length === 0 || game.rule === RULE_CAREER) return head;
 		const lengthPart = game.rule === RULE_ROUTE && Number.isFinite(game.length)
 			? '&len=' + Math.round(game.length) : '';
@@ -146,7 +159,17 @@
 		return createShot(SRC_CODES.indexOf(match[1]), origin, angle, speed, abort);
 	}
 
-	/* Returns { seed, rate, rule, bot, player, cheat, shots, end, length } or null. */
+	/* absent = 1, otherwise a plain up-to-two-decimal number inside [min, max] */
+	function decodeScale(text, min, max) {
+		if (text === null) return 1;
+		if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;
+		const value = Number(text);
+		if (!Number.isFinite(value) || value < min || value > max) return null;
+		return value;
+	}
+
+	/* Returns { seed, rate, rule, bot, player, cheat, gravityScale, forceScale,
+	 * shots, end, length } or null. */
 	function decodeLink(text) {
 		const params = new URLSearchParams(String(text).replace(/^#/, ''));
 		if (params.get('game') !== String(FORMAT)) return null;
@@ -166,6 +189,9 @@
 		const cheatText = params.get('cheat');
 		const cheat = cheatText === null ? null : CHEATS[cheatText];
 		if (cheat === undefined || (cheat !== null && rule.name !== RULE_CAREER)) return null;
+		const gravityScale = decodeScale(params.get('gs'), EXPERIMENT.gravityMin, EXPERIMENT.gravityMax);
+		const forceScale = decodeScale(params.get('fs'), EXPERIMENT.forceMin, EXPERIMENT.forceMax);
+		if (gravityScale === null || forceScale === null) return null;
 		const list = params.get('shots');
 		const parts = list ? list.split('_') : [];
 		if (rule.planner && parts.length > 1) return null;
@@ -183,7 +209,7 @@
 		const endMatch = END_FORM.exec(params.get('end') || '');
 		const end = endMatch ? { visited: Number(endMatch[1]), steps: Number(endMatch[2]) } : null;
 		return { seed: seed, rate: rate, rule: rule.name, bot: bot, player: player, cheat: cheat,
-			shots: shots, end: end, length: length };
+			gravityScale: gravityScale, forceScale: forceScale, shots: shots, end: end, length: length };
 	}
 
 	function isGameLink(text) {
@@ -804,7 +830,7 @@
 		BOT_OFF, BOT_EASY, BOT_NORMAL, BOT_HARD, BOTS,
 		PLAYER_USER, PLAYER_BOT, PLAYER_TYPES,
 		CHEAT_COMMUNISM, CHEAT_ENDGAME, CHEATS,
-		SRC_PLANETS, SRC_PORTS, NO_ABORT, MONEY, PURSE_PRESETS,
+		SRC_PLANETS, SRC_PORTS, NO_ABORT, MONEY, PURSE_PRESETS, EXPERIMENT,
 		angleUnits, angleOf, speedUnits, speedOf,
 		createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
 		initSteps, createMarket, resetMarket, planetProfit,

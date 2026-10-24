@@ -94,13 +94,16 @@ function benchCodec() {
 				GravityGame.speedUnits(GravitySim.SPEED_MIN + rand() * (GravitySim.SPEED_MAX - GravitySim.SPEED_MIN)),
 				planner || rand() >= 0.2 ? GravityGame.NO_ABORT : Math.floor(rand() * cap)));
 		}
+		const gravityScale = n % 7 === 0 ? Math.round(rand() * 20) / 10 : 1;
+		const forceScale = n % 5 === 0 ? Math.round((0.25 + rand() * 2.75) * 100) / 100 : 1;
 		const game = { seed: 1 + Math.floor(rand() * 4e9), rate: (1 + Math.floor(rand() * 24)) / 2,
-			rule, bot, player, shots, visited: Math.floor(rand() * 27),
+			rule, bot, player, gravityScale, forceScale, shots, visited: Math.floor(rand() * 27),
 			steps: Math.floor(rand() * 1e6), length };
 		const text = GravityGame.encodeLink(game);
 		const back = GravityGame.decodeLink('#' + text);
 		const same = back && back.seed === game.seed && back.rate === game.rate &&
 			back.rule === game.rule && back.bot === game.bot && back.player === game.player &&
+			back.gravityScale === gravityScale && back.forceScale === forceScale &&
 			JSON.stringify(back.shots) === JSON.stringify(shots) &&
 			(count === 0 ? back.end === null : back.end.visited === game.visited && back.end.steps === game.steps) &&
 			(!planner || count === 0 || back.length === length);
@@ -115,7 +118,11 @@ function benchCodec() {
 		'game=1&seed=5&rate=1&you=robot',
 		'game=1&seed=5&rate=1&rule=route&shots=p0.0.3aio_p1.0.3aio',
 		'game=1&seed=5&rate=1&rule=route&shots=p0.0.3aio.1',
-		'game=1&seed=5&rate=1&rule=route&shots=p0.0.3aio&len=-1'];
+		'game=1&seed=5&rate=1&rule=route&shots=p0.0.3aio&len=-1',
+		'game=1&seed=5&rate=1&gs=2.05', 'game=1&seed=5&rate=1&gs=-0.1',
+		'game=1&seed=5&rate=1&gs=1.234', 'game=1&seed=5&rate=1&fs=0.1',
+		'game=1&seed=5&rate=1&fs=3.01', 'game=1&seed=5&rate=1&gs=abc',
+		'game=1&seed=5&rate=1&fs='];
 	for (const text of rejects) check(GravityGame.decodeLink(text) === null, 'accepted bad link ' + text);
 	/* route is a one-plan link: its traced length is part of the verdict */
 	check(GravityGame.decodeShot('p0.0.3aio.ba0', GravityGame.CAP_STEPS) === null,
@@ -126,6 +133,19 @@ function benchCodec() {
 		routeLink.player === GravityGame.PLAYER_BOT && routeLink.shots.length === 1 &&
 		routeLink.shots[0].abort === GravityGame.NO_ABORT && routeLink.length === 4321,
 		'a valid one-plan route link was rejected');
+	const plainLink = GravityGame.encodeLink({ seed: 5, rate: 1, rule: GravityGame.RULE_TOUR,
+		bot: GravityGame.BOT_OFF, player: GravityGame.PLAYER_USER, shots: [] });
+	check(plainLink === 'game=1&seed=5&rate=1' &&
+		GravityGame.decodeLink('#' + plainLink).gravityScale === 1,
+		'default scales leaked into a link: ' + plainLink);
+	const scaledLink = GravityGame.decodeLink(
+		'#game=1&seed=5&rate=1&rule=career&gs=0.8&fs=1.5');
+	check(scaledLink && scaledLink.gravityScale === 0.8 && scaledLink.forceScale === 1.5,
+		'valid experimental scales were rejected');
+	check(GravityGame.encodeLink({ seed: 5, rate: 1, rule: GravityGame.RULE_CAREER,
+		bot: GravityGame.BOT_OFF, player: GravityGame.PLAYER_USER, cheat: null,
+		gravityScale: 0.8, forceScale: 1.5, shots: [] }) ===
+		'game=1&seed=5&rate=1&rule=career&gs=0.8&fs=1.5', 'scales are not encoded');
 	let worst = 0;
 	for (let n = 0; n < 100000; n++) {
 		const angle = rand() * 20 - 10;

@@ -193,11 +193,14 @@ function loadPage(options = {}) {
 			const sim = context.OrbitScene.sim;
 			return { x: sim.planetX[index] * view.scale + view.offX, y: sim.planetY[index] * view.scale + view.offY };
 		},
-		/* a real pointer drag from a planet to the grip of (angle, speed) */
+		/* a real pointer drag from a planet to the grip of (angle, speed); the
+		 * grip uses the same pad ceiling the page maps the drag range onto */
 		dragAim(planet, angle, speed) {
 			const origin = env.planetScreen(planet);
 			const canvas = elements.get('c');
-			const reach = context.GravityScene.sim.gripLength(speed) * context.OrbitScene.view.scale;
+			const scene = context.GravityScene;
+			const reach = scene.sim.gripLength(speed, scene.speedCeiling(planet)) *
+				context.OrbitScene.view.scale;
 			const gripX = origin.x + Math.cos(angle) * reach;
 			const gripY = origin.y + Math.sin(angle) * reach;
 			fire(windowListeners, 'pointerdown', { button: 0, clientX: origin.x, clientY: origin.y, target: canvas, shiftKey: false });

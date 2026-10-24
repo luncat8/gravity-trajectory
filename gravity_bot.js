@@ -245,6 +245,21 @@
 		this.bindSim(this.player.sim);
 	};
 
+	/* experimental scales belong to the world, so every bot-owned sim mirrors
+	 * the GUI sim (probe = headless candidate search, rivals = shared market) */
+	GravityBot.prototype.setScales = function (gravityScale, forceScale) {
+		const changed = this.probe.gravityScale !== gravityScale ||
+			this.probe.forceScale !== forceScale;
+		this.probe.setScales(gravityScale, forceScale);
+		for (let i = 0; i < MAX_RIVALS; i++) this.rivals[i].sim.setScales(gravityScale, forceScale);
+		this.player.sim.setScales(gravityScale, forceScale);
+		if (!changed) return;
+		/* a cached plan was searched in the old world */
+		this.jobActive = false;
+		for (let i = 0; i < MAX_RIVALS; i++) this.rivals[i].planReady = false;
+		this.player.planReady = false;
+	};
+
 	GravityBot.prototype.bindSim = function (sim) {
 		const trade = this.tradeSim;
 		sim.setPlanets(
@@ -276,6 +291,7 @@
 		const bind = function (sim) {
 			sim.fieldT = sourceSim.fieldT;
 			sim.fieldRate = sourceSim.fieldRate;
+			sim.setScales(sourceSim.gravityScale, sourceSim.forceScale);
 			sim.setField(sourceSim.bodyCount, sourceSim.bodyR, sourceSim.strength,
 				sourceSim.fillField, sourceSim.fieldStatic);
 		};
@@ -1036,7 +1052,7 @@
 		};
 	};
 
-	GravityBot.prototype.rivalLink = function (seed, rate, index) {
+	GravityBot.prototype.rivalLink = function (seed, rate, index, gravityScale, forceScale) {
 		const idx = index || 0;
 		const r = this.actorAt(idx);
 		const route = this.rule === GravityGame.RULE_ROUTE;
@@ -1046,6 +1062,8 @@
 			rule: this.rule,
 			bot: GravityGame.BOT_OFF,
 			player: GravityGame.PLAYER_USER,
+			gravityScale: gravityScale,
+			forceScale: forceScale,
 			shots: r.shots,
 			visited: route ? r.routeVisits : r.sim.visitedCount,
 			steps: this.scoreSteps(idx),
@@ -1117,9 +1135,9 @@
 		let upgraded = false;
 		for (let n = 0; n < 8; n++) {
 			const fullLimit = OrbitTech.speedLimit(pad.battery.capacity,
-				career.ship.mass, pad.catapult);
+				career.ship.mass, pad.catapult, sim.forceScale);
 			if (fullLimit >= wantedSpeed) break;
-			const forceLimit = OrbitTech.maxSpeed(career.ship.mass, pad.catapult);
+			const forceLimit = OrbitTech.maxSpeed(career.ship.mass, pad.catapult, sim.forceScale);
 			let kind = forceLimit < wantedSpeed ? OrbitTech.KIND_CATAPULT : OrbitTech.KIND_BATTERY;
 			let table = kind === OrbitTech.KIND_CATAPULT ? OrbitTech.CATAPULTS : OrbitTech.BATTERIES;
 			let item = careerNextItem(table, pad[kind]);
@@ -1158,6 +1176,16 @@
 		}
 		if (career.ended !== GravityGame.CAREER_OPEN) return actions;
 
+		/* a built pad whose full battery still cannot lift the current ship is a
+		 * dead end (heavy cargo, lowered force scale): repair it before shopping */
+		if (career.at >= 0) {
+			const here = career.pads[career.at];
+			const fullLimit = here.catapult === null ? Infinity : OrbitTech.speedLimit(
+				here.battery.capacity, career.ship.mass, here.catapult, sim.forceScale);
+			if (fullLimit < GravitySim.SPEED_MIN &&
+				this.careerUpgrade(career, sim, GravitySim.SPEED_MIN, 0)) actions += 1;
+		}
+
 		if (career.at === career.hq && career.ship.hold === OrbitTech.HOLDS[0]) {
 			const hold = OrbitTech.HOLDS[1];
 			if (career.ledger.purse + 1e-9 >= careerPrice(career, hold) + CAREER_PURSE_RESERVE &&
@@ -1173,7 +1201,7 @@
 				}
 				const pad = career.pads[career.at];
 				const fullLimit = OrbitTech.speedLimit(pad.battery.capacity,
-					career.ship.mass, pad.catapult);
+					career.ship.mass, pad.catapult, sim.forceScale);
 				if (fullLimit < GravitySim.SPEED_MIN) {
 					GravityGame.dropContract(career);
 					actions += 1;

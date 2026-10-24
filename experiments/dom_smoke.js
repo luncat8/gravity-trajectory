@@ -217,6 +217,33 @@ console.log('trim +5% / -5%:', speedBefore, '->', speedAfter, '->', speedBack,
 if (speedBefore === speedAfter) throw new Error('trim did not change the aim');
 if (ui.get('trim').value !== '0') throw new Error('trim thumb did not spring back');
 
+/* experimental settings: the sliders are world state, so the page sim, the
+ * auto-helper probe and the bots must all carry the same two multipliers */
+if (ui.get('expGravity').value !== '1' || ui.get('expForce').value !== '1' ||
+	ui.get('expGravityLabel').textContent !== '×1.00' ||
+	ui.get('expForceLabel').textContent !== '×1.00' ||
+	!ui.get('expTag').textContent.includes('×1.00')) {
+	throw new Error('experimental panel defaults: ' + ui.get('expTag').textContent);
+}
+const expScene = env.context.GravityScene;
+env.setValue('expGravity', 0.5);
+if (expScene.sim.gravityScale !== 0.5 || expScene.bot.probe.gravityScale !== 0.5 ||
+	ui.get('expGravityLabel').textContent !== '×0.50' ||
+	!ui.get('expTag').textContent.startsWith('g ×0.50')) {
+	throw new Error('global gravity slider did not reach every sim: ' + ui.get('expTag').textContent);
+}
+env.setValue('expForce', 1.5);
+if (expScene.sim.forceScale !== 1.5 || expScene.bot.probe.forceScale !== 1.5 ||
+	ui.get('expForceLabel').textContent !== '×1.50') {
+	throw new Error('catapult force slider did not reach every sim');
+}
+console.log('experimental panel:', ui.get('expTag').textContent);
+env.setValue('expGravity', 1);
+env.setValue('expForce', 1);
+if (expScene.sim.gravityScale !== 1 || expScene.sim.forceScale !== 1) {
+	throw new Error('experimental panel did not reset');
+}
+
 /* trade pause must not stop the experiment clock or cargo physics */
 const beforeExp = ui.get('expClock').textContent;
 const beforeTrade = ui.get('tradeClock').textContent;
@@ -730,6 +757,10 @@ check(cargo.cargo.x === endX && cargo.cargo.y === endY && sim.t === endT, 'repla
 check(game.shots.length === 2 && !ui.get('replayRow').hidden, 'replay did not hand over the run');
 console.log('replay verdict:', ui.get('replayReadout').textContent, '· cargo end identical, trade t identical');
 
+/* the scales define the world a link re-flies, so a flown run locks them */
+check(ui.get('expGravity').disabled && ui.get('expForce').disabled,
+	'a run with recorded shots must lock the experimental scales');
+
 /* money: a purse below the launch fee refuses launches and ends the run */
 game.money.purse = 0.4;
 env.runFrames(8, 16.0);
@@ -748,6 +779,8 @@ console.log('broke run: launch refused,', ui.get('launch').textContent);
 env.choose('modeRoute');
 env.runFrames(2, 16.0);
 check(game.on && gScene.rule() === 'route' && game.shots.length === 0, 'rule switch did not restart the run');
+check(!ui.get('expGravity').disabled && !ui.get('expForce').disabled,
+	'a fresh run must unlock the experimental scales');
 check(ui.get('ruleTag').textContent === 'route · longest one plan', 'rule tag: ' + ui.get('ruleTag').textContent);
 check(ui.get('scoreRuleTag').textContent === 'route · longest one plan', 'route scoreboard label');
 check(ui.get('launch').disabled && ui.get('launch').textContent.includes('no launch'),
@@ -757,6 +790,19 @@ check(ui.get('purseRow').hidden && ui.get('visitLabel').textContent === 'route s
 for (let i = 0; i < 1000 && !gScene.bot.rivals[0].routeDone; i++) env.runFrames(1, 16.0);
 check(gScene.bot.rivals[0].routeDone && gScene.bot.rivals[0].routeReady,
 	'route rival never finished planning');
+/* the planner scores traced plans: a release restarts the contest so every
+ * plan in it was traced in one world, while a live drag only re-traces */
+env.setValue('expGravity', 1.2);
+check(gScene.sim.gravityScale === 1.2 && gScene.bot.rivals[0].routeDone,
+	'a live gravity edit must not restart the route mid-drag');
+env.fireElement(ui.get('expGravity'), 'change', {});
+check(!gScene.bot.rivals[0].routeDone && game.shots.length === 0,
+	'route slider release did not restart the contest');
+env.setValue('expGravity', 1);
+env.fireElement(ui.get('expGravity'), 'change', {});
+for (let i = 0; i < 1000 && !gScene.bot.rivals[0].routeDone; i++) env.runFrames(1, 16.0);
+check(gScene.sim.gravityScale === 1 && gScene.bot.rivals[0].routeDone,
+	'route gravity reset did not replan');
 const occupied = gScene.bot.rivals[0].routeOrigin;
 check(occupied >= 0 && gScene.routeOccupiedBy(occupied) === 0,
 	'route rival origin is not reported occupied');
@@ -1107,6 +1153,7 @@ const kui = careerEnv.elements;
 const kScene = careerEnv.context.GravityScene;
 const kGame = careerEnv.context.GravityGame;
 const kSim = careerEnv.context.GravitySim;
+const OrbitTech = careerEnv.context.OrbitTech;
 const career = kScene.career;
 const kCargo = kScene.sim;
 check(kScene.game.rule === 'career' && kScene.bot.level === 'off' && kScene.bot.count === 0 &&
@@ -1134,12 +1181,78 @@ careerEnv.runFrames(2, 16.0);
 check(kui.get('launch').disabled && kCargo.status !== kSim.STATUS_FLYING, 'no catapult: drag from P' + noPad + ' must not arm');
 const limit = kCargo.speedLimit(career.hq);
 check(limit > 85 && limit < 95, 'HQ speed limit ' + limit);
+/* the drag range is the pad's real ceiling: a long drag stops at 92 px/s and
+ * the armed shot is always one the starter rail can fire */
 careerEnv.dragAim(career.hq, 0.7, 200);
 careerEnv.runFrames(2, 16.0);
+check(!kui.get('launch').disabled && kui.get('launch').textContent === 'launch',
+	'a drag past the pad cap must clamp to a firable shot: ' + kui.get('launch').textContent);
+check(kui.get('aimReadout').textContent.startsWith(Math.round(limit) + ' px/s ') &&
+	kui.get('aimReadout').textContent.includes('max ' + Math.round(limit)),
+	'the drag range stops at the pad ceiling: ' + kui.get('aimReadout').textContent);
+check(kui.get('cargoStatus').textContent === 'armed · P' + career.hq,
+	'clamped drag did not arm: ' + kui.get('cargoStatus').textContent);
+/* a pad that loses its charge while armed shows the shortfall only when it
+ * drops below the minimum firable speed, since everything else is clamped */
+const armedCharge = career.pads[career.hq].chargeKwh;
+career.pads[career.hq].chargeKwh = 0.05;
+kScene.refreshCareerPanel();
+careerEnv.runFrames(2, 16.0);
 check(kui.get('launch').disabled && kui.get('launch').textContent.startsWith('pad '),
-	'over the limit the pad note shows: ' + kui.get('launch').textContent);
+	'a drained pad explains the shortfall: ' + kui.get('launch').textContent);
+career.pads[career.hq].chargeKwh = armedCharge;
+kScene.refreshCareerPanel();
+careerEnv.runFrames(2, 16.0);
 check(kScene.game.career.light[career.hq] > 0 && kScene.game.career.pads[career.hq].catapult.id === 'EMC-1',
 	'career pad records');
+
+/* experimental settings in career: the force slider moves the pad cap and the
+ * drag range together; the gravity slider reaches every sim */
+check(kui.get('expGravity').value === '1' && kui.get('expForce').value === '1' &&
+	!kui.get('expGravity').disabled && !kui.get('expForce').disabled,
+	'career keeps the experimental scales live');
+careerEnv.setValue('expGravity', 0.5);
+check(kCargo.gravityScale === 0.5 && kScene.bot.probe.gravityScale === 0.5 &&
+	kScene.bot.player.sim.gravityScale === 0.5 &&
+	kui.get('expGravityLabel').textContent === '×0.50',
+	'career global gravity did not reach every sim');
+careerEnv.setValue('expForce', 0.5);
+const halfLimit = kCargo.speedLimit(career.hq);
+check(halfLimit < limit - 20 && Math.abs(halfLimit - limit * Math.SQRT1_2) < 1e-6,
+	'catapult force scale: ' + halfLimit + ' vs ' + limit);
+check(kScene.game.career.pads[career.hq].catapult.id === 'EMC-1' &&
+	kui.get('careerPad').innerHTML.includes('max ' + Math.round(halfLimit) + ' px/s'),
+	'pad readout ignores the force scale: ' + kui.get('careerPad').innerHTML);
+careerEnv.dragAim(career.hq, 0.7, 200);
+careerEnv.runFrames(2, 16.0);
+check(kui.get('aimReadout').textContent.startsWith(Math.round(halfLimit) + ' px/s '),
+	'force scale did not shrink the drag range: ' + kui.get('aimReadout').textContent);
+/* the canvas plate caches its string: the force scale and the ship mass both
+ * move the cap, and a pad that cannot fire at all is the only red one */
+const plate = kScene.careerPadInfo();
+check(plate.text.endsWith('· ' + Math.round(halfLimit) + ' px/s') && !plate.warn,
+	'canvas plate ignores the force scale: ' + plate.text);
+career.ship.cargoTons = 24;
+career.ship.mass = OrbitTech.shipMass(career.ship, career.ship.cargoTons);
+const heavyLimit = kCargo.speedLimit(career.hq);
+check(heavyLimit < halfLimit && kScene.careerPadInfo().text.endsWith('· ' + Math.round(heavyLimit) + ' px/s'),
+	'canvas plate ignores the ship mass: ' + kScene.careerPadInfo().text);
+careerEnv.setValue('expForce', 0.25);
+const stuckLimit = kCargo.speedLimit(career.hq);
+const stuck = kScene.careerPadInfo();
+check(stuckLimit < kSim.SPEED_MIN && stuck.warn &&
+	stuck.text.endsWith('· ' + Math.round(stuckLimit) + ' px/s'),
+	'a pad that cannot fire at all must warn: ' + stuck.text + ' warn ' + stuck.warn);
+career.ship.cargoTons = 0;
+career.ship.mass = OrbitTech.shipMass(career.ship, 0);
+careerEnv.setValue('expForce', 0.5);
+check(!kScene.careerPadInfo().warn, 'a firable pad must not warn');
+careerEnv.setValue('expGravity', 1);
+careerEnv.setValue('expForce', 1);
+careerEnv.runFrames(2, 16.0);
+check(kCargo.gravityScale === 1 && kCargo.forceScale === 1 &&
+	Math.abs(kCargo.speedLimit(career.hq) - limit) < 1e-9,
+	'career experimental reset');
 let landingShot = null;
 for (let a = 0; a < 72 && !landingShot; a++) {
 	const angle = a / 72 * Math.PI * 2;
@@ -1183,6 +1296,21 @@ check(kui.get('cargoStatus').textContent === 'landed P' + career.hq + ' · clock
 	'after evacuation: ' + kui.get('cargoStatus').textContent);
 careerEnv.click('gameCopy');
 check(kui.get('gameLink').value.endsWith('#game=1&seed=42&rate=1&rule=career'), 'career link ' + kui.get('gameLink').value);
+careerEnv.setValue('expGravity', 0.8);
+careerEnv.setValue('expForce', 1.5);
+careerEnv.click('gameCopy');
+const expLink = kui.get('gameLink').value;
+check(expLink.endsWith('#game=1&seed=42&rate=1&rule=career&gs=0.8&fs=1.5'),
+	'career link must carry the experimental scales: ' + expLink);
+careerEnv.setHash(expLink.slice(expLink.indexOf('#')));
+careerEnv.runFrames(2, 16.0);
+check(kCargo.gravityScale === 0.8 && kCargo.forceScale === 1.5 &&
+	kui.get('expGravity').value === '0.8' && kui.get('expForce').value === '1.5' &&
+	kui.get('expGravityLabel').textContent === '×0.80',
+	'reloaded link did not restore the experimental scales: ' + kui.get('expTag').textContent);
+console.log('experimental link:', expLink.slice(expLink.indexOf('#')), '->', kui.get('expTag').textContent);
+careerEnv.setValue('expGravity', 1);
+careerEnv.setValue('expForce', 1);
 careerEnv.choose('modeLab');
 careerEnv.runFrames(2, 16.0);
 check(kCargo.pads === null && kCargo.landedBody === career.hq && kCargo.canLaunchFrom(career.hq),
