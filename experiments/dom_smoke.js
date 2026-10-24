@@ -872,9 +872,112 @@ env.runFrames(2, 16.0);
 check(!gScene.routeBest().ready && ui.get('routeBest').disabled && game.shots.length === 0,
 	'restart did not clear the saved route best');
 
+/* continuous mid-drag sweep: best is captured during pointermove without pointerup */
+{
+	const origin = env.planetScreen(routeShot.p);
+	const reachBest = cargo.gripLength(routeShot.speed) * env.context.OrbitScene.view.scale;
+	const reachShort = cargo.gripLength(shorterRouteShot.speed) * env.context.OrbitScene.view.scale;
+	env.fireWindow('pointerdown', { button: 0, clientX: origin.x, clientY: origin.y, target: ui.get('c'), shiftKey: false });
+	env.fireWindow('pointermove', {
+		clientX: origin.x + Math.cos(routeShot.angle) * reachBest,
+		clientY: origin.y + Math.sin(routeShot.angle) * reachBest,
+		target: ui.get('c'),
+		shiftKey: false
+	});
+	env.runFrames(1, 16.0);
+	check(gScene.routeBest().ready && Math.round(gScene.routeBest().length) === Math.round(savedBestLength),
+		'continuous drag did not capture best on single move frame');
+	env.fireWindow('pointermove', {
+		clientX: origin.x + Math.cos(shorterRouteShot.angle) * reachShort,
+		clientY: origin.y + Math.sin(shorterRouteShot.angle) * reachShort,
+		target: ui.get('c'),
+		shiftKey: false
+	});
+	env.runFrames(1, 16.0);
+	env.fireWindow('pointerup', {
+		clientX: origin.x + Math.cos(shorterRouteShot.angle) * reachShort,
+		clientY: origin.y + Math.sin(shorterRouteShot.angle) * reachShort,
+		target: ui.get('c'),
+		shiftKey: false
+	});
+	env.runFrames(1, 16.0);
+	check(Math.round(gScene.routeBest().length) === Math.round(savedBestLength) &&
+		ui.get('routeBest').classList.contains('on'),
+		'use best did not stay armed and highlighted after sweeping past peak');
+	env.click('clear');
+	env.runFrames(1, 16.0);
+	check(!gScene.routePlan().ready && gScene.routeBest().ready && !ui.get('routeBest').disabled,
+		'clear plan discarded saved routeBest instead of keeping recovery button');
+	env.click('routeBest');
+	env.runFrames(2, 16.0);
+	check(gScene.routePlan().ready && Math.round(gScene.routePlan().length) === Math.round(savedBestLength),
+		'use best after clear plan did not restore peak trajectory');
+	env.click('gameRestart');
+	env.runFrames(2, 16.0);
+}
+
+/* Scoreboard: every player row has a bot checkbox; clicking user rows switches active user */
+check(ui.get('scorePlayer').tagName === 'DIV' &&
+	ui.get('scoreRival1').tagName === 'DIV' &&
+	ui.get('scoreRival2').tagName === 'DIV',
+	'player score rows must be DIV containers so row click does not toggle checkbox');
+check(!ui.get('playerBot').checked && ui.get('rivalBot1').checked && ui.get('rivalBot2').checked,
+	'default bot checkboxes should be YOU=unchecked, R1=checked, R2=checked');
+env.click('scorePlayer');
+check(!ui.get('playerBot').checked && gScene.activeSlot() === 0,
+	'clicking YOU score row toggled bot instead of selecting user');
+
+/* Multi-user switching on hard (3 players: YOU=user, R1=user, R2=bot) */
+env.choose('botHard');
+env.runFrames(2, 16.0);
+env.toggle('rivalBot1');
+env.runFrames(2, 16.0);
+check(gScene.slotType(0) === 'user' && gScene.slotType(1) === 'user' && gScene.slotType(2) === 'bot',
+	'unchecking rivalBot1 did not switch R1 to user');
+check(gScene.activeSlot() === 0 && ui.get('scorePlayer').classList.contains('isActive') &&
+	ui.get('scoreRival1').classList.contains('isUser') && !ui.get('scoreRival2').classList.contains('isUser'),
+	'scoreboard active/user classes mismatch');
+for (let i = 0; i < 600 && gScene.bot.routeThinking(); i++) env.runFrames(1, 16.0);
+const r2Occupied = gScene.bot.rivals[1].routeOrigin;
+const youMultiShot = findShot((g, p) => p !== r2Occupied &&
+	(g.predReason === pageSim.END_IMPACT || g.predReason === pageSim.END_EXIT) && g.predTime > 2);
+dragShot(youMultiShot);
+env.runFrames(2, 16.0);
+const youMultiLen = gScene.routePlan().length;
+check(youMultiLen > 0 && gScene.routeBest().origin === youMultiShot.p, 'YOU route plan in multi-user failed');
+
+/* Pressing R1 row switches active user to R1; pressing R2 (bot) row does not switch */
+env.click('scoreRival2');
+check(gScene.activeSlot() === 0, 'clicking bot row R2 switched active user');
+env.click('scoreRival1');
+env.runFrames(1, 16.0);
+check(gScene.activeSlot() === 1 && !ui.get('rivalBot1').checked &&
+	ui.get('scoreRival1').classList.contains('isActive') &&
+	!ui.get('scorePlayer').classList.contains('isActive'),
+	'clicking user row R1 did not switch active user to R1');
+check(gScene.routeOccupiedBy(youMultiShot.p) === gScene.bot.constructor.PLAYER_INDEX,
+	'YOU planet was not marked occupied when playing as R1');
+check(!gScene.routeBest().ready, 'R1 inherited YOU routeBest');
+const r1MultiShot = findShot((g, p) => p !== r2Occupied && p !== youMultiShot.p &&
+	(g.predReason === pageSim.END_IMPACT || g.predReason === pageSim.END_EXIT) && g.predTime > 2);
+env.dragAim(r1MultiShot.p, r1MultiShot.angle, r1MultiShot.speed);
+env.runFrames(2, 16.0);
+check(gScene.routePlan().ready && gScene.routePlan().origin === r1MultiShot.p &&
+	gScene.routeBest().origin === r1MultiShot.p,
+	'R1 manual route plan was not recorded independently');
+env.click('scorePlayer');
+env.runFrames(1, 16.0);
+check(gScene.activeSlot() === 0 && gScene.routePlan().origin === youMultiShot.p &&
+	Math.round(gScene.routeBest().length) === Math.round(youMultiLen) &&
+	gScene.routeOccupiedBy(r1MultiShot.p) === 0,
+	'switching back to YOU did not preserve YOU plan/best or R1 occupation');
+env.toggle('rivalBot1');
+env.choose('botNormal');
+env.runFrames(2, 16.0);
+for (let i = 0; i < 600 && gScene.bot.routeThinking(); i++) env.runFrames(1, 16.0);
+
 /* YOU can be a bot: the scoreboard checkbox plans in route mode, then auto-launches under tour */
-check(ui.get('scorePlayer').tagName === 'LABEL' && !ui.get('playerBot').checked,
-	'YOU score row is not a user/bot switch');
+check(!ui.get('playerBot').checked, 'YOU bot checkbox should start unchecked');
 env.toggle('playerBot');
 env.runFrames(2, 16.0);
 check(gScene.playerType() === 'bot' && ui.get('playerBot').checked,

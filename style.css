@@ -67,6 +67,7 @@ body {
 	align-items: flex-start;
 	justify-content: space-between;
 	gap: 8px;
+	flex: none;
 }
 
 .headBtns {
@@ -109,19 +110,23 @@ body {
 	top: 14px;
 	right: 14px;
 	width: 294px;
-	max-height: calc(100vh - var(--footReserve, 76px));
+	max-height: calc(100vh - 88px);
+	max-height: var(--hudMaxH, calc(100dvh - 88px));
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
+	pointer-events: none;
 }
 
 /* only the content blocks catch the pointer, so the panel padding stays see-through */
+#cargoHud > .panelHead,
 #cargoBody,
 #cargoFoot {
 	pointer-events: auto;
 }
 
 #cargoBody {
+	flex: 0 1 auto;
 	min-height: 0;
 	overflow-y: auto;
 	overscroll-behavior: contain;
@@ -193,14 +198,47 @@ body {
 
 .scoreEntry {
 	display: grid;
-	grid-template-columns: 28px minmax(0, 1fr);
+	grid-template-columns: 42px minmax(0, 1fr);
 	grid-template-rows: auto auto;
 	align-items: center;
 	gap: 0 8px;
-	padding: 4px 0 4px 8px;
-	border-left: 2px solid;
-	border-radius: 2px;
+	padding: 4px 6px 4px 8px;
+	border: 1px solid transparent;
+	border-left: 3px solid;
+	border-radius: 4px;
 	background: rgba(126, 180, 230, 0.035);
+	pointer-events: auto;
+}
+
+.scoreEntry.isUser {
+	cursor: pointer;
+}
+
+.scoreEntry.isUser:hover {
+	background: rgba(126, 180, 230, 0.09);
+}
+
+.scoreEntry.isActive {
+	background: rgba(142, 240, 192, 0.09);
+	border-color: rgba(142, 240, 192, 0.28);
+	border-left-color: var(--mint);
+}
+
+.scoreRivalOne.isActive {
+	background: rgba(185, 154, 255, 0.12);
+	border-color: rgba(185, 154, 255, 0.36);
+	border-left-color: #b99aff;
+}
+
+.scoreRivalTwo.isActive {
+	background: rgba(255, 133, 168, 0.12);
+	border-color: rgba(255, 133, 168, 0.36);
+	border-left-color: #ff85a8;
+}
+
+.scoreEntry:focus-visible {
+	outline: 1px solid rgba(142, 240, 192, 0.5);
+	outline-offset: 1px;
 }
 
 .scoreName {
@@ -208,6 +246,18 @@ body {
 	font-size: 10px;
 	font-weight: 700;
 	letter-spacing: 0.08em;
+}
+
+.scoreActorName {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 3px;
+}
+
+.scoreEntry.isActive .scoreActorName > span:first-child::before {
+	content: "▸ ";
+	letter-spacing: 0;
 }
 
 .scoreValue {
@@ -228,19 +278,7 @@ body {
 }
 
 .scorePlayer {
-	grid-template-columns: 38px minmax(0, 1fr);
-	border-color: var(--mint);
-	pointer-events: auto;
-	cursor: pointer;
-}
-
-#scorePlayer:hover {
-	background: rgba(142, 240, 192, 0.08);
-}
-
-#scorePlayer:focus-within {
-	outline: 1px solid rgba(142, 240, 192, 0.45);
-	outline-offset: 2px;
+	border-left-color: var(--mint);
 }
 
 .scorePlayer .scoreName,
@@ -248,21 +286,19 @@ body {
 	color: var(--mint);
 }
 
-.scorePlayerName {
-	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	gap: 3px;
-}
-
 .scoreBotToggle {
-	display: flex;
+	display: inline-flex;
 	align-items: center;
 	gap: 3px;
 	color: var(--dim);
 	font-size: 9px;
 	font-weight: 500;
 	letter-spacing: 0;
+	cursor: pointer;
+}
+
+.scoreBotToggle:hover {
+	color: var(--text);
 }
 
 .scoreBotToggle input {
@@ -271,10 +307,11 @@ body {
 	margin: 0;
 	accent-color: var(--mint);
 	pointer-events: auto;
+	cursor: pointer;
 }
 
 .scoreRivalOne {
-	border-color: #b99aff;
+	border-left-color: #b99aff;
 }
 
 .scoreRivalOne .scoreName,
@@ -282,13 +319,21 @@ body {
 	color: #c5aaff;
 }
 
+.scoreRivalOne .scoreBotToggle input {
+	accent-color: #b99aff;
+}
+
 .scoreRivalTwo {
-	border-color: #ff85a8;
+	border-left-color: #ff85a8;
 }
 
 .scoreRivalTwo .scoreName,
 .scoreRivalTwo .scoreValue {
 	color: #ff9ab6;
+}
+
+.scoreRivalTwo .scoreBotToggle input {
+	accent-color: #ff85a8;
 }
 
 .drawer {
@@ -556,7 +601,7 @@ body {
 /* launch owns a full row, so its changing label cannot reflow clear / use best */
 .cargoActions {
 	display: grid;
-	grid-template-columns: 96px minmax(0, 1fr);
+	grid-template-columns: 98px minmax(0, 1fr);
 	gap: 6px 8px;
 	margin-top: 0;
 }
@@ -572,13 +617,36 @@ body {
 	grid-column: 1 / -1;
 }
 
-#routeBest {
-	grid-column: 2;
+#clear {
+	grid-column: 1 / -1;
 }
 
-/* without a best slot the clear action keeps the row balanced */
-.cargoActions:not(:has(#routeBest:not([hidden]))) #clear {
-	grid-column: 1 / -1;
+#cargoFoot.routeMode #clear {
+	grid-column: 1;
+}
+
+#routeBest {
+	grid-column: 2;
+	border-color: rgba(126, 180, 230, 0.3);
+	background: rgba(126, 180, 230, 0.05);
+	color: var(--text);
+}
+
+#routeBest:disabled {
+	opacity: 0.62;
+	color: var(--dim);
+}
+
+#routeBest.bestReady:not(:disabled) {
+	border-color: rgba(142, 240, 192, 0.52);
+	background: rgba(142, 240, 192, 0.12);
+	color: var(--mint);
+}
+
+#routeBest.bestReady.on:not(:disabled) {
+	border-color: rgba(255, 207, 110, 0.62);
+	background: rgba(255, 207, 110, 0.18);
+	color: var(--accent);
 }
 
 button {
@@ -764,13 +832,9 @@ input:disabled {
 	}
 
 	.scoreEntry {
-		grid-template-columns: 24px minmax(0, 1fr);
+		grid-template-columns: 36px minmax(0, 1fr);
 		gap: 0 5px;
-		padding: 3px 0 3px 6px;
-	}
-
-	.scoreEntry.scorePlayer {
-		grid-template-columns: 34px minmax(0, 1fr);
+		padding: 3px 4px 3px 6px;
 	}
 
 	.scoreBotToggle {
@@ -839,17 +903,32 @@ input:disabled {
 	.opts {
 		display: none;
 	}
+
+	#cargoFoot.routeMode .cargoActions {
+		grid-template-columns: auto minmax(0, 1fr);
+		gap: 5px;
+	}
+
+	#cargoFoot.routeMode #clear {
+		padding: 6px 8px;
+		font-size: 11px;
+	}
+
+	#routeBest {
+		padding: 6px 7px;
+		font-size: 11px;
+	}
 }
 
-@media (max-width: 640px) {
-	/* below the control panel: rule radios remain tappable while help is open */
+@media (max-width: 460px) {
+	/* top-mounted on narrow phones so the bottom launch / use best row stays visible */
 	.drawer {
-		top: auto;
+		top: 8px;
 		right: 8px;
-		bottom: 64px;
+		bottom: auto;
 		left: 8px;
 		width: auto;
-		max-height: 46vh;
+		max-height: 52vh;
 	}
 }
 

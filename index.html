@@ -20,21 +20,27 @@
 			<div id="rivalRow" class="scoreStanding" hidden><b id="rivalReadout">—</b></div>
 		</div>
 		<div class="scoreRows">
-			<label id="scorePlayer" class="scoreEntry scorePlayer" title="switch YOU between user and bot · restarts the run">
-				<span class="scoreName scorePlayerName">
+			<div id="scorePlayer" class="scoreEntry scorePlayer isUser isActive" role="button" tabindex="0">
+				<span class="scoreName scoreActorName">
 					<span id="playerScoreName">YOU</span>
-					<span class="scoreBotToggle"><input id="playerBot" type="checkbox" aria-label="bot controls YOU"> bot</span>
+					<label id="scoreBotLabel0" class="scoreBotToggle" title="switch YOU between user and bot · restarts the run"><input id="playerBot" type="checkbox" aria-label="bot controls YOU"> bot</label>
 				</span>
 				<b id="gameScore" class="scoreValue">0 / 26</b>
 				<span id="playerScoreMeta" class="scoreMeta">0 shots · purse 3.00</span>
-			</label>
+			</div>
 			<div id="scoreRival1" class="scoreEntry scoreRival scoreRivalOne" hidden>
-				<span class="scoreName">R1</span>
+				<span class="scoreName scoreActorName">
+					<span id="rivalScoreName1">R1</span>
+					<label id="scoreBotLabel1" class="scoreBotToggle" title="switch R1 between user and bot · restarts the run"><input id="rivalBot1" type="checkbox" checked aria-label="bot controls R1"> bot</label>
+				</span>
 				<b id="rivalScore1" class="scoreValue">—</b>
 				<span id="rivalMeta1" class="scoreMeta">—</span>
 			</div>
 			<div id="scoreRival2" class="scoreEntry scoreRival scoreRivalTwo" hidden>
-				<span class="scoreName">R2</span>
+				<span class="scoreName scoreActorName">
+					<span id="rivalScoreName2">R2</span>
+					<label id="scoreBotLabel2" class="scoreBotToggle" title="switch R2 between user and bot · restarts the run"><input id="rivalBot2" type="checkbox" checked aria-label="bot controls R2"> bot</label>
+				</span>
 				<b id="rivalScore2" class="scoreValue">—</b>
 				<span id="rivalMeta2" class="scoreMeta">—</span>
 			</div>
@@ -75,7 +81,7 @@
 		<div class="stat"><span>status</span><b id="cargoStatus">ready</b></div>
 		<div class="stat goalStat"><span id="visitLabel">systems visited</span><b id="visitReadout">0 / 26</b></div>
 		<div class="stat goalStat"><span id="predVisitLabel">pred visits</span><b id="predVisitReadout">—</b></div>
-		<div class="stat"><span>flight</span><b id="cargoFlight">—</b></div>
+		<div id="flightRow" class="stat"><span>flight</span><b id="cargoFlight">—</b></div>
 		<div class="stat"><span>aim</span><b id="aimReadout">—</b></div>
 		<div class="stat"><span>traj length</span><b id="lengthReadout">—</b></div>
 		<div class="stat"><span>time to end</span><b id="pathReadout">—</b></div>
@@ -127,7 +133,7 @@
 		</div>
 	</div>
 
-	<div class="group">
+	<div id="bodyGroup" class="group">
 		<div class="caption"><span>body gravity</span><span id="bodyTag">none selected</span></div>
 		<label class="ctl">g
 			<input id="gravity" type="range" min="-2" max="2" step="0.05" value="1" disabled>
@@ -143,7 +149,7 @@
 		</label>
 	</div>
 
-	<div class="group">
+	<div id="horizonGroup" class="group">
 		<div class="caption"><span>trajectory horizon</span><span id="horizonTag">60 s</span></div>
 		<label class="ctl">len
 			<input id="horizon" type="range" min="5" max="60" step="5" value="60">
@@ -151,7 +157,7 @@
 		</label>
 	</div>
 
-	<div class="group">
+	<div id="playbackGroup" class="group">
 		<div class="caption"><span>playback</span><span id="playTag">×1</span></div>
 		<div class="actions playActions">
 			<button id="playSlower" class="miniBtn" title="slower · physics unchanged">− slower</button>
@@ -169,7 +175,7 @@
 		<div class="actions cargoActions">
 			<button id="launch" class="primary" disabled>launch</button>
 			<button id="clear">clear</button>
-			<button id="routeBest" class="miniBtn" title="restore the longest finished plan for this planet" hidden disabled>use best</button>
+			<button id="routeBest" title="restore the longest finished plan for this planet" hidden disabled>use best</button>
 		</div>
 	</div>
 </aside>

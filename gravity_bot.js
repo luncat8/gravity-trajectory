@@ -157,6 +157,7 @@
 		this.level = GravityGame.BOT_OFF;
 		this.playerType = GravityGame.PLAYER_USER;
 		this.playerLevel = GravityGame.BOT_OFF;
+		this.rivalTypes = [GravityGame.PLAYER_BOT, GravityGame.PLAYER_BOT];
 		this.rule = GravityGame.RULE_TOUR;
 		this.seed = 1;
 		this.count = 0;
@@ -285,7 +286,12 @@
 		actor.routeBody = -1;
 	};
 
-	GravityBot.prototype.reset = function (seed, rule, level, playerType) {
+	GravityBot.prototype.isRivalBot = function (index) {
+		return index >= 0 && index < this.count &&
+			this.rivalTypes[index] === GravityGame.PLAYER_BOT;
+	};
+
+	GravityBot.prototype.reset = function (seed, rule, level, playerType, rivalTypes) {
 		this.seed = seed >>> 0;
 		this.rule = GravityGame.RULES[rule] ? rule : GravityGame.RULE_TOUR;
 		this.level = LEVELS[level] ? level : GravityGame.BOT_OFF;
@@ -294,6 +300,10 @@
 		this.playerLevel = this.playerType === GravityGame.PLAYER_BOT
 			? (this.level === GravityGame.BOT_OFF ? GravityGame.BOT_NORMAL : this.level)
 			: GravityGame.BOT_OFF;
+		for (let i = 0; i < MAX_RIVALS; i++) {
+			this.rivalTypes[i] = rivalTypes && rivalTypes[i] === GravityGame.PLAYER_USER
+				? GravityGame.PLAYER_USER : GravityGame.PLAYER_BOT;
+		}
 		this.count = this.spec().count;
 		this.jobActive = false;
 		this.jobRival = -1;
@@ -304,11 +314,14 @@
 		const base0 = (Math.imul(this.seed, 7) + 5) >>> 0;
 		for (let i = 0; i < MAX_RIVALS; i++) {
 			const r = this.rivals[i];
-			this.resetActor(r, (base0 + i * 13) % PLANETS);
+			const home = this.rivalTypes[i] === GravityGame.PLAYER_BOT
+				? (base0 + i * 13) % PLANETS : -1;
+			this.resetActor(r, home);
 			r.routeOffset = 0.013 + i * 0.191;
 		}
-		let playerBase = (Math.imul(this.seed, 11) + 3) % PLANETS;
-		if (this.rule === GravityGame.RULE_ROUTE) {
+		let playerBase = this.playerType === GravityGame.PLAYER_BOT
+			? (Math.imul(this.seed, 11) + 3) % PLANETS : -1;
+		if (playerBase >= 0 && this.rule === GravityGame.RULE_ROUTE) {
 			while (this.routeOccupiedBy(playerBase, false) >= 0) {
 				playerBase = (playerBase + 1) % PLANETS;
 			}
@@ -316,7 +329,9 @@
 		this.resetActor(this.player, playerBase);
 		this.player.routeOffset = 0.717;
 		if (this.rule === GravityGame.RULE_ROUTE) {
-			for (let i = 0; i < this.count; i++) this.rivals[i].routeDone = false;
+			for (let i = 0; i < this.count; i++) {
+				if (this.isRivalBot(i)) this.rivals[i].routeDone = false;
+			}
 			if (this.playerType === GravityGame.PLAYER_BOT) this.player.routeDone = false;
 		}
 	};
@@ -346,11 +361,12 @@
 
 	GravityBot.prototype.routeActorActive = function (index) {
 		if (index === PLAYER_INDEX) return this.playerType === GravityGame.PLAYER_BOT;
-		return index >= 0 && index < this.count;
+		return this.isRivalBot(index);
 	};
 
-	/* opponent index, PLAYER_INDEX for a bot-controlled YOU, or -1 when free */
+	/* opponent index, PLAYER_INDEX for YOU, or -1 when free */
 	GravityBot.prototype.routeOccupiedBy = function (planet, includePlayer) {
+		if (planet < 0) return -1;
 		for (let i = 0; i < this.count; i++) {
 			if (this.rivals[i].routeOrigin === planet) return i;
 		}
@@ -480,6 +496,7 @@
 		const budget = budgetMs > 0 ? budgetMs : 3;
 		const started = performance.now();
 		for (let i = 0; i < this.count; i++) {
+			if (!this.isRivalBot(i)) continue;
 			const sim = this.rivals[i].sim;
 			if (!sim.routeActive) continue;
 			const left = budget - (performance.now() - started);
@@ -826,6 +843,7 @@
 			this.jobRival = -1;
 		}
 		for (let i = 0; i < this.count; i++) {
+			if (!this.isRivalBot(i)) continue;
 			const rival = this.rivals[i];
 			if (!this.needsLaunch(rival, runStep)) continue;
 			if (this.planValid(rival, runStep, market)) continue;
@@ -858,6 +876,7 @@
 	GravityBot.prototype.prepareStep = function (runStep, market, capSteps, budgetMs, sync) {
 		if (this.rule === GravityGame.RULE_ROUTE || this.count === 0) return true;
 		for (let i = 0; i < this.count; i++) {
+			if (!this.isRivalBot(i)) continue;
 			const rival = this.rivals[i];
 			if (!this.needsLaunch(rival, runStep)) continue;
 			if (!this.planValid(rival, runStep, market)) {
@@ -891,7 +910,7 @@
 				GravityGame.endFlight(rival.ledger);
 				rival.length += rival.sim.flightLength;
 				if (rival.sim.landedBody >= 0) rival.basePlanet = rival.sim.landedBody;
-				rival.readyStep = runStep + stage;
+				if (this.isRivalBot(i)) rival.readyStep = runStep + stage;
 			}
 		}
 	};
@@ -923,7 +942,8 @@
 			let active = false;
 			for (let i = 0; i < this.count; i++) {
 				const r = this.rivals[i];
-				if (r.sim.status === STATUS_FLYING || !this.rivalDone(r)) {
+				if (r.sim.status === STATUS_FLYING ||
+					(this.isRivalBot(i) && !this.rivalDone(r))) {
 					active = true;
 					break;
 				}
@@ -943,11 +963,14 @@
 
 	GravityBot.prototype.actorSummary = function (index) {
 		const r = this.actorAt(index);
+		const isBot = index === PLAYER_INDEX
+			? this.playerType === GravityGame.PLAYER_BOT
+			: this.isRivalBot(index);
 		if (this.rule === GravityGame.RULE_ROUTE) {
 			return {
 				purse: r.ledger.purse,
 				visited: r.routeReady ? r.routeVisits : 0,
-				done: r.routeDone,
+				done: isBot ? r.routeDone : r.routeReady,
 				length: r.routeReady ? r.routeLength : 0,
 				shots: r.routeReady ? 1 : 0,
 				steps: r.routeSteps,
@@ -955,7 +978,7 @@
 				reason: r.routeReason,
 				body: r.routeBody,
 				ready: r.routeReady,
-				planning: !r.routeDone
+				planning: isBot ? !r.routeDone : r.sim.routeActive
 			};
 		}
 		const flyingLength = r.sim.status === STATUS_FLYING ? r.sim.flightLength : 0;
@@ -966,9 +989,9 @@
 			length: r.length + flyingLength,
 			shots: r.shots.length,
 			steps: this.scoreSteps(index),
-			origin: r.basePlanet,
-			reason: END_OPEN,
-			body: -1,
+			origin: r.sim.landedBody >= 0 ? r.sim.landedBody : r.basePlanet,
+			reason: r.sim.endReason,
+			body: r.sim.endBody,
 			ready: r.shots.length > 0,
 			planning: false
 		};

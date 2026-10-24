@@ -29,7 +29,7 @@ function loadPuppeteer() {
 
 const puppeteer = loadPuppeteer();
 const PAGE_URL = 'file://' + path.resolve(__dirname, '..', 'index.html');
-const SIZES = [[1440, 900], [1280, 800], [1024, 700], [900, 640], [520, 760]];
+const SIZES = [[1440, 900], [1280, 800], [1280, 600], [1024, 700], [900, 640], [800, 560], [520, 760], [390, 700]];
 const failures = [];
 
 function check(ok, message) {
@@ -48,14 +48,19 @@ async function measure(page) {
 		const launch = rect('launch');
 		const best = rect('routeBest');
 		const clear = rect('clear');
+		const hudRect = hud.getBoundingClientRect();
+		const bestHit = best.width > 0 && best.height > 0
+			? document.elementFromPoint(best.left + best.width * 0.5, best.top + best.height * 0.5)
+			: null;
 		return {
 			footBottom: foot.bottom, footTop: foot.top,
 			tradeTop: trade.top, viewport: innerHeight,
 			launch: [launch.top, launch.height],
-			best: [best.top, best.width, document.getElementById('routeBest').hidden],
+			best: [best.top, best.width, document.getElementById('routeBest').hidden,
+				best.bottom, best.height, bestHit ? bestHit.id : ''],
 			clearTop: clear.top,
 			scrollable: body.scrollHeight > body.clientHeight + 1,
-			hudBottom: hud.getBoundingClientRect().bottom
+			hudBottom: hudRect.bottom
 		};
 	});
 }
@@ -167,13 +172,41 @@ async function scoreboardStable(page) {
 			const label = width + 'x' + height;
 			check(layout.footBottom <= layout.tradeTop,
 				label + ': action row overlaps the trade footer (' + Math.round(layout.footBottom) + ' > ' + Math.round(layout.tradeTop) + ')');
-			check(layout.best[0] + 20 <= layout.viewport && !layout.best[2],
-				label + ': use best is out of view');
+			check(layout.best[3] <= layout.viewport && layout.best[0] >= 0 && !layout.best[2],
+				label + ': use best is out of view (' + Math.round(layout.best[0]) + '..' + Math.round(layout.best[3]) + ' vs ' + layout.viewport + ')');
+			check(layout.best[3] <= layout.hudBottom + 1,
+				label + ': use best clipped below cargoHud');
+			check(layout.best[5] === 'routeBest',
+				label + ': use best occluded by #' + layout.best[5]);
 			if (planned) check(layout.best[1] > 80, label + ': use best collapsed to ' + Math.round(layout.best[1]) + 'px');
 			check(layout.launch[1] > 20, label + ': launch row collapsed');
 			check(errors.length === 0, label + ': page error ' + errors.join(' / '));
 			await dragAimAndWatchRow(page);
 			await scoreboardStable(page);
+			if (width === 1280 && height === 800) {
+				await page.evaluate(() => {
+					const hard = document.getElementById('botHard');
+					hard.checked = true;
+					hard.dispatchEvent(new Event('change', { bubbles: true }));
+				});
+				await page.click('#rivalBot1');
+				await page.click('#scoreRival1');
+				const multiCheck = await page.evaluate(() => {
+					const r = id => document.getElementById(id).getBoundingClientRect();
+					return {
+						active: GravityScene.activeSlot(),
+						types: [GravityScene.slotType(0), GravityScene.slotType(1), GravityScene.slotType(2)],
+						botWidths: [r('playerBot').width, r('rivalBot1').width, r('rivalBot2').width],
+						rowHeights: [r('scorePlayer').height, r('scoreRival1').height, r('scoreRival2').height]
+					};
+				});
+				check(multiCheck.active === 1 && multiCheck.types[0] === 'user' &&
+					multiCheck.types[1] === 'user' && multiCheck.types[2] === 'bot',
+					label + ': scoreboard click/bot toggle failed ' + JSON.stringify(multiCheck));
+				check(multiCheck.botWidths.every(w => w >= 10) &&
+					multiCheck.rowHeights.every(h => h >= 28 && h <= 46),
+					label + ': scoreboard checkbox geometry invalid ' + JSON.stringify(multiCheck));
+			}
 			console.log(label, 'foot', Math.round(layout.footTop) + '..' + Math.round(layout.footBottom),
 				'| trade', Math.round(layout.tradeTop),
 				'| use best', Math.round(layout.best[1]) + 'px',

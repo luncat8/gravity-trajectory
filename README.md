@@ -35,7 +35,7 @@ Open `index.html` (`file://` works, no build, no modules).
 | `abort` (game) | ends the running flight at the current step (recorded in the replay) |
 | rule `tour` / `route` / `money` (game) | tour: 120 s flight cap, score systems → shots → time; route: 1 800 s wall, score trajectory length; money: 10 shots, score purse → systems → shots → time · switching restarts the seed |
 | rivals `off` / `easy` / `normal` / `hard` | deterministic shared-market rivals in `tour`, `route` and `money` (`normal` default; `hard` fields 2 rivals with 1-ply lookahead) · switching restarts the seed |
-| scoreboard (upper-left, game only) | compares the player with each rival using the active rule’s score; player is mint, R1 violet and R2 rose · click anywhere on the YOU row or its `bot` checkbox to hand control to the bot and back; the switch stays live for the whole run (including while the bot flies) and always restarts it |
+| scoreboard (upper-left, game only) | compares `YOU`, `R1` and `R2` under the active rule’s score (mint, violet, rose) · every player row has its own `bot` checkbox (`user` ↔ `bot`, live at all times and restarts the run), and clicking any `user` player’s row switches which human player is currently active |
 | purse & planet profits (game) | starts at `3.00`; each launch costs `1.00` (refused below `1.00`); each planet's fly-visit payout grows with unvisited game time (`+0.25` initial, resets to `+0.00` when visited by you or a rival, `+0.00625/s` up to `+0.75` cap) and is drawn as a live pill under every planet |
 | `restart` / `new seed` | same seed fresh start / random world |
 | `copy replay` / `copy rival` | copies your replay link (with `&rule=` and `&bot=` when active) or Rival 1's solo trajectory link |
@@ -54,15 +54,16 @@ Open `index.html` (`file://` works, no build, no modules).
   continues ahead of the vessel until it lands. When centres move or change,
   prediction updates every frame while `>= 60 fps` and throttles automatically if
   frame time rises above `17.5 ms`.
-- **Route rule**: a shot is traced to its end before it is recorded, whatever it
-  costs: the tracer is a resumable job (`GravitySim.routeBegin/routeStep`) that
-  spends 4 ms per frame, so a 160 s preview never drops a frame, and the aim
-  readout shows `computing 43 %` while it runs. Launching drains the job
-  synchronously. The longest finished manual plan is remembered while aiming;
-  `use best` retraces its exact snapped inputs. That best is per start planet and
-  is cleared by a planet switch, restart, new seed, rule/player/field change, or
-  return to the lab. The 1 800 s wall is a net, not a routine end — measured: no
-  unedited shot in the shipped world outlives ~160 s.
+- **Route rule**: `route` is a deterministic planner (no ship flies). While
+  dragging, the resumable tracer (`GravitySim.routeBegin/routeStep`) runs its
+  first 4 ms slice immediately and continues across frames when needed, so
+  finished plans are captured even during continuous drags. Each human player
+  slot remembers its longest finished manual plan for the current start planet;
+  `use best` stays pinned in the sticky Cargo HUD footer, highlights in gold
+  whenever the current trajectory is shorter than the saved peak, and restores
+  its exact snapped angle and speed (even after `clear plan`). Saved bests reset
+  on start-planet change, restart, new seed, rule/player/field change, or return
+  to lab.
 - **Game mode, planet-profit market & rivals**: the world is rebuilt from a seed
   and advances only with fixed physics steps (`DT = 1/120 s`, field time
   `+= DT · rate`), so aiming takes any amount of real time. Aim snaps to
@@ -71,16 +72,14 @@ Open `index.html` (`file://` works, no build, no modules).
   shared 26-planet market where each planet's fly-visit payout grows while
   unvisited (`+0.25` at start, `+0.00625/s` up to `+0.75`, drawn beneath every
   planet and highlighted in green along your predicted trajectory): `tour`
-  (26 systems, 120 s cap), `route` (26 systems, 1 800 s wall, ranked by route
-  length), and `money` (10 shots, ranked by final purse). Optional deterministic
-  rivals (`easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead) fly in
+  (26 systems, 120 s cap), `route` (1 800 s wall, ranked by trajectory length),
+  and `money` (10 shots, ranked by final purse). Optional deterministic
+  competitors (`easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead) fly in
   integer-step lockstep and compete for the same growing planet values without
-  dropping 60 fps (`3 ms` / 64-candidate background slices). The upper-left
-  scoreboard compares player and rival scores under the active rule (route shows
-  distance; money leads with purse), using mint for the player, violet for R1
-  and rose for R2. The YOU row is also the user/bot switch: it stays
-  clickable during a bot flight, because restarting the run is the only way
-  back to manual control. Replay links
+  dropping 60 fps (`3 ms` / 64-candidate background slices). In the upper-left
+  scoreboard, every player row (`YOU`, `R1`, `R2`) carries its own `bot`
+  checkbox to assign `user` or `bot` control, and clicking any `user` row
+  switches the active human player on the fly. Replay links
   (`#game=1&seed=…&rate=…[&rule=…][&bot=…]&shots=…&end=…`) re-fly and verify
   every run (`verified ✓ · purse …`).
 - **Playback**: the flight is watched, not simulated, faster — one multiplier
