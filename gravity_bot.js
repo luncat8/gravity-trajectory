@@ -291,11 +291,13 @@
 			this.rivalTypes[index] === GravityGame.PLAYER_BOT;
 	};
 
+	/* a solo rule (career) fields no rivals and never hands YOU to a bot */
 	GravityBot.prototype.reset = function (seed, rule, level, playerType, rivalTypes) {
 		this.seed = seed >>> 0;
 		this.rule = GravityGame.RULES[rule] ? rule : GravityGame.RULE_TOUR;
-		this.level = LEVELS[level] ? level : GravityGame.BOT_OFF;
-		this.playerType = playerType === GravityGame.PLAYER_BOT
+		const solo = this.ruleSpec().solo;
+		this.level = LEVELS[level] && !solo ? level : GravityGame.BOT_OFF;
+		this.playerType = playerType === GravityGame.PLAYER_BOT && !solo
 			? GravityGame.PLAYER_BOT : GravityGame.PLAYER_USER;
 		this.playerLevel = this.playerType === GravityGame.PLAYER_BOT
 			? (this.level === GravityGame.BOT_OFF ? GravityGame.BOT_NORMAL : this.level)

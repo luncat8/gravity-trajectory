@@ -1,0 +1,9 @@
+0.4.2 career rule + launch gate + solo clock-stall fix
+
+Career bench: 26 checks — launch model (EMC-1/BAT-1 dry limit 111 px/s, 38 t stalls < 60, rail force cap, efficiency), hull, solar/battery, bulk upgrade (upgrades only), copy spec; headless career on GravitySim: start on sunlit HQ, pad gating, launch draws pad energy without purse fee, stranding, build-to-unstrand, evacuation fee 5 + broke, lost in space, solar refill (10 s → 0.1-0.4 kWh, capped), delivery accept/load/pay with cargo mass, contract expiry, competition payout, both cheats, honest completion, board determinism over seeds. CAREER BENCH OK.
+DOM smoke: previous suite unchanged; solo money run reaches 'purse empty · run over' with its last flight landed (3 shots, purse 0.56); ?rule=career page: solo, 'landed P21 · clock paused', ruleTag 'career · 1 / 26 pads', score '6.00 purse', drag from a pad-less planet refused, 200 px/s shows 'pad charge … · max 111 px/s', 100 px/s launch draws the HQ battery, stranded P2 button/status, evacuate → landed HQ, career link without shots, lab detaches the network, &cheat=endgame link ('career · 26 / 26 pads · endgame'), cheat rejected on tour. SMOKE OK.
+Game: scripted game 26 / 26 ✓ in 8 shots (6066 steps, 25.3 s); replays 144 Hz x4 / jitter / 60 Hz x16 / skip identical, verified ✓ purse 6.51; route 1614 px replays identical; money tours 12 s / 60 s replay the purse exactly; broke run 3 shots, launch refused; cross-engine proxy 0 outcome flips. GAME BENCH OK.
+Bot: tour hard>easy 4/4, normal>easy 4/4; route 4/4, 1/4; money 4/4, 4/4; full decision easy/normal/hard 6.9/22.0/45.0 ms, worst 64-cand slice 3.7 ms; contested replay invariant. BOT BENCH OK.
+Gravity: budget 10 ms cap, worst 5.6 ms. BENCH OK.
+Route: traces identical, buffers keep identity. ROUTE BENCH OK.
+Colony: 1622/1622 checks. COLONY BENCH OK.

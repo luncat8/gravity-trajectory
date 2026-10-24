@@ -166,9 +166,6 @@
 		TIER_SCALE: TIER_SCALE, K_DIST: K_DIST
 	};
 
-	if (typeof module !== 'undefined' && module.exports) {
-		module.exports = OrbitScience;
-	} else {
-		root.OrbitScience = OrbitScience;
-	}
-})();
+	if (typeof module !== 'undefined' && module.exports) module.exports = OrbitScience;
+	else root.OrbitScience = OrbitScience;
+})(typeof globalThis !== 'undefined' ? globalThis : this);

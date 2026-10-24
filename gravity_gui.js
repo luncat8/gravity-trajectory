@@ -36,6 +36,7 @@
 	const RULE_TOUR = GravityGame.RULE_TOUR;
 	const RULE_ROUTE = GravityGame.RULE_ROUTE;
 	const RULE_MONEY = GravityGame.RULE_MONEY;
+	const RULE_CAREER = GravityGame.RULE_CAREER;
 	const BOT_OFF = GravityGame.BOT_OFF;
 	const BOT_EASY = GravityGame.BOT_EASY;
 	const BOT_NORMAL = GravityGame.BOT_NORMAL;
@@ -142,6 +143,14 @@
 			detailLabel: 'Money',
 			detail: 'Launch costs 1.00. Entering a system collects its shown profit; profit grows while unvisited, up to +0.75.',
 			controls: 'Drag from a planet to aim · Shift = fine · Enter = launch'
+		},
+		career: {
+			name: 'career · catapult network',
+			goal: 'Build a catapult on every planet.',
+			score: 'Purse. The career ends complete with all ' + PLANETS + ' catapults, or broke.',
+			detailLabel: 'Launch',
+			detail: 'Only a built catapult launches, drawing its solar-charged battery; the mass of ship and cargo caps the speed. Landing without a catapult strands the ship: build one there or evacuate to HQ for a fee. Deliveries and competitions pay.',
+			controls: 'Drag from the pad under the ship to aim · Shift = fine · Enter = launch'
 		}
 	};
 
@@ -375,6 +384,7 @@
 	let hudReplayText = '';
 	let predGain = 0;
 	let launchState = -1;
+	let launchNote = '';
 	let linkNote = '';
 	let playIndex = PLAY_DEFAULT;
 	/* partial game slice carried between frames, so 0.25x and 32x both stay smooth */
@@ -410,9 +420,10 @@
 	 * market = per-planet visit clock shared with rivals, money = player purse ledger
 	 */
 	const game = { on: false, seed: 0, fixedRate: false, rule: RULE_TOUR, bot: BOT_NORMAL,
-		player: PLAYER_USER,
+		player: PLAYER_USER, cheat: null,
 		shots: [], steps: 0, clockSteps: 0, doneSteps: -1, length: 0,
 		market: GravityGame.createMarket(), money: GravityGame.createLedger() };
+	game.career = GravityGame.createCareer(game.money);
 	const slotTypes = [PLAYER_USER, PLAYER_BOT, PLAYER_BOT];
 	const rivalTypesArg = [PLAYER_BOT, PLAYER_BOT];
 	let activeSlot = 0;
@@ -916,6 +927,7 @@
 	function launch() {
 		if (routeRule() && game.on) return;
 		if (!armed || !canAimFrom(aimBody) || gameLocked()) return;
+		if (!activeSim().canFire(aimBody, aimSpeed)) return;
 		fire(NO_ABORT);
 	}
 
@@ -928,7 +940,8 @@
 		dirty = false;
 		sim.launch(aimBody, aimAngle, aimSpeed);
 		if (game.on) {
-			GravityGame.beginFlight(slotLedger(slot), sim);
+			if (careerRule()) GravityGame.careerBeginFlight(game.career, sim);
+			else GravityGame.beginFlight(slotLedger(slot), sim);
 			if (slot > 0) bot.rivals[slot - 1].basePlanet = aimBody;
 		}
 		aiming = false;
@@ -981,7 +994,7 @@
 		srcPortsEl.checked = mode === MODE_PORTS;
 		if (game.on && routeRule() && !replay.on) {
 			/* every route plan is traced in one field; changing it restarts the contest */
-			startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player);
+			startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player, game.cheat);
 			return;
 		}
 		cancelAim();
@@ -1014,6 +1027,31 @@
 
 	function moneyRule() {
 		return game.rule === RULE_MONEY;
+	}
+
+	function careerRule() {
+		return game.on && game.rule === RULE_CAREER;
+	}
+
+	/* a flown slot stops when the purse cannot cover a launch; a career when it ended */
+	function slotBroke(slot) {
+		if (careerRule()) return game.career.ended !== GravityGame.CAREER_OPEN;
+		return slotLedger(slot).purse < MONEY.cost;
+	}
+
+	function careerOverText() {
+		const career = game.career;
+		if (career.ended === GravityGame.CAREER_BROKE) return 'broke · career over';
+		if (career.ended === GravityGame.CAREER_COMPLETE) return 'catapult network complete';
+		if (!career.stranded) return '';
+		return career.at < 0 ? 'lost in space · evacuate' : 'stranded · build a catapult or evacuate';
+	}
+
+	/* why the armed shot cannot fire from its pad right now ('' when it can) */
+	function careerPadNote() {
+		if (!careerRule() || !armed || aimBody < 0 || gravity.canFire(aimBody, aimSpeed)) return '';
+		return 'pad charge ' + gravity.pads[aimBody].chargeKwh.toFixed(2) + ' kWh · max ' +
+			Math.round(gravity.speedLimit(aimBody)) + ' px/s';
 	}
 
 	function routeOccupiedBy(planet) {
@@ -1630,7 +1668,7 @@
 
 	function slotFlownDone(slot) {
 		if (routeRule()) return false;
-		return slotGoalDone(slot) || slotLedger(slot).purse < MONEY.cost;
+		return slotGoalDone(slot) || slotBroke(slot);
 	}
 
 	function playerGoalDone() {
@@ -1645,22 +1683,24 @@
 		return false;
 	}
 
-	function clockDriverFlying() {
-		if (replay.on) return gravity.status === STATUS_FLYING;
-		if (!hasLiveUser()) {
-			if (slotIsBot(0) && gravity.status === STATUS_FLYING) return true;
-			if (slotFlownDone(0)) {
-				for (let i = 0; i < bot.count; i++) {
-					if (bot.isRivalBot(i) && bot.rivals[i].sim.status === STATUS_FLYING) return true;
-				}
-			}
-			return false;
-		}
-		if (!slotIsBot(0) && gravity.status === STATUS_FLYING) return true;
+	function rivalFlying(wantBot) {
 		for (let i = 0; i < bot.count; i++) {
-			if (!bot.isRivalBot(i) && bot.rivals[i].sim.status === STATUS_FLYING) return true;
+			if (bot.isRivalBot(i) === wantBot && bot.rivals[i].sim.status === STATUS_FLYING) return true;
 		}
 		return false;
+	}
+
+	/* A human flight always drives the clock, even after its run was decided
+	 * mid-air (26th system, purse below the fee), so it still reaches its end.
+	 * Bot flights drive it only once no human can still act. */
+	function clockDriverFlying() {
+		const slot0Flying = gravity.status === STATUS_FLYING;
+		if (replay.on) return slot0Flying;
+		if (slot0Flying && !slotIsBot(0)) return true;
+		if (rivalFlying(false)) return true;
+		if (hasLiveUser()) return false;
+		if (slot0Flying) return true;
+		return slotFlownDone(0) && rivalFlying(true);
 	}
 
 	function runOver() {
@@ -1755,14 +1795,20 @@
 		}
 	}
 
-	function startGame(seed, fixedRate, rule, botLevel, playerType) {
+	function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 		stopReplay();
 		linkNote = '';
 		game.on = true;
 		game.seed = seed;
 		game.fixedRate = fixedRate;
 		if (rule) game.rule = rule;
+		game.cheat = game.rule === RULE_CAREER && GravityGame.CHEATS[cheat] ? cheat : null;
 		if (botLevel) game.bot = botLevel;
+		/* a solo rule (career) fields no rivals and is always flown by hand */
+		if (RULES[game.rule].solo) {
+			game.bot = BOT_OFF;
+			playerType = PLAYER_USER;
+		}
 		if (playerType) {
 			game.player = playerType;
 			slotTypes[0] = playerType;
@@ -1794,6 +1840,8 @@
 		bot.reset(seed, game.rule, game.bot, game.player, rivalTypesArg);
 		ensureValidActiveSlot(-1);
 		attachWorld();
+		if (careerRule()) GravityGame.startCareer(game.career, gravity, seed, tradeSim, game.cheat);
+		else gravity.setLaunchNetwork(null, null);
 		if (routeRule()) bot.useField(gravity, mode);
 		launchState = -1;
 		gameLinkEl.hidden = true;
@@ -1806,12 +1854,12 @@
 			updateRuleHelp(next);
 			return;
 		}
-		startGame(game.seed, game.fixedRate, next, game.bot, game.player);
+		startGame(game.seed, game.fixedRate, next, game.bot, game.player, game.cheat);
 	}
 
 	function setBot(next) {
 		if (next === game.bot) return;
-		startGame(game.seed, game.fixedRate, game.rule, next, game.player);
+		startGame(game.seed, game.fixedRate, game.rule, next, game.player, game.cheat);
 	}
 
 	function setSlotType(slot, next) {
@@ -1821,7 +1869,7 @@
 		slotTypes[slot] = normalized;
 		if (slot === 0) game.player = normalized;
 		ensureValidActiveSlot(normalized === PLAYER_USER ? slot : -1);
-		if (game.on) startGame(game.seed, game.fixedRate, game.rule, game.bot, slotTypes[0]);
+		if (game.on) startGame(game.seed, game.fixedRate, game.rule, game.bot, slotTypes[0], game.cheat);
 		else syncScoreControls(false);
 	}
 
@@ -1869,6 +1917,7 @@
 		game.on = false;
 		activeSlot = 0;
 		predGain = 0;
+		gravity.setLaunchNetwork(null, null);
 		resetAllRouteBest();
 		updateRuleHelp(selectedHelpRule());
 		scene.setGameClock(false);
@@ -2051,6 +2100,7 @@
 			return;
 		}
 		game.clockSteps += 1;
+		if (careerRule()) GravityGame.careerAdvance(game.career, scene.trade.speed, 1);
 		if (gravity.status === STATUS_FLYING) {
 			gravity.stepOne();
 			GravityGame.stepHarvest(game.money, game.market, gravity, game.clockSteps);
@@ -2075,12 +2125,13 @@
 		if (spec.stopOnTour && gravity.visitedCount === PLANETS && game.doneSteps < 0) {
 			game.doneSteps = game.steps + gravity.visitStep;
 		}
-		GravityGame.endFlight(game.money);
+		if (careerRule()) GravityGame.careerEndFlight(game.career, gravity, tradeSim, game.clockSteps);
+		else GravityGame.endFlight(game.money);
 		game.steps += gravity.liveSteps;
 		game.length += gravity.flightLength;
 		playerBotSyncNeeded = true;
 		const settleRivals = !hasLiveUser() &&
-			((game.money.purse < MONEY.cost && !(spec.stopOnTour && game.doneSteps >= 0)) ||
+			((slotBroke(0) && !(spec.stopOnTour && game.doneSteps >= 0)) ||
 				(spec.maxShots > 0 && game.shots.length >= spec.maxShots));
 		if (settleRivals && bot.count > 0) {
 			game.clockSteps = bot.settle(game.clockSteps, game.market, spec.capSteps);
@@ -2121,7 +2172,13 @@
 		} else {
 			parts.push('no harvest');
 		}
-		parts.push('cost −' + MONEY.cost.toFixed(2));
+		if (careerRule()) {
+			const career = game.career;
+			parts.push('pad −' + career.lastEnergy.toFixed(2) + ' kWh');
+			if (career.lastReward > 0) parts.push('task +' + career.lastReward.toFixed(2));
+		} else {
+			parts.push('cost −' + MONEY.cost.toFixed(2));
+		}
 		parts.push('purse ' + m.purse.toFixed(2));
 		const who = slot === 0 ? 'purse' : slotName(slot) + ' purse';
 		root.PhotoDeck.toast(who + ' · shot ' + shotCount,
@@ -2319,6 +2376,7 @@
 			rule: game.rule,
 			bot: game.bot,
 			player: game.player,
+			cheat: game.cheat,
 			shots: game.shots,
 			visited: routeRule() ? routePlan.visits : gravity.visitedCount,
 			steps: scoreSteps(),
@@ -2353,7 +2411,7 @@
 		}
 		modeGameEl.checked = true;
 		scene.setSpeed(link.rate);
-		startGame(link.seed, true, link.rule, link.bot, link.player);
+		startGame(link.seed, true, link.rule, link.bot, link.player, link.cheat);
 		if (link.shots.length > 0) startReplay(link.shots, link.end, link.length);
 		return true;
 	}
@@ -2397,9 +2455,12 @@
 		if (!ruleStr) ruleStr = RULE_TOUR;
 		if (botStr !== null && !(botStr in GravityGame.BOTS)) return false;
 		if (playerStr !== null && !(playerStr in GravityGame.PLAYER_TYPES)) return false;
+		const cheatStr = params.get('cheat');
+		if (cheatStr !== null && !(ruleStr === RULE_CAREER && GravityGame.CHEATS[cheatStr])) return false;
 		modeGameEl.checked = true;
 		if (rateStr !== null) scene.setSpeed(rateNum);
-		startGame(seedNum, rateStr !== null, ruleStr, botStr || undefined, playerStr || undefined);
+		startGame(seedNum, rateStr !== null, ruleStr, botStr || undefined, playerStr || undefined,
+			cheatStr || undefined);
 		if (sourceStr === 'ports' || sourceStr === 'port') setMode(MODE_PORTS);
 		else if (sourceStr === 'planets' || sourceStr === 'planet') setMode(MODE_PLANETS);
 		const shotsParam = params.get('shots');
@@ -2485,7 +2546,7 @@
 		if (routeRule()) {
 			return summary.ready ? Math.round(summary.length) + ' px' : 'planning…';
 		}
-		if (moneyRule()) return summary.purse.toFixed(2) + ' purse';
+		if (moneyRule() || careerRule()) return summary.purse.toFixed(2) + ' purse';
 		return summary.visited + ' / ' + PLANETS + (summary.done ? ' ✓' : '');
 	}
 
@@ -2589,11 +2650,20 @@
 		return { text: 'EVEN', outcome: 0 };
 	}
 
+	function careerRuleText() {
+		const career = game.career;
+		const pads = career.padCount + ' / ' + PLANETS + ' pads';
+		if (career.ended === GravityGame.CAREER_BROKE) return 'career · broke · ' + pads;
+		if (career.ended === GravityGame.CAREER_COMPLETE) return 'career · complete';
+		return 'career · ' + pads + (career.cheat ? ' · ' + career.cheat : '');
+	}
+
 	function updateGameHud() {
 		const ruleText = moneyRule()
 			? 'money · ' + GravityGame.MONEY_SHOTS + ' shots'
 			: routeRule()
 			? 'route · longest one plan'
+			: careerRule() ? careerRuleText()
 			: 'tour · ' + GravityGame.CAP_SECONDS + ' s cap';
 		if (ruleText !== hudRuleText) {
 			hudRuleText = ruleText;
@@ -2659,7 +2729,7 @@
 			hudPurseText = purseText;
 			if (gamePurseEl) {
 				gamePurseEl.textContent = purseText;
-				const loss = ledger.purse < MONEY.cost ||
+				const loss = slotBroke(activeSlotNow) ||
 					(shots.length > 0 && ledger.last < 0);
 				gamePurseEl.classList.toggle('loss', loss);
 				gamePurseEl.classList.toggle('gain', !loss && shots.length > 0 &&
@@ -3710,12 +3780,15 @@
 		const botPlayer = slotIsBot(slot);
 		const ledger = slotLedger(slot);
 		const plan = slotPlans[slot];
-		const broke = game.on && !route && ledger.purse < MONEY.cost;
+		const career = careerRule();
+		const note = career ? careerOverText() || careerPadNote() : '';
+		const broke = game.on && !route && (career ? note !== '' : ledger.purse < MONEY.cost);
 		const state = (blocked || broke ? 1 : 0) + (exitWarning ? 2 : 0) +
 			(broke ? 4 : 0) + (route ? 8 : 0) + (botPlayer ? 16 : 0) +
 			(route && plan.ready ? 32 : 0) + (slot * 64);
-		if (state === launchState) return;
+		if (state === launchState && note === launchNote) return;
 		launchState = state;
+		launchNote = note;
 		launchButton.disabled = route || botPlayer || blocked || broke;
 		launchButton.classList.toggle('exitWarning', exitWarning);
 		const who = slotName(slot);
@@ -3724,14 +3797,14 @@
 			? plan.ready ? 'plan counts · no launch' : 'plan only · no launch'
 			: botPlayer ? 'bot controls ' + who
 			: broke
-			? 'purse ' + ledger.purse.toFixed(2) + ' · need ' + MONEY.cost.toFixed(2)
+			? career ? note : 'purse ' + ledger.purse.toFixed(2) + ' · need ' + MONEY.cost.toFixed(2)
 			: exitWarning ? prefix + 'launch · leaves system'
-			: prefix + 'launch' + (game.on ? ' · ' + MONEY.cost.toFixed(2) : '');
+			: prefix + 'launch' + (game.on && !career ? ' · ' + MONEY.cost.toFixed(2) : '');
 		launchButton.title = route
 			? 'Route is a planner: the finished traced trajectory is the entry'
 			: botPlayer ? 'Clear bot in the ' + who + ' score row to aim and launch manually'
 			: broke
-			? 'The purse cannot cover a launch; this run is over'
+			? career ? 'The pad cannot fire this shot' : 'The purse cannot cover a launch; this run is over'
 			: exitWarning ? 'Warning: predicted trajectory ends outside the system' : '';
 	}
 
@@ -3784,7 +3857,9 @@
 		if (game.on && playerGoalDone()) {
 			return whoPrefix + (moneyRule() ? GravityGame.MONEY_SHOTS + ' shots complete' : 'tour complete');
 		}
-		if (game.on && ledger.purse < MONEY.cost) return whoPrefix + 'purse empty · run over';
+		const careerNote = careerRule() ? careerOverText() : '';
+		if (careerNote) return careerNote;
+		if (game.on && slotBroke(slot)) return whoPrefix + 'purse empty · run over';
 		const rest = sim.status === STATUS_ENDED
 			? endText(sim.endReason, sim.endBody)
 			: sim.landedBody >= 0 ? 'landed ' + planetName(sim.landedBody) : 'ready';
@@ -4022,7 +4097,8 @@
 	if (botHardEl) botHardEl.addEventListener('change', () => setBot(BOT_HARD));
 	modeLabEl.addEventListener('change', stopGame);
 	modeGameEl.addEventListener('change', () => startGame(tradeSim.seed, false));
-	gameRestartBtn.addEventListener('click', () => startGame(game.seed, game.fixedRate));
+	gameRestartBtn.addEventListener('click', () =>
+		startGame(game.seed, game.fixedRate, undefined, undefined, undefined, game.cheat));
 	gameNewSeedBtn.addEventListener('click', () => {
 		startGame(1 + Math.floor(Math.random() * SEED_RANGE), false);
 	});
@@ -4105,6 +4181,7 @@
 		activeSim: activeSim,
 		bot: bot,
 		game: game,
+		career: game.career,
 		replay: replay,
 		playScale: playScale,
 		playIndex: () => playIndex,

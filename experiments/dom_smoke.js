@@ -1062,6 +1062,114 @@ check(cui.get('modeTag').textContent === 'invalid game link', 'invalid link note
 console.log('challenge link: seed 42 ×1 locked · fallback field', cui.get('gameLink').value.slice(-24),
 	'· invalid link noted');
 
+/* solo money run: a flight launched with the purse dipping below the fee must still land */
+const soloEnv = loadPage({ hash: '#game=1&seed=31&rate=3&rule=money', clipboard: false });
+soloEnv.runFrames(2, 16.7);
+const soloScene = soloEnv.context.GravityScene;
+const soloCargo = soloScene.sim;
+check(soloScene.bot.count === 0 && soloEnv.elements.get('rivalRow').hidden, 'solo money run');
+function cheapShot(p) {
+	for (let a = 0; a < 72; a++) {
+		const angle = a / 72 * Math.PI * 2;
+		soloCargo.predict(p, angle, 250);
+		if (soloCargo.predNewVisits <= 1 && soloCargo.predReason !== pageSim.END_OPEN && soloCargo.predTime > 1) return angle;
+	}
+	throw new Error('no cheap shot from P' + p);
+}
+let soloShots = 0;
+while (soloScene.game.money.purse >= 1 && soloShots < 6) {
+	const p = soloCargo.landedBody >= 0 ? soloCargo.landedBody : 5;
+	soloEnv.dragAim(p, cheapShot(p), 250);
+	soloEnv.runFrames(1, 16.7);
+	soloEnv.click('launch');
+	soloShots += 1;
+	let frames = 0;
+	for (; soloCargo.status === pageSim.STATUS_FLYING && frames < 3000; frames++) soloEnv.runFrames(1, 16.7);
+	check(soloCargo.status === pageSim.STATUS_ENDED, 'solo flight ' + soloShots + ' stalled at step ' + soloCargo.liveSteps +
+		' with purse ' + soloScene.game.money.purse.toFixed(2));
+}
+check(soloScene.game.money.purse < 1 && soloEnv.elements.get('cargoStatus').textContent === 'purse empty · run over',
+	'solo broke status: ' + soloEnv.elements.get('cargoStatus').textContent);
+console.log('solo money:', soloShots, 'shots · broke flight landed · purse', soloScene.game.money.purse.toFixed(2));
+
+/* career via ?rule=career: ship on HQ, only its pad launches, a landing elsewhere strands */
+const careerEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
+careerEnv.runFrames(2, 16.0);
+const kui = careerEnv.elements;
+const kScene = careerEnv.context.GravityScene;
+const kGame = careerEnv.context.GravityGame;
+const kSim = careerEnv.context.GravitySim;
+const career = kScene.career;
+const kCargo = kScene.sim;
+check(kScene.game.rule === 'career' && kScene.bot.level === 'off' && kScene.bot.count === 0 &&
+	kScene.bot.playerType === 'user', 'career is solo: ' + kScene.bot.level + ' ' + kScene.bot.playerType);
+check(career.at === career.hq && kCargo.landedBody === career.hq && career.padCount === 1, 'career start on HQ');
+check(kui.get('cargoStatus').textContent === 'landed P' + career.hq + ' · clock paused',
+	'career status: ' + kui.get('cargoStatus').textContent);
+check(kui.get('ruleTag').textContent === 'career · 1 / 26 pads', 'career rule tag: ' + kui.get('ruleTag').textContent);
+check(kui.get('rivalTag').textContent === 'solo' && kui.get('rivalRow').hidden, 'career hides rivals');
+check(kui.get('gameScore').textContent === '6.00 purse', 'career score is the purse: ' + kui.get('gameScore').textContent);
+const noPad = (career.hq + 3) % pageWorld.PLANETS;
+careerEnv.dragAim(noPad, 0.7, 100);
+careerEnv.runFrames(2, 16.0);
+check(kui.get('launch').disabled && kCargo.status !== kSim.STATUS_FLYING, 'no catapult: drag from P' + noPad + ' must not arm');
+const limit = kCargo.speedLimit(career.hq);
+check(limit > 100 && limit < 125, 'HQ speed limit ' + limit);
+careerEnv.dragAim(career.hq, 0.7, 200);
+careerEnv.runFrames(2, 16.0);
+check(kui.get('launch').disabled && kui.get('launch').textContent.startsWith('pad charge '),
+	'over the limit the pad note shows: ' + kui.get('launch').textContent);
+let landingShot = null;
+for (let a = 0; a < 72 && !landingShot; a++) {
+	const angle = a / 72 * Math.PI * 2;
+	kCargo.predict(career.hq, angle, 100);
+	if (kCargo.predReason === kSim.END_IMPACT && kCargo.predBody !== career.hq) landingShot = angle;
+}
+check(landingShot !== null, 'no landing shot from HQ at 100 px/s');
+careerEnv.dragAim(career.hq, landingShot, 100);
+careerEnv.runFrames(2, 16.0);
+check(!kui.get('launch').disabled && kui.get('launch').textContent === 'launch',
+	'career launch label: ' + kui.get('launch').textContent);
+const charge0 = career.pads[career.hq].chargeKwh;
+const purse0 = kScene.game.money.purse;
+careerEnv.click('launch');
+careerEnv.runFrames(2, 16.0);
+check(kCargo.status === kSim.STATUS_FLYING && career.flights === 1, 'career flight did not start');
+check(career.pads[career.hq].chargeKwh < charge0, 'launch did not draw the pad battery');
+for (let i = 0; i < 400 && kCargo.status === kSim.STATUS_FLYING; i++) careerEnv.runFrames(1, 40.0);
+check(kCargo.status === kSim.STATUS_ENDED && kCargo.endReason === kSim.END_IMPACT, 'career flight end ' + kCargo.endReason);
+check(career.at === kCargo.endBody && career.stranded, 'landing without a catapult must strand');
+check(kScene.game.money.purse >= purse0, 'no launch fee in career: ' + kScene.game.money.purse);
+check(kui.get('cargoStatus').textContent === 'stranded · build a catapult or evacuate',
+	'stranded status: ' + kui.get('cargoStatus').textContent);
+check(kui.get('launch').disabled && kui.get('launch').textContent === 'stranded · build a catapult or evacuate',
+	'stranded launch button: ' + kui.get('launch').textContent);
+const strandedAt = career.at;
+check(kGame.evacuate(career, kCargo) && career.at === career.hq && !career.stranded, 'evacuate home');
+careerEnv.runFrames(8, 40.0);
+check(kui.get('cargoStatus').textContent === 'landed P' + career.hq + ' · clock paused',
+	'after evacuation: ' + kui.get('cargoStatus').textContent);
+careerEnv.click('gameCopy');
+check(kui.get('gameLink').value.endsWith('#game=1&seed=42&rate=1&rule=career'), 'career link ' + kui.get('gameLink').value);
+careerEnv.choose('modeLab');
+careerEnv.runFrames(2, 16.0);
+check(kCargo.pads === null && kCargo.landedBody === career.hq && kCargo.canLaunchFrom(career.hq),
+	'lab drops the launch network but keeps the landed ship');
+const cheatEnv = loadPage({ hash: '#game=1&seed=42&rate=1&rule=career&cheat=endgame', clipboard: false });
+cheatEnv.runFrames(2, 16.0);
+const cheatCareer = cheatEnv.context.GravityScene.career;
+check(cheatCareer.cheat === 'endgame' && cheatCareer.padCount === pageWorld.PLANETS &&
+	cheatEnv.context.GravityScene.game.money.purse === kGame.CAREER.endgamePurse, 'endgame cheat link');
+check(cheatEnv.elements.get('ruleTag').textContent === 'career · 26 / 26 pads · endgame',
+	'cheat rule tag: ' + cheatEnv.elements.get('ruleTag').textContent);
+cheatEnv.click('gameCopy');
+check(cheatEnv.elements.get('gameLink').value.endsWith('&rule=career&cheat=endgame'), 'cheat survives the link');
+const badCheat = loadPage({ hash: '#game=1&seed=42&rate=1&rule=tour&cheat=endgame', clipboard: false });
+badCheat.runFrames(2, 16.0);
+check(badCheat.elements.get('modeTag').textContent === 'invalid game link', 'cheat outside career rejected');
+console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s · stranded P' + strandedAt,
+	'→ evacuated · endgame cheat link ok');
+
 console.log('paint calls', {
 	fillText: env.calls.fillText,
 	stroke: env.calls.stroke,

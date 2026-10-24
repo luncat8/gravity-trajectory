@@ -1,235 +1,202 @@
 /*
- * Career tech tree: part tables, ship mass, launch energy, planet-gear
- * (catapult / solar / battery) economics and the per-item "copy spec" balance
- * line. Pure functions of static tables — no DOM, no simulation state, safe
- * under node. Guarded module.exports like gravity_game.js.
+ * Career tech tree: planet gear (EM catapult / solar panel / battery), ship
+ * parts (cargo hold / impulse engine / fuel tank / auto-helpers), ship mass,
+ * the catapult launch model and the per-item "copy spec" balance line. Pure
+ * functions of static tables — no DOM, no simulation state, node-safe.
  *
- * Units: mass in tons, force in kN, energy in kWh, power in W, time in s.
- * Launch energy model: E = k * m * v^2 / efficiency, with k tuned in the
- * balance bench so EMC-1 barely lifts a light ship and stalls with cargo.
+ * Planet gear is built once per planet and shared by every visitor; it never
+ * adds to ship mass. Only ship parts and cargo do. Every API takes table
+ * records (not ids), so the hot path never searches a table; `find` turns an
+ * id from a link or a cheat into its record.
  *
- * Economic model (revised): catapult, solar panel and battery are planet
- * equipment, built once per planet and shared by every visitor. They do NOT
- * add to ship mass. A planet without a built catapult cannot be launched from
- * — the player must call an expensive evacuation. Ship parts (hold, engine,
- * tank) add to ship mass and are installed/uninstalled at HQ.
+ * Units: mass t, force kN, energy kWh, panel power kW, speed px/s of the
+ * gravity sim, time s. Launch model:
+ *   energy  = KWH_PER_T_V2 · m · v² / efficiency   (drawn from the pad battery)
+ *   v_max   = sqrt(2 · maxForce / m · RAIL_M)        (force cap of the rail)
+ * so EMC-1 + BAT-1 lifts a 10 t ship to ~111 px/s (the 80–120 px/s band where
+ * most shots land on another planet) and stalls a 38 t load below 60 px/s,
+ * while EMC-5 reaches the sim's top speed with a dry ship.
  */
 (function (root) {
 	'use strict';
 
-	var SHIP_DRY_MASS = 10.0;
-	/* kWh per (t * (m/s)^2). So a 10 t dry ship at 100 m/s needs ~0.75 kWh
-	 * (inside one BAT-1 charge), while a 38 t loaded ship needs ~2.85 kWh
-	 * (blocked on EMC-1's 1.2 kWh shot). */
-	var KWH_PER_KNT2 = 7.5e-6;
-	var G0 = 9.81; // m/s^2, for the impulse rocket equation
+	const SHIP_DRY_MASS = 10;
+	const KWH_PER_T_V2 = 7.5e-6;
+	const RAIL_M = 2800;
+	const G0 = 9.81;
 
-	/* --- planet gear (built per planet, no ship mass) ------------------ */
+	/* --- planet gear --------------------------------------------------- */
 
-	var CATAPULTS = [
-		{ id: 'EMC-1', tier: 1, maxForce: 45, efficiency: 0.62, buildCost: 3.00,
-			padMass: 0.0, chargeTime: 120, energyPerShot: 1.2 },
-		{ id: 'EMC-2', tier: 2, maxForce: 90, efficiency: 0.71, buildCost: 6.00,
-			padMass: 0.0, chargeTime: 90, energyPerShot: 2.1 },
-		{ id: 'EMC-3', tier: 3, maxForce: 135, efficiency: 0.80, buildCost: 10.00,
-			padMass: 0.0, chargeTime: 60, energyPerShot: 3.4 },
-		{ id: 'EMC-4', tier: 4, maxForce: 165, efficiency: 0.85, buildCost: 15.00,
-			padMass: 0.0, chargeTime: 40, energyPerShot: 5.0 },
-		{ id: 'EMC-5', tier: 5, maxForce: 180, efficiency: 0.88, buildCost: 20.00,
-			padMass: 0.0, chargeTime: 30, energyPerShot: 6.5 }
+	const CATAPULTS = [
+		{ id: 'EMC-1', tier: 1, maxForce: 45, efficiency: 0.62, buildCost: 3.00 },
+		{ id: 'EMC-2', tier: 2, maxForce: 90, efficiency: 0.71, buildCost: 6.00 },
+		{ id: 'EMC-3', tier: 3, maxForce: 135, efficiency: 0.80, buildCost: 10.00 },
+		{ id: 'EMC-4', tier: 4, maxForce: 165, efficiency: 0.85, buildCost: 15.00 },
+		{ id: 'EMC-5', tier: 5, maxForce: 180, efficiency: 0.88, buildCost: 20.00 }
 	];
 
-	var PANELS = [
-		{ id: 'SP-1', tier: 1, power: 60, mass: 0.0, buildCost: 1.50 },
-		{ id: 'SP-2', tier: 2, power: 140, mass: 0.0, buildCost: 3.50 },
-		{ id: 'SP-3', tier: 3, power: 260, mass: 0.0, buildCost: 7.00 },
-		{ id: 'SP-4', tier: 4, power: 420, mass: 0.0, buildCost: 12.00 }
+	/* kW: SP-1 refills BAT-1 in ~90 flight-seconds of full sunlight at world rate ×1 */
+	const PANELS = [
+		{ id: 'SP-1', tier: 1, power: 1.0, buildCost: 1.50 },
+		{ id: 'SP-2', tier: 2, power: 2.4, buildCost: 3.50 },
+		{ id: 'SP-3', tier: 3, power: 4.5, buildCost: 7.00 },
+		{ id: 'SP-4', tier: 4, power: 7.5, buildCost: 12.00 }
 	];
 
-	var BATTERIES = [
-		{ id: 'BAT-1', tier: 1, capacity: 1.5, leak: 0.001, mass: 0.4, buildCost: 1.00 },
-		{ id: 'BAT-2', tier: 2, capacity: 3.0, leak: 0.0008, mass: 0.7, buildCost: 2.50 },
-		{ id: 'BAT-3', tier: 3, capacity: 6.0, leak: 0.0006, mass: 1.2, buildCost: 5.00 },
-		{ id: 'BAT-4', tier: 4, capacity: 10.0, leak: 0.0004, mass: 1.8, buildCost: 9.00 },
-		{ id: 'BAT-5', tier: 5, capacity: 16.0, leak: 0.0003, mass: 2.8, buildCost: 15.00 }
+	/* capacity kWh, leak fraction per colony year */
+	const BATTERIES = [
+		{ id: 'BAT-1', tier: 1, capacity: 1.5, leak: 0.001, buildCost: 1.00 },
+		{ id: 'BAT-2', tier: 2, capacity: 3.0, leak: 0.0008, buildCost: 2.50 },
+		{ id: 'BAT-3', tier: 3, capacity: 6.0, leak: 0.0006, buildCost: 5.00 },
+		{ id: 'BAT-4', tier: 4, capacity: 10.0, leak: 0.0004, buildCost: 9.00 },
+		{ id: 'BAT-5', tier: 5, capacity: 16.0, leak: 0.0003, buildCost: 15.00 }
 	];
 
-	/* --- ship parts (add mass, installed at HQ) ------------------------ */
+	/* --- ship parts (add mass, refitted at HQ) ------------------------- */
 
-	var HOLDS = [
+	const HOLDS = [
 		{ id: 'HOLD-0', tier: 0, capacity: 0, emptyMass: 0.0, buildCost: 0.00 },
 		{ id: 'HOLD-8', tier: 1, capacity: 8, emptyMass: 1.5, buildCost: 2.00 },
 		{ id: 'HOLD-24', tier: 2, capacity: 24, emptyMass: 4.0, buildCost: 5.00 }
 	];
 
-	var ENGINES = [
+	const ENGINES = [
 		{ id: 'IMP-1', tier: 1, thrust: 12, isp: 260, mass: 1.0, buildCost: 4.00 },
 		{ id: 'IMP-2', tier: 2, thrust: 24, isp: 290, mass: 1.6, buildCost: 8.00 },
 		{ id: 'IMP-3', tier: 3, thrust: 40, isp: 330, mass: 2.5, buildCost: 14.00 }
 	];
 
-	var TANKS = [
+	const TANKS = [
 		{ id: 'FT-0', tier: 0, fuelCap: 0, emptyMass: 0.0, buildCost: 0.00 },
 		{ id: 'FT-1', tier: 1, fuelCap: 40, emptyMass: 0.5, buildCost: 1.50 },
 		{ id: 'FT-2', tier: 2, fuelCap: 90, emptyMass: 0.9, buildCost: 3.50 },
 		{ id: 'FT-3', tier: 3, fuelCap: 160, emptyMass: 1.4, buildCost: 7.00 }
 	];
 
-	var HELPERS = [
+	const HELPERS = [
 		{ id: 'HELP-0', tier: 0, candidates: 0, horizon: 0, buildCost: 0.00 },
 		{ id: 'HELP-1', tier: 1, candidates: 28, horizon: 60, buildCost: 1.00 },
 		{ id: 'HELP-2', tier: 2, candidates: 144, horizon: 240, buildCost: 4.00 }
 	];
 
-	var TABLES = {
+	const KIND_CATAPULT = 'catapult';
+	const KIND_PANEL = 'panel';
+	const KIND_BATTERY = 'battery';
+	const KIND_HOLD = 'hold';
+	const KIND_ENGINE = 'engine';
+	const KIND_TANK = 'tank';
+	const KIND_HELPER = 'helper';
+	const TABLES = {
 		catapult: CATAPULTS, panel: PANELS, battery: BATTERIES,
 		hold: HOLDS, engine: ENGINES, tank: TANKS, helper: HELPERS
 	};
+	const GEAR_KINDS = [KIND_CATAPULT, KIND_PANEL, KIND_BATTERY];
+	const PART_KINDS = [KIND_HOLD, KIND_ENGINE, KIND_TANK];
 
 	function find(table, id) {
-		var i;
-		for (i = 0; i < table.length; i++) {
+		for (let i = 0; i < table.length; i++) {
 			if (table[i].id === id) return table[i];
 		}
 		return null;
 	}
 
-	function catapult(id) { return find(CATAPULTS, id || 'EMC-1'); }
-	function panel(id) { return find(PANELS, id || 'SP-1'); }
-	function battery(id) { return find(BATTERIES, id || 'BAT-1'); }
-	function hold(id) { return find(HOLDS, id || 'HOLD-0'); }
-	function engine(id) { return id ? find(ENGINES, id) : null; }
-	function tank(id) { return find(TANKS, id || 'FT-0'); }
-
-	/* Total ship mass: dry + installed ship parts + cargo tons. Planet gear
-	 * (catapult / panel / battery) does NOT add to ship mass. */
-	function shipMass(parts, cargoTons) {
-		var m = SHIP_DRY_MASS;
-		if (parts.hold) m += hold(parts.hold).emptyMass;
-		if (parts.engine) m += engine(parts.engine).mass;
-		if (parts.tank) m += tank(parts.tank).emptyMass;
-		if (cargoTons) m += cargoTons;
-		return m;
+	function findKind(kind, id) {
+		return TABLES[kind] ? find(TABLES[kind], id) : null;
 	}
 
-	/* Energy needed for a catapult launch of `mass` tons at `speed` m/s. */
-	function launchEnergy(mass, catapultId, speed) {
-		var c = catapult(catapultId);
-		return KWH_PER_KNT2 * mass * speed * speed / c.efficiency;
+	/* --- ship ---------------------------------------------------------- */
+
+	/* ship = { hold, engine, tank } records (engine may be null) */
+	function shipMass(ship, cargoTons) {
+		let m = SHIP_DRY_MASS;
+		if (ship.hold) m += ship.hold.emptyMass;
+		if (ship.engine) m += ship.engine.mass;
+		if (ship.tank) m += ship.tank.emptyMass;
+		return m + cargoTons;
 	}
 
-	/* Can the pad launch right now from its stored charge? */
-	function canLaunch(chargeKwh, mass, catapultId, speed) {
-		return chargeKwh >= launchEnergy(mass, catapultId, speed);
+	function launchEnergy(mass, catapult, speed) {
+		return KWH_PER_T_V2 * mass * speed * speed / catapult.efficiency;
 	}
 
-	/* Solar energy added over dt seconds at planet light (0..1): W*s -> kWh. */
-	function solarCharge(panelId, light, dtSec) {
-		var p = panel(panelId);
-		return p.power * light * dtSec / 3600000;
+	/* speed the rail reaches before its force cap, px/s */
+	function maxSpeed(mass, catapult) {
+		return Math.sqrt(2 * catapult.maxForce * RAIL_M / mass);
 	}
 
-	/* Battery charge after leak over dt years (colony years per 0.2.0 clock). */
-	function batteryLeak(batteryId, chargeKwh, dtYears) {
-		var b = battery(batteryId);
-		return chargeKwh * Math.exp(-b.leak * dtYears);
+	/* fastest launch the pad affords right now: min of the energy and force caps */
+	function speedLimit(chargeKwh, mass, catapult) {
+		if (!catapult || chargeKwh <= 0) return 0;
+		const byEnergy = Math.sqrt(chargeKwh * catapult.efficiency / (KWH_PER_T_V2 * mass));
+		const byForce = maxSpeed(mass, catapult);
+		return byEnergy < byForce ? byEnergy : byForce;
 	}
 
-	/* Impulse delta-v from burning fuelKg with the installed engine. */
-	function impulseDeltaV(fuelKg, engineId, shipMassT) {
-		var e = engine(engineId);
-		if (!e || fuelKg <= 0 || shipMassT <= 0) return 0;
-		return G0 * e.isp * Math.log((shipMassT + fuelKg) / shipMassT);
+	function canLaunch(chargeKwh, mass, catapult, speed) {
+		return speed <= speedLimit(chargeKwh, mass, catapult) + 1e-9;
+	}
+
+	/* kWh gained over dtSec seconds at relative light (0..1) */
+	function solarCharge(panel, light, dtSec) {
+		return panel.power * light * dtSec / 3600;
+	}
+
+	function batteryLeak(battery, chargeKwh, dtYears) {
+		return chargeKwh * Math.exp(-battery.leak * dtYears);
+	}
+
+	/* impulse delta-v (m/s) from burning fuelKg with the installed engine */
+	function impulseDeltaV(fuelKg, engine, shipMassT) {
+		if (!engine || fuelKg <= 0 || shipMassT <= 0) return 0;
+		return G0 * engine.isp * Math.log((shipMassT + fuelKg / 1000) / shipMassT);
 	}
 
 	/* --- planet-gear economics ----------------------------------------- */
 
-	/* Build cost of a single piece of planet gear. */
-	function gearBuildCost(kind, id) {
-		var t = find(TABLES[kind], id);
-		return t ? t.buildCost : 0;
+	/* total to apply `item` to every pad whose `kind` slot is built and differs */
+	/* planet gear only ever goes up a tier */
+	function upgrades(pad, kind, item) {
+		const cur = pad[kind];
+		return cur !== null && cur.tier < item.tier;
 	}
 
-	/* Cost to apply the `toId` tier to every already-built facility of `kind`
-	 * across `planets`. A planet counts as built when its gear slot is non-null
-	 * and differs from `toId`. Returns the total purse cost. */
-	function bulkUpgradeCost(planets, kind, toId) {
-		var total = 0;
-		var i, p, cur;
-		for (i = 0; i < planets.length; i++) {
-			p = planets[i];
-			cur = p[kind];
-			if (cur && cur !== toId) {
-				total += gearBuildCost(kind, toId);
-			}
+	function bulkUpgradeCost(pads, kind, item) {
+		let total = 0;
+		for (let i = 0; i < pads.length; i++) {
+			if (upgrades(pads[i], kind, item)) total += item.buildCost;
 		}
 		return total;
 	}
 
-	/* Pure bulk upgrade: returns { planets, cost }. Does not mutate input. */
-	function applyBulkUpgrade(planets, kind, toId) {
-		var out = [];
-		var i, p, cp;
-		var cost = bulkUpgradeCost(planets, kind, toId);
-		for (i = 0; i < planets.length; i++) {
-			p = planets[i];
-			cp = {};
-			cp.catapult = p.catapult;
-			cp.panel = p.panel;
-			cp.battery = p.battery;
-			cp.chargeKwh = p.chargeKwh;
-			if (p[kind] && p[kind] !== toId) cp[kind] = toId;
-			out.push(cp);
-		}
-		return { planets: out, cost: cost };
-	}
-
-	/* --- starter grant ------------------------------------------------- */
-
 	function starterGrant() {
 		return {
-			purse: 3.00,
-			ship: { hold: 'HOLD-0', engine: null, tank: 'FT-0' },
-			startPlanet: { catapult: 'EMC-1', panel: 'SP-1', battery: 'BAT-1',
-				chargeKwh: 1.5 }
+			purse: 6.00,
+			ship: { hold: HOLDS[0], engine: null, tank: TANKS[0] },
+			pad: { catapult: CATAPULTS[0], panel: PANELS[0], battery: BATTERIES[0] }
 		};
 	}
 
-	/* Clipboard line for balance feedback: tech: KIND ID { key: value, ... }.
-	 * Paste into chat: "this item needs price up / mass down". */
-	function copySpec(kind, id) {
-		if (!TABLES[kind]) return '';
-		var t = find(TABLES[kind], id);
-		var k, out, first;
-		if (!t) return '';
-		out = 'tech: ' + kind.toUpperCase() + ' ' + id + ' {';
-		first = true;
-		for (k in t) {
-			if (k === 'id') continue;
-			if (!first) out += ', ';
-			out += k + ': ' + t[k];
-			first = false;
+	/* balance feedback line: `tech: CATAPULT EMC-2 { tier: 2, maxForce: 90, … }` */
+	function copySpec(kind, item) {
+		if (!TABLES[kind] || !item) return '';
+		const fields = [];
+		for (const key in item) {
+			if (key !== 'id') fields.push(key + ': ' + item[key]);
 		}
-		out += ' }';
-		return out;
+		return 'tech: ' + kind.toUpperCase() + ' ' + item.id + ' { ' + fields.join(', ') + ' }';
 	}
 
-	var OrbitTech = {
-		CATAPULTS: CATAPULTS, PANELS: PANELS, BATTERIES: BATTERIES,
-		HOLDS: HOLDS, ENGINES: ENGINES, TANKS: TANKS, HELPERS: HELPERS,
-		find: find,
-		shipMass: shipMass, launchEnergy: launchEnergy,
-		canLaunch: canLaunch, solarCharge: solarCharge,
-		batteryLeak: batteryLeak, impulseDeltaV: impulseDeltaV,
-		gearBuildCost: gearBuildCost,
-		bulkUpgradeCost: bulkUpgradeCost,
-		applyBulkUpgrade: applyBulkUpgrade,
-		copySpec: copySpec, starterGrant: starterGrant
+	const OrbitTech = {
+		SHIP_DRY_MASS, KWH_PER_T_V2, RAIL_M,
+		CATAPULTS, PANELS, BATTERIES, HOLDS, ENGINES, TANKS, HELPERS, TABLES,
+		KIND_CATAPULT, KIND_PANEL, KIND_BATTERY, KIND_HOLD, KIND_ENGINE, KIND_TANK, KIND_HELPER,
+		GEAR_KINDS, PART_KINDS,
+		find, findKind,
+		shipMass, launchEnergy, maxSpeed, speedLimit, canLaunch,
+		solarCharge, batteryLeak, impulseDeltaV,
+		upgrades, bulkUpgradeCost, starterGrant, copySpec
 	};
 
-	if (typeof module !== 'undefined' && module.exports) {
-		module.exports = OrbitTech;
-	} else {
-		root.OrbitTech = OrbitTech;
-	}
-})();
+	if (typeof module !== 'undefined' && module.exports) module.exports = OrbitTech;
+	else root.OrbitTech = OrbitTech;
+})(typeof globalThis !== 'undefined' ? globalThis : this);

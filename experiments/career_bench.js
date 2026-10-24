@@ -1,15 +1,32 @@
 /*
- * Career mode bench (0.4.0): knowledge hull, mass gating, solar power,
- * evacuation economics and bulk planet-gear upgrades. Deterministic, node-only.
- * Run: node experiments/career_bench.js
+ * Career mode bench (0.4.x): catapult launch model, knowledge hull, solar /
+ * battery, bulk planet-gear upgrades, and a headless career run on the real
+ * gravity sim: pad gating, energy draw and recharge, stranding, evacuation,
+ * building, contracts, competitions, cheats, link codec, end conditions.
+ * Deterministic, node-only. Run: node experiments/career_bench.js
  */
 'use strict';
 
-var assert = require('assert');
-var OrbitTech = require('../orbit_tech.js');
-var OrbitScience = require('../orbit_science.js');
+const assert = require('assert');
+const path = require('path');
+const root = path.join(__dirname, '..');
+const OrbitTech = require(path.join(root, 'orbit_tech.js'));
+const OrbitScience = require(path.join(root, 'orbit_science.js'));
+const OrbitWorld = require(path.join(root, 'orbit_world.js'));
+const Sim = require(path.join(root, 'orbit_sim.js'));
+const GravitySim = require(path.join(root, 'gravity_sim.js'));
+const GravityGame = require(path.join(root, 'gravity_game.js'));
 
-var failures = 0;
+globalThis.performance = globalThis.performance || { now: () => Date.now() };
+
+const PLANETS = OrbitWorld.PLANETS;
+const EMC = OrbitTech.CATAPULTS;
+const SP = OrbitTech.PANELS;
+const BAT = OrbitTech.BATTERIES;
+const HOLD = OrbitTech.HOLDS;
+const CAREER = GravityGame.CAREER;
+let failures = 0;
+
 function check(name, fn) {
 	try {
 		fn();
@@ -20,148 +37,506 @@ function check(name, fn) {
 	}
 }
 
-/* --- §1 mass / energy gating ------------------------------------------ */
+function dry() {
+	return OrbitTech.shipMass({ hold: HOLD[0], engine: null, tank: OrbitTech.TANKS[0] }, 0);
+}
 
-check('dry ship launchable by EMC-1 from BAT-1 charge', function () {
-	var mass = OrbitTech.shipMass({}, 0); // 10 t dry, no battery mass now
-	var e = OrbitTech.launchEnergy(mass, 'EMC-1', 100);
-	assert.ok(e <= 1.5, 'energy ' + e + ' kWh > 1.5 kWh battery');
-	assert.ok(OrbitTech.canLaunch(1.5, mass, 'EMC-1', 100));
+/* --- §1 launch model ---------------------------------------------------- */
+
+check('dry ship launchable by EMC-1 from a full BAT-1 in the 80-120 px/s landing band', () => {
+	const limit = OrbitTech.speedLimit(BAT[0].capacity, dry(), EMC[0]);
+	assert.ok(limit > 100 && limit < 125, 'speed limit ' + limit);
+	assert.ok(OrbitTech.canLaunch(BAT[0].capacity, dry(), EMC[0], 100));
+	assert.ok(!OrbitTech.canLaunch(BAT[0].capacity, dry(), EMC[0], 130));
+	assert.ok(OrbitTech.launchEnergy(dry(), EMC[0], 100) <= BAT[0].capacity);
 });
 
-check('24 t cargo + HOLD-24 cannot launch on EMC-1 / BAT-1', function () {
-	var mass = OrbitTech.shipMass({hold: 'HOLD-24'}, 24); // 10 + 4 + 24 = 38 t
-	var e = OrbitTech.launchEnergy(mass, 'EMC-1', 100);
-	assert.ok(e > 1.5, 'energy ' + e + ' should exceed 1.5 kWh');
-	assert.ok(!OrbitTech.canLaunch(1.5, mass, 'EMC-1', 100), 'overloaded launch must be rejected');
-	assert.ok(OrbitTech.canLaunch(16.0, mass, 'EMC-5', 100), 'BAT-5 + EMC-5 should launch it');
+check('24 t cargo + HOLD-24 stalls on EMC-1 / BAT-1, flies on EMC-5 / BAT-5', () => {
+	const mass = OrbitTech.shipMass({ hold: HOLD[2], engine: null, tank: OrbitTech.TANKS[0] }, 24);
+	assert.strictEqual(mass, 38);
+	assert.ok(OrbitTech.speedLimit(BAT[0].capacity, mass, EMC[0]) < 60, 'loaded EMC-1 limit');
+	assert.ok(!OrbitTech.canLaunch(BAT[0].capacity, mass, EMC[0], 100));
+	assert.ok(OrbitTech.canLaunch(BAT[4].capacity, mass, EMC[4], 100));
 });
 
-check('stronger catapult / efficiency cuts energy', function () {
-	var m = OrbitTech.shipMass({hold: 'HOLD-8'}, 8); // 19.5 t
-	var e1 = OrbitTech.launchEnergy(m, 'EMC-1', 90);
-	var e5 = OrbitTech.launchEnergy(m, 'EMC-5', 90);
-	assert.ok(e5 < e1, 'EMC-5 should need less energy than EMC-1');
+check('rail force caps speed even with a huge battery; efficiency cuts energy', () => {
+	const m = dry();
+	assert.ok(Math.abs(OrbitTech.speedLimit(1000, m, EMC[0]) - OrbitTech.maxSpeed(m, EMC[0])) < 1e-9);
+	assert.ok(OrbitTech.maxSpeed(m, EMC[0]) < OrbitTech.maxSpeed(m, EMC[4]));
+	assert.ok(OrbitTech.launchEnergy(m, EMC[4], 90) < OrbitTech.launchEnergy(m, EMC[0], 90));
+	assert.strictEqual(OrbitTech.speedLimit(1, m, null), 0);
+	assert.strictEqual(OrbitTech.speedLimit(0, m, EMC[0]), 0);
 });
 
-check('impulse delta-v needs engine + fuel', function () {
-	var dv = OrbitTech.impulseDeltaV(10, 'IMP-2', 20);
-	assert.ok(dv > 0);
-	assert.ok(OrbitTech.impulseDeltaV(0, 'IMP-2', 20) === 0);
-	assert.ok(OrbitTech.impulseDeltaV(10, null, 20) === 0);
+check('impulse delta-v needs engine + fuel, grows with fuel', () => {
+	const dv = OrbitTech.impulseDeltaV(1000, OrbitTech.ENGINES[1], 20);
+	assert.ok(dv > 0 && dv < 200, 'dv ' + dv);
+	assert.ok(OrbitTech.impulseDeltaV(2000, OrbitTech.ENGINES[1], 20) > dv);
+	assert.strictEqual(OrbitTech.impulseDeltaV(0, OrbitTech.ENGINES[1], 20), 0);
+	assert.strictEqual(OrbitTech.impulseDeltaV(10, null, 20), 0);
 });
 
-/* --- §2 knowledge hull ------------------------------------------------ */
+/* --- §2 knowledge hull -------------------------------------------------- */
 
-check('1D hull: segment, interior cheap, exterior costs k*dist', function () {
-	var fam = 'test1d';
+check('1D hull: segment, interior cheap, exterior costs k*dist', () => {
+	const fam = 'test1d';
 	OrbitScience.accept(fam, [0], 'zero');
 	OrbitScience.accept(fam, [10], 'ten');
-
-	var inside = OrbitScience.preview(fam, [5]);
-	assert.ok(inside.inside, 'midpoint of segment must be inside');
-	assert.ok(Math.abs(inside.dist) < 1e-6);
-
-	var outside = OrbitScience.preview(fam, [20]);
-	assert.ok(!outside.inside);
-	assert.ok(Math.abs(outside.dist - 10) < 1e-6);
-	assert.ok(outside.cost > inside.cost);
-
+	const inside = OrbitScience.preview(fam, [5]);
+	assert.ok(inside.inside && Math.abs(inside.dist) < 1e-6);
+	const outside = OrbitScience.preview(fam, [20]);
+	assert.ok(!outside.inside && Math.abs(outside.dist - 10) < 1e-6 && outside.cost > inside.cost);
 	OrbitScience.accept(fam, [20], 'twenty');
 	assert.ok(OrbitScience.preview(fam, [20]).inside);
 });
 
-check('2D hull: triangle interior cheap, exterior priced by distance', function () {
-	var fam = 'test2d';
+check('2D hull: triangle interior cheap, exterior priced by distance', () => {
+	const fam = 'test2d';
 	OrbitScience.accept(fam, [0, 0], 'a');
 	OrbitScience.accept(fam, [10, 0], 'b');
 	OrbitScience.accept(fam, [0, 10], 'c');
-
-	assert.ok(OrbitScience.preview(fam, [3, 3]).inside, 'triangle interior cheap');
-
-	var out = OrbitScience.preview(fam, [8, 8]);
-	assert.ok(!out.inside);
-	assert.ok(Math.abs(out.dist - 6 / Math.sqrt(2)) < 1e-6);
+	assert.ok(OrbitScience.preview(fam, [3, 3]).inside);
+	const out = OrbitScience.preview(fam, [8, 8]);
+	assert.ok(!out.inside && Math.abs(out.dist - 6 / Math.sqrt(2)) < 1e-6);
 	assert.ok(out.cost > OrbitScience.preview(fam, [3, 3]).cost);
 });
 
-check('empty family: everything outside, infinite dist', function () {
-	var p = OrbitScience.preview('nope', [1]);
-	assert.ok(!p.inside);
-	assert.ok(p.dist === Infinity);
+check('empty family: everything outside, infinite dist', () => {
+	const p = OrbitScience.preview('nope', [1]);
+	assert.ok(!p.inside && p.dist === Infinity);
 });
 
-/* --- §3 solar / battery ---------------------------------------------- */
+/* --- §3 solar / battery ------------------------------------------------- */
 
-check('solar charge: W*s -> kWh, dim world charges slowly', function () {
-	assert.ok(Math.abs(OrbitTech.solarCharge('SP-1', 0.2, 3600) - 0.012) < 1e-9);
-	assert.ok(OrbitTech.solarCharge('SP-4', 1.0, 3600) >
-		OrbitTech.solarCharge('SP-1', 0.2, 3600));
+check('solar charge: kW·s -> kWh, dim world charges slowly, leak decays', () => {
+	assert.ok(Math.abs(OrbitTech.solarCharge(SP[0], 1, 3600) - 1.0) < 1e-9);
+	assert.ok(OrbitTech.solarCharge(SP[3], 1, 3600) > 5 * OrbitTech.solarCharge(SP[0], 0.2, 3600));
+	const c1 = OrbitTech.batteryLeak(BAT[0], 1.5, 100);
+	assert.ok(c1 < 1.5 && c1 > 1.3);
+	assert.ok(OrbitTech.batteryLeak(BAT[4], 1.5, 100) > c1);
 });
 
-check('battery leak decays charge over years; BAT-5 leaks least', function () {
-	var c1 = OrbitTech.batteryLeak('BAT-1', 1.5, 1);
-	assert.ok(c1 < 1.5 && c1 > 0);
-	assert.ok(OrbitTech.batteryLeak('BAT-5', 1.5, 1) > c1);
-});
+/* --- §4 bulk planet-gear upgrade ---------------------------------------- */
 
-/* --- §4 evacuation economics ------------------------------------------ */
-
-check('delivery to catapult-less planet is unprofitable (evacuation fee)',
-	function () {
-		/* A delivery pays only if the target has a catapult strong enough to
-		 * launch the loaded ship back. Without one, evacuation fee applies. */
-		var mass = OrbitTech.shipMass({hold: 'HOLD-8'}, 8);
-		var e1 = OrbitTech.launchEnergy(mass, 'EMC-1', 90);
-		assert.ok(e1 > 1.5, 'EMC-1/BAT-1 cannot launch loaded 8 t ship');
-		var e5 = OrbitTech.launchEnergy(mass, 'EMC-5', 90);
-		assert.ok(e5 <= 16.0, 'EMC-5/BAT-5 can launch loaded 8 t ship');
-	});
-
-/* --- §5 bulk planet-gear upgrade -------------------------------------- */
-
-check('bulkUpgradeCost sums cost to upgrade all built facilities', function () {
-	var planets = [
-		{ catapult: 'EMC-1', panel: 'SP-1', battery: 'BAT-1', chargeKwh: 1.5 },
-		{ catapult: 'EMC-1', panel: 'SP-1', battery: 'BAT-1', chargeKwh: 1.5 },
-		{ catapult: null, panel: null, battery: null, chargeKwh: 0 } // not built
+check('bulkUpgradeCost sums the tier cost over built facilities only', () => {
+	const pads = [
+		{ catapult: EMC[0], panel: SP[0], battery: BAT[0], chargeKwh: 1.5 },
+		{ catapult: EMC[0], panel: SP[0], battery: BAT[0], chargeKwh: 1.5 },
+		{ catapult: EMC[2], panel: SP[0], battery: BAT[0], chargeKwh: 1.5 },
+		{ catapult: null, panel: null, battery: null, chargeKwh: 0 }
 	];
-	var cost = OrbitTech.bulkUpgradeCost(planets, 'catapult', 'EMC-3');
-	assert.ok(cost === 2 * 10.0, 'should cost 2 * EMC-3 build cost, got ' + cost);
-
-	var res = OrbitTech.applyBulkUpgrade(planets, 'catapult', 'EMC-3');
-	assert.ok(res.cost === cost);
-	assert.ok(res.planets[0].catapult === 'EMC-3');
-	assert.ok(res.planets[1].catapult === 'EMC-3');
-	assert.ok(res.planets[2].catapult === null, 'not-built planet stays null');
-	assert.ok(res.planets[0] !== planets[0], 'pure: does not mutate input');
+	assert.strictEqual(OrbitTech.bulkUpgradeCost(pads, 'catapult', EMC[2]), 2 * EMC[2].buildCost);
+	assert.strictEqual(OrbitTech.bulkUpgradeCost(pads, 'catapult', EMC[1]), 2 * EMC[1].buildCost);
+	assert.strictEqual(OrbitTech.bulkUpgradeCost(pads, 'catapult', EMC[0]), 0, 'never a downgrade');
+	assert.strictEqual(OrbitTech.bulkUpgradeCost(pads, 'panel', SP[0]), 0);
+	assert.strictEqual(OrbitTech.bulkUpgradeCost(pads, 'panel', SP[3]), 3 * SP[3].buildCost);
 });
 
-check('bulk upgrade to same tier costs nothing', function () {
-	var planets = [{ catapult: 'EMC-3', panel: 'SP-1', battery: 'BAT-1',
-		chargeKwh: 1.5 }];
-	assert.ok(OrbitTech.bulkUpgradeCost(planets, 'catapult', 'EMC-3') === 0);
+/* --- §5 copy spec / starter grant --------------------------------------- */
+
+check('copySpec emits the balance line; starter grant is the weak kit', () => {
+	const line = OrbitTech.copySpec('catapult', EMC[1]);
+	assert.ok(/^tech: CATAPULT EMC-2 \{ /.test(line) && line.indexOf('maxForce: 90') >= 0, line);
+	assert.ok(/^tech: ENGINE IMP-2 \{/.test(OrbitTech.copySpec('engine', OrbitTech.ENGINES[1])));
+	assert.strictEqual(OrbitTech.copySpec('nope', EMC[0]), '');
+	assert.strictEqual(OrbitTech.findKind('catapult', 'EMC-3'), EMC[2]);
+	assert.strictEqual(OrbitTech.findKind('catapult', 'EMC-9'), null);
+	const g = OrbitTech.starterGrant();
+	assert.ok(g.pad.catapult === EMC[0] && g.pad.panel === SP[0] && g.pad.battery === BAT[0]);
+	assert.ok(g.ship.hold === HOLD[0] && g.ship.engine === null && g.purse > CAREER.evacFee);
 });
 
-/* --- §6 copy spec ----------------------------------------------------- */
+/* --- §6 headless career run on the real gravity sim --------------------- */
 
-check('copySpec emits parseable tech line', function () {
-	var line = OrbitTech.copySpec('catapult', 'EMC-2');
-	assert.ok(/^tech: CATAPULT EMC-2 \{/.test(line));
-	assert.ok(line.indexOf('maxForce: 90') >= 0);
-	var line2 = OrbitTech.copySpec('engine', 'IMP-2');
-	assert.ok(/^tech: ENGINE IMP-2 \{/.test(line2));
-	assert.ok(OrbitTech.copySpec('nope', 'x') === '');
+const DT = GravitySim.DT;
+const RATE = 1;
+
+function makeWorld(seed) {
+	const trade = new Sim(seed);
+	trade.advanceTo(420);
+	const sim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	sim.setPlanets(PLANETS, trade.planetX, trade.planetY, trade.planetR,
+		trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+	const strength = new Float64Array(GravitySim.MAX_BODIES).fill(1);
+	sim.setField(PLANETS, trade.planetR, strength, (t, ox, oy, n) => {
+		for (let i = 0; i < n; i++) {
+			ox[i] = trade.planetX[i];
+			oy[i] = trade.planetY[i];
+		}
+	}, true);
+	sim.fieldT = trade.t;
+	sim.fieldRate = RATE;
+	sim.stepLimit = GravityGame.CAP_STEPS;
+	const ledger = GravityGame.createLedger();
+	const career = GravityGame.createCareer(ledger);
+	const market = GravityGame.createMarket();
+	return { trade, sim, career, ledger, market, step: 0 };
+}
+
+function startCareer(w, seed, cheat) {
+	GravityGame.startCareer(w.career, w.sim, seed, w.trade, cheat || null);
+	GravityGame.resetMarket(w.market);
+	w.step = 0;
+}
+
+/* the fastest affordable shot from `from` that lands on `want` (or any other planet) */
+function findShot(w, from, want) {
+	const sim = w.sim;
+	const limit = sim.speedLimit(from);
+	let best = null;
+	for (let s = Math.floor(limit); s >= GravitySim.SPEED_MIN; s -= 10) {
+		for (let a = 0; a < 72; a++) {
+			const angle = (a + 0.31) / 72 * Math.PI * 2;
+			sim.predictFast(from, angle, s, GravityGame.CAP_SECONDS);
+			if (sim.predReason !== GravitySim.END_IMPACT || sim.predBody === from) continue;
+			if (want >= 0 ? sim.predBody !== want : false) continue;
+			const score = sim.predLength;
+			if (!best || score > best.score) best = { angle, speed: s, score, body: sim.predBody };
+		}
+		if (best) return best;
+	}
+	return null;
+}
+
+function fly(w, from, angle, speed) {
+	const { sim, career, ledger, market, trade } = w;
+	assert.ok(sim.canFire(from, speed), 'pad refused the shot at ' + speed);
+	sim.launch(from, angle, speed);
+	GravityGame.careerBeginFlight(career, sim);
+	while (sim.status === GravitySim.STATUS_FLYING) {
+		w.step += 1;
+		sim.stepOne();
+		GravityGame.stepHarvest(ledger, market, sim, w.step);
+		GravityGame.careerAdvance(career, RATE, 1);
+	}
+	trade.advanceTo(sim.flightFieldT);
+	return GravityGame.careerEndFlight(career, sim, trade, w.step);
+}
+
+check('career start: HQ pad only, sim gates on the network, link codec carries cheat', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, sim, trade } = w;
+	assert.ok(career.hq >= 0 && career.padCount === 1 && career.at === career.hq);
+	assert.ok(trade.planetLight[career.hq] >= CAREER.hqMinLight, 'HQ must be sunlit');
+	assert.strictEqual(sim.landedBody, career.hq);
+	assert.ok(sim.canLaunchFrom(career.hq));
+	for (let p = 0; p < PLANETS; p++) {
+		if (p !== career.hq) assert.ok(!sim.canLaunchFrom(p), 'P' + p + ' has no catapult');
+	}
+	assert.ok(sim.canFire(career.hq, 100) && !sim.canFire(career.hq, 130));
+	assert.ok(sim.launchEnergy(career.hq, 100) > 0 && sim.speedLimit(career.hq) < 125);
+	const link = GravityGame.encodeLink({ seed: 42, rate: 1, rule: 'career', bot: 'off', player: 'user',
+		cheat: 'endgame', shots: [{ src: 0, origin: 0, angle: 0, speed: 40000, abort: -1 }] });
+	assert.strictEqual(link, 'game=1&seed=42&rate=1&rule=career&cheat=endgame', link);
+	const back = GravityGame.decodeLink('#' + link);
+	assert.ok(back && back.rule === 'career' && back.cheat === 'endgame' && back.shots.length === 0);
+	assert.strictEqual(GravityGame.decodeLink('#game=1&seed=42&rate=1&rule=tour&cheat=endgame'), null);
+	assert.strictEqual(GravityGame.decodeLink('#game=1&seed=42&rate=1&rule=career&cheat=free'), null);
+	assert.strictEqual(GravityGame.decodeLink('#game=1&seed=42&rate=1&rule=career&shots=p0.0.3aio'), null);
+	assert.strictEqual(GravityGame.decodeLink('#game=1&seed=42&rate=1&rule=career').cheat, null);
+	assert.ok(!GravityGame.RULES.tour.solo && GravityGame.RULES.career.solo);
 });
 
-/* --- starter grant ---------------------------------------------------- */
+check('career board: deliveries pair an exporting colony with a short one, pay below the evacuation fee', () => {
+	let offers = 0;
+	for (const seed of [1, 7, 42, 913, 2024]) {
+		const w = makeWorld(seed);
+		startCareer(w, seed);
+		for (let i = 0; i < CAREER.deliverySlots; i++) {
+			const t = w.career.tasks[i];
+			if (t.kind !== GravityGame.TASK_DELIVERY) continue;
+			offers += 1;
+			assert.ok(t.from !== t.to && t.from >= 0 && t.to >= 0);
+			assert.ok(w.trade.colonyAt(t.from) && w.trade.colonyAt(t.to), 'both ends are colonies');
+			assert.ok(t.reward > 0 && t.reward < CAREER.evacFee, 'reward ' + t.reward);
+			assert.ok(GravityGame.CARGO_TONS.indexOf(t.tons) >= 0);
+			assert.ok(t.deadline === Math.round(CAREER.deliverySec / DT));
+			assert.ok(!GravityGame.canAccept(w.career, i), 'HOLD-0 cannot accept cargo');
+		}
+	}
+	assert.ok(offers >= 15, 'only ' + offers + ' offers over 5 seeds');
+});
 
-check('starter grant: weak planet gear on start planet, ship has no hold', function () {
-	var g = OrbitTech.starterGrant();
-	assert.ok(g.startPlanet.catapult === 'EMC-1');
-	assert.ok(g.startPlanet.panel === 'SP-1' && g.startPlanet.battery === 'BAT-1');
-	assert.ok(g.ship.hold === 'HOLD-0' && g.ship.engine === null);
-	assert.ok(g.purse === 3.00);
+check('career board is a pure function of (seed, world, clock)', () => {
+	const a = makeWorld(913);
+	const b = makeWorld(913);
+	startCareer(a, 913);
+	startCareer(b, 913);
+	assert.strictEqual(JSON.stringify(a.career.tasks), JSON.stringify(b.career.tasks));
+	assert.strictEqual(a.career.hq, b.career.hq);
+	const c = makeWorld(914);
+	startCareer(c, 914);
+	assert.notStrictEqual(JSON.stringify(a.career.tasks), JSON.stringify(c.career.tasks));
+});
+
+check('career flight: launch draws pad energy (no purse fee), landing elsewhere strands the ship', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, sim, ledger } = w;
+	const hq = career.hq;
+	const pad = career.pads[hq];
+	const shot = findShot(w, hq, -1);
+	assert.ok(shot, 'no landing shot from HQ');
+	const purse0 = ledger.purse;
+	const charge0 = pad.chargeKwh;
+	const energy = sim.launchEnergy(hq, shot.speed);
+	fly(w, hq, shot.angle, shot.speed);
+	assert.strictEqual(career.flights, 1);
+	assert.ok(Math.abs(career.lastEnergy - energy) < 1e-12);
+	assert.ok(pad.chargeKwh < charge0, 'battery must drop');
+	assert.ok(pad.chargeKwh > charge0 - energy, 'pad recharges during the flight');
+	assert.ok(ledger.purse >= purse0, 'no launch fee; visits only add: ' + ledger.purse);
+	assert.ok(ledger.fee === 0 && ledger.last === ledger.shotGain);
+	assert.strictEqual(career.at, sim.endBody);
+	assert.ok(career.stranded && career.ended === GravityGame.CAREER_OPEN);
+	assert.ok(!sim.canLaunchFrom(career.at) && !sim.canFire(career.at, 50));
+	assert.ok(!sim.canLaunchFrom(hq), 'the landed rule still binds');
+});
+
+check('career stranded: building a catapult brings a charged starter pad; the pad then fires', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, sim, ledger } = w;
+	const shot = findShot(w, career.hq, -1);
+	fly(w, career.hq, shot.angle, shot.speed);
+	const here = career.at;
+	assert.ok(!GravityGame.buildGear(career, here, 'panel', SP[1]), 'no panel without a pad');
+	const purse = ledger.purse;
+	assert.ok(GravityGame.buildGear(career, here, 'catapult', EMC[0]));
+	assert.ok(Math.abs(ledger.purse - (purse - EMC[0].buildCost)) < 1e-9);
+	assert.ok(!career.stranded && career.padCount === 2);
+	const pad = career.pads[here];
+	assert.ok(pad.panel === SP[0] && pad.battery === BAT[0] && pad.chargeKwh === BAT[0].capacity);
+	assert.ok(sim.canLaunchFrom(here) && sim.canFire(here, 100));
+	assert.ok(!GravityGame.buildGear(career, here, 'catapult', EMC[0]), 'same tier again is a no-op');
+	assert.ok(!GravityGame.buildGear(career, here, 'catapult', EMC[4]), 'cannot afford EMC-5');
+	assert.ok(GravityGame.buildGear(career, here, 'battery', BAT[1]) && pad.battery === BAT[1]);
+	assert.ok(!GravityGame.buildGear(career, here, 'battery', BAT[0]), 'no downgrade');
+});
+
+check('career evacuation: fee, ship back on HQ, broke when the purse cannot cover an exit', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, sim, ledger } = w;
+	assert.ok(!GravityGame.evacuate(career, sim), 'nothing to evacuate from HQ');
+	const shot = findShot(w, career.hq, -1);
+	fly(w, career.hq, shot.angle, shot.speed);
+	const purse = ledger.purse;
+	assert.ok(GravityGame.evacuate(career, sim));
+	assert.ok(Math.abs(ledger.purse - (purse - CAREER.evacFee)) < 1e-9);
+	assert.ok(career.at === career.hq && !career.stranded && career.evacuations === 1);
+	assert.strictEqual(sim.landedBody, career.hq);
+	assert.ok(sim.status === GravitySim.STATUS_IDLE && sim.canLaunchFrom(career.hq));
+	assert.strictEqual(career.ended, GravityGame.CAREER_OPEN);
+	/* second stranding with a thin purse: no affordable exit = broke */
+	const again = findShot(w, career.hq, -1);
+	assert.ok(again, 'HQ pad still has charge for a slow shot: limit ' + sim.speedLimit(career.hq));
+	assert.strictEqual(fly(w, career.hq, again.angle, again.speed), GravityGame.CAREER_OPEN);
+	assert.ok(career.stranded);
+	ledger.purse = Math.min(CAREER.evacFee, EMC[0].buildCost) - 0.5;
+	assert.strictEqual(GravityGame.checkEnded(career), GravityGame.CAREER_BROKE);
+	assert.strictEqual(career.ended, GravityGame.CAREER_BROKE);
+	/* a negative purse is broke anywhere */
+	const v = makeWorld(7);
+	startCareer(v, 7);
+	v.ledger.purse = -0.01;
+	assert.strictEqual(GravityGame.checkEnded(v.career), GravityGame.CAREER_BROKE);
+});
+
+check('career pads: solar refills on the world clock up to capacity, dim pads slower', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career } = w;
+	const hq = career.hq;
+	career.pads[hq].chargeKwh = 0;
+	GravityGame.careerAdvance(career, RATE, Math.round(10 / DT));
+	const after10 = career.pads[hq].chargeKwh;
+	assert.ok(after10 > 0.1 && after10 < 0.4, '10 s of sun gave ' + after10);
+	GravityGame.careerAdvance(career, RATE, Math.round(600 / DT));
+	assert.ok(Math.abs(career.pads[hq].chargeKwh - BAT[0].capacity) < 1e-9, 'capped at capacity');
+	/* darkest pad vs HQ */
+	let dim = 0;
+	for (let p = 1; p < PLANETS; p++) if (career.light[p] < career.light[dim]) dim = p;
+	assert.ok(GravityGame.buildGear(career, dim, 'catapult', EMC[0]));
+	career.pads[dim].chargeKwh = 0;
+	career.pads[hq].chargeKwh = 0;
+	GravityGame.careerAdvance(career, RATE, Math.round(10 / DT));
+	assert.ok(career.pads[dim].chargeKwh < career.pads[hq].chargeKwh);
+	assert.ok(career.pads[dim].chargeKwh > 0, 'the light floor keeps every pad alive');
+	assert.ok(career.light[dim] >= CAREER.lightFloor * 0.5);
+	/* with the battery empty no shot fires; after charging a slow one does */
+	career.pads[hq].chargeKwh = 0;
+	assert.ok(!w.sim.canFire(hq, GravitySim.SPEED_MIN) && w.sim.speedLimit(hq) === 0);
+	GravityGame.careerAdvance(career, RATE, Math.round(60 / DT));
+	assert.ok(w.sim.canFire(hq, GravitySim.SPEED_MIN));
+});
+
+check('career contracts: hold required, cargo adds mass, delivery pays on landing at the target', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, sim, ledger } = w;
+	const task = career.tasks[0];
+	assert.strictEqual(task.kind, GravityGame.TASK_DELIVERY);
+	assert.ok(!GravityGame.acceptTask(career, 0), 'no hold');
+	assert.ok(GravityGame.installPart(career, 'hold', HOLD[2]));
+	assert.ok(career.owned['HOLD-24'] && career.ship.hold === HOLD[2]);
+	const dryMass = career.ship.mass;
+	assert.ok(GravityGame.acceptTask(career, 0));
+	assert.ok(!GravityGame.acceptTask(career, 1), 'one contract at a time');
+	assert.strictEqual(career.contract, 0);
+	/* teleport the idle ship to the origin pad, as a landing there would */
+	GravityGame.buildGear(career, task.from, 'catapult', EMC[0]);
+	career.ledger.purse = 50;
+	sim.relocate(task.from);
+	sim.endReason = GravitySim.END_IMPACT;
+	sim.endBody = task.from;
+	sim.origin = -1;
+	GravityGame.careerEndFlight(career, sim, w.trade, w.step);
+	assert.strictEqual(task.state, GravityGame.TASK_LOADED);
+	assert.ok(Math.abs(career.ship.mass - (dryMass + task.tons)) < 1e-9, 'cargo mass');
+	assert.ok(sim.speedLimit(task.from) < OrbitTech.speedLimit(BAT[0].capacity, dryMass, EMC[0]));
+	/* deliver */
+	const reward = task.reward;
+	const purse = ledger.purse;
+	sim.relocate(task.to);
+	sim.endReason = GravitySim.END_IMPACT;
+	sim.endBody = task.to;
+	GravityGame.careerEndFlight(career, sim, w.trade, w.step);
+	assert.ok(Math.abs(ledger.purse - (purse + reward)) < 1e-9, 'reward paid');
+	assert.ok(career.contract < 0 && career.ship.cargoTons === 0 && career.delivered === 1);
+	assert.ok(Math.abs(career.ship.mass - dryMass) < 1e-9);
+	assert.strictEqual(career.lastReward, reward);
+	assert.ok(career.tasks[0].kind === GravityGame.TASK_DELIVERY, 'board refilled');
+	assert.ok(!GravityGame.installPart(career, 'hold', HOLD[0]), 'refits only at HQ');
+});
+
+check('career lost in space: a map exit strands nowhere; only the evacuation brings the ship back', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, sim, ledger } = w;
+	sim.landedBody = -1;
+	sim.endReason = GravitySim.END_EXIT;
+	sim.endBody = -1;
+	GravityGame.careerEndFlight(career, sim, w.trade, 10);
+	assert.ok(career.at === -1 && career.stranded && career.ended === GravityGame.CAREER_OPEN);
+	assert.ok(!sim.canLaunchFrom(career.hq), 'no vessel on the HQ pad');
+	ledger.purse = 20;
+	assert.ok(GravityGame.buildGear(career, career.hq, 'catapult', EMC[1]) && career.stranded, 'building does not rescue');
+	ledger.purse = CAREER.evacFee - 0.5;
+	assert.strictEqual(GravityGame.checkEnded(career), GravityGame.CAREER_BROKE, 'a cheap catapult is no way out');
+	const v = makeWorld(42);
+	startCareer(v, 42);
+	v.sim.landedBody = -1;
+	v.sim.endReason = GravitySim.END_TIME;
+	v.sim.endBody = -1;
+	GravityGame.careerEndFlight(v.career, v.sim, v.trade, 10);
+	assert.ok(GravityGame.evacuate(v.career, v.sim));
+	assert.ok(v.career.at === v.career.hq && v.sim.canLaunchFrom(v.career.hq) && v.career.evacuations === 1);
+});
+
+check('career contracts expire with the clock and drop the cargo', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, sim } = w;
+	GravityGame.installPart(career, 'hold', HOLD[2]);
+	GravityGame.acceptTask(career, 0);
+	const deadline = career.tasks[0].deadline;
+	sim.endReason = GravitySim.END_EXIT;
+	sim.endBody = -1;
+	GravityGame.careerEndFlight(career, sim, w.trade, deadline + 1);
+	assert.ok(career.contract < 0 && career.ship.cargoTons === 0);
+	assert.ok(career.tasks[0].kind === GravityGame.TASK_DELIVERY && career.tasks[0].deadline > deadline);
+});
+
+check('career competition: pays once for a long enough landing flight from its planet', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, sim, ledger } = w;
+	const task = career.tasks[GravityGame.COMPETE_SLOT];
+	task.kind = GravityGame.TASK_COMPETE;
+	task.planet = career.hq;
+	task.minLength = 300;
+	task.reward = 2.5;
+	task.deadline = 10000;
+	const purse = ledger.purse;
+	sim.origin = career.hq;
+	sim.flightLength = 299;
+	sim.endReason = GravitySim.END_IMPACT;
+	sim.endBody = career.hq;
+	GravityGame.careerEndFlight(career, sim, w.trade, 5);
+	assert.ok(Math.abs(ledger.purse - purse) < 1e-9 && task.kind === GravityGame.TASK_COMPETE, 'too short');
+	sim.flightLength = 300;
+	GravityGame.careerEndFlight(career, sim, w.trade, 6);
+	assert.ok(Math.abs(ledger.purse - (purse + 2.5)) < 1e-9, 'prize paid');
+	assert.ok(career.tasks[GravityGame.COMPETE_SLOT].reward !== 2.5 ||
+		career.tasks[GravityGame.COMPETE_SLOT].kind !== GravityGame.TASK_COMPETE ||
+		career.tasks[GravityGame.COMPETE_SLOT].deadline !== 10000, 'offer cleared');
+	let seen = 0;
+	for (let seed = 1; seed <= 12; seed++) {
+		const v = makeWorld(seed);
+		startCareer(v, seed);
+		for (let k = 0; k < 6; k++) {
+			GravityGame.refreshBoard(v.career, v.trade, k * 1000);
+			const c = v.career.tasks[GravityGame.COMPETE_SLOT];
+			if (c.kind !== GravityGame.TASK_COMPETE) continue;
+			seen += 1;
+			assert.ok(c.minLength >= CAREER.competeMinPx && c.reward >= CAREER.competeBase);
+			assert.ok(c.minLength % 50 === 0);
+		}
+	}
+	assert.ok(seen >= 6, 'competitions appear sometimes: ' + seen);
+});
+
+check('career bulk upgrade: total before, every built pad after, unbuilt untouched', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, ledger } = w;
+	const other = (career.hq + 5) % PLANETS;
+	GravityGame.buildGear(career, other, 'catapult', EMC[0]);
+	const cost = GravityGame.bulkUpgradeCost(career, 'battery', BAT[2]);
+	assert.strictEqual(cost, 2 * BAT[2].buildCost);
+	assert.ok(!GravityGame.bulkUpgrade(career, 'battery', BAT[2]), 'cannot afford yet');
+	ledger.purse = cost;
+	assert.ok(GravityGame.bulkUpgrade(career, 'battery', BAT[2]));
+	assert.ok(Math.abs(ledger.purse) < 1e-9);
+	assert.ok(career.pads[career.hq].battery === BAT[2] && career.pads[other].battery === BAT[2]);
+	assert.ok(career.pads[career.hq].chargeKwh === BAT[2].capacity);
+	assert.strictEqual(career.pads[(other + 1) % PLANETS].battery, null);
+	assert.strictEqual(GravityGame.bulkUpgradeCost(career, 'battery', BAT[2]), 0);
+});
+
+check('career cheats: communism prices everything 0; endgame fits all and never completes', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42, GravityGame.CHEAT_COMMUNISM);
+	const { career, sim, ledger } = w;
+	const purse = ledger.purse;
+	assert.ok(GravityGame.buildGear(career, (career.hq + 1) % PLANETS, 'catapult', EMC[4]));
+	assert.ok(GravityGame.installPart(career, 'hold', HOLD[2]));
+	assert.strictEqual(GravityGame.bulkUpgradeCost(career, 'catapult', EMC[4]), 0);
+	assert.strictEqual(ledger.purse, purse);
+	for (let p = 0; p < PLANETS; p++) GravityGame.buildGear(career, p, 'catapult', EMC[0]);
+	assert.ok(career.padCount === PLANETS && career.ended === GravityGame.CAREER_OPEN, 'cheat runs never complete');
+	const e = makeWorld(42);
+	startCareer(e, 42, GravityGame.CHEAT_ENDGAME);
+	assert.strictEqual(e.ledger.purse, CAREER.endgamePurse);
+	assert.ok(e.career.padCount === PLANETS && e.career.ship.hold === HOLD[2]);
+	assert.ok(e.career.pads[0].catapult === EMC[4] && e.career.pads[0].chargeKwh === BAT[4].capacity);
+	assert.ok(e.sim.canFire(e.career.hq, 200), 'endgame HQ lifts the fitted ship fast');
+	e.career.ship.cargoTons = HOLD[2].capacity;
+	e.career.ship.mass = OrbitTech.shipMass(e.career.ship, HOLD[2].capacity);
+	assert.ok(e.sim.speedLimit(e.career.hq) > 100, 'the heaviest delivery still launches in the landing band');
+	assert.ok(sim.canLaunchFrom(career.hq));
+});
+
+check('career completes when every planet has a catapult (honest run)', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, ledger } = w;
+	ledger.purse = 1000;
+	for (let p = 0; p < PLANETS; p++) GravityGame.buildGear(career, p, 'catapult', EMC[0]);
+	assert.strictEqual(career.ended, GravityGame.CAREER_COMPLETE);
+	assert.ok(ledger.purse > 0);
 });
 
 console.log(failures === 0 ? 'CAREER BENCH OK' : 'CAREER BENCH FAILED ' + failures);

@@ -6,9 +6,17 @@
  * impact() and markSystemsAt() on one fixed step, so predicted paths, landings
  * and planet-system visits match live flight. While flying, predictFlight()
  * continues the path ahead of the cargo until it lands (bounded by frame budget).
+ *
+ * Launch gate: with `pads` attached (career), a planet can only be launched from
+ * when its pad has a catapult, and a shot only fires while the pad battery and
+ * rail force cover the ship mass at that speed (OrbitTech launch model).
  */
 (function (root) {
 	'use strict';
+
+	const OrbitTech = typeof module !== 'undefined' && module.exports
+		? require('./orbit_tech.js')
+		: root.OrbitTech;
 
 	const DT = 1 / 120;
 	const MU = 400000;
@@ -105,6 +113,10 @@
 		this.endReason = END_OPEN;
 		this.endBody = NO_BODY;
 		this.landedBody = NO_BODY;
+		/* career network view: pads[planet] = { catapult, panel, battery, chargeKwh },
+		 * ship = { mass } — null means every planet is a free launch base */
+		this.pads = null;
+		this.ship = null;
 
 		this.visited = new Uint8Array(MAX_BODIES);
 		this.visitedCount = 0;
@@ -220,10 +232,51 @@
 		return worst;
 	};
 
+	/* with a launch network the vessel fires only from the pad it sits on */
 	GravitySim.prototype.canLaunchFrom = function (planet) {
 		const limit = this.planetCount > 0 ? this.planetCount : this.bodyCount;
 		if (planet < 0 || planet >= limit) return false;
-		return this.landedBody < 0 || planet === this.landedBody;
+		if (this.landedBody >= 0 && planet !== this.landedBody) return false;
+		if (this.pads === null) return true;
+		return this.landedBody === planet && this.pads[planet].catapult !== null;
+	};
+
+	GravitySim.prototype.setLaunchNetwork = function (pads, ship) {
+		this.pads = pads;
+		this.ship = ship;
+	};
+
+	/* kWh the pad battery spends on a launch at `speed`; 0 without a network */
+	GravitySim.prototype.launchEnergy = function (planet, speed) {
+		if (this.pads === null) return 0;
+		return OrbitTech.launchEnergy(this.ship.mass, this.pads[planet].catapult, speed);
+	};
+
+	/* fastest shot the pad affords now (energy and rail force); SPEED_MAX without a network */
+	GravitySim.prototype.speedLimit = function (planet) {
+		if (this.pads === null) return SPEED_MAX;
+		const pad = this.pads[planet];
+		return OrbitTech.speedLimit(pad.chargeKwh, this.ship.mass, pad.catapult);
+	};
+
+	GravitySim.prototype.canFire = function (planet, speed) {
+		if (!this.canLaunchFrom(planet)) return false;
+		if (this.pads === null) return true;
+		const pad = this.pads[planet];
+		return OrbitTech.canLaunch(pad.chargeKwh, this.ship.mass, pad.catapult, speed);
+	};
+
+	/* puts the idle vessel on `planet` (career start, evacuation); visits are kept */
+	GravitySim.prototype.relocate = function (planet) {
+		this.status = STATUS_IDLE;
+		this.origin = NO_BODY;
+		this.endReason = END_OPEN;
+		this.endBody = NO_BODY;
+		this.landedBody = planet;
+		this.trailCount = 0;
+		this.trailStride = TRAIL_STRIDE;
+		this.predCount = 0;
+		this.routeActive = false;
 	};
 
 	GravitySim.prototype.markSystemsAt = function (x, y, mask) {

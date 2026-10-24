@@ -1,7 +1,8 @@
 /*
  * Game-mode rules shared by the page, rival bots and the node benches: the aim
- * grid, per-rule caps, replay link codec, and the shared per-planet growing
- * visit-profit market.
+ * grid, per-rule caps, replay link codec, the shared per-planet growing
+ * visit-profit market, and the career rule (catapult network, pad energy,
+ * contract board, evacuation, cheats).
  */
 (function (root) {
 	'use strict';
@@ -12,6 +13,12 @@
 	const OrbitWorld = typeof module !== 'undefined' && module.exports
 		? require('./orbit_world.js')
 		: root.OrbitWorld;
+	const OrbitEcon = typeof module !== 'undefined' && module.exports
+		? require('./orbit_econ.js')
+		: root.OrbitEcon;
+	const OrbitTech = typeof module !== 'undefined' && module.exports
+		? require('./orbit_tech.js')
+		: root.OrbitTech;
 
 	const FORMAT = 1;
 	const ANGLE_STEPS = 1048576;
@@ -27,16 +34,21 @@
 	const RULE_TOUR = 'tour';
 	const RULE_ROUTE = 'route';
 	const RULE_MONEY = 'money';
+	const RULE_CAREER = 'career';
 	/*
 	 * One table for everything a rule changes: flight cap, preview horizon
-	 * (null = the lab slider), shot ceiling (0 = unlimited) and whether the run
-	 * stops when all 26 systems are visited.
+	 * (null = the lab slider), shot ceiling (0 = unlimited), whether the run
+	 * stops when all 26 systems are visited, and whether rivals may join.
 	 */
 	const RULES = {
-		tour: { name: RULE_TOUR, capSteps: CAP_STEPS, horizon: null, maxShots: 0, stopOnTour: true, planner: false },
-		route: { name: RULE_ROUTE, capSteps: ROUTE_STEPS, horizon: ROUTE_SECONDS, maxShots: 1, stopOnTour: false, planner: true },
-		money: { name: RULE_MONEY, capSteps: CAP_STEPS, horizon: null, maxShots: MONEY_SHOTS, stopOnTour: false, planner: false }
+		tour: { name: RULE_TOUR, capSteps: CAP_STEPS, horizon: null, maxShots: 0, stopOnTour: true, planner: false, solo: false },
+		route: { name: RULE_ROUTE, capSteps: ROUTE_STEPS, horizon: ROUTE_SECONDS, maxShots: 1, stopOnTour: false, planner: true, solo: false },
+		money: { name: RULE_MONEY, capSteps: CAP_STEPS, horizon: null, maxShots: MONEY_SHOTS, stopOnTour: false, planner: false, solo: false },
+		career: { name: RULE_CAREER, capSteps: CAP_STEPS, horizon: null, maxShots: 0, stopOnTour: false, planner: false, solo: true }
 	};
+	const CHEAT_COMMUNISM = 'communism';
+	const CHEAT_ENDGAME = 'endgame';
+	const CHEATS = { communism: CHEAT_COMMUNISM, endgame: CHEAT_ENDGAME };
 	const BOT_OFF = 'off';
 	const BOT_EASY = 'easy';
 	const BOT_NORMAL = 'normal';
@@ -103,15 +115,18 @@
 		return shot.abort === NO_ABORT ? head : head + '.' + shot.abort.toString(36);
 	}
 
-	/* `game` = { seed, rate, rule, bot, player, shots, visited, steps, length };
-	 * default rule/bot/player stay omitted; `length` verifies a route plan. */
+	/* `game` = { seed, rate, rule, bot, player, cheat, shots, visited, steps, length };
+	 * default rule/bot/player stay omitted; `length` verifies a route plan. A
+	 * career link starts the same career (seed, rate, cheat) — its builds and
+	 * contracts are not replayed, so it never carries shots. */
 	function encodeLink(game) {
 		const rulePart = game.rule && game.rule !== RULE_TOUR ? '&rule=' + game.rule : '';
 		const botPart = game.bot && game.bot !== BOT_OFF ? '&bot=' + game.bot : '';
 		const playerPart = game.player === PLAYER_BOT ? '&you=' + PLAYER_BOT : '';
+		const cheatPart = game.rule === RULE_CAREER && game.cheat ? '&cheat=' + game.cheat : '';
 		const head = 'game=' + FORMAT + '&seed=' + game.seed + '&rate=' + game.rate +
-			rulePart + botPart + playerPart;
-		if (game.shots.length === 0) return head;
+			rulePart + botPart + playerPart + cheatPart;
+		if (game.shots.length === 0 || game.rule === RULE_CAREER) return head;
 		const lengthPart = game.rule === RULE_ROUTE && Number.isFinite(game.length)
 			? '&len=' + Math.round(game.length) : '';
 		return head + '&shots=' + game.shots.map(encodeShot).join('_') +
@@ -131,7 +146,7 @@
 		return createShot(SRC_CODES.indexOf(match[1]), origin, angle, speed, abort);
 	}
 
-	/* Returns { seed, rate, rule, bot, player, shots, end, length } or null. */
+	/* Returns { seed, rate, rule, bot, player, cheat, shots, end, length } or null. */
 	function decodeLink(text) {
 		const params = new URLSearchParams(String(text).replace(/^#/, ''));
 		if (params.get('game') !== String(FORMAT)) return null;
@@ -148,9 +163,13 @@
 		const playerText = params.get('you');
 		const player = playerText === null ? PLAYER_USER : PLAYER_TYPES[playerText];
 		if (!player) return null;
+		const cheatText = params.get('cheat');
+		const cheat = cheatText === null ? null : CHEATS[cheatText];
+		if (cheat === undefined || (cheat !== null && rule.name !== RULE_CAREER)) return null;
 		const list = params.get('shots');
 		const parts = list ? list.split('_') : [];
 		if (rule.planner && parts.length > 1) return null;
+		if (rule.name === RULE_CAREER && parts.length > 0) return null;
 		const shots = [];
 		for (const part of parts) {
 			const shot = decodeShot(part, rule.capSteps);
@@ -163,7 +182,7 @@
 			(!Number.isInteger(length) || length < 0 || length > 10000000)) return null;
 		const endMatch = END_FORM.exec(params.get('end') || '');
 		const end = endMatch ? { visited: Number(endMatch[1]), steps: Number(endMatch[2]) } : null;
-		return { seed: seed, rate: rate, rule: rule.name, bot: bot, player: player,
+		return { seed: seed, rate: rate, rule: rule.name, bot: bot, player: player, cheat: cheat,
 			shots: shots, end: end, length: length };
 	}
 
@@ -201,9 +220,11 @@
 		return planetProfitAtStep(market.lastVisitStep[planet], runStep);
 	}
 
+	/* `fee` is what the current flight's launch cost, so `last` nets it out */
 	function createLedger(purse0) {
 		return {
 			purse: purse0 === undefined ? MONEY.purse0 : purse0,
+			fee: MONEY.cost,
 			last: 0,
 			shotGain: 0,
 			shotVisits: 0,
@@ -215,6 +236,7 @@
 
 	function resetLedger(ledger, purse0) {
 		ledger.purse = purse0 === undefined ? MONEY.purse0 : purse0;
+		ledger.fee = MONEY.cost;
 		ledger.last = 0;
 		ledger.shotGain = 0;
 		ledger.shotVisits = 0;
@@ -223,13 +245,18 @@
 	}
 
 	/* deducts the launch fee and marks the launch base as already inside so departure pays 0 */
-	function beginFlight(ledger, sim) {
-		ledger.purse -= MONEY.cost;
+	function openFlight(ledger, sim, fee) {
+		ledger.purse -= fee;
+		ledger.fee = fee;
 		ledger.shotGain = 0;
 		ledger.shotVisits = 0;
 		ledger.lastPlanet = -1;
 		ledger.inside.fill(0);
 		sim.markSystemsAt(sim.cargo.x, sim.cargo.y, ledger.inside);
+	}
+
+	function beginFlight(ledger, sim) {
+		openFlight(ledger, sim, MONEY.cost);
 	}
 
 	function harvestPlanet(ledger, market, planet, runStep) {
@@ -260,7 +287,7 @@
 	}
 
 	function endFlight(ledger) {
-		ledger.last = ledger.shotGain - MONEY.cost;
+		ledger.last = ledger.shotGain - ledger.fee;
 		return ledger.shotGain;
 	}
 
@@ -279,12 +306,486 @@
 		return total;
 	}
 
+	/* --- career ------------------------------------------------------------ */
+
+	/*
+	 * Career: a launch costs pad energy, never money. The purse grows from the
+	 * shared visit market (the always-available "visit a long-unvisited planet"
+	 * task), delivery contracts (land cargo on a planet, needs a hold) and
+	 * route competitions (one flight from a planet at least `minLength` long).
+	 * Only a planet with a built EM catapult can be launched from: landing
+	 * anywhere else strands the ship until a catapult is bought there or an
+	 * evacuation flies it back to HQ for `evacFee` — more than any delivery
+	 * pays, so a contract is profitable only once its target has a pad.
+	 * The run ends broke (purse below zero, or stranded with no affordable exit)
+	 * or complete (a catapult on every planet; cheat runs never complete).
+	 */
+	const CAREER = {
+		evacFee: 5,
+		endgamePurse: 99,
+		hqMinLight: 0.5,
+		lightFloor: 0.25,
+		deliverySlots: 4,
+		deliverySec: 240,
+		competeSec: 180,
+		competeEvery: 3,
+		deliveryBase: 0.5,
+		deliveryPerTon: 0.06,
+		deliveryDistPx: 900,
+		deliveryMax: 4.5,
+		competeMinPx: 1500,
+		competeSpanPx: 1500,
+		competeBase: 2,
+		competeSpan: 2
+	};
+	const CARGO_TONS = [4, 8, 16, 24];
+	const BOARD_SIZE = CAREER.deliverySlots + 1;
+	const COMPETE_SLOT = CAREER.deliverySlots;
+	const TASK_NONE = 0;
+	const TASK_DELIVERY = 1;
+	const TASK_COMPETE = 2;
+	const TASK_OFFERED = 0;
+	const TASK_ACCEPTED = 1;
+	const TASK_LOADED = 2;
+	const CAREER_OPEN = 0;
+	const CAREER_BROKE = 1;
+	const CAREER_COMPLETE = 2;
+	const SALT_HQ = 0xca;
+	const SALT_TASK = 0xcb;
+	const WORLD_SEC_PER_MIN = 60;
+
+	function createPad() {
+		return { catapult: null, panel: null, battery: null, chargeKwh: 0 };
+	}
+
+	function createTask() {
+		return { kind: TASK_NONE, state: TASK_OFFERED, good: 0, tons: 0, from: -1, to: -1,
+			planet: -1, minLength: 0, reward: 0, deadline: 0 };
+	}
+
+	function clearTask(task) {
+		task.kind = TASK_NONE;
+		task.state = TASK_OFFERED;
+	}
+
+	/* `ledger` is the purse shared with the page's score rows; pads and ship
+	 * are the objects a GravitySim gates on (setLaunchNetwork) */
+	function createCareer(ledger) {
+		const pads = [];
+		for (let i = 0; i < OrbitWorld.PLANETS; i++) pads.push(createPad());
+		const tasks = [];
+		for (let i = 0; i < BOARD_SIZE; i++) tasks.push(createTask());
+		return {
+			ledger: ledger,
+			seed: 0,
+			cheat: null,
+			hq: -1,
+			at: -1,
+			stranded: false,
+			pads: pads,
+			padCount: 0,
+			light: new Float64Array(OrbitWorld.PLANETS),
+			ship: { hold: OrbitTech.HOLDS[0], engine: null, tank: OrbitTech.TANKS[0], cargoTons: 0, mass: 0 },
+			owned: {},
+			tasks: tasks,
+			contract: -1,
+			serial: 0,
+			flights: 0,
+			evacuations: 0,
+			delivered: 0,
+			earned: 0,
+			lastEnergy: 0,
+			lastReward: 0,
+			ended: CAREER_OPEN
+		};
+	}
+
+	function price(career, cost) {
+		return career.cheat === CHEAT_COMMUNISM ? 0 : cost;
+	}
+
+	function canPay(career, cost) {
+		return career.ledger.purse + 1e-9 >= price(career, cost);
+	}
+
+	function refitShip(career) {
+		career.ship.mass = OrbitTech.shipMass(career.ship, career.ship.cargoTons);
+	}
+
+	function draw01(career, salt) {
+		career.serial += 1;
+		return OrbitWorld.hashBits(career.seed, career.serial, salt) / 4294967296;
+	}
+
+	/* HQ: a random planet with enough sunlight to run its starter pad */
+	function pickHq(seed, world) {
+		let count = 0;
+		for (let i = 0; i < world.planetCount; i++) {
+			if (world.planetLight[i] >= CAREER.hqMinLight) count += 1;
+		}
+		let pick = OrbitWorld.hashBits(seed, 0, SALT_HQ) % count;
+		for (let i = 0; i < world.planetCount; i++) {
+			if (world.planetLight[i] < CAREER.hqMinLight) continue;
+			if (pick === 0) return i;
+			pick -= 1;
+		}
+		return 0;
+	}
+
+	/* pad sunlight: orbit light above a floor so no world is dead, star brightness a mild modifier */
+	function fillLight(career, world) {
+		const lumNorm = OrbitWorld.clamp01(Math.sqrt(world.lum) / 1.5);
+		const star = 0.5 + 0.5 * lumNorm;
+		for (let i = 0; i < world.planetCount; i++) {
+			career.light[i] = (CAREER.lightFloor + (1 - CAREER.lightFloor) * world.planetLight[i]) * star;
+		}
+	}
+
+	function fitPad(career, planet, catapult, panel, battery) {
+		const pad = career.pads[planet];
+		if (pad.catapult === null) career.padCount += 1;
+		pad.catapult = catapult;
+		pad.panel = panel;
+		pad.battery = battery;
+		pad.chargeKwh = battery.capacity;
+	}
+
+	function resetCareer(career, seed, trade, cheat) {
+		const grant = OrbitTech.starterGrant();
+		career.seed = seed >>> 0;
+		career.cheat = cheat || null;
+		resetLedger(career.ledger, cheat === CHEAT_ENDGAME ? CAREER.endgamePurse : grant.purse);
+		career.ledger.fee = 0;
+		for (let i = 0; i < career.pads.length; i++) {
+			const pad = career.pads[i];
+			pad.catapult = null;
+			pad.panel = null;
+			pad.battery = null;
+			pad.chargeKwh = 0;
+		}
+		career.padCount = 0;
+		fillLight(career, trade.world);
+		career.hq = pickHq(career.seed, trade.world);
+		career.at = career.hq;
+		career.stranded = false;
+		career.ship.hold = grant.ship.hold;
+		career.ship.engine = grant.ship.engine;
+		career.ship.tank = grant.ship.tank;
+		career.ship.cargoTons = 0;
+		career.owned = {};
+		fitPad(career, career.hq, grant.pad.catapult, grant.pad.panel, grant.pad.battery);
+		if (career.cheat === CHEAT_ENDGAME) fitEndgame(career);
+		refitShip(career);
+		for (let i = 0; i < BOARD_SIZE; i++) clearTask(career.tasks[i]);
+		career.contract = -1;
+		career.serial = 0;
+		career.flights = 0;
+		career.evacuations = 0;
+		career.delivered = 0;
+		career.earned = 0;
+		career.lastEnergy = 0;
+		career.lastReward = 0;
+		career.ended = CAREER_OPEN;
+		refreshBoard(career, trade, 0);
+	}
+
+	function topTier(table) {
+		return table[table.length - 1];
+	}
+
+	/* endgame cheat: every pad at top tier, the ship fully fitted */
+	function fitEndgame(career) {
+		for (let i = 0; i < career.pads.length; i++) {
+			fitPad(career, i, topTier(OrbitTech.CATAPULTS), topTier(OrbitTech.PANELS),
+				topTier(OrbitTech.BATTERIES));
+		}
+		career.ship.hold = topTier(OrbitTech.HOLDS);
+		career.ship.engine = topTier(OrbitTech.ENGINES);
+		career.ship.tank = topTier(OrbitTech.TANKS);
+	}
+
+	/* places the idle vessel on a planet and syncs the sim's landed base */
+	function placeShip(career, sim, planet) {
+		career.at = planet;
+		career.stranded = career.pads[planet].catapult === null;
+		sim.relocate(planet);
+	}
+
+	/* a career begins with the vessel on HQ and the sim gating on the network */
+	function startCareer(career, sim, seed, trade, cheat) {
+		resetCareer(career, seed, trade, cheat);
+		sim.setLaunchNetwork(career.pads, career.ship);
+		placeShip(career, sim, career.hq);
+	}
+
+	/* broke = negative purse, or stranded without the money for any way out
+	 * (a catapult where the vessel sits, or the evacuation) */
+	function checkEnded(career) {
+		if (career.ended !== CAREER_OPEN) return career.ended;
+		const purse = career.ledger.purse;
+		const evac = price(career, CAREER.evacFee);
+		const exit = career.at < 0 ? evac : Math.min(evac, price(career, OrbitTech.CATAPULTS[0].buildCost));
+		if (purse < -1e-9 || (career.stranded && purse + 1e-9 < exit)) career.ended = CAREER_BROKE;
+		else if (career.cheat === null && career.padCount === career.pads.length) {
+			career.ended = CAREER_COMPLETE;
+		}
+		return career.ended;
+	}
+
+	/* --- building ------------------------------------------------------ */
+
+	/* a first catapult brings a starter panel and battery (charged) with it;
+	 * a panel or battery needs a pad to sit on */
+	function buildGear(career, planet, kind, item) {
+		const pad = career.pads[planet];
+		const fresh = kind === OrbitTech.KIND_CATAPULT && pad.catapult === null;
+		if (!fresh && !OrbitTech.upgrades(pad, kind, item)) return false;
+		if (!canPay(career, item.buildCost)) return false;
+		career.ledger.purse -= price(career, item.buildCost);
+		if (fresh) {
+			fitPad(career, planet, item, OrbitTech.PANELS[0], OrbitTech.BATTERIES[0]);
+		} else {
+			pad[kind] = item;
+			if (kind === OrbitTech.KIND_BATTERY) pad.chargeKwh = item.capacity;
+		}
+		if (planet === career.at) career.stranded = false;
+		checkEnded(career);
+		return true;
+	}
+
+	function bulkUpgradeCost(career, kind, item) {
+		return price(career, OrbitTech.bulkUpgradeCost(career.pads, kind, item));
+	}
+
+	/* applies `item` to every already-built facility of `kind` at once */
+	function bulkUpgrade(career, kind, item) {
+		const cost = bulkUpgradeCost(career, kind, item);
+		if (career.ledger.purse + 1e-9 < cost) return false;
+		for (let i = 0; i < career.pads.length; i++) {
+			const pad = career.pads[i];
+			if (!OrbitTech.upgrades(pad, kind, item)) continue;
+			pad[kind] = item;
+			if (kind === OrbitTech.KIND_BATTERY) pad.chargeKwh = item.capacity;
+		}
+		career.ledger.purse -= cost;
+		return true;
+	}
+
+	/* ship parts are refitted at HQ; a bought part stays owned, so swapping back is free */
+	function installPart(career, kind, item) {
+		if (career.at !== career.hq || career.ship[kind] === item) return false;
+		if (kind === OrbitTech.KIND_HOLD && item.capacity < career.ship.cargoTons) return false;
+		if (item !== null && !career.owned[item.id]) {
+			if (!canPay(career, item.buildCost)) return false;
+			career.ledger.purse -= price(career, item.buildCost);
+			career.owned[item.id] = true;
+		}
+		career.ship[kind] = item;
+		refitShip(career);
+		return true;
+	}
+
+	/* --- contracts ----------------------------------------------------- */
+
+	function planetDistance(trade, a, b) {
+		const dx = trade.planetX[a] - trade.planetX[b];
+		const dy = trade.planetY[a] - trade.planetY[b];
+		return Math.sqrt(dx * dx + dy * dy);
+	}
+
+	function round2(value) {
+		return Math.round(value * 100) / 100;
+	}
+
+	/* delivery: a colony with a real export to the colony short of that good
+	 * (else the lowest supply); pays by tons, scarcity and distance, capped
+	 * below the evacuation fee */
+	function makeDelivery(career, trade, step, task) {
+		const colonies = trade.colonies;
+		const count = colonies.length;
+		if (count < 2) return false;
+		const first = Math.floor(draw01(career, SALT_TASK) * count);
+		let src = null;
+		let good = -1;
+		for (let k = 0; k < count && good < 0; k++) {
+			src = colonies[(first + k) % count];
+			good = OrbitEcon.bestExport(src);
+		}
+		if (good < 0) return false;
+		let dst = null;
+		let bestShort = 0;
+		let lowSupply = 2;
+		for (let k = 0; k < count; k++) {
+			const colony = colonies[k];
+			if (colony === src) continue;
+			const short = OrbitEcon.goodShortfall(colony, good);
+			const supply = OrbitEcon.marketSupply(colony, good);
+			const better = bestShort > 0 ? short > bestShort : short > 0 || supply < lowSupply;
+			if (!better) continue;
+			dst = colony;
+			bestShort = short;
+			lowSupply = supply;
+		}
+		const tons = CARGO_TONS[Math.floor(draw01(career, SALT_TASK) * CARGO_TONS.length)];
+		const scarcity = 1 - OrbitEcon.marketSupply(dst, good);
+		const dist = Math.min(planetDistance(trade, src.planet, dst.planet), CAREER.deliveryDistPx);
+		const pay = CAREER.deliveryBase + tons * CAREER.deliveryPerTon * (1 + scarcity) *
+			(1 + dist / CAREER.deliveryDistPx);
+		task.kind = TASK_DELIVERY;
+		task.state = TASK_OFFERED;
+		task.good = good;
+		task.tons = tons;
+		task.from = src.planet;
+		task.to = dst.planet;
+		task.planet = -1;
+		task.minLength = 0;
+		task.reward = round2(Math.min(pay, CAREER.deliveryMax));
+		task.deadline = step + Math.round(CAREER.deliverySec / GravitySim.DT);
+		return true;
+	}
+
+	/* competition: one flight launched from `planet` that lands after at least `minLength` px */
+	function makeCompete(career, step, task) {
+		task.kind = TASK_COMPETE;
+		task.state = TASK_OFFERED;
+		task.planet = Math.floor(draw01(career, SALT_TASK) * OrbitWorld.PLANETS);
+		task.minLength = Math.round((CAREER.competeMinPx + draw01(career, SALT_TASK) * CAREER.competeSpanPx) / 50) * 50;
+		task.reward = round2(CAREER.competeBase + draw01(career, SALT_TASK) * CAREER.competeSpan);
+		task.from = -1;
+		task.to = -1;
+		task.good = 0;
+		task.tons = 0;
+		task.deadline = step + Math.round(CAREER.competeSec / GravitySim.DT);
+	}
+
+	function dropContract(career) {
+		if (career.contract < 0) return;
+		clearTask(career.tasks[career.contract]);
+		career.contract = -1;
+		career.ship.cargoTons = 0;
+		refitShip(career);
+	}
+
+	/* drops expired offers (and an expired contract with its cargo), refills the board */
+	function refreshBoard(career, trade, step) {
+		for (let i = 0; i < BOARD_SIZE; i++) {
+			const task = career.tasks[i];
+			if (task.kind === TASK_NONE || step <= task.deadline) continue;
+			if (i === career.contract) dropContract(career);
+			else clearTask(task);
+		}
+		for (let i = 0; i < CAREER.deliverySlots; i++) {
+			const task = career.tasks[i];
+			if (task.kind === TASK_NONE) makeDelivery(career, trade, step, task);
+		}
+		const compete = career.tasks[COMPETE_SLOT];
+		if (compete.kind === TASK_NONE && draw01(career, SALT_TASK) * CAREER.competeEvery < 1) {
+			makeCompete(career, step, compete);
+		}
+	}
+
+	function canAccept(career, index) {
+		const task = career.tasks[index];
+		return task.kind === TASK_DELIVERY && task.state === TASK_OFFERED &&
+			career.contract < 0 && career.ship.hold.capacity >= task.tons;
+	}
+
+	function loadCargo(career, task) {
+		task.state = TASK_LOADED;
+		career.ship.cargoTons = task.tons;
+		refitShip(career);
+	}
+
+	/* one contract at a time; cargo loads at once when the ship already sits at the origin */
+	function acceptTask(career, index) {
+		if (!canAccept(career, index)) return false;
+		const task = career.tasks[index];
+		task.state = TASK_ACCEPTED;
+		career.contract = index;
+		if (career.at === task.from) loadCargo(career, task);
+		return true;
+	}
+
+	function pay(career, amount) {
+		career.ledger.purse += amount;
+		career.earned += amount;
+		career.lastReward += amount;
+	}
+
+	/* landing on `planet`: cargo pickup, delivery payout, competition payout */
+	function settleLanding(career, sim, planet, step) {
+		for (let i = 0; i < BOARD_SIZE; i++) {
+			const task = career.tasks[i];
+			if (task.kind !== TASK_COMPETE || sim.origin !== task.planet) continue;
+			if (sim.flightLength < task.minLength || step > task.deadline) continue;
+			pay(career, task.reward);
+			clearTask(task);
+		}
+		if (career.contract < 0) return;
+		const task = career.tasks[career.contract];
+		if (task.state === TASK_ACCEPTED && planet === task.from) loadCargo(career, task);
+		else if (task.state === TASK_LOADED && planet === task.to) {
+			pay(career, task.reward);
+			career.delivered += 1;
+			dropContract(career);
+		}
+	}
+
+	/* --- flights ------------------------------------------------------- */
+
+	/* the pad battery pays for the launch; the purse does not */
+	function careerBeginFlight(career, sim) {
+		const pad = career.pads[sim.origin];
+		const energy = OrbitTech.launchEnergy(career.ship.mass, pad.catapult, sim.speed);
+		pad.chargeKwh = pad.chargeKwh > energy ? pad.chargeKwh - energy : 0;
+		career.lastEnergy = energy;
+		career.lastReward = 0;
+		career.flights += 1;
+		openFlight(career.ledger, sim, 0);
+	}
+
+	/* pads charge on the world clock (DT · rate world minutes per step): solar gain
+	 * over those minutes minus the battery's slow leak (one world minute = one leak year) */
+	function careerAdvance(career, rate, steps) {
+		const minutes = steps * GravitySim.DT * rate;
+		const seconds = minutes * WORLD_SEC_PER_MIN;
+		for (let i = 0; i < career.pads.length; i++) {
+			const pad = career.pads[i];
+			if (pad.catapult === null) continue;
+			const charge = OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, minutes) +
+				OrbitTech.solarCharge(pad.panel, career.light[i], seconds);
+			pad.chargeKwh = charge < pad.battery.capacity ? charge : pad.battery.capacity;
+		}
+	}
+
+	/* a landing settles contracts; a vessel that left the map or timed out is
+	 * lost in space (at = -1) and only an evacuation brings it back */
+	function careerEndFlight(career, sim, trade, step) {
+		endFlight(career.ledger);
+		const landed = sim.endReason === GravitySim.END_IMPACT && sim.endBody >= 0;
+		if (landed) settleLanding(career, sim, sim.endBody, step);
+		career.at = landed ? sim.endBody : -1;
+		career.stranded = !landed || career.pads[sim.endBody].catapult === null;
+		refreshBoard(career, trade, step);
+		return checkEnded(career);
+	}
+
+	/* flies the stranded ship home for the fee (the cargo rides along) */
+	function evacuate(career, sim) {
+		if (!career.stranded) return false;
+		career.ledger.purse -= price(career, CAREER.evacFee);
+		career.evacuations += 1;
+		placeShip(career, sim, career.hq);
+		checkEnded(career);
+		return true;
+	}
+
 	/* > 0 when actor `a` beats `b` under `ruleName` */
 	function compareScores(ruleName, a, b) {
 		if (ruleName === RULE_ROUTE) {
 			return Math.abs(a.length - b.length) > 0.5 ? a.length - b.length : 0;
 		}
-		if (ruleName === RULE_MONEY) {
+		if (ruleName === RULE_MONEY || ruleName === RULE_CAREER) {
 			if (Math.abs(a.purse - b.purse) > 1e-9) return a.purse - b.purse;
 			if (a.visited !== b.visited) return a.visited - b.visited;
 			if (a.shots !== b.shots) return b.shots - a.shots;
@@ -299,15 +800,23 @@
 	const GravityGame = {
 		FORMAT, ANGLE_STEPS, SPEED_STEPS, CAP_SECONDS, CAP_STEPS, RATE_MIN, RATE_MAX,
 		ROUTE_SECONDS, ROUTE_STEPS, MONEY_SHOTS,
-		RULE_TOUR, RULE_ROUTE, RULE_MONEY, RULES,
+		RULE_TOUR, RULE_ROUTE, RULE_MONEY, RULE_CAREER, RULES,
 		BOT_OFF, BOT_EASY, BOT_NORMAL, BOT_HARD, BOTS,
 		PLAYER_USER, PLAYER_BOT, PLAYER_TYPES,
+		CHEAT_COMMUNISM, CHEAT_ENDGAME, CHEATS,
 		SRC_PLANETS, SRC_PORTS, NO_ABORT, MONEY, PURSE_PRESETS,
 		angleUnits, angleOf, speedUnits, speedOf,
 		createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
 		initSteps, createMarket, resetMarket, planetProfit,
 		createLedger, resetLedger, beginFlight, stepHarvest, endFlight,
-		estimateProfit, compareScores
+		estimateProfit, compareScores,
+		CAREER, BOARD_SIZE, COMPETE_SLOT, CARGO_TONS,
+		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
+		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
+		createCareer, resetCareer, startCareer, checkEnded,
+		buildGear, bulkUpgradeCost, bulkUpgrade, installPart,
+		refreshBoard, canAccept, acceptTask, dropContract,
+		careerBeginFlight, careerAdvance, careerEndFlight, evacuate
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = GravityGame;

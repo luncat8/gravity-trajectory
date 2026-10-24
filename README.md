@@ -34,6 +34,7 @@ Open `index.html` (`file://` works, no build, no modules).
 | mode `lab` / `game` | game: rebuilds the seeded world at `t+07:00`, freezes it between flights, locks gravity at `1` |
 | `abort` (game) | ends the running flight at the current step (recorded in the replay) |
 | rule `tour` / `route` / `money` (game) | tour: 120 s flight cap, score systems → shots → time; route: 1 800 s wall, score trajectory length; money: 10 shots, score purse → systems → shots → time · switching restarts the seed |
+| `?rule=career` (link only, no radio yet) | solo career: the vessel starts on a sunlit HQ with the only catapult; a launch fires from the pad under the ship and spends its solar-charged battery (ship + cargo mass caps the speed, button shows `pad charge … · max … px/s`); landing elsewhere strands the ship (`GravityGame.buildGear` / `evacuate` via the console until the shop lands) · `&cheat=communism` (everything free) / `&cheat=endgame` (all pads at top tier, purse 99) · ends `complete` with 26 catapults or `broke` |
 | rivals `off` / `easy` / `normal` / `hard` | deterministic shared-market rivals in `tour`, `route` and `money` (`normal` default; `hard` fields 2 rivals with 1-ply lookahead) · switching restarts the seed |
 | scoreboard (upper-left, game only) | compares `YOU`, `R1` and `R2` under the active rule’s score (mint, violet, rose) · every player row has its own `bot` checkbox (`user` ↔ `bot`, live at all times and restarts the run), and clicking any `user` player’s row switches which human player is currently active |
 | purse & planet profits (game) | starts at `3.00`; each launch costs `1.00` (refused below `1.00`); each planet's fly-visit payout grows with unvisited game time (`+0.25` initial, resets to `+0.00` when visited by you or a rival, `+0.00625/s` up to `+0.75` cap) and is drawn as a live pill under every planet |
@@ -106,13 +107,15 @@ Open `index.html` (`file://` works, no build, no modules).
 - `orbit_econ.js` — colony economy laws: goods, resource map, growth
 - `orbit_sim.js` — orbital trade & colony simulation
 - `orbit_view.js` — trade renderer, coplanar Kepler moons & belts, camera `OrbitScene`
-- `gravity_sim.js` — gravity field, planet-system visits, per-pass prediction log, headless `predictFast`, live `stepOne` flight & continuation
-- `gravity_game.js` — game rules (`tour`, `route`, `money`), aim grid, replay link codec (`rule`, `bot`), shared planet-profit market (`MONEY`, `createMarket`, `planetProfit`, `stepHarvest`, `estimateProfit`, `compareScores`)
+- `orbit_tech.js` — career tech tables (catapults, panels, batteries, holds, engines, tanks, helpers) and the launch model: rail energy / force speed caps, solar charge, battery leak, bulk upgrade cost
+- `orbit_science.js` — knowledge hull (convex volume of discovered parameter vectors; cheap inside, `k·dist` outside) for the planned research screen, node-only so far
+- `gravity_sim.js` — gravity field, planet-system visits, per-pass prediction log, headless `predictFast`, live `stepOne` flight & continuation, career launch gate (`setLaunchNetwork`, `canFire`, `speedLimit`, `relocate`)
+- `gravity_game.js` — game rules (`tour`, `route`, `money`, `career`), aim grid, replay link codec (`rule`, `bot`, `cheat`), shared planet-profit market (`MONEY`, `createMarket`, `planetProfit`, `stepHarvest`, `estimateProfit`, `compareScores`), career state (pads, ship, task board from the colony economy, evacuation, end condition)
 - `gravity_bot.js` — deterministic shared-market rivals for all game rules (`off`, `easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead, sliced search, `rivalLink`)
 - `photo_deck.js` — postcard popup: type → file candidates, captions, compact layout, purse toast
 - `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game scoreboard, game mode & replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
-  `game_bench.js`, `route_bench.js`, `bot_bench.js`), headless DOM smoke suite
+  `game_bench.js`, `route_bench.js`, `bot_bench.js`, `career_bench.js`), headless DOM smoke suite
   (`dom_smoke.js`) on the shared vm page stub (`dom_stub.js`), and a real-browser
   HUD layout check (`layout_check.js`, needs `CHROME_PATH`) that asserts the
   action row stays reachable and never reflows while aiming
