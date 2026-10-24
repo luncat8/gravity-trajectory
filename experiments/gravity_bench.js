@@ -341,8 +341,8 @@ function fieldBench(world) {
 	for (let r = 0; r < runs; r++) GravityField.renderBuffer(pixels, w, h, g, view, 1280, 800);
 	const avgMs = Number(process.hrtime.bigint() - t0) / 1e6 / runs;
 
-	/* WebGL backend + adaptive 1/4 resolution drop + context-loss fallback */
-	const glState = { draws: 0, origin: null, step: null, lostFn: null };
+	/* WebGL backend + adaptive 1/4 resolution drop + context loss / restore */
+	const glState = { draws: 0, origin: null, step: null, lostFn: null, restoredFn: null, lost: false };
 	const mockGl = {
 		VERTEX_SHADER: 1, FRAGMENT_SHADER: 2, COMPILE_STATUS: 3, LINK_STATUS: 4,
 		ARRAY_BUFFER: 5, STATIC_DRAW: 6, FLOAT: 7, TRIANGLES: 8,
@@ -372,16 +372,23 @@ function fieldBench(world) {
 		uniform3fv() {},
 		drawArrays() { glState.draws += 1; }
 	};
+	/* a canvas keeps the first context type it was given: after `webgl` no 2D */
 	const mockCanvas = {
 		width: 0, height: 0,
-		addEventListener(type, fn) { if (type === 'webglcontextlost') glState.lostFn = fn; },
+		bound: null,
+		addEventListener(type, fn) {
+			if (type === 'webglcontextlost') glState.lostFn = fn;
+			if (type === 'webglcontextrestored') glState.restoredFn = fn;
+		},
 		getContext(kind) {
-			if (kind === 'webgl') return mockGl;
-			return {
-				createImageData: (cw, ch) => ({ width: cw, height: ch, data: new Uint8ClampedArray(cw * ch * 4) }),
-				putImageData() {}
-			};
+			if (kind !== 'webgl') return this.bound === 'webgl' ? null : twoD;
+			this.bound = 'webgl';
+			return glState.lost ? null : mockGl;
 		}
+	};
+	const twoD = {
+		createImageData: (cw, ch) => ({ width: cw, height: ch, data: new Uint8ClampedArray(cw * ch * 4) }),
+		putImageData() {}
 	};
 	const glField = GravityField.create(mockCanvas);
 	const hiView = { dpr: 2, scale: 0.8, offX: 40, offY: 20 };
@@ -394,10 +401,28 @@ function fieldBench(world) {
 	if (glField.scaleDiv() !== 4 || mockCanvas.width !== 320 || mockCanvas.height !== 200) {
 		throw new Error('WebGL slow-frame 4x resolution fallback failed');
 	}
+	glState.lost = true;
 	glState.lostFn({ preventDefault() {} });
+	const drewWhileLost = glField.render(g, hiView, 1280, 800, false);
+	if (glField.backend() !== 'lost' || drewWhileLost || glField.pixels() !== null) {
+		throw new Error('webglcontextlost must report lost and stop drawing, not fake a 2D fallback');
+	}
+	glState.lost = false;
+	glState.restoredFn();
 	glField.render(g, hiView, 1280, 800, false);
-	if (glField.backend() !== '2d' || glField.scaleDiv() !== 4) {
-		throw new Error('webglcontextlost did not fall back to 1/4 2D');
+	if (glField.backend() !== 'webgl' || glState.draws < 2) {
+		throw new Error('webglcontextrestored did not rebuild the shader');
+	}
+	/* a browser without WebGL keeps the 1/4-resolution 2D raster */
+	const noGlCanvas = {
+		width: 0, height: 0,
+		addEventListener() {},
+		getContext(kind) { return kind === 'webgl' ? null : twoD; }
+	};
+	const twoDField = GravityField.create(noGlCanvas);
+	twoDField.render(g, hiView, 1280, 800, false);
+	if (twoDField.backend() !== '2d' || noGlCanvas.width !== 320) {
+		throw new Error('no-WebGL canvas did not use the 1/4 2D raster');
 	}
 
 	return { w, h, maxDiff, meanDiff: sumDiff / (w * h), avgMs };

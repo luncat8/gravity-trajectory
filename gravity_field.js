@@ -345,10 +345,19 @@
 		const lastBodies = new Float64Array(MAX_BODIES * 3);
 
 		if (canvas && typeof canvas.addEventListener === 'function') {
+			/* a canvas keeps the first context type it was given, so a lost WebGL
+			 * context can never fall back to 2D on the same element: draw nothing
+			 * until `webglcontextrestored` rebuilds the program and buffer */
 			canvas.addEventListener('webglcontextlost', event => {
 				if (event && typeof event.preventDefault === 'function') event.preventDefault();
 				glState = null;
-				ctx2d = canvas.getContext('2d');
+				ctx2d = null;
+				fbW = 0;
+				dirty = true;
+			});
+			canvas.addEventListener('webglcontextrestored', () => {
+				glState = initWebGL(canvas);
+				fbW = 0;
 				dirty = true;
 			});
 		}
@@ -445,6 +454,7 @@
 
 		function render(sim, view, cssW, cssH, slow) {
 			if (cssW <= 0 || cssH <= 0 || view.scale <= 0) return false;
+			if (glState === null && ctx2d === null) return false;
 			if (glState !== null && glDiv === 1) {
 				slowStreak = slow ? slowStreak + 1 : 0;
 				if (slowStreak >= SLOW_LIMIT) {
@@ -464,7 +474,7 @@
 		}
 
 		return {
-			backend: () => (glState !== null ? 'webgl' : '2d'),
+			backend: () => (glState !== null ? 'webgl' : ctx2d !== null ? '2d' : 'lost'),
 			scaleDiv,
 			draws: () => draws,
 			pixels: () => (imgData ? imgData.data : null),

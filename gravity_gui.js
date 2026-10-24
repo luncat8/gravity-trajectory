@@ -69,6 +69,8 @@
 	const CAREER_WAIT_MIN = 30;
 	const VIEW_SPACE = 'space';
 	const VIEW_FIELD = 'field';
+	/* refit button `data-tier` that empties the engine slot (the tech tables have no `null` record) */
+	const NO_TIER = -1;
 	/* the flat mode row: lab has no rule, every other mode is a game rule */
 	const PLAY_LAB = 'lab';
 	/* route mode traces a 1 800 s shot in slices: per-frame slice of tracer work */
@@ -585,8 +587,11 @@
 		if (viewFieldEl) viewFieldEl.checked = viewMode === VIEW_FIELD;
 		if (!viewTagEl) return;
 		if (viewMode !== VIEW_FIELD || !fieldRenderer) {
-			viewTagEl.textContent = 'space';
-			viewTagEl.title = 'starfield backdrop and gravity well rings';
+			const lost = fieldRenderer !== null && fieldRenderer.backend() === 'lost';
+			viewTagEl.textContent = lost ? 'space · field lost' : 'space';
+			viewTagEl.title = lost
+				? 'gravity field paused: the WebGL context was lost · f retries once it restores'
+				: 'starfield backdrop and gravity well rings';
 			return;
 		}
 		const gl = fieldRenderer.backend() === 'webgl';
@@ -598,7 +603,17 @@
 			(gl ? 'WebGL shader' : '1/' + div + ' 2D raster');
 	}
 
+	/* a lost WebGL context cannot become a 2D one in place: fall back to the
+	 * starfield, and let `f` retry once the browser restores the context */
+	function fieldLost() {
+		setViewMode(VIEW_SPACE);
+	}
+
 	function setViewMode(next) {
+		if (next === VIEW_FIELD && fieldRenderer && fieldRenderer.backend() === 'lost') {
+			refreshViewUi();
+			return;
+		}
 		viewMode = next === VIEW_FIELD ? VIEW_FIELD : VIEW_SPACE;
 		if (fieldCanvas) fieldCanvas.hidden = viewMode !== VIEW_FIELD;
 		if (scene.setBackdrop) scene.setBackdrop(viewMode !== VIEW_FIELD);
@@ -2908,12 +2923,17 @@
 		return value === 0 ? 'free' : value.toFixed(2);
 	}
 
-	/* full-battery cap of one pad with the ship as loaded now, so the shop can
-	 * answer "can this pad lift this cargo?" before the player buys; 0 = no pad */
-	function padCap(career, catapult, battery) {
+	/* full-battery cap of one pad for a given ship mass, so the shop can answer
+	 * "can this pad lift this cargo?" and "what does this part cost in rail
+	 * speed?" from the same rail model; 0 = no pad */
+	function padCapMass(catapult, battery, mass) {
 		if (catapult === null || battery === null) return 0;
-		const cap = OrbitTech.speedLimit(battery.capacity, career.ship.mass, catapult, gravity.forceScale);
+		const cap = OrbitTech.speedLimit(battery.capacity, mass, catapult, gravity.forceScale);
 		return cap > SPEED_MAX ? SPEED_MAX : cap;
+	}
+
+	function padCap(career, catapult, battery) {
+		return padCapMass(catapult, battery, career.ship.mass);
 	}
 
 	function panelWaitKwh(career, planet, panel) {
@@ -3025,8 +3045,10 @@
 		const cargo = ship.cargoTons > 0 ? ' · cargo ' + ship.cargoTons + ' t' : '';
 		let html = '<div class="careerLine"><b>' + planetName(at) + (at === career.hq ? ' · HQ' : '') +
 			'</b> · ' + ship.mass.toFixed(1) + ' t' + cargo + '</div>';
+		const dv = OrbitTech.shipDeltaV(ship, ship.cargoTons);
 		html += '<div class="careerLine dim">ship ' + ship.hold.id + ' · ' +
-			(ship.engine ? ship.engine.id : 'no engine') + ' · ' + ship.tank.id + '</div>';
+			(ship.engine ? ship.engine.id : 'no engine') + ' · ' + ship.tank.id +
+			(dv > 0 ? ' · Δv ' + dv.toFixed(1) + ' m/s' : '') + '</div>';
 		if (pad.catapult === null) {
 			const first = OrbitTech.CATAPULTS[0];
 			const cost = careerCost(career, first.buildCost);
@@ -3103,20 +3125,78 @@
 		return html + '</span></div>';
 	}
 
+	/* what a part row leads with: hold tons, tank fuel kg, engine thrust kN */
+	function partStatText(kind, item) {
+		if (item === null) return kind === OrbitTech.KIND_ENGINE ? '0 kN' : 'none';
+		if (kind === OrbitTech.KIND_HOLD) return item.capacity + ' t';
+		if (kind === OrbitTech.KIND_TANK) return item.fuelCap + ' kg';
+		return item.thrust + ' kN';
+	}
+
+	/* heaviest owned tier below the fitted one: the free way back to a lighter
+	 * ship; null when nothing lighter is owned (a hold/tank always has a tier 0) */
+	function lighterTier(career, table, cur) {
+		const below = cur === null ? 0 : cur.tier;
+		for (let i = table.length - 1; i >= 0; i--) {
+			if (table[i].tier < below && career.owned[table[i].id]) return table[i];
+		}
+		return null;
+	}
+
+	/* full-battery cap of HQ with `item` in `kind` and the ship as loaded now */
+	function partCap(career, row, item) {
+		const pad = career.pads[career.hq];
+		return padCapMass(pad.catapult, pad.battery,
+			OrbitTech.refitMass(career.ship, row.kind, item, career.ship.cargoTons));
+	}
+
+	/* `8 → 24 t · 88 → 78 px/s`: the stat the offered refit holds and the HQ cap
+	 * it buys, so a heavy fit reads as a launch limit before it is fitted;
+	 * `change` undefined prints the fit as it is, null means the empty engine slot */
+	function partCapText(career, row, cur, change) {
+		const now = partCap(career, row, cur);
+		const after = change === undefined ? now : partCap(career, row, change);
+		const stat = change === undefined ? partStatText(row.kind, cur)
+			: partStatText(row.kind, cur) + ' → ' + partStatText(row.kind, change);
+		const cap = capArrowText(now, after);
+		return cap === '' ? stat : stat + ' · ' + cap;
+	}
+
+	/* one refit button: forward buys/installs the next tier, `back` returns to
+	 * an owned lighter one (item null = strip the engine) */
+	function partButtonHtml(career, row, item, back) {
+		const atHq = career.at === career.hq;
+		const owned = item === null || Boolean(career.owned[item.id]);
+		const price = owned ? 0 : careerCost(career, item.buildCost);
+		const fits = row.kind !== OrbitTech.KIND_HOLD || item.capacity >= career.ship.cargoTons;
+		const name = item === null ? 'no engine' : item.id;
+		const mass = OrbitTech.refitMass(career.ship, row.kind, item, career.ship.cargoTons);
+		const dv = OrbitTech.refitDeltaV(career.ship, row.kind, item, career.ship.cargoTons);
+		const title = 'refit ' + name + (atHq ? '' : ' at HQ only') + ' · ' +
+			partStatText(row.kind, item) + ' · ship ' + mass.toFixed(1) + ' t · HQ cap ' +
+			Math.round(partCap(career, row, item)) + ' px/s' +
+			(dv > 0 ? ' · Δv ' + dv.toFixed(1) + ' m/s' : '') +
+			(fits ? '' : ' · drops ' + career.ship.cargoTons + ' t cargo first');
+		const label = back ? 'back ' + name
+			: (owned ? 'fit ' : 'buy ') + name + ' · ' + costText(price);
+		return shopButton(label, 'part', row.kind,
+			item === null ? NO_TIER : tierIndex(row.table, item),
+			!atHq || !fits || career.ledger.purse + 1e-9 < price, title);
+	}
+
 	function partRowHtml(career, row) {
 		const cur = career.ship[row.kind];
 		const next = nextTier(row.table, cur);
+		const engine = row.kind === OrbitTech.KIND_ENGINE;
+		const back = engine ? null : lighterTier(career, row.table, cur);
+		const canBack = cur !== null && (engine || back !== null);
+		/* the arrow describes the action on offer: the upgrade, else the step down */
+		const change = next !== null ? next : canBack ? back : undefined;
 		let html = '<div class="careerRow"><span class="careerKind">' + row.label + '</span>' +
-			'<span class="careerNow">' + (cur ? cur.id : 'none') + '</span><span class="careerBtns">';
-		if (next === null) return html + '<i>max</i></span></div>';
-		const owned = Boolean(career.owned[next.id]);
-		const price = owned ? 0 : careerCost(career, next.buildCost);
-		const atHq = career.at === career.hq;
-		const fits = row.kind !== OrbitTech.KIND_HOLD || next.capacity >= career.ship.cargoTons;
-		html += shopButton((owned ? 'fit ' : 'buy ') + next.id + ' · ' + costText(price),
-			'part', row.kind, tierIndex(row.table, next),
-			!atHq || !fits || career.ledger.purse + 1e-9 < price,
-			atHq ? 'install ' + next.id + ' at HQ' : 'refit at HQ only');
+			'<span class="careerNow">' + (cur ? cur.id : 'none') + '</span>' +
+			capHtml(partCapText(career, row, cur, change)) + '<span class="careerBtns">';
+		if (next !== null) html += partButtonHtml(career, row, next, false);
+		if (canBack) html += partButtonHtml(career, row, back, true);
 		return html + '</span></div>';
 	}
 
@@ -3355,12 +3435,15 @@
 	}
 
 	function careerPart(career, kind, item) {
+		const name = item === null ? 'no engine' : item.id;
 		if (!GravityGame.installPart(career, kind, item)) {
-			careerNotice('cannot fit ' + item.id + ' · refit at HQ ' + planetName(career.hq) +
+			careerNotice('cannot fit ' + name + ' · refit at HQ ' + planetName(career.hq) +
 				(kind === OrbitTech.KIND_HOLD ? ' and keep the hold at least as big as the cargo' : ''));
 			return;
 		}
-		careerNotice('fitted ' + item.id + ' · ship ' + career.ship.mass.toFixed(1) + ' t');
+		const dv = OrbitTech.shipDeltaV(career.ship, career.ship.cargoTons);
+		careerNotice('fitted ' + name + ' · ship ' + career.ship.mass.toFixed(1) + ' t' +
+			(dv > 0 ? ' · Δv ' + dv.toFixed(1) + ' m/s' : ''));
 		careerChanged();
 	}
 
@@ -3436,7 +3519,12 @@
 		if (act === 'accept') return careerAccept(career, Number(data.slot));
 		const table = TECH_TABLES[data.kind];
 		if (!table) return;
-		const item = table[Number(data.tier)];
+		const index = Math.round(Number(data.tier));
+		if (index === NO_TIER) {
+			if (act === 'part') careerPart(career, data.kind, null);
+			return;
+		}
+		const item = table[index];
 		if (!item) return;
 		if (act === 'build') careerBuild(career, careerPickPlanet(), data.kind, item);
 		else if (act === 'bulk') careerBulk(career, data.kind, item);
@@ -4534,10 +4622,13 @@
 
 	function draw(now) {
 		if (viewMode === VIEW_FIELD && fieldRenderer) {
-			const prevDiv = fieldRenderer.scaleDiv();
-			fieldRenderer.render(gravity, view, window.innerWidth, window.innerHeight,
-				emaFrameMs > FPS_DROP_MS);
-			if (fieldRenderer.scaleDiv() !== prevDiv) refreshViewUi();
+			if (fieldRenderer.backend() === 'lost') fieldLost();
+			else {
+				const prevDiv = fieldRenderer.scaleDiv();
+				fieldRenderer.render(gravity, view, window.innerWidth, window.innerHeight,
+					emaFrameMs > FPS_DROP_MS);
+				if (fieldRenderer.scaleDiv() !== prevDiv) refreshViewUi();
+			}
 		}
 		const blocked = activeBlockedPlanet(now);
 		ctx.setTransform(1, 0, 0, 1, 0, 0);

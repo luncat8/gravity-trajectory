@@ -1,0 +1,180 @@
+0.4.8 ship refit rows & reversible refits · field-context loss fix
+node v22.22.3 · 2026-10-24T12:28Z
+
+=== node --check ===
+all files parse
+
+=== gravity_bench ===
+world: 26 planets, fast-forward to t+07:00 in 45.46 ms
+trade at t+07:00: ports 14, ships 14, delivered 1737, colonies 7
+
+prediction sweep: 5616 runs (36 angles x 6 speeds x 26 planets)
+  avg 0.297 ms, p95 30.04 s flight, worst 2.969 ms
+  avg flight 7.98 s
+  ends: open 0, impact 3282, exit 2295, horizon 39, budget 0
+
+parity: 216 shots, worst live/predicted deviation 0.000068 px (P9 a7 v60)
+moving ports at x6: parity 60 shots, worst deviation 0.000068 px (port 9 a4 v90)
+  moving vs frozen end point: max 1358.1 px apart
+  moving prediction: 168 runs, avg 0.245 ms, worst 2.879 ms
+experimental gravity x0.5: parity 48 shots, worst deviation 0.000068 px (scaled 7 a0 v90)
+experimental gravity: one-step pull x0 0.000 · x0.5 0.010 · x1 0.020 · x2 0.040
+repel field: 156 paths, finite bounds x -14.1…1614.0, y -13.7…1013.9
+field raster 1/4 (320x200): avg 11.20 ms, LUT diff max 3, mean 0.516
+budget: 10 ms cap, worst 2.969 ms (within budget)
+BENCH OK
+=== career_bench ===
+ok - dry ship launchable by weak EMC-1 from a full BAT-1 in the 85-95 px/s band
+ok - 24 t cargo + HOLD-24 stalls below 50 on EMC-1 / BAT-1, flies on EMC-5 / BAT-5
+ok - rail force caps speed even with a huge battery; efficiency cuts energy
+ok - impulse delta-v needs engine + fuel, grows with fuel
+ok - 1D hull: segment, interior cheap, exterior costs k*dist
+ok - 2D hull: triangle interior cheap, exterior priced by distance
+ok - empty family: everything outside, infinite dist
+ok - solar charge: kW·s -> kWh, dim world charges slowly, leak decays
+ok - bulkUpgradeCost sums the tier cost over built facilities only
+ok - copySpec emits the balance line; starter grant is the weak kit
+ok - experimental scales: force shrinks the rail cap and the live pad gate
+ok - experimental gravity scales every pull and keeps prediction parity
+ok - career start: HQ pad only, sim gates on the network, link codec carries cheat
+ok - career board: deliveries pair an exporting colony with a short one, pay below the evacuation fee
+ok - career board is a pure function of (seed, world, clock)
+ok - career flight: launch draws pad energy (no purse fee), landing elsewhere strands the ship
+ok - career stranded: building a catapult brings a charged starter pad; the pad then fires
+ok - career evacuation: fee, ship back on HQ, broke when the purse cannot cover an exit
+ok - career pads: solar refills on the world clock up to capacity, dim pads slower
+ok - career contracts: hold required, cargo adds mass, delivery pays on landing at the target
+ok - career lost in space: a map exit strands nowhere; only the evacuation brings the ship back
+ok - career contracts expire with the clock and drop the cargo
+ok - career competition: pays once for a long enough landing flight from its planet
+ok - career ship refit: reversible to any owned tier, mass feeds the HQ cap, Δv from tank × engine
+ok - career bulk upgrade: total before, every built pad after, unbuilt untouched
+ok - career cheats: communism prices everything 0; endgame fits all and never completes
+ok - career completes when every planet has a catapult (honest run)
+CAREER BENCH OK
+=== career_bot_bench ===
+ok - starter EMC-1 is rail-limited to a weak 85-95 px/s dry band
+ok - career plan uses only the occupied pad, caps speed, and exposes exact score terms
+ok - idle controller first repairs a pad its loaded ship cannot lift
+ok - a shot that lands back on its own pad with no pay is never a plan
+ok - idle controller buys a hold and pads, and upgrades a weak loaded pad
+  career s7: complete · purse 9.95 · earned 3.38 · pads 26 · flights 24 · deliveries 3 · upgrades 4 · waits 6 · fallbacks 3 · evac 0
+ok - full career seed 7: 26 pads and purse >= 6.00
+  career s31: complete · purse 8.72 · earned 6.71 · pads 26 · flights 25 · deliveries 2 · upgrades 0 · waits 0 · fallbacks 0 · evac 0
+ok - full career seed 31: 26 pads and purse >= 6.00
+  career s42: complete · purse 6.54 · earned 14.15 · pads 26 · flights 23 · deliveries 9 · upgrades 4 · waits 10 · fallbacks 1 · evac 0
+ok - full career seed 42: 26 pads and purse >= 6.00
+  career s913: complete · purse 6.35 · earned 2.19 · pads 26 · flights 21 · deliveries 1 · upgrades 0 · waits 0 · fallbacks 1 · evac 0
+ok - full career seed 913: 26 pads and purse >= 6.00
+  scaled s42 g0.8 f1.5: complete · purse 10.83 · earned 12.26 · pads 26 · flights 17 · deliveries 7 · upgrades 0 · waits 9 · fallbacks 2 · evac 0
+ok - scaled career seed 42 (g ×0.8, f ×1.5): 26 pads and purse >= 6.00
+  scaled s7 g0.8 f1.5: complete · purse 6.60 · earned 3.65 · pads 26 · flights 21 · deliveries 1 · upgrades 5 · waits 0 · fallbacks 1 · evac 0
+ok - scaled career seed 7 (g ×0.8, f ×1.5): 26 pads and purse >= 6.00
+  scaled s42 g1.4 f0.6: complete · purse 6.32 · earned 2.18 · pads 26 · flights 69 · deliveries 2 · upgrades 8 · waits 111 · fallbacks 11 · evac 0
+ok - scaled career seed 42 (g ×1.4, f ×0.6): 26 pads and purse >= 6.00
+CAREER BOT BENCH OK
+=== colony_bench ===
+colony bench: 1622/1622 checks
+  jitter max 0.0600 · map 0.4 µs · advance 0.28 µs/colony-y (22.1 µs/tick for 26 colonies)
+COLONY BENCH OK
+=== game_bench ===
+trade: advanceTo chunks 0-3 min vs one jump, 9 runs identical incl. exact t; reset == new Sim
+codec: 300 round trips, 23 rejects, ~107.0 chars/shot; grid: 1e5 idempotent, angle snap ≤ 3.00e-6 rad
+scripted game (seed 31, rate 3, 60 Hz): 26 / 26 ✓ · ends impact P15, impact P20, impact P3, impact P22, abort, impact P23, impact P17, impact P10 · 6066 steps · 20104 ms
+  link 153 chars: #game=1&seed=31&rate=3&shots=p12.21ns.3aio_p15.68j.3aio_p20.5sib.5hj4_m3.lpm0.5hj4_m22.krwd.5hj4.2i_m22.krwd.5hj4_p23.a07n.5hj4_p17.da7c.5hj4&end=26.6033
+  replay 144 Hz x4: identical · verified ✓ · purse 6.51 · 2224 frames ·  7818 ms
+  replay jitter 4-45 ms + 120 ms stalls x1: identical · verified ✓ · purse 6.51 · 2282 frames ·  5559 ms
+  replay 60 Hz x16: identical · verified ✓ · purse 6.51 · 253 frames ·  977 ms
+  replay skip: identical · verified ✓ · purse 6.51 ·  101 ms
+route planner (seed 31, rate 3, 60 Hz): 1614 px · ends impact P9 · 1225 steps in 1 sliced frames · 3050 ms
+  plan 10.2 s / 1614 px · no launch · world stayed at t+07:00
+  link 73 chars: #game=1&seed=31&rate=3&rule=route&shots=p12.iwh4.3if4&end=8.1225&len=1614
+  replay 60 Hz trace: identical · verified ✓ · 1614 px · 3 frames ·  14 ms
+  replay jitter 4-45 ms + 120 ms stalls: identical · verified ✓ · 1614 px · 3 frames ·  13 ms
+  replay skip trace: identical · verified ✓ · 1614 px ·  12 ms
+money tour 12 s: 8/8.0 · 5/10.6 · 2/3.5 · 5/7.5 · 4/4.4 · 1/1.3 · 5/7.6 · 2/1.9 · 6/3.3 · purse 4.90 +1.90 · replay verified ✓ · purse 4.90
+money tour 60 s: 25/45.3 · 2/2.9 · 1/0.9 · 6/13.8 · 2/6.1 · 1/1.5 · purse 10.11 +7.11 · replay verified ✓ · purse 10.11
+  both tours replayed the purse exactly · 21572 ms
+broke run: 3 shots · purse left 0.00 · launch refused · replay verified ✓ · purse 0.00
+cross-engine proxy (1 ulp):
+  planets · launch angle: 1872 flights, 0 outcome flips · end drift median 2.7e-13 p99 2.3e-8 max 1.4e-6 px
+  ports x3 · launch angle: 1872 flights, 0 outcome flips · end drift median 2.3e-13 p99 1.5e-10 max 8.0e-9 px
+  ports x3 · every port position: 1872 flights, 0 outcome flips · end drift median 1.1e-13 p99 1.4e-10 max 2.4e-8 px
+GAME BENCH OK
+=== route_bench ===
+route bench — 216000 steps of wall (1800 s)
+1. sliced tracer equals a one-shot tracer
+  static: 200 shots, one call vs 1 ms slices agree point for point (mean 0.1 slices)
+  moving ports x6: 60 shots, one call vs 1 ms slices agree point for point (mean 0.1 slices)
+2. flight length in the static field
+  static field, 6864 shots: flight median 5.7 s, p95 37.1 s, longest 158.3 s · over the 120 s tour cap 4 · reaching the 1 800 s wall 0
+3. point buffer
+  wall trace: 216000 steps, 27001 points, stride 8, end horizon (1800 s)
+  the same wall shot in 4 ms slices: 7 slices, identical path after 8x compaction
+  longest real shot: 158.3 s, 18997 points, stride 1 (every step kept)
+4. slice cost
+  static field: 0.4 ms of work in 1.0 slices, worst slice 2.33 ms, 1269 points
+  moving ports x6: 0.9 ms of work in 1.0 slices, worst slice 3.91 ms, 1649 points
+  wall trace: 35.5 ms of work in 9.0 slices, worst slice 4.02 ms, 27001 points
+5. no allocation
+  probe, path and all field buffers keep their identity across a trace
+ROUTE BENCH OK
+=== bot_bench ===
+1a. market curve & parity: 208 flights, max |estimateProfit - stepHarvest| = 0.0e+0
+1b. balance (4 seeds): lazy broke 4/4 · casual broke 4/4 · blind lost money 4/4 · smart won money 4/4 · smart 26/26 tour 4/4
+rule-aware bots: tour, route, money · route plans rival 3630.7 px · YOU-bot 6972.4 px · no route flights
+2. ladder [tour]: hard>easy 4/4, normal>easy 4/4 · s7 E:26/$10.8 N:26/$13.6 H:26/$8.6 | s31 E:26/$5.0 N:26/$15.1 H:26/$7.0 | s42 E:26/$7.5 N:26/$13.8 H:26/$5.1 | s913 E:25/$7.7 N:26/$12.0 H:26/$5.8
+2. ladder [route]: hard>easy 4/4, normal>easy 1/4 · s7 E:7384px N:10325px H:10325px | s31 E:6232px N:6232px H:13199px | s42 E:3631px N:3631px H:10094px | s913 E:7953px N:7953px H:12493px
+2. ladder [money]: hard>easy 4/4, normal>easy 4/4 · s7 E:23/$7.1 N:23/$14.0 H:23/$9.1 | s31 E:23/$6.4 N:26/$14.4 H:25/$12.1 | s42 E:23/$7.4 N:25/$17.6 H:25/$11.5 | s913 E:24/$6.9 N:23/$12.1 H:24/$9.1
+3 & 4. slices & perf: 6 exact 1-cand === sync matches · buffers 0-alloc · full decision easy/normal/hard = 6.59/16.66/42.76 ms · worst 64-cand slice 4.73 ms
+5. contested race replay (money + hard 2 rivals): 60 Hz === 144 Hz x16 === jitter === skip · #game=1&seed=31&rate=3&rule=money&bot=hard&shots=p0.dhg.2mtc_p6.ef5w.3u9s_p3.ef5w.3u9s&end=15.3909
+BOT BENCH OK
+=== layout_check ===
+LAYOUT CHECK SKIPPED — set CHROME_PATH to a Chromium binary
+=== dom_smoke ===
+trade start t+ 07:00 ports 14 / 26 colonies 7 / 18
+world traits: rock 7, terran 3, super 4, dwarf 6, mini 3, gas 1, ice giant 2 | Z 0.0122 L 0.77 belts 1
+photo deck: rock world, terran world, super-Earth, dwarf world, mini world, gas giant, ice giant · candidates photos/space/terran-2.jpg photos/space/terran-2.png photos/space/terran.jpg photos/space/terran.png
+colonies at t+07:00: 14 stages outpost 0, settlement 0, town 6, city 8 log entries 40
+after drag: status armed · P0 aim 320 px/s · 16.7° · +5 (5 sys) path 4.8 s · left field calc 570 steps · 0.00 ms launch disabled false
+trajectory length 1495 px time to end 4.8 s · left field
+after click (no drag): status armed · P0 path 4.8 s · left field launch disabled false
+after launch: status in flight flight 0.02 s · 5 px
+fine aim: — -> 173 px/s · 0.0° · fine · +3 (5 sys)
+gravity edit: P0 · g -1.50 repel slider -1.50
+trim +5% / -5%: 237 px/s · 9.5° · +4 (6 sys) -> 249 px/s · 9.5° · +4 (6 sys) -> 224 px/s · 9.5° · +3 (5 sys) target aim speed thumb after release 0
+experimental panel: g ×0.50 · force ×1.50
+paused trade: t+ 07:00 -> t+ 07:00 | exp: exp + 00:00.4 -> exp + 00:01.2
+after clear: ready flight —
+gravity source ports · moving
+ports drag: status armed · P21 selected port 0 · g +1.00 launch disabled false
+ports trajectory while centres move: 0.5 s · left field|147 px -> 0.5 s · left field|148 px
+gravity source back to planets
+after resize scale 0.710 offX 72.0 canvas 1280x800 · photo compact fold OK
+moons & belts: 324 points, 34 tracks · Kepler OK
+help: lab by default; hovered/held mode radios preview their own goal + score
+adaptive trajectory updates: 60fps 30/30, 33fps 11/24 (interval 4)
+photo cards: space P14 -> landed P14 · gas giant
+grand tour verified: 5.0 s · time cap -> 16.8 s · impact P14 | visited 6 / 26 | next base P14
+game idle: trade t+ 07:00 · clock game + 00:00.0 · seed seed 7 · ×2 · rival EVEN
+money after abort: purse 2.25 · toast P14 +0.25 · cost −1.00 · purse 2.25
+game flight: aborted at step 57 · trade t+ 0.950 min · clock game + 00:00.4
+game score: 6 / 26 · R1 5 / 26 · impact P10 · clock paused · watched at ×4 then reset
+replay link: #game=1&seed=7&rate=2&bot=normal&shots=p0.0.2mtc.1l_p0.0.2mtc&end=6.1009
+replay verdict: verified ✓ · purse 2.12 · cargo end identical, trade t identical
+broke run: launch refused, purse 0.40 · need 1.00
+route best: 1211 px restored after 160 px/s weaker adjustment
+route planner: 1211 px · rival 10325 px · leader · R1 · 10325 px · traced 7.9 s in 953 points · occupied P2 refused
+route replay: verified ✓ · 1211 px · 78 char link · world stayed at t+07:00
+YOU=bot: route planned 2081 px · tour auto-launched from P2
+money & rivals UI: money · 10 shots · hard R1/R2 + solo verified
+challenge link: seed 42 ×1 locked · fallback field ml#game=1&seed=42&rate=1 · invalid link noted
+solo money: 3 shots · broke flight landed · purse 0.56
+experimental link: #game=1&seed=42&rate=1&rule=career&gs=0.8&fs=1.5 -> g ×0.80 · force ×1.50
+career drawer: built P25 · bulk EMC-2 · hold HOLD-24 · wait contract dropped
+career gate: stranded P11 -> built EMC-1 · relaunched from P11 · pads 2
+career: HQ P21 · limit 92 px/s · stranded P2 → evacuated · shop · wait · endgame cheat link ok
+0.4.7 verified: field view 1/4 (63165 lit px), panel +1.12 kWh · ready in 27 s, wait settlement & armed clamp ok
+0.4.8 verified: 8 t → 24 t · 111 → 101 px/s · free back refit · engine strip (data-tier -1) · cargo-blocked down-refit
+paint calls { fillText: 12251, stroke: 579353, fill: 225359 }
+SMOKE OK

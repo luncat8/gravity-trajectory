@@ -550,6 +550,65 @@ check('career competition: pays once for a long enough landing flight from its p
 	assert.ok(seen >= 6, 'competitions appear sometimes: ' + seen);
 });
 
+check('career ship refit: reversible to any owned tier, mass feeds the HQ cap, Δv from tank × engine', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career } = w;
+	const ship = career.ship;
+	assert.ok(career.owned['HOLD-0'] && career.owned['FT-0'], 'starter fit owned from the start');
+	assert.strictEqual(OrbitTech.shipMass(ship, 0), dry());
+	/* refitMass substitutes one slot and leaves cargo alone */
+	assert.strictEqual(OrbitTech.refitMass(ship, 'hold', HOLD[2], 0), dry() + HOLD[2].emptyMass);
+	assert.strictEqual(OrbitTech.refitMass(ship, 'hold', HOLD[2], 6), dry() + HOLD[2].emptyMass + 6);
+	assert.strictEqual(OrbitTech.refitMass(ship, null, null, 2), dry() + 2);
+	/* buying up costs once; fitting back to the owned tier is free and restores the mass */
+	const purse = career.ledger.purse;
+	assert.ok(GravityGame.installPart(career, 'hold', HOLD[2]));
+	assert.strictEqual(career.ledger.purse, purse - HOLD[2].buildCost);
+	assert.strictEqual(career.ship.mass, OrbitTech.refitMass(ship, 'hold', HOLD[2], 0));
+	const heavyCap = OrbitTech.speedLimit(BAT[0].capacity, career.ship.mass, EMC[0]);
+	const dryMass = OrbitTech.shipMass({ hold: HOLD[0], engine: null, tank: OrbitTech.TANKS[0] }, 0);
+	assert.ok(OrbitTech.speedLimit(BAT[0].capacity, dryMass, EMC[0]) > heavyCap, 'a hold costs rail speed');
+	assert.ok(GravityGame.installPart(career, 'hold', HOLD[0]));
+	assert.strictEqual(career.ledger.purse, purse - HOLD[2].buildCost, 'going back is free');
+	assert.strictEqual(career.ship.mass, dryMass);
+	assert.ok(GravityGame.installPart(career, 'hold', HOLD[2]), 'owned part fits again without paying');
+	assert.strictEqual(career.ledger.purse, purse - HOLD[2].buildCost);
+	career.ship.cargoTons = 12;
+	career.ship.mass = OrbitTech.shipMass(career.ship, 12);
+	assert.ok(!GravityGame.installPart(career, 'hold', HOLD[1]), 'cargo keeps the hold at least as big');
+	career.ship.cargoTons = 0;
+	career.ship.mass = OrbitTech.shipMass(career.ship, 0);
+	/* a stripped engine is a valid fit; a null hold/tank is not */
+	career.ledger.purse = 20;
+	assert.ok(GravityGame.installPart(career, 'engine', OrbitTech.ENGINES[0]));
+	assert.ok(GravityGame.installPart(career, 'engine', null));
+	assert.strictEqual(career.ship.engine, null);
+	assert.ok(!GravityGame.installPart(career, 'hold', null));
+	assert.ok(!GravityGame.installPart(career, 'tank', null));
+	/* Δv: tank fuel × engine Isp at the fitted mass, zero without either half */
+	assert.strictEqual(OrbitTech.shipDeltaV(ship, 0), 0);
+	ship.engine = OrbitTech.ENGINES[1];
+	assert.strictEqual(OrbitTech.shipDeltaV(ship, 0), 0, 'no fuel, no Δv');
+	const tankDv = OrbitTech.refitDeltaV(ship, 'tank', OrbitTech.TANKS[2], 0);
+	assert.ok(tankDv > 0);
+	assert.ok(Math.abs(tankDv - OrbitTech.impulseDeltaV(OrbitTech.TANKS[2].fuelCap,
+		OrbitTech.ENGINES[1], OrbitTech.refitMass(ship, 'tank', OrbitTech.TANKS[2], 0))) < 1e-12);
+	ship.tank = OrbitTech.TANKS[2];
+	assert.ok(Math.abs(OrbitTech.shipDeltaV(ship, 0) - tankDv) < 1e-12, 'whole-fit Δv equals the refit Δv');
+	assert.ok(OrbitTech.refitDeltaV(ship, 'engine', OrbitTech.ENGINES[2], 0) > tankDv, 'a hotter engine adds Δv');
+	assert.ok(OrbitTech.shipDeltaV(ship, 20) < OrbitTech.shipDeltaV(ship, 0), 'cargo eats Δv');
+	/* the endgame cheat owns every part, so its heavy fit can also go back down */
+	const e = makeWorld(42);
+	startCareer(e, 42, GravityGame.CHEAT_ENDGAME);
+	for (let k = 0; k < OrbitTech.PART_KINDS.length; k++) {
+		const table = OrbitTech.TABLES[OrbitTech.PART_KINDS[k]];
+		for (let i = 0; i < table.length; i++) assert.ok(e.career.owned[table[i].id], table[i].id + ' not owned');
+	}
+	assert.ok(GravityGame.installPart(e.career, 'hold', HOLD[1]));
+	assert.strictEqual(e.career.ship.hold, HOLD[1]);
+});
+
 check('career bulk upgrade: total before, every built pad after, unbuilt untouched', () => {
 	const w = makeWorld(42);
 	startCareer(w, 42);

@@ -499,6 +499,9 @@
 		career.ship.tank = grant.ship.tank;
 		career.ship.cargoTons = 0;
 		career.owned = {};
+		/* the starter fit is owned from the start, so every refit is reversible */
+		ownPart(career, career.ship.hold);
+		ownPart(career, career.ship.tank);
 		fitPad(career, career.hq, grant.pad.catapult, grant.pad.panel, grant.pad.battery);
 		if (career.cheat === CHEAT_ENDGAME) fitEndgame(career);
 		refitShip(career);
@@ -519,11 +522,19 @@
 		return table[table.length - 1];
 	}
 
-	/* endgame cheat: every pad at top tier, the ship fully fitted */
+	function ownPart(career, item) {
+		if (item !== null) career.owned[item.id] = true;
+	}
+
+	/* endgame cheat: every pad at top tier, every ship part owned and the ship fully fitted */
 	function fitEndgame(career) {
 		for (let i = 0; i < career.pads.length; i++) {
 			fitPad(career, i, topTier(OrbitTech.CATAPULTS), topTier(OrbitTech.PANELS),
 				topTier(OrbitTech.BATTERIES));
+		}
+		for (let k = 0; k < OrbitTech.PART_KINDS.length; k++) {
+			const table = OrbitTech.TABLES[OrbitTech.PART_KINDS[k]];
+			for (let i = 0; i < table.length; i++) ownPart(career, table[i]);
 		}
 		career.ship.hold = topTier(OrbitTech.HOLDS);
 		career.ship.engine = topTier(OrbitTech.ENGINES);
@@ -597,14 +608,16 @@
 		return true;
 	}
 
-	/* ship parts are refitted at HQ; a bought part stays owned, so swapping back is free */
+	/* ship parts are refitted at HQ; a bought part stays owned, so swapping back
+	 * to a lighter owned tier is free; only the engine has a `null` = none step */
 	function installPart(career, kind, item) {
 		if (career.at !== career.hq || career.ship[kind] === item) return false;
+		if (item === null && kind !== OrbitTech.KIND_ENGINE) return false;
 		if (kind === OrbitTech.KIND_HOLD && item.capacity < career.ship.cargoTons) return false;
 		if (item !== null && !career.owned[item.id]) {
 			if (!canPay(career, item.buildCost)) return false;
 			career.ledger.purse -= price(career, item.buildCost);
-			career.owned[item.id] = true;
+			ownPart(career, item);
 		}
 		career.ship[kind] = item;
 		refitShip(career);

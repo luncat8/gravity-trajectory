@@ -107,13 +107,26 @@
 
 	/* --- ship ---------------------------------------------------------- */
 
+	/* mass one part record adds to the hull: holds/tanks carry `emptyMass`,
+	 * engines `mass`; the engine slot alone can hold `null` = no engine */
+	function partMass(item) {
+		if (item === null) return 0;
+		return item.emptyMass === undefined ? item.mass : item.emptyMass;
+	}
+
+	/* ship with `item` fitted in `kind`, cargo and every other slot as they are;
+	 * `kind` null leaves the whole fit as it is (the plain ship mass) */
+	function refitMass(ship, kind, item, cargoTons) {
+		let m = SHIP_DRY_MASS + cargoTons;
+		if (kind !== KIND_HOLD) m += partMass(ship.hold);
+		if (kind !== KIND_ENGINE) m += partMass(ship.engine);
+		if (kind !== KIND_TANK) m += partMass(ship.tank);
+		return m + partMass(item);
+	}
+
 	/* ship = { hold, engine, tank } records (engine may be null) */
 	function shipMass(ship, cargoTons) {
-		let m = SHIP_DRY_MASS;
-		if (ship.hold) m += ship.hold.emptyMass;
-		if (ship.engine) m += ship.engine.mass;
-		if (ship.tank) m += ship.tank.emptyMass;
-		return m + cargoTons;
+		return refitMass(ship, null, null, cargoTons);
 	}
 
 	function launchEnergy(mass, catapult, speed) {
@@ -152,6 +165,19 @@
 	function impulseDeltaV(fuelKg, engine, shipMassT) {
 		if (!engine || fuelKg <= 0 || shipMassT <= 0) return 0;
 		return G0 * engine.isp * Math.log((shipMassT + fuelKg / 1000) / shipMassT);
+	}
+
+	/* Δv the tank's full fuel buys with the engine fitted after refitting
+	 * `item` into `kind` (the whole current fit when kind is null) */
+	function refitDeltaV(ship, kind, item, cargoTons) {
+		const engine = kind === KIND_ENGINE ? item : ship.engine;
+		const tank = kind === KIND_TANK ? item : ship.tank;
+		if (engine === null || tank === null) return 0;
+		return impulseDeltaV(tank.fuelCap, engine, refitMass(ship, kind, item, cargoTons));
+	}
+
+	function shipDeltaV(ship, cargoTons) {
+		return refitDeltaV(ship, null, null, cargoTons);
 	}
 
 	/* --- planet-gear economics ----------------------------------------- */
@@ -195,7 +221,8 @@
 		KIND_CATAPULT, KIND_PANEL, KIND_BATTERY, KIND_HOLD, KIND_ENGINE, KIND_TANK, KIND_HELPER,
 		GEAR_KINDS, PART_KINDS,
 		find, findKind,
-		shipMass, launchEnergy, maxSpeed, speedLimit, canLaunch,
+		shipMass, partMass, refitMass, shipDeltaV, refitDeltaV,
+		launchEnergy, maxSpeed, speedLimit, canLaunch,
 		solarCharge, batteryLeak, impulseDeltaV,
 		upgrades, bulkUpgradeCost, starterGrant, copySpec
 	};

@@ -1403,16 +1403,29 @@ function shopClick(env, ui, data) {
 function taskClick(env, ui, data) {
 	env.fireElement(ui.get('careerBox'), 'click', { target: { dataset: data } });
 }
-/* the data-* of the first rendered shop button, so the test clicks the real markup */
-function shopData(ui, act, kind) {
+/* every rendered shop button of one act+kind in DOM order, so the test clicks the real markup */
+function shopButtons(ui, act, kind) {
 	const html = ui.get('careerShop').innerHTML;
 	const tags = html.match(new RegExp('<button[^>]*data-act="' + act + '"[^>]*>', 'gi')) || [];
+	const out = [];
 	for (let i = 0; i < tags.length; i++) {
 		const kindMatch = /data-kind="([^"]+)"/.exec(tags[i]);
 		if (!kindMatch || kindMatch[1] !== kind) continue;
-		return { act, kind, tier: /data-tier="(\d+)"/.exec(tags[i])[1] };
+		out.push({
+			act,
+			kind,
+			tier: /data-tier="(-?\d+)"/.exec(tags[i])[1],
+			disabled: /\sdisabled(?=>|\s)/.test(tags[i]),
+			title: /title="([^"]*)"/.exec(tags[i])[1]
+		});
 	}
-	return null;
+	return out;
+}
+function shopData(ui, act, kind) {
+	return shopButtons(ui, act, kind)[0] || null;
+}
+function shopTier(ui, act, kind, tier) {
+	return shopButtons(ui, act, kind).find(button => button.tier === tier) || null;
 }
 check(shopCareer.cheat === 'communism' && sui.get('careerEvac').textContent === 'evacuate · free',
 	'communism career: ' + sui.get('careerEvac').textContent);
@@ -1440,10 +1453,59 @@ check(holdBtn !== null, 'no rendered hold button');
 shopClick(shopEnv, sui, holdBtn);
 check(holdBefore === 'HOLD-0' && shopCareer.ship.hold.id === 'HOLD-8',
 	'first hold refit: ' + shopCareer.ship.hold.id);
+/* the hold row prints the fit's tons and the HQ cap the next tier costs */
+const sTech = shopEnv.context.OrbitTech;
+const sPad = shopCareer.pads[shopCareer.hq];
+function shopCap(mass) {
+	return Math.min(pageSim.SPEED_MAX, sTech.speedLimit(sPad.battery.capacity, mass, sPad.catapult, 1));
+}
+const holdCargo = shopCareer.ship.cargoTons;
+const mass8 = sTech.refitMass(shopCareer.ship, 'hold', sTech.HOLDS[1], holdCargo);
+const mass24 = sTech.refitMass(shopCareer.ship, 'hold', sTech.HOLDS[2], holdCargo);
+const expectHoldCap = '8 t → 24 t · ' + Math.round(shopCap(mass8)) + ' → ' +
+	Math.round(shopCap(mass24)) + ' px/s';
+check(sui.get('careerShop').innerHTML.includes('>' + expectHoldCap + '<'),
+	'hold row cap: expected ' + expectHoldCap + ' in ' + sui.get('careerShop').innerHTML);
 holdBtn = shopData(sui, 'part', 'hold');
 shopClick(shopEnv, sui, holdBtn);
 check(shopCareer.ship.hold.id === 'HOLD-24' && shopCareer.ship.mass > 13,
 	'big hold refit: ' + shopCareer.ship.hold.id + ' · ' + shopCareer.ship.mass.toFixed(1) + ' t');
+/* the way back to a lighter owned tier is free and restores the mass and the cap */
+const purseBack = shopCareer.ledger.purse;
+const heavyMass = shopCareer.ship.mass;
+let backHold = shopData(sui, 'part', 'hold');
+check(backHold !== null && backHold.tier === '1' && !backHold.disabled,
+	'no free back button to the owned HOLD-8: ' + (backHold && backHold.title));
+shopClick(shopEnv, sui, backHold);
+check(shopCareer.ship.hold.id === 'HOLD-8' && shopCareer.ship.mass < heavyMass &&
+	shopCareer.ledger.purse === purseBack,
+	'back refit: ' + shopCareer.ship.hold.id + ' · ' + shopCareer.ship.mass.toFixed(1) + ' t');
+shopClick(shopEnv, sui, shopData(sui, 'part', 'hold'));
+check(shopCareer.ship.hold.id === 'HOLD-24' && shopCareer.ledger.purse === purseBack,
+	'owned HOLD-24 charged again: ' + shopCareer.ledger.purse.toFixed(2));
+/* an engine can be stripped back to `no engine`, the lightest fit */
+shopClick(shopEnv, sui, shopData(sui, 'part', 'engine'));
+check(shopCareer.ship.engine !== null && shopCareer.ship.engine.id === 'IMP-1',
+	'engine refit: ' + (shopCareer.ship.engine && shopCareer.ship.engine.id));
+shopClick(shopEnv, sui, shopData(sui, 'part', 'tank'));
+check(sui.get('careerPad').innerHTML.includes('· Δv '),
+	'pad line does not state the impulse budget: ' + sui.get('careerPad').innerHTML);
+const engineMass = shopCareer.ship.mass;
+const stripEngine = shopTier(sui, 'part', 'engine', '-1');
+check(stripEngine !== null && stripEngine.tier === '-1', 'no strip-engine button: ' +
+	(sui.get('careerShop').innerHTML));
+shopClick(shopEnv, sui, stripEngine);
+check(shopCareer.ship.engine === null && shopCareer.ship.mass < engineMass,
+	'engine strip: ' + (shopCareer.ship.engine === null) + ' · ' + shopCareer.ship.mass.toFixed(1) + ' t');
+/* a down-refit that would drop the cargo is offered but disabled */
+shopCareer.ship.cargoTons = 12;
+shopCareer.ship.mass = sTech.shipMass(shopCareer.ship, 12);
+sScene.refreshCareerPanel();
+check(shopData(sui, 'part', 'hold').disabled, 'cargo does not block a smaller hold');
+shopCareer.ship.cargoTons = 0;
+shopCareer.ship.mass = sTech.shipMass(shopCareer.ship, 0);
+sScene.refreshCareerPanel();
+check(!shopData(sui, 'part', 'hold').disabled, 'empty hold still blocked by cargo');
 let offer = -1;
 for (let i = 0; i < shopCareer.tasks.length && offer < 0; i++) {
 	if (sGame.canAccept(shopCareer, i)) offer = i;
@@ -1677,6 +1739,8 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 		'endgame x3 force clamps pad and shop readouts at 320 px/s');
 	console.log('0.4.7 verified: field view 1/4 (' + litPixels + ' lit px), panel ' +
 		expectPanelCap + ', wait settlement & armed clamp ok');
+	console.log('0.4.8 verified: ' + expectHoldCap + ' · free back refit · engine strip ' +
+		'(data-tier -1) · cargo-blocked down-refit');
 }
 
 console.log('paint calls', {

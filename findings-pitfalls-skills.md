@@ -231,6 +231,16 @@ prediction buffers round away exactly the differences being measured.
 - Put the deciding number before the gear id in a `<select>`: a narrow picker
 	clips the tail, and `P4 · 118 px/s · EMC-2` survives that better than
 	`P4 · EMC-2 · 118 px/s`.
+- Mass is a purchase too: a heavier part buys nothing a lighter one does not, so
+	every ship-part row prints what it adds (`8 → 24 t`, `40 → 90 kg`) **and** the
+	HQ pad cap it costs (`88 → 78 px/s`, from the same `speedLimit` the launch
+	button gates on). Without the second number the shop sells a downforce the
+	player only discovers when the rail refuses to fire.
+- Make refits reversible in the data, not in the markup: own every bought part
+	(`career.owned[id]`), charge only for a part that is not owned, and price the
+	starter fit as owned from the first frame — then "buy up" and "fit back down"
+	are the same call and cannot drift. Offer the *heaviest owned tier below* the
+	fitted one so a three-tier table still has a one-click way back.
 
 ## an armed drag input outlives its range
 
@@ -266,3 +276,10 @@ prediction buffers round away exactly the differences being measured.
 - In `dom_stub.js`, `getContext('webgl')` ignores its argument and returns the
 	2D paint stub; guard WebGL init with `gl && typeof gl.createShader === 'function'`
 	so headless tests exercise the 1/4-resolution 2D fallback cleanly.
+- A canvas keeps the **first** context type it was given: `getContext('2d')` on a
+	canvas that once had `webgl` returns `null` for the life of the element, so a
+	`webglcontextlost` handler cannot "fall back to 2D in place" — the field just
+	freezes. Rebuild the program/buffer on `webglcontextrestored` and expose a
+	`lost` backend so the page can show the plain starfield until then. Mock the
+	canvas that way in the bench (`getContext('2d')` → `null` once WebGL was
+	asked for), or the dead fallback passes headless while breaking in a browser.
