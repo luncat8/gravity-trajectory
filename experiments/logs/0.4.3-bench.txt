@@ -1,0 +1,7 @@
+0.4.3 flat mode row + career drawer
+
+DOM smoke: flat mode row (career | lab | visit all tour | route length | money for visit) drives run start/stop; help drawer starts on lab and previews a mode on hover; ?mode=career starts the career with its drawer, lab -> money keeps the rival row and hides the drawer; career page shows careerTag 'HQ P21', pad block (EMC-1 · SP-1 · BAT-1 · 1.50 / 1.50 kWh, max 111 px/s), shop + board markup, stranded pad block, evacuate button (fee 5.00, disabled at HQ), full gate launch -> strand P11 -> build EMC-1 from the pad block -> relaunch, and the drawer with free gear (pick planet -> build EMC-1 on P25 -> bulk EMC-2 on both pads -> hold HOLD-0 -> 8 -> 24 -> accept/drop delivery -> wait 30 min advances clock + world and charges the far pad). SMOKE OK.
+Layout (headless Chromium 153, 8 sizes 390x700 ... 1440x900): route flow unchanged, plus ?mode=career per size: foot row above the trade footer (max gap 22 px), drawer inside the panel, 15 shop buttons, no page error. LAYOUT CHECK OK.
+Game: scripted tour 26 / 26 in 8 shots (6066 steps); route 1614 px; money tours 12 s / 60 s replay the purse exactly; broke run 3 shots refused; cross-engine proxy 0 outcome flips. GAME BENCH OK.
+Bot: full decision easy/normal/hard 6.5/16.9/41.2 ms, worst 64-cand slice 4.1 ms. BOT BENCH OK.
+Gravity: worst 2.3 ms of the 10 ms cap. Route: buffers keep identity. Career: 26 checks. Colony: OK.

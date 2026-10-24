@@ -301,7 +301,7 @@ function playRoute() {
 	const scene = page.context.GravityScene;
 	const cargo = scene.sim;
 	page.runFrames(2, 16.7);
-	page.choose('ruleRoute');
+	page.choose('modeRoute');
 	page.runFrames(1, 16.7);
 	if (scene.rule() !== GravityGame.RULE_ROUTE) throw new Error('rule did not switch');
 	if (!page.elements.get('launch').disabled) throw new Error('route planner left launch enabled');

@@ -345,28 +345,35 @@ function allHelpText() {
 		ui.get('helpControls').textContent;
 }
 env.fireElement(ui.get('helpBtn'), 'pointerenter', { pointerType: 'mouse' });
-if (!gScene.helpOpen() || gScene.helpRule() !== 'tour') {
-	throw new Error('help hover did not open on the selected tour rule');
+if (!gScene.helpOpen() || gScene.helpRule() !== 'lab') {
+	throw new Error('help hover did not open on the default lab mode');
 }
 env.fireElement(ui.get('helpBtn'), 'pointerleave', {});
 if (gScene.helpOpen()) throw new Error('hover help did not close on leave');
 gScene.setHelpOpen(true);
-if (!gScene.helpOpen() || gScene.helpRule() !== 'tour' ||
-	ui.get('helpRuleName').textContent !== 'tour' ||
-	!ui.get('helpScore').textContent.startsWith('Most systems.') ||
+if (!gScene.helpOpen() || gScene.helpRule() !== 'lab' ||
+	ui.get('helpRuleName').textContent !== 'lab' ||
+	ui.get('helpScore').textContent !== 'No score.' ||
+	allHelpText().includes('Most systems.') ||
 	allHelpText().includes('Trajectory length only') ||
 	allHelpText().includes('10-launch contract')) {
-	throw new Error('tour help is not selected-rule-only: ' + allHelpText());
+	throw new Error('lab help is not selected-rule-only: ' + allHelpText());
 }
-env.fireElement(ui.get('ruleRoute'), 'pointerenter', { pointerType: 'mouse' });
+env.fireElement(ui.get('modeTour'), 'pointerenter', { pointerType: 'mouse' });
+if (!gScene.helpOpen() || gScene.helpRule() !== 'tour' ||
+	!ui.get('helpScore').textContent.startsWith('Most systems.')) {
+	throw new Error('hovered tour mode did not preview tour help: ' + allHelpText());
+}
+env.fireElement(ui.get('modeTour'), 'pointerleave', {});
+env.fireElement(ui.get('modeRoute'), 'pointerenter', { pointerType: 'mouse' });
 if (!gScene.helpOpen() || gScene.helpRule() !== 'route') {
 	throw new Error('hovered route radio did not preview route help');
 }
-env.fireElement(ui.get('ruleRoute'), 'pointerleave', {});
-if (!gScene.helpOpen() || gScene.helpRule() !== 'tour') {
-	throw new Error('pinned help did not return to selected tour after radio hover');
+env.fireElement(ui.get('modeRoute'), 'pointerleave', {});
+if (!gScene.helpOpen() || gScene.helpRule() !== 'lab') {
+	throw new Error('pinned help did not return to the selected lab mode after hover');
 }
-env.fireElement(ui.get('ruleRoute'), 'pointerdown', { pointerType: 'mouse' });
+env.fireElement(ui.get('modeRoute'), 'pointerdown', { pointerType: 'mouse' });
 if (!gScene.helpOpen() || gScene.helpRule() !== 'route' ||
 	!ui.get('helpRuleName').textContent.startsWith('route') ||
 	!ui.get('helpScore').textContent.startsWith('Trajectory length only') ||
@@ -374,19 +381,19 @@ if (!gScene.helpOpen() || gScene.helpRule() !== 'route' ||
 	allHelpText().includes('10-launch contract')) {
 	throw new Error('pressed route radio did not show route help: ' + allHelpText());
 }
-env.fireElement(ui.get('ruleRoute'), 'pointerup', { pointerType: 'mouse' });
-if (!gScene.helpOpen() || gScene.helpRule() !== 'tour') {
-	throw new Error('pinned help did not return to the selected tour rule');
+env.fireElement(ui.get('modeRoute'), 'pointerup', { pointerType: 'mouse' });
+if (!gScene.helpOpen() || gScene.helpRule() !== 'lab') {
+	throw new Error('pinned help did not return to the selected lab mode');
 }
-env.fireElement(ui.get('ruleMoney'), 'pointerdown', { pointerType: 'mouse' });
+env.fireElement(ui.get('modeMoney'), 'pointerdown', { pointerType: 'mouse' });
 if (!gScene.helpOpen() || gScene.helpRule() !== 'money' ||
 	!ui.get('helpScore').textContent.startsWith('Highest purse.')) {
 	throw new Error('pressed money radio did not show money help: ' + allHelpText());
 }
-env.fireElement(ui.get('ruleMoney'), 'pointerup', { pointerType: 'mouse' });
+env.fireElement(ui.get('modeMoney'), 'pointerup', { pointerType: 'mouse' });
 env.fireElement(ui.get('helpClose'), 'click', {});
 if (gScene.helpOpen()) throw new Error('help close failed');
-console.log('help: selected tour only; pressed route/money radios preview their own goal + score');
+console.log('help: lab by default; hovered/held mode radios preview their own goal + score');
 
 /* 60 fps adaptive trajectory cadence vs sub-60 fps throttling */
 env.fireElement(ui.get('clear'), 'click', {});
@@ -567,7 +574,7 @@ function dragShot(shot) {
 	env.runFrames(2, 16.0);
 }
 
-env.choose('modeGame');
+env.choose('modeTour');
 env.calls.texts.length = 0;
 env.runFrames(1, 16.0);
 check(ui.get('rivalTag').textContent.startsWith('thinking '),
@@ -575,8 +582,8 @@ check(ui.get('rivalTag').textContent.startsWith('thinking '),
 check(env.calls.texts.includes('+0.25') && env.calls.texts.includes('R1'),
 	'canvas did not draw +0.25 planet profit pills and R1 tag: ' + env.calls.texts.join(' '));
 env.runFrames(8, 16.0);
-check(ui.get('modeTag').textContent === 'game · clock runs in flight', 'game mode tag: ' + ui.get('modeTag').textContent);
-check(!ui.get('gameBox').hidden && game.on && game.seed === 7, 'game box / seed');
+check(ui.get('modeTag').textContent === 'run · clock runs in flight', 'game mode tag: ' + ui.get('modeTag').textContent);
+check(!ui.get('runBox').hidden && game.on && game.seed === 7, 'game box / seed');
 check(!ui.get('scoreHud').hidden, 'game scoreboard should be visible above the trade HUD');
 check(ui.get('scoreRuleTag').textContent.startsWith('tour ·'), 'tour scoreboard rule label');
 check(!ui.get('scoreRival1').hidden && ui.get('scoreRival2').hidden,
@@ -738,7 +745,7 @@ check(game.shots.length === 2, 'a broke run accepted a launch');
 console.log('broke run: launch refused,', ui.get('launch').textContent);
 
 /* route rule: one traced plan per player; longest finished trajectory leads */
-env.choose('ruleRoute');
+env.choose('modeRoute');
 env.runFrames(2, 16.0);
 check(game.on && gScene.rule() === 'route' && game.shots.length === 0, 'rule switch did not restart the run');
 check(ui.get('ruleTag').textContent === 'route · longest one plan', 'rule tag: ' + ui.get('ruleTag').textContent);
@@ -999,7 +1006,7 @@ const botLink = env.clipboardText || '';
 const botDecoded = pageGame.decodeLink(botLink.slice(botLink.indexOf('#')));
 check(botDecoded && botDecoded.player === 'bot' && botDecoded.shots.length === 1,
 	'YOU=bot route link: ' + botLink);
-env.choose('ruleTour');
+env.choose('modeTour');
 env.runFrames(2, 16.0);
 for (let i = 0; i < 500 && game.shots.length === 0; i++) env.runFrames(1, 16.0);
 check(gScene.rule() === 'tour' && gScene.playerType() === 'bot' && game.shots.length >= 1,
@@ -1017,7 +1024,7 @@ check(!ui.get('playerBot').disabled && cargo.status !== pageSim.STATUS_FLYING,
 	'taking control back mid-bot-flight did not restart the run as a user');
 
 /* money rule + hard rivals (2 rivals on canvas) + solo toggle */
-env.choose('ruleMoney');
+env.choose('modeMoney');
 env.choose('botHard');
 env.calls.texts.length = 0;
 env.runFrames(2, 16.0);
@@ -1042,7 +1049,7 @@ console.log('money & rivals UI:', ui.get('ruleTag').textContent, '· hard R1/R2 
 
 env.choose('modeLab');
 env.runFrames(2, 16.0);
-check(ui.get('modeTag').textContent === 'lab · free clock' && ui.get('gameBox').hidden, 'back to lab');
+check(ui.get('modeTag').textContent === 'lab · free clock' && ui.get('runBox').hidden, 'back to lab');
 check(ui.get('scoreHud').hidden, 'scoreboard should hide in lab mode');
 check(!ui.get('tradePause').disabled && !ui.get('tradeSpeed').disabled, 'lab controls still locked');
 const labT = sim.t;
@@ -1107,7 +1114,18 @@ check(career.at === career.hq && kCargo.landedBody === career.hq && career.padCo
 check(kui.get('cargoStatus').textContent === 'landed P' + career.hq + ' · clock paused',
 	'career status: ' + kui.get('cargoStatus').textContent);
 check(kui.get('ruleTag').textContent === 'career · 1 / 26 pads', 'career rule tag: ' + kui.get('ruleTag').textContent);
-check(kui.get('rivalTag').textContent === 'solo' && kui.get('rivalRow').hidden, 'career hides rivals');
+check(kui.get('rivalTag').textContent === 'solo' && kui.get('rivalRow').hidden &&
+	kui.get('rivalGroup').hidden, 'career hides rivals');
+check(kui.get('modeCareer').checked && !kui.get('modeLab').checked && !kui.get('modeTour').checked &&
+	!kui.get('modeRoute').checked && !kui.get('modeMoney').checked, 'career radio owns the flat mode row');
+check(!kui.get('runBox').hidden && !kui.get('careerBox').hidden, 'career shows run + career boxes');
+check(kui.get('careerTag').textContent === 'HQ P' + career.hq,
+	'career tag: ' + kui.get('careerTag').textContent);
+check(kui.get('careerPad').innerHTML.includes('EMC-1') && kui.get('careerPad').innerHTML.includes('1.50 / 1.50 kWh'),
+	'career pad block: ' + kui.get('careerPad').innerHTML);
+check(kui.get('careerShop').innerHTML.includes('data-act="build"') &&
+	kui.get('careerShop').innerHTML.includes('data-act="part"'), 'career shop buttons missing');
+check(kui.get('careerTasks').innerHTML.includes('careerRow'), 'career task board empty');
 check(kui.get('gameScore').textContent === '6.00 purse', 'career score is the purse: ' + kui.get('gameScore').textContent);
 const noPad = (career.hq + 3) % pageWorld.PLANETS;
 careerEnv.dragAim(noPad, 0.7, 100);
@@ -1117,8 +1135,10 @@ const limit = kCargo.speedLimit(career.hq);
 check(limit > 100 && limit < 125, 'HQ speed limit ' + limit);
 careerEnv.dragAim(career.hq, 0.7, 200);
 careerEnv.runFrames(2, 16.0);
-check(kui.get('launch').disabled && kui.get('launch').textContent.startsWith('pad charge '),
+check(kui.get('launch').disabled && kui.get('launch').textContent.startsWith('pad '),
 	'over the limit the pad note shows: ' + kui.get('launch').textContent);
+check(kScene.game.career.light[career.hq] > 0 && kScene.game.career.pads[career.hq].catapult.id === 'EMC-1',
+	'career pad records');
 let landingShot = null;
 for (let a = 0; a < 72 && !landingShot; a++) {
 	const angle = a / 72 * Math.PI * 2;
@@ -1140,13 +1160,24 @@ for (let i = 0; i < 400 && kCargo.status === kSim.STATUS_FLYING; i++) careerEnv.
 check(kCargo.status === kSim.STATUS_ENDED && kCargo.endReason === kSim.END_IMPACT, 'career flight end ' + kCargo.endReason);
 check(career.at === kCargo.endBody && career.stranded, 'landing without a catapult must strand');
 check(kScene.game.money.purse >= purse0, 'no launch fee in career: ' + kScene.game.money.purse);
-check(kui.get('cargoStatus').textContent === 'stranded · build a catapult or evacuate',
+check(kui.get('cargoStatus').textContent === 'stranded · build or evacuate',
 	'stranded status: ' + kui.get('cargoStatus').textContent);
-check(kui.get('launch').disabled && kui.get('launch').textContent === 'stranded · build a catapult or evacuate',
+check(kui.get('launch').disabled && kui.get('launch').textContent === 'stranded · build or evacuate',
 	'stranded launch button: ' + kui.get('launch').textContent);
 const strandedAt = career.at;
-check(kGame.evacuate(career, kCargo) && career.at === career.hq && !career.stranded, 'evacuate home');
+check(kui.get('careerPad').innerHTML.includes('no catapult here'),
+	'stranded pad block: ' + kui.get('careerPad').innerHTML);
+check(!kui.get('careerEvac').disabled && kui.get('careerEvac').textContent === 'evacuate · 5.00',
+	'stranded evacuate button: ' + kui.get('careerEvac').textContent);
+const purseStranded = kScene.game.money.purse;
+careerEnv.click('careerEvac');
 careerEnv.runFrames(8, 40.0);
+check(career.at === career.hq && !career.stranded, 'evacuate button did not bring the ship home');
+check(Math.abs(kScene.game.money.purse - (purseStranded - 5)) < 1e-9,
+	'evacuation fee: ' + kScene.game.money.purse);
+check(kui.get('careerEvac').disabled, 'evacuate stays enabled at HQ');
+check(kui.get('careerMsg').textContent.startsWith('evacuated to HQ P' + career.hq),
+	'evacuation note: ' + kui.get('careerMsg').textContent);
 check(kui.get('cargoStatus').textContent === 'landed P' + career.hq + ' · clock paused',
 	'after evacuation: ' + kui.get('cargoStatus').textContent);
 careerEnv.click('gameCopy');
@@ -1155,6 +1186,19 @@ careerEnv.choose('modeLab');
 careerEnv.runFrames(2, 16.0);
 check(kCargo.pads === null && kCargo.landedBody === career.hq && kCargo.canLaunchFrom(career.hq),
 	'lab drops the launch network but keeps the landed ship');
+check(kui.get('careerBox').hidden && kui.get('runBox').hidden && kui.get('modeLab').checked,
+	'lab hides the run and career boxes');
+careerEnv.choose('modeMoney');
+careerEnv.runFrames(2, 16.0);
+check(kScene.rule() === 'money' && kScene.game.on && kui.get('careerBox').hidden &&
+	!kui.get('runBox').hidden && kui.get('modeMoney').checked, 'flat row: lab -> money for visit');
+check(!kui.get('rivalGroup').hidden, 'money keeps the rival row');
+const modeParamEnv = loadPage({ search: '?mode=career&seed=5&rate=1', clipboard: false });
+modeParamEnv.runFrames(2, 16.0);
+check(modeParamEnv.context.GravityScene.rule() === 'career' &&
+	modeParamEnv.elements.get('modeCareer').checked &&
+	!modeParamEnv.elements.get('modeLab').checked &&
+	!modeParamEnv.elements.get('careerBox').hidden, '?mode=career starts the career with its drawer');
 const cheatEnv = loadPage({ hash: '#game=1&seed=42&rate=1&rule=career&cheat=endgame', clipboard: false });
 cheatEnv.runFrames(2, 16.0);
 const cheatCareer = cheatEnv.context.GravityScene.career;
@@ -1166,9 +1210,143 @@ cheatEnv.click('gameCopy');
 check(cheatEnv.elements.get('gameLink').value.endsWith('&rule=career&cheat=endgame'), 'cheat survives the link');
 const badCheat = loadPage({ hash: '#game=1&seed=42&rate=1&rule=tour&cheat=endgame', clipboard: false });
 badCheat.runFrames(2, 16.0);
-check(badCheat.elements.get('modeTag').textContent === 'invalid game link', 'cheat outside career rejected');
+check(badCheat.elements.get('modeTag').textContent === 'invalid link · back to lab' &&
+	badCheat.elements.get('modeLab').checked, 'cheat outside career rejected');
+/* career drawer with free gear: build on a chosen planet, bulk upgrade, refit, accept, wait */
+const shopEnv = loadPage({ search: '?rule=career&cheat=communism&seed=42&rate=1', clipboard: false });
+shopEnv.runFrames(2, 16.0);
+const sui = shopEnv.elements;
+const sScene = shopEnv.context.GravityScene;
+const sGame = shopEnv.context.GravityGame;
+const shopCareer = sScene.career;
+/* the page listens on the drawer (bubbling), the stub fires on it directly */
+function shopClick(env, ui, data) {
+	env.fireElement(ui.get('careerBox'), 'click', { target: { dataset: data } });
+}
+function taskClick(env, ui, data) {
+	env.fireElement(ui.get('careerBox'), 'click', { target: { dataset: data } });
+}
+/* the data-* of the first rendered shop button, so the test clicks the real markup */
+function shopData(ui, act, kind) {
+	const html = ui.get('careerShop').innerHTML;
+	const tags = html.match(new RegExp('<button[^>]*data-act="' + act + '"[^>]*>', 'gi')) || [];
+	for (let i = 0; i < tags.length; i++) {
+		const kindMatch = /data-kind="([^"]+)"/.exec(tags[i]);
+		if (!kindMatch || kindMatch[1] !== kind) continue;
+		return { act, kind, tier: /data-tier="(\d+)"/.exec(tags[i])[1] };
+	}
+	return null;
+}
+check(shopCareer.cheat === 'communism' && sui.get('careerEvac').textContent === 'evacuate · free',
+	'communism career: ' + sui.get('careerEvac').textContent);
+const far = (shopCareer.hq + 4) % pageWorld.PLANETS;
+shopEnv.setValue('careerPlanet', far);
+shopEnv.runFrames(1, 16.0);
+check(sScene.careerPickPlanet() === far, 'planet selector: ' + sui.get('careerPlanet').value);
+const buildBtn = shopData(sui, 'build', 'catapult');
+check(buildBtn !== null, 'no rendered build button');
+shopClick(shopEnv, sui, buildBtn);
+check(shopCareer.pads[far].catapult && shopCareer.pads[far].catapult.id === 'EMC-1' &&
+	shopCareer.padCount === 2, 'shop build on the picked planet: ' +
+	(shopCareer.pads[far].catapult ? shopCareer.pads[far].catapult.id : 'none'));
+check(sui.get('careerMsg').textContent.startsWith('built EMC-1 on P' + far),
+	'shop build note: ' + sui.get('careerMsg').textContent);
+const bulkBtn = shopData(sui, 'bulk', 'catapult');
+check(bulkBtn !== null && /EMC-2/.test(sui.get('careerShop').innerHTML), 'bulk button missing');
+shopClick(shopEnv, sui, bulkBtn);
+check(shopCareer.pads[far].catapult.id === 'EMC-2' &&
+	shopCareer.pads[shopCareer.hq].catapult.id === 'EMC-2', 'bulk upgrade missed a pad: ' +
+	shopCareer.pads[far].catapult.id);
+const holdBefore = shopCareer.ship.hold.id;
+let holdBtn = shopData(sui, 'part', 'hold');
+check(holdBtn !== null, 'no rendered hold button');
+shopClick(shopEnv, sui, holdBtn);
+check(holdBefore === 'HOLD-0' && shopCareer.ship.hold.id === 'HOLD-8',
+	'first hold refit: ' + shopCareer.ship.hold.id);
+holdBtn = shopData(sui, 'part', 'hold');
+shopClick(shopEnv, sui, holdBtn);
+check(shopCareer.ship.hold.id === 'HOLD-24' && shopCareer.ship.mass > 13,
+	'big hold refit: ' + shopCareer.ship.hold.id + ' · ' + shopCareer.ship.mass.toFixed(1) + ' t');
+let offer = -1;
+for (let i = 0; i < shopCareer.tasks.length && offer < 0; i++) {
+	if (sGame.canAccept(shopCareer, i)) offer = i;
+}
+check(offer >= 0, 'no acceptable delivery offer on the board');
+taskClick(shopEnv, sui, { act: 'accept', slot: String(offer) });
+check(shopCareer.contract === offer, 'accept did not take the contract');
+check(sui.get('careerTasks').innerHTML.includes('load at') ||
+	sui.get('careerTasks').innerHTML.includes('loaded'),
+	'task board did not show the taken contract');
+shopCareer.pads[far].chargeKwh = 0.1;
+const waitSteps = sScene.game.clockSteps;
+const waitTrade = shopEnv.context.OrbitScene.sim.t;
+shopEnv.click('careerWait');
+const waitRate = shopEnv.context.OrbitScene.trade.speed;
+check(sScene.game.clockSteps === waitSteps + Math.round(30 / (pageSim.DT * waitRate)),
+	'wait advanced ' + (sScene.game.clockSteps - waitSteps) + ' steps, not 30 world minutes');
+check(Math.abs(shopEnv.context.OrbitScene.sim.t - (waitTrade + 30)) < 1e-6,
+	'wait moved the world ' + (shopEnv.context.OrbitScene.sim.t - waitTrade) + ' minutes');
+check(shopCareer.pads[far].chargeKwh > 0.1, 'wait did not charge the far pad: ' + shopCareer.pads[far].chargeKwh);
+check(sui.get('careerMsg').textContent.startsWith('waited 30 min'),
+	'wait note: ' + sui.get('careerMsg').textContent);
+taskClick(shopEnv, sui, { act: 'drop' });
+check(shopCareer.contract === -1 && shopCareer.ship.cargoTons === 0, 'drop kept the contract');
+console.log('career drawer:', 'built P' + far, '· bulk EMC-2 · hold', shopCareer.ship.hold.id,
+	'· wait', sui.get('careerMsg').textContent);
+/* the whole gate: land without a catapult, build one from the pad block, launch again */
+const buildEnv = loadPage({ search: '?rule=career&seed=7&rate=1', clipboard: false });
+buildEnv.runFrames(2, 16.0);
+const bui = buildEnv.elements;
+const bScene = buildEnv.context.GravityScene;
+const bCargo = bScene.sim;
+const bCareer = bScene.career;
+/* the quickest landing shot: a short flight keeps the smoke test fast */
+function landingAngle(sim, from, speed) {
+	let best = null;
+	let bestTime = Infinity;
+	for (let a = 0; a < 72; a++) {
+		const angle = a / 72 * Math.PI * 2;
+		sim.predict(from, angle, speed);
+		if (sim.predReason !== pageSim.END_IMPACT || sim.predBody === from) continue;
+		if (sim.predTime >= bestTime) continue;
+		best = angle;
+		bestTime = sim.predTime;
+	}
+	return best;
+}
+const firstAngle = landingAngle(bCargo, bCareer.hq, 100);
+check(firstAngle !== null, 'build env: no landing shot from HQ');
+buildEnv.dragAim(bCareer.hq, firstAngle, 100);
+buildEnv.runFrames(2, 16.0);
+buildEnv.click('launch');
+for (let i = 0; i < 400 && bCargo.status === pageSim.STATUS_FLYING; i++) buildEnv.runFrames(1, 40.0);
+check(bCargo.status === pageSim.STATUS_ENDED && bCargo.endReason === pageSim.END_IMPACT,
+	'build env: flight end ' + bCargo.endReason);
+check(bCareer.stranded && bCareer.at === bCargo.endBody, 'build env: did not strand on landing');
+const padBuild = /data-act="build"[^>]*data-kind="catapult"[^>]*data-tier="(\d+)"/.exec(bui.get('careerPad').innerHTML);
+check(padBuild !== null, 'pad block has no first-catapult button: ' + bui.get('careerPad').innerHTML);
+buildEnv.fireElement(bui.get('careerBox'), 'click',
+	{ target: { dataset: { act: 'build', kind: 'catapult', tier: padBuild[1] } } });
+check(!bCareer.stranded && bCareer.pads[bCareer.at].catapult.id === 'EMC-1' && bCareer.padCount === 2,
+	'pad block build did not unstrand: ' + bCareer.padCount);
+buildEnv.runFrames(2, 16.0);
+check(bui.get('launch').textContent === 'launch',
+	'new pad launch state: ' + bui.get('launch').textContent);
+const secondAngle = landingAngle(bCargo, bCareer.at, 100);
+check(secondAngle !== null, 'build env: no second flight from the new pad');
+const padCharge = bCareer.pads[bCareer.at].chargeKwh;
+buildEnv.dragAim(bCareer.at, secondAngle, 100);
+buildEnv.runFrames(2, 16.0);
+check(!bui.get('launch').disabled, 'an armed shot from the new pad is still disabled');
+buildEnv.click('launch');
+buildEnv.runFrames(2, 16.0);
+check(bCargo.status === pageSim.STATUS_FLYING && bCareer.flights === 2,
+	'second launch from the built pad: ' + bCargo.status + ' / ' + bCareer.flights);
+check(bCareer.pads[bCargo.origin].chargeKwh < padCharge, 'second launch did not draw the new pad');
+console.log('career gate: stranded P' + bCargo.landedBody, '-> built EMC-1 · relaunched from P' + bCargo.origin,
+	'· pads', bCareer.padCount);
 console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s · stranded P' + strandedAt,
-	'→ evacuated · endgame cheat link ok');
+	'→ evacuated · shop · wait · endgame cheat link ok');
 
 console.log('paint calls', {
 	fillText: env.calls.fillText,

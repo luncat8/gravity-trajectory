@@ -60,6 +60,27 @@ containers `pointer-events: none` and opt interactive children (`button`,
 `input`, `label`) back into `pointer-events: auto` so planets behind translucent
 HUD text stay selectable and launchable.
 
+### aiming through the panel
+
+A panel that sits over the screen corner where the ship's pad happens to be is
+a dead end when the canvas is the only pointer target: the press hits the
+panel, nothing happens, and the player has no way to aim at all. Let the press
+on the panel **padding** fall through to a world pick, but only when it lands on
+a body the ship may launch from and only outside `button, input, select, label`
+— then a normal drag starts. Panels are translucent and the pad is the biggest
+thing there, so the hit is predictable; `pointer-events: auto` on controls keeps
+every real control above it.
+
+### one flat mode row instead of mode + rule
+
+`lab | game` with a `[hidden]` rule group inside is two decisions for one
+choice, and a JS-hidden box is a layout the CSS cannot see (the panel reserves
+no space for it, `:has()` selectors cannot reach it). Ship one flat radio row
+keyed by rule name (`lab` is the "no rule" value) and let the same table drive
+labels, the help drawer preview, `?mode=`/`?rule=` parsing and the run restart;
+a single `syncModeRadios()` called from the HUD refresh makes the DOM a function
+of `game.on ? game.rule : 'lab'`, so links and console calls cannot desync it.
+
 ## DOM smoke test without a browser
 
 `experiments/dom_smoke.js` loads the classic scripts in `node:vm` with a stub
@@ -67,6 +88,13 @@ HUD text stay selectable and launchable.
 real event handlers (`pointerdown`/`move`/`up`, `input`, `change`, `click`,
 `resize`) and asserts the HUD text. Cheap regression net for interaction
 plumbing that a physics-only benchmark cannot see.
+
+Generated markup is exercised by firing the *panel's* `click` with a
+`{ target: { dataset } }` shaped event (the page delegates and reads
+`data-act` there) — the stub element has no real `dataset`, `closest` or
+`contains`, so helper functions that use them must guard as the page does. Read
+the real `data-*` values out of the rendered `innerHTML` instead of hard-coding
+tier indices; that is what caught the hold table starting at tier 0.
 
 The stub lives in `experiments/dom_stub.js` (`loadPage({ hash, clipboard })`)
 and reads the script list, element ids and initial `disabled` / `hidden` /

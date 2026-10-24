@@ -6,9 +6,10 @@ planets' port orbits using gravity assists, land cleanly, and stage the next
 hop from where you landed. The `route` rule instead plans one longest possible
 trajectory without launching it.
 
-Two modes: **lab** (free clock, editable gravity) and **game** (seeded world,
-fixed rules and shareable replay links; under the flown rules the clock runs
-only while cargo flies, while `route` stays a deterministic planner).
+One flat mode row: **lab** (free clock, editable gravity) and four seeded rules
+— **visit all tour**, **route length**, **money for visit** and **career** (a
+solo catapult network). Under the flown rules the clock runs only while cargo
+flies, while `route` stays a deterministic planner; links stay shareable.
 
 ## run
 
@@ -31,10 +32,17 @@ Open `index.html` (`file://` works, no build, no modules).
 | gravity positions | radio group `planets` (static) / `ports` (`ports · moving`); launch base is always a static planet |
 | `? help` / `h` | toggles the mission & guide drawer (`tourist` / `emperor’s emissary`) |
 | space | pauses the trade background only (lab) |
-| mode `lab` / `game` | game: rebuilds the seeded world at `t+07:00`, freezes it between flights, locks gravity at `1` |
+| mode `career` / `lab` / `visit all tour` / `route length` / `money for visit` | one radio row: `lab` is the free lab, every other choice starts its seeded run at once (rebuilds the world at `t+07:00`, freezes it between flights, locks gravity at `1`); switching restarts the seed, `lab` stops the run |
+| `tour` | 120 s flight cap, score systems → shots → time |
+| `route` | 1 800 s wall, score trajectory length, no launch |
+| `money` | 10 shots, score purse → systems → shots → time |
+| career | solo catapult network: the vessel starts on a sunlit HQ with the only catapult; a launch fires from the pad under the ship and spends its solar-charged battery (ship + cargo mass caps the speed, the button shows `pad … kWh · shot … · max … px/s`, the pad plate under the planet shows charge and cap) · landing elsewhere strands the ship · `&cheat=communism` (everything free) / `&cheat=endgame` (all pads at top tier, purse 99) · ends `complete` with 26 catapults or `broke` |
+| career drawer · planet select | picks the planet the shop builds on; it follows the ship until you pick another |
+| career drawer · shop | one button per gear kind buys the next tier on that planet (`EMC-2 · 6.00`), `all N · …` applies it to every built pad of that kind and shows the total first; below, ship parts (`hold`/`tank`/`engine`) are bought and fitted at HQ only |
+| career drawer · task board | delivery offers show `from → to`, good, tons, pay and time left with `accept` (needs a big enough hold and no other contract) / `drop`; the sport slot pays for one landing flight of at least the shown length |
+| `wait · 30 min` (career) | runs the world clock 30 minutes while nothing flies: every pad charges, the board ages, planet profit grows |
+| `evacuate` (career) | buys the stranded ship a flight home to HQ (fee shown on the button) |
 | `abort` (game) | ends the running flight at the current step (recorded in the replay) |
-| rule `tour` / `route` / `money` (game) | tour: 120 s flight cap, score systems → shots → time; route: 1 800 s wall, score trajectory length; money: 10 shots, score purse → systems → shots → time · switching restarts the seed |
-| `?rule=career` (link only, no radio yet) | solo career: the vessel starts on a sunlit HQ with the only catapult; a launch fires from the pad under the ship and spends its solar-charged battery (ship + cargo mass caps the speed, button shows `pad charge … · max … px/s`); landing elsewhere strands the ship (`GravityGame.buildGear` / `evacuate` via the console until the shop lands) · `&cheat=communism` (everything free) / `&cheat=endgame` (all pads at top tier, purse 99) · ends `complete` with 26 catapults or `broke` |
 | rivals `off` / `easy` / `normal` / `hard` | deterministic shared-market rivals in `tour`, `route` and `money` (`normal` default; `hard` fields 2 rivals with 1-ply lookahead) · switching restarts the seed |
 | scoreboard (upper-left, game only) | compares `YOU`, `R1` and `R2` under the active rule’s score (mint, violet, rose) · every player row has its own `bot` checkbox (`user` ↔ `bot`, live at all times and restarts the run), and clicking any `user` player’s row switches which human player is currently active |
 | purse & planet profits (game) | starts at `3.00`; each launch costs `1.00` (refused below `1.00`); each planet's fly-visit payout grows with unvisited game time (`+0.25` initial, resets to `+0.00` when visited by you or a rival, `+0.00625/s` up to `+0.75` cap) and is drawn as a live pill under every planet |
@@ -74,7 +82,10 @@ Open `index.html` (`file://` works, no build, no modules).
   unvisited (`+0.25` at start, `+0.00625/s` up to `+0.75`, drawn beneath every
   planet and highlighted in green along your predicted trajectory): `tour`
   (26 systems, 120 s cap), `route` (1 800 s wall, ranked by trajectory length),
-  and `money` (10 shots, ranked by final purse). Optional deterministic
+  and `money` (10 shots, ranked by final purse). `career` is solo and swaps the
+  launch fee and market ranking for the pad network: every planet needs its own
+  catapult, panel and battery, the battery pays each shot, and the purse comes
+  from delivery/sport tasks plus fly-visit profit. Optional deterministic
   competitors (`easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead) fly in
   integer-step lockstep and compete for the same growing planet values without
   dropping 60 fps (`3 ms` / 64-candidate background slices). In the upper-left
@@ -113,7 +124,7 @@ Open `index.html` (`file://` works, no build, no modules).
 - `gravity_game.js` — game rules (`tour`, `route`, `money`, `career`), aim grid, replay link codec (`rule`, `bot`, `cheat`), shared planet-profit market (`MONEY`, `createMarket`, `planetProfit`, `stepHarvest`, `estimateProfit`, `compareScores`), career state (pads, ship, task board from the colony economy, evacuation, end condition)
 - `gravity_bot.js` — deterministic shared-market rivals for all game rules (`off`, `easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead, sliced search, `rivalLink`)
 - `photo_deck.js` — postcard popup: type → file candidates, captions, compact layout, purse toast
-- `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game scoreboard, game mode & replays
+- `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game scoreboard, the flat mode row, career drawer (pad plate, shop, task board) & replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
   `game_bench.js`, `route_bench.js`, `bot_bench.js`, `career_bench.js`), headless DOM smoke suite
   (`dom_smoke.js`) on the shared vm page stub (`dom_stub.js`), and a real-browser

@@ -701,12 +701,145 @@ input:disabled {
 	cursor: default;
 }
 
-#gameBox {
+#runBox {
 	margin-top: 7px;
 }
 
-#gameBox .radioRow {
+#runBox .radioRow {
 	margin-bottom: 7px;
+}
+
+/* the flat mode row replaces the old mode + rule groups: five labels wrap */
+.modeRow {
+	flex-wrap: wrap;
+	gap: 6px 12px;
+}
+
+/* career drawer: planet picker, pad readout, shop rows, task board */
+.careerPick {
+	justify-content: space-between;
+	gap: 6px;
+	margin-bottom: 5px;
+}
+
+.careerPick select {
+	flex: 1;
+	min-width: 0;
+	padding: 2px 5px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: rgba(2, 8, 16, 0.7);
+	color: var(--text);
+	font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+	letter-spacing: 0;
+	text-transform: none;
+	cursor: pointer;
+}
+
+.careerBlock {
+	font-size: 11px;
+	line-height: 1.45;
+}
+
+.careerHead {
+	margin-top: 6px;
+	color: var(--dim);
+	font-size: 9.5px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.careerLine {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.careerLine.dim {
+	color: var(--dim);
+}
+
+.careerLine.warn {
+	color: var(--warn);
+}
+
+.careerBar {
+	height: 4px;
+	margin: 2px 0 3px;
+	border-radius: 2px;
+	background: rgba(140, 170, 200, 0.2);
+	overflow: hidden;
+}
+
+.careerBar i {
+	display: block;
+	height: 100%;
+	background: var(--mint);
+}
+
+.careerRow {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 2px 7px;
+	padding: 2px 0;
+	border-bottom: 1px dotted rgba(126, 180, 230, 0.12);
+}
+
+.careerRow:last-child {
+	border-bottom: 0;
+}
+
+.careerRow.dim {
+	color: var(--dim);
+}
+
+.careerKind {
+	min-width: 48px;
+	color: var(--dim);
+	font-size: 9.5px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.careerNow {
+	flex: 1 1 96px;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 10.5px;
+}
+
+.careerBtns {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px;
+	margin-left: auto;
+}
+
+.careerBtns i {
+	color: var(--dim);
+	font-style: normal;
+	font-size: 10px;
+}
+
+.careerActions {
+	flex-wrap: wrap;
+	gap: 5px;
+}
+
+.careerActions .miniBtn {
+	flex: 1 1 84px;
+}
+
+.careerMsg {
+	margin-top: 6px;
+	color: var(--mint);
+	font-size: 10.5px;
+	line-height: 1.35;
 }
 
 .gameActions {

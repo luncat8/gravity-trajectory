@@ -72,8 +72,7 @@ async function setRoute(page) {
 			el.checked = true;
 			el.dispatchEvent(new Event('change', { bubbles: true }));
 		};
-		set('modeGame');
-		set('ruleRoute');
+		set('modeRoute');
 	});
 }
 
@@ -211,6 +210,41 @@ async function scoreboardStable(page) {
 				'| trade', Math.round(layout.tradeTop),
 				'| use best', Math.round(layout.best[1]) + 'px',
 				'| body scrolls', layout.scrollable ? 'yes' : 'no');
+			await page.close();
+		}
+		/* the career drawer must keep the same invariants with the shop open */
+		for (const [width, height] of SIZES) {
+			const page = await browser.newPage();
+			await page.setViewport({ width, height });
+			const errors = [];
+			page.on('pageerror', error => errors.push(error.message));
+			await page.goto(PAGE_URL + '?mode=career&seed=42&rate=1');
+			await page.waitForSelector('#careerBox');
+			const label = width + 'x' + height + ' career';
+			const layout = await measure(page);
+			const drawer = await page.evaluate(() => {
+				const box = document.getElementById('careerBox');
+				const hud = document.getElementById('cargoHud').getBoundingClientRect();
+				const rect = box.getBoundingClientRect();
+				return {
+					visible: !box.hidden,
+					run: !document.getElementById('runBox').hidden,
+					rivals: document.getElementById('rivalGroup').hidden,
+					scrollWidth: box.scrollWidth,
+					width: rect.width,
+					inside: rect.left >= hud.left - 1 && rect.right <= hud.right + 1,
+					buttons: box.querySelectorAll('button').length,
+					pad: document.getElementById('careerPad').textContent.indexOf('kWh') >= 0
+				};
+			});
+			check(errors.length === 0, label + ': page error ' + errors.join(' / '));
+			check(layout.footBottom <= layout.tradeTop, label + ': foot row overlaps the trade footer');
+			check(drawer.visible && drawer.run && drawer.rivals, label + ': boxes ' + JSON.stringify(drawer));
+			check(drawer.buttons >= 7 && drawer.pad, label + ': shop ' + drawer.buttons + ' buttons');
+			check(drawer.scrollWidth <= drawer.width + 1 && drawer.inside,
+				label + ': drawer overflows ' + drawer.scrollWidth + ' > ' + Math.round(drawer.width));
+			console.log(label, 'foot', Math.round(layout.footTop) + '..' + Math.round(layout.footBottom),
+				'| trade', Math.round(layout.tradeTop), '| shop', drawer.buttons, 'buttons');
 			await page.close();
 		}
 	} finally {

@@ -44,6 +44,31 @@
 	const PLAYER_USER = GravityGame.PLAYER_USER;
 	const PLAYER_BOT = GravityGame.PLAYER_BOT;
 	const MONEY = GravityGame.MONEY;
+	const OrbitTech = root.OrbitTech;
+	const OrbitEcon = root.OrbitEcon;
+	const GEAR_ROWS = [
+		{ kind: OrbitTech.KIND_CATAPULT, label: 'catapult', table: OrbitTech.CATAPULTS },
+		{ kind: OrbitTech.KIND_PANEL, label: 'panel', table: OrbitTech.PANELS },
+		{ kind: OrbitTech.KIND_BATTERY, label: 'battery', table: OrbitTech.BATTERIES }
+	];
+	const PART_ROWS = [
+		{ kind: OrbitTech.KIND_HOLD, label: 'hold', table: OrbitTech.HOLDS },
+		{ kind: OrbitTech.KIND_TANK, label: 'tank', table: OrbitTech.TANKS },
+		{ kind: OrbitTech.KIND_ENGINE, label: 'engine', table: OrbitTech.ENGINES }
+	];
+	/* one lookup for every shop button: kind → item table */
+	const TECH_TABLES = {
+		catapult: OrbitTech.CATAPULTS,
+		panel: OrbitTech.PANELS,
+		battery: OrbitTech.BATTERIES,
+		hold: OrbitTech.HOLDS,
+		tank: OrbitTech.TANKS,
+		engine: OrbitTech.ENGINES
+	};
+	/* one press of wait runs the world clock: 30 world minutes of sunlight */
+	const CAREER_WAIT_MIN = 30;
+	/* the flat mode row: lab has no rule, every other mode is a game rule */
+	const PLAY_LAB = 'lab';
 	/* route mode traces a 1 800 s shot in slices: per-frame slice of tracer work */
 	const ROUTE_STEP_MS = 4;
 	const ROUTE_FIELD_DELTA = 4;
@@ -148,8 +173,8 @@
 			name: 'career · catapult network',
 			goal: 'Build a catapult on every planet.',
 			score: 'Purse. The career ends complete with all ' + PLANETS + ' catapults, or broke.',
-			detailLabel: 'Launch',
-			detail: 'Only a built catapult launches, drawing its solar-charged battery; the mass of ship and cargo caps the speed. Landing without a catapult strands the ship: build one there or evacuate to HQ for a fee. Deliveries and competitions pay.',
+			detailLabel: 'Network',
+			detail: 'Only a built catapult launches, drawing its solar-charged battery; ship and cargo mass cap the speed. Landing without a catapult strands the ship: build one there or evacuate to HQ for a fee. wait runs the world clock so pads charge; the drawer builds any planet\'s pad, upgrades every pad at once and takes deliveries.',
 			controls: 'Drag from the pad under the ship to aim · Shift = fine · Enter = launch'
 		}
 	};
@@ -267,12 +292,24 @@
 	const cargoHintEl = $('cargoHint');
 	const tradeCanvas = $('c');
 	const modeTagEl = $('modeTag');
-	const modeLabEl = $('modeLab');
-	const modeGameEl = $('modeGame');
-	const gameBoxEl = $('gameBox');
-	const ruleTourEl = $('ruleTour');
-	const ruleRouteEl = $('ruleRoute');
-	const ruleMoneyEl = $('ruleMoney');
+	const modeEls = [
+		[RULE_CAREER, $('modeCareer')],
+		[PLAY_LAB, $('modeLab')],
+		[RULE_TOUR, $('modeTour')],
+		[RULE_ROUTE, $('modeRoute')],
+		[RULE_MONEY, $('modeMoney')]
+	];
+	const runBoxEl = $('runBox');
+	const rivalGroupEl = $('rivalGroup');
+	const careerBoxEl = $('careerBox');
+	const careerTagEl = $('careerTag');
+	const careerPlanetEl = $('careerPlanet');
+	const careerPadEl = $('careerPad');
+	const careerShopEl = $('careerShop');
+	const careerTaskEl = $('careerTasks');
+	const careerWaitBtn = $('careerWait');
+	const careerEvacBtn = $('careerEvac');
+	const careerMsgEl = $('careerMsg');
 	const ruleTagEl = $('ruleTag');
 	const scoreHudEl = $('scoreHud');
 	const scoreRuleTagEl = $('scoreRuleTag');
@@ -471,11 +508,9 @@
 		}
 	}
 
+	/* the flat mode row drives both the help drawer and the running rule */
 	function selectedHelpRule() {
-		if (ruleMoneyEl && ruleMoneyEl.checked) return RULE_MONEY;
-		if (ruleRouteEl && ruleRouteEl.checked) return RULE_ROUTE;
-		if (ruleTourEl && ruleTourEl.checked) return RULE_TOUR;
-		return game.on ? game.rule : 'lab';
+		return game.on ? game.rule : PLAY_LAB;
 	}
 
 	function updateHelp(rule) {
@@ -509,15 +544,6 @@
 		setHelpOpen(true, !pin);
 	}
 
-	function hideRuleHelpPreview() {
-		if (helpPinned) {
-			updateHelp(selectedHelpRule());
-			return;
-		}
-		setHelpOpen(false, true);
-		updateHelp(selectedHelpRule());
-	}
-
 	function updateRuleHelp(rule) {
 		updateHelp(rule || selectedHelpRule());
 	}
@@ -543,6 +569,38 @@
 		canvas.style.width = width + 'px';
 		canvas.style.height = height + 'px';
 		reserveTradeFooter();
+		measureHudRects();
+	}
+
+	/* panel rects for the world plates (2 rows × 4 numbers): refreshed on resize and
+	 * whenever the HUD content changes, never per frame */
+	const hudRects = new Float64Array(8);
+	const hudRectEls = [$('cargoHud'), $('leftHud')];
+
+	function measureHudRects() {
+		for (let i = 0; i < hudRectEls.length; i++) {
+			const el = hudRectEls[i];
+			const r = el && !el.hidden ? el.getBoundingClientRect() : null;
+			const o = i * 4;
+			hudRects[o] = r ? r.left : 0;
+			hudRects[o + 1] = r ? r.top : 0;
+			hudRects[o + 2] = r ? r.right : 0;
+			hudRects[o + 3] = r ? r.bottom : 0;
+		}
+	}
+
+	/* does a screen rect cross one of the panels? */
+	function rectUnderHud(x, y, width, height) {
+		for (let i = 0; i < hudRectEls.length; i++) {
+			const o = i * 4;
+			const right = hudRects[o + 2];
+			const bottom = hudRects[o + 3];
+			if (right <= hudRects[o] || bottom <= hudRects[o + 1]) continue;
+			if (x >= right || x + width <= hudRects[o]) continue;
+			if (y >= bottom || y + height <= hudRects[o + 1]) continue;
+			return true;
+		}
+		return false;
 	}
 
 	/* the wrapped trade footer grows; the cargo panel stops above it so its launch row stays reachable */
@@ -748,10 +806,6 @@
 
 	function slotLedger(slot) {
 		return slot === 0 ? game.money : bot.rivals[slot - 1].ledger;
-	}
-
-	function activeLedger() {
-		return slotLedger(activeSlotIndex());
 	}
 
 	function slotShots(slot) {
@@ -987,7 +1041,8 @@
 		hudAt = -Infinity;
 	}
 
-	function setMode(next) {
+	/* gravity source: static planets or their moving ports */
+	function setSource(next) {
 		if (next === mode && gravity.fillField) return;
 		mode = next;
 		srcPlanetsEl.checked = mode === MODE_PLANETS;
@@ -1044,13 +1099,16 @@
 		if (career.ended === GravityGame.CAREER_BROKE) return 'broke · career over';
 		if (career.ended === GravityGame.CAREER_COMPLETE) return 'catapult network complete';
 		if (!career.stranded) return '';
-		return career.at < 0 ? 'lost in space · evacuate' : 'stranded · build a catapult or evacuate';
+		/* short enough for the launch button, which must not wrap */
+		return career.at < 0 ? 'lost in space · evacuate' : 'stranded · build or evacuate';
 	}
 
 	/* why the armed shot cannot fire from its pad right now ('' when it can) */
 	function careerPadNote() {
-		if (!careerRule() || !armed || aimBody < 0 || gravity.canFire(aimBody, aimSpeed)) return '';
-		return 'pad charge ' + gravity.pads[aimBody].chargeKwh.toFixed(2) + ' kWh · max ' +
+		if (!careerRule() || !armed || aimBody < 0) return '';
+		if (gravity.canFire(aimBody, aimSpeed)) return '';
+		return 'pad ' + gravity.pads[aimBody].chargeKwh.toFixed(2) + ' kWh · shot ' +
+			gravity.launchEnergy(aimBody, aimSpeed).toFixed(2) + ' · max ' +
 			Math.round(gravity.speedLimit(aimBody)) + ' px/s';
 	}
 
@@ -1756,10 +1814,12 @@
 		helperUpdateUi();
 	}
 
-	function syncRuleRadios() {
-		ruleTourEl.checked = game.rule === RULE_TOUR;
-		ruleRouteEl.checked = game.rule === RULE_ROUTE;
-		if (ruleMoneyEl) ruleMoneyEl.checked = game.rule === RULE_MONEY;
+	function syncModeRadios() {
+		const current = game.on ? game.rule : PLAY_LAB;
+		for (let i = 0; i < modeEls.length; i++) {
+			const el = modeEls[i][1];
+			if (el) el.checked = modeEls[i][0] === current;
+		}
 	}
 
 	function syncBotRadios() {
@@ -1817,7 +1877,7 @@
 		}
 		rivalTypesArg[0] = slotTypes[1];
 		rivalTypesArg[1] = slotTypes[2];
-		syncRuleRadios();
+		syncModeRadios();
 		syncBotRadios();
 		updateHelp(game.rule);
 		game.shots.length = 0;
@@ -1842,19 +1902,32 @@
 		attachWorld();
 		if (careerRule()) GravityGame.startCareer(game.career, gravity, seed, tradeSim, game.cheat);
 		else gravity.setLaunchNetwork(null, null);
+		careerFollow = true;
+		careerNotice('');
 		if (routeRule()) bot.useField(gravity, mode);
 		launchState = -1;
 		gameLinkEl.hidden = true;
 		refreshGameUi();
 	}
 
-	/* rule, player type and rival difficulty are part of a run; changing one restarts it */
-	function setRule(next) {
-		if (next === game.rule) {
+	/* one flat row: lab stops the run, every other mode starts its rule at once */
+	function setPlayMode(next) {
+		if (next === PLAY_LAB) {
+			if (game.on) stopGame();
+			updateRuleHelp(PLAY_LAB);
+			syncModeRadios();
+			return;
+		}
+		if (!RULES[next]) {
+			syncModeRadios();
+			return;
+		}
+		if (game.on && game.rule === next) {
 			updateRuleHelp(next);
 			return;
 		}
-		startGame(game.seed, game.fixedRate, next, game.bot, game.player, game.cheat);
+		updateRuleHelp(next);
+		startGame(game.on ? game.seed : tradeSim.seed, game.on ? game.fixedRate : false, next);
 	}
 
 	function setBot(next) {
@@ -1871,10 +1944,6 @@
 		ensureValidActiveSlot(normalized === PLAYER_USER ? slot : -1);
 		if (game.on) startGame(game.seed, game.fixedRate, game.rule, game.bot, slotTypes[0], game.cheat);
 		else syncScoreControls(false);
-	}
-
-	function setPlayerType(next) {
-		setSlotType(0, next);
 	}
 
 	function selectUserSlot(slot) {
@@ -2125,8 +2194,11 @@
 		if (spec.stopOnTour && gravity.visitedCount === PLANETS && game.doneSteps < 0) {
 			game.doneSteps = game.steps + gravity.visitStep;
 		}
-		if (careerRule()) GravityGame.careerEndFlight(game.career, gravity, tradeSim, game.clockSteps);
-		else GravityGame.endFlight(game.money);
+		if (careerRule()) {
+			GravityGame.careerEndFlight(game.career, gravity, tradeSim, game.clockSteps);
+			/* the shop follows the ship again after every landing / stranding */
+			careerFollow = true;
+		} else GravityGame.endFlight(game.money);
 		game.steps += gravity.liveSteps;
 		game.length += gravity.flightLength;
 		playerBotSyncNeeded = true;
@@ -2216,7 +2288,7 @@
 			const shot = shots[0];
 			replay.phase = PHASE_AIM;
 			replay.until = Infinity;
-			setMode(shot.src);
+			setSource(shot.src);
 			bot.useField(gravity, mode);
 			if (routeOccupiedBy(shot.origin) >= 0) {
 				finishRouteReplay('desync · ' + planetName(shot.origin) + ' is occupied');
@@ -2286,7 +2358,7 @@
 	}
 
 	function aimReplayShot(shot, now) {
-		setMode(shot.src);
+		setSource(shot.src);
 		if (!gravity.canLaunchFrom(shot.origin)) {
 			finishReplay('desync · shot ' + (replay.index + 1) + ' from ' + planetName(shot.origin));
 			return;
@@ -2405,11 +2477,10 @@
 		if (!GravityGame.isGameLink(location.hash)) return false;
 		const link = GravityGame.decodeLink(location.hash);
 		if (!link) {
-			linkNote = 'invalid game link';
+			linkNote = game.on ? 'invalid game link' : 'invalid link · back to lab';
 			refreshGameUi();
 			return false;
 		}
-		modeGameEl.checked = true;
 		scene.setSpeed(link.rate);
 		startGame(link.seed, true, link.rule, link.bot, link.player, link.cheat);
 		if (link.shots.length > 0) startReplay(link.shots, link.end, link.length);
@@ -2427,14 +2498,15 @@
 		if (!hasGameHint) return false;
 		const modeParam = params.get('mode');
 		const gameParam = params.get('game');
-		const shouldGame = modeParam === 'game' || gameParam === '1' ||
+		/* `?mode=` takes a rule name too: ?mode=career === ?rule=career */
+		const modeRule = modeParam && RULES[modeParam] ? modeParam : null;
+		const shouldGame = modeParam === 'game' || gameParam === '1' || modeRule !== null ||
 			params.has('rule') || params.has('seed') || params.has('rate') || params.has('bot');
-		if (modeParam === 'lab') {
-			modeLabEl.checked = true;
+		if (modeParam === PLAY_LAB) {
 			stopGame();
 			const src = params.get('src') || params.get('source');
-			if (src === 'ports') setMode(MODE_PORTS);
-			else if (src === 'planets') setMode(MODE_PLANETS);
+			if (src === 'ports') setSource(MODE_PORTS);
+			else if (src === 'planets') setSource(MODE_PLANETS);
 			const spd = params.get('speed') || params.get('rate');
 			if (spd !== null) scene.setSpeed(Number(spd));
 			return true;
@@ -2452,17 +2524,17 @@
 		let rateNum = rateStr !== null ? Number(rateStr) : scene.trade.speed;
 		if (rateStr !== null && (!Number.isFinite(rateNum) || rateNum < 0.5 || rateNum > 12)) return false;
 		if (ruleStr !== null && !RULES[ruleStr]) return false;
+		if (!ruleStr && modeRule) ruleStr = modeRule;
 		if (!ruleStr) ruleStr = RULE_TOUR;
 		if (botStr !== null && !(botStr in GravityGame.BOTS)) return false;
 		if (playerStr !== null && !(playerStr in GravityGame.PLAYER_TYPES)) return false;
 		const cheatStr = params.get('cheat');
 		if (cheatStr !== null && !(ruleStr === RULE_CAREER && GravityGame.CHEATS[cheatStr])) return false;
-		modeGameEl.checked = true;
 		if (rateStr !== null) scene.setSpeed(rateNum);
 		startGame(seedNum, rateStr !== null, ruleStr, botStr || undefined, playerStr || undefined,
 			cheatStr || undefined);
-		if (sourceStr === 'ports' || sourceStr === 'port') setMode(MODE_PORTS);
-		else if (sourceStr === 'planets' || sourceStr === 'planet') setMode(MODE_PLANETS);
+		if (sourceStr === 'ports' || sourceStr === 'port') setSource(MODE_PORTS);
+		else if (sourceStr === 'planets' || sourceStr === 'planet') setSource(MODE_PLANETS);
 		const shotsParam = params.get('shots');
 		const endParam = params.get('end');
 		const lenParam = params.get('len');
@@ -2483,12 +2555,25 @@
 		const activeFlying = activeSim().status === STATUS_FLYING;
 		const flightLock = game.on && (anyFlying || replay.on);
 		const activeSlotNow = activeSlotIndex();
+		const career = careerRule();
+		/* "run" matches the run box: the rule itself is named in its caption */
 		modeTagEl.textContent = linkNote || (game.on
 			? activeSlotNow > 0 && !playerIsBot()
-				? (route ? 'game · planner · ' : 'game · ') + slotName(activeSlotNow)
-				: route ? 'game · planner · no launch' : 'game · clock runs in flight'
+				? (route ? 'run · planner · ' : 'run · ') + slotName(activeSlotNow)
+				: route ? 'run · planner · no launch'
+				: career ? 'career · clock runs in flight'
+				: 'run · clock runs in flight'
 			: 'lab · free clock');
-		gameBoxEl.hidden = !game.on;
+		if (goalRoleEl) {
+			goalRoleEl.textContent = career ? 'catapult network · pads & tasks'
+				: route ? 'one plan · longest trajectory'
+				: game.on ? (moneyRule() ? 'ten launches · visit profit' : 'visit every system')
+				: 'one ship · gravity only';
+		}
+		runBoxEl.hidden = !game.on;
+		if (careerBoxEl) careerBoxEl.hidden = !career;
+		if (rivalGroupEl) rivalGroupEl.hidden = !game.on || RULES[game.rule].solo;
+		syncModeRadios();
 		if (scoreHudEl) scoreHudEl.hidden = !game.on;
 		if (bodyGroupEl) bodyGroupEl.hidden = game.on;
 		if (horizonGroupEl) horizonGroupEl.hidden = route;
@@ -2496,9 +2581,10 @@
 		if (flightRowEl) flightRowEl.hidden = route;
 		srcPlanetsEl.disabled = flightLock;
 		srcPortsEl.disabled = flightLock;
-		ruleTourEl.disabled = flightLock;
-		ruleRouteEl.disabled = flightLock;
-		if (ruleMoneyEl) ruleMoneyEl.disabled = flightLock;
+		/* a flight locks the rule; lab stays reachable as the way out */
+		for (let i = 0; i < modeEls.length; i++) {
+			if (modeEls[i][1]) modeEls[i][1].disabled = flightLock && modeEls[i][0] !== PLAY_LAB;
+		}
 		if (botOffEl) botOffEl.disabled = flightLock;
 		if (botEasyEl) botEasyEl.disabled = flightLock;
 		if (botNormalEl) botNormalEl.disabled = flightLock;
@@ -2526,7 +2612,9 @@
 		if (predVisitLabelEl) predVisitLabelEl.textContent = route ? 'plan end' : 'pred visits';
 		horizonSlider.disabled = route;
 		if (cargoHintEl) {
-			cargoHintEl.innerHTML = route
+			cargoHintEl.innerHTML = career
+				? 'drag from the pad under the ship · <b>wait</b> charges every pad<br>build pads for any planet and take deliveries in the career drawer'
+				: route
 				? playerIsBot()
 					? 'bot plans ' + slotName(activeSlotIndex()) + ' · longest finished plan leads'
 					: 'drag from a free planet · longest finished trajectory leads<br><b>use best</b> restores your longest plan · see <b>? help</b>'
@@ -2537,7 +2625,9 @@
 		replaySpeedBtn.textContent = '×' + REPLAY_SPEEDS[replay.speed];
 		replayRowEl.hidden = !replay.on && replay.verdict === '';
 		refreshRouteBestUi();
+		refreshCareerPanel();
 		helperUpdateUi();
+		measureHudRects();
 		reserveTradeFooter();
 		hudAt = -Infinity;
 	}
@@ -2567,6 +2657,11 @@
 		if (moneyRule()) {
 			return summary.visited + ' systems · ' + summary.shots + ' / ' +
 				GravityGame.MONEY_SHOTS + ' shots · ' + time;
+		}
+		if (careerRule()) {
+			const pads = game.career.padCount;
+			return pads + (pads === 1 ? ' pad · ' : ' pads · ') +
+				summary.shots + (summary.shots === 1 ? ' shot · ' : ' shots · ') + time;
 		}
 		const shots = summary.shots + (summary.shots === 1 ? ' shot' : ' shots');
 		return shots + ' · ' + time + ' · purse ' + summary.purse.toFixed(2);
@@ -2656,6 +2751,369 @@
 		if (career.ended === GravityGame.CAREER_BROKE) return 'career · broke · ' + pads;
 		if (career.ended === GravityGame.CAREER_COMPLETE) return 'career · complete';
 		return 'career · ' + pads + (career.cheat ? ' · ' + career.cheat : '');
+	}
+
+	/* --- career drawer: pad readout, shop, task board ------------------- */
+
+	/* the planet selector follows the ship until the player picks one */
+	let careerFollow = true;
+
+	function careerCost(career, value) {
+		return career.cheat === GravityGame.CHEAT_COMMUNISM ? 0 : value;
+	}
+
+	function costText(value) {
+		return value === 0 ? 'free' : value.toFixed(2);
+	}
+
+	/* the next record above the installed one (a pad starts from nothing) */
+	function nextTier(table, current) {
+		const tier = current ? current.tier : 0;
+		for (let i = 0; i < table.length; i++) {
+			if (table[i].tier > tier) return table[i];
+		}
+		return null;
+	}
+
+	/* shop buttons carry the table index, not the tier: tables differ per kind */
+	function tierIndex(table, item) {
+		for (let i = 0; i < table.length; i++) {
+			if (table[i] === item) return i;
+		}
+		return -1;
+	}
+
+	function careerPickPlanet() {
+		const career = game.career;
+		if (careerFollow) return career.at >= 0 ? career.at : career.hq;
+		const raw = careerPlanetEl ? careerPlanetEl.value : '';
+		const picked = raw === '' ? -1 : Math.round(Number(raw));
+		if (picked >= 0 && picked < PLANETS) return picked;
+		return career.at >= 0 ? career.at : career.hq;
+	}
+
+	function careerNotice(text) {
+		if (!careerMsgEl) return;
+		careerMsgEl.textContent = text;
+		careerMsgEl.hidden = text === '';
+	}
+
+	function shopButton(label, act, kind, tier, disabled, title) {
+		return '<button class="miniBtn" data-act="' + act + '" data-kind="' + kind +
+			'" data-tier="' + tier + '"' + (disabled ? ' disabled' : '') +
+			' title="' + title + '">' + label + '</button>';
+	}
+
+	function careerTagText() {
+		const career = game.career;
+		const at = career.at;
+		const where = at < 0 ? 'lost in space'
+			: at === career.hq ? 'HQ ' + planetName(at)
+			: 'at ' + planetName(at) + ' · HQ ' + planetName(career.hq);
+		const state = career.ended === GravityGame.CAREER_BROKE ? ' · broke'
+			: career.ended === GravityGame.CAREER_COMPLETE ? ' · complete' : '';
+		return where + state;
+	}
+
+	function padBlockHtml(career) {
+		const at = career.at;
+		if (at < 0) return '<div class="careerLine warn">lost in space · evacuate to HQ</div>';
+		const pad = career.pads[at];
+		const ship = career.ship;
+		const cargo = ship.cargoTons > 0 ? ' · cargo ' + ship.cargoTons + ' t' : '';
+		let html = '<div class="careerLine"><b>' + planetName(at) + (at === career.hq ? ' · HQ' : '') +
+			'</b> · ' + ship.mass.toFixed(1) + ' t' + cargo + '</div>';
+		html += '<div class="careerLine dim">ship ' + ship.hold.id + ' · ' +
+			(ship.engine ? ship.engine.id : 'no engine') + ' · ' + ship.tank.id + '</div>';
+		if (pad.catapult === null) {
+			const first = OrbitTech.CATAPULTS[0];
+			const cost = careerCost(career, first.buildCost);
+			html += '<div class="careerLine warn">no catapult here · build one or evacuate</div>' +
+				'<div class="careerRow"><span class="careerBtns">' +
+				shopButton('build ' + first.id + ' here · ' + costText(cost), 'build', 'catapult', 0,
+					career.ledger.purse + 1e-9 < cost, 'build the first catapult on ' + planetName(at)) +
+				'</span></div>';
+			return html;
+		}
+		const limit = OrbitTech.speedLimit(pad.chargeKwh, ship.mass, pad.catapult);
+		const shot = OrbitTech.launchEnergy(ship.mass, pad.catapult, limit);
+		const frac = pad.battery.capacity > 0 ? pad.chargeKwh / pad.battery.capacity : 0;
+		html += '<div class="careerLine">' + pad.catapult.id + ' · ' + pad.panel.id + ' · ' +
+			pad.battery.id + ' · ' + pad.chargeKwh.toFixed(2) + ' / ' +
+			pad.battery.capacity.toFixed(2) + ' kWh</div>';
+		html += '<div class="careerBar"><i style="width:' + Math.round(frac * 100) + '%"></i></div>';
+		html += '<div class="careerLine dim">max ' + Math.round(limit) + ' px/s · full shot ' +
+			shot.toFixed(2) + ' kWh</div>';
+		return html;
+	}
+
+	function gearRowHtml(career, row, planet) {
+		const pad = career.pads[planet];
+		const cur = pad[row.kind];
+		const next = nextTier(row.table, cur);
+		let html = '<div class="careerRow"><span class="careerKind">' + row.label + '</span>' +
+			'<span class="careerNow">' + (cur ? cur.id : 'none') + '</span><span class="careerBtns">';
+		if (next === null) return html + '<i>max</i></span></div>';
+		if (cur === null && row.kind !== OrbitTech.KIND_CATAPULT) {
+			return html + '<i>needs a catapult</i></span></div>';
+		}
+		const buildCost = careerCost(career, next.buildCost);
+		html += shopButton(next.id + ' · ' + costText(buildCost), 'build', row.kind, tierIndex(row.table, next),
+			career.ledger.purse + 1e-9 < buildCost, 'build ' + next.id + ' on ' + planetName(planet));
+		let count = 0;
+		for (let i = 0; i < career.pads.length; i++) {
+			if (OrbitTech.upgrades(career.pads[i], row.kind, next)) count += 1;
+		}
+		if (count > 0) {
+			const bulkCost = GravityGame.bulkUpgradeCost(career, row.kind, next);
+			html += shopButton('all ' + count + ' · ' + costText(bulkCost), 'bulk', row.kind,
+				tierIndex(row.table, next), career.ledger.purse + 1e-9 < bulkCost,
+				'fit ' + next.id + ' to ' + count + ' built ' + row.label + (count === 1 ? '' : 's'));
+		}
+		return html + '</span></div>';
+	}
+
+	function partRowHtml(career, row) {
+		const cur = career.ship[row.kind];
+		const next = nextTier(row.table, cur);
+		let html = '<div class="careerRow"><span class="careerKind">' + row.label + '</span>' +
+			'<span class="careerNow">' + (cur ? cur.id : 'none') + '</span><span class="careerBtns">';
+		if (next === null) return html + '<i>max</i></span></div>';
+		const owned = Boolean(career.owned[next.id]);
+		const price = owned ? 0 : careerCost(career, next.buildCost);
+		const atHq = career.at === career.hq;
+		const fits = row.kind !== OrbitTech.KIND_HOLD || next.capacity >= career.ship.cargoTons;
+		html += shopButton((owned ? 'fit ' : 'buy ') + next.id + ' · ' + costText(price),
+			'part', row.kind, tierIndex(row.table, next),
+			!atHq || !fits || career.ledger.purse + 1e-9 < price,
+			atHq ? 'install ' + next.id + ' at HQ' : 'refit at HQ only');
+		return html + '</span></div>';
+	}
+
+	function shopBlockHtml(career) {
+		const planet = careerPickPlanet();
+		let html = '<div class="careerHead">pad on ' + planetName(planet) + '</div>';
+		for (let i = 0; i < GEAR_ROWS.length; i++) html += gearRowHtml(career, GEAR_ROWS[i], planet);
+		html += '<div class="careerHead">ship refit · HQ ' + planetName(career.hq) + '</div>';
+		for (let i = 0; i < PART_ROWS.length; i++) html += partRowHtml(career, PART_ROWS[i]);
+		return html;
+	}
+
+	function taskRowHtml(career, index) {
+		const task = career.tasks[index];
+		const sport = index === GravityGame.COMPETE_SLOT;
+		const kind = sport ? 'sport' : 'delivery';
+		if (task.kind === GravityGame.TASK_NONE) {
+			return '<div class="careerRow dim"><span class="careerKind">' + kind +
+				'</span><span class="careerNow">no offer</span></div>';
+		}
+		const left = Math.max(0, Math.round((task.deadline - game.clockSteps) * DT));
+		if (task.kind === GravityGame.TASK_COMPETE) {
+			return '<div class="careerRow"><span class="careerKind">sport</span>' +
+				'<span class="careerNow">' + planetName(task.planet) + ' · land ≥ ' +
+				task.minLength + ' px</span><span class="careerBtns">+' + task.reward.toFixed(2) +
+				' · ' + left + ' s</span></div>';
+		}
+		const good = OrbitEcon.GOODS_TABLE[task.good].id;
+		const state = task.state === GravityGame.TASK_LOADED
+			? 'loaded → ' + planetName(task.to)
+			: task.state === GravityGame.TASK_ACCEPTED
+			? 'load at ' + planetName(task.from)
+			: planetName(task.from) + ' → ' + planetName(task.to);
+		let html = '<div class="careerRow"><span class="careerKind">' + kind + '</span>' +
+			'<span class="careerNow">' + state + ' · ' + good + ' ' + task.tons + ' t</span>' +
+			'<span class="careerBtns">+' + task.reward.toFixed(2) + ' · ' + left + ' s';
+		if (task.state === GravityGame.TASK_OFFERED) {
+			const hold = career.ship.hold.capacity;
+			const ok = GravityGame.canAccept(career, index);
+			html += '<button class="miniBtn" data-act="accept" data-slot="' + index + '"' +
+				(ok ? '' : ' disabled') +
+				' title="' + (ok ? 'take this delivery' : hold < task.tons
+					? 'needs a ' + task.tons + ' t hold (have ' + hold + ' t)'
+					: 'one contract at a time') + '">accept</button>';
+		} else {
+			html += '<button class="miniBtn" data-act="drop" title="drop the contract and its cargo">drop</button>';
+		}
+		return html + '</span></div>';
+	}
+
+	function taskBlockHtml(career) {
+		let html = '<div class="careerHead">task board</div>';
+		for (let i = 0; i < career.tasks.length; i++) html += taskRowHtml(career, i);
+		return html;
+	}
+
+	function fillCareerPlanets(career) {
+		if (!careerPlanetEl) return;
+		const picked = careerPickPlanet();
+		let html = '';
+		for (let i = 0; i < PLANETS; i++) {
+			const pad = career.pads[i];
+			html += '<option value="' + i + '">' + planetName(i) + (i === career.hq ? ' ★' : '') +
+				(pad.catapult ? ' · ' + pad.catapult.id : ' · no pad') + '</option>';
+		}
+		careerPlanetEl.innerHTML = html;
+		careerPlanetEl.value = String(picked);
+	}
+
+	function refreshCareerPanel() {
+		if (!careerBoxEl) return;
+		if (!careerRule()) {
+			careerPadEl.innerHTML = '';
+			careerShopEl.innerHTML = '';
+			careerTaskEl.innerHTML = '';
+			careerNotice('');
+			return;
+		}
+		const career = game.career;
+		if (careerTagEl) careerTagEl.textContent = careerTagText();
+		fillCareerPlanets(career);
+		careerPadEl.innerHTML = padBlockHtml(career);
+		careerTaskEl.innerHTML = taskBlockHtml(career);
+		careerShopEl.innerHTML = shopBlockHtml(career);
+		const ended = career.ended !== GravityGame.CAREER_OPEN;
+		careerWaitBtn.disabled = ended || gravity.status === STATUS_FLYING;
+		const here = career.at >= 0 ? career.pads[career.at] : null;
+		careerWaitBtn.title = 'run the world clock ' + CAREER_WAIT_MIN + ' minutes' +
+			(here && here.panel
+				? ' · ' + planetName(career.at) + ' pad gains about ' +
+					waitGain(career, career.at) + ' kWh'
+				: '');
+		careerEvacBtn.disabled = ended || !career.stranded || gravity.status === STATUS_FLYING;
+		careerEvacBtn.textContent = 'evacuate · ' + costText(careerCost(career, GravityGame.CAREER.evacFee));
+	}
+
+	/* any career edit can change the armed shot, the clock and the board */
+	function careerChanged() {
+		launchState = -1;
+		dirty = true;
+		refreshGameUi();
+	}
+
+	function careerBuild(career, planet, kind, item) {
+		const before = career.ledger.purse;
+		if (!GravityGame.buildGear(career, planet, kind, item)) {
+			careerNotice('cannot build ' + item.id + ' on ' + planetName(planet) + ' · ' +
+				costText(careerCost(career, item.buildCost)) + ' and a free ' + kind + ' slot');
+			return;
+		}
+		careerNotice('built ' + item.id + ' on ' + planetName(planet) + ' · −' +
+			(before - career.ledger.purse).toFixed(2));
+		careerChanged();
+	}
+
+	function careerBulk(career, kind, item) {
+		const cost = GravityGame.bulkUpgradeCost(career, kind, item);
+		if (!GravityGame.bulkUpgrade(career, kind, item)) {
+			careerNotice('cannot fit ' + item.id + ' on every pad · ' + costText(cost));
+			return;
+		}
+		careerNotice('every ' + kind + ' now ' + item.id + ' · −' + cost.toFixed(2));
+		careerChanged();
+	}
+
+	function careerPart(career, kind, item) {
+		if (!GravityGame.installPart(career, kind, item)) {
+			careerNotice('cannot fit ' + item.id + ' · refit at HQ ' + planetName(career.hq) +
+				(kind === OrbitTech.KIND_HOLD ? ' and keep the hold at least as big as the cargo' : ''));
+			return;
+		}
+		careerNotice('fitted ' + item.id + ' · ship ' + career.ship.mass.toFixed(1) + ' t');
+		careerChanged();
+	}
+
+	function careerAccept(career, index) {
+		if (!GravityGame.acceptTask(career, index)) {
+			careerNotice('cannot take that delivery');
+			return;
+		}
+		const task = career.tasks[index];
+		careerNotice(task.state === GravityGame.TASK_LOADED
+			? 'contract accepted · cargo loaded at ' + planetName(task.from)
+			: 'contract accepted · load at ' + planetName(task.from));
+		careerChanged();
+	}
+
+	function careerDrop(career) {
+		if (career.contract < 0) return;
+		GravityGame.dropContract(career);
+		/* a freed slot is offered again at once instead of after the next landing */
+		GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
+		careerNotice('contract dropped');
+		careerChanged();
+	}
+
+	/* kWh one wait adds to that pad's battery (solar over the wait, before the leak) */
+	function waitGain(career, planet) {
+		const pad = career.pads[planet];
+		if (pad.catapult === null) return '0.00';
+		return OrbitTech.solarCharge(pad.panel, career.light[planet], CAREER_WAIT_MIN * 60).toFixed(2);
+	}
+
+	/* let the world clock run so every pad charges (and the board ages) */
+	function careerWait() {
+		if (!careerRule() || gravity.status === STATUS_FLYING) return;
+		const career = game.career;
+		if (career.ended !== GravityGame.CAREER_OPEN) return;
+		const planet = career.at >= 0 ? career.at : career.hq;
+		const pad = career.pads[planet];
+		const before = pad.catapult === null ? 0 : pad.chargeKwh;
+		const rate = scene.trade.speed;
+		const steps = Math.max(1, Math.round(CAREER_WAIT_MIN / (DT * rate)));
+		GravityGame.careerAdvance(career, rate, steps);
+		game.clockSteps += steps;
+		tradeSim.advanceTo(tradeSim.t + CAREER_WAIT_MIN);
+		GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
+		GravityGame.checkEnded(career);
+		gravity.fieldT = tradeSim.t;
+		gravity.predCount = 0;
+		const after = pad.catapult === null ? 0 : pad.chargeKwh;
+		careerNotice('waited ' + CAREER_WAIT_MIN + ' min · ' + planetName(planet) + ' pad +' +
+			(after - before).toFixed(2) + ' kWh');
+		careerChanged();
+	}
+
+	function careerEvacuate() {
+		const career = game.career;
+		if (!GravityGame.evacuate(career, gravity)) {
+			careerNotice('nothing to evacuate');
+			return;
+		}
+		cancelAim();
+		careerNotice('evacuated to HQ ' + planetName(career.hq));
+		careerChanged();
+	}
+
+	/* every shop / board button carries data-act (and its args) */
+	function careerAct(data) {
+		if (!careerRule() || gravity.status === STATUS_FLYING) return;
+		const career = game.career;
+		const act = data.act;
+		if (act === 'wait') return careerWait();
+		if (act === 'evac') return careerEvacuate();
+		if (career.ended !== GravityGame.CAREER_OPEN) {
+			careerNotice('career over · restart for a new HQ');
+			return;
+		}
+		if (act === 'drop') return careerDrop(career);
+		if (act === 'accept') return careerAccept(career, Number(data.slot));
+		const table = TECH_TABLES[data.kind];
+		if (!table) return;
+		const item = table[Number(data.tier)];
+		if (!item) return;
+		if (act === 'build') careerBuild(career, careerPickPlanet(), data.kind, item);
+		else if (act === 'bulk') careerBulk(career, data.kind, item);
+		else if (act === 'part') careerPart(career, data.kind, item);
+	}
+
+	/* delegated click on the generated rows; data-* args live on the button */
+	function careerEventData(event) {
+		let node = event && event.target;
+		while (node) {
+			if (node.dataset && node.dataset.act) return node.dataset;
+			node = node.parentElement;
+		}
+		return null;
 	}
 
 	function updateGameHud() {
@@ -2748,8 +3206,19 @@
 		}
 	}
 
+	/* a planet disc hidden under the cargo panel still aims: the press is taken
+	 * over only when it lands on a pad the ship may launch from, never on a control */
+	function hudPadPress(event) {
+		const node = event.target;
+		if (!node || node === tradeCanvas || !cargoHudEl) return false;
+		if (typeof cargoHudEl.contains !== 'function' || !cargoHudEl.contains(node)) return false;
+		if (node.closest && node.closest('button, input, select, label, textarea')) return false;
+		const planet = planetAt(worldX(event.clientX), worldY(event.clientY));
+		return planet >= 0 && canAimFrom(planet);
+	}
+
 	function onPointerDown(event) {
-		if (event.button !== 0 || event.target !== tradeCanvas) return;
+		if (event.button !== 0 || (event.target !== tradeCanvas && !hudPadPress(event))) return;
 		const wx = worldX(event.clientX);
 		const wy = worldY(event.clientY);
 		const planet = planetAt(wx, wy);
@@ -3629,6 +4098,73 @@
 		}
 	}
 
+	/* pad plate under the landed planet: catapult tier, battery charge, speed cap.
+	 * Strings are cached by (planet, tier, 0.01 kWh) so draw() stays 0-alloc. */
+	const padPlate = { key: -1, text: '', frac: 0, warn: false };
+
+	function careerPadPlate(career) {
+		const at = career.at;
+		const pad = at >= 0 ? career.pads[at] : null;
+		const tier = pad && pad.catapult ? pad.catapult.tier : 0;
+		const key = at * 1000000 + tier * 100000 + (pad && pad.catapult ? Math.round(pad.chargeKwh * 100) : 0);
+		if (key === padPlate.key) return padPlate;
+		padPlate.key = key;
+		if (!pad) {
+			padPlate.text = 'lost in space';
+			padPlate.frac = 0;
+			padPlate.warn = true;
+			return padPlate;
+		}
+		if (!pad.catapult) {
+			padPlate.text = planetName(at) + ' · no catapult';
+			padPlate.frac = 0;
+			padPlate.warn = true;
+			return padPlate;
+		}
+		const mass = career.ship.mass;
+		padPlate.text = pad.catapult.id + ' · ' + pad.chargeKwh.toFixed(2) + ' kWh · ' +
+			Math.round(OrbitTech.speedLimit(pad.chargeKwh, mass, pad.catapult)) + ' px/s';
+		padPlate.frac = pad.chargeKwh / pad.battery.capacity;
+		padPlate.warn = pad.chargeKwh < OrbitTech.launchEnergy(mass, pad.catapult, 90);
+		return padPlate;
+	}
+
+	function drawCareerPad() {
+		const at = game.career.at;
+		if (at < 0) return;
+		const info = careerPadPlate(game.career);
+		const width = 186;
+		const height = 18;
+		const sx = tradeSim.planetX[at] * view.scale + view.offX;
+		const sy = tradeSim.planetY[at] * view.scale + view.offY;
+		const radius = tradeSim.planetR[at] * view.scale + 8;
+		const maxX = window.innerWidth - width - 6;
+		const maxY = window.innerHeight - height - 6;
+		/* below, above, right, left of the planet: the first slot clear of both HUD panels */
+		let x = 0;
+		let y = 0;
+		for (let slot = 0; slot < 4; slot++) {
+			x = sx - width * 0.5 + (slot === 2 ? radius : slot === 3 ? -radius - width : 0);
+			y = sy - height * 0.5 + (slot === 0 ? radius : slot === 1 ? -radius - height : 0);
+			if (x < 4) x = 4;
+			else if (x > maxX) x = maxX;
+			if (y < 4) y = 4;
+			else if (y > maxY) y = maxY;
+			if (!rectUnderHud(x, y, width, height)) break;
+		}
+		plate(x, y, width, height, info.warn ? 'rgba(255, 148, 120, 0.7)' : 'rgba(255, 207, 110, 0.34)');
+		ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillStyle = info.warn ? WARN : GOLD;
+		ctx.fillText(info.text, x + width * 0.5, y + 6.5);
+		const frac = info.frac < 0 ? 0 : info.frac > 1 ? 1 : info.frac;
+		ctx.fillStyle = 'rgba(140, 170, 200, 0.28)';
+		ctx.fillRect(x + 5, y + 13, width - 10, 3);
+		ctx.fillStyle = info.warn ? WARN : MINT;
+		ctx.fillRect(x + 5, y + 13, (width - 10) * frac, 3);
+	}
+
 	function drawRivalTags() {
 		ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
 		ctx.textAlign = 'center';
@@ -3677,6 +4213,7 @@
 		drawSigns();
 		ctx.restore();
 		if (game.on && !routeRule()) drawPlanetProfits();
+		if (careerRule()) drawCareerPad();
 		if (game.on && bot.count > 0) drawRivalTags();
 		if (hoverBody >= 0 && hoverBody !== selected && !aiming) {
 			drawLabel(hoverLabel, gravity.bodyX[hoverBody],
@@ -3991,8 +4528,8 @@
 			fieldChanged();
 		}
 	});
-	srcPlanetsEl.addEventListener('change', () => setMode(MODE_PLANETS));
-	srcPortsEl.addEventListener('change', () => setMode(MODE_PORTS));
+	srcPlanetsEl.addEventListener('change', () => setSource(MODE_PLANETS));
+	srcPortsEl.addEventListener('change', () => setSource(MODE_PORTS));
 	trimSlider.addEventListener('input', onTrimInput);
 	trimSlider.addEventListener('change', resetTrim);
 	horizonSlider.addEventListener('input', () => {
@@ -4016,21 +4553,33 @@
 		else if (game.on) abortFlight();
 		else clearCargo();
 	});
-	ruleTourEl.addEventListener('change', () => {
-		updateRuleHelp();
-		setRule(RULE_TOUR);
-	});
-	ruleRouteEl.addEventListener('change', () => {
-		updateRuleHelp();
-		setRule(RULE_ROUTE);
-	});
-	if (ruleMoneyEl) ruleMoneyEl.addEventListener('change', () => {
-		updateRuleHelp();
-		setRule(RULE_MONEY);
-	});
-	const ruleEls = [ruleTourEl, ruleRouteEl, ruleMoneyEl];
-	for (let rIdx = 0; rIdx < ruleEls.length; rIdx++) {
-		const el = ruleEls[rIdx];
+	/* the flat mode row replaces the old mode + rule groups */
+	for (let mIdx = 0; mIdx < modeEls.length; mIdx++) {
+		const el = modeEls[mIdx][1];
+		if (!el) continue;
+		const value = modeEls[mIdx][0];
+		el.addEventListener('change', () => {
+			if (el.checked) setPlayMode(value);
+		});
+	}
+	if (careerBoxEl) {
+		careerBoxEl.addEventListener('click', event => {
+			const data = careerEventData(event);
+			if (data) careerAct(data);
+		});
+	}
+	if (careerWaitBtn) careerWaitBtn.addEventListener('click', () => careerAct({ act: 'wait' }));
+	if (careerEvacBtn) careerEvacBtn.addEventListener('click', () => careerAct({ act: 'evac' }));
+	if (careerPlanetEl) {
+		const pickPlanet = () => {
+			careerFollow = false;
+			refreshCareerPanel();
+		};
+		careerPlanetEl.addEventListener('change', pickPlanet);
+		careerPlanetEl.addEventListener('input', pickPlanet);
+	}
+	for (let rIdx = 0; rIdx < modeEls.length; rIdx++) {
+		const el = modeEls[rIdx][1];
 		if (!el) continue;
 		const targets = el.parentElement && el.parentElement !== el
 			? [el, el.parentElement] : [el];
@@ -4095,8 +4644,6 @@
 	if (botEasyEl) botEasyEl.addEventListener('change', () => setBot(BOT_EASY));
 	if (botNormalEl) botNormalEl.addEventListener('change', () => setBot(BOT_NORMAL));
 	if (botHardEl) botHardEl.addEventListener('change', () => setBot(BOT_HARD));
-	modeLabEl.addEventListener('change', stopGame);
-	modeGameEl.addEventListener('change', () => startGame(tradeSim.seed, false));
 	gameRestartBtn.addEventListener('click', () =>
 		startGame(game.seed, game.fixedRate, undefined, undefined, undefined, game.cheat));
 	gameNewSeedBtn.addEventListener('click', () => {
@@ -4196,6 +4743,13 @@
 		setSlotType: setSlotType,
 		activeSlot: () => activeSlotIndex(),
 		selectUserSlot: selectUserSlot,
+		careerAct,
+		careerWait,
+		careerNotice,
+		careerPickPlanet,
+		refreshCareerPanel,
+		playMode: () => (game.on ? game.rule : PLAY_LAB),
+		setPlayMode,
 		routeLength: () => activeRoutePlan().length,
 		routePlan: activeRoutePlan,
 		routeBest: activeRouteBest,

@@ -90,17 +90,18 @@
 
 	<div class="group">
 		<div class="caption"><span>mode</span><span id="modeTag">lab · free clock</span></div>
-		<div class="radioRow" role="radiogroup" aria-label="mode">
-			<label><input id="modeLab" type="radio" name="playMode" value="lab" checked> lab</label>
-			<label><input id="modeGame" type="radio" name="playMode" value="game"> game</label>
+		<div class="radioRow modeRow" role="radiogroup" aria-label="mode">
+			<label title="catapult network: tasks, pads, evacuation"><input id="modeCareer" type="radio" name="playMode" value="career"> career</label>
+			<label title="free clock, editable gravity"><input id="modeLab" type="radio" name="playMode" value="lab" checked> lab</label>
+			<label title="visit every planet system within the flight cap"><input id="modeTour" type="radio" name="playMode" value="tour"> visit all tour</label>
+			<label title="plan the longest single trajectory"><input id="modeRoute" type="radio" name="playMode" value="route"> route length</label>
+			<label title="collect planet visit profit for 10 launches"><input id="modeMoney" type="radio" name="playMode" value="money"> money for visit</label>
 		</div>
-		<div id="gameBox" hidden>
-			<div class="caption"><span>rule</span><span id="ruleTag">tour</span></div>
-			<div class="radioRow" role="radiogroup" aria-label="game rule">
-				<label><input id="ruleTour" type="radio" name="gameRule" value="tour" checked> tour</label>
-				<label><input id="ruleRoute" type="radio" name="gameRule" value="route"> route</label>
-				<label><input id="ruleMoney" type="radio" name="gameRule" value="money"> money</label>
-			</div>
+	</div>
+
+	<div id="runBox" class="group" hidden>
+		<div class="caption"><span>run</span><span id="ruleTag">tour</span></div>
+		<div id="rivalGroup">
 			<div class="caption"><span>rivals</span><span id="rivalTag">normal · 1 bot</span></div>
 			<div class="radioRow rivalRadios" role="radiogroup" aria-label="rival difficulty">
 				<label><input id="botOff" type="radio" name="gameBot" value="off"> off</label>
@@ -108,21 +109,36 @@
 				<label><input id="botNormal" type="radio" name="gameBot" value="normal" checked> normal</label>
 				<label><input id="botHard" type="radio" name="gameBot" value="hard"> hard</label>
 			</div>
-			<div class="stats">
-				<div class="stat"><span>seed · rate</span><b id="gameSeed">—</b></div>
-				<div class="stat" id="purseRow"><span>purse</span><b id="gamePurse">—</b></div>
-				<div class="stat" id="replayRow" hidden><span>replay</span><b id="replayReadout">—</b></div>
-			</div>
-			<div class="actions gameActions">
-				<button id="gameRestart" class="miniBtn" title="same seed, fresh start">restart</button>
-				<button id="gameNewSeed" class="miniBtn" title="random world">new seed</button>
-				<button id="gameCopy" class="miniBtn" title="link with seed, rate and every launch">copy replay</button>
-				<button id="botCopy" class="miniBtn" title="copy rival shot list as a replay link" hidden>copy rival</button>
-				<button id="replaySpeed" class="miniBtn" title="replay speed" hidden>×1</button>
-				<button id="replaySkip" class="miniBtn" title="re-simulate the rest instantly" hidden>skip</button>
-			</div>
-			<input id="gameLink" type="text" readonly hidden aria-label="replay link">
 		</div>
+		<div class="stats">
+			<div class="stat"><span>seed · rate</span><b id="gameSeed">—</b></div>
+			<div class="stat" id="purseRow"><span>purse</span><b id="gamePurse">—</b></div>
+			<div class="stat" id="replayRow" hidden><span>replay</span><b id="replayReadout">—</b></div>
+		</div>
+		<div class="actions gameActions">
+			<button id="gameRestart" class="miniBtn" title="same seed, fresh start">restart</button>
+			<button id="gameNewSeed" class="miniBtn" title="random world">new seed</button>
+			<button id="gameCopy" class="miniBtn" title="link with seed, rate and every launch">copy replay</button>
+			<button id="botCopy" class="miniBtn" title="copy rival shot list as a replay link" hidden>copy rival</button>
+			<button id="replaySpeed" class="miniBtn" title="replay speed" hidden>×1</button>
+			<button id="replaySkip" class="miniBtn" title="re-simulate the rest instantly" hidden>skip</button>
+		</div>
+		<input id="gameLink" type="text" readonly hidden aria-label="replay link">
+	</div>
+
+	<div id="careerBox" class="group" hidden>
+		<div class="caption"><span>career</span><span id="careerTag">—</span></div>
+		<label class="ctl careerPick" title="planet whose pad the shop builds on">planet
+			<select id="careerPlanet" aria-label="build planet"></select>
+		</label>
+		<div id="careerPad" class="careerBlock"></div>
+		<div id="careerTasks" class="careerBlock"></div>
+		<div id="careerShop" class="careerBlock"></div>
+		<div class="actions careerActions">
+			<button id="careerWait" class="miniBtn" title="run the world clock so every pad charges">wait · 30 min</button>
+			<button id="careerEvac" class="miniBtn" title="fly the ship home to HQ for a fee">evacuate</button>
+		</div>
+		<div id="careerMsg" class="careerMsg" hidden></div>
 	</div>
 
 	<div class="group">
