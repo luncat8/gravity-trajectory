@@ -840,6 +840,33 @@ input:disabled {
 	font-size: 10px;
 }
 
+/* science research sliders: fill the row, wrap before the drawer can overflow */
+.careerRow.sciAxis {
+	gap: 6px;
+}
+
+.careerRow.sciAxis input[type="range"] {
+	flex: 1 1 120px;
+	min-width: 60px;
+	max-width: 100%;
+	accent-color: var(--accent);
+}
+
+.sciVal {
+	flex: none;
+	min-width: 46px;
+	color: var(--dim);
+	text-align: right;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 10px;
+}
+
+.sciHull {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
 #careerWaitInfo {
 	margin: 5px 0 3px;
 	font-size: 10px;

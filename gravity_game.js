@@ -19,6 +19,9 @@
 	const OrbitTech = typeof module !== 'undefined' && module.exports
 		? require('./orbit_tech.js')
 		: root.OrbitTech;
+	const OrbitScience = typeof module !== 'undefined' && module.exports
+		? require('./orbit_science.js')
+		: root.OrbitScience;
 
 	const FORMAT = 1;
 	const ANGLE_STEPS = 1048576;
@@ -450,6 +453,8 @@
 				cargoTons: 0, fuelKg: 0, mass: 0
 			},
 			owned: {},
+			science: OrbitScience.createHull(),
+			research: 0,
 			tasks: tasks,
 			contract: -1,
 			serial: 0,
@@ -461,6 +466,7 @@
 			lastEnergy: 0,
 			lastReward: 0,
 			lastFuel: 0,
+			lastResearch: 0,
 			ended: CAREER_OPEN
 		};
 	}
@@ -519,6 +525,55 @@
 		pad.chargeKwh = battery.capacity;
 	}
 
+	/* researchable parameter spaces, in the axis order the science panel sliders use */
+	const SCIENCE_KINDS = [OrbitTech.KIND_ENGINE, OrbitTech.KIND_CATAPULT];
+
+	/* the tech tree itself is discovered science: its items seed the hull so the
+	 * first custom inventions pay only the distance beyond known tradeoffs */
+	function seedScience(career) {
+		career.science = OrbitScience.createHull();
+		for (let i = 0; i < OrbitTech.ENGINES.length; i++) {
+			const e = OrbitTech.ENGINES[i];
+			OrbitScience.acceptHull(career.science, OrbitTech.KIND_ENGINE, [e.thrust, e.mass], e.id);
+		}
+		for (let i = 0; i < OrbitTech.CATAPULTS.length; i++) {
+			const c = OrbitTech.CATAPULTS[i];
+			OrbitScience.acceptHull(career.science, OrbitTech.KIND_CATAPULT,
+				[c.maxForce, c.efficiency], c.id);
+		}
+	}
+
+	function researchPreview(career, family, params) {
+		return OrbitScience.previewHull(career.science, family, params);
+	}
+
+	/* purse price of a preview after the active cheat (communism researches free) */
+	function researchCost(career, family, params) {
+		const p = OrbitScience.previewHull(career.science, family, params);
+		if (!Number.isFinite(p.cost)) return Infinity;
+		return price(career, p.cost);
+	}
+
+	function researchLabel(career, family) {
+		return 'R' + (OrbitScience.statsHull(career.science, family).n + 1);
+	}
+
+	/* invent a parameter point at HQ: the purse pays the hull-distance fee and
+	 * the point expands the career's knowledge hull for the next invention */
+	function researchPoint(career, family, params, label) {
+		if (career.ended !== CAREER_OPEN || career.at !== career.hq) return false;
+		if (SCIENCE_KINDS.indexOf(family) < 0) return false;
+		const p = OrbitScience.previewHull(career.science, family, params);
+		if (!Number.isFinite(p.cost)) return false;
+		const cost = price(career, p.cost);
+		if (!canPay(career, cost)) return false;
+		career.ledger.purse -= cost;
+		OrbitScience.acceptHull(career.science, family, params, label);
+		career.research += 1;
+		career.lastResearch = cost;
+		return true;
+	}
+
 	function resetCareer(career, seed, trade, cheat) {
 		const grant = OrbitTech.starterGrant();
 		career.seed = seed >>> 0;
@@ -542,6 +597,9 @@
 		career.ship.tank = grant.ship.tank;
 		career.ship.cargoTons = 0;
 		career.owned = {};
+		seedScience(career);
+		career.research = 0;
+		career.lastResearch = 0;
 		/* the starter fit is owned from the start, so every refit is reversible */
 		ownPart(career, career.ship.hold);
 		ownPart(career, career.ship.tank);
@@ -920,6 +978,7 @@
 		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
 		createCareer, resetCareer, startCareer, checkEnded,
+		SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart,
 		refreshBoard, canAccept, acceptTask, dropContract,
 		careerBeginFlight, careerBurn, careerAdvance, careerEndFlight, evacuate

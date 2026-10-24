@@ -104,6 +104,14 @@ wall-clock budgets never trip: a flying cargo's continuation traces the full
 240 s every frame. Keep vm flights short and do not read vm timings as
 browser timings.
 
+The stub's `navigator.clipboard.writeText` records the text synchronously and
+then returns a resolved promise. Assert `env.clipboardText` right after the
+click; anything done in the `.then()` (a "copied ✓" notice) is a microtask and
+is still empty in the same synchronous segment. The no-clipboard fallback path
+(notice set directly) is the one to assert synchronously. Also remember a newly
+added script must go into `index.html` — a module that only worked under node
+(`require`) stays `undefined` in the vm until its tag is added.
+
 ## throttled HUD vs pointer feedback
 
 Throttling a whole HUD to ~10 Hz is fine for clocks and stats but hides the
@@ -297,3 +305,19 @@ prediction buffers round away exactly the differences being measured.
 	so moving-field stride alignment is preserved). Live flights, `predictBurn`,
 	`predictBurnFast`, and `-b<step>.<angle>.<dv>` replay links then match
 	step-for-step.
+
+## convex-hull distance on real, nearly-collinear data
+
+The knowledge-hull distance is a projected-gradient simplex projection
+(`orbit_science.js`), fine on the bench's well-separated toy points. Real tech
+tuples are nearly collinear and badly scaled (engine `(thrust 12..40, mass
+1..2.5)`): with a fixed 200-iteration budget and step `1/‖P‖_F²`, re-previewing
+an *already accepted* vertex returned a small nonzero distance, so researching
+the same vector twice was mispriced above the base fee. Fix before the
+iteration: an exact-vertex short circuit (component-wise `EPS` match →
+`inside, dist 0`). Keep the iterative path for genuine interior/exterior
+targets instead of "improving" the solver globally — the cheap exact check is
+what the acceptance flow needs, and the bench's tolerance-sensitive toy cases
+must stay unchanged. Also make hull state an instance (`createHull()`) from the
+start: a module-global point table cannot be reset per career or isolated
+between two runs in the same page.

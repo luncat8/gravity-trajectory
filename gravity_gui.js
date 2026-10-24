@@ -45,6 +45,7 @@
 	const PLAYER_BOT = GravityGame.PLAYER_BOT;
 	const MONEY = GravityGame.MONEY;
 	const OrbitTech = root.OrbitTech;
+	const OrbitScience = root.OrbitScience;
 	const OrbitEcon = root.OrbitEcon;
 	const GEAR_ROWS = [
 		{ kind: OrbitTech.KIND_CATAPULT, label: 'catapult', table: OrbitTech.CATAPULTS },
@@ -64,6 +65,29 @@
 		hold: OrbitTech.HOLDS,
 		tank: OrbitTech.TANKS,
 		engine: OrbitTech.ENGINES
+	};
+	/* §10 science: the two researchable 2-D parameter spaces and their slider
+	 * ranges; axis order matches the hull points seeded in GravityGame */
+	const SCIENCE_AXES = {
+		engine: [
+			{ key: 'thrust', label: 'thrust kN', min: 4, max: 60, step: 0.5, digits: 1 },
+			{ key: 'mass', label: 'mass t', min: 0.5, max: 4, step: 0.1, digits: 1 }
+		],
+		catapult: [
+			{ key: 'maxForce', label: 'force kN', min: 10, max: 220, step: 1, digits: 0 },
+			{ key: 'efficiency', label: 'efficiency', min: 0.5, max: 0.95, step: 0.01, digits: 2 }
+		]
+	};
+	/* near-hull defaults: the first invention costs ~base fee and fits the
+	 * starter purse, while pushing a slider outward shows the k·dist growth */
+	const SCIENCE_DEFAULTS = {
+		engine: { thrust: 26, mass: 1.8 },
+		catapult: { maxForce: 100, efficiency: 0.74 }
+	};
+	let scienceFamily = OrbitTech.KIND_ENGINE;
+	const scienceValues = {
+		engine: { thrust: SCIENCE_DEFAULTS.engine.thrust, mass: SCIENCE_DEFAULTS.engine.mass },
+		catapult: { maxForce: SCIENCE_DEFAULTS.catapult.maxForce, efficiency: SCIENCE_DEFAULTS.catapult.efficiency }
 	};
 	/* one press of wait runs the world clock: 30 world minutes of sunlight */
 	const CAREER_WAIT_MIN = 30;
@@ -321,6 +345,7 @@
 	const careerPlanetEl = $('careerPlanet');
 	const careerPadEl = $('careerPad');
 	const careerShopEl = $('careerShop');
+	const careerScienceEl = $('careerScience');
 	const careerTaskEl = $('careerTasks');
 	const careerWaitInfoEl = $('careerWaitInfo');
 	const careerWaitBtn = $('careerWait');
@@ -3278,6 +3303,14 @@
 			' title="' + title + '">' + label + '</button>';
 	}
 
+	/* §11 balance tooling: the spec a row shares is the tier on offer, else
+	 * the one fitted; copy stays enabled with an empty purse or a closed career */
+	function copyButtonHtml(row, item) {
+		if (!item) return '';
+		return shopButton('copy', 'copy', row.kind, tierIndex(row.table, item), false,
+			'copy the balance spec of ' + item.id);
+	}
+
 	function careerTagText() {
 		const career = game.career;
 		const at = career.at;
@@ -3363,7 +3396,7 @@
 		let html = '<div class="careerRow"><span class="careerKind">' + row.label + '</span>' +
 			'<span class="careerNow">' + (cur ? cur.id : 'none') + '</span>' +
 			capHtml(gearCapText(career, planet, pad, row.kind, next)) + '<span class="careerBtns">';
-		if (next === null) return html + '<i>max</i></span></div>';
+		if (next === null) return html + '<i>max</i> ' + copyButtonHtml(row, cur) + '</span></div>';
 		if (cur === null && row.kind !== OrbitTech.KIND_CATAPULT) {
 			return html + '<i>needs a catapult</i></span></div>';
 		}
@@ -3386,6 +3419,7 @@
 				tierIndex(row.table, next), career.ledger.purse + 1e-9 < bulkCost,
 				'fit ' + next.id + ' to ' + count + ' built ' + row.label + (count === 1 ? '' : 's'));
 		}
+		html += copyButtonHtml(row, next);
 		return html + '</span></div>';
 	}
 
@@ -3465,6 +3499,7 @@
 			capHtml(partCapText(career, row, cur, change)) + '<span class="careerBtns">';
 		if (next !== null) html += partButtonHtml(career, row, next, false);
 		if (canBack) html += partButtonHtml(career, row, back, true);
+		html += copyButtonHtml(row, next !== null ? next : cur);
 		return html + '</span></div>';
 	}
 
@@ -3475,6 +3510,173 @@
 		html += '<div class="careerHead">ship refit · HQ ' + planetName(career.hq) + '</div>';
 		for (let i = 0; i < PART_ROWS.length; i++) html += partRowHtml(career, PART_ROWS[i]);
 		return html;
+	}
+
+	/* --- §10 science: hull-distance research on custom parameter vectors --- */
+
+	function scienceParams(family) {
+		const axes = SCIENCE_AXES[family];
+		const out = new Array(axes.length);
+		for (let i = 0; i < axes.length; i++) out[i] = scienceValues[family][axes[i].key];
+		return out;
+	}
+
+	function scienceAxisText(axis, value) {
+		return value.toFixed(axis.digits);
+	}
+
+	function scienceVectorText(family, params) {
+		const axes = SCIENCE_AXES[family];
+		const parts = new Array(axes.length);
+		for (let i = 0; i < axes.length; i++) parts[i] = params[i].toFixed(axes[i].digits);
+		return '[' + parts.join(', ') + ']';
+	}
+
+	function sciencePreviewText(career, family) {
+		const params = scienceParams(family);
+		const p = GravityGame.researchPreview(career, family, params);
+		const where = p.inside ? 'inside hull · recombine' : 'outside · dist ' + p.dist.toFixed(2);
+		return scienceVectorText(family, params) + ' · ' + where +
+			' · fee ' + costText(GravityGame.researchCost(career, family, params));
+	}
+
+	function scienceAcceptButton(career, family) {
+		const cost = GravityGame.researchCost(career, family, scienceParams(family));
+		const atHq = career.at === career.hq && career.ended === GravityGame.CAREER_OPEN;
+		const disabled = !atHq || !Number.isFinite(cost) || career.ledger.purse + 1e-9 < cost;
+		const why = !atHq ? 'research is done back at HQ ' + planetName(career.hq)
+			: disabled ? 'the purse cannot cover the research fee'
+			: 'accept this point into the knowledge hull';
+		return '<button class="miniBtn" id="sciAccept" data-act="sciAccept" data-kind="' + family + '"' +
+			(disabled ? ' disabled' : '') + ' title="' + why + '">research · ' + costText(cost) + '</button>';
+	}
+
+	function scienceHullText(career) {
+		let html = '';
+		for (let i = 0; i < GravityGame.SCIENCE_KINDS.length; i++) {
+			const kind = GravityGame.SCIENCE_KINDS[i];
+			const st = OrbitScience.statsHull(career.science, kind);
+			const points = OrbitScience.pointsHull(career.science, kind);
+			let custom = '';
+			for (let j = 0; j < points.length; j++) {
+				if (points[j].label.charAt(0) === 'R') {
+					custom += (custom ? ', ' : '') + points[j].label;
+				}
+			}
+			html += '<div class="careerLine dim sciHull">' + kind + ' hull · ' + st.n + ' points' +
+				(custom ? ' · ' + custom : '') + '</div>';
+		}
+		return html;
+	}
+
+	function scienceBlockHtml(career) {
+		const family = scienceFamily;
+		const axes = SCIENCE_AXES[family];
+		let html = '<div class="careerHead">science · hull research · HQ ' + planetName(career.hq) + '</div>';
+		html += '<div class="careerRow"><span class="careerBtns">';
+		for (let i = 0; i < GravityGame.SCIENCE_KINDS.length; i++) {
+			const kind = GravityGame.SCIENCE_KINDS[i];
+			html += '<button class="miniBtn' + (kind === family ? ' on' : '') +
+				'" data-act="sciFamily" data-family="' + kind +
+				'" title="research the ' + kind + ' parameter space">' + kind + '</button>';
+		}
+		html += '</span></div>';
+		for (let i = 0; i < axes.length; i++) {
+			const a = axes[i];
+			const v = scienceValues[family][a.key];
+			html += '<div class="careerRow sciAxis"><span class="careerKind">' + a.label + '</span>' +
+				'<input type="range" data-sci-family="' + family + '" data-sci-axis="' + a.key +
+				'" min="' + a.min + '" max="' + a.max + '" step="' + a.step + '" value="' + v +
+				'" aria-label="' + a.label + '"><span class="sciVal" id="sciVal' + i + '">' +
+				scienceAxisText(a, v) + '</span></div>';
+		}
+		html += '<div class="careerLine dim" id="sciPreview" title="base fee inside the known hull, base + k·dist outside">' +
+			sciencePreviewText(career, family) + '</div>';
+		html += '<div class="careerRow"><span class="careerBtns">' +
+			scienceAcceptButton(career, family) + '</span></div>';
+		return html + scienceHullText(career);
+	}
+
+	/* sliders stay mounted while dragged, so an input only patches the readout
+	 * and the accept button; the full block re-renders on a family switch */
+	function refreshScienceReadout(career) {
+		if (!careerScienceEl || !career) return;
+		const family = scienceFamily;
+		const axes = SCIENCE_AXES[family];
+		for (let i = 0; i < axes.length; i++) {
+			const valEl = $('sciVal' + i);
+			if (valEl) valEl.textContent = scienceAxisText(axes[i], scienceValues[family][axes[i].key]);
+		}
+		const previewEl = $('sciPreview');
+		if (previewEl) previewEl.textContent = sciencePreviewText(career, family);
+		const acceptEl = $('sciAccept');
+		if (acceptEl) {
+			const cost = GravityGame.researchCost(career, family, scienceParams(family));
+			const atHq = career.at === career.hq && career.ended === GravityGame.CAREER_OPEN;
+			acceptEl.disabled = !atHq || !Number.isFinite(cost) || career.ledger.purse + 1e-9 < cost;
+			acceptEl.textContent = 'research · ' + costText(cost);
+		}
+	}
+
+	function scienceSliderInput(node) {
+		const family = node.dataset.sciFamily;
+		const axisKey = node.dataset.sciAxis;
+		const axes = SCIENCE_AXES[family];
+		if (!axes) return;
+		let meta = null;
+		for (let i = 0; i < axes.length; i++) {
+			if (axes[i].key === axisKey) meta = axes[i];
+		}
+		if (!meta) return;
+		let v = Number(node.value);
+		if (!Number.isFinite(v)) return;
+		if (v < meta.min) v = meta.min;
+		if (v > meta.max) v = meta.max;
+		scienceValues[family][axisKey] = v;
+		refreshScienceReadout(game.career);
+	}
+
+	function careerScienceFamily(family) {
+		if (!SCIENCE_AXES[family]) return;
+		scienceFamily = family;
+		refreshCareerPanel();
+	}
+
+	function careerResearch() {
+		const career = game.career;
+		const family = scienceFamily;
+		const label = GravityGame.researchLabel(career, family);
+		const params = scienceParams(family);
+		const before = career.ledger.purse;
+		if (!GravityGame.researchPoint(career, family, params, label)) {
+			careerNotice('research needs the ship at HQ ' + planetName(career.hq) +
+				', an open career, and the preview fee');
+			return;
+		}
+		const n = OrbitScience.statsHull(career.science, family).n;
+		careerNotice('researched ' + family + ' ' + label + ' ' + scienceVectorText(family, params) +
+			' · −' + (before - career.ledger.purse).toFixed(2) + ' · hull ' + n + ' points');
+		careerChanged();
+	}
+
+	/* §11 share a tech record's balance line; without a clipboard the line is
+	 * shown in the drawer notice so it stays selectable on file:// pages */
+	function careerCopySpec(data) {
+		const index = Math.round(Number(data.tier));
+		if (index === NO_TIER) return;
+		const table = TECH_TABLES[data.kind];
+		if (!table) return;
+		const item = table[index];
+		if (!item) return;
+		const text = OrbitTech.copySpec(data.kind, item);
+		const clipboard = navigator.clipboard;
+		if (!clipboard) {
+			careerNotice(text);
+			return;
+		}
+		clipboard.writeText(text).then(
+			() => careerNotice('copied spec · ' + item.id),
+			() => careerNotice(text));
 	}
 
 	function taskRowHtml(career, index) {
@@ -3652,6 +3854,7 @@
 		if (!careerRule()) {
 			careerPadEl.innerHTML = '';
 			careerShopEl.innerHTML = '';
+			if (careerScienceEl) careerScienceEl.innerHTML = '';
 			careerTaskEl.innerHTML = '';
 			if (careerWaitInfoEl) {
 				careerWaitInfoEl.textContent = '';
@@ -3666,6 +3869,7 @@
 		careerPadEl.innerHTML = padBlockHtml(career);
 		careerTaskEl.innerHTML = taskBlockHtml(career);
 		careerShopEl.innerHTML = shopBlockHtml(career);
+		if (careerScienceEl) careerScienceEl.innerHTML = scienceBlockHtml(career);
 		const ended = career.ended !== GravityGame.CAREER_OPEN;
 		refreshCareerWaitUi(career, ended);
 		careerEvacBtn.disabled = ended || !career.stranded || gravity.status === STATUS_FLYING;
@@ -3779,12 +3983,16 @@
 		const act = data.act;
 		if (act === 'wait') return careerWait();
 		if (act === 'evac') return careerEvacuate();
+		/* balance tooling stays available on a closed career */
+		if (act === 'copy') return careerCopySpec(data);
 		if (career.ended !== GravityGame.CAREER_OPEN) {
 			careerNotice('career over · restart for a new HQ');
 			return;
 		}
 		if (act === 'drop') return careerDrop(career);
 		if (act === 'accept') return careerAccept(career, Number(data.slot));
+		if (act === 'sciFamily') return careerScienceFamily(data.family);
+		if (act === 'sciAccept') return careerResearch();
 		const table = TECH_TABLES[data.kind];
 		if (!table) return;
 		const index = Math.round(Number(data.tier));
@@ -5414,6 +5622,10 @@
 		careerBoxEl.addEventListener('click', event => {
 			const data = careerEventData(event);
 			if (data) careerAct(data);
+		});
+		careerBoxEl.addEventListener('input', event => {
+			const node = event && event.target;
+			if (node && node.dataset && node.dataset.sciAxis) scienceSliderInput(node);
 		});
 	}
 	if (careerWaitBtn) careerWaitBtn.addEventListener('click', () => careerAct({ act: 'wait' }));

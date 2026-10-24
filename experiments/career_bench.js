@@ -106,6 +106,26 @@ check('empty family: everything outside, infinite dist', () => {
 	assert.ok(!p.inside && p.dist === Infinity);
 });
 
+check('per-career hulls are isolated and an accepted vertex is exactly inside', () => {
+	const a = OrbitScience.createHull();
+	const b = OrbitScience.createHull();
+	OrbitScience.acceptHull(a, 'engine', [12, 1], 'IMP-1');
+	OrbitScience.acceptHull(a, 'engine', [40, 2.5], 'IMP-3');
+	assert.strictEqual(OrbitScience.statsHull(a, 'engine').n, 2);
+	assert.strictEqual(OrbitScience.statsHull(b, 'engine').n, 0, 'hulls must not share state');
+	assert.strictEqual(OrbitScience.previewHull(b, 'engine', [12, 1]).dist, Infinity);
+	/* midpoint of the segment is a cheap interior recombining */
+	const mid = OrbitScience.previewHull(a, 'engine', [26, 1.75]);
+	assert.ok(mid.inside && Math.abs(mid.cost - OrbitScience.BASE_PRICE.engine) < 1e-9);
+	/* re-previewing an accepted vertex is exact even on a thin near-collinear hull */
+	OrbitScience.acceptHull(a, 'engine', [26, 1.8], 'R1');
+	const again = OrbitScience.previewHull(a, 'engine', [26, 1.8]);
+	assert.ok(again.inside && again.dist === 0 && again.cost === OrbitScience.BASE_PRICE.engine);
+	const labels = OrbitScience.pointsHull(a, 'engine').map(p => p.label);
+	assert.deepStrictEqual(labels, ['IMP-1', 'IMP-3', 'R1']);
+	assert.deepStrictEqual(OrbitScience.pointsHull(a, 'ghost'), []);
+});
+
 /* --- §3 solar / battery ------------------------------------------------- */
 
 check('solar charge: kW·s -> kWh, dim world charges slowly, leak decays', () => {
@@ -145,6 +165,15 @@ check('copySpec emits the balance line; starter grant is the weak kit', () => {
 	assert.ok(g.pad.catapult === EMC[0] && g.pad.panel === SP[0] && g.pad.battery === BAT[0]);
 	assert.ok(g.ship.hold === HOLD[0] && g.ship.engine === null && g.purse > CAREER.evacFee);
 });
+
+/* §11 balance dump: every tech record as a paste-ready spec line */
+for (const kind of Object.keys(OrbitTech.TABLES)) {
+	for (const item of OrbitTech.TABLES[kind]) {
+		const spec = OrbitTech.copySpec(kind, item);
+		assert.ok(spec.indexOf('tech: ' + kind.toUpperCase() + ' ' + item.id) === 0, spec);
+		console.log('  ' + spec);
+	}
+}
 
 /* --- §6 headless career run on the real gravity sim --------------------- */
 
@@ -781,6 +810,70 @@ check('shot burn codec: round-trip multi-burn shots and reject invalid burn tags
 	assert.strictEqual(GravityGame.decodeShot('p5.100.2bc0.10-b10.10.100', GravityGame.CAP_STEPS), null);
 	assert.strictEqual(GravityGame.decodeShot('p5.100.2bc0-b5.10.0', GravityGame.CAP_STEPS), null);
 	assert.strictEqual(GravityGame.decodeLink('game=1&seed=7&rate=1&rule=route&shots=p5.100.2bc0-b5.10.100'), null);
+});
+
+check('career science: tech tables seed the hull; research grows it for the preview fee', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career } = w;
+	assert.deepStrictEqual(OrbitScience.statsHull(career.science, 'engine'), { n: 3, dim: 2 });
+	assert.deepStrictEqual(OrbitScience.statsHull(career.science, 'catapult'), { n: 5, dim: 2 });
+	/* known tech vectors are discovered points: exact, fee = base */
+	const imp2 = OrbitTech.ENGINES[1];
+	const known = OrbitScience.previewHull(career.science, 'engine', [imp2.thrust, imp2.mass]);
+	assert.ok(known.inside && known.dist === 0);
+	/* an outside vector prices base + k·dist·scale through the career purse model */
+	const target = [60, 0.5];
+	const prev = OrbitScience.previewHull(career.science, 'engine', target);
+	assert.ok(!prev.inside && prev.dist > 0);
+	assert.strictEqual(GravityGame.researchCost(career, 'engine', target), prev.cost);
+	career.ledger.purse = 200;
+	const purse = career.ledger.purse;
+	const label = GravityGame.researchLabel(career, 'engine');
+	assert.ok(GravityGame.researchPoint(career, 'engine', target, label));
+	assert.ok(Math.abs(career.ledger.purse - (purse - prev.cost)) < 1e-9);
+	assert.strictEqual(career.research, 1);
+	assert.strictEqual(career.lastResearch, prev.cost);
+	assert.strictEqual(OrbitScience.statsHull(career.science, 'engine').n, 4);
+	/* the same vector is now a hull vertex: inside, and only the base fee remains */
+	const again = OrbitScience.previewHull(career.science, 'engine', target);
+	assert.ok(again.inside && again.cost === OrbitScience.BASE_PRICE.engine);
+	const purse2 = career.ledger.purse;
+	assert.ok(GravityGame.researchPoint(career, 'engine', target, 'R5'));
+	assert.ok(Math.abs(career.ledger.purse - (purse2 - again.cost)) < 1e-9);
+	/* restarting the career rebuilds the hull from the tech tables */
+	startCareer(w, 42);
+	assert.strictEqual(OrbitScience.statsHull(career.science, 'engine').n, 3);
+	assert.strictEqual(career.research, 0);
+});
+
+check('career science: research is HQ-only, open-career-only, affordable and a known family', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career } = w;
+	const target = [55, 0.6];
+	const fee = GravityGame.researchCost(career, 'engine', target);
+	career.at = (career.hq + 1) % PLANETS;
+	assert.strictEqual(GravityGame.researchPoint(career, 'engine', target, 'R4'), false);
+	assert.strictEqual(OrbitScience.statsHull(career.science, 'engine').n, 3, 'refusal leaves the hull untouched');
+	career.at = career.hq;
+	career.ledger.purse = fee - 1;
+	assert.strictEqual(GravityGame.researchPoint(career, 'engine', target, 'R4'), false);
+	career.ledger.purse = fee;
+	career.ended = GravityGame.CAREER_BROKE;
+	assert.strictEqual(GravityGame.researchPoint(career, 'engine', target, 'R4'), false);
+	career.ended = GravityGame.CAREER_OPEN;
+	assert.strictEqual(GravityGame.researchPoint(career, 'panel', [2, 0.5], 'X'), false, 'no panel research space');
+	assert.ok(GravityGame.researchPoint(career, 'engine', target, 'R4'));
+	assert.strictEqual(OrbitScience.statsHull(career.science, 'engine').n, 4);
+	/* communism: the same invention is free but still expands the hull */
+	const c = makeWorld(7);
+	startCareer(c, 7, GravityGame.CHEAT_COMMUNISM);
+	const purse = c.career.ledger.purse;
+	assert.strictEqual(GravityGame.researchCost(c.career, 'catapult', [220, 0.95]), 0);
+	assert.ok(GravityGame.researchPoint(c.career, 'catapult', [220, 0.95], 'R6'));
+	assert.strictEqual(c.career.ledger.purse, purse);
+	assert.strictEqual(OrbitScience.statsHull(c.career.science, 'catapult').n, 6);
 });
 
 console.log(failures === 0 ? 'CAREER BENCH OK' : 'CAREER BENCH FAILED ' + failures);

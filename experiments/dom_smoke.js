@@ -1915,6 +1915,110 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 		'/90 kg) & burn replay (' + rVerdict + ')');
 }
 
+/* --- 0.4.10: per-row copySpec balance button & hull research panel --- */
+{
+	const sciEnv = loadPage({ search: '?rule=career&seed=42&rate=1' });
+	sciEnv.runFrames(2, 16.0);
+	const sciUi = sciEnv.elements;
+	const sciScene = sciEnv.context.GravityScene;
+	const sciGame = sciEnv.context.GravityGame;
+	const sciTech = sciEnv.context.OrbitTech;
+	const sciScience = sciEnv.context.OrbitScience;
+	const sciCareer = sciScene.career;
+	const sciBox = sciUi.get('careerBox');
+	const sciBlock = () => sciUi.get('careerScience').innerHTML;
+	function sciClick(data) {
+		sciEnv.fireElement(sciBox, 'click', { target: { dataset: data } });
+	}
+	function sciMarkup(act) {
+		return new RegExp('<button[^>]*data-act="' + act + '"[^>]*>').exec(sciBlock()) || null;
+	}
+
+	/* every shop row carries a copy button, enabled regardless of purse */
+	const shopHtml = sciUi.get('careerShop').innerHTML;
+	const copyTags = shopHtml.match(/data-act="copy"/g) || [];
+	check(copyTags.length === 6, 'one copy button per shop row: ' + copyTags.length);
+	const firstCopy = /<button[^>]*data-act="copy" data-kind="([^"]+)" data-tier="(\d+)"[^>]*>/.exec(shopHtml);
+	check(firstCopy !== null, 'copy button markup: ' + shopHtml.slice(0, 120));
+	const expectedSpec = sciTech.copySpec(firstCopy[1], sciTech.TABLES[firstCopy[1]][Number(firstCopy[2])]);
+	sciClick({ act: 'copy', kind: firstCopy[1], tier: firstCopy[2] });
+	/* the stub writes inside writeText; its resolved .then notice is covered by the fallback env below */
+	check(sciEnv.clipboardText === expectedSpec, 'copy wrote the balance spec: ' + sciEnv.clipboardText);
+
+	/* research panel: seeded hulls, family switch, sliders, live fee, accept */
+	check(sciMarkup('sciFamily') !== null && sciMarkup('sciAccept') !== null, 'science controls rendered');
+	check((sciBlock().match(/data-sci-axis="/g) || []).length === 2, 'two engine research sliders');
+	check(sciBlock().includes('engine hull · 3 points') && sciBlock().includes('catapult hull · 5 points'),
+		'seeded hull summaries: ' + sciBlock());
+	check(sciScience.statsHull(sciCareer.science, 'engine').n === 3, 'career owns an isolated hull');
+	const defaultFee = sciGame.researchCost(sciCareer, 'engine', [26, 1.8]);
+	check(/outside · dist 0\.06 · fee 2\.38/.test(sciBlock()) && defaultFee > 2 && defaultFee < 2.5,
+		'default near-hull preview fee: ' + /id="sciPreview"[^>]*>([^<]+)/.exec(sciBlock())[1]);
+	check(!/data-act="sciAccept"[^>]*disabled/.test(sciBlock()), 'starter purse funds the first invention');
+
+	const purse0 = sciCareer.ledger.purse;
+	sciClick({ act: 'sciAccept', kind: 'engine' });
+	check(sciCareer.research === 1 && Math.abs(sciCareer.ledger.purse - (purse0 - defaultFee)) < 1e-9,
+		'accept paid the preview fee: ' + sciCareer.ledger.purse);
+	check(sciBlock().includes('engine hull · 4 points · R4'), 'hull grew with a custom label: ' + sciBlock());
+	check(/^researched engine R4/.test(sciUi.get('careerMsg').textContent),
+		'research notice: ' + sciUi.get('careerMsg').textContent);
+	/* the accepted vertex is now exactly inside: a repeat costs the base fee only */
+	sciClick({ act: 'sciAccept', kind: 'engine' });
+	check(sciCareer.research === 2 &&
+		Math.abs(sciCareer.ledger.purse - (purse0 - defaultFee - sciScience.BASE_PRICE.engine)) < 1e-9,
+		'repeat invention costs the base fee');
+
+	/* slider input delegation updates the draft and the re-rendered readout */
+	sciEnv.fireElement(sciBox, 'input',
+		{ target: { dataset: { sciFamily: 'engine', sciAxis: 'thrust' }, value: '60' } });
+	sciScene.refreshCareerPanel();
+	check(/data-sci-axis="thrust"[^>]*value="60"/.test(sciBlock()) &&
+		sciBlock().includes('[60.0, 1.8] · outside'), 'slider draft re-renders: ' +
+		/id="sciPreview"[^>]*>([^<]+)/.exec(sciBlock())[1]);
+
+	/* family switch swaps the parameter space and marks the active button */
+	sciClick({ act: 'sciFamily', family: 'catapult' });
+	check(sciBlock().includes('data-sci-axis="maxForce"') && sciBlock().includes('data-sci-axis="efficiency"') &&
+		/class="miniBtn on" data-act="sciFamily" data-family="catapult"/.test(sciBlock()),
+		'catapult research space: ' + sciBlock().slice(0, 200));
+
+	/* research is HQ-only: away from HQ the accept is disabled and clicks refuse */
+	sciCareer.at = (sciCareer.hq + 1) % pageWorld.PLANETS;
+	sciScene.refreshCareerPanel();
+	check(/data-act="sciAccept"[^>]*disabled/.test(sciBlock()), 'accept disabled away from HQ');
+	const purseAway = sciCareer.ledger.purse;
+	sciClick({ act: 'sciAccept', kind: 'catapult' });
+	check(sciCareer.ledger.purse === purseAway && /research needs the ship at HQ/.test(sciUi.get('careerMsg').textContent),
+		'away research refused: ' + sciUi.get('careerMsg').textContent);
+
+	/* max-tier rows (endgame) still offer a copy of the fitted record */
+	const endEnv = loadPage({ search: '?rule=career&cheat=endgame&seed=42&rate=1' });
+	endEnv.runFrames(2, 16.0);
+	const endShop = endEnv.elements.get('careerShop').innerHTML;
+	check(endShop.includes('data-act="copy" data-kind="catapult" data-tier="4"') &&
+		endShop.includes('<i>max</i>'), 'max-tier row copies EMC-5: ' + endShop.slice(0, 160));
+
+	/* clipboard-less page: the spec falls back to the drawer notice; communism researches free */
+	const commEnv = loadPage({ search: '?rule=career&cheat=communism&seed=42&rate=1', clipboard: false });
+	commEnv.runFrames(2, 16.0);
+	const commBox = commEnv.elements.get('careerBox');
+	const commCopy = /data-act="copy" data-kind="tank" data-tier="(\d+)"/.exec(commEnv.elements.get('careerShop').innerHTML);
+	commEnv.fireElement(commBox, 'click',
+		{ target: { dataset: { act: 'copy', kind: 'tank', tier: commCopy[1] } } });
+	check(commEnv.elements.get('careerMsg').textContent ===
+		sciTech.copySpec('tank', sciTech.TABLES.tank[Number(commCopy[1])]),
+		'no-clipboard copy fallback: ' + commEnv.elements.get('careerMsg').textContent);
+	const commCareer = commEnv.context.GravityScene.career;
+	const commPurse = commCareer.ledger.purse;
+	commEnv.fireElement(commBox, 'click', { target: { dataset: { act: 'sciAccept', kind: 'engine' } } });
+	check(commCareer.research === 1 && commCareer.ledger.purse === commPurse &&
+		/id="sciAccept"[^>]*>research · free</.test(commEnv.elements.get('careerScience').innerHTML),
+		'communism research is free: ' + commCareer.ledger.purse);
+	console.log('0.4.10 verified: 6 copy-spec rows (clipboard + file:// fallback) · hull research',
+		'(seed 3/5, fee ' + defaultFee.toFixed(2) + ', R4/R5 accept, slider, family switch, HQ gate, endgame max-tier copy, communism free)');
+}
+
 console.log('paint calls', {
 	fillText: env.calls.fillText,
 	stroke: env.calls.stroke,

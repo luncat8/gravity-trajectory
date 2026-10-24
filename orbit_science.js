@@ -4,6 +4,10 @@
  * hull is cheap (a recombination of known tradeoffs), outside costs
  * `k * dist` of new scientific work. Pure functions, no DOM, node-safe.
  *
+ * A hull is a plain object from createHull(), so every career owns an
+ * isolated knowledge volume; the module also keeps a default hull behind the
+ * family-only legacy API (used by the early node benches).
+ *
  * Example from the brief: engine (force=1, mass=10) and (force=2, mass=15)
  * discovered → hull is the segment; inventing (force=1, mass=1) next makes
  * the hull a triangle — any (force, mass) inside is cheap.
@@ -28,13 +32,16 @@
 		hold: 1.10, tank: 1.00
 	};
 
-	var families = {}; // family -> { points: Array[{params, label}], n, dim }
+	/* one career's knowledge volume: family -> { points, n, dim } */
+	function createHull() {
+		return { families: {} };
+	}
 
-	function ensure(family, dim) {
-		var f = families[family];
+	function ensureHull(hull, family, dim) {
+		var f = hull.families[family];
 		if (!f) {
 			f = { points: [], n: 0, dim: dim };
-			families[family] = f;
+			hull.families[family] = f;
 		}
 		return f;
 	}
@@ -67,7 +74,7 @@
 		var w = new Array(n);
 		var grad = new Array(n);
 		var Pw = new Array(dim);
-		var step, i, k, d, norm2, resid, gw;
+		var i, k, d, norm2, resid, gw, same;
 		var invL, best;
 
 		if (n === 0) return { inside: false, dist: Infinity, cost: Infinity };
@@ -78,6 +85,19 @@
 				d += resid * resid;
 			}
 			return { inside: d <= EPS * EPS, dist: Math.sqrt(d), cost: Math.sqrt(d) };
+		}
+
+		/* an accepted vertex is exactly inside: the gradient solver below
+		 * converges slowly on near-collinear real tech points */
+		for (i = 0; i < n; i++) {
+			same = true;
+			for (k = 0; k < dim; k++) {
+				if (Math.abs(target[k] - f.points[i].params[k]) > EPS * (1 + Math.abs(target[k]))) {
+					same = false;
+					break;
+				}
+			}
+			if (same) return { inside: true, dist: 0, cost: 0 };
 		}
 
 		for (i = 0; i < n; i++) w[i] = 1 / n;
@@ -131,38 +151,71 @@
 		return Math.sqrt(s);
 	}
 
+	/* research fee for one distance result: base fee, plus k·dist outside */
+	function priceOf(family, t) {
+		var base = BASE_PRICE[family] || 1.00;
+		var scale = TIER_SCALE[family] || 1.00;
+		return base + (t.inside ? 0 : K_DIST * t.dist * scale);
+	}
+
 	/* Preview cost of a desired tuple before it is invented. */
-	function preview(family, params) {
-		var f = families[family];
+	function previewHull(hull, family, params) {
+		var f = hull.families[family];
 		if (!f || f.n === 0) {
 			return { inside: false, dist: Infinity, cost: Infinity };
 		}
 		var t = distToHull(f, params);
-		var base = BASE_PRICE[family] || 1.00;
-		var scale = TIER_SCALE[family] || 1.00;
-		return {
-			inside: t.inside,
-			dist: t.dist,
-			cost: base + (t.inside ? 0 : K_DIST * t.dist * scale)
-		};
+		return { inside: t.inside, dist: t.dist, cost: priceOf(family, t) };
 	}
 
 	/* Accept the invention: add the point, expanding the hull. */
-	function accept(family, params, label) {
-		var f = ensure(family, params.length);
+	function acceptHull(hull, family, params, label) {
+		var f = ensureHull(hull, family, params.length);
 		f.points.push({ params: params.slice(), label: label || '' });
 		f.n = f.points.length;
 		return { inside: true, dist: 0, cost: BASE_PRICE[family] || 1.00 };
 	}
 
-	function stats(family) {
-		var f = families[family];
+	function statsHull(hull, family) {
+		var f = hull.families[family];
 		return f ? { n: f.n, dim: f.dim } : { n: 0, dim: 0 };
 	}
 
+	/* the discovered points of a family, oldest first (empty for an unknown family) */
+	function pointsHull(hull, family) {
+		var f = hull.families[family];
+		return f ? f.points : [];
+	}
+
+	/* legacy default hull: the family-only API the early benches were written on */
+	var defaultHull = createHull();
+
+	function ensure(family, dim) {
+		return ensureHull(defaultHull, family, dim);
+	}
+
+	function preview(family, params) {
+		return previewHull(defaultHull, family, params);
+	}
+
+	function accept(family, params, label) {
+		return acceptHull(defaultHull, family, params, label);
+	}
+
+	function stats(family) {
+		return statsHull(defaultHull, family);
+	}
+
 	var OrbitScience = {
-		ensure: ensure, distToHull: distToHull, preview: preview,
-		accept: accept, stats: stats, BASE_PRICE: BASE_PRICE,
+		createHull: createHull,
+		ensureHull: ensureHull,
+		previewHull: previewHull,
+		acceptHull: acceptHull,
+		statsHull: statsHull,
+		pointsHull: pointsHull,
+		distToHull: distToHull,
+		ensure: ensure, preview: preview, accept: accept, stats: stats,
+		BASE_PRICE: BASE_PRICE,
 		TIER_SCALE: TIER_SCALE, K_DIST: K_DIST
 	};
 
