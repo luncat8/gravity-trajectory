@@ -308,16 +308,43 @@ prediction buffers round away exactly the differences being measured.
 
 ## convex-hull distance on real, nearly-collinear data
 
-The knowledge-hull distance is a projected-gradient simplex projection
-(`orbit_science.js`), fine on the bench's well-separated toy points. Real tech
-tuples are nearly collinear and badly scaled (engine `(thrust 12..40, mass
-1..2.5)`): with a fixed 200-iteration budget and step `1/‖P‖_F²`, re-previewing
-an *already accepted* vertex returned a small nonzero distance, so researching
-the same vector twice was mispriced above the base fee. Fix before the
-iteration: an exact-vertex short circuit (component-wise `EPS` match →
-`inside, dist 0`). Keep the iterative path for genuine interior/exterior
-targets instead of "improving" the solver globally — the cheap exact check is
-what the acceptance flow needs, and the bench's tolerance-sensitive toy cases
-must stay unchanged. Also make hull state an instance (`createHull()`) from the
-start: a module-global point table cannot be reset per career or isolated
-between two runs in the same page.
+Projected gradient on the simplex is the wrong tool for knowledge-hull distance
+(`orbit_science.js`). Real tech tuples are badly scaled and nearly collinear
+(engine `(thrust 12..40, mass 1..2.5)`, catapult `(maxForce 15..180,
+efficiency 0.62..0.88)`): with step `1/‖P‖_F²` the iterate barely leaves the
+uniform start, so provably interior points (midpoints, centroids of the real
+tech points) were reported outside with distances up to 0.85 and charged
+`k·dist`. A vertex short circuit only hid the symptom for accepted points.
+
+What works:
+
+- **Wolfe's min-norm active set** on the translated vertices `p_i − target`:
+  finite, no step size, exact up to rounding. Use the affine min-norm step via
+  modified Gram-Schmidt on the vertex offsets, not normal equations: the Gram
+  matrix squares the condition number and loses ~10 digits on thin slivers.
+- Stop on a **relative** gap `(‖x‖² − min_i x·x_i) ≤ ε‖x‖²`. An absolute
+  `ε` on squared distances caps distance resolution at `√ε ≈ 1e-6`, which
+  misclassified a genuine sliver interior point at 6e-7 outside.
+- Keep only a small absolute floor for exact-zero targets so they end cleanly.
+- Verify against an independent oracle, not against the solver's own output:
+  brute force in 2-D (triangle containment, else nearest pair segment) and exact
+  rational arithmetic on the tech points. In 3-D, check the separating-plane lower
+  bound and convex-combination upper bound. The bench keeps a seeded 2-D
+  brute-force cross-check.
+
+Make hull state an instance (`createHull()`) from the start: a module-global
+point table cannot be reset per career or isolated between two runs in the
+same page.
+
+## custom records on a tier ladder
+
+Ladder logic keys everything off `tier` and table identity: `nextTier`,
+`lighterTier`, `upgrades` (`cur.tier < item.tier`), and the shop's
+`tierIndex` button refs. An off-table record with no numeric tier silently
+breaks the ladder (no next rung, no back rung, copy buttons pointing at index
+−1). Place custom records *on* the ladder instead: a fractional tier
+interpolated from the seeded rungs by the record's defining value
+(`interpolate`, `engineRecord`, `catapultRecord`), with isp and build cost
+read off that same rung. Keep the tier ≥ 0.5 so the record still outranks
+the empty slot. Shop buttons then name a record by table tier or by id
+(`data-item`), resolved once by `shopRecord` for both the act and the copy.

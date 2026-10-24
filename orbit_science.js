@@ -12,16 +12,18 @@
  * discovered → hull is the segment; inventing (force=1, mass=1) next makes
  * the hull a triangle — any (force, mass) inside is cheap.
  *
- * Distance to hull = min ||P w - p|| s.t. w >= 0, sum(w) = 1, solved by
- * projected gradient with simplex projection; by Carathéodory this is exact
- * for the convex hull of all discovered points of the family.
+ * Distance to hull is the nearest-point problem min ||P w - p|| s.t. w on the
+ * simplex, solved exactly by Wolfe's min-norm active-set method (finite, no
+ * step-size tuning). Tech tuples are badly scaled and nearly collinear, where a
+ * first-order method stalls and wrongly reports interior points as outside.
  */
 (function (root) {
 	'use strict';
 
-	var EPS = 1e-7;
+	var INSIDE_EPS = 1e-9; // relative to the target magnitude
+	var WOLFE_EPS = 1e-12;
+	var MAX_CYCLES = 64;
 	var K_DIST = 6.0; // purse per unit distance outside the hull
-	var MAX_ITER = 200;
 
 	var BASE_PRICE = {
 		engine: 2.00, catapult: 3.00, panel: 1.50, battery: 1.00,
@@ -46,109 +48,157 @@
 		return f;
 	}
 
-	/* Project vector v onto the simplex {w >= 0, sum(w) = 1}. */
-	function projectSimplex(v) {
-		var n = v.length;
-		var u = v.slice();
-		var i, j, cum, t, s;
-		u.sort(function (a, b) { return b - a; });
-		cum = 0;
-		t = 0;
-		for (i = 0; i < n; i++) {
-			cum += u[i];
-			t = (cum - 1) / (i + 1);
-			if (i + 1 < n && u[i + 1] <= t) break;
-		}
-		s = 0;
-		for (j = 0; j < n; j++) {
-			s = v[j] - t;
-			v[j] = s < 0 ? 0 : s;
-		}
-		return v;
+	function dot(a, b) {
+		var s = 0;
+		for (var k = 0; k < a.length; k++) s += a[k] * b[k];
+		return s;
 	}
 
-	/* Distance from target to conv(points), and whether target is inside. */
-	function distToHull(f, target) {
-		var n = f.n;
-		var dim = f.dim;
-		var w = new Array(n);
-		var grad = new Array(n);
-		var Pw = new Array(dim);
-		var i, k, d, norm2, resid, gw, same;
-		var invL, best;
-
-		if (n === 0) return { inside: false, dist: Infinity, cost: Infinity };
-		if (n === 1) {
-			d = 0;
-			for (k = 0; k < dim; k++) {
-				resid = target[k] - f.points[0].params[k];
-				d += resid * resid;
+	/* min-norm point of aff(corral): alpha (sum 1) minimising ||sum alpha_k x_k||.
+	 * Least squares on the offsets o_k = x_k - x_0 by modified Gram-Schmidt: it works
+	 * on the offsets' condition number, where normal equations would square it
+	 * (thin tech hulls lose ~10 digits that way). A vanishing R diagonal means the
+	 * corral is affinely dependent, which returns null. */
+	function affineMinNorm(xs, idx) {
+		var m = idx.length;
+		var cols = m - 1;
+		var x0 = xs[idx[0]];
+		var Q = new Array(cols);
+		var R = new Array(cols);
+		var g = new Array(cols);
+		var beta = new Array(cols);
+		var alpha = new Array(m);
+		var c, j, d, v, norm0, rcc, sum;
+		for (c = 0; c < cols; c++) R[c] = new Array(cols).fill(0);
+		for (c = 0; c < cols; c++) {
+			v = new Array(x0.length);
+			for (d = 0; d < v.length; d++) v[d] = xs[idx[c + 1]][d] - x0[d];
+			norm0 = Math.sqrt(dot(v, v));
+			for (j = 0; j < c; j++) {
+				R[j][c] = dot(Q[j], v);
+				for (d = 0; d < v.length; d++) v[d] -= R[j][c] * Q[j][d];
 			}
-			return { inside: d <= EPS * EPS, dist: Math.sqrt(d), cost: Math.sqrt(d) };
+			rcc = Math.sqrt(dot(v, v));
+			if (rcc <= WOLFE_EPS * norm0) return null;
+			R[c][c] = rcc;
+			for (d = 0; d < v.length; d++) v[d] /= rcc;
+			Q[c] = v;
+			g[c] = -dot(Q[c], x0);
 		}
+		/* R beta = Q' (-x0): back substitution gives beta = argmin ||x0 + D beta|| */
+		for (c = cols - 1; c >= 0; c--) {
+			sum = g[c];
+			for (j = c + 1; j < cols; j++) sum -= R[c][j] * beta[j];
+			beta[c] = sum / R[c][c];
+		}
+		sum = 1;
+		for (c = 0; c < cols; c++) {
+			alpha[c + 1] = beta[c];
+			sum -= beta[c];
+		}
+		alpha[0] = sum;
+		return alpha;
+	}
 
-		/* an accepted vertex is exactly inside: the gradient solver below
-		 * converges slowly on near-collinear real tech points */
+	/* out = sum_k lam_k xs[idx_k] */
+	function combine(xs, idx, lam, out) {
+		var k, d;
+		for (d = 0; d < out.length; d++) out[d] = 0;
+		for (k = 0; k < idx.length; k++) {
+			for (d = 0; d < out.length; d++) out[d] += lam[k] * xs[idx[k]][d];
+		}
+	}
+
+	/* drop vertices whose weight vanished and renormalise the rest onto the simplex */
+	function pruneCorral(idx, lam) {
+		var k, w = 0, sum = 0;
+		for (k = 0; k < idx.length; k++) {
+			if (lam[k] <= WOLFE_EPS) continue;
+			idx[w] = idx[k];
+			lam[w] = lam[k];
+			sum += lam[k];
+			w++;
+		}
+		idx.length = w;
+		lam.length = w;
+		for (k = 0; k < w; k++) lam[k] /= sum;
+	}
+
+	/* Minor cycle: move the corral toward the affine min-norm point until it lies
+	 * in the simplex. Returns false when the corral degenerates (rare); the
+	 * current point stays a valid point of the hull. */
+	function minorCycle(xs, idx, lam, x) {
+		var alpha, k, theta, ratio, cycle;
+		for (cycle = 0; cycle < MAX_CYCLES; cycle++) {
+			alpha = affineMinNorm(xs, idx);
+			if (!alpha) return false;
+			theta = 1;
+			for (k = 0; k < idx.length; k++) {
+				if (alpha[k] >= -WOLFE_EPS) continue;
+				ratio = lam[k] / (lam[k] - alpha[k]);
+				if (ratio < theta) theta = ratio;
+			}
+			for (k = 0; k < idx.length; k++) lam[k] = (1 - theta) * lam[k] + theta * alpha[k];
+			pruneCorral(idx, lam);
+			combine(xs, idx, lam, x);
+			if (theta === 1) return true;
+		}
+		return true;
+	}
+
+	/* Distance from the target to conv(points). Vertices are translated so the
+	 * target is the origin; the major cycle adds the vertex most against the
+	 * current nearest point until no vertex improves it (optimality certificate). */
+	function nearestHullDist(points, target) {
+		var n = points.length;
+		var dim = target.length;
+		var xs = new Array(n);
+		var idx, lam, x, i, d, pick, pv, v, xx, nn, cycle;
+		var bestNorm = Infinity, best = 0;
+		var absFloor = WOLFE_EPS * (1 + Math.sqrt(dot(target, target)));
+		var absFloor2 = absFloor * absFloor;
 		for (i = 0; i < n; i++) {
-			same = true;
-			for (k = 0; k < dim; k++) {
-				if (Math.abs(target[k] - f.points[i].params[k]) > EPS * (1 + Math.abs(target[k]))) {
-					same = false;
-					break;
+			xs[i] = new Array(dim);
+			for (d = 0; d < dim; d++) xs[i][d] = points[i].params[d] - target[d];
+			nn = dot(xs[i], xs[i]);
+			if (nn < bestNorm) {
+				bestNorm = nn;
+				best = i;
+			}
+		}
+		idx = [best];
+		lam = [1];
+		x = xs[best].slice();
+		for (cycle = 0; cycle < MAX_CYCLES; cycle++) {
+			xx = dot(x, x);
+			pick = 0;
+			pv = Infinity;
+			for (i = 0; i < n; i++) {
+				v = dot(x, xs[i]);
+				if (v < pv) {
+					pv = v;
+					pick = i;
 				}
 			}
-			if (same) return { inside: true, dist: 0, cost: 0 };
+			/* relative gap on the squared distance; the absolute floor only ends exact-zero cases */
+			if (xx <= absFloor2 || xx - pv <= WOLFE_EPS * xx || idx.indexOf(pick) >= 0) break;
+			idx.push(pick);
+			lam.push(0);
+			if (!minorCycle(xs, idx, lam, x)) break;
 		}
-
-		for (i = 0; i < n; i++) w[i] = 1 / n;
-		/* Lipschitz constant upper bound: ||P||_F^2. */
-		norm2 = 0;
-		for (i = 0; i < n; i++) {
-			for (k = 0; k < dim; k++) {
-				d = f.points[i].params[k];
-				norm2 += d * d;
-			}
-		}
-		invL = 1 / (norm2 + EPS);
-
-		for (i = 0; i < MAX_ITER; i++) {
-			/* Pw */
-			for (k = 0; k < dim; k++) Pw[k] = 0;
-			for (k = 0; k < n; k++) {
-				gw = w[k];
-				if (gw === 0) continue;
-				for (d = 0; d < dim; d++) Pw[d] += gw * f.points[k].params[d];
-			}
-			/* grad = P^T (Pw - target) */
-			for (k = 0; k < n; k++) {
-				grad[k] = 0;
-				for (d = 0; d < dim; d++) grad[k] += f.points[k].params[d] * (Pw[d] - target[d]);
-			}
-			/* w = project(w - step * grad) */
-			for (k = 0; k < n; k++) w[k] -= invL * grad[k];
-			projectSimplex(w);
-		}
-
-		/* residual = ||Pw - target|| */
-		for (k = 0; k < dim; k++) Pw[k] = 0;
-		for (k = 0; k < n; k++) {
-			gw = w[k];
-			if (gw === 0) continue;
-			for (d = 0; d < dim; d++) Pw[d] += gw * f.points[k].params[d];
-		}
-		resid = 0;
-		for (d = 0; d < dim; d++) {
-			best = target[d] - Pw[d];
-			resid += best * best;
-		}
-		resid = Math.sqrt(resid);
-		return { inside: resid <= EPS * (1 + normTarget(target)), dist: resid, cost: resid };
+		return Math.sqrt(dot(x, x));
 	}
 
 	function normTarget(target) {
-		var s = 0, i;
-		for (i = 0; i < target.length; i++) s += target[i] * target[i];
-		return Math.sqrt(s);
+		return Math.sqrt(dot(target, target));
+	}
+
+	/* distance from target to the family's hull, zero when inside */
+	function distToHull(f, target) {
+		if (f.n === 0) return { inside: false, dist: Infinity };
+		var dist = nearestHullDist(f.points, target);
+		var inside = dist <= INSIDE_EPS * (1 + normTarget(target));
+		return { inside: inside, dist: inside ? 0 : dist };
 	}
 
 	/* research fee for one distance result: base fee, plus k·dist outside */

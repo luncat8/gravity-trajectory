@@ -1952,7 +1952,7 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 		'seeded hull summaries: ' + sciBlock());
 	check(sciScience.statsHull(sciCareer.science, 'engine').n === 3, 'career owns an isolated hull');
 	const defaultFee = sciGame.researchCost(sciCareer, 'engine', [26, 1.8]);
-	check(/outside · dist 0\.06 · fee 2\.38/.test(sciBlock()) && defaultFee > 2 && defaultFee < 2.5,
+	check(/outside · dist 0\.05 · fee 2\.30/.test(sciBlock()) && defaultFee > 2 && defaultFee < 2.5,
 		'default near-hull preview fee: ' + /id="sciPreview"[^>]*>([^<]+)/.exec(sciBlock())[1]);
 	check(!/data-act="sciAccept"[^>]*disabled/.test(sciBlock()), 'starter purse funds the first invention');
 
@@ -1960,8 +1960,8 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	sciClick({ act: 'sciAccept', kind: 'engine' });
 	check(sciCareer.research === 1 && Math.abs(sciCareer.ledger.purse - (purse0 - defaultFee)) < 1e-9,
 		'accept paid the preview fee: ' + sciCareer.ledger.purse);
-	check(sciBlock().includes('engine hull · 4 points · R4'), 'hull grew with a custom label: ' + sciBlock());
-	check(/^researched engine R4/.test(sciUi.get('careerMsg').textContent),
+	check(sciBlock().includes('engine hull · 4 points · R1'), 'hull grew with a custom label: ' + sciBlock());
+	check(/^researched engine R1/.test(sciUi.get('careerMsg').textContent),
 		'research notice: ' + sciUi.get('careerMsg').textContent);
 	/* the accepted vertex is now exactly inside: a repeat costs the base fee only */
 	sciClick({ act: 'sciAccept', kind: 'engine' });
@@ -2016,7 +2016,78 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 		/id="sciAccept"[^>]*>research · free</.test(commEnv.elements.get('careerScience').innerHTML),
 		'communism research is free: ' + commCareer.ledger.purse);
 	console.log('0.4.10 verified: 6 copy-spec rows (clipboard + file:// fallback) · hull research',
-		'(seed 3/5, fee ' + defaultFee.toFixed(2) + ', R4/R5 accept, slider, family switch, HQ gate, endgame max-tier copy, communism free)');
+		'(seed 3/5, fee ' + defaultFee.toFixed(2) + ', R1/R2 accept, slider, family switch, HQ gate, endgame max-tier copy, communism free)');
+}
+
+function protoExists(career, family, id) {
+	return Boolean(protoOf(career, family, id));
+}
+
+function protoOf(career, family, id) {
+	const list = career.prototypes[family];
+	return list.find(p => p.id === id) || null;
+}
+
+/* --- 0.4.11: research unlocks prototypes that fit and build from the shop --- */
+{
+	const protoEnv = loadPage({ search: '?rule=career&seed=42&rate=1' });
+	protoEnv.runFrames(2, 16.0);
+	const pUi = protoEnv.elements;
+	const pScene = protoEnv.context.GravityScene;
+	const pTech = protoEnv.context.OrbitTech;
+	const pCareer = pScene.career;
+	const pBox = pUi.get('careerBox');
+	const pShop = () => pUi.get('careerShop').innerHTML;
+	const pBlock = () => pUi.get('careerScience').innerHTML;
+	function pClick(data) {
+		protoEnv.fireElement(pBox, 'click', { target: { dataset: data } });
+	}
+
+	/* the panel's default engine point is researched from the page, so R1 appears in the refit block */
+	check(!/data-item="R1"/.test(pShop()), 'no prototype rows before research');
+	pClick({ act: 'sciAccept', kind: 'engine' });
+	check(pCareer.research === 1 && protoExists(pCareer, 'engine', 'R1'), 'engine research unlocked R1');
+	check(/<span class="careerNow">R1<\/span>/.test(pShop()) && /data-act="part" data-kind="engine" data-item="R1"/.test(pShop()),
+		'engine prototype row with fit button');
+	check(pBlock().includes('engine hull · 4 points · R1'), 'hull summary names R1');
+
+	/* research the default catapult point too, from the family switch */
+	pClick({ act: 'sciFamily', family: 'catapult' });
+	pCareer.ledger.purse = 60;
+	pClick({ act: 'sciAccept', kind: 'catapult' });
+	check(protoExists(pCareer, 'catapult', 'R2'), 'catapult research unlocked R2 (career-wide label)');
+
+	/* fit the engine prototype at HQ: free, marked as fitted afterwards */
+	const purse = pCareer.ledger.purse;
+	pClick({ act: 'part', kind: 'engine', item: 'R1' });
+	check(pCareer.ship.engine && pCareer.ship.engine.id === 'R1' && pCareer.ledger.purse === purse,
+		'engine prototype fitted free: ' + (pCareer.ship.engine && pCareer.ship.engine.id));
+	check(/<i>fitted<\/i>/.test(pShop()) && !/data-act="part" data-kind="engine" data-item="R1"/.test(pShop()),
+		'fitted engine is marked instead of offered');
+
+	/* the catapult prototype builds on the HQ pad (rung above EMC-1), paying its record's cost */
+	const hq = pCareer.hq;
+	const pad = pCareer.pads[hq];
+	const before = pCareer.ledger.purse;
+	check(/data-act="build" data-kind="catapult" data-item="R2"/.test(pShop()), 'catapult prototype build button on the pad');
+	pClick({ act: 'build', kind: 'catapult', item: 'R2' });
+	check(pad.catapult && pad.catapult.id === 'R2' && Math.abs(pCareer.ledger.purse - (before - pad.catapult.buildCost)) < 1e-9,
+		'catapult prototype built on HQ: ' + (pad.catapult && pad.catapult.id));
+	check(!/data-act="build" data-kind="catapult" data-item="R2"/.test(pShop()),
+		'a built prototype is not offered again on its pad');
+
+	/* balance copy names the record by id, for prototypes too */
+	const proto = protoOf(pCareer, 'catapult', 'R2');
+	pClick({ act: 'copy', kind: 'catapult', item: 'R2' });
+	check(protoEnv.clipboardText === pTech.copySpec('catapult', proto) && /tech: CATAPULT R2 \{/.test(protoEnv.clipboardText),
+		'prototype copy spec: ' + protoEnv.clipboardText);
+
+	/* a second invention on the same rung is not above the built catapult: offered, but disabled */
+	pClick({ act: 'sciAccept', kind: 'catapult' });
+	check(protoExists(pCareer, 'catapult', 'R3') &&
+		/<button[^>]*data-act="build" data-kind="catapult" data-item="R3"[^>]*disabled/.test(pShop()),
+		'same-rung prototype offered disabled on the built pad');
+	console.log('0.4.11 verified: research unlocks R1 engine / R2 catapult prototypes · fit free at HQ · build on pad · prototype copy');
 }
 
 console.log('paint calls', {

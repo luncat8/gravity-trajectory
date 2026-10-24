@@ -1,0 +1,39 @@
+0.4.11 bench summary (node, deterministic)
+
+suites: bot_bench OK · career_bench OK · career_bot_bench OK · colony_bench OK ·
+        game_bench OK · gravity_bench OK · route_bench OK · dom_smoke SMOKE OK
+        (layout_check skipped: no CHROME_PATH in sandbox)
+
+hull distance vs independent oracles (orbit_science.js)
+  2-D brute force (triangle containment, else nearest pair segment), 24000 queries
+    random / near-collinear / integer grid / tech-like scaling
+    max |dist err| 4.6e-13 · inside-classification mismatches 0
+  3-D (9000 queries, 1500 random hulls of 4..13 points)
+    separating-plane lower bound <= solver <= sampled convex-combo upper bound: 0 violations
+    every convex combination of the points classified inside
+  exact rational arithmetic on the real tech points (0.4.10 solver wrong on 6 of 8, right on 2):
+    engine   (26,1.8)  dist 0.049928   (0.4.10 solver: 0.064090)
+    engine   (26,1.75) inside          (0.4.10 solver: outside 0.014167)
+    engine   (60,0.5)  dist 20.099751  (unchanged)
+    catapult (100,0.74) inside         (0.4.10 solver: outside 0.004932)
+    catapult (100,0.76) dist 0.006061  (0.4.10 solver: 0.015068)
+    catapult (60,0.5)  dist 0.174000   (0.4.10 solver: 0.181277)
+    catapult (120,0.8) dist 0.014545   (0.4.10 solver: 0.023223)
+  0.4.10 solver on 20 provably-interior catapult midpoints/centroids: 20 reported outside
+  0.4.11 solver on the same probes: 0 reported outside
+  preview cost: 12 µs (5 points), 6 µs (20 points), 4 µs (60 points)
+
+default research fees (starter purse 6.00)
+  engine   (26, 1.8)  outside  fee 2.30   (0.4.10 text: 2.38)
+  catapult (100, 0.76) outside fee 3.04  (0.4.10 default (100, 0.74) was inside, fee 3.00)
+
+prototypes (rung = ladder position, isp / buildCost read off the rung)
+  engine   (26, 1.8)    tier 2.13  isp 295.2  buildCost 8.78
+  engine   (60, 0.5)    tier 4.25 (extrapolated past IMP-3)  isp 380  buildCost 21.50
+  catapult (100, 0.76)  tier 2.22  buildCost 6.88
+  catapult (220, 0.95)  tier 7.67  buildCost 33.35
+  engine   (4, 0.5)     tier 0.50 (clamped)  isp 245  buildCost 2.00
+
+career bot runs (career_bot_bench): bit-identical to 0.4.10 log
+  s7 purse 9.95 · s31 purse 8.72 · s42 purse 6.54 · s913 purse 6.35
+  scaled s42 (g x0.8, f x1.5) purse 10.83 · scaled s7 (g x0.8, f x1.5) purse 6.60

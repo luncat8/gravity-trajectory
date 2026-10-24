@@ -454,6 +454,7 @@
 			},
 			owned: {},
 			science: OrbitScience.createHull(),
+			prototypes: newPrototypes(),
 			research: 0,
 			tasks: tasks,
 			contract: -1,
@@ -528,6 +529,10 @@
 	/* researchable parameter spaces, in the axis order the science panel sliders use */
 	const SCIENCE_KINDS = [OrbitTech.KIND_ENGINE, OrbitTech.KIND_CATAPULT];
 
+	function newPrototypes() {
+		return { engine: [], catapult: [] };
+	}
+
 	/* the tech tree itself is discovered science: its items seed the hull so the
 	 * first custom inventions pay only the distance beyond known tradeoffs */
 	function seedScience(career) {
@@ -554,8 +559,30 @@
 		return price(career, p.cost);
 	}
 
-	function researchLabel(career, family) {
-		return 'R' + (OrbitScience.statsHull(career.science, family).n + 1);
+	/* one counter for the whole career, so a label names one record in every family */
+	function researchLabel(career) {
+		return 'R' + (career.research + 1);
+	}
+
+	/* research unlocks its point as a record on the family's ladder (owned, like a part) */
+	function unlockPrototype(career, family, params, id) {
+		const record = family === OrbitTech.KIND_ENGINE
+			? OrbitTech.engineRecord(id, params[0], params[1])
+			: OrbitTech.catapultRecord(id, params[0], params[1]);
+		career.prototypes[family].push(record);
+		career.owned[id] = true;
+	}
+
+	function prototypesOf(career, family) {
+		return career.prototypes[family];
+	}
+
+	function prototypeById(career, family, id) {
+		const list = career.prototypes[family];
+		for (let i = 0; list && i < list.length; i++) {
+			if (list[i].id === id) return list[i];
+		}
+		return null;
 	}
 
 	/* invent a parameter point at HQ: the purse pays the hull-distance fee and
@@ -571,6 +598,7 @@
 		OrbitScience.acceptHull(career.science, family, params, label);
 		career.research += 1;
 		career.lastResearch = cost;
+		unlockPrototype(career, family, params, label);
 		return true;
 	}
 
@@ -597,6 +625,7 @@
 		career.ship.tank = grant.ship.tank;
 		career.ship.cargoTons = 0;
 		career.owned = {};
+		career.prototypes = newPrototypes();
 		seedScience(career);
 		career.research = 0;
 		career.lastResearch = 0;
@@ -979,6 +1008,7 @@
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
 		createCareer, resetCareer, startCareer, checkEnded,
 		SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
+		prototypesOf, prototypeById,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart,
 		refreshBoard, canAccept, acceptTask, dropContract,
 		careerBeginFlight, careerBurn, careerAdvance, careerEndFlight, evacuate

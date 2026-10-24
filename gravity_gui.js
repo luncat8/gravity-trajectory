@@ -52,10 +52,11 @@
 		{ kind: OrbitTech.KIND_PANEL, label: 'panel', table: OrbitTech.PANELS },
 		{ kind: OrbitTech.KIND_BATTERY, label: 'battery', table: OrbitTech.BATTERIES }
 	];
+	const ENGINE_ROW = { kind: OrbitTech.KIND_ENGINE, label: 'engine', table: OrbitTech.ENGINES };
 	const PART_ROWS = [
 		{ kind: OrbitTech.KIND_HOLD, label: 'hold', table: OrbitTech.HOLDS },
 		{ kind: OrbitTech.KIND_TANK, label: 'tank', table: OrbitTech.TANKS },
-		{ kind: OrbitTech.KIND_ENGINE, label: 'engine', table: OrbitTech.ENGINES }
+		ENGINE_ROW
 	];
 	/* one lookup for every shop button: kind → item table */
 	const TECH_TABLES = {
@@ -82,7 +83,7 @@
 	 * starter purse, while pushing a slider outward shows the k·dist growth */
 	const SCIENCE_DEFAULTS = {
 		engine: { thrust: 26, mass: 1.8 },
-		catapult: { maxForce: 100, efficiency: 0.74 }
+		catapult: { maxForce: 100, efficiency: 0.76 }
 	};
 	let scienceFamily = OrbitTech.KIND_ENGINE;
 	const scienceValues = {
@@ -3298,16 +3299,33 @@
 	}
 
 	function shopButton(label, act, kind, tier, disabled, title) {
-		return '<button class="miniBtn" data-act="' + act + '" data-kind="' + kind +
-			'" data-tier="' + tier + '"' + (disabled ? ' disabled' : '') +
-			' title="' + title + '">' + label + '</button>';
+		return shopButtonRef(label, act, kind, 'data-tier="' + tier + '"', disabled, title);
+	}
+
+	/* `ref` names the record: a table tier, or the id of a research prototype */
+	function shopButtonRef(label, act, kind, ref, disabled, title) {
+		return '<button class="miniBtn" data-act="' + act + '" data-kind="' + kind + '" ' + ref +
+			(disabled ? ' disabled' : '') + ' title="' + title + '">' + label + '</button>';
+	}
+
+	function recordRef(table, item) {
+		const index = tierIndex(table, item);
+		return index >= 0 ? 'data-tier="' + index + '"' : 'data-item="' + item.id + '"';
+	}
+
+	/* a button's record: its table tier, or its prototype id (null when unknown) */
+	function shopRecord(data) {
+		if (data.item) return GravityGame.prototypeById(game.career, data.kind, data.item);
+		const table = TECH_TABLES[data.kind];
+		if (!table) return null;
+		return table[Math.round(Number(data.tier))] || null;
 	}
 
 	/* §11 balance tooling: the spec a row shares is the tier on offer, else
 	 * the one fitted; copy stays enabled with an empty purse or a closed career */
 	function copyButtonHtml(row, item) {
 		if (!item) return '';
-		return shopButton('copy', 'copy', row.kind, tierIndex(row.table, item), false,
+		return shopButtonRef('copy', 'copy', row.kind, recordRef(row.table, item), false,
 			'copy the balance spec of ' + item.id);
 	}
 
@@ -3503,12 +3521,52 @@
 		return html + '</span></div>';
 	}
 
+	/* a researched engine is owned like a bought part: refit free at HQ, and the
+	 * fitted one is marked instead of offered */
+	function protoEngineRowHtml(career, proto) {
+		const fitted = career.ship.engine === proto;
+		let html = '<div class="careerRow"><span class="careerKind">prototype</span>' +
+			'<span class="careerNow">' + proto.id + '</span>' +
+			capHtml(partCapText(career, ENGINE_ROW, proto, undefined)) + '<span class="careerBtns">';
+		if (fitted) html += '<i>fitted</i>';
+		else {
+			html += shopButtonRef('fit ' + proto.id, 'part', ENGINE_ROW.kind, 'data-item="' + proto.id + '"',
+				career.at !== career.hq, 'refit ' + proto.id + ' at HQ ' + planetName(career.hq) +
+				' · ' + partStatText(ENGINE_ROW.kind, proto) + ' · isp ' + proto.isp);
+		}
+		return html + copyButtonHtml(ENGINE_ROW, proto) + '</span></div>';
+	}
+
+	/* a researched catapult is built on a pad under the tech tables' upgrade rule:
+	 * it needs an empty pad or a higher rung than the catapult already there */
+	function protoGearRowHtml(career, planet, proto) {
+		const pad = career.pads[planet];
+		const fits = pad.catapult === null || OrbitTech.upgrades(pad, OrbitTech.KIND_CATAPULT, proto);
+		const cost = careerCost(career, proto.buildCost);
+		let html = '<div class="careerRow"><span class="careerKind">prototype</span>' +
+			'<span class="careerNow">' + proto.id + '</span>' +
+			capHtml(gearCapText(career, planet, pad, OrbitTech.KIND_CATAPULT, proto)) + '<span class="careerBtns">';
+		if (pad.catapult === proto) html += '<i>built</i>';
+		else {
+			html += shopButtonRef('build ' + proto.id + ' · ' + costText(cost), 'build', OrbitTech.KIND_CATAPULT,
+				'data-item="' + proto.id + '"', !fits || career.ledger.purse + 1e-9 < cost,
+				fits ? 'build ' + proto.id + ' on ' + planetName(planet)
+					: proto.id + ' is not above the catapult on ' + planetName(planet));
+		}
+		return html + copyButtonHtml({ kind: OrbitTech.KIND_CATAPULT, table: OrbitTech.CATAPULTS }, proto) +
+			'</span></div>';
+	}
+
 	function shopBlockHtml(career) {
 		const planet = careerPickPlanet();
 		let html = '<div class="careerHead">pad on ' + planetName(planet) + '</div>';
 		for (let i = 0; i < GEAR_ROWS.length; i++) html += gearRowHtml(career, GEAR_ROWS[i], planet);
+		const catapults = GravityGame.prototypesOf(career, OrbitTech.KIND_CATAPULT);
+		for (let i = 0; i < catapults.length; i++) html += protoGearRowHtml(career, planet, catapults[i]);
 		html += '<div class="careerHead">ship refit · HQ ' + planetName(career.hq) + '</div>';
 		for (let i = 0; i < PART_ROWS.length; i++) html += partRowHtml(career, PART_ROWS[i]);
+		const engines = GravityGame.prototypesOf(career, OrbitTech.KIND_ENGINE);
+		for (let i = 0; i < engines.length; i++) html += protoEngineRowHtml(career, engines[i]);
 		return html;
 	}
 
@@ -3645,7 +3703,7 @@
 	function careerResearch() {
 		const career = game.career;
 		const family = scienceFamily;
-		const label = GravityGame.researchLabel(career, family);
+		const label = GravityGame.researchLabel(career);
 		const params = scienceParams(family);
 		const before = career.ledger.purse;
 		if (!GravityGame.researchPoint(career, family, params, label)) {
@@ -3662,11 +3720,8 @@
 	/* §11 share a tech record's balance line; without a clipboard the line is
 	 * shown in the drawer notice so it stays selectable on file:// pages */
 	function careerCopySpec(data) {
-		const index = Math.round(Number(data.tier));
-		if (index === NO_TIER) return;
-		const table = TECH_TABLES[data.kind];
-		if (!table) return;
-		const item = table[index];
+		if (!data.item && Math.round(Number(data.tier)) === NO_TIER) return;
+		const item = shopRecord(data);
 		if (!item) return;
 		const text = OrbitTech.copySpec(data.kind, item);
 		const clipboard = navigator.clipboard;
@@ -3993,14 +4048,11 @@
 		if (act === 'accept') return careerAccept(career, Number(data.slot));
 		if (act === 'sciFamily') return careerScienceFamily(data.family);
 		if (act === 'sciAccept') return careerResearch();
-		const table = TECH_TABLES[data.kind];
-		if (!table) return;
-		const index = Math.round(Number(data.tier));
-		if (index === NO_TIER) {
+		if (!data.item && Math.round(Number(data.tier)) === NO_TIER) {
 			if (act === 'part') careerPart(career, data.kind, null);
 			return;
 		}
-		const item = table[index];
+		const item = shopRecord(data);
 		if (!item) return;
 		if (act === 'build') careerBuild(career, careerPickPlanet(), data.kind, item);
 		else if (act === 'bulk') careerBulk(career, data.kind, item);

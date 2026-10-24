@@ -231,6 +231,44 @@
 		return total;
 	}
 
+	/* linear value of `field` at `value` of `key` along a ladder sorted by `key`;
+	 * the end segments extrapolate, so a point past the last rung keeps climbing */
+	function interpolate(table, key, value, field) {
+		const last = table.length - 1;
+		let i = 0;
+		while (i < last - 1 && value > table[i + 1][key]) i++;
+		const a = table[i];
+		const b = table[i + 1];
+		return a[field] + (value - a[key]) * (b[field] - a[field]) / (b[key] - a[key]);
+	}
+
+	/* a custom record sits on the ladder it was invented next to: its rung follows
+	 * the force or thrust, and isp, build cost come from that same rung. The rung
+	 * never drops below RUNG_MIN, so it still outranks the empty slot. */
+	const RUNG_MIN = 0.5;
+
+	function round2(x) {
+		return Math.round(x * 100) / 100;
+	}
+
+	function engineRecord(id, thrust, mass) {
+		const tier = round2(Math.max(RUNG_MIN, interpolate(ENGINES, 'thrust', thrust, 'tier')));
+		return {
+			id: id, tier: tier, thrust: thrust,
+			isp: round2(interpolate(ENGINES, 'tier', tier, 'isp')),
+			mass: mass,
+			buildCost: round2(interpolate(ENGINES, 'tier', tier, 'buildCost'))
+		};
+	}
+
+	function catapultRecord(id, maxForce, efficiency) {
+		const tier = round2(Math.max(RUNG_MIN, interpolate(CATAPULTS, 'maxForce', maxForce, 'tier')));
+		return {
+			id: id, tier: tier, maxForce: maxForce, efficiency: efficiency,
+			buildCost: round2(interpolate(CATAPULTS, 'tier', tier, 'buildCost'))
+		};
+	}
+
 	function starterGrant() {
 		return {
 			purse: 6.00,
@@ -258,7 +296,7 @@
 		shipMass, partMass, refitMass, shipDeltaV, refitDeltaV, refitBurnLimit,
 		launchEnergy, maxSpeed, speedLimit, canLaunch,
 		solarCharge, batteryLeak, impulseDeltaV, impulseFuel, burnMaxDeltaV, burnLimit,
-		upgrades, bulkUpgradeCost, starterGrant, copySpec
+		upgrades, bulkUpgradeCost, interpolate, engineRecord, catapultRecord, starterGrant, copySpec
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = OrbitTech;

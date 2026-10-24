@@ -876,5 +876,192 @@ check('career science: research is HQ-only, open-career-only, affordable and a k
 	assert.strictEqual(OrbitScience.statsHull(c.career.science, 'catapult').n, 6);
 });
 
+/* --- 0.4.11: exact hull distance and research prototypes --------------- */
+
+/* brute-force 2-D nearest distance: a triangle of three points contains the
+ * target, else the nearest hull edge is the nearest pair segment */
+function bruteHullDist(pts, t) {
+	const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+	const n = pts.length;
+	for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) for (let k = j + 1; k < n; k++) {
+		if (Math.abs(cross(pts[i], pts[j], pts[k])) <= 1e-12) continue;
+		const d = [cross(pts[i], pts[j], t), cross(pts[j], pts[k], t), cross(pts[k], pts[i], t)];
+		if ((d[0] >= 0 && d[1] >= 0 && d[2] >= 0) || (d[0] <= 0 && d[1] <= 0 && d[2] <= 0)) return 0;
+	}
+	let best = Infinity;
+	for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+		const a = pts[i], b = pts[j];
+		const L = (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2;
+		const u = L === 0 ? 0 : Math.max(0, Math.min(1, ((t[0] - a[0]) * (b[0] - a[0]) + (t[1] - a[1]) * (b[1] - a[1])) / L));
+		best = Math.min(best, Math.hypot(t[0] - a[0] - u * (b[0] - a[0]), t[1] - a[1] - u * (b[1] - a[1])));
+	}
+	return n === 1 ? Math.hypot(t[0] - pts[0][0], t[1] - pts[0][1]) : best;
+}
+
+function techHull() {
+	const h = OrbitScience.createHull();
+	OrbitTech.ENGINES.forEach(e => OrbitScience.acceptHull(h, 'engine', [e.thrust, e.mass], e.id));
+	OrbitTech.CATAPULTS.forEach(c => OrbitScience.acceptHull(h, 'catapult', [c.maxForce, c.efficiency], c.id));
+	return h;
+}
+
+check('hull distance: every recombination of the near-collinear tech points is inside', () => {
+	const h = techHull();
+	for (const family of ['engine', 'catapult']) {
+		const pts = OrbitScience.pointsHull(h, family).map(p => p.params);
+		const probes = [];
+		for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+			probes.push([(pts[i][0] + pts[j][0]) / 2, (pts[i][1] + pts[j][1]) / 2]);
+			for (let k = j + 1; k < pts.length; k++) {
+				probes.push([0, 1].map(d => (pts[i][d] + pts[j][d] + pts[k][d]) / 3));
+			}
+		}
+		for (const q of probes) {
+			const r = OrbitScience.previewHull(h, family, q);
+			assert.ok(r.inside && r.dist === 0 && r.cost === OrbitScience.BASE_PRICE[family],
+				family + ' ' + JSON.stringify(q) + ' priced outside: ' + JSON.stringify(r));
+		}
+	}
+});
+
+check('hull distance: default slider fees match the exact distances', () => {
+	const h = techHull();
+	const engine = OrbitScience.previewHull(h, 'engine', [26, 1.8]);
+	assert.ok(!engine.inside && Math.abs(engine.dist - 0.049928) < 1e-6, 'engine dist ' + engine.dist);
+	assert.ok(Math.abs(engine.cost - (2 + 6 * 0.049928)) < 1e-5, 'engine fee ' + engine.cost);
+	assert.ok(OrbitScience.previewHull(h, 'engine', [26, 1.75]).inside, '(26, 1.75) lies on the IMP-1/IMP-3 chord');
+	assert.ok(OrbitScience.previewHull(h, 'catapult', [100, 0.74]).inside, '(100, 0.74) is inside the EMC hull');
+	const cat = OrbitScience.previewHull(h, 'catapult', [100, 0.76]);
+	assert.ok(!cat.inside && Math.abs(cat.dist - 0.006061) < 1e-6, 'catapult dist ' + cat.dist);
+	assert.ok(Math.abs(cat.cost - (3 + 6 * 1.2 * 0.006061)) < 1e-5, 'catapult fee ' + cat.cost);
+});
+
+check('hull distance: a thin sliver is classified exactly (regression: normal-equation solver)', () => {
+	const h = OrbitScience.createHull();
+	[[2.8967285169738943, 0.28974903635166077], [8.430366520038977, 0.8430513380161726],
+		[2.606888116619963, 0.26076241103632486]].forEach((p, i) => OrbitScience.acceptHull(h, 'f', p, 'v' + i));
+	assert.ok(OrbitScience.previewHull(h, 'f', [3.3542313052324757, 0.3354903004017051]).inside);
+});
+
+check('hull distance: seeded random 2-D sets agree with the brute force', () => {
+	let seed = 12345;
+	const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+	let worst = 0;
+	for (let trial = 0; trial < 400; trial++) {
+		const n = 1 + Math.floor(rnd() * 8);
+		const mode = trial % 3;
+		const pts = [];
+		for (let i = 0; i < n; i++) {
+			if (mode === 0) pts.push([rnd() * 10, rnd() * 10]);
+			else if (mode === 1) pts.push([rnd() * 10, 0.1 * rnd() * 10 + 1e-4 * rnd()]);
+			else pts.push([Math.floor(rnd() * 5), Math.floor(rnd() * 5)]);
+		}
+		const h = OrbitScience.createHull();
+		pts.forEach((p, i) => OrbitScience.acceptHull(h, 'f', p, 'v' + i));
+		for (let q = 0; q < 4; q++) {
+			const t = [rnd() * 12, rnd() * 12];
+			const r = OrbitScience.previewHull(h, 'f', t);
+			const want = bruteHullDist(pts, t);
+			const got = r.inside ? 0 : r.dist;
+			worst = Math.max(worst, Math.abs(got - want));
+		}
+	}
+	assert.ok(worst < 1e-9, 'worst distance error ' + worst);
+});
+
+check('prototypes: research unlocks a rung-placed engine record with career-wide labels', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career } = w;
+	career.ledger.purse = 50;
+	assert.strictEqual(GravityGame.researchLabel(career), 'R1');
+	assert.ok(GravityGame.researchPoint(career, 'engine', [26, 1.8], 'R1'));
+	const proto = GravityGame.prototypeById(career, 'engine', 'R1');
+	assert.ok(proto, 'engine prototype unlocked');
+	assert.strictEqual(proto.thrust, 26);
+	assert.strictEqual(proto.mass, 1.8);
+	/* 26 kN sits 2/16 of the way from IMP-2 to IMP-3: rung 2.13, isp and cost read off it */
+	assert.strictEqual(proto.tier, 2.13);
+	assert.strictEqual(proto.isp, 295.2);
+	assert.strictEqual(proto.buildCost, 8.78);
+	assert.ok(career.owned.R1, 'the unlocked prototype is owned');
+	assert.strictEqual(GravityGame.prototypesOf(career, 'engine').length, 1);
+	assert.strictEqual(GravityGame.prototypeById(career, 'catapult', 'R1'), null);
+	/* a second family invention takes the next career-wide label, so ids never collide */
+	assert.strictEqual(GravityGame.researchLabel(career), 'R2');
+	assert.ok(GravityGame.researchPoint(career, 'catapult', [100, 0.76], 'R2'));
+	const cat = GravityGame.prototypeById(career, 'catapult', 'R2');
+	assert.strictEqual(cat.tier, 2.22);
+	assert.strictEqual(cat.buildCost, 6.88);
+	/* a restart clears the unlocked records along with the hull */
+	startCareer(w, 42);
+	assert.deepStrictEqual(GravityGame.prototypesOf(career, 'engine'), []);
+	assert.strictEqual(GravityGame.prototypeById(career, 'catapult', 'R2'), null);
+});
+
+check('prototypes: an engine record refits free at HQ, is ship-mass correct, and swaps back to the ladder', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career } = w;
+	career.ledger.purse = 200;
+	assert.ok(GravityGame.researchPoint(career, 'engine', [60, 0.5], 'R1'));
+	const proto = GravityGame.prototypeById(career, 'engine', 'R1');
+	const purse = career.ledger.purse;
+	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, proto), 'owned prototype fits at HQ');
+	assert.strictEqual(career.ship.engine, proto);
+	assert.strictEqual(career.ledger.purse, purse, 'owned records refit for free');
+	assert.strictEqual(career.ship.mass, OrbitTech.shipMass(career.ship, career.ship.cargoTons));
+	assert.ok(OrbitTech.impulseDeltaV(OrbitTech.TANKS[1].fuelCap, proto, career.ship.mass, OrbitTech.TANKS[1].fuelCap) > 0);
+	/* the unowned ladder rung still costs its build price, then the ladder works again */
+	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, OrbitTech.ENGINES[0]));
+	assert.ok(Math.abs(career.ledger.purse - (purse - OrbitTech.ENGINES[0].buildCost)) < 1e-9);
+	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, proto), 'and back to the prototype');
+	career.at = (career.hq + 1) % PLANETS;
+	assert.strictEqual(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, OrbitTech.ENGINES[0]), false,
+		'refit only at HQ');
+});
+
+check('prototypes: a catapult record builds on an empty pad or one rung up, never below', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career } = w;
+	career.ledger.purse = 50;
+	assert.ok(GravityGame.researchPoint(career, 'catapult', [100, 0.76], 'R1'));
+	const proto = GravityGame.prototypeById(career, 'catapult', 'R1');
+	const hq = career.hq;
+	const purse = career.ledger.purse;
+	/* HQ already holds EMC-1 (rung 1): the prototype (rung 2.22) is an upgrade */
+	assert.ok(GravityGame.buildGear(career, hq, OrbitTech.KIND_CATAPULT, proto));
+	assert.strictEqual(career.pads[hq].catapult, proto);
+	assert.ok(Math.abs(career.ledger.purse - (purse - proto.buildCost)) < 1e-9);
+	/* a weaker invention cannot replace it on that pad */
+	assert.ok(GravityGame.researchPoint(career, 'catapult', [20, 0.6], 'R2'));
+	const weak = GravityGame.prototypeById(career, 'catapult', 'R2');
+	assert.strictEqual(GravityGame.buildGear(career, hq, OrbitTech.KIND_CATAPULT, weak), false);
+	assert.strictEqual(career.pads[hq].catapult, proto);
+	/* an empty pad takes any record as its first catapult, with the starter panel and battery */
+	const other = (hq + 1) % PLANETS;
+	assert.ok(GravityGame.buildGear(career, other, OrbitTech.KIND_CATAPULT, weak));
+	assert.strictEqual(career.pads[other].catapult, weak);
+	assert.strictEqual(career.pads[other].battery, BAT[0]);
+	/* the generic physics takes the record: a stronger rail limits speed higher */
+	const mass = career.ship.mass;
+	assert.ok(OrbitTech.maxSpeed(mass, proto) > OrbitTech.maxSpeed(mass, EMC[0]));
+	assert.ok(OrbitTech.launchEnergy(mass, proto, 100) > 0);
+});
+
+check('prototypes: communism builds and fits them free', () => {
+	const c = makeWorld(7);
+	startCareer(c, 7, GravityGame.CHEAT_COMMUNISM);
+	const { career } = c;
+	const purse = career.ledger.purse;
+	assert.ok(GravityGame.researchPoint(career, 'engine', [60, 0.5], 'R1'));
+	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, GravityGame.prototypeById(career, 'engine', 'R1')));
+	assert.ok(GravityGame.researchPoint(career, 'catapult', [100, 0.76], 'R2'));
+	assert.ok(GravityGame.buildGear(career, career.hq, OrbitTech.KIND_CATAPULT,
+		GravityGame.prototypeById(career, 'catapult', 'R2')));
+	assert.strictEqual(career.ledger.purse, purse);
+});
+
 console.log(failures === 0 ? 'CAREER BENCH OK' : 'CAREER BENCH FAILED ' + failures);
 process.exit(failures === 0 ? 0 : 1);
