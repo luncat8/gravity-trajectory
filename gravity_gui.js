@@ -374,6 +374,8 @@
 	let gripX = 0;
 	let gripY = 0;
 	let gripLen = 0;
+	/* the drag range the grip was placed on: a slider move invalidates it */
+	let aimCeiling = SPEED_MAX;
 	let mode = MODE_PLANETS;
 	let pressing = false;
 	let pressPlanet = -1;
@@ -916,12 +918,13 @@
 	}
 
 	/* a pad can lose its ceiling while a shot is armed (drained battery, lowered
-	 * force slider); keep the aim inside what the pad can actually fire */
+	 * force slider): keep the aim inside what can fire, and put the grip dot back
+	 * on the new drag range so the dot still shows the armed speed */
 	function clampArmedToPad() {
 		if (!armed || aimBody < 0) return;
 		const ceiling = speedCeiling(aimBody);
-		if (aimSpeed <= ceiling) return;
-		aimSpeed = ceiling;
+		if (ceiling === aimCeiling && aimSpeed <= ceiling) return;
+		aimSpeed = aimSpeed > ceiling ? ceiling : aimSpeed;
 		placeGripFromSpeed();
 		dirty = true;
 	}
@@ -976,7 +979,8 @@
 		} else {
 			gripLen = 0;
 		}
-		aimSpeed = gravity.speedAt(gripLen, speedCeiling(aimBody));
+		aimCeiling = speedCeiling(aimBody);
+		aimSpeed = gravity.speedAt(gripLen, aimCeiling);
 		snapAim();
 		refreshAimLabel();
 	}
@@ -994,6 +998,7 @@
 
 	function placeGripFromSpeed() {
 		const ceiling = speedCeiling(aimBody);
+		aimCeiling = ceiling;
 		if (aimSpeed > ceiling) aimSpeed = ceiling;
 		else if (aimSpeed < SPEED_MIN) aimSpeed = SPEED_MIN;
 		snapAim();
@@ -2861,6 +2866,38 @@
 		return value === 0 ? 'free' : value.toFixed(2);
 	}
 
+	/* full-battery cap of one pad with the ship as loaded now, so the shop can
+	 * answer "can this pad lift this cargo?" before the player buys; 0 = no pad */
+	function padCap(career, catapult, battery) {
+		if (catapult === null || battery === null) return 0;
+		return OrbitTech.speedLimit(battery.capacity, career.ship.mass, catapult, gravity.forceScale);
+	}
+
+	/* `91 → 132 px/s`: the cap a row's next tier would buy */
+	function capArrowText(now, after) {
+		if (after <= 0) return '';
+		const to = Math.round(after);
+		if (now <= 0) return to + ' px/s';
+		const from = Math.round(now);
+		return from === to ? to + ' px/s' : from + ' → ' + to + ' px/s';
+	}
+
+	/* a rail or a battery moves the cap; a panel only moves the recharge time */
+	function gearCapText(career, pad, kind, next) {
+		if (kind === OrbitTech.KIND_PANEL) return '';
+		const now = padCap(career, pad.catapult, pad.battery);
+		if (next === null) return now > 0 ? Math.round(now) + ' px/s' : '';
+		/* a first catapult arrives with the starter panel and battery */
+		const after = kind === OrbitTech.KIND_CATAPULT
+			? padCap(career, next, pad.catapult === null ? OrbitTech.BATTERIES[0] : pad.battery)
+			: padCap(career, pad.catapult, next);
+		return capArrowText(now, after);
+	}
+
+	function capHtml(text) {
+		return text === '' ? '' : '<span class="careerCap">' + text + '</span>';
+	}
+
 	/* the next record above the installed one (a pad starts from nothing) */
 	function nextTier(table, current) {
 		const tier = current ? current.tier : 0;
@@ -2923,22 +2960,34 @@
 		if (pad.catapult === null) {
 			const first = OrbitTech.CATAPULTS[0];
 			const cost = careerCost(career, first.buildCost);
+			const fresh = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity, ship.mass, first,
+				gravity.forceScale);
 			html += '<div class="careerLine warn">no catapult here · build one or evacuate</div>' +
 				'<div class="careerRow"><span class="careerBtns">' +
 				shopButton('build ' + first.id + ' here · ' + costText(cost), 'build', 'catapult', 0,
-					career.ledger.purse + 1e-9 < cost, 'build the first catapult on ' + planetName(at)) +
-				'</span></div>';
+					career.ledger.purse + 1e-9 < cost,
+					'build the first catapult on ' + planetName(at) + ' · full battery lifts ' +
+						ship.mass.toFixed(1) + ' t to ' + Math.round(fresh) + ' px/s') +
+				capHtml(capArrowText(0, fresh)) + '</span></div>';
 			return html;
 		}
 		const limit = gravity.speedLimit(at);
+		const full = padCap(career, pad.catapult, pad.battery);
 		const shot = OrbitTech.launchEnergy(ship.mass, pad.catapult, limit);
 		const frac = pad.battery.capacity > 0 ? pad.chargeKwh / pad.battery.capacity : 0;
 		html += '<div class="careerLine">' + pad.catapult.id + ' · ' + pad.panel.id + ' · ' +
 			pad.battery.id + ' · ' + pad.chargeKwh.toFixed(2) + ' / ' +
 			pad.battery.capacity.toFixed(2) + ' kWh</div>';
 		html += '<div class="careerBar"><i style="width:' + Math.round(frac * 100) + '%"></i></div>';
-		html += '<div class="careerLine dim">max ' + Math.round(limit) + ' px/s · full shot ' +
-			shot.toFixed(2) + ' kWh</div>';
+		/* a pad on a full battery is rail-limited: say "full" only when the charge bites */
+		const fullNote = Math.round(full) === Math.round(limit) ? ''
+			: ' · full ' + Math.round(full) + ' px/s';
+		html += '<div class="careerLine dim">max ' + Math.round(limit) + ' px/s' + fullNote +
+			' · shot ' + shot.toFixed(2) + ' kWh</div>';
+		if (full < GravitySim.SPEED_MIN) {
+			html += '<div class="careerLine warn">cannot lift ' + ship.mass.toFixed(1) +
+				' t · buy a bigger rail below</div>';
+		}
 		return html;
 	}
 
@@ -2947,7 +2996,8 @@
 		const cur = pad[row.kind];
 		const next = nextTier(row.table, cur);
 		let html = '<div class="careerRow"><span class="careerKind">' + row.label + '</span>' +
-			'<span class="careerNow">' + (cur ? cur.id : 'none') + '</span><span class="careerBtns">';
+			'<span class="careerNow">' + (cur ? cur.id : 'none') + '</span>' +
+			capHtml(gearCapText(career, pad, row.kind, next)) + '<span class="careerBtns">';
 		if (next === null) return html + '<i>max</i></span></div>';
 		if (cur === null && row.kind !== OrbitTech.KIND_CATAPULT) {
 			return html + '<i>needs a catapult</i></span></div>';
@@ -3044,8 +3094,14 @@
 		let html = '';
 		for (let i = 0; i < PLANETS; i++) {
 			const pad = career.pads[i];
+			const cap = padCap(career, pad.catapult, pad.battery);
+			/* the cap comes before the tier so a narrow picker clips the gear id,
+			 * not the answer to "can this pad lift the ship?" */
+			const note = pad.catapult === null ? 'no pad'
+				: cap < GravitySim.SPEED_MIN ? 'cannot lift'
+				: Math.round(cap) + ' px/s';
 			html += '<option value="' + i + '">' + planetName(i) + (i === career.hq ? ' ★' : '') +
-				(pad.catapult ? ' · ' + pad.catapult.id : ' · no pad') + '</option>';
+				' · ' + note + (pad.catapult ? ' · ' + pad.catapult.id : '') + '</option>';
 		}
 		careerPlanetEl.innerHTML = html;
 		careerPlanetEl.value = String(picked);
@@ -4864,6 +4920,7 @@
 		speedCeiling,
 		experimentScales: () => ({ gravity: gravityScale, force: forceScale }),
 		careerPadInfo: () => (game.career ? careerPadPlate(game.career) : null),
+		aimState: () => ({ angle: aimAngle, speed: aimSpeed, grip: gripLen, ceiling: aimCeiling }),
 		routeLength: () => activeRoutePlan().length,
 		routePlan: activeRoutePlan,
 		routeBest: activeRouteBest,

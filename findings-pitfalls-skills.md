@@ -213,3 +213,41 @@ prediction buffers round away exactly the differences being measured.
   `purse0 = 3.00` against a `1.00` launch cost forces players to chain 4+ aged
   planets and steer away from clusters recently harvested by rivals.
 
+
+## numbers that decide a purchase
+
+- Compute a shop's promise from the same function the engine gates on
+	(`OrbitTech.speedLimit` with the *full* battery, the shipped mass and the
+	experimental force scale), never from the currently charged pad and never
+	from a copy of the formula. The drawer, the canvas plate and the launch
+	button then cannot disagree, and a slider move only has to re-render.
+- Say what a purchase *changes*: the rail row prints `92 → 119 px/s`, the
+	battery row prints the cap it would add (usually nothing while the rail is
+	the limit), a panel row prints nothing because it moves recharge time, not
+	the cap. A row without a number is a row the player cannot judge.
+- Put the deciding number before the gear id in a `<select>`: a narrow picker
+	clips the tail, and `P4 · 118 px/s · EMC-2` survives that better than
+	`P4 · EMC-2 · 118 px/s`.
+
+## an armed drag input outlives its range
+
+- When a control re-maps an input (a pad cap re-mapping the drag length), store
+	the mapping's parameter (`aimCeiling`) next to the derived input and re-place
+	the input whenever that parameter moves — in *both* directions. Clamping only
+	downwards leaves the grip dot pointing at a length the range no longer has
+	after the ceiling grows, and the dot then contradicts the armed shot until
+	the next pointer move.
+
+## any finite plan beats no plan
+
+- A controller that returns the best-scoring candidate will happily fly a
+	negative-score no-op when nothing scores better — the headless career flew
+	"launch and land back on the same pad" 400 times. Score the no-op as
+	`-Infinity` so "no plan" wins; the idle policy (wait for charge, upgrade the
+	rail) then takes over. Flights that *do* pay on the way round (new systems, a
+	sport landing) keep their finite score.
+- Guard this with a scaled world, not just the default one: `g ×1.4 · f ×0.6`
+	needs a stronger rail to leave the pad, so it is exactly the world where
+	min-speed shots fall back home, and it went from "never finishes" to 26 pads
+	in 69 flights once the no-op was rejected. The default seeds were
+	bit-identical before and after, so only the scaled run could catch it.

@@ -812,6 +812,14 @@ input:disabled {
 	font-size: 10.5px;
 }
 
+/* what the pad (or a row's next tier) can fire with the ship as loaded now */
+.careerCap {
+	color: var(--dim);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 10px;
+	white-space: nowrap;
+}
+
 .careerBtns {
 	display: flex;
 	flex-wrap: wrap;

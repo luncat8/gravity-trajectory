@@ -25,6 +25,12 @@ const MAX_WAITS = 1200;
 const SEEDS = process.env.SEEDS
 	? process.env.SEEDS.split(',').map(Number)
 	: [7, 31, 42, 913];
+/* scaled careers keep their own worlds and purse gates: a friendlier rail, and
+ * a hostile field whose min-speed shots used to dead-end as same-pad bounces */
+const SCALED_WORLDS = [
+	{ gravity: 0.8, force: 1.5, purse: 6, seeds: [42, 7] },
+	{ gravity: 1.4, force: 0.6, purse: 6, seeds: [42] }
+];
 let failures = 0;
 
 function check(name, fn) {
@@ -37,7 +43,7 @@ function check(name, fn) {
 	}
 }
 
-function makeWorld(seed) {
+function makeWorld(seed, gravityScale = 1, forceScale = 1) {
 	const trade = new Sim(seed);
 	trade.advanceTo(420);
 	const sim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
@@ -61,6 +67,9 @@ function makeWorld(seed) {
 	bot.attachWorld(trade);
 	bot.reset(seed, GravityGame.RULE_CAREER, GravityGame.BOT_OFF);
 	GravityGame.startCareer(career, sim, seed, trade, null);
+	/* the experimental multipliers must reach the sim and the controller alike */
+	sim.setScales(gravityScale, forceScale);
+	bot.setScales(gravityScale, forceScale);
 	GravityGame.resetMarket(market);
 	return { seed, trade, sim, career, ledger, market, bot, step: 0 };
 }
@@ -107,8 +116,8 @@ function fly(w, plan) {
 	return GravityGame.careerEndFlight(career, sim, trade, w.step);
 }
 
-function runCareer(seed, trace) {
-	const w = makeWorld(seed);
+function runCareer(seed, trace, gravityScale = 1, forceScale = 1) {
+	const w = makeWorld(seed, gravityScale, forceScale);
 	const { bot, career, sim } = w;
 	let waits = 0;
 	let fallbacks = 0;
@@ -225,6 +234,22 @@ check('idle controller first repairs a pad its loaded ship cannot lift', () => {
 	assert.ok(w.bot.careerPlan(w.career, w.sim, w.market, w.step, false), 'no plan after repair');
 });
 
+check('a shot that lands back on its own pad with no pay is never a plan', () => {
+	const w = makeWorld(42);
+	const origin = w.career.hq;
+	w.career.tasks[GravityGame.COMPETE_SLOT].kind = GravityGame.TASK_NONE;
+	w.bot.probe.fieldT = w.sim.fieldT;
+	w.bot.probe.fieldRate = w.sim.fieldRate;
+	w.bot.probe.visited.set(w.sim.visited);
+	w.bot.probe.visitedCount = w.sim.visitedCount;
+	w.bot.probe.predictFast(origin, 0, GravitySim.SPEED_MIN, GravityGame.CAP_SECONDS);
+	assert.strictEqual(w.bot.probe.predBody, origin, 'fixture shot must fall back on the pad');
+	assert.strictEqual(w.bot.careerScoreProbe(w.career, w.sim, origin, GravitySim.SPEED_MIN,
+		w.market, 0), -Infinity, 'a pointless bounce must not score');
+	const plan = w.bot.careerPlan(w.career, w.sim, w.market, 0, false);
+	assert.ok(plan && plan.body !== origin, 'the opening plan bounces on its own pad');
+});
+
 check('idle controller buys a hold and pads, and upgrades a weak loaded pad', () => {
 	const w = makeWorld(42);
 	w.ledger.purse = 40;
@@ -256,6 +281,27 @@ for (const seed of SEEDS) {
 		assert.ok(r.flights > 0 && r.flights < MAX_FLIGHTS, 'flight guard');
 		assert.ok(r.builds >= PLANETS - 1, 'not all pads were bought through the controller');
 	});
+}
+
+/* the experimental multipliers are a world change, not a cheat: the controller
+ * must still finish a career under each world's own purse gate */
+for (const world of SCALED_WORLDS) {
+	for (const seed of world.seeds) {
+		check('scaled career seed ' + seed + ' (g ×' + world.gravity + ', f ×' + world.force +
+			'): 26 pads and purse >= ' + world.purse.toFixed(2), () => {
+			const r = runCareer(seed, process.env.TRACE === '1', world.gravity, world.force);
+			console.log('  scaled s' + seed + ' g' + world.gravity + ' f' + world.force + ': ' +
+				(r.ended === GravityGame.CAREER_COMPLETE ? 'complete' : 'ENDED ' + r.ended) +
+				' · purse ' + r.purse.toFixed(2) + ' · earned ' + r.earned.toFixed(2) +
+				' · pads ' + r.pads + ' · flights ' + r.flights + ' · deliveries ' + r.delivered +
+				' · upgrades ' + r.upgrades + ' · waits ' + r.waits + ' · fallbacks ' + r.fallbacks +
+				' · evac ' + r.evacuations);
+			assert.strictEqual(r.ended, GravityGame.CAREER_COMPLETE, 'scaled career did not complete');
+			assert.strictEqual(r.pads, PLANETS);
+			assert.ok(r.purse + 1e-9 >= world.purse, 'scaled purse gate missed: ' + r.purse);
+			assert.ok(r.flights > 0 && r.flights < MAX_FLIGHTS, 'flight guard');
+		});
+	}
 }
 
 console.log(failures === 0 ? 'CAREER BOT BENCH OK' : 'CAREER BOT BENCH FAILED ' + failures);

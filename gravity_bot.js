@@ -1250,6 +1250,9 @@
 			cashPay += compete.reward;
 		}
 
+		/* landing back on the pad it left pays nothing and only drains the
+		 * battery: better to wait or shop than to fly a pointless bounce */
+		if (body === origin && taskPay <= 0) return -Infinity;
 		const pad = career.pads[body];
 		let padValue;
 		if (body === origin) padValue = CAREER_SAME_PAD_VALUE;

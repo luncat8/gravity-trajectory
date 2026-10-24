@@ -1,0 +1,32 @@
+0.4.6 drawer caps + no-bounce controller
+
+Drawer caps (OrbitTech.speedLimit at full battery, ship mass, gravity.forceScale):
+  picker  P4 · 118 px/s · EMC-2 | P7 · no pad | P9 · cannot lift
+  shop    rail 92 -> 119 px/s, battery 92 px/s (rail-limited), panel no cap (recharge only)
+  pad     full: max 92 px/s · shot 1.02 kWh · charging: max 20 px/s · full 92 px/s · shot 0.02 kWh
+  warn    cannot lift 38.0 t · buy a bigger rail below (full-battery cap < SPEED_MIN)
+Grip: aimCeiling tracks the drag range; clampArmedToPad re-places the grip both ways.
+  55 px/s armed at cap 92 (grip 97.3) -> force x1.5 (cap 112) -> grip 72.6, speed 55 kept.
+Bot: careerScoreProbe(-Infinity) for a same-pad landing that pays nothing.
+
+career_bot_bench.js: 5 focused checks + 4 standard + 3 scaled careers, CAREER BOT BENCH OK.
+  standard (g1 f1), purse gate 6.00: 26/26 pads, CAREER_COMPLETE
+    seed 7: purse 9.95 · flights 24 · deliveries 3 · upgrades 4 · waits 6 · fallbacks 3
+    seed 31: 8.72 · 25 · 2 · 0 · 0 · 0
+    seed 42: 6.54 · 23 · 9 · 4 · 10 · 1
+    seed 913: 6.35 · 21 · 1 · 0 · 0 · 1
+  scaled (g0.8 f1.5), purse gate 6.00
+    seed 42: 10.83 · flights 17 · deliveries 7 · waits 9 · fallbacks 2
+    seed 7: 6.60 · 21 · 1 · 5 · 0 · 1
+  scaled (g1.4 f0.6), purse gate 6.00
+    seed 42: 6.32 · flights 69 · deliveries 2 · upgrades 8 · waits 111 · fallbacks 11
+    before the no-bounce guard: 400 flights (cap), purse 4.85, 8 pads, 0 deliveries, 253 waits
+dom_smoke.js: SMOKE OK; picker/shop/pad caps, grip 97.3 -> 72.6 on a raised ceiling,
+  force x0.5 caps 65 -> 119 px/s (EMC-1 -> EMC-2 on BAT-1; the rail cap drops, the
+  efficiency gain wins), force x0.25 + 24 t hold -> pad and picker "cannot lift".
+career_bench.js: CAREER BENCH OK (26 checks).
+bot_bench.js: BOT BENCH OK; decisions 6.11/16.33/38.36 ms, worst 64-cand slice 3.67 ms.
+game_bench.js: GAME BENCH OK; 1872 flights x3, 0 flips.
+gravity_bench.js: BENCH OK; worst slice 3.088 ms (10 ms cap).
+layout_check.js: skipped, CHROME_PATH unset.
+node --check touched JS: OK.

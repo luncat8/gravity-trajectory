@@ -1173,6 +1173,21 @@ check(kui.get('careerPad').innerHTML.includes('EMC-1') && kui.get('careerPad').i
 	'career pad block: ' + kui.get('careerPad').innerHTML);
 check(kui.get('careerShop').innerHTML.includes('data-act="build"') &&
 	kui.get('careerShop').innerHTML.includes('data-act="part"'), 'career shop buttons missing');
+/* the drawer states each pad's cap with the ship as loaded now and what the
+ * next rail would buy: the shop must answer "can this pad lift this cargo?" */
+function padCapOf(catapult, battery, force) {
+	return OrbitTech.speedLimit(battery.capacity, career.ship.mass, catapult, force);
+}
+const emc1Cap = padCapOf(OrbitTech.CATAPULTS[0], OrbitTech.BATTERIES[0], kCargo.forceScale);
+const emc2Cap = padCapOf(OrbitTech.CATAPULTS[1], OrbitTech.BATTERIES[0], kCargo.forceScale);
+check(kui.get('careerShop').innerHTML.includes('>' + Math.round(emc1Cap) + ' → ' +
+	Math.round(emc2Cap) + ' px/s<'), 'shop caps: ' + kui.get('careerShop').innerHTML);
+check(!kui.get('careerPad').innerHTML.includes('· full '),
+	'a full pad is rail-limited and must not repeat its cap: ' + kui.get('careerPad').innerHTML);
+check(kui.get('careerPlanet').innerHTML.includes(' · ' + Math.round(emc1Cap) + ' px/s · EMC-1'),
+	'planet picker caps: ' + kui.get('careerPlanet').innerHTML);
+check(kui.get('careerPlanet').innerHTML.includes(' · no pad'),
+	'planet picker marks unbuilt planets: ' + kui.get('careerPlanet').innerHTML);
 check(kui.get('careerTasks').innerHTML.includes('careerRow'), 'career task board empty');
 check(kui.get('gameScore').textContent === '6.00 purse', 'career score is the purse: ' + kui.get('gameScore').textContent);
 const noPad = (career.hq + 3) % pageWorld.PLANETS;
@@ -1200,6 +1215,11 @@ kScene.refreshCareerPanel();
 careerEnv.runFrames(2, 16.0);
 check(kui.get('launch').disabled && kui.get('launch').textContent.startsWith('pad '),
 	'a drained pad explains the shortfall: ' + kui.get('launch').textContent);
+/* while charging, the pad line names the cap the battery would afford */
+const drained = kScene.game.career.pads[career.hq];
+check(kui.get('careerPad').innerHTML.includes('max ' + Math.round(kCargo.speedLimit(career.hq)) +
+	' px/s · full ' + Math.round(padCapOf(drained.catapult, drained.battery, kCargo.forceScale)) +
+	' px/s'), 'a charging pad must state its full-battery cap: ' + kui.get('careerPad').innerHTML);
 career.pads[career.hq].chargeKwh = armedCharge;
 kScene.refreshCareerPanel();
 careerEnv.runFrames(2, 16.0);
@@ -1223,6 +1243,11 @@ check(halfLimit < limit - 20 && Math.abs(halfLimit - limit * Math.SQRT1_2) < 1e-
 check(kScene.game.career.pads[career.hq].catapult.id === 'EMC-1' &&
 	kui.get('careerPad').innerHTML.includes('max ' + Math.round(halfLimit) + ' px/s'),
 	'pad readout ignores the force scale: ' + kui.get('careerPad').innerHTML);
+/* the shop caps follow the force slider, so the buy decision stays truthful */
+check(kui.get('careerShop').innerHTML.includes('>' +
+	Math.round(padCapOf(OrbitTech.CATAPULTS[0], OrbitTech.BATTERIES[0], 0.5)) + ' → ' +
+	Math.round(padCapOf(OrbitTech.CATAPULTS[1], OrbitTech.BATTERIES[0], 0.5)) + ' px/s<'),
+	'shop caps ignore the force scale: ' + kui.get('careerShop').innerHTML);
 careerEnv.dragAim(career.hq, 0.7, 200);
 careerEnv.runFrames(2, 16.0);
 check(kui.get('aimReadout').textContent.startsWith(Math.round(halfLimit) + ' px/s '),
@@ -1243,16 +1268,39 @@ const stuck = kScene.careerPadInfo();
 check(stuckLimit < kSim.SPEED_MIN && stuck.warn &&
 	stuck.text.endsWith('· ' + Math.round(stuckLimit) + ' px/s'),
 	'a pad that cannot fire at all must warn: ' + stuck.text + ' warn ' + stuck.warn);
+/* the same dead end in the drawer, before the player buys anything */
+kScene.refreshCareerPanel();
+check(kui.get('careerPad').innerHTML.includes('cannot lift ' + career.ship.mass.toFixed(1) + ' t'),
+	'pad block must warn when the ship is too heavy: ' + kui.get('careerPad').innerHTML);
+check(kui.get('careerPlanet').innerHTML.includes(' · cannot lift'),
+	'planet picker must warn when the ship is too heavy: ' + kui.get('careerPlanet').innerHTML);
 career.ship.cargoTons = 0;
 career.ship.mass = OrbitTech.shipMass(career.ship, 0);
 careerEnv.setValue('expForce', 0.5);
-check(!kScene.careerPadInfo().warn, 'a firable pad must not warn');
+kScene.refreshCareerPanel();
+check(!kScene.careerPadInfo().warn &&
+	!kui.get('careerPad').innerHTML.includes('cannot lift'), 'a firable pad must not warn');
 careerEnv.setValue('expGravity', 1);
 careerEnv.setValue('expForce', 1);
 careerEnv.runFrames(2, 16.0);
 check(kCargo.gravityScale === 1 && kCargo.forceScale === 1 &&
 	Math.abs(kCargo.speedLimit(career.hq) - limit) < 1e-9,
 	'career experimental reset');
+/* a slider move re-places the armed grip on the new drag range: the dot must
+ * keep showing the armed speed instead of a length the range no longer has */
+careerEnv.dragAim(career.hq, 0.7, 55);
+careerEnv.runFrames(2, 16.0);
+const aimBefore = kScene.aimState();
+check(aimBefore.speed > 54 && aimBefore.speed < 56, 'fixture aim ' + aimBefore.speed);
+careerEnv.setValue('expForce', 1.5);
+const aimAfter = kScene.aimState();
+check(Math.abs(aimAfter.speed - aimBefore.speed) < 1e-9 && aimAfter.ceiling > aimBefore.ceiling &&
+	Math.abs(aimAfter.grip - kCargo.gripLength(aimAfter.speed, aimAfter.ceiling)) < 1e-9 &&
+	aimAfter.grip < aimBefore.grip,
+	'a raised ceiling left the grip off its drag range: ' + aimAfter.grip + ' vs ' +
+		aimBefore.grip + ' · ' + aimAfter.ceiling);
+careerEnv.setValue('expForce', 1);
+careerEnv.runFrames(2, 16.0);
 let landingShot = null;
 for (let a = 0; a < 72 && !landingShot; a++) {
 	const angle = a / 72 * Math.PI * 2;

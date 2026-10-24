@@ -39,8 +39,8 @@ Open `index.html` (`file://` works, no build, no modules).
 | `route` | 1 800 s wall, score trajectory length, no launch |
 | `money` | 10 shots, score purse → systems → shots → time |
 | career | solo catapult network: the vessel starts on a sunlit HQ with the only catapult; a launch fires from the pad under the ship and spends its solar-charged battery (ship + cargo mass caps the speed, the button shows `pad … kWh · shot … · max … px/s`, the pad plate under the planet shows charge and cap) · landing elsewhere strands the ship · `&cheat=communism` (everything free) / `&cheat=endgame` (all pads at top tier, purse 99) · ends `complete` with 26 catapults or `broke` |
-| career drawer · planet select | picks the planet the shop builds on; it follows the ship until you pick another |
-| career drawer · shop | one button per gear kind buys the next tier on that planet (`EMC-2 · 6.00`), `all N · …` applies it to every built pad of that kind and shows the total first; below, ship parts (`hold`/`tank`/`engine`) are bought and fitted at HQ only |
+| career drawer · planet select | picks the planet the shop builds on; it follows the ship until you pick another · every entry states that pad's full-battery cap with the ship as loaded now (`P4 · 118 px/s · EMC-2`), `no pad`, or `cannot lift` |
+| career drawer · shop | one button per gear kind buys the next tier on that planet (`EMC-2 · 6.00`), `all N · …` applies it to every built pad of that kind and shows the total first; the rail and battery rows print the cap they would buy (`92 → 119 px/s`), a panel only moves the recharge time; below, ship parts (`hold`/`tank`/`engine`) are bought and fitted at HQ only |
 | career drawer · task board | delivery offers show `from → to`, good, tons, pay and time left with `accept` (needs a big enough hold and no other contract) / `drop`; the sport slot pays for one landing flight of at least the shown length |
 | `wait · 30 min` (career) | runs the world clock 30 minutes while nothing flies: every pad charges, the board ages, planet profit grows |
 | `evacuate` (career) | buys the stranded ship a flight home to HQ (fee shown on the button) |
