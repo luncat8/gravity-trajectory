@@ -668,5 +668,120 @@ check('career completes when every planet has a catapult (honest run)', () => {
 	assert.ok(ledger.purse > 0);
 });
 
+check('impulse fuel & Δv: inverse, multi-burn telescoping, and thrust vs tank burn cap', () => {
+	const imp1 = OrbitTech.ENGINES[0];
+	const imp3 = OrbitTech.ENGINES[2];
+	const ft1 = OrbitTech.TANKS[1];
+	const ft3 = OrbitTech.TANKS[3];
+	const ship13 = { hold: HOLD[0], engine: imp1, tank: ft3 };
+	const mass13 = OrbitTech.shipMass(ship13, 0);
+	const total13 = OrbitTech.shipDeltaV(ship13, 0);
+	const cap13 = OrbitTech.burnLimit(ft3.fuelCap, imp1, mass13);
+	assert.ok(cap13 < total13 - 10, 'IMP-1 on FT-3 is thrust-capped per single burn');
+	assert.ok(Math.abs(cap13 - OrbitTech.burnMaxDeltaV(imp1, mass13, ft3.fuelCap)) < 1e-12);
+
+	const ship31 = { hold: HOLD[0], engine: imp3, tank: ft1 };
+	const mass31 = OrbitTech.shipMass(ship31, 0);
+	assert.ok(Math.abs(OrbitTech.burnLimit(ft1.fuelCap, imp3, mass31) -
+		OrbitTech.shipDeltaV(ship31, 0)) < 1e-12, 'IMP-3 on FT-1 is fuel-capped');
+
+	/* three sequential burns draining FT-3 telescope to the exact full-tank Δv */
+	let fuel = ft3.fuelCap;
+	const dv1 = 7.5;
+	const used1 = OrbitTech.impulseFuel(dv1, imp1, mass13, fuel);
+	assert.ok(Math.abs(OrbitTech.impulseDeltaV(used1, imp1, mass13, fuel) - dv1) < 1e-12);
+	fuel -= used1;
+	const dv2 = 9.2;
+	const used2 = OrbitTech.impulseFuel(dv2, imp1, mass13, fuel);
+	assert.ok(Math.abs(OrbitTech.impulseDeltaV(used2, imp1, mass13, fuel) - dv2) < 1e-12);
+	fuel -= used2;
+	const dv3 = OrbitTech.impulseDeltaV(fuel, imp1, mass13, fuel);
+	assert.ok(Math.abs((dv1 + dv2 + dv3) - total13) < 1e-11, 'sequential burns telescope to full-tank Δv');
+});
+
+check('career in-flight burn: predictBurn & predictBurnFast match stepOne, pad refuels', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, sim, trade } = w;
+	career.ledger.purse = 50;
+	assert.ok(GravityGame.installPart(career, 'engine', OrbitTech.ENGINES[1]));
+	assert.ok(GravityGame.installPart(career, 'tank', OrbitTech.TANKS[2]));
+	assert.strictEqual(career.ship.fuelKg, OrbitTech.TANKS[2].fuelCap);
+
+	sim.stepLimit = GravityGame.CAP_STEPS;
+	sim.limitReason = GravitySim.END_TIME;
+	const origin = career.hq;
+	const launchSpeed = Math.min(72, sim.speedLimit(origin));
+	sim.launch(origin, 0.7, launchSpeed);
+	GravityGame.careerBeginFlight(career, sim);
+	for (let i = 0; i < 45 && sim.status === GravitySim.STATUS_FLYING; i++) sim.stepOne();
+	assert.strictEqual(sim.status, GravitySim.STATUS_FLYING);
+
+	const burnStep = sim.liveSteps;
+	const burnAngle = GravityGame.angleOf(GravityGame.angleUnits(-1.1));
+	const burnDv = GravityGame.speedOf(GravityGame.speedUnits(Math.min(8.5, sim.burnLimit() * 0.7)));
+	sim.predictBurn(burnAngle, burnDv);
+	const predReason = sim.predReason;
+	const predBody = sim.predBody;
+	const predSteps = sim.predSteps;
+	const endPredX = sim.predX[sim.predCount - 1];
+	const endPredY = sim.predY[sim.predCount - 1];
+
+	const extProbe = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	extProbe.setPlanets(PLANETS, trade.planetX, trade.planetY, trade.planetR,
+		trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+	extProbe.setField(PLANETS, trade.planetR, sim.strength, sim.fillField, true);
+	extProbe.predictBurnFast(sim, burnAngle, burnDv);
+	assert.strictEqual(extProbe.predReason, predReason);
+	assert.strictEqual(extProbe.predBody, predBody);
+	assert.strictEqual(extProbe.predSteps, predSteps);
+
+	assert.ok(!GravityGame.careerBurn(career, sim, burnAngle, sim.burnLimit() + 0.5), 'over-cap burn refused');
+	assert.ok(GravityGame.careerBurn(career, sim, burnAngle, burnDv));
+	assert.ok(career.ship.fuelKg < OrbitTech.TANKS[2].fuelCap && career.burns === 1 && career.lastFuel > 0);
+	const fuelMid = career.ship.fuelKg;
+
+	while (sim.status === GravitySim.STATUS_FLYING) sim.stepOne();
+	assert.strictEqual(sim.endReason, predReason, 'burn endReason parity');
+	assert.strictEqual(sim.endBody, predBody, 'burn endBody parity');
+	assert.strictEqual(sim.liveSteps - burnStep, predSteps, 'burn step count parity');
+	assert.ok(Math.hypot(sim.cargo.x - endPredX, sim.cargo.y - endPredY) < 1e-3, 'burn endpoint parity (Float32 predX/Y)');
+
+	GravityGame.careerEndFlight(career, sim, trade, sim.liveSteps);
+	if (career.stranded) {
+		assert.strictEqual(career.ship.fuelKg, fuelMid, 'stranded ship keeps partial tank until pad/evac');
+		GravityGame.evacuate(career, sim);
+	}
+	assert.strictEqual(career.ship.fuelKg, OrbitTech.TANKS[2].fuelCap, 'built pad refuels tank');
+});
+
+check('shot burn codec: round-trip multi-burn shots and reject invalid burn tags', () => {
+	const plain = GravityGame.createShot(GravityGame.SRC_PLANETS, 3, 12345, 92160, GravityGame.NO_ABORT);
+	assert.strictEqual(GravityGame.encodeShot(plain), 'p3.' + (12345).toString(36) + '.' + (92160).toString(36));
+
+	const burned = GravityGame.createShot(GravityGame.SRC_PLANETS, 5, 40000, 81920, 600, [
+		GravityGame.createBurn(40, 100000, 8192),
+		GravityGame.createBurn(190, 250000, 4096)
+	]);
+	const enc = GravityGame.encodeShot(burned);
+	assert.ok(enc.includes('-b'), 'encoded shot carries burn suffix: ' + enc);
+	const dec = GravityGame.decodeShot(enc, GravityGame.CAP_STEPS);
+	assert.ok(dec && dec.burns.length === 2);
+	assert.deepStrictEqual(dec.burns, burned.burns);
+
+	const link = GravityGame.encodeLink({
+		seed: 7, rate: 2, rule: GravityGame.RULE_TOUR, bot: GravityGame.BOT_OFF,
+		player: GravityGame.PLAYER_USER, shots: [burned], visited: 4, steps: 600
+	});
+	const parsed = GravityGame.decodeLink(link);
+	assert.ok(parsed && parsed.shots.length === 1 && parsed.shots[0].burns.length === 2);
+
+	/* out-of-order steps, step >= abort, zero dv, and burns on route planner are rejected */
+	assert.strictEqual(GravityGame.decodeShot('p5.100.2bc0-b20.10.100-b10.10.100', GravityGame.CAP_STEPS), null);
+	assert.strictEqual(GravityGame.decodeShot('p5.100.2bc0.10-b10.10.100', GravityGame.CAP_STEPS), null);
+	assert.strictEqual(GravityGame.decodeShot('p5.100.2bc0-b5.10.0', GravityGame.CAP_STEPS), null);
+	assert.strictEqual(GravityGame.decodeLink('game=1&seed=7&rate=1&rule=route&shots=p5.100.2bc0-b5.10.100'), null);
+});
+
 console.log(failures === 0 ? 'CAREER BENCH OK' : 'CAREER BENCH FAILED ' + failures);
 process.exit(failures === 0 ? 0 : 1);

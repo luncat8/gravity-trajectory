@@ -272,6 +272,18 @@
 		return speed >= 0 && speed <= this.speedLimit(planet) + 1e-9;
 	};
 
+	/* largest single in-flight Δv burn available right now; 0 when grounded or dry */
+	GravitySim.prototype.burnLimit = function () {
+		if (this.status !== STATUS_FLYING || this.liveSteps >= this.stepLimit) return 0;
+		if (this.ship === null) return SPEED_MAX;
+		const limit = OrbitTech.burnLimit(this.ship.fuelKg, this.ship.engine, this.ship.mass);
+		return limit > SPEED_MAX ? SPEED_MAX : limit;
+	};
+
+	GravitySim.prototype.canBurn = function (dv) {
+		return dv > 0 && dv <= this.burnLimit() + 1e-9;
+	};
+
 	/* gravitational acceleration (px/s²) at world point (x, y) into `out` */
 	GravitySim.prototype.fieldAt = function (x, y, out) {
 		const px = this.bodyX;
@@ -388,21 +400,23 @@
 	};
 
 	/* drag length <-> speed over one full GRIP_MAX; `ceiling` is the pad's real
-	 * fastest shot, so a weak catapult compresses the whole range and every
-	 * drag step gets finer instead of running into a wall at launch time */
-	GravitySim.prototype.speedAt = function (length, ceiling) {
+	 * fastest shot (or single-burn Δv cap when `floor` is 0), so a tighter cap
+	 * compresses the whole range and every drag step gets finer */
+	GravitySim.prototype.speedAt = function (length, ceiling, floor) {
+		const low = floor === undefined ? SPEED_MIN : floor;
 		const top = ceiling === undefined ? SPEED_MAX : ceiling;
-		const span = top - SPEED_MIN;
+		const span = top - low;
 		let t = length / GRIP_MAX;
 		if (t < 0) t = 0;
 		else if (t > 1) t = 1;
-		return span > 0 ? SPEED_MIN + t * span : SPEED_MIN;
+		return span > 0 ? low + t * span : low;
 	};
 
-	GravitySim.prototype.gripLength = function (speed, ceiling) {
+	GravitySim.prototype.gripLength = function (speed, ceiling, floor) {
+		const low = floor === undefined ? SPEED_MIN : floor;
 		const top = ceiling === undefined ? SPEED_MAX : ceiling;
-		const span = top - SPEED_MIN;
-		let t = span > 0 ? (speed - SPEED_MIN) / span : 1;
+		const span = top - low;
+		let t = span > 0 ? (speed - low) / span : 1;
 		if (t < 0) t = 0;
 		else if (t > 1) t = 1;
 		return t * GRIP_MAX;
@@ -694,27 +708,76 @@
 		this.routeStorePath = true;
 	};
 
-	/* continues trajectory forward from the live flying cargo until it lands */
-	GravitySim.prototype.predictFlight = function (budgetMs) {
-		if (this.status !== STATUS_FLYING) return;
-		this.savedStepX.set(this.stepX);
-		this.savedStepY.set(this.stepY);
-		this.probe.x = this.cargo.x;
-		this.probe.y = this.cargo.y;
-		this.probe.vx = this.cargo.vx;
-		this.probe.vy = this.cargo.vy;
-		const t0 = this.flightFieldT;
-		this.snapshotField(t0);
+	/* continues trajectory forward from `source`'s live cargo with an optional
+	 * velocity impulse (angle, dv); `storePath` false skips predX/predY writes */
+	GravitySim.prototype.traceFromCargo = function (source, angle, dv, budgetMs, storePath) {
+		if (source.status !== STATUS_FLYING) return;
+		const self = source === this;
+		if (self) {
+			this.savedStepX.set(this.stepX);
+			this.savedStepY.set(this.stepY);
+		} else {
+			this.fieldRate = source.fieldRate;
+			this.gravityScale = source.gravityScale;
+			this.visited.set(source.visited);
+			this.visitedCount = source.visitedCount;
+			if (!source.stepStale) {
+				this.stepX.set(source.stepX);
+				this.stepY.set(source.stepY);
+				this.stepStale = false;
+			}
+		}
+		this.probe.x = source.cargo.x;
+		this.probe.y = source.cargo.y;
+		this.probe.vx = source.cargo.vx + (dv > 0 ? Math.cos(angle) * dv : 0);
+		this.probe.vy = source.cargo.vy + (dv > 0 ? Math.sin(angle) * dv : 0);
+		const t0 = source.flightFieldT;
+		if (storePath) this.snapshotField(t0);
 		const moving = !this.fieldStatic && this.fieldRate !== 0;
 		const stride = moving ? this.fieldStride() : FIELD_STRIDE;
-		if (this.stepStale || (moving && this.liveSteps % stride === 0)) {
+		const stale = self ? this.stepStale : source.stepStale;
+		if (stale || (moving && source.liveSteps % stride === 0)) {
 			this.fillStep(t0);
+			if (!self) this.stepStale = false;
 		}
-		const maxSteps = Math.min(PATH_MAX - 1, Math.ceil(FLY_HORIZON / DT) + 2);
-		this.routeBeginAt(this.probe, t0, this.liveSteps, FLY_HORIZON, maxSteps);
+		let horizon = FLY_HORIZON;
+		let maxSteps = Math.min(PATH_MAX - 1, Math.ceil(FLY_HORIZON / DT) + 2);
+		if (Number.isFinite(source.stepLimit)) {
+			const rem = source.stepLimit > source.liveSteps ? source.stepLimit - source.liveSteps : 0;
+			if (rem * DT < horizon) horizon = rem * DT;
+			if (rem < maxSteps) maxSteps = rem;
+		}
+		this.routeBeginAt(this.probe, t0, source.liveSteps, horizon, maxSteps);
+		this.routeStorePath = storePath;
 		this.routeDrain(budgetMs);
-		this.stepX.set(this.savedStepX);
-		this.stepY.set(this.savedStepY);
+		this.routeStorePath = true;
+		if (self) {
+			this.stepX.set(this.savedStepX);
+			this.stepY.set(this.savedStepY);
+		}
+	};
+
+	GravitySim.prototype.predictFlight = function (budgetMs) {
+		this.traceFromCargo(this, 0, 0, budgetMs, true);
+	};
+
+	GravitySim.prototype.predictBurn = function (angle, dv, budgetMs) {
+		this.traceFromCargo(this, angle, dv, budgetMs, true);
+	};
+
+	GravitySim.prototype.predictBurnFast = function (source, angle, dv) {
+		this.traceFromCargo(source, angle, dv, FULL_BUDGET_MS, false);
+	};
+
+	/* instantaneous velocity impulse at the current fixed-step boundary */
+	GravitySim.prototype.burn = function (angle, dv) {
+		if (this.status !== STATUS_FLYING || !(dv > 0) || this.liveSteps >= this.stepLimit) {
+			return false;
+		}
+		this.cargo.vx += Math.cos(angle) * dv;
+		this.cargo.vy += Math.sin(angle) * dv;
+		this.recordTrail();
+		return true;
 	};
 
 	GravitySim.prototype.launch = function (origin, angle, speed) {

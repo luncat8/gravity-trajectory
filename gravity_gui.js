@@ -178,8 +178,8 @@
 			goal: 'Build a catapult on every planet.',
 			score: 'Purse. The career ends complete with all ' + PLANETS + ' catapults, or broke.',
 			detailLabel: 'Network',
-			detail: 'Only a built catapult launches, drawing its solar-charged battery; ship and cargo mass cap the speed. The drag range ends at that live cap, so an aimed shot can always fire. Landing without a catapult strands the ship: build one there or evacuate to HQ for a fee. wait runs the world clock so pads charge; the drawer builds any planet\'s pad, upgrades every pad at once and takes deliveries.',
-			controls: 'Drag from the pad under the ship to aim (range ends at its live max) · Shift = fine · Enter = launch'
+			detail: 'Only a built catapult launches, drawing its solar-charged battery; ship and cargo mass cap the speed. An impulse engine and fuel tank let you pause in flight (Space / P or drag from the ship) to spend fuel on mid-course burns. Landing without a catapult strands the ship: build one there or evacuate to HQ for a fee.',
+			controls: 'Drag from pad to launch · in flight: Space / P or drag ship to burn · Shift = fine · Enter = fire'
 		}
 	};
 
@@ -248,7 +248,8 @@
 	const canvas = $('g');
 	const ctx = canvas.getContext('2d');
 	const fieldCanvas = $('f');
-	const fieldRenderer = root.GravityField && fieldCanvas ? root.GravityField.create(fieldCanvas) : null;
+	const fieldRenderer = root.GravityField && fieldCanvas
+		? root.GravityField.create(fieldCanvas, () => syncViewState()) : null;
 	const glow = makeGlow('rgba(92, 255, 139, 0.95)');
 	const impactGlow = makeGlow('rgba(255, 126, 160, 0.5)');
 
@@ -388,6 +389,7 @@
 	let aimCeiling = SPEED_MAX;
 	let mode = MODE_PLANETS;
 	let viewMode = VIEW_SPACE;
+	let viewDesired = VIEW_SPACE;
 	let pressing = false;
 	let pressPlanet = -1;
 	let pressClientX = 0;
@@ -398,6 +400,16 @@
 	let savedBody = -1;
 	let savedAngle = 0;
 	let savedSpeed = SPEED_MIN;
+	let burnPaused = false;
+	let burnAiming = false;
+	let burnArmed = false;
+	let burnPressing = false;
+	let burnAngle = 0;
+	let burnDv = 0;
+	let burnCeiling = 0;
+	let savedBurnArmed = false;
+	let savedBurnAngle = 0;
+	let savedBurnDv = 0;
 	let blockedPlanet = -1;
 	let blockedUntil = -Infinity;
 	let blockedKind = 0;
@@ -497,7 +509,8 @@
 	let playerBotSyncNeeded = true;
 	/* replay of a link: shots fired in order, aim shown then flown; verdict after the last */
 	const replay = { on: false, shots: null, end: null, index: 0, phase: PHASE_GAP, until: 0,
-		speed: REPLAY_DEFAULT, verdict: '', route: false, length: null };
+		speed: REPLAY_DEFAULT, verdict: '', route: false, length: null,
+		activeShot: null, burnIndex: 0 };
 
 	function makeGlow(fill) {
 		const sprite = document.createElement('canvas');
@@ -603,22 +616,29 @@
 			(gl ? 'WebGL shader' : '1/' + div + ' 2D raster');
 	}
 
-	/* a lost WebGL context cannot become a 2D one in place: fall back to the
-	 * starfield, and let `f` retry once the browser restores the context */
-	function fieldLost() {
-		setViewMode(VIEW_SPACE);
+	/* a lost WebGL context falls back to the starfield until `webglcontextrestored`
+	 * rebuilds the shader and automatically restores the requested view */
+	function activeFieldView() {
+		return viewDesired === VIEW_FIELD &&
+			(!fieldRenderer || fieldRenderer.backend() !== 'lost');
 	}
 
-	function setViewMode(next) {
-		if (next === VIEW_FIELD && fieldRenderer && fieldRenderer.backend() === 'lost') {
-			refreshViewUi();
-			return;
-		}
-		viewMode = next === VIEW_FIELD ? VIEW_FIELD : VIEW_SPACE;
+	function syncViewState() {
+		viewMode = activeFieldView() ? VIEW_FIELD : VIEW_SPACE;
 		if (fieldCanvas) fieldCanvas.hidden = viewMode !== VIEW_FIELD;
 		if (scene.setBackdrop) scene.setBackdrop(viewMode !== VIEW_FIELD);
 		if (viewMode === VIEW_FIELD && fieldRenderer) fieldRenderer.invalidate();
 		refreshViewUi();
+		hudAt = -Infinity;
+	}
+
+	function fieldLost() {
+		syncViewState();
+	}
+
+	function setViewMode(next) {
+		viewDesired = next === VIEW_FIELD ? VIEW_FIELD : VIEW_SPACE;
+		syncViewState();
 	}
 
 	function resizeOverlay() {
@@ -728,6 +748,14 @@
 			}
 		}
 		return best;
+	}
+
+	function shipAt(wx, wy) {
+		if (gravity.status !== STATUS_FLYING) return false;
+		const reach = HIT_PX / view.scale;
+		const dx = gravity.cargo.x - wx;
+		const dy = gravity.cargo.y - wy;
+		return dx * dx + dy * dy <= reach * reach;
 	}
 
 	function planetName(index) {
@@ -918,11 +946,23 @@
 	}
 
 	function refreshAimLabel() {
+		const sim = activeSim();
+		if (burnAiming || burnArmed) {
+			const deg = ((-burnAngle * 180 / Math.PI) % 360 + 360) % 360;
+			const ship = game.career.ship;
+			const usedKg = OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg);
+			const visitNote = sim.predCount >= 2
+				? ' · +' + predGain.toFixed(2) + ' · +' + sim.predNewVisits +
+					' (' + sim.predVisits + ' sys)'
+				: '';
+			aimLabel = 'Δv ' + burnDv.toFixed(1) + ' px/s · ' + deg.toFixed(1) + '° · −' +
+				usedKg.toFixed(1) + ' kg' + (fine ? ' · fine' : '') + visitNote;
+			return;
+		}
 		if (!aiming && !armed) {
 			aimLabel = '';
 			return;
 		}
-		const sim = activeSim();
 		const deg = ((-aimAngle * 180 / Math.PI) % 360 + 360) % 360;
 		const ceiling = aimBody >= 0 ? speedCeiling(aimBody) : SPEED_MAX;
 		const visitNote = sim.predCount >= 2
@@ -1124,7 +1164,133 @@
 		hudAt = -Infinity;
 	}
 
+	function canImpulse() {
+		return careerRule() && !replay.on && gravity.status === STATUS_FLYING &&
+			gravity.burnLimit() > 0;
+	}
+
+	function clearBurnAim() {
+		burnPaused = false;
+		burnAiming = false;
+		burnArmed = false;
+		burnPressing = false;
+		savedBurnArmed = false;
+	}
+
+	function setBurnPaused(next) {
+		if (next) {
+			if (!canImpulse()) return false;
+			burnPaused = true;
+			playAcc = 0;
+			dirty = true;
+			launchState = -1;
+			hudAt = -Infinity;
+			return true;
+		}
+		clearBurnAim();
+		playAcc = 0;
+		dirty = true;
+		refreshAimLabel();
+		launchState = -1;
+		hudAt = -Infinity;
+		return true;
+	}
+
+	function snapBurnAim() {
+		burnAngle = GravityGame.angleOf(GravityGame.angleUnits(burnAngle));
+		const maxU = Math.floor(burnCeiling * GravityGame.SPEED_STEPS + 1e-9);
+		const units = GravityGame.speedUnits(burnDv);
+		burnDv = GravityGame.speedOf(units < maxU ? units : maxU);
+	}
+
+	function updateBurnAim() {
+		const cx = gravity.cargo.x;
+		const cy = gravity.cargo.y;
+		const dx = gripX - cx;
+		const dy = gripY - cy;
+		let len = Math.sqrt(dx * dx + dy * dy);
+		if (len > GRIP_MAX) {
+			const k = GRIP_MAX / len;
+			gripX = cx + dx * k;
+			gripY = cy + dy * k;
+			len = GRIP_MAX;
+		}
+		if (len > 0.25) {
+			burnAngle = Math.atan2(dy, dx);
+			gripLen = len;
+		} else {
+			gripLen = 0;
+		}
+		burnCeiling = gravity.burnLimit();
+		burnDv = gravity.speedAt(gripLen, burnCeiling, 0);
+		snapBurnAim();
+		refreshAimLabel();
+	}
+
+	function placeBurnGrip() {
+		burnCeiling = gravity.burnLimit();
+		if (burnDv > burnCeiling) burnDv = burnCeiling;
+		else if (burnDv < 0) burnDv = 0;
+		snapBurnAim();
+		gripLen = gravity.gripLength(burnDv, burnCeiling, 0);
+		gripX = gravity.cargo.x + Math.cos(burnAngle) * gripLen;
+		gripY = gravity.cargo.y + Math.sin(burnAngle) * gripLen;
+		refreshAimLabel();
+	}
+
+	function takeOverBurnAim() {
+		if (!canImpulse()) {
+			burnPressing = false;
+			return;
+		}
+		if (!burnPaused) setBurnPaused(true);
+		savedBurnArmed = burnArmed;
+		savedBurnAngle = burnAngle;
+		savedBurnDv = burnDv;
+		burnAiming = true;
+		burnArmed = false;
+		gripX = pendGripX;
+		gripY = pendGripY;
+		updateBurnAim();
+		dirty = true;
+		launchState = -1;
+		hudAt = -Infinity;
+	}
+
+	function executeBurn() {
+		if (!canImpulse() || !burnArmed || !(burnDv > 0)) return false;
+		const angleU = GravityGame.angleUnits(burnAngle);
+		const dvU = GravityGame.speedUnits(burnDv);
+		if (dvU < 1) return false;
+		const angle = GravityGame.angleOf(angleU);
+		const dv = GravityGame.speedOf(dvU);
+		const step = gravity.liveSteps;
+		const ship = game.career.ship;
+		const beforeFuel = ship.fuelKg;
+		if (!GravityGame.careerBurn(game.career, gravity, angle, dv)) return false;
+		const used = beforeFuel - ship.fuelKg;
+		if (game.shots.length > 0) {
+			game.shots[game.shots.length - 1].burns.push(GravityGame.createBurn(step, angleU, dvU));
+		}
+		clearBurnAim();
+		playAcc = 0;
+		dirty = true;
+		launchState = -1;
+		const remDv = OrbitTech.impulseDeltaV(ship.fuelKg, ship.engine, ship.mass, ship.fuelKg);
+		careerNotice('burned Δv ' + dv.toFixed(1) + ' px/s (−' + used.toFixed(1) + ' kg) · fuel ' +
+			ship.fuelKg.toFixed(1) + ' kg' +
+			(remDv > 0.05 ? ' · Δv ' + remDv.toFixed(1) + ' px/s left' : ' · tank empty'));
+		refreshGameUi();
+		return true;
+	}
+
 	function launch() {
+		if (canImpulse()) {
+			if (!burnPaused) setBurnPaused(true);
+			else if (burnArmed) executeBurn();
+			else setBurnPaused(false);
+			return;
+		}
 		if (routeRule() && game.on) return;
 		if (!armed || !canAimFrom(aimBody) || gameLocked()) return;
 		if (!activeSim().canFire(aimBody, aimSpeed)) return;
@@ -1133,6 +1299,7 @@
 
 	function fire(abortStep) {
 		if (game.on && routeRule()) return;
+		clearBurnAim();
 		const slot = activeSlotIndex();
 		const sim = slotSim(slot);
 		if (game.on) recordSlotShot(slot, abortStep);
@@ -1176,6 +1343,7 @@
 		if (root.PhotoDeck) root.PhotoDeck.hide();
 		playAcc = 0;
 		gravity.clear();
+		clearBurnAim();
 		aiming = false;
 		armed = false;
 		pressing = false;
@@ -1435,7 +1603,27 @@
 		const samePad = probe.predReason === END_IMPACT && probe.predBody === origin ? 1 : 0;
 		const newVisits = probe.predNewVisits;
 		let score = lands * 12 - samePad * 35 - (probe.predReason === END_EXIT ? 220 : 0);
-		if (game.on && ruleSpec().stopOnTour) {
+		if (careerRule()) {
+			if (probe.predReason !== END_IMPACT) return -1e12;
+			const career = game.career;
+			const body = probe.predBody;
+			if (career.pads[body].catapult === null && body !== origin &&
+				career.ledger.purse + profit + 1e-9 < OrbitTech.CATAPULTS[0].buildCost) {
+				return -1e11;
+			}
+			if (career.contract >= 0) {
+				const task = career.tasks[career.contract];
+				if (task.state === GravityGame.TASK_LOADED && body === task.to) score += task.reward * 40;
+				else if (task.state === GravityGame.TASK_ACCEPTED && body === task.from) score += task.reward * 20;
+			}
+			const compete = career.tasks[GravityGame.COMPETE_SLOT];
+			if (compete.kind === GravityGame.TASK_COMPETE && origin === compete.planet &&
+				probe.predLength >= compete.minLength &&
+				game.clockSteps + probe.predSteps <= compete.deadline) {
+				score += compete.reward * 35;
+			}
+			score += profit * 28 + newVisits * 4 - probe.predTime * 0.12;
+		} else if (game.on && ruleSpec().stopOnTour) {
 			const wouldComplete = activeSim().visitedCount + newVisits >= PLANETS;
 			score += (wouldComplete ? 80 : 0) + newVisits * 12 + profit * 18 - probe.predTime * 0.16;
 		} else if (game.on && moneyRule()) {
@@ -1447,40 +1635,57 @@
 		return score;
 	}
 
+	function helperSnapSpeedUnits(origin, speed) {
+		const maxU = Math.floor(speedCeiling(origin) * GravityGame.SPEED_STEPS + 1e-9);
+		const minU = GravityGame.speedUnits(SPEED_MIN);
+		let u = GravityGame.speedUnits(speed);
+		if (u < minU) u = minU;
+		if (u > maxU) u = maxU;
+		return u;
+	}
+
 	function helperMakeBroad(count) {
 		const route = routeRule();
 		const out = [];
+		const fixedOrigin = game.on && !route ? activeSim().landedBody : -1;
+		if (fixedOrigin >= 0 && !canAimFrom(fixedOrigin)) return out;
 		let attempts = 0;
 		while (out.length < count && attempts < count * 6) {
 			attempts += 1;
 			let planet;
-			if (selected >= 0 && Math.random() < 0.42) planet = selected;
+			if (fixedOrigin >= 0) planet = fixedOrigin;
+			else if (selected >= 0 && Math.random() < 0.42) planet = selected;
 			else planet = Math.floor(Math.random() * PLANETS);
 			if (route && routeOccupiedBy(planet) >= 0) continue;
 			if (!route && !game.on && planet >= PLANETS) continue;
-			if (game.on && !route && !canAimFrom(planet)) {
-				const landed = activeSim().landedBody;
-				if (landed >= 0 && planet !== landed) continue;
-			}
+			if (game.on && !route && !canAimFrom(planet)) continue;
+			const cap = speedCeiling(planet);
 			const angle = Math.random() * TAU;
-			const speed = SPEED_MIN + Math.random() * (SPEED_MAX - SPEED_MIN);
-			out.push({ origin: planet, angleU: GravityGame.angleUnits(angle), speedU: GravityGame.speedUnits(speed) });
+			const speed = SPEED_MIN + Math.random() * Math.max(0, cap - SPEED_MIN);
+			out.push({
+				origin: planet,
+				angleU: GravityGame.angleUnits(angle),
+				speedU: helperSnapSpeedUnits(planet, speed)
+			});
 		}
 		return out;
 	}
 
 	function helperMakeFocus(origin, count) {
 		const out = [];
+		const cap = speedCeiling(origin);
+		const span = Math.max(0, cap - SPEED_MIN);
 		for (let i = 0; i < count; i++) {
 			const angle = Math.random() * TAU;
 			const jitter = (Math.random() - 0.5) * 0.06;
 			const a = (angle + jitter + TAU) % TAU;
-			const speed = SPEED_MIN + Math.random() * (SPEED_MAX - SPEED_MIN);
-			const speedJitter = speed * (0.97 + Math.random() * 0.06);
-			let s = speedJitter;
-			if (s < SPEED_MIN) s = SPEED_MIN;
-			if (s > SPEED_MAX) s = SPEED_MAX;
-			out.push({ origin: origin, angleU: GravityGame.angleUnits(a), speedU: GravityGame.speedUnits(s) });
+			const speed = SPEED_MIN + Math.random() * span;
+			const s = speed * (0.97 + Math.random() * 0.06);
+			out.push({
+				origin: origin,
+				angleU: GravityGame.angleUnits(a),
+				speedU: helperSnapSpeedUnits(origin, s)
+			});
 		}
 		return out;
 	}
@@ -1489,14 +1694,20 @@
 		const baseAngle = GravityGame.angleOf(base.angleU);
 		const baseSpeed = GravityGame.speedOf(base.speedU);
 		const out = [];
-		out.push({ origin: base.origin, angleU: base.angleU, speedU: base.speedU });
+		out.push({
+			origin: base.origin,
+			angleU: base.angleU,
+			speedU: helperSnapSpeedUnits(base.origin, baseSpeed)
+		});
 		for (let i = 1; i < count; i++) {
 			let angle = baseAngle + (Math.random() - 0.5) * 0.26;
 			angle = (angle % TAU + TAU) % TAU;
-			let speed = baseSpeed * (0.92 + Math.random() * 0.16);
-			if (speed < SPEED_MIN) speed = SPEED_MIN;
-			if (speed > SPEED_MAX) speed = SPEED_MAX;
-			out.push({ origin: base.origin, angleU: GravityGame.angleUnits(angle), speedU: GravityGame.speedUnits(speed) });
+			const speed = baseSpeed * (0.92 + Math.random() * 0.16);
+			out.push({
+				origin: base.origin,
+				angleU: GravityGame.angleUnits(angle),
+				speedU: helperSnapSpeedUnits(base.origin, speed)
+			});
 		}
 		return out;
 	}
@@ -2129,6 +2340,7 @@
 	/* back to lab: the world stays, the clock returns to real time, a running flight continues */
 	function stopGame() {
 		stopReplay();
+		clearBurnAim();
 		linkNote = '';
 		game.on = false;
 		activeSlot = 0;
@@ -2242,6 +2454,10 @@
 			}
 			return;
 		}
+		if (burnPaused || burnAiming) {
+			playAcc = 0;
+			return;
+		}
 		let scale = playScale() * (replay.on ? REPLAY_SPEEDS[replay.speed] : 1);
 		if (scale > PLAY_MAX) scale = PLAY_MAX;
 		playAcc += dt * scale;
@@ -2291,6 +2507,26 @@
 		}
 	}
 
+	function applyReplayBurns() {
+		const rShot = replay.activeShot;
+		if (!rShot || !rShot.burns) return;
+		while (replay.burnIndex < rShot.burns.length &&
+			rShot.burns[replay.burnIndex].step === gravity.liveSteps) {
+			const b = rShot.burns[replay.burnIndex++];
+			const angle = GravityGame.angleOf(b.angle);
+			const dv = GravityGame.speedOf(b.dv);
+			const ok = careerRule()
+				? GravityGame.careerBurn(game.career, gravity, angle, dv)
+				: gravity.burn(angle, dv);
+			if (!ok) continue;
+			if (game.shots.length > 0) {
+				game.shots[game.shots.length - 1].burns.push(
+					GravityGame.createBurn(b.step, b.angle, b.dv));
+			}
+			dirty = true;
+		}
+	}
+
 	function advanceGameOneStep() {
 		let endedLimit = false;
 		if (gravity.status === STATUS_FLYING && gravity.liveSteps >= gravity.stepLimit) {
@@ -2315,6 +2551,7 @@
 				slotTypes[1] === PLAYER_BOT && slotTypes[2] === PLAYER_BOT))) {
 			return;
 		}
+		if (replay.on && gravity.status === STATUS_FLYING) applyReplayBurns();
 		game.clockSteps += 1;
 		if (careerRule()) GravityGame.careerAdvance(game.career, scene.trade.speed, 1);
 		if (gravity.status === STATUS_FLYING) {
@@ -2337,6 +2574,7 @@
 	}
 
 	function endGameFlight() {
+		clearBurnAim();
 		const spec = ruleSpec();
 		if (spec.stopOnTour && gravity.visitedCount === PLANETS && game.doneSteps < 0) {
 			game.doneSteps = game.steps + gravity.visitStep;
@@ -2356,6 +2594,8 @@
 			game.clockSteps = bot.settle(game.clockSteps, game.market, spec.capSteps);
 		}
 		if (replay.on) {
+			replay.activeShot = null;
+			replay.burnIndex = 0;
 			replay.phase = PHASE_GAP;
 			replay.until = performance.now() + REPLAY_GAP_MS / REPLAY_SPEEDS[replay.speed];
 		}
@@ -2394,6 +2634,7 @@
 		if (careerRule()) {
 			const career = game.career;
 			parts.push('pad −' + career.lastEnergy.toFixed(2) + ' kWh');
+			if (career.lastFuel > 0) parts.push('fuel −' + career.lastFuel.toFixed(1) + ' kg');
 			if (career.lastReward > 0) parts.push('task +' + career.lastReward.toFixed(2));
 		} else {
 			parts.push('cost −' + MONEY.cost.toFixed(2));
@@ -2405,6 +2646,7 @@
 	}
 
 	function abortFlight() {
+		clearBurnAim();
 		const slot = activeSlotIndex();
 		const sim = slotSim(slot);
 		if (replay.on || sim.status !== STATUS_FLYING) return;
@@ -2423,6 +2665,7 @@
 	}
 
 	function startReplay(shots, end, length) {
+		clearBurnAim();
 		replay.on = true;
 		replay.shots = shots;
 		replay.end = end;
@@ -2431,6 +2674,8 @@
 		replay.index = 0;
 		replay.speed = REPLAY_DEFAULT;
 		replay.verdict = '';
+		replay.activeShot = null;
+		replay.burnIndex = 0;
 		if (replay.route) {
 			const shot = shots[0];
 			replay.phase = PHASE_AIM;
@@ -2457,6 +2702,8 @@
 		replay.route = false;
 		replay.length = null;
 		replay.verdict = '';
+		replay.activeShot = null;
+		replay.burnIndex = 0;
 	}
 
 	function routeVerdictText() {
@@ -2492,6 +2739,8 @@
 	function advanceReplay(now) {
 		if (replay.phase === PHASE_AIM) {
 			const shot = replay.shots[replay.index++];
+			replay.activeShot = shot;
+			replay.burnIndex = 0;
 			setShotAim(shot);
 			replay.phase = PHASE_FLY;
 			fire(shot.abort);
@@ -2527,6 +2776,8 @@
 
 	function finishReplay(problem) {
 		replay.on = false;
+		replay.activeShot = null;
+		replay.burnIndex = 0;
 		replay.verdict = problem || verdictText(replay.end);
 		armed = false;
 		refreshGameUi();
@@ -2584,7 +2835,8 @@
 		if (routeRule() && (armed || aiming)) predictShot();
 		const slot = activeSlotIndex();
 		if (slot > 0) {
-			const hash = bot.rivalLink(game.seed, scene.trade.speed, slot - 1);
+			const hash = bot.rivalLink(game.seed, scene.trade.speed, slot - 1,
+				gravityScale, forceScale);
 			if (!hash) return;
 			copyUrlText(location.href.split('#')[0] + '#' + hash, gameCopyBtn, 'copy replay');
 			return;
@@ -2770,7 +3022,7 @@
 		horizonSlider.disabled = route;
 		if (cargoHintEl) {
 			cargoHintEl.innerHTML = career
-				? 'drag from the pad under the ship · <b>wait</b> charges every pad<br>build pads for any planet and take deliveries in the career drawer'
+				? 'drag from pad to launch · in flight: <b>Space</b> / drag ship to burn<br><b>wait</b> charges pads · build pads, refit at HQ and take deliveries'
 				: route
 				? playerIsBot()
 					? 'bot plans ' + slotName(activeSlotIndex()) + ' · longest finished plan leads'
@@ -3037,6 +3289,19 @@
 		return where + state;
 	}
 
+	function shipImpulseNote(ship) {
+		if (!ship.engine || ship.tank.fuelCap <= 0) return '';
+		const remDv = OrbitTech.impulseDeltaV(ship.fuelKg, ship.engine, ship.mass, ship.fuelKg);
+		const burnCap = OrbitTech.burnLimit(ship.fuelKg, ship.engine, ship.mass);
+		if (ship.fuelKg < ship.tank.fuelCap - 0.05) {
+			return ' · fuel ' + ship.fuelKg.toFixed(1) + '/' + ship.tank.fuelCap + ' kg' +
+				(remDv > 0.05 ? ' · Δv ' + remDv.toFixed(1) + ' px/s' : ' · empty');
+		}
+		if (remDv <= 0) return '';
+		return ' · Δv ' + remDv.toFixed(1) + ' px/s' +
+			(burnCap < remDv - 0.05 ? ' (burn ' + burnCap.toFixed(1) + ')' : '');
+	}
+
 	function padBlockHtml(career) {
 		const at = career.at;
 		if (at < 0) return '<div class="careerLine warn">lost in space · evacuate to HQ</div>';
@@ -3045,10 +3310,9 @@
 		const cargo = ship.cargoTons > 0 ? ' · cargo ' + ship.cargoTons + ' t' : '';
 		let html = '<div class="careerLine"><b>' + planetName(at) + (at === career.hq ? ' · HQ' : '') +
 			'</b> · ' + ship.mass.toFixed(1) + ' t' + cargo + '</div>';
-		const dv = OrbitTech.shipDeltaV(ship, ship.cargoTons);
 		html += '<div class="careerLine dim">ship ' + ship.hold.id + ' · ' +
 			(ship.engine ? ship.engine.id : 'no engine') + ' · ' + ship.tank.id +
-			(dv > 0 ? ' · Δv ' + dv.toFixed(1) + ' m/s' : '') + '</div>';
+			shipImpulseNote(ship) + '</div>';
 		if (pad.catapult === null) {
 			const first = OrbitTech.CATAPULTS[0];
 			const cost = careerCost(career, first.buildCost);
@@ -3172,10 +3436,14 @@
 		const name = item === null ? 'no engine' : item.id;
 		const mass = OrbitTech.refitMass(career.ship, row.kind, item, career.ship.cargoTons);
 		const dv = OrbitTech.refitDeltaV(career.ship, row.kind, item, career.ship.cargoTons);
+		const burnCap = OrbitTech.refitBurnLimit(career.ship, row.kind, item, career.ship.cargoTons);
+		const dvNote = dv > 0
+			? ' · Δv ' + dv.toFixed(1) + ' px/s' +
+				(burnCap < dv - 0.05 ? ' (burn ' + burnCap.toFixed(1) + ')' : '')
+			: '';
 		const title = 'refit ' + name + (atHq ? '' : ' at HQ only') + ' · ' +
 			partStatText(row.kind, item) + ' · ship ' + mass.toFixed(1) + ' t · HQ cap ' +
-			Math.round(partCap(career, row, item)) + ' px/s' +
-			(dv > 0 ? ' · Δv ' + dv.toFixed(1) + ' m/s' : '') +
+			Math.round(partCap(career, row, item)) + ' px/s' + dvNote +
 			(fits ? '' : ' · drops ' + career.ship.cargoTons + ' t cargo first');
 		const label = back ? 'back ' + name
 			: (owned ? 'fit ' : 'buy ') + name + ' · ' + costText(price);
@@ -3188,7 +3456,7 @@
 		const cur = career.ship[row.kind];
 		const next = nextTier(row.table, cur);
 		const engine = row.kind === OrbitTech.KIND_ENGINE;
-		const back = engine ? null : lighterTier(career, row.table, cur);
+		const back = lighterTier(career, row.table, cur);
 		const canBack = cur !== null && (engine || back !== null);
 		/* the arrow describes the action on offer: the upgrade, else the step down */
 		const change = next !== null ? next : canBack ? back : undefined;
@@ -3443,7 +3711,7 @@
 		}
 		const dv = OrbitTech.shipDeltaV(career.ship, career.ship.cargoTons);
 		careerNotice('fitted ' + name + ' · ship ' + career.ship.mass.toFixed(1) + ' t' +
-			(dv > 0 ? ' · Δv ' + dv.toFixed(1) + ' m/s' : ''));
+			(dv > 0 ? ' · Δv ' + dv.toFixed(1) + ' px/s' : ''));
 		careerChanged();
 	}
 
@@ -3631,14 +3899,17 @@
 		}
 	}
 
-	/* a planet disc hidden under the cargo panel still aims: the press is taken
-	 * over only when it lands on a pad the ship may launch from, never on a control */
+	/* a planet disc or paused ship hidden under the cargo panel still aims: the
+	 * press is taken over only on a launchable pad or impulse ship, never a control */
 	function hudPadPress(event) {
 		const node = event.target;
 		if (!node || node === tradeCanvas || !cargoHudEl) return false;
 		if (typeof cargoHudEl.contains !== 'function' || !cargoHudEl.contains(node)) return false;
 		if (node.closest && node.closest('button, input, select, label, textarea')) return false;
-		const planet = planetAt(worldX(event.clientX), worldY(event.clientY));
+		const wx = worldX(event.clientX);
+		const wy = worldY(event.clientY);
+		if (canImpulse() && shipAt(wx, wy)) return true;
+		const planet = planetAt(wx, wy);
 		return planet >= 0 && canAimFrom(planet);
 	}
 
@@ -3646,10 +3917,21 @@
 		if (event.button !== 0 || (event.target !== tradeCanvas && !hudPadPress(event))) return;
 		const wx = worldX(event.clientX);
 		const wy = worldY(event.clientY);
+		if (canImpulse() && shipAt(wx, wy)) {
+			lastWX = wx;
+			lastWY = wy;
+			burnPressing = true;
+			pressClientX = event.clientX;
+			pressClientY = event.clientY;
+			pendGripX = wx;
+			pendGripY = wy;
+			if (!burnPaused) setBurnPaused(true);
+			return;
+		}
 		const planet = planetAt(wx, wy);
 		const body = bodyAt(wx, wy);
 		if (planet < 0 && body < 0) {
-			if (!aiming && !pressing && selected >= 0) {
+			if (!aiming && !pressing && !burnAiming && !burnPressing && selected >= 0) {
 				setSelected(-1);
 				helperUpdateUi();
 			}
@@ -3678,7 +3960,30 @@
 		const wx = worldX(event.clientX);
 		const wy = worldY(event.clientY);
 		fine = event.shiftKey;
-		if (aiming) {
+		if (burnAiming) {
+			const prevAngle = burnAngle;
+			const prevDv = burnDv;
+			const dx = wx - lastWX;
+			const dy = wy - lastWY;
+			const sens = fine ? SENS_FINE : 1;
+			gripX += dx * sens;
+			gripY += dy * sens;
+			updateBurnAim();
+			if (burnAngle !== prevAngle || burnDv !== prevDv || activeSim().predCount < 2) {
+				dirty = true;
+			}
+		} else if (burnPressing) {
+			const dx = wx - lastWX;
+			const dy = wy - lastWY;
+			const sens = fine ? SENS_FINE : 1;
+			pendGripX += dx * sens;
+			pendGripY += dy * sens;
+			const movedX = event.clientX - pressClientX;
+			const movedY = event.clientY - pressClientY;
+			if (movedX * movedX + movedY * movedY > DRAG_TAKEOVER_PX * DRAG_TAKEOVER_PX) {
+				takeOverBurnAim();
+			}
+		} else if (aiming) {
 			const prevAngle = aimAngle;
 			const prevSpeed = aimSpeed;
 			const dx = wx - lastWX;
@@ -3719,6 +4024,30 @@
 
 	function onPointerUp(event) {
 		fine = event.shiftKey;
+		if (burnPressing && !burnAiming) {
+			burnPressing = false;
+			return;
+		}
+		if (burnAiming) {
+			burnAiming = false;
+			burnPressing = false;
+			if (gripLen > 6 / view.scale && burnDv >= GravityGame.speedOf(1)) {
+				burnArmed = true;
+			} else if (savedBurnArmed) {
+				burnAngle = savedBurnAngle;
+				burnDv = savedBurnDv;
+				burnArmed = true;
+				placeBurnGrip();
+			} else {
+				burnArmed = false;
+			}
+			savedBurnArmed = false;
+			dirty = true;
+			refreshAimLabel();
+			launchState = -1;
+			hudAt = -Infinity;
+			return;
+		}
 		if (pressing && !aiming) {
 			pressing = false;
 			return;
@@ -3755,7 +4084,16 @@
 		trimLast = value;
 		if (delta === 0) return;
 		const factor = 1 + delta / 100;
-		if (armed) {
+		if (burnArmed && canImpulse()) {
+			const ceiling = gravity.burnLimit();
+			const minDv = GravityGame.speedOf(1);
+			burnDv = burnDv * factor;
+			if (burnDv < minDv) burnDv = minDv;
+			else if (burnDv > ceiling) burnDv = ceiling;
+			placeBurnGrip();
+			dirty = true;
+			launchState = -1;
+		} else if (armed) {
 			const ceiling = speedCeiling(aimBody);
 			aimSpeed = aimSpeed * factor;
 			if (aimSpeed < SPEED_MIN) aimSpeed = SPEED_MIN;
@@ -4243,6 +4581,14 @@
 		const x = gravity.cargo.x;
 		const y = gravity.cargo.y;
 		if (gravity.status === STATUS_FLYING) {
+			if (burnPaused) {
+				const holdPulse = 0.5 + 0.5 * Math.sin(now * 0.006);
+				ctx.beginPath();
+				ctx.arc(x, y, (8 + holdPulse * 3) * px, 0, TAU);
+				ctx.strokeStyle = ICE;
+				ctx.lineWidth = 1.25 * px;
+				ctx.stroke();
+			}
 			const angle = Math.atan2(gravity.cargo.vy, gravity.cargo.vx);
 			ctx.globalAlpha = 0.7;
 			ctx.drawImage(glow, x - 18 * px, y - 18 * px, 36 * px, 36 * px);
@@ -4272,48 +4618,51 @@
 	}
 
 	function drawAim() {
-		if (!armed && !aiming) return;
+		const isBurn = (burnArmed || burnAiming) && gravity.status === STATUS_FLYING;
+		if (!isBurn && !armed && !aiming) return;
 		const px = 1 / view.scale;
-		const cx = tradeSim.planetX[aimBody];
-		const cy = tradeSim.planetY[aimBody];
+		const cx = isBurn ? gravity.cargo.x : tradeSim.planetX[aimBody];
+		const cy = isBurn ? gravity.cargo.y : tradeSim.planetY[aimBody];
+		const angle = isBurn ? burnAngle : aimAngle;
+		const mainStroke = isBurn ? ICE : GOLD;
 		GRIP_DASH[0] = 3 * px;
 		GRIP_DASH[1] = 7 * px;
 		ctx.beginPath();
 		ctx.arc(cx, cy, GRIP_MAX, 0, TAU);
-		ctx.strokeStyle = 'rgba(255, 207, 110, 0.10)';
+		ctx.strokeStyle = isBurn ? 'rgba(103, 224, 255, 0.14)' : 'rgba(255, 207, 110, 0.10)';
 		ctx.lineWidth = px;
 		ctx.setLineDash(GRIP_DASH);
 		ctx.stroke();
 		ctx.setLineDash(NO_DASH);
 
 		const sim = activeSim();
-		const sx = sim.predCount > 0 ? sim.predX[0] : cx;
-		const sy = sim.predCount > 0 ? sim.predY[0] : cy;
+		const sx = !isBurn && sim.predCount > 0 ? sim.predX[0] : cx;
+		const sy = !isBurn && sim.predCount > 0 ? sim.predY[0] : cy;
 		ctx.beginPath();
 		ctx.moveTo(sx, sy);
 		ctx.lineTo(gripX, gripY);
-		ctx.strokeStyle = 'rgba(255, 207, 110, 0.82)';
+		ctx.strokeStyle = isBurn ? 'rgba(103, 224, 255, 0.85)' : 'rgba(255, 207, 110, 0.82)';
 		ctx.lineWidth = 1.2 * px;
 		ctx.stroke();
 
 		const size = (4 + (gripLen > 0 ? gripLen / GRIP_MAX : 0) * 4) * px;
 		ctx.beginPath();
 		ctx.arc(gripX, gripY, size, 0, TAU);
-		ctx.fillStyle = 'rgba(255, 207, 110, 0.16)';
+		ctx.fillStyle = isBurn ? 'rgba(103, 224, 255, 0.18)' : 'rgba(255, 207, 110, 0.16)';
 		ctx.fill();
-		ctx.strokeStyle = GOLD;
+		ctx.strokeStyle = mainStroke;
 		ctx.lineWidth = 1.4 * px;
 		ctx.stroke();
 		const tip = 11 * px;
 		const side = 4.5 * px;
 		ctx.beginPath();
-		ctx.moveTo(gripX + Math.cos(aimAngle) * tip, gripY + Math.sin(aimAngle) * tip);
-		ctx.lineTo(gripX + Math.cos(aimAngle + 2.5) * side,
-			gripY + Math.sin(aimAngle + 2.5) * side);
-		ctx.lineTo(gripX + Math.cos(aimAngle - 2.5) * side,
-			gripY + Math.sin(aimAngle - 2.5) * side);
+		ctx.moveTo(gripX + Math.cos(angle) * tip, gripY + Math.sin(angle) * tip);
+		ctx.lineTo(gripX + Math.cos(angle + 2.5) * side,
+			gripY + Math.sin(angle + 2.5) * side);
+		ctx.lineTo(gripX + Math.cos(angle - 2.5) * side,
+			gripY + Math.sin(angle - 2.5) * side);
 		ctx.closePath();
-		ctx.fillStyle = GOLD;
+		ctx.fillStyle = mainStroke;
 		ctx.fill();
 	}
 
@@ -4351,7 +4700,7 @@
 	}
 
 	function drawGripLabel() {
-		if (!aimLabel || (!armed && !aiming)) return;
+		if (!aimLabel || (!armed && !aiming && !burnArmed && !burnAiming)) return;
 		const sx = gripX * view.scale + view.offX + 16;
 		const sy = gripY * view.scale + view.offY - 12;
 		const width = 20 + aimLabel.length * 6.4;
@@ -4697,7 +5046,7 @@
 	function updateLiveHud() {
 		const sim = activeSim();
 		const plan = activeRoutePlan();
-		const text = aiming || armed ? aimLabel : '—';
+		const text = aiming || armed || burnAiming || burnArmed ? aimLabel : '—';
 		if (text !== hudAimText) {
 			hudAimText = text;
 			aimEl.textContent = text;
@@ -4744,15 +5093,43 @@
 			hudPathText = pText;
 			pathEl.textContent = pText;
 		}
+		const impulseOk = canImpulse();
 		const locked = gameLocked();
-		const trimOff = locked || (!armed && (game.on || selected < 0));
+		const trimOff = (locked && !(impulseOk && burnArmed)) ||
+			(!armed && !(impulseOk && burnArmed) && (game.on || selected < 0));
 		if (trimSlider.disabled !== trimOff) trimSlider.disabled = trimOff;
-		const exitWarning = !routeRule() && (aiming || armed) &&
+		const exitWarning = !routeRule() && (aiming || armed || burnAiming || burnArmed) &&
 			sim.predCount >= 2 && sim.predReason === END_EXIT;
 		setLaunchState(locked || !armed || !canAimFrom(aimBody), exitWarning);
 	}
 
 	function setLaunchState(blocked, exitWarning) {
+		if (canImpulse()) {
+			const ship = game.career.ship;
+			const usedKg = burnArmed
+				? OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg) : 0;
+			const warnExit = burnArmed && exitWarning;
+			const text = !burnPaused
+				? 'impulse · max ' + gravity.burnLimit().toFixed(1) + ' px/s'
+				: burnArmed
+				? (warnExit ? 'burn · leaves map · ' : 'burn · Δv ') +
+					burnDv.toFixed(1) + ' px/s (−' + usedKg.toFixed(1) + ' kg)'
+				: 'resume · drag ship to burn';
+			const state = 1024 + (burnPaused ? 2048 : 0) + (burnArmed ? 4096 : 0) +
+				(warnExit ? 2 : 0);
+			if (state === launchState && text === launchNote) return;
+			launchState = state;
+			launchNote = text;
+			launchButton.disabled = false;
+			launchButton.classList.toggle('exitWarning', warnExit);
+			launchButton.textContent = text;
+			launchButton.title = !burnPaused
+				? 'Pause flight to aim an impulse burn (Space / P, or drag from the ship)'
+				: burnArmed
+				? 'Execute impulse burn and resume flight (Enter) · Escape cancels burn'
+				: 'Drag from the ship to aim a burn, or click / press Space to resume coasting';
+			return;
+		}
 		const route = routeRule();
 		const slot = activeSlotIndex();
 		const botPlayer = slotIsBot(slot);
@@ -4824,6 +5201,9 @@
 				? who + ' · bot thinking ' + Math.round(bot.progress() * 100) + ' %'
 				: who + ' · bot ready';
 		}
+		if (burnAiming) return 'aiming impulse · Δv ' + burnDv.toFixed(1) + ' px/s';
+		if (burnArmed) return 'burn armed · Δv ' + burnDv.toFixed(1) + ' px/s';
+		if (burnPaused) return 'flight paused · drag ship for impulse';
 		if (aiming) return whoPrefix + 'aiming ' + planetName(aimBody);
 		if (armed) return whoPrefix + 'armed · ' + planetName(aimBody);
 		if (sim.status === STATUS_FLYING) {
@@ -4865,7 +5245,8 @@
 			? sim.predSteps + ' steps · ' + sim.predMs.toFixed(2) + ' ms'
 			: '—';
 
-		if (armed) trimTargetEl.textContent = 'aim speed';
+		if (burnArmed) trimTargetEl.textContent = 'burn Δv';
+		else if (armed) trimTargetEl.textContent = 'aim speed';
 		else if (selected >= 0) trimTargetEl.textContent = bodyName(selected) + ' g';
 		else trimTargetEl.textContent = '—';
 	}
@@ -4939,7 +5320,14 @@
 				refreshAimLabel();
 			}
 		} else if (sim.status === STATUS_FLYING) {
-			if (dirty || autoSkip === 0) {
+			if (burnAiming || burnArmed) {
+				if (dirty) {
+					sim.predictBurn(burnAngle, burnDv, budgetMs);
+					refreshPredGain();
+					refreshAimLabel();
+					dirty = false;
+				}
+			} else if (dirty || (autoSkip === 0 && !burnPaused)) {
 				sim.predictFlight(budgetMs);
 				refreshPredGain();
 				dirty = false;
@@ -5173,7 +5561,26 @@
 				return;
 			}
 		}
+		if ((event.code === 'Space' || event.code === 'KeyP') &&
+			!event.ctrlKey && !event.metaKey && !event.altKey) {
+			const tag = event.target && event.target.tagName;
+			if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT' &&
+				careerRule() && !replay.on && gravity.status === STATUS_FLYING) {
+				if (event.preventDefault) event.preventDefault();
+				if (canImpulse()) setBurnPaused(!burnPaused);
+				else {
+					careerNotice(game.career.ship.engine
+						? 'fuel tank empty' : 'no impulse engine fitted · refit at HQ');
+				}
+				return;
+			}
+		}
 		if (event.code === 'Enter') {
+			if (burnPaused && burnArmed && canImpulse()) {
+				if (event.preventDefault) event.preventDefault();
+				executeBurn();
+				return;
+			}
 			if (!armed) return;
 			event.preventDefault();
 			launch();
@@ -5181,6 +5588,15 @@
 		}
 		if (event.code === 'Escape') {
 			if (helpOpen) setHelpOpen(false);
+			else if (burnAiming || burnArmed) {
+				burnAiming = false;
+				burnArmed = false;
+				savedBurnArmed = false;
+				dirty = true;
+				refreshAimLabel();
+				launchState = -1;
+				hudAt = -Infinity;
+			} else if (burnPaused) setBurnPaused(false);
 			else if (!replay.on) cancelAim();
 		}
 	});
@@ -5225,6 +5641,13 @@
 		experimentScales: () => ({ gravity: gravityScale, force: forceScale }),
 		careerPadInfo: () => (game.career ? careerPadPlate(game.career) : null),
 		aimState: () => ({ angle: aimAngle, speed: aimSpeed, grip: gripLen, ceiling: aimCeiling }),
+		burnPaused: () => burnPaused,
+		setBurnPaused,
+		burnState: () => ({
+			paused: burnPaused, armed: burnArmed,
+			angle: burnAngle, dv: burnDv, grip: gripLen, ceiling: burnCeiling
+		}),
+		startReplay,
 		routeLength: () => activeRoutePlan().length,
 		routePlan: activeRoutePlan,
 		routeBest: activeRouteBest,

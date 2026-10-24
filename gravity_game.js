@@ -91,6 +91,7 @@
 	const SRC_CODES = 'pm';
 	const NO_ABORT = -1;
 	const SHOT_FORM = /^([pm])(\d{1,2})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})(?:\.([0-9a-z]{1,4}))?$/;
+	const BURN_FORM = /^b([0-9a-z]{1,4})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})$/;
 	const END_FORM = /^(\d{1,2})\.(\d{1,9})$/;
 	const estScratch = new Int32Array(OrbitWorld.PLANETS);
 
@@ -110,14 +111,29 @@
 		return units / SPEED_STEPS;
 	}
 
-	function createShot(src, origin, angle, speed, abort) {
-		return { src: src, origin: origin, angle: angle, speed: speed, abort: abort };
+	function createBurn(step, angle, dv) {
+		return { step: step, angle: angle, dv: dv };
+	}
+
+	function encodeBurn(burn) {
+		return 'b' + burn.step.toString(36) + '.' + burn.angle.toString(36) + '.' + burn.dv.toString(36);
+	}
+
+	function createShot(src, origin, angle, speed, abort, burns) {
+		return {
+			src: src, origin: origin, angle: angle, speed: speed, abort: abort,
+			burns: burns ? burns.slice() : []
+		};
 	}
 
 	function encodeShot(shot) {
 		const head = SRC_CODES[shot.src] + shot.origin + '.' +
 			shot.angle.toString(36) + '.' + shot.speed.toString(36);
-		return shot.abort === NO_ABORT ? head : head + '.' + shot.abort.toString(36);
+		const base = shot.abort === NO_ABORT ? head : head + '.' + shot.abort.toString(36);
+		if (!shot.burns || shot.burns.length === 0) return base;
+		let out = base;
+		for (let i = 0; i < shot.burns.length; i++) out += '-' + encodeBurn(shot.burns[i]);
+		return out;
 	}
 
 	/* two-decimal multiplier, omitted at the default 1 */
@@ -147,16 +163,32 @@
 	}
 
 	function decodeShot(text, capSteps) {
-		const match = SHOT_FORM.exec(text);
+		const parts = String(text).split('-');
+		const match = SHOT_FORM.exec(parts[0]);
 		if (!match) return null;
 		const origin = Number(match[2]);
 		const angle = parseInt(match[3], 36);
 		const speed = parseInt(match[4], 36);
 		const abort = match[5] === undefined ? NO_ABORT : parseInt(match[5], 36);
+		const limit = capSteps || ROUTE_STEPS;
 		if (origin >= OrbitWorld.PLANETS || angle >= ANGLE_STEPS) return null;
 		if (speed < SPEED_UNITS_MIN || speed > SPEED_UNITS_MAX) return null;
-		if (abort >= (capSteps || ROUTE_STEPS)) return null;
-		return createShot(SRC_CODES.indexOf(match[1]), origin, angle, speed, abort);
+		if (abort >= limit) return null;
+		const maxBurnStep = abort === NO_ABORT ? limit : abort;
+		const burns = [];
+		let prevStep = 0;
+		for (let i = 1; i < parts.length; i++) {
+			const bm = BURN_FORM.exec(parts[i]);
+			if (!bm) return null;
+			const bStep = parseInt(bm[1], 36);
+			const bAngle = parseInt(bm[2], 36);
+			const bDv = parseInt(bm[3], 36);
+			if (bStep < prevStep || bStep >= maxBurnStep) return null;
+			if (bAngle >= ANGLE_STEPS || bDv < 1 || bDv > SPEED_UNITS_MAX) return null;
+			prevStep = bStep;
+			burns.push(createBurn(bStep, bAngle, bDv));
+		}
+		return createShot(SRC_CODES.indexOf(match[1]), origin, angle, speed, abort, burns);
 	}
 
 	/* absent = 1, otherwise a plain up-to-two-decimal number inside [min, max] */
@@ -199,7 +231,9 @@
 		const shots = [];
 		for (const part of parts) {
 			const shot = decodeShot(part, rule.capSteps);
-			if (!shot || (rule.planner && shot.abort !== NO_ABORT)) return null;
+			if (!shot || (rule.planner && (shot.abort !== NO_ABORT || shot.burns.length > 0))) {
+				return null;
+			}
 			shots.push(shot);
 		}
 		const lengthText = params.get('len');
@@ -411,17 +445,22 @@
 			pads: pads,
 			padCount: 0,
 			light: new Float64Array(OrbitWorld.PLANETS),
-			ship: { hold: OrbitTech.HOLDS[0], engine: null, tank: OrbitTech.TANKS[0], cargoTons: 0, mass: 0 },
+			ship: {
+				hold: OrbitTech.HOLDS[0], engine: null, tank: OrbitTech.TANKS[0],
+				cargoTons: 0, fuelKg: 0, mass: 0
+			},
 			owned: {},
 			tasks: tasks,
 			contract: -1,
 			serial: 0,
 			flights: 0,
+			burns: 0,
 			evacuations: 0,
 			delivered: 0,
 			earned: 0,
 			lastEnergy: 0,
 			lastReward: 0,
+			lastFuel: 0,
 			ended: CAREER_OPEN
 		};
 	}
@@ -436,6 +475,10 @@
 
 	function refitShip(career) {
 		career.ship.mass = OrbitTech.shipMass(career.ship, career.ship.cargoTons);
+	}
+
+	function refuelShip(career) {
+		career.ship.fuelKg = career.ship.tank ? career.ship.tank.fuelCap : 0;
 	}
 
 	function draw01(career, salt) {
@@ -505,15 +548,18 @@
 		fitPad(career, career.hq, grant.pad.catapult, grant.pad.panel, grant.pad.battery);
 		if (career.cheat === CHEAT_ENDGAME) fitEndgame(career);
 		refitShip(career);
+		refuelShip(career);
 		for (let i = 0; i < BOARD_SIZE; i++) clearTask(career.tasks[i]);
 		career.contract = -1;
 		career.serial = 0;
 		career.flights = 0;
+		career.burns = 0;
 		career.evacuations = 0;
 		career.delivered = 0;
 		career.earned = 0;
 		career.lastEnergy = 0;
 		career.lastReward = 0;
+		career.lastFuel = 0;
 		career.ended = CAREER_OPEN;
 		refreshBoard(career, trade, 0);
 	}
@@ -545,6 +591,7 @@
 	function placeShip(career, sim, planet) {
 		career.at = planet;
 		career.stranded = career.pads[planet].catapult === null;
+		if (!career.stranded) refuelShip(career);
 		sim.relocate(planet);
 	}
 
@@ -585,7 +632,10 @@
 			pad[kind] = item;
 			if (kind === OrbitTech.KIND_BATTERY) pad.chargeKwh = item.capacity;
 		}
-		if (planet === career.at) career.stranded = false;
+		if (planet === career.at) {
+			career.stranded = false;
+			refuelShip(career);
+		}
 		checkEnded(career);
 		return true;
 	}
@@ -621,6 +671,7 @@
 		}
 		career.ship[kind] = item;
 		refitShip(career);
+		refuelShip(career);
 		return true;
 	}
 
@@ -777,10 +828,25 @@
 		const pad = career.pads[sim.origin];
 		const energy = OrbitTech.launchEnergy(career.ship.mass, pad.catapult, sim.speed);
 		pad.chargeKwh = pad.chargeKwh > energy ? pad.chargeKwh - energy : 0;
+		refuelShip(career);
 		career.lastEnergy = energy;
 		career.lastReward = 0;
+		career.lastFuel = 0;
 		career.flights += 1;
 		openFlight(career.ledger, sim, 0);
+	}
+
+	/* spends tank fuel for an in-flight impulse burn at the current step boundary */
+	function careerBurn(career, sim, angle, dv) {
+		if (career.ended !== CAREER_OPEN || !sim.canBurn(dv)) return false;
+		const ship = career.ship;
+		const used = OrbitTech.impulseFuel(dv, ship.engine, ship.mass, ship.fuelKg);
+		if (!(used > 0)) return false;
+		if (!sim.burn(angle, dv)) return false;
+		ship.fuelKg = ship.fuelKg > used ? ship.fuelKg - used : 0;
+		career.burns += 1;
+		career.lastFuel += used;
+		return true;
 	}
 
 	/* pads charge on the world clock (DT · rate world minutes per step): solar gain
@@ -805,6 +871,7 @@
 		if (landed) settleLanding(career, sim, sim.endBody, step);
 		career.at = landed ? sim.endBody : -1;
 		career.stranded = !landed || career.pads[sim.endBody].catapult === null;
+		if (!career.stranded) refuelShip(career);
 		refreshBoard(career, trade, step);
 		return checkEnded(career);
 	}
@@ -845,7 +912,7 @@
 		CHEAT_COMMUNISM, CHEAT_ENDGAME, CHEATS,
 		SRC_PLANETS, SRC_PORTS, NO_ABORT, MONEY, PURSE_PRESETS, EXPERIMENT,
 		angleUnits, angleOf, speedUnits, speedOf,
-		createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
+		createBurn, encodeBurn, createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
 		initSteps, createMarket, resetMarket, planetProfit,
 		createLedger, resetLedger, beginFlight, stepHarvest, endFlight,
 		estimateProfit, compareScores,
@@ -855,7 +922,7 @@
 		createCareer, resetCareer, startCareer, checkEnded,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart,
 		refreshBoard, canAccept, acceptTask, dropContract,
-		careerBeginFlight, careerAdvance, careerEndFlight, evacuate
+		careerBeginFlight, careerBurn, careerAdvance, careerEndFlight, evacuate
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = GravityGame;

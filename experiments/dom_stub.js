@@ -79,7 +79,7 @@ function makePaint(calls) {
 	};
 }
 
-function makeElement(spec, paint) {
+function makeElement(spec, paint, webglFactory) {
 	return {
 		id: spec.id,
 		tagName: spec.tagName,
@@ -98,7 +98,13 @@ function makeElement(spec, paint) {
 		addEventListener(type, fn) {
 			(this.listeners[type] || (this.listeners[type] = [])).push(fn);
 		},
-		getContext() { return paint; },
+		getContext(type) {
+			if (webglFactory && spec.id === 'f' &&
+				(type === 'webgl' || type === 'experimental-webgl')) {
+				return webglFactory();
+			}
+			return paint;
+		},
 		getBoundingClientRect() { return { left: 0, top: 0, width: 1280, height: 800 }; },
 		appendChild() {},
 		setPointerCapture() {},
@@ -115,7 +121,7 @@ function loadPage(options = {}) {
 	const calls = { fillText: 0, stroke: 0, fill: 0, putImageData: 0, lastImageData: null, texts: [] };
 	const paint = makePaint(calls);
 	const elements = new Map();
-	for (const spec of ELEMENTS) elements.set(spec.id, makeElement(spec, paint));
+	for (const spec of ELEMENTS) elements.set(spec.id, makeElement(spec, paint, options.webglFactory));
 
 	const windowListeners = {};
 	const location = { hash: options.hash || '', search: options.search || '', href: PAGE_URL + (options.search || '') + (options.hash || '') };
@@ -200,6 +206,11 @@ function loadPage(options = {}) {
 			const sim = context.OrbitScene.sim;
 			return { x: sim.planetX[index] * view.scale + view.offX, y: sim.planetY[index] * view.scale + view.offY };
 		},
+		shipScreen() {
+			const view = context.OrbitScene.view;
+			const cargo = context.GravityScene.sim.cargo;
+			return { x: cargo.x * view.scale + view.offX, y: cargo.y * view.scale + view.offY };
+		},
 		/* a real pointer drag from a planet to the grip of (angle, speed); the
 		 * grip uses the same pad ceiling the page maps the drag range onto */
 		dragAim(planet, angle, speed) {
@@ -208,6 +219,17 @@ function loadPage(options = {}) {
 			const scene = context.GravityScene;
 			const reach = scene.sim.gripLength(speed, scene.speedCeiling(planet)) *
 				context.OrbitScene.view.scale;
+			const gripX = origin.x + Math.cos(angle) * reach;
+			const gripY = origin.y + Math.sin(angle) * reach;
+			fire(windowListeners, 'pointerdown', { button: 0, clientX: origin.x, clientY: origin.y, target: canvas, shiftKey: false });
+			fire(windowListeners, 'pointermove', { clientX: gripX, clientY: gripY, target: canvas, shiftKey: false });
+			fire(windowListeners, 'pointerup', { clientX: gripX, clientY: gripY, target: canvas, shiftKey: false });
+		},
+		dragBurn(angle, dv) {
+			const origin = env.shipScreen();
+			const canvas = elements.get('c');
+			const sim = context.GravityScene.sim;
+			const reach = sim.gripLength(dv, sim.burnLimit(), 0) * context.OrbitScene.view.scale;
 			const gripX = origin.x + Math.cos(angle) * reach;
 			const gripY = origin.y + Math.sin(angle) * reach;
 			fire(windowListeners, 'pointerdown', { button: 0, clientX: origin.x, clientY: origin.y, target: canvas, shiftKey: false });

@@ -279,7 +279,21 @@ prediction buffers round away exactly the differences being measured.
 - A canvas keeps the **first** context type it was given: `getContext('2d')` on a
 	canvas that once had `webgl` returns `null` for the life of the element, so a
 	`webglcontextlost` handler cannot "fall back to 2D in place" — the field just
-	freezes. Rebuild the program/buffer on `webglcontextrestored` and expose a
-	`lost` backend so the page can show the plain starfield until then. Mock the
-	canvas that way in the bench (`getContext('2d')` → `null` once WebGL was
-	asked for), or the dead fallback passes headless while breaking in a browser.
+	freezes. Rebuild the program/buffer on `webglcontextrestored`, reset any
+	slow-frame resolution divider (`glDiv = 1`), and notify the GUI while keeping
+	`viewDesired` separate from the active `viewMode` so the view restores
+	automatically instead of stranding the tag on `'space · field lost'`.
+
+## mid-flight burns: partial-tank rocket equation & step-boundary parity
+
+- Burning `b` kg out of `f` kg on board acts on wet mass `m_dry + f`, not
+	`m_dry + b`: use `g0 · Isp · ln((m_dry + f) / (m_dry + f - b))` and its
+	inverse `f_burn = (m_dry + f) · (1 - exp(-Δv / (g0 · Isp)))`. Sequential
+	partial burns then telescope (`Δv_1 + Δv_2 === Δv_full`) instead of quietly
+	dropping fuel mass between burns.
+- Apply and replay impulses at the integer step boundary (`liveSteps === step`)
+	before `stepOne()`, and cap `predictBurn` by the remaining `stepLimit -
+	liveSteps` steps (while copying `source.stepX/stepY` into external bot probes
+	so moving-field stride alignment is preserved). Live flights, `predictBurn`,
+	`predictBurnFast`, and `-b<step>.<angle>.<dv>` replay links then match
+	step-for-step.

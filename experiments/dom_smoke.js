@@ -1741,6 +1741,178 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 		expectPanelCap + ', wait settlement & armed clamp ok');
 	console.log('0.4.8 verified: ' + expectHoldCap + ' · free back refit · engine strip ' +
 		'(data-tier -1) · cargo-blocked down-refit');
+
+	/* 0.4.8 review fix 1: endgame engine steps down IMP-3 -> IMP-2 -> IMP-1 -> no engine */
+	const cShop = cEnv.elements.get('careerShop');
+	const cBox = cEnv.elements.get('careerBox');
+	check(cShop.innerHTML.includes('>back IMP-2<') && cShop.innerHTML.includes('40 kN → 24 kN'),
+		'endgame engine offers step down to IMP-2: ' + cShop.innerHTML);
+	cEnv.fireElement(cBox, 'click', { target: { dataset: { act: 'part', kind: 'engine', tier: '1' } } });
+	check(cEnv.context.GravityScene.career.ship.engine.id === 'IMP-2' &&
+		cShop.innerHTML.includes('>back IMP-1<'), 'engine stepped down to IMP-2');
+	cEnv.fireElement(cBox, 'click', { target: { dataset: { act: 'part', kind: 'engine', tier: '0' } } });
+	check(cEnv.context.GravityScene.career.ship.engine.id === 'IMP-1' &&
+		cShop.innerHTML.includes('>back no engine<'), 'engine stepped down to IMP-1');
+	cEnv.fireElement(cBox, 'click', { target: { dataset: { act: 'part', kind: 'engine', tier: '-1' } } });
+	check(cEnv.context.GravityScene.career.ship.engine === null, 'engine stripped at tier -1');
+
+	/* 0.4.8 review fix 2: GUI WebGL context loss falls back and context restore auto-recovers */
+	let glLost = false;
+	const stubGl = {
+		VERTEX_SHADER: 1, FRAGMENT_SHADER: 2, COMPILE_STATUS: 3, LINK_STATUS: 4,
+		ARRAY_BUFFER: 5, STATIC_DRAW: 6, FLOAT: 7, TRIANGLE_STRIP: 8,
+		createShader: () => ({}), shaderSource() {}, compileShader() {},
+		getShaderParameter: () => true, deleteShader() {},
+		createProgram: () => ({}), attachShader() {}, linkProgram() {},
+		getProgramParameter: () => true, deleteProgram() {},
+		createBuffer: () => ({}), bindBuffer() {}, bufferData() {},
+		useProgram() {}, getAttribLocation: () => 0,
+		enableVertexAttribArray() {}, vertexAttribPointer() {},
+		getUniformLocation: (_, name) => name, viewport() {},
+		uniform2f() {}, uniform1i() {}, uniform3fv() {}, drawArrays() {}
+	};
+	const glEnv = loadPage({
+		search: '?view=field',
+		webglFactory: () => (glLost ? null : stubGl)
+	});
+	glEnv.runFrames(2, 16.0);
+	const glUi = glEnv.elements;
+	const glScene = glEnv.context.GravityScene;
+	const glOrbit = glEnv.context.OrbitScene;
+	check(glScene.viewMode() === 'field' && glUi.get('viewTag').textContent === 'hue · grad · WebGL',
+		'GUI WebGL field active: ' + glUi.get('viewTag').textContent);
+	glLost = true;
+	glEnv.fireElement(glUi.get('f'), 'webglcontextlost', { preventDefault() {} });
+	check(glScene.viewMode() === 'space' && glUi.get('f').hidden && glOrbit.backdropVisible() &&
+		glUi.get('viewTag').textContent === 'space · field lost',
+		'webglcontextlost switched GUI to starfield fallback: ' + glUi.get('viewTag').textContent);
+	glLost = false;
+	glEnv.fireElement(glUi.get('f'), 'webglcontextrestored', {});
+	glEnv.runFrames(2, 16.0);
+	check(glScene.viewMode() === 'field' && !glUi.get('f').hidden && !glOrbit.backdropVisible() &&
+		glUi.get('viewTag').textContent === 'hue · grad · WebGL',
+		'webglcontextrestored automatically restored WebGL field view: ' + glUi.get('viewTag').textContent);
+
+	/* 0.4.8 review fix 3: Career helper scan respects HQ origin and pad speed ceiling */
+	const hEnv = loadPage({ search: '?mode=career&seed=42&rate=1' });
+	hEnv.runFrames(2, 16.0);
+	const hScene = hEnv.context.GravityScene;
+	const hCap = hScene.speedCeiling(hScene.career.hq);
+	hEnv.click('helperScan');
+	for (let i = 0; i < 40 && !hEnv.elements.get('helperStop').hidden; i++) hEnv.runFrames(1, 16.0);
+	hEnv.runFrames(2, 16.0);
+	check(!hEnv.elements.get('launch').disabled && hScene.aimState().speed <= hCap + 1e-6,
+		'career helperScan armed a fireable shot within pad ceiling (' +
+		hScene.aimState().speed.toFixed(1) + ' <= ' + hCap.toFixed(1) + ')');
+
+	/* 0.4.9: fly-time impulse pause, ship drag, continuation preview, trim, burn & replay */
+	const bEnv = loadPage({ search: '?mode=career&seed=42&rate=1' });
+	bEnv.runFrames(2, 16.0);
+	const bUi = bEnv.elements;
+	const bScene = bEnv.context.GravityScene;
+	const bCareer2 = bScene.career;
+	const bSim = bScene.sim;
+	const bHq = bCareer2.hq;
+	bCareer2.ledger.purse = 30;
+	bScene.refreshCareerPanel();
+	bEnv.fireElement(bUi.get('careerBox'), 'click',
+		{ target: { dataset: { act: 'part', kind: 'engine', tier: '1' } } });
+	bEnv.fireElement(bUi.get('careerBox'), 'click',
+		{ target: { dataset: { act: 'part', kind: 'tank', tier: '2' } } });
+	check(bCareer2.ship.engine.id === 'IMP-2' && bCareer2.ship.tank.id === 'FT-2' &&
+		bCareer2.ship.fuelKg === 90 && bUi.get('careerPad').innerHTML.includes('px/s'),
+		'fitted IMP-2 + FT-2 with 90 kg fuel and px/s Δv readout');
+
+	bEnv.dragAim(bHq, 0.65, Math.min(72, bScene.speedCeiling(bHq)));
+	bEnv.runFrames(2, 16.0);
+	bEnv.click('launch');
+	bEnv.runFrames(6, 16.7);
+	check(bSim.status === pageSim.STATUS_FLYING && bSim.liveSteps > 0, 'career ship in flight');
+	check(!bUi.get('launch').disabled && bUi.get('launch').textContent.startsWith('impulse · max '),
+		'in-flight launch button offers impulse pause: ' + bUi.get('launch').textContent);
+
+	/* Space pauses flight at exact step boundary */
+	bEnv.fireWindow('keydown', { code: 'Space', key: ' ', target: { tagName: 'BODY' }, preventDefault() {} });
+	bEnv.runFrames(1, 16.7);
+	const pausedSteps = bSim.liveSteps;
+	const pausedClock = bScene.game.clockSteps;
+	bEnv.runFrames(5, 16.7);
+	check(bScene.burnPaused() && bSim.liveSteps === pausedSteps &&
+		bScene.game.clockSteps === pausedClock,
+		'paused flight freezes liveSteps and clockSteps');
+
+	/* drag burn vector from ship, trim +5%, Escape disarms, re-drag + Enter executes burn */
+	const maxBurn = bSim.burnLimit();
+	const wantDv = maxBurn * 0.6;
+	bEnv.dragBurn(-1.15, wantDv);
+	bEnv.runFrames(2, 16.7);
+	const armedBurn1 = bScene.burnState();
+	check(armedBurn1.armed && Math.abs(armedBurn1.dv - wantDv) < 0.05 &&
+		bUi.get('aimReadout').textContent.startsWith('Δv ') &&
+		bUi.get('launch').textContent.startsWith('burn · Δv '),
+		'ship drag armed continuation burn: ' + bUi.get('aimReadout').textContent);
+	bEnv.setValue('trim', '5');
+	bEnv.runFrames(1, 16.7);
+	check(bScene.burnState().dv > armedBurn1.dv && bUi.get('trimTarget').textContent === 'burn Δv',
+		'trim slider nudges armed burn Δv');
+	bEnv.fireElement(bUi.get('trim'), 'change');
+
+	bEnv.fireWindow('keydown', { code: 'Escape', key: 'Escape', target: { tagName: 'BODY' } });
+	bEnv.runFrames(1, 16.7);
+	check(bScene.burnPaused() && !bScene.burnState().armed, 'Escape disarms burn without unpausing');
+
+	bEnv.dragBurn(-1.15, wantDv);
+	bEnv.runFrames(2, 16.7);
+	const expectedEndReason = bSim.predReason;
+	const expectedEndBody = bSim.predBody;
+	const expectedRemSteps = bSim.predSteps;
+	bEnv.fireWindow('keydown', { code: 'Enter', key: 'Enter', target: { tagName: 'BODY' }, preventDefault() {} });
+	const fuelAfterBurn = bCareer2.ship.fuelKg;
+	check(!bScene.burnPaused() && bCareer2.burns === 1 && fuelAfterBurn < 90 &&
+		bScene.game.shots[0].burns.length === 1 &&
+		bScene.game.shots[0].burns[0].step === pausedSteps &&
+		bUi.get('careerPad').innerHTML.includes('/90 kg'),
+		'Enter executed burn, logged step ' + pausedSteps + ', and updated live fuel readout');
+
+	for (let i = 0; i < 600 && bSim.status === pageSim.STATUS_FLYING; i++) bEnv.runFrames(1, 40.0);
+	check(bSim.status === pageSim.STATUS_ENDED &&
+		bSim.endReason === expectedEndReason &&
+		bSim.endBody === expectedEndBody &&
+		bSim.liveSteps - pausedSteps === expectedRemSteps,
+		'live post-burn flight matched predictBurn step-for-step');
+
+	/* replay a Tour link carrying a mid-flight burn suffix (-b...) and verify exact end state */
+	const rEnv1 = loadPage({ hash: '#game=1&seed=19&rate=1' });
+	rEnv1.runFrames(2, 16.0);
+	const rScene1 = rEnv1.context.GravityScene;
+	const rSim1 = rScene1.sim;
+	const rGame = rEnv1.context.GravityGame;
+	rEnv1.dragAim(0, 0.5, 95);
+	rEnv1.runFrames(2, 16.0);
+	rEnv1.click('launch');
+	while (rSim1.liveSteps < 30 && rSim1.status === pageSim.STATUS_FLYING) rEnv1.runFrames(1, 16.7);
+	const rBurnStep = rSim1.liveSteps;
+	const rBurnAngleU = rGame.angleUnits(1.8);
+	const rBurnDvU = rGame.speedUnits(18);
+	rSim1.burn(rGame.angleOf(rBurnAngleU), rGame.speedOf(rBurnDvU));
+	rScene1.game.shots[0].burns.push(rGame.createBurn(rBurnStep, rBurnAngleU, rBurnDvU));
+	for (let i = 0; i < 600 && rSim1.status === pageSim.STATUS_FLYING; i++) rEnv1.runFrames(1, 40.0);
+	rEnv1.click('gameCopy');
+	const burnReplayUrl = rEnv1.clipboardText;
+	check(burnReplayUrl && burnReplayUrl.includes('-b' + rBurnStep.toString(36) + '.'),
+		'copied replay URL encodes burn suffix: ' + burnReplayUrl);
+
+	const rEnv2 = loadPage({ hash: '#' + burnReplayUrl.split('#')[1] });
+	rEnv2.click('replaySkip');
+	rEnv2.runFrames(1, 200.0);
+	const rVerdict = rEnv2.elements.get('replayReadout').textContent;
+	check(rVerdict.startsWith('verified ✓') &&
+		Math.hypot(rEnv2.context.GravityScene.sim.cargo.x - rSim1.cargo.x,
+			rEnv2.context.GravityScene.sim.cargo.y - rSim1.cargo.y) < 1e-9,
+		'burn replay link verified bit-exact: ' + rVerdict);
+	console.log('0.4.9 verified: stepped engine refit · WebGL auto-restore · helper pad cap · ' +
+		'fly-time impulse burn (step ' + pausedSteps + ', fuel ' + fuelAfterBurn.toFixed(1) +
+		'/90 kg) & burn replay (' + rVerdict + ')');
 }
 
 console.log('paint calls', {

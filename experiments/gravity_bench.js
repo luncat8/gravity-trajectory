@@ -390,7 +390,8 @@ function fieldBench(world) {
 		createImageData: (cw, ch) => ({ width: cw, height: ch, data: new Uint8ClampedArray(cw * ch * 4) }),
 		putImageData() {}
 	};
-	const glField = GravityField.create(mockCanvas);
+	let stateChanges = 0;
+	const glField = GravityField.create(mockCanvas, () => { stateChanges += 1; });
 	const hiView = { dpr: 2, scale: 0.8, offX: 40, offY: 20 };
 	glField.render(g, hiView, 1280, 800, false);
 	if (glField.backend() !== 'webgl' || glField.scaleDiv() !== 1 ||
@@ -404,14 +405,15 @@ function fieldBench(world) {
 	glState.lost = true;
 	glState.lostFn({ preventDefault() {} });
 	const drewWhileLost = glField.render(g, hiView, 1280, 800, false);
-	if (glField.backend() !== 'lost' || drewWhileLost || glField.pixels() !== null) {
+	if (glField.backend() !== 'lost' || drewWhileLost || glField.pixels() !== null || stateChanges !== 1) {
 		throw new Error('webglcontextlost must report lost and stop drawing, not fake a 2D fallback');
 	}
 	glState.lost = false;
 	glState.restoredFn();
 	glField.render(g, hiView, 1280, 800, false);
-	if (glField.backend() !== 'webgl' || glState.draws < 2) {
-		throw new Error('webglcontextrestored did not rebuild the shader');
+	if (glField.backend() !== 'webgl' || glField.scaleDiv() !== 1 ||
+		mockCanvas.width !== 2560 || glState.draws < 2 || stateChanges !== 2) {
+		throw new Error('webglcontextrestored did not rebuild the shader at full resolution');
 	}
 	/* a browser without WebGL keeps the 1/4-resolution 2D raster */
 	const noGlCanvas = {

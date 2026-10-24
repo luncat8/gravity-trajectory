@@ -84,6 +84,10 @@
 	const CAREER_REFIT_VALUE = 3;
 	const CAREER_PURSE_RESERVE = 6;
 	const CAREER_LOADED_SPEED = 75;
+	const CAREER_BURN_ANGLES = 24;
+	const CAREER_BURN_FRACTIONS = [0.35, 0.68, 1];
+	const CAREER_BURN_FUEL_COST = 0.008;
+	const CAREER_BURN_MIN_GAIN = 0.25;
 
 	const LEVELS = {
 		off: {
@@ -222,10 +226,15 @@
 			origin: -1, body: -1, angle: 0, speed: 0, score: -Infinity,
 			taskPay: 0, padValue: 0, energy: 0, wait: 0, steps: 0
 		};
+		this.careerBurnBest = {
+			body: -1, angle: 0, dv: 0, angleU: 0, dvU: 0,
+			score: -Infinity, coastScore: -Infinity, fuelKg: 0, steps: 0
+		};
 		this.careerEval = { taskPay: 0, padValue: 0, energy: 0, wait: 0 };
 		this.careerBuilds = 0;
 		this.careerUpgrades = 0;
 		this.careerPlans = 0;
+		this.careerBurnsPlanned = 0;
 
 		const self = this;
 		this.fillPlanets = function (t, outX, outY, count) {
@@ -362,9 +371,11 @@
 		this.routeTurn = 0;
 		this.probe.clear();
 		this.careerBest.origin = -1;
+		this.careerBurnBest.body = -1;
 		this.careerBuilds = 0;
 		this.careerUpgrades = 0;
 		this.careerPlans = 0;
+		this.careerBurnsPlanned = 0;
 
 		const base0 = (Math.imul(this.seed, 7) + 5) >>> 0;
 		for (let i = 0; i < MAX_RIVALS; i++) {
@@ -1226,8 +1237,8 @@
 		return gain > 0 ? energy / gain : Infinity;
 	};
 
-	/* Scores the trace already in `probe`; `careerEval` exposes its money terms. */
-	GravityBot.prototype.careerScoreProbe = function (career, sim, origin, speed, market, runStep) {
+	/* Landing + harvest + contract + solvency value of the trace in `probe`. */
+	GravityBot.prototype.careerScoreFlight = function (career, origin, market, runStep, flownLen) {
 		const probe = this.probe;
 		const body = probe.predBody;
 		if (probe.predReason !== END_IMPACT || body < 0) return -Infinity;
@@ -1244,8 +1255,9 @@
 			}
 		}
 		const compete = career.tasks[GravityGame.COMPETE_SLOT];
+		const totalLen = (flownLen || 0) + probe.predLength;
 		if (compete.kind === GravityGame.TASK_COMPETE && origin === compete.planet &&
-			probe.predLength >= compete.minLength && runStep + probe.predSteps <= compete.deadline) {
+			totalLen >= compete.minLength && runStep + probe.predSteps <= compete.deadline) {
 			taskPay += compete.reward;
 			cashPay += compete.reward;
 		}
@@ -1270,13 +1282,20 @@
 			const reserve = career.padCount === PLANETS - 1 ? CAREER_PURSE_RESERVE : 0;
 			if (career.ledger.purse + cashPay + 1e-9 < buildPrice + reserve) return -Infinity;
 		}
-		const energy = sim.launchEnergy(origin, speed);
-		const wait = this.careerEnergyWait(career, origin, energy);
 		this.careerEval.taskPay = taskPay;
 		this.careerEval.padValue = padValue;
+		return taskPay + padValue;
+	};
+
+	/* Scores the trace already in `probe`; `careerEval` exposes its money terms. */
+	GravityBot.prototype.careerScoreProbe = function (career, sim, origin, speed, market, runStep) {
+		const base = this.careerScoreFlight(career, origin, market, runStep, 0);
+		if (!Number.isFinite(base)) return -Infinity;
+		const energy = sim.launchEnergy(origin, speed);
+		const wait = this.careerEnergyWait(career, origin, energy);
 		this.careerEval.energy = energy;
 		this.careerEval.wait = wait;
-		return taskPay + padValue - energy * wait * CAREER_ENERGY_WAIT_COST;
+		return base - energy * wait * CAREER_ENERGY_WAIT_COST;
 	};
 
 	GravityBot.prototype.careerTarget = function (career) {
@@ -1360,6 +1379,78 @@
 			}
 		}
 		return best.origin >= 0 ? best : null;
+	};
+
+	/* Mid-flight course-correction search: burns tank fuel only when it beats
+	 * coasting and, whenever a contract is active, still lands the contract. */
+	GravityBot.prototype.careerBurnPlan = function (career, sim, market, runStep) {
+		const best = this.careerBurnBest;
+		best.body = -1;
+		best.score = -Infinity;
+		if (career.ended !== GravityGame.CAREER_OPEN || sim.status !== GravitySim.STATUS_FLYING) {
+			return null;
+		}
+		const limit = sim.burnLimit();
+		const capU = Math.floor(limit * GravityGame.SPEED_STEPS + 1e-9);
+		if (capU < 1) return null;
+
+		let requiredBody = -1;
+		if (career.contract >= 0) {
+			const task = career.tasks[career.contract];
+			requiredBody = task.state === GravityGame.TASK_LOADED ? task.to : task.from;
+		}
+		this.probe.predictBurnFast(sim, 0, 0);
+		let coastScore = -Infinity;
+		if (requiredBody < 0 || this.probe.predBody === requiredBody) {
+			coastScore = this.careerScoreFlight(career, sim.origin, market, runStep, sim.flightLength);
+		}
+		best.coastScore = coastScore;
+
+		const target = requiredBody >= 0 ? requiredBody : this.careerTarget(career);
+		const targetAngle = target >= 0
+			? Math.atan2(sim.planetY[target] - sim.cargo.y, sim.planetX[target] - sim.cargo.x) : 0;
+		const extra = target >= 0 ? CAREER_TARGET_OFFSETS * 2 + 1 : 0;
+		const ship = career.ship;
+		let prevDvU = -1;
+
+		for (let f = 0; f < CAREER_BURN_FRACTIONS.length; f++) {
+			let dvU = Math.round(limit * CAREER_BURN_FRACTIONS[f] * GravityGame.SPEED_STEPS);
+			if (dvU > capU) dvU = capU;
+			if (dvU < 1) dvU = 1;
+			if (dvU === prevDvU) continue;
+			prevDvU = dvU;
+			const dv = GravityGame.speedOf(dvU);
+			const fuelKg = OrbitTech.impulseFuel(dv, ship.engine, ship.mass, ship.fuelKg);
+			const fuelPenalty = fuelKg * CAREER_BURN_FUEL_COST;
+			for (let a = 0; a < CAREER_BURN_ANGLES + extra; a++) {
+				let rawAngle;
+				if (a < CAREER_BURN_ANGLES) rawAngle = (a + 0.5) / CAREER_BURN_ANGLES * Math.PI * 2;
+				else rawAngle = targetAngle + (a - CAREER_BURN_ANGLES - CAREER_TARGET_OFFSETS) * CAREER_TARGET_STEP;
+				const angleU = GravityGame.angleUnits(rawAngle);
+				const angle = GravityGame.angleOf(angleU);
+				this.probe.predictBurnFast(sim, angle, dv);
+				if (requiredBody >= 0 && this.probe.predBody !== requiredBody) continue;
+				const rawScore = this.careerScoreFlight(career, sim.origin, market, runStep, sim.flightLength);
+				if (!Number.isFinite(rawScore)) continue;
+				const score = rawScore - fuelPenalty;
+				if (Number.isFinite(coastScore) && score <= coastScore + CAREER_BURN_MIN_GAIN) continue;
+				const better = score > best.score + 1e-12 ||
+					(Math.abs(score - best.score) <= 1e-12 && best.body >= 0 &&
+						(angleU < best.angleU || (angleU === best.angleU && dvU < best.dvU)));
+				if (!better) continue;
+				best.body = this.probe.predBody;
+				best.angle = angle;
+				best.dv = dv;
+				best.angleU = angleU;
+				best.dvU = dvU;
+				best.score = score;
+				best.fuelKg = fuelKg;
+				best.steps = this.probe.predSteps;
+			}
+		}
+		if (best.body < 0) return null;
+		this.careerBurnsPlanned += 1;
+		return best;
 	};
 
 	GravityBot.LEVELS = LEVELS;

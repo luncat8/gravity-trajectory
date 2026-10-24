@@ -267,6 +267,112 @@ check('idle controller buys a hold and pads, and upgrades a weak loaded pad', ()
 	assert.ok(v.career.pads[v.career.hq].catapult.tier > before && v.bot.careerUpgrades > 0);
 });
 
+check('careerBurnPlan: rescues a missed contract or map exit and never breaks a contract', () => {
+	const w = makeWorld(42);
+	const { career, sim, bot, market, ledger, trade } = w;
+	ledger.purse = 60;
+	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_HOLD, OrbitTech.HOLDS[2]));
+	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, OrbitTech.ENGINES[2]));
+	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_TANK, OrbitTech.TANKS[3]));
+	GravityGame.buildGear(career, career.hq, OrbitTech.KIND_CATAPULT, OrbitTech.CATAPULTS[4]);
+	GravityGame.buildGear(career, career.hq, OrbitTech.KIND_BATTERY, OrbitTech.BATTERIES[4]);
+
+	/* 1. Active loaded contract already coasting onto target: any burn must STILL land target */
+	let target = (career.hq + 1) % PLANETS;
+	let hitAngle = 0;
+	let hitSpeed = 120;
+	let foundHit = false;
+	for (let p = 0; p < PLANETS && !foundHit; p++) {
+		if (p === career.hq) continue;
+		const ang = Math.atan2(sim.planetY[p] - sim.planetY[career.hq],
+			sim.planetX[p] - sim.planetX[career.hq]);
+		for (let off = -10; off <= 10 && !foundHit; off++) {
+			const a = GravityGame.angleOf(GravityGame.angleUnits(ang + off * 0.02));
+			for (const sp of [110, 145, 185]) {
+				bot.probe.predictFast(career.hq, a, sp, GravityGame.CAP_SECONDS);
+				if (bot.probe.predReason === GravitySim.END_IMPACT && bot.probe.predBody === p &&
+					bot.probe.predSteps > 40) {
+					target = p;
+					hitAngle = a;
+					hitSpeed = sp;
+					foundHit = true;
+				}
+			}
+		}
+	}
+	assert.ok(foundHit, 'fixture ballistic hit found');
+	const task = career.tasks[0];
+	task.kind = GravityGame.TASK_DELIVERY;
+	task.state = GravityGame.TASK_LOADED;
+	task.from = career.hq;
+	task.to = target;
+	task.tons = 4;
+	task.reward = 4.25;
+	task.deadline = 99999;
+	career.contract = 0;
+	career.ship.cargoTons = 4;
+	career.ship.mass = OrbitTech.shipMass(career.ship, 4);
+
+	sim.launch(career.hq, hitAngle, hitSpeed);
+	GravityGame.careerBeginFlight(career, sim);
+	for (let i = 0; i < 20; i++) {
+		w.step += 1;
+		sim.stepOne();
+	}
+	const keepPlan = bot.careerBurnPlan(career, sim, market, w.step);
+	assert.ok(keepPlan === null || keepPlan.body === target,
+		'bot burn broke an already-on-target contract');
+
+	/* 2. Perturb velocity so coasting misses `target`: burn rescues the delivery */
+	const missAngle = hitAngle + 0.14;
+	sim.launch(career.hq, missAngle, hitSpeed);
+	GravityGame.careerBeginFlight(career, sim);
+	for (let i = 0; i < 18 && sim.status === GravitySim.STATUS_FLYING; i++) {
+		w.step += 1;
+		sim.stepOne();
+	}
+	bot.probe.predictBurnFast(sim, 0, 0);
+	assert.notStrictEqual(bot.probe.predBody, target, 'perturbed shot must miss contract target');
+	const rescue = bot.careerBurnPlan(career, sim, market, w.step);
+	assert.ok(rescue && rescue.body === target, 'careerBurnPlan rescued contract onto target');
+	const purseBefore = ledger.purse;
+	assert.ok(GravityGame.careerBurn(career, sim, rescue.angle, rescue.dv));
+	while (sim.status === GravitySim.STATUS_FLYING) {
+		w.step += 1;
+		sim.stepOne();
+		GravityGame.stepHarvest(ledger, market, sim, w.step);
+	}
+	GravityGame.careerEndFlight(career, sim, trade, w.step);
+	assert.strictEqual(sim.endBody, target, 'burned flight landed on contract target');
+	assert.strictEqual(career.delivered, 1, 'rescued delivery settled');
+	assert.ok(ledger.purse >= purseBefore + task.reward - 1e-9, 'contract reward credited');
+
+	/* 3. No contract, heading off-map (END_EXIT): burn pulls ship onto a planet */
+	GravityGame.evacuate(career, sim);
+	let exitAngle = 0;
+	let foundExit = false;
+	for (let k = 0; k < 48 && !foundExit; k++) {
+		const a = GravityGame.angleOf(GravityGame.angleUnits(k / 48 * Math.PI * 2));
+		bot.probe.predictFast(career.hq, a, 240, GravityGame.CAP_SECONDS);
+		if (bot.probe.predReason === GravitySim.END_EXIT) {
+			exitAngle = a;
+			foundExit = true;
+		}
+	}
+	if (foundExit) {
+		sim.cargo.x = sim.planetX[career.hq] + 40;
+		sim.cargo.y = sim.planetY[career.hq];
+		sim.launch(career.hq, exitAngle, 120);
+		GravityGame.careerBeginFlight(career, sim);
+		for (let i = 0; i < 20 && sim.status === GravitySim.STATUS_FLYING; i++) sim.stepOne();
+		bot.probe.predictBurnFast(sim, 0, 0);
+		if (bot.probe.predReason !== GravitySim.END_IMPACT) {
+			const saveBurn = bot.careerBurnPlan(career, sim, market, w.step);
+			assert.ok(saveBurn && saveBurn.body >= 0, 'burn rescued off-map flight');
+		}
+	}
+});
+
 for (const seed of SEEDS) {
 	check('full career seed ' + seed + ': 26 pads and purse >= ' + PURSE_BASELINE.toFixed(2), () => {
 		const r = runCareer(seed, process.env.TRACE === '1');

@@ -24,6 +24,7 @@
 	const SHIP_DRY_MASS = 10;
 	const KWH_PER_T_V2 = 7.5e-6;
 	const RAIL_M = 2800;
+	const BURN_SEC = 12;
 	const G0 = 9.81;
 
 	/* --- planet gear --------------------------------------------------- */
@@ -161,10 +162,36 @@
 		return chargeKwh * Math.exp(-battery.leak * dtYears);
 	}
 
-	/* impulse delta-v (m/s) from burning fuelKg with the installed engine */
-	function impulseDeltaV(fuelKg, engine, shipMassT) {
+	/* impulse delta-v (px/s, 1:1 with m/s) from burning `fuelKg` out of
+	 * `tankFuelKg` (defaults to `fuelKg`, i.e. burning the tank dry) */
+	function impulseDeltaV(fuelKg, engine, shipMassT, tankFuelKg) {
 		if (!engine || fuelKg <= 0 || shipMassT <= 0) return 0;
-		return G0 * engine.isp * Math.log((shipMassT + fuelKg / 1000) / shipMassT);
+		const onBoard = tankFuelKg === undefined || tankFuelKg < fuelKg ? fuelKg : tankFuelKg;
+		const afterT = shipMassT + (onBoard - fuelKg) / 1000;
+		return G0 * engine.isp * Math.log((shipMassT + onBoard / 1000) / afterT);
+	}
+
+	/* kg of tank fuel spent to deliver `dv` (px/s) from `tankFuelKg` on board */
+	function impulseFuel(dv, engine, shipMassT, tankFuelKg) {
+		if (!engine || dv <= 0 || shipMassT <= 0 || tankFuelKg <= 0) return 0;
+		const wetT = shipMassT + tankFuelKg / 1000;
+		const needKg = wetT * (1 - Math.exp(-dv / (G0 * engine.isp))) * 1000;
+		return needKg < tankFuelKg ? needKg : tankFuelKg;
+	}
+
+	/* thrust cap (px/s) of a single impulse burn over BURN_SEC */
+	function burnMaxDeltaV(engine, shipMassT, tankFuelKg) {
+		if (!engine || shipMassT <= 0) return 0;
+		const wetT = shipMassT + (tankFuelKg > 0 ? tankFuelKg / 1000 : 0);
+		return engine.thrust * BURN_SEC / wetT;
+	}
+
+	/* largest single burn (px/s) the ship affords right now */
+	function burnLimit(fuelKg, engine, shipMassT) {
+		if (!engine || fuelKg <= 0 || shipMassT <= 0) return 0;
+		const byFuel = impulseDeltaV(fuelKg, engine, shipMassT, fuelKg);
+		const byThrust = burnMaxDeltaV(engine, shipMassT, fuelKg);
+		return byFuel < byThrust ? byFuel : byThrust;
 	}
 
 	/* Δv the tank's full fuel buys with the engine fitted after refitting
@@ -174,6 +201,13 @@
 		const tank = kind === KIND_TANK ? item : ship.tank;
 		if (engine === null || tank === null) return 0;
 		return impulseDeltaV(tank.fuelCap, engine, refitMass(ship, kind, item, cargoTons));
+	}
+
+	function refitBurnLimit(ship, kind, item, cargoTons) {
+		const engine = kind === KIND_ENGINE ? item : ship.engine;
+		const tank = kind === KIND_TANK ? item : ship.tank;
+		if (engine === null || tank === null) return 0;
+		return burnLimit(tank.fuelCap, engine, refitMass(ship, kind, item, cargoTons));
 	}
 
 	function shipDeltaV(ship, cargoTons) {
@@ -216,14 +250,14 @@
 	}
 
 	const OrbitTech = {
-		SHIP_DRY_MASS, KWH_PER_T_V2, RAIL_M,
+		SHIP_DRY_MASS, KWH_PER_T_V2, RAIL_M, BURN_SEC,
 		CATAPULTS, PANELS, BATTERIES, HOLDS, ENGINES, TANKS, HELPERS, TABLES,
 		KIND_CATAPULT, KIND_PANEL, KIND_BATTERY, KIND_HOLD, KIND_ENGINE, KIND_TANK, KIND_HELPER,
 		GEAR_KINDS, PART_KINDS,
 		find, findKind,
-		shipMass, partMass, refitMass, shipDeltaV, refitDeltaV,
+		shipMass, partMass, refitMass, shipDeltaV, refitDeltaV, refitBurnLimit,
 		launchEnergy, maxSpeed, speedLimit, canLaunch,
-		solarCharge, batteryLeak, impulseDeltaV,
+		solarCharge, batteryLeak, impulseDeltaV, impulseFuel, burnMaxDeltaV, burnLimit,
 		upgrades, bulkUpgradeCost, starterGrant, copySpec
 	};
 

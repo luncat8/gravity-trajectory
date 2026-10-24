@@ -326,7 +326,7 @@
 		};
 	}
 
-	function create(canvas) {
+	function create(canvas, onStateChange) {
 		let glState = initWebGL(canvas);
 		let ctx2d = glState === null ? canvas.getContext('2d') : null;
 		let glDiv = 1;
@@ -354,11 +354,15 @@
 				ctx2d = null;
 				fbW = 0;
 				dirty = true;
+				if (onStateChange) onStateChange();
 			});
 			canvas.addEventListener('webglcontextrestored', () => {
+				glDiv = 1;
+				slowStreak = 0;
 				glState = initWebGL(canvas);
 				fbW = 0;
 				dirty = true;
+				if (onStateChange) onStateChange();
 			});
 		}
 
