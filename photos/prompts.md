@@ -1,205 +1,123 @@
-# photo prompts — Krea 2 and MOSS-Image
+# photo prompts — MOSS-Image (optimized)
 
-Fourteen captions: seven planet types × (from space, landed). Each is written
-as a description of the finished picture, which is what both models want — Krea
-2 is trained on natural-language prose (not tag soup), and MOSS-Image is trained
-on captions and explicitly recommends describing the image rather than giving
-an instruction. The same paragraph works in both; the settings differ.
+Fourteen captions: seven planet types × (from space, landed). Each caption is
+written as a **finished-image description** for MOSS-Image, which was trained
+on captions — not instructions. The model reads a caption as “this is what the
+finished picture shows.” The same paragraph works for MOSS Base or SFT.
 
-## settings
+MOSS-Image is the recommended renderer for this project (superior texture and
+lighting vs Krea 2). The Krea-prompted set is preserved in
+`archive/photos-prompts-krea2.md`.
 
-### Krea 2
+## settings — MOSS-Image
 
-- Prompt: the full paragraph below. Long, flowing, natural language; do not
-  turn it into comma tags. One medium and one lighting idea per image.
-- Aspect: 3:2 (1536 × 1024 or 1344 × 896). The turbo model goes up to 2K.
-- Creativity: medium for these; low if a particular frame matters.
-- No text in the image. If a platform sign is unavoidable, quote the exact
-  short string — but the deck's placeholder art has no lettering and the game
-  draws its own caption.
-- Krea has no CFG; do not write "no X / without X" in the prose. Use the
-  platform's negative field if a run keeps adding unwanted objects.
+| | |
+|---|---|
+| Prompt | The full paragraph below, verbatim. Turn the prompt **upsampler OFF** if you want wording kept exactly. |
+| Size | **1536 × 1024** (3:2, both sides divisible by 16, 1.5 MP — recommended budget). |
+| Sampler | `Euler` · `steps ≥ 50` · `CFG 3.0` (raise toward 6 for short prompts) · `shift 5.0` |
+| SLG | skip layer `22` if available |
+| Negative | `nsfw, worst quality, bad anatomy, watermark, jpeg artifact` |
+| Text in image | none — the deck draws kicker/title below the picture |
+| Variants | Save as `photos/space/<type>.jpg` or `photos/landed/<type>.jpg`; optional `-2`, `-3` variants |
 
-### MOSS-Image (Base or SFT)
+Shared notes:
 
-- Prompt: the same paragraph, as one cohesive caption. Turn the prompt
-  upsampler **off** if you want the wording kept exactly as written.
-- Size: 1536 × 1024 (both sides divisible by 16; ≈ 1.5 MP is one of the
-  recommended budgets).
-- Sampler Euler · steps ≥ 50 · CFG 3.0 (raise toward 6 for short prompts) ·
-  shift 5.0 · SLG skip layer 22 if available.
-- Negative prompt: `nsfw, worst quality, bad anatomy, watermark, jpeg artifact`
-- Layout JSON is not needed here; it is for placing text and panels. Keep the
-  whole planet/platform inside the frame and let the model compose.
-
-### shared
-
-- Save as `photos/space/<type>.jpg` or `photos/landed/<type>.jpg`;
-  optional variants `<type>-2.jpg`, `<type>-3.jpg`. See `README.md`.
-- No lettering, logos or watermarks. The popup adds the title itself.
-- Keep the main subject clear of the extreme bottom edge; the card stacks its
-  title below the picture.
+- Save files exactly as `photos/space/<type>.jpg` or `photos/landed/<type>.jpg`
+  — see `README.md` for variant rule (`<type>-2.jpg`).
+- Keep the whole planet/platform inside the frame; keep subject clear of the
+  extreme bottom edge (title block sits below image).
+- No lettering, logos or watermarks.
+- Layout JSON is not needed here (only for placing text panels).
 
 ## the set
 
 Each entry: **type · situation** — file name, then the caption. The style
-column is deliberately varied so a run through many systems does not look like
-one filter.
+column is varied so a tour through many systems does not look like one filter.
 
 ### 1 · rock · from space → `photos/space/rock.jpg`
 
 *Style: ink-wash graphic novel.*
 
-> A small airless rock world seen from orbit, its surface a maze of sharp
-> craters and long scarps, rendered in loose black ink washes with a single
-> warm ochre accent. The planet fills the lower-left of a wide black field, lit
-> hard from the upper right so the terminator cuts a crisp diagonal across the
-> disc. A handful of tiny port lights glimmer on the night side. Fine paper
-> grain, muted grey palette, one colour only, graphic-novel cover art.
+> Ink-wash graphic novel illustration of a small airless rock world seen from orbit. The planet sits in the lower left of a wide black field, occupying about a third of the frame. Its surface is a dense maze of sharp craters, long scarps and pale ejecta rays rendered in loose black brush strokes on textured paper with a single warm ochre accent on sunlit crater rims. Hard sunlight from the upper right cuts a crisp diagonal terminator across the disc; the night side is deep grey-black with four tiny warm-white port lights glimmering near the limb. Fine paper grain throughout, muted palette of charcoal, bone-white and ochre, graphic-novel cover composition with generous empty space above the world.
 
 ### 2 · rock · landed → `photos/landed/rock.jpg`
 
-*Style: hazy science-fiction photograph.*
+*Style: hazy 35 mm science-fiction photograph.*
 
-> A squat cargo lander resting on a vast dust plain at dusk, its three legs
-> sunk slightly into grey regolith, a ramp lowered and a single work light
-> casting a long cone through drifting dust. Two small moons hang above a flat
-> horizon, one behind the other, and the sky fades from dusty violet at the
-> ground to near-black overhead. Wide 35 mm view from a low tripod, fine dust
-> in the air, cool shadows and a warm lamp, quiet and empty.
+> Hazy 35 mm science-fiction photograph of a squat cargo lander at rest on a vast dust plain at dusk. The lander stands in the centre foreground, three legs sunk slightly into fine grey regolith, a ramp lowered to the ground and a single work light casting a long conical beam through drifting pale dust. The horizon is flat and low, foreground dust in sharp focus fading to soft atmospheric haze in the midground. Above, two small moons hang one behind the other in a dusty violet sky that fades to near-black at the top of the frame. Low tripod viewpoint, wide 35 mm perspective, cool shadows and warm lamp color contrast, quiet empty atmosphere, subtle film grain.
 
 ### 3 · terran · from space → `photos/space/terran.jpg`
 
 *Style: photoreal orbital photograph.*
 
-> A photorealistic orbital view of a blue ocean world: deep cobalt seas, white
-> spiral storm bands, a brown-green continental shelf along the left limb, and
-> thin blue atmospheric haze glowing at the edge of the disc. Sunlight comes
-> from behind the camera, so most of the visible face is lit, with one soft
-> shadow line near the right edge. The planet fills most of the frame against
-> black space with a few sharp stars. 50 mm lens, high detail, natural colour,
-> documentary satellite photography.
+> Photoreal orbital photograph of a blue ocean world filling most of the frame. Deep cobalt seas dominate the right two-thirds, white spiral storm bands curl near the top, and a brown-green continental shelf with river deltas lines the left limb. A thin luminous blue atmospheric haze glows at the planet's edge, strongest along the upper right curve. Sunlight comes from behind the camera, so almost the full disc is lit with one soft shadow line near the right edge. The planet floats against black space with four sharp pinpoint stars visible in the upper left. 50 mm lens rendering, natural documentary colour, high detail in cloud tops and coastline, crisp focus from horizon to horizon.
 
 ### 4 · terran · landed → `photos/landed/terran.jpg`
 
 *Style: retro-futurist travel poster.*
 
-> A weathered concrete landing pad on a grassy river delta at golden hour, the
-> cargo lander standing at the centre with heat still shimmering above its
-> engines, and a shallow river braiding away toward green hills. A few white
-> clouds, long warm shadows, and a low sun behind the lander rim-lighting the
-> hull. Painted travel-poster style: flat colour fields, screen-print texture,
-> generous sky, optimistic 1960s space-age palette of teal, ochre and cream.
+> Retro-futurist travel poster painting of a weathered concrete landing pad on a grassy river delta at golden hour. The cargo lander stands at the centre of the pad, heat shimmer rising above its engines, with a shallow braided river meandering from the foreground toward green hills in the background. A few flat white clouds drift in a wide teal sky. The low sun sits directly behind the lander on the horizon, rim-lighting the hull with a thin gold edge and casting long warm ochre shadows across the grass and concrete. Flat colour fields, subtle screen-print halftone texture, generous sky occupying the top half, optimistic 1960s space-age palette of teal, ochre, cream and warm grey, clean geometric composition.
 
 ### 5 · super · from space → `photos/space/super.jpg`
 
 *Style: painterly matte painting.*
 
-> A massive super-Earth looming in a deep indigo sky, its surface a dark
-> blue-green ocean broken by chains of volcanic islands and one huge hurricane
-> system, wrapped in a teal aurora that spills over the north pole. The planet
-> is lit from low behind, a bright crescent on the right limb, the rest in
-> shadow with city-scale volcanic glows. Painterly science-fiction matte
-> painting, soft atmospheric scattering, dramatic scale, no spacecraft.
+> Painterly science-fiction matte painting of a massive super-Earth looming in the centre of the frame, viewed from high orbit. The surface is a dark blue-green global ocean broken by chains of volcanic islands glowing faint orange and one enormous white hurricane vortex in the lower right quadrant. A translucent teal aurora curtains over the north pole, spilling down the night side. The planet is lit from low behind the camera on the right, creating a bright crescent along the right limb while the left two-thirds falls into shadow punctuated by scattered volcanic glows at city scale. Soft atmospheric scattering, deep indigo sky fading to black at the edges, dramatic scale, no spacecraft, broad painterly brushwork with luminous edges.
 
 ### 6 · super · landed → `photos/landed/super.jpg`
 
 *Style: hard science-fiction photograph.*
 
-> A cargo lander on a black basalt shore under a crushing orange sky, its hull
-> visibly bowed, the struts half-buried in coarse volcanic gravel, and a heavy
-> sea of dark oil-like liquid stretching to a blurred horizon. Dust hangs in
-> the thick air, the local star is a small hard disc, and everything casts
-> short heavy shadows. Wide-angle, slight wide-lens distortion, desaturated
-> blacks and rust, oppressive high-gravity atmosphere, cinematic realism.
+> Hard science-fiction photograph of a cargo lander on a black basalt shore under a crushing orange atmosphere. The lander dominates the left foreground, hull plates visibly bowed under gravity, three thick struts half-buried in coarse volcanic gravel, a loading ramp extending to the right. To the right, a heavy sea of dark oil-like liquid stretches flat to a blurred ochre horizon. The air is thick with suspended rust dust; the local star is a small hard white disc high in a hazy burnt-orange sky, casting short, dense shadows straight down. Wide-angle view from low ground level with slight lens distortion, desaturated blacks and rusts, oppressive high-gravity mood, cinematic realism with sharp micro-detail on hull rivets and gravel texture.
 
 ### 7 · dwarf · from space → `photos/space/dwarf.jpg`
 
 *Style: minimalist screen print.*
 
-> A small grey dwarf world in the upper right of the frame, tiny against a
-> huge deep-red parent star that fills the left half of the image — the star
-> cropped by the frame so only its curve is visible. The planet is a pale
-> pebble with a few craters and a faint terminator. Two-colour screen print:
-> warm vermilion and bone grey on a dark ground, big flat shapes, subtle paper
-> texture, scientific poster composition with lots of empty space.
+> Minimalist screen print of a small grey dwarf world in the upper right quarter, tiny against a huge deep-red parent star that fills the left half of the image. The star is cropped by the left and bottom frame edges so only its curved limb is visible, radiating subtle granular texture in warm vermilion. The planet is a pale bone-grey pebble, delicately cratered, with a faint terminator line along its lower left edge. The background is a flat dark charcoal field with two small white stars. Two-colour design: warm vermilion and bone-grey on dark ground, large flat shapes, subtle paper texture, scientific poster composition with expansive empty space emphasizing scale, crisp edges.
 
 ### 8 · dwarf · landed → `photos/landed/dwarf.jpg`
 
 *Style: isometric illustration.*
 
-> An isometric cutaway of a cramped research outpost on a crater rim, dome
-> modules and a small cargo lander clustered on the narrow ledge, the crater
-> falling away steeply on one side. A swollen orange sun sits low and enormous
-> in the sky, casting long shadows across the grey ground; the far horizon
-> curves noticeably. Clean vector-like isometric style, limited palette of
-> rust, sand and slate, crisp shadows, no text.
+> Clean isometric cutaway illustration of a cramped research outpost perched on a narrow crater rim. In the foreground, white dome modules and a small cargo lander cluster on the ledge; the crater wall falls away steeply on the left into deep shadow, revealing layered grey strata. The horizon curves noticeably, emphasizing the tiny world. A swollen orange sun sits low on the right horizon, enormous, casting long hard shadows to the left across the grey regolith. The sky is near-black fading to deep rust at the horizon. Limited palette of rust, sand, slate and warm white, precise vector-like edges, crisp shadows, no text, viewpoint from slightly above and to the right looking across the outpost.
 
 ### 9 · mini · from space → `photos/space/mini.jpg`
 
 *Style: pastel risograph.*
 
-> A pebble of a world, barely three kilometres across, floating in a busy
-> asteroid belt: the little potato-shaped body is in sharp focus centre-left,
-> three larger rocks drift out of focus behind it, and a distant star glows
-> pale pink. Soft pastel risograph style, visible halftone dots, mint and
-> salmon ink on cream paper, gentle grain, playful and quiet.
+> Pastel risograph print of a pebble-sized asteroid centred slightly left of frame, barely three kilometres across, floating in a busy asteroid belt. The main body is potato-shaped, light warm grey with soft pitted craters, in sharp focus. Behind it to the right, three larger angular rocks drift out of focus, rendered as muted pastel blobs. A distant small sun glows pale pink-white in the upper right, softly illuminating the scene. The background is cream paper with visible halftone dots and slight misregistration, palette of mint, salmon pink and warm grey, gentle grain, playful quiet composition with generous negative space, print texture visible across flat colour areas.
 
 ### 10 · mini · landed → `photos/landed/mini.jpg`
 
-*Style: playful cartoon.*
+*Style: playful cartoon illustration.*
 
-> A cargo lander absurdly large for the world it stands on: the tiny round
-> asteroid curves away to both sides just past the landing legs, and the
-> horizon is close enough to see it bend. Two tiny astronauts for scale stand
-> beside the pad, one holding a flag-less pole. A huge pastel gas giant hangs
-> in the black sky behind. Bright cartoon illustration, clean outlines, warm
-> highlight and deep blue shadow, friendly and funny.
+> Bright playful cartoon illustration of a cargo lander absurdly large for the tiny world it stands on. The lander occupies the centre, landing legs straddling the sharply curving horizon that bends down on both sides just past the pads, revealing the asteroid as a small round grey-brown rock with soft craters. In the lower left foreground, two tiny astronauts in white suits stand beside the pad for scale, one holding a flag-less pole, casting short shadows. Behind the lander, a huge pastel gas giant with cream and peach bands dominates the black sky, spanning the upper half of the frame. Clean outlines, warm highlight on the lander's left side and deep blue shadow on the right, friendly and humorous mood, clear readable composition.
 
 ### 11 · gas · from space → `photos/space/gas.jpg`
 
-*Style: photoreal.*
+*Style: photoreal planetary imaging.*
 
-> A photorealistic gas giant filling the frame: broad cream and rust bands,
-> turbulent white storm ovals, and a thin dark ring system seen almost edge-on.
-> The planet is lit from the left, the right limb in deep shadow, and one large
-> moon transits the disc as a small black dot. Deep black space, sharp stars,
-> very high detail in the cloud tops, long telephoto compression, planetary
-> science imaging.
+> Photoreal planetary image of a gas giant filling the entire frame horizontally. Broad horizontal cloud bands in cream, warm rust and pale gold stretch across the disc, interrupted by turbulent white storm ovals and a thin dark ring system seen almost edge-on cutting across the lower third. The planet is lit from the left, the right limb falling into deep shadow; a single large dark moon casts a small crisp circular shadow transiting the mid-right disc. Deep black space with half a dozen sharp stars surrounds the planet. Long telephoto compression, extremely high detail in cloud texture — wispy filaments, churning eddies and soft haze between bands — scientific imaging clarity, natural colour balanced for print.
 
 ### 12 · gas · landed → `photos/landed/gas.jpg`
 
-*Style: dieselpunk.*
+*Style: dieselpunk engineering concept art.*
 
-> A heavy air platform floating in the cloud deck of a gas giant: riveted
-> metal deck, four huge ducted fans holding station, a cargo lander clamped to
-> the pad, and a railing where two tiny figures look out over an ocean of
-> amber clouds. Above, banded storm clouds curve away toward a bright opening
-> in the overcast; below, no ground at all. Dieselpunk engineering, warm brass
-> and soot-black palette, dramatic side light, volumetric haze, painterly
-> concept art.
+> Dieselpunk engineering concept art of a heavy air platform floating in the mid-level cloud deck of a gas giant. The platform occupies the foreground centre, a riveted dark metal deck with four huge downward-angled ducted fans churning amber air, a cargo lander clamped to the pad centre, and a railing along the right edge where two tiny silhouetted figures look outward. Above, massive banded storm clouds in warm amber, rust and cream curve away toward a bright opening in the overcast at the top centre; below the deck, the cloud ocean drops into shadow with no visible ground. Volumetric haze and sunbeams cutting through cloud gaps, warm brass and soot-black palette, dramatic side light from the left, painterly detail on metal rivets and fan blades, sense of immense altitude and engineering bravado.
 
 ### 13 · ice · from space → `photos/space/ice.jpg`
 
 *Style: luminous digital painting.*
 
-> A pale ice giant seen from a high angle, its marbled cyan and white
-> atmosphere faintly banded, a bright ring system sweeping in front of the disc
-> and another arc behind it. The sun is hidden behind the planet, so the rings
-> glow and the atmosphere is outlined in a thin luminous rim; the night side
-> shows a soft teal aurora. Luminous digital painting, cool palette, long
-> exposure feel, serene and monumental.
+> Luminous digital painting of a pale ice giant viewed from a high three-quarter angle, offset to the right. The planet shows a marbled cyan and white atmosphere with faint subtle horizontal bands. A bright, thin ring system sweeps in front of the lower half of the disc, casting a delicate shadow line, with a second fainter arc visible behind the planet on the upper left. The sun is hidden directly behind the planet, so the atmosphere is rimmed with a thin luminous white-cyan edge light and the unlit night side glows with a soft translucent teal aurora near the pole. The rings catch the backlight and appear to glow. Background is very dark navy-black with a few faint stars. Cool palette of cyan, white, pale teal and deep navy, long-exposure serenity, serene monumental scale, smooth luminous gradients.
 
 ### 14 · ice · landed → `photos/landed/ice.jpg`
 
-*Style: art-deco poster.*
+*Style: art-deco travel poster.*
 
-> A low platform on a frozen methane sea, white geometric struts and a domed
-> hangar reflected in black ice, a cargo lander parked beside it, and curtains
-> of green aurora arcing overhead. The horizon is flat and very far away; a
-> small pale sun sits just above it. Art-deco travel-poster style: clean
-> geometry, gold and glacial-blue palette, symmetrical composition, engraved
-> texture, elegant and cold.
+> Art-deco travel poster of a low platform on a frozen methane sea extending flat to a distant horizon. In the centre foreground, geometric white struts and a domed hangar with a cargo lander parked beside it are reflected perfectly in the glossy black ice surface, creating a symmetrical vertical mirror. Above, huge curtains of green aurora arc from the left horizon to the right, rippling in clean geometric folds. A small pale sun sits just above the flat horizon line in the centre distance, casting a thin gold line across the ice. The sky fades from black at the top to deep glacial blue at the horizon. Gold and glacial-blue palette, precise symmetry, bold geometry, subtle engraved line texture, elegant cold stillness.
 
 ## what the deck does with them
 
@@ -210,9 +128,21 @@ overlay on small screens, closes on × or after nine seconds, and never shows
 the same planet twice in one run. Every missing file simply shows the CSS
 postcard for that type — so generate in any order.
 
+## generator
+
+`generator/comfy_queue.py` queues the captions into ComfyUI; see `README.md`
+for usage. The MOSS template is `generator/image_moss_image_t2i.json`.
+
+```sh
+python3 photos/generator/comfy_queue.py --list
+python3 photos/generator/comfy_queue.py --workflow moss
+python3 photos/generator/comfy_queue.py --workflow moss --wait
+```
+
 ## references
 
-- Krea 2 prompting: <https://github.com/krea-ai/krea-2> (natural language,
-  long detailed prompts; docs/prompting.md)
 - MOSS-Image user guide: <https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md>
-  (caption-style prompts, CFG 3.0, Euler, ≥50 steps, shift 5.0, negative tags)
+  (caption-style prompts, CFG 3.0, Euler ≥50 steps, shift 5.0, negative tags,
+  upsampler toggle)
+- Krea 2 history: `archive/photos-prompts-krea2.md` (long-form natural language;
+  docs/prompting.md)

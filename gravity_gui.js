@@ -78,6 +78,8 @@
 	const HUD_INTERVAL = 100;
 	const FPS_FRAME_MS = 1000 / 60;
 	const FPS_DROP_MS = 17.5;
+	const HELPER_BUDGET_MS = 3;
+	const HELPER_CANDIDATE_MS = 8;
 	const SENS_FINE = 1 / 20;
 	const DRAG_TAKEOVER_PX = 7;
 	const WELL_BASE = 24;
@@ -298,6 +300,15 @@
 	const playSlowerBtn = $('playSlower');
 	const playResetBtn = $('playReset');
 	const playFasterBtn = $('playFaster');
+	const helperGroupEl = $('helperGroup');
+	const helperTagEl = $('helperTag');
+	const helperScanBtn = $('helperScan');
+	const helperFocusBtn = $('helperFocus');
+	const helperTweakBtn = $('helperTweak');
+	const helperProgressEl = $('helperProgress');
+	const helperProgressFillEl = $('helperProgressFill');
+	const helperProgressTextEl = $('helperProgressText');
+	const helperStopBtn = $('helperStop');
 
 	let lastWX = 0;
 	let lastWY = 0;
@@ -371,6 +382,14 @@
 	/* photo deck: one space view per planet and one surface view per landing, per run */
 	const photoSpace = new Uint8Array(PLANETS);
 	const photoLanded = new Uint8Array(PLANETS);
+
+	/* user helper tools: background candidate search reusing GravitySim slicing */
+	const helperProbe = new GravitySim(OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+	const helperState = {
+		active: false, mode: '', candidates: null, index: 0,
+		best: null, bestScore: -Infinity, horizon: 60, startedAt: 0
+	};
+	let helperHudTag = 'ready';
 
 	function makeRoutePlanSlot() {
 		return { ready: false, length: 0, steps: 0, visits: 0,
@@ -692,6 +711,7 @@
 	function setSelected(index) {
 		selected = index;
 		refreshSelected();
+		helperUpdateUi();
 		hudAt = -Infinity;
 	}
 
@@ -950,6 +970,7 @@
 		blockedPlanet = -1;
 		blockedUntil = -Infinity;
 		dirty = false;
+		if (helperState.active) helperStop();
 		hudAt = -Infinity;
 	}
 
@@ -1091,6 +1112,285 @@
 		routeBestBtn.title = best.ready
 			? 'restore ' + Math.round(best.length) + ' px from ' + planetName(best.origin)
 			: 'the longest finished plan for this planet is saved while you adjust aim';
+		helperUpdateUi();
+	}
+
+	function helperHelperOrigin() {
+		if (selected >= 0 && selected < PLANETS) return selected;
+		if (aiming || armed) return aimBody;
+		return -1;
+	}
+
+	function helperUpdateUi() {
+		if (!helperGroupEl) return;
+		helperGroupEl.hidden = false;
+		const route = routeRule();
+		const canScan = !helperState.active && !replay.on && !playerIsBot() && !gameLocked() || !game.on;
+		const focusOrigin = helperHelperOrigin();
+		const focusOk = focusOrigin >= 0 && (route ? routeOccupiedBy(focusOrigin) < 0 : canAimFrom(focusOrigin));
+		const best = activeRouteBest();
+		const tweakOk = !helperState.active && best.ready && !replay.on && !playerIsBot() && (route ? routeOccupiedBy(best.origin) < 0 : true);
+		if (helperScanBtn) {
+			helperScanBtn.disabled = !canScan;
+			helperScanBtn.textContent = route ? 'quick scan' : 'auto scan';
+			helperScanBtn.title = selected >= 0
+				? 'broad scan biased to ' + planetName(selected) + ' plus random planets'
+				: 'broad random scan over all planets · each press adds fresh jitter';
+		}
+		if (helperFocusBtn) {
+			helperFocusBtn.disabled = !canScan || !focusOk;
+			helperFocusBtn.textContent = focusOk ? 'scan ' + planetName(focusOrigin) : 'scan here';
+			helperFocusBtn.title = focusOk
+				? 'scan many angles and speeds from ' + planetName(focusOrigin)
+				: 'select a free planet first';
+		}
+		if (helperTweakBtn) {
+			helperTweakBtn.disabled = !tweakOk;
+			helperTweakBtn.textContent = best.ready ? 'tweak ' + Math.round(best.length) + ' px' : 'tweak best';
+			helperTweakBtn.title = best.ready
+				? 'nudge the ' + Math.round(best.length) + ' px best by ± small angle and ±8 % speed · each press tries new jitter'
+				: 'make a best plan first (drag and wait for trace to finish)';
+		}
+		if (helperStopBtn) helperStopBtn.hidden = !helperState.active;
+		if (helperProgressEl) helperProgressEl.hidden = !helperState.active;
+		const tag = helperState.active
+			? helperState.mode + ' ' + (helperState.index + 1) + '/' + helperState.candidates.length +
+				(helperProbe.routeActive ? ' · ' + Math.round(helperProbe.routeProgress() * 100) + '%' : '')
+			: best.ready ? 'best ' + Math.round(best.length) + ' px' : 'ready';
+		if (tag !== helperHudTag) {
+			helperHudTag = tag;
+			if (helperTagEl) helperTagEl.textContent = tag;
+		}
+		if (helperState.active && helperProgressFillEl && helperState.candidates) {
+			const pct = Math.max(0, Math.min(100, helperState.index / helperState.candidates.length * 100));
+			helperProgressFillEl.style.width = pct.toFixed(1) + '%';
+		}
+		if (helperProgressTextEl) {
+			if (helperState.active) {
+				const done = helperState.index;
+				const total = helperState.candidates ? helperState.candidates.length : 0;
+				const bestLen = helperState.best ? Math.round(helperState.best.length) : 0;
+				helperProgressTextEl.textContent = done + '/' + total + (bestLen ? ' · best ' + bestLen + ' px' : '');
+			} else helperProgressTextEl.textContent = '';
+		}
+	}
+
+	function helperAttachWorld() {
+		helperProbe.setPlanets(PLANETS, tradeSim.planetX, tradeSim.planetY, tradeSim.planetR,
+			tradeSim.orbitRX, tradeSim.orbitRY, tradeSim.orbitTiltCos, tradeSim.orbitTiltSin);
+		helperProbe.setField(gravity.bodyCount, gravity.bodyR, gravity.strength, gravity.fillField, gravity.fieldStatic);
+		helperProbe.fieldT = gravity.fieldT;
+		helperProbe.fieldRate = gravity.fieldRate;
+	}
+
+	function helperScore(probe, origin) {
+		if (routeRule()) {
+			if (probe.predReason === END_IMPACT || probe.predReason === END_EXIT) return probe.predLength;
+			return -1e12;
+		}
+		const profit = game.on ? GravityGame.estimateProfit(game.market, game.clockSteps, probe) : 0;
+		const lands = probe.predReason === END_IMPACT && probe.predBody !== origin ? 1 : 0;
+		const samePad = probe.predReason === END_IMPACT && probe.predBody === origin ? 1 : 0;
+		const newVisits = probe.predNewVisits;
+		let score = lands * 12 - samePad * 35 - (probe.predReason === END_EXIT ? 220 : 0);
+		if (game.on && ruleSpec().stopOnTour) {
+			const wouldComplete = activeSim().visitedCount + newVisits >= PLANETS;
+			score += (wouldComplete ? 80 : 0) + newVisits * 12 + profit * 18 - probe.predTime * 0.16;
+		} else if (game.on && moneyRule()) {
+			score += profit * 30 + newVisits * 3 - probe.predTime * 0.14;
+		} else {
+			score += newVisits * 10 + profit * 12 - probe.predTime * 0.12;
+		}
+		score += probe.predLength * 0.0002;
+		return score;
+	}
+
+	function helperMakeBroad(count) {
+		const route = routeRule();
+		const out = [];
+		let attempts = 0;
+		while (out.length < count && attempts < count * 6) {
+			attempts += 1;
+			let planet;
+			if (selected >= 0 && Math.random() < 0.42) planet = selected;
+			else planet = Math.floor(Math.random() * PLANETS);
+			if (route && routeOccupiedBy(planet) >= 0) continue;
+			if (!route && !game.on && planet >= PLANETS) continue;
+			if (game.on && !route && !canAimFrom(planet)) {
+				const landed = activeSim().landedBody;
+				if (landed >= 0 && planet !== landed) continue;
+			}
+			const angle = Math.random() * TAU;
+			const speed = SPEED_MIN + Math.random() * (SPEED_MAX - SPEED_MIN);
+			out.push({ origin: planet, angleU: GravityGame.angleUnits(angle), speedU: GravityGame.speedUnits(speed) });
+		}
+		return out;
+	}
+
+	function helperMakeFocus(origin, count) {
+		const out = [];
+		for (let i = 0; i < count; i++) {
+			const angle = Math.random() * TAU;
+			const jitter = (Math.random() - 0.5) * 0.06;
+			const a = (angle + jitter + TAU) % TAU;
+			const speed = SPEED_MIN + Math.random() * (SPEED_MAX - SPEED_MIN);
+			const speedJitter = speed * (0.97 + Math.random() * 0.06);
+			let s = speedJitter;
+			if (s < SPEED_MIN) s = SPEED_MIN;
+			if (s > SPEED_MAX) s = SPEED_MAX;
+			out.push({ origin: origin, angleU: GravityGame.angleUnits(a), speedU: GravityGame.speedUnits(s) });
+		}
+		return out;
+	}
+
+	function helperMakeTweak(base, count) {
+		const baseAngle = GravityGame.angleOf(base.angleU);
+		const baseSpeed = GravityGame.speedOf(base.speedU);
+		const out = [];
+		out.push({ origin: base.origin, angleU: base.angleU, speedU: base.speedU });
+		for (let i = 1; i < count; i++) {
+			let angle = baseAngle + (Math.random() - 0.5) * 0.26;
+			angle = (angle % TAU + TAU) % TAU;
+			let speed = baseSpeed * (0.92 + Math.random() * 0.16);
+			if (speed < SPEED_MIN) speed = SPEED_MIN;
+			if (speed > SPEED_MAX) speed = SPEED_MAX;
+			out.push({ origin: base.origin, angleU: GravityGame.angleUnits(angle), speedU: GravityGame.speedUnits(speed) });
+		}
+		return out;
+	}
+
+	function helperBeginCandidate() {
+		if (!helperState.active || helperState.index >= helperState.candidates.length) return;
+		const cand = helperState.candidates[helperState.index];
+		helperProbe.visited.set(activeSim().visited);
+		helperProbe.visitedCount = activeSim().visitedCount;
+		helperProbe.fieldT = gravity.fieldT;
+		helperProbe.fieldRate = gravity.fieldRate;
+		helperProbe.horizon = helperState.horizon;
+		if (!helperProbe.fieldStatic) helperProbe.refreshField();
+		const angle = GravityGame.angleOf(cand.angleU);
+		const speed = GravityGame.speedOf(cand.speedU);
+		helperProbe.routeBegin(cand.origin, angle, speed, helperState.horizon);
+	}
+
+	function helperRun(candidates, mode) {
+		if (!candidates || candidates.length === 0) return;
+		helperAttachWorld();
+		helperState.active = true;
+		helperState.mode = mode;
+		helperState.candidates = candidates;
+		helperState.index = 0;
+		helperState.best = null;
+		helperState.bestScore = -Infinity;
+		helperState.startedAt = performance.now();
+		if (routeRule()) helperState.horizon = ruleSpec().horizon;
+		else helperState.horizon = gravity.horizon;
+		helperBeginCandidate();
+		helperUpdateUi();
+		hudAt = -Infinity;
+	}
+
+	function helperStartBroad() {
+		if (helperState.active || replay.on || playerIsBot()) return;
+		if (game.on && gameLocked()) return;
+		const count = routeRule() ? 28 : 20;
+		const cands = helperMakeBroad(count);
+		if (cands.length === 0) return;
+		helperRun(cands, 'quick scan');
+	}
+
+	function helperStartFocus() {
+		if (helperState.active || replay.on || playerIsBot()) return;
+		if (game.on && gameLocked()) return;
+		let origin = helperHelperOrigin();
+		if (origin < 0) return;
+		if (routeRule() && routeOccupiedBy(origin) >= 0) return;
+		if (!routeRule() && !canAimFrom(origin)) {
+			const landed = activeSim().landedBody;
+			if (landed >= 0 && origin !== landed) return;
+		}
+		const count = routeRule() ? 22 : 18;
+		const cands = helperMakeFocus(origin, count);
+		helperRun(cands, 'scan ' + planetName(origin));
+	}
+
+	function helperStartTweak() {
+		if (helperState.active || replay.on || playerIsBot()) return;
+		if (game.on && gameLocked()) return;
+		const best = activeRouteBest();
+		let base = null;
+		if (routeRule() && best.ready) base = { origin: best.origin, angleU: best.angleU, speedU: best.speedU };
+		else if (armed) base = { origin: aimBody, angleU: GravityGame.angleUnits(aimAngle), speedU: GravityGame.speedUnits(aimSpeed) };
+		else return;
+		if (routeRule() && routeOccupiedBy(base.origin) >= 0) return;
+		const cands = helperMakeTweak(base, 16);
+		helperRun(cands, 'tweak');
+	}
+
+	function helperStop() {
+		if (!helperState.active) return;
+		helperState.active = false;
+		helperState.candidates = null;
+		if (helperProgressFillEl) helperProgressFillEl.style.width = '0%';
+		helperUpdateUi();
+		hudAt = -Infinity;
+	}
+
+	function helperTick(budgetMs) {
+		if (!helperState.active) return;
+		const budget = budgetMs > 0 ? budgetMs : HELPER_BUDGET_MS;
+		const start = performance.now();
+		while (helperState.active && performance.now() - start < budget) {
+			if (helperProbe.routeActive) {
+				const left = budget - (performance.now() - start);
+				if (left <= 0.3) break;
+				helperProbe.routeStep(Math.min(left, 2));
+				if (helperProbe.routeActive) break;
+			}
+			if (!helperProbe.routeActive) {
+				const idx = helperState.index;
+				if (idx < helperState.candidates.length) {
+					const cand = helperState.candidates[idx];
+					const score = helperScore(helperProbe, cand.origin);
+					if (score > helperState.bestScore) {
+						helperState.bestScore = score;
+						helperState.best = {
+							origin: cand.origin, angleU: cand.angleU, speedU: cand.speedU,
+							length: helperProbe.predLength, steps: helperProbe.predSteps,
+							reason: helperProbe.predReason, body: helperProbe.predBody,
+							score: score
+						};
+					}
+					helperState.index += 1;
+					if (helperState.index < helperState.candidates.length) {
+						helperBeginCandidate();
+						continue;
+					}
+				}
+				if (helperState.index >= helperState.candidates.length) {
+					const best = helperState.best;
+					helperState.active = false;
+					helperState.candidates = null;
+					if (best && best.score > -1e11) {
+						aimBody = best.origin;
+						aimAngle = GravityGame.angleOf(best.angleU);
+						aimSpeed = GravityGame.speedOf(best.speedU);
+						aiming = false;
+						armed = true;
+						pressing = false;
+						savedArmed = false;
+						placeGripFromSpeed();
+						dirty = true;
+						hudAt = -Infinity;
+						if (helperProgressFillEl) helperProgressFillEl.style.width = '100%';
+						setTimeout(() => { if (helperProgressFillEl && !helperState.active) helperProgressFillEl.style.width = '0%'; }, 900);
+					}
+					helperUpdateUi();
+					break;
+				}
+			}
+		}
+		if (helperState.active) helperUpdateUi();
 	}
 
 	function resetBestSlot(best) {
@@ -1412,6 +1712,8 @@
 		setSelected(-1);
 		applyMode();
 		if (routeRule()) bot.useField(gravity, mode);
+		helperAttachWorld();
+		helperUpdateUi();
 	}
 
 	function syncRuleRadios() {
@@ -1479,6 +1781,7 @@
 		game.doneSteps = -1;
 		resetRoutePlan();
 		resetAllRouteBest();
+		if (helperState.active) helperStop();
 		playerBotSyncNeeded = true;
 		predGain = 0;
 		GravityGame.resetMarket(game.market);
@@ -2055,6 +2358,63 @@
 		return true;
 	}
 
+	function loadSearchParams() {
+		const search = location.search || '';
+		if (!search || search === '?') return false;
+		let params;
+		try { params = new URLSearchParams(search); } catch (e) { return false; }
+		const hasGameHint = params.has('mode') || params.has('game') || params.has('rule') ||
+			params.has('seed') || params.has('rate') || params.has('bot') || params.has('src') ||
+			params.has('source') || params.has('player') || params.has('you') || params.has('shots');
+		if (!hasGameHint) return false;
+		const modeParam = params.get('mode');
+		const gameParam = params.get('game');
+		const shouldGame = modeParam === 'game' || gameParam === '1' ||
+			params.has('rule') || params.has('seed') || params.has('rate') || params.has('bot');
+		if (modeParam === 'lab') {
+			modeLabEl.checked = true;
+			stopGame();
+			const src = params.get('src') || params.get('source');
+			if (src === 'ports') setMode(MODE_PORTS);
+			else if (src === 'planets') setMode(MODE_PLANETS);
+			const spd = params.get('speed') || params.get('rate');
+			if (spd !== null) scene.setSpeed(Number(spd));
+			return true;
+		}
+		if (!shouldGame) return false;
+		let seedStr = params.get('seed');
+		let rateStr = params.get('rate') || params.get('speed');
+		let ruleStr = params.get('rule');
+		let botStr = params.get('bot');
+		let playerStr = params.get('player') || params.get('you');
+		let sourceStr = params.get('src') || params.get('source');
+		let seedNum = seedStr !== null ? Number(seedStr) : tradeSim.seed;
+		if (seedStr !== null && (!Number.isInteger(seedNum) || seedNum < 1 || seedNum > 0xffffffff)) return false;
+		if (seedStr === null) seedNum = tradeSim.seed;
+		let rateNum = rateStr !== null ? Number(rateStr) : scene.trade.speed;
+		if (rateStr !== null && (!Number.isFinite(rateNum) || rateNum < 0.5 || rateNum > 12)) return false;
+		if (ruleStr !== null && !RULES[ruleStr]) return false;
+		if (!ruleStr) ruleStr = RULE_TOUR;
+		if (botStr !== null && !(botStr in GravityGame.BOTS)) return false;
+		if (playerStr !== null && !(playerStr in GravityGame.PLAYER_TYPES)) return false;
+		modeGameEl.checked = true;
+		if (rateStr !== null) scene.setSpeed(rateNum);
+		startGame(seedNum, rateStr !== null, ruleStr, botStr || undefined, playerStr || undefined);
+		if (sourceStr === 'ports' || sourceStr === 'port') setMode(MODE_PORTS);
+		else if (sourceStr === 'planets' || sourceStr === 'planet') setMode(MODE_PLANETS);
+		const shotsParam = params.get('shots');
+		const endParam = params.get('end');
+		const lenParam = params.get('len');
+		if (shotsParam) {
+			const fakeHash = '#game=1&seed=' + seedNum + '&rate=' + rateNum +
+				'&rule=' + ruleStr + (botStr ? '&bot=' + botStr : '') +
+				'&shots=' + shotsParam + (endParam ? '&end=' + endParam : '') + (lenParam ? '&len=' + lenParam : '');
+			const link = GravityGame.decodeLink(fakeHash);
+			if (link && link.shots.length > 0) startReplay(link.shots, link.end, link.length);
+		}
+		return true;
+	}
+
 	/* control locks and button states; runs on game state changes, not per frame */
 	function refreshGameUi() {
 		const route = routeRule();
@@ -2111,11 +2471,12 @@
 					: 'drag from a free planet · longest finished trajectory leads<br><b>use best</b> restores your longest plan · see <b>? help</b>'
 				: 'drag from planet to aim · shift = 1/20 fine · enter launches<br>land on a planet to stage next launch · see <b>? help</b> for the selected rule';
 		}
-		replaySpeedBtn.hidden = !replay.on || replay.route;
+			replaySpeedBtn.hidden = !replay.on || replay.route;
 		replaySkipBtn.hidden = !replay.on;
 		replaySpeedBtn.textContent = '×' + REPLAY_SPEEDS[replay.speed];
 		replayRowEl.hidden = !replay.on && replay.verdict === '';
 		refreshRouteBestUi();
+		helperUpdateUi();
 		reserveTradeFooter();
 		hudAt = -Infinity;
 	}
@@ -2323,7 +2684,13 @@
 		const wy = worldY(event.clientY);
 		const planet = planetAt(wx, wy);
 		const body = bodyAt(wx, wy);
-		if (planet < 0 && body < 0) return;
+		if (planet < 0 && body < 0) {
+			if (!aiming && !pressing && selected >= 0) {
+				setSelected(-1);
+				helperUpdateUi();
+			}
+			return;
+		}
 		lastWX = wx;
 		lastWY = wy;
 		if (body >= 0) {
@@ -3486,6 +3853,7 @@
 		lastFrame = now;
 
 		if (game.on) stepGame(now, dt);
+		if (helperState.active) helperTick(HELPER_BUDGET_MS);
 		syncField();
 		if (!game.on) gravity.step(dt * playScale());
 		photoTick();
@@ -3562,7 +3930,12 @@
 	});
 	launchButton.addEventListener('click', launch);
 	routeBestBtn.addEventListener('click', restoreRouteBest);
+	if (helperScanBtn) helperScanBtn.addEventListener('click', helperStartBroad);
+	if (helperFocusBtn) helperFocusBtn.addEventListener('click', helperStartFocus);
+	if (helperTweakBtn) helperTweakBtn.addEventListener('click', helperStartTweak);
+	if (helperStopBtn) helperStopBtn.addEventListener('click', helperStop);
 	clearButton.addEventListener('click', () => {
+		if (helperState.active) { helperStop(); return; }
 		if (playerIsBot()) return;
 		if (routeRule()) clearRoutePlan();
 		else if (game.on) abortFlight();
@@ -3778,7 +4151,7 @@
 	gravity.fieldRate = tradeRate();
 	updateRuleHelp(selectedHelpRule());
 	attachWorld();
-	if (!loadLink()) refreshGameUi();
+	if (!loadSearchParams() && !loadLink()) refreshGameUi();
 
 	resizeOverlay();
 	refreshSelected();

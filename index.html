@@ -166,6 +166,20 @@
 		</div>
 	</div>
 
+	<div id="helperGroup" class="group">
+		<div class="caption"><span>auto helpers</span><span id="helperTag">ready</span></div>
+		<div class="actions helperActions">
+			<button id="helperScan" class="miniBtn" title="broad random scan · if a planet is selected only that planet is used, otherwise any planet">quick scan</button>
+			<button id="helperFocus" class="miniBtn" title="scan only the selected planet">scan here</button>
+			<button id="helperTweak" class="miniBtn" title="nudge the best plan slightly · each press adds fresh random">tweak best</button>
+		</div>
+		<div id="helperProgress" class="helperProgress" hidden>
+			<div class="helperBar"><div id="helperProgressFill"></div></div>
+			<span id="helperProgressText">—</span>
+			<button id="helperStop" class="miniBtn" title="stop scanning">stop</button>
+		</div>
+	</div>
+
 	<div id="cargoHint">
 		drag from planet to aim · shift = 1/20 fine · enter launches<br>
 		land on a planet to stage next launch · see <b>? help</b> for mission

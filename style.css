@@ -728,6 +728,45 @@ input:disabled {
 	pointer-events: auto;
 }
 
+.helperActions {
+	flex-wrap: wrap;
+	gap: 5px;
+}
+
+.helperActions .miniBtn {
+	flex: 1 1 70px;
+}
+
+.helperProgress {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	margin-top: 7px;
+}
+
+.helperBar {
+	flex: 1;
+	height: 6px;
+	border-radius: 999px;
+	background: rgba(126, 180, 230, 0.16);
+	overflow: hidden;
+}
+
+.helperBar div {
+	height: 100%;
+	width: 0%;
+	background: var(--mint);
+	transition: width 0.12s linear;
+}
+
+#helperProgressText {
+	min-width: 72px;
+	color: var(--dim);
+	font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
 #cargoHint {
 	margin-top: 8px;
 	padding-top: 8px;

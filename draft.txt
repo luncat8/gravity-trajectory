@@ -90,3 +90,16 @@ show visit profit near planets in this mode and total player's money.
 
 possible set player type user/bot
 
+## auto helper tools
+
+implement click on non planet to deselect planet.
+
+add helper tools available to user: similar as bot use but with buttons. Especially need them in 'route' mode to make longest route.
+
+i think good to have 3 buttons: broad fast search if no planet selected.
+if planet selected - use it as start point.
+if planet selected and some best route already recorded - then improve it by only small angle and force change.
+
+start each adjustments after user click button try with random - so next press will not calculate same attempts again.
+
+## if not yet - implement url parameters to run specific game mode to fast start visual test

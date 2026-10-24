@@ -111,7 +111,7 @@ function loadPage(options = {}) {
 	for (const spec of ELEMENTS) elements.set(spec.id, makeElement(spec, paint));
 
 	const windowListeners = {};
-	const location = { hash: options.hash || '', href: PAGE_URL + (options.hash || '') };
+	const location = { hash: options.hash || '', search: options.search || '', href: PAGE_URL + (options.search || '') + (options.hash || '') };
 	const env = { clipboardText: null };
 	let now = 1000;
 	let rafQueue = [];
@@ -181,8 +181,12 @@ function loadPage(options = {}) {
 		},
 		setHash(hash) {
 			location.hash = hash;
-			location.href = PAGE_URL + hash;
+			location.href = PAGE_URL + (location.search || '') + hash;
 			fire(windowListeners, 'hashchange', {});
+		},
+		setSearch(search) {
+			location.search = search;
+			location.href = PAGE_URL + search + (location.hash || '');
 		},
 		planetScreen(index) {
 			const view = context.OrbitScene.view;
