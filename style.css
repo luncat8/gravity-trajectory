@@ -167,16 +167,27 @@ body {
 	background: rgba(126, 180, 230, 0.28);
 }
 
-/* launch / clear / use best stay visible while the settings above scroll */
+/* auto helpers and launch / stranded / clear / use best sit in their own bottom panel */
 #cargoFoot {
-	flex: none;
-	margin-top: 9px;
-	padding-top: 9px;
-	border-top: 1px solid var(--line);
+	top: auto;
+	right: 14px;
+	bottom: var(--footReserve, 64px);
+	left: auto;
+	width: 294px;
+	padding: 10px 15px 11px;
+	pointer-events: auto;
+}
+
+#cargoFoot #helperGroup {
+	margin-top: 0;
+	margin-bottom: 8px;
+	padding-top: 0;
+	padding-bottom: 8px;
+	border-top: 0;
+	border-bottom: 1px solid var(--line);
 }
 
 #cargoHud.folded #cargoBody,
-#cargoHud.folded #cargoFoot,
 #scoreHud.folded .scoreRows,
 #careerHud.folded #careerBox,
 #tradeHud.folded #tradeBody {
@@ -457,22 +468,34 @@ body {
 
 .stats {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	gap: 1px;
 }
 
 .stat {
 	display: flex;
 	justify-content: space-between;
-	gap: 10px;
+	gap: 6px;
+	min-width: 0;
 	color: var(--dim);
 	font-size: 12px;
+	white-space: nowrap;
+}
+
+.stat span {
+	flex: none;
 }
 
 .stat b {
+	min-width: 0;
+	overflow: hidden;
 	color: var(--text);
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-variant-numeric: tabular-nums;
 	font-weight: 600;
+	text-align: right;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 #aimReadout {
@@ -647,8 +670,21 @@ body {
 	text-overflow: ellipsis;
 }
 
-#launch {
+#launch,
+#strandedActions {
 	grid-column: 1 / -1;
+}
+
+.strandedActions {
+	display: flex;
+	gap: 6px;
+	min-width: 0;
+}
+
+.strandedActions button {
+	flex: 1 1 0;
+	min-width: 0;
+	padding: 5px 8px;
 }
 
 #clear {
@@ -737,6 +773,7 @@ input:disabled {
 
 /* the purse, not a state gate (HQ only, cargo too big, no catapult), is what
  * blocks this price: keep it readable and red instead of dim */
+button.costly,
 button.costly:disabled {
 	border-color: rgba(255, 148, 120, 0.32);
 	color: var(--warn);
@@ -1361,6 +1398,18 @@ polyline.sciKnownHull {
 		right: 8px;
 		width: 248px;
 		padding: 10px 12px;
+	}
+
+	#cargoFoot {
+		right: 8px;
+		bottom: var(--footReserve, 60px);
+		width: 248px;
+		padding: 9px 12px 10px;
+	}
+
+	.strandedActions button {
+		padding: 5px 6px;
+		font-size: 11px;
 	}
 
 	.drawer {

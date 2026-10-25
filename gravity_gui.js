@@ -140,9 +140,13 @@
 	/* replay multipliers; index 2 is real time */
 	const REPLAY_SPEEDS = [0.25, 0.5, 1, 4, 16];
 	const REPLAY_DEFAULT = 2;
-	/* live playback: how fast the flight is watched; the physics steps never change */
-	const PLAY_SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
+	/* live playback: how fast the flight is watched; the physics steps never change.
+	 * Career defaults 4x faster (×4) with 4x higher ceiling (×32 vs ×8). */
+	const PLAY_SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16, 32];
 	const PLAY_DEFAULT = 2;
+	const PLAY_MAX_INDEX = 5;
+	const PLAY_CAREER_DEFAULT = 4;
+	const PLAY_CAREER_MAX_INDEX = 7;
 	const PLAY_MAX = 32;
 	const GAME_SLICE = 1 / 60;
 	const PLAY_GUARD = 128;
@@ -306,6 +310,8 @@
 	const visitLabelEl = $('visitLabel');
 	const predVisitEl = $('predVisitReadout');
 	const predVisitLabelEl = $('predVisitLabel');
+	const predProfitRowEl = $('predProfitRow');
+	const predProfitEl = $('predProfitReadout');
 	const flightEl = $('cargoFlight');
 	const aimEl = $('aimReadout');
 	const pathEl = $('pathReadout');
@@ -332,6 +338,9 @@
 	const expForceLabelEl = $('expForceLabel');
 	const expTagEl = $('expTag');
 	const launchButton = $('launch');
+	const strandedActionsEl = $('strandedActions');
+	const launchBuildBtn = $('launchBuild');
+	const launchEvacBtn = $('launchEvac');
 	const clearButton = $('clear');
 	const routeBestBtn = $('routeBest');
 	const leftHudEl = $('leftHud');
@@ -497,6 +506,7 @@
 	let hudTagText = '';
 	let hudVisitText = '';
 	let hudPredVisitText = '';
+	let hudPredProfitText = '';
 	let hudLengthText = '';
 	let hudPathText = '';
 	let hudSeedText = '';
@@ -717,10 +727,10 @@
 		measureHudRects();
 	}
 
-	/* panel rects for the world plates (2 rows × 4 numbers): refreshed on resize and
+	/* panel rects for the world plates (3 panels × 4 numbers): refreshed on resize and
 	 * whenever the HUD content changes, never per frame */
-	const hudRects = new Float64Array(8);
-	const hudRectEls = [$('cargoHud'), $('leftHud')];
+	const hudRects = new Float64Array(12);
+	const hudRectEls = [$('cargoHud'), $('leftHud'), $('cargoFoot')];
 
 	function measureHudRects() {
 		for (let i = 0; i < hudRectEls.length; i++) {
@@ -748,7 +758,8 @@
 		return false;
 	}
 
-	/* the wrapped trade footer grows; both HUD columns stop above it so their bottom controls stay reachable */
+	/* the wrapped trade footer grows; both HUD columns stop above it, and the
+	 * right cargo HUD also stops above the separate bottom launch/helpers panel */
 	function reserveTradeFooter() {
 		if (!cargoHudEl) return;
 		const vv = root.visualViewport;
@@ -762,17 +773,26 @@
 		if (rect && rect.height > 0 && rect.height < vh * 0.5) {
 			bottomY = Math.min(bottomY, rect.top - 10);
 		}
-		const maxH = Math.max(180, Math.floor(bottomY - hudTop)) + 'px';
+		const leftMaxH = Math.max(180, Math.floor(bottomY - hudTop)) + 'px';
 		const reserve = Math.ceil(vh - bottomY) + 'px';
 		cargoHudEl.style.setProperty('--footReserve', reserve);
-		cargoHudEl.style.setProperty('--hudMaxH', maxH);
+		if (cargoFootEl && cargoFootEl.style) {
+			cargoFootEl.style.setProperty('--footReserve', reserve);
+		}
 		if (leftHudEl && leftHudEl.style) {
 			leftHudEl.style.setProperty('--footReserve', reserve);
-			leftHudEl.style.setProperty('--hudMaxH', maxH);
+			leftHudEl.style.setProperty('--hudMaxH', leftMaxH);
 		}
-		/* the postcard sits just above the bar, taller in career (wait line) */
+		/* the postcard and #cargoFoot sit just above the bar, taller in career (wait line) */
 		const rootEl = root.document && root.document.documentElement;
 		if (rootEl && rootEl.style) rootEl.style.setProperty('--footReserve', reserve);
+		let cargoBottomY = bottomY;
+		const footRect = cargoFootEl ? cargoFootEl.getBoundingClientRect() : null;
+		if (footRect && footRect.height > 0 && footRect.height < vh * 0.6) {
+			cargoBottomY = Math.min(cargoBottomY, footRect.top - 8);
+		}
+		const cargoMaxH = Math.max(140, Math.floor(cargoBottomY - hudTop)) + 'px';
+		cargoHudEl.style.setProperty('--hudMaxH', cargoMaxH);
 	}
 
 	function worldX(clientX) {
@@ -837,6 +857,14 @@
 		return scene.trade.paused ? 0 : scene.trade.speed;
 	}
 
+	function playDefaultIndex() {
+		return careerRule() ? PLAY_CAREER_DEFAULT : PLAY_DEFAULT;
+	}
+
+	function playMaxIndex() {
+		return careerRule() ? PLAY_CAREER_MAX_INDEX : PLAY_MAX_INDEX;
+	}
+
 	function playScale() {
 		return PLAY_SPEEDS[playIndex];
 	}
@@ -845,18 +873,25 @@
 		if (!playTagEl) return;
 		playTagEl.textContent = '×' + playScale();
 		if (playSlowerBtn) playSlowerBtn.disabled = playIndex === 0;
-		if (playFasterBtn) playFasterBtn.disabled = playIndex === PLAY_SPEEDS.length - 1;
+		if (playFasterBtn) playFasterBtn.disabled = playIndex >= playMaxIndex();
+		if (playResetBtn) {
+			const def = PLAY_SPEEDS[playDefaultIndex()];
+			playResetBtn.textContent = def + '×';
+			playResetBtn.title = careerRule()
+				? 'default career pace (×' + def + ')'
+				: 'real time (×' + def + ')';
+		}
 	}
 
 	function stepPlayback(step) {
 		const next = playIndex + step;
-		if (next < 0 || next >= PLAY_SPEEDS.length) return;
+		if (next < 0 || next > playMaxIndex()) return;
 		playIndex = next;
 		refreshPlaybackUi();
 	}
 
 	function resetPlayback() {
-		playIndex = PLAY_DEFAULT;
+		playIndex = playDefaultIndex();
 		refreshPlaybackUi();
 	}
 
@@ -1015,9 +1050,53 @@
 
 	function refreshPredGain() {
 		const sim = activeSim();
-		predGain = game.on && !routeRule() && sim.predCount >= 2
-			? GravityGame.estimateProfit(game.market, game.clockSteps, sim)
-			: 0;
+		if (!game.on || routeRule() || sim.predCount < 2) {
+			predGain = 0;
+			return;
+		}
+		let gain = GravityGame.estimateProfit(game.market, game.clockSteps, sim);
+		if (careerRule() && sim.predReason === END_IMPACT && sim.predBody >= 0) {
+			const career = game.career;
+			const endStep = game.clockSteps + sim.predSteps;
+			if (career.contract >= 0) {
+				const task = career.tasks[career.contract];
+				if (task.state === GravityGame.TASK_LOADED &&
+					sim.predBody === task.to && endStep <= task.deadline) {
+					gain += task.reward;
+				}
+			}
+			const compete = career.tasks[GravityGame.COMPETE_SLOT];
+			const origin = sim.status === STATUS_FLYING ? sim.origin : aimBody;
+			const len = (sim.status === STATUS_FLYING ? sim.flightLength : 0) + sim.predLength;
+			if (compete && compete.kind === GravityGame.TASK_COMPETE &&
+				origin === compete.planet && len >= compete.minLength &&
+				endStep <= compete.deadline) {
+				gain += compete.reward;
+			}
+		}
+		predGain = gain;
+	}
+
+	function predBuildCost(sim) {
+		if (!careerRule() || sim.predCount < 2 || sim.predReason !== END_IMPACT || sim.predBody < 0) {
+			return 0;
+		}
+		const pad = game.career.pads[sim.predBody];
+		if (!pad || pad.catapult !== null) return 0;
+		return careerCost(game.career, OrbitTech.CATAPULTS[0].buildCost);
+	}
+
+	function predProfitText(sim) {
+		const build = predBuildCost(sim);
+		const gain = predGain.toFixed(2);
+		if (build <= 0) return gain;
+		const sub = Number.isInteger(build) ? String(build) : build.toFixed(2);
+		return gain + '-' + sub;
+	}
+
+	function predRateText(sim) {
+		const rate = sim.predTime > 1e-6 ? predGain / sim.predTime : 0;
+		return '+' + rate.toFixed(2) + '/s';
 	}
 
 	function refreshAimLabel() {
@@ -1027,7 +1106,8 @@
 			const ship = game.career.ship;
 			const usedKg = OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg);
 			const visitNote = sim.predCount >= 2
-				? ' · +' + predGain.toFixed(2) + ' · +' + sim.predNewVisits +
+				? ' · +' + predProfitText(sim) + ' · ' + predRateText(sim) +
+					' · ' + sim.predTime.toFixed(1) + ' s · +' + sim.predNewVisits +
 					' (' + sim.predVisits + ' sys)'
 				: '';
 			aimLabel = 'Δv ' + burnDv.toFixed(1) + ' px/s · ' + deg.toFixed(1) + '° · −' +
@@ -1042,10 +1122,12 @@
 		const ceiling = aimBody >= 0 ? speedCeiling(aimBody) : SPEED_MAX;
 		const visitNote = sim.predCount >= 2
 			? routeRule()
-				? ' · ' + Math.round(sim.predLength) + ' px' +
+				? ' · ' + Math.round(sim.predLength) + ' px · ' +
+					sim.predTime.toFixed(1) + ' s' +
 					(sim.routeActive ? ' · tracing' : '')
-				: (game.on ? ' · +' + predGain.toFixed(2) : '') +
-					' · +' + sim.predNewVisits + ' (' + sim.predVisits + ' sys)'
+				: (game.on ? ' · +' + predProfitText(sim) + ' · ' + predRateText(sim) : '') +
+					' · ' + sim.predTime.toFixed(1) + ' s · +' +
+					sim.predNewVisits + ' (' + sim.predVisits + ' sys)'
 			: '';
 		aimLabel = Math.round(aimSpeed) + ' px/s · ' + deg.toFixed(1) + '°' +
 			(fine ? ' · fine' : '') +
@@ -2293,6 +2375,7 @@
 	}
 
 	function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
+		const wasCareer = careerRule();
 		cancelCareerWait();
 		stopReplay();
 		linkNote = '';
@@ -2301,6 +2384,11 @@
 		game.fixedRate = fixedRate;
 		if (rule) game.rule = rule;
 		game.cheat = game.rule === RULE_CAREER && GravityGame.CHEATS[cheat] ? cheat : null;
+		if (careerRule() !== wasCareer) resetPlayback();
+		else if (playIndex > playMaxIndex()) {
+			playIndex = playMaxIndex();
+			refreshPlaybackUi();
+		}
 		if (botLevel) game.bot = botLevel;
 		/* a solo rule (career) fields no rivals and is always flown by hand */
 		if (RULES[game.rule].solo) {
@@ -2419,6 +2507,7 @@
 
 	/* back to lab: the world stays, the clock returns to real time, a running flight continues */
 	function stopGame() {
+		const wasCareer = careerRule();
 		cancelCareerWait();
 		stopReplay();
 		clearBurnAim();
@@ -2426,6 +2515,8 @@
 		game.on = false;
 		activeSlot = 0;
 		predGain = 0;
+		if (wasCareer) resetPlayback();
+		else refreshPlaybackUi();
 		gravity.setLaunchNetwork(null, null);
 		resetAllRouteBest();
 		updateRuleHelp(selectedHelpRule());
@@ -3104,6 +3195,7 @@
 		}
 		if (rivalRowEl) rivalRowEl.hidden = game.bot === BOT_OFF;
 		if (purseRowEl) purseRowEl.hidden = route;
+		if (predProfitRowEl) predProfitRowEl.hidden = !game.on || route;
 		if (visitLabelEl) visitLabelEl.textContent = route ? 'route score' : 'systems visited';
 		if (predVisitLabelEl) predVisitLabelEl.textContent = route ? 'plan end' : 'pred visits';
 		horizonSlider.disabled = route;
@@ -3116,13 +3208,15 @@
 					: 'drag from a free planet · longest finished trajectory leads<br><b>use best</b> restores your longest plan · see <b>? help</b>'
 				: 'drag from planet to aim · shift = 1/20 fine · enter launches<br>land on a planet to stage next launch · see <b>? help</b> for the selected rule';
 		}
-			replaySpeedBtn.hidden = !replay.on || replay.route;
+		replaySpeedBtn.hidden = !replay.on || replay.route;
 		replaySkipBtn.hidden = !replay.on;
 		replaySpeedBtn.textContent = '×' + REPLAY_SPEEDS[replay.speed];
 		replayRowEl.hidden = !replay.on && replay.verdict === '';
+		refreshPlaybackUi();
 		refreshRouteBestUi();
 		refreshCareerPanel();
 		helperUpdateUi();
+		updateLiveHud();
 		measureHudRects();
 		reserveTradeFooter();
 		hudAt = -Infinity;
@@ -3455,9 +3549,9 @@
 		const shot = OrbitTech.launchEnergy(ship.mass, pad.catapult, limit);
 		const frac = pad.battery.capacity > 0 ? pad.chargeKwh / pad.battery.capacity : 0;
 		html += '<div class="careerLine">' + pad.catapult.id + ' · ' + pad.panel.id + ' · ' +
-			pad.battery.id + ' · ' + pad.chargeKwh.toFixed(2) + ' / ' +
-			pad.battery.capacity.toFixed(2) + ' kWh</div>';
-		html += '<div class="careerBar"><i style="width:' + Math.round(frac * 100) + '%"></i></div>';
+			pad.battery.id + ' · <span id="careerPadCharge">' + pad.chargeKwh.toFixed(2) + ' / ' +
+			pad.battery.capacity.toFixed(2) + ' kWh</span></div>';
+		html += '<div class="careerBar"><i id="careerPadBar" style="width:' + Math.round(frac * 100) + '%"></i></div>';
 		/* a pad on a full battery is rail-limited: say "full" only when the charge bites */
 		const fullNote = Math.round(full) === Math.round(limit) ? ''
 			: ' · full ' + Math.round(full) + ' px/s';
@@ -4319,8 +4413,13 @@
 		if (careerScienceEl) careerScienceEl.innerHTML = scienceBlockHtml(career);
 		const ended = career.ended !== GravityGame.CAREER_OPEN;
 		refreshCareerWaitUi(career, ended);
-		careerEvacBtn.disabled = ended || !career.stranded || gravity.status === STATUS_FLYING;
-		careerEvacBtn.textContent = 'evacuate · ' + costText(careerCost(career, GravityGame.CAREER.evacFee));
+		const evacCost = careerCost(career, GravityGame.CAREER.evacFee);
+		const evacPoor = purseTooSmall(career, evacCost);
+		careerEvacBtn.disabled = ended || !career.stranded || gravity.status === STATUS_FLYING || careerWaitBusy();
+		careerEvacBtn.classList.toggle('costly', evacPoor && !ended && career.stranded);
+		careerEvacBtn.textContent = 'evacuate · ' + costText(evacCost);
+		launchState = -1;
+		updateLiveHud();
 	}
 
 	/* any career edit can change the armed shot, the clock and the board */
@@ -4402,12 +4501,30 @@
 		if (pct === careerWaitAnim.pct) return;
 		careerWaitAnim.pct = pct;
 		careerWaitBtn.textContent = 'waiting · ' + pct + ' %';
+		const career = careerWaitAnim.career;
+		const pad = career.pads[careerWaitAnim.planet];
+		if (pad && pad.catapult !== null) {
+			const chargeEl = $('careerPadCharge');
+			if (chargeEl) {
+				chargeEl.textContent = pad.chargeKwh.toFixed(2) + ' / ' +
+					pad.battery.capacity.toFixed(2) + ' kWh';
+			}
+			const barEl = $('careerPadBar');
+			if (barEl && barEl.style) {
+				const frac = pad.battery.capacity > 0 ? pad.chargeKwh / pad.battery.capacity : 0;
+				barEl.style.width = Math.round(frac * 100) + '%';
+			}
+		}
 		if (!careerWaitInfoEl) return;
 		careerWaitInfoEl.hidden = false;
 		careerWaitInfoEl.className = 'careerLine dim';
 		/* the minutes are the eased world time, the % is wall-clock progress */
+		const padNote = pad && pad.catapult !== null
+			? ' · ' + planetName(careerWaitAnim.planet) + ' ' + pad.chargeKwh.toFixed(2) +
+				' / ' + pad.battery.capacity.toFixed(2) + ' kWh'
+			: '';
 		careerWaitInfoEl.textContent = 'fast-forward · ' + (CAREER_WAIT_MIN * eased).toFixed(1) +
-			' / ' + CAREER_WAIT_MIN + ' min · ' + pct + ' %';
+			' / ' + CAREER_WAIT_MIN + ' min' + padNote + ' · ' + pct + ' %';
 	}
 
 	/* the whole settled result lands exactly on the old instant wait */
@@ -4636,7 +4753,8 @@
 		if (!node || node === tradeCanvas) return false;
 		const inCargo = Boolean(cargoHudEl && typeof cargoHudEl.contains === 'function' && cargoHudEl.contains(node));
 		const inLeft = Boolean(leftHudEl && typeof leftHudEl.contains === 'function' && leftHudEl.contains(node));
-		if (!inCargo && !inLeft) return false;
+		const inFoot = Boolean(cargoFootEl && typeof cargoFootEl.contains === 'function' && cargoFootEl.contains(node));
+		if (!inCargo && !inLeft && !inFoot) return false;
 		if (node.closest && node.closest('button, input, select, label, textarea, .scoreEntry')) return false;
 		const wx = worldX(event.clientX);
 		const wy = worldY(event.clientY);
@@ -5433,18 +5551,32 @@
 
 	function drawGripLabel() {
 		if (!aimLabel || (!armed && !aiming && !burnArmed && !burnAiming)) return;
+		ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
 		const sx = gripX * view.scale + view.offX + 16;
 		const sy = gripY * view.scale + view.offY - 12;
-		const width = 20 + aimLabel.length * 6.4;
+		const width = 20 + aimLabel.length * 6.7;
 		let x = sx;
 		let y = sy - 18;
-		if (x + width > window.innerWidth - 8) x = sx - width - 32;
 		if (y < 8) y = sy + 22;
+		if (x + width > window.innerWidth - 8 || rectUnderHud(x, y, width, 20)) {
+			x = sx - width - 32;
+			for (let i = 0; i < hudRectEls.length; i++) {
+				const o = i * 4;
+				const left = hudRects[o];
+				const right = hudRects[o + 2];
+				const bottom = hudRects[o + 3];
+				if (right <= left || bottom <= hudRects[o + 1]) continue;
+				if (y >= bottom || y + 20 <= hudRects[o + 1]) continue;
+				if (x < right && x + width > left && left > width + 12) {
+					x = left - width - 6;
+				}
+			}
+			if (x < 8) x = 8;
+		}
 		plate(x, y, width, 20);
 		ctx.fillStyle = fine ? ICE : GOLD;
 		ctx.textAlign = 'left';
 		ctx.textBaseline = 'middle';
-		ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
 		ctx.fillText(aimLabel, x + 10, y + 10.5);
 	}
 
@@ -5805,11 +5937,19 @@
 				? sim.routeActive ? 'tracing…' : endText(sim.predReason, sim.predBody)
 				: sim.predVisits + ' sys · +' + sim.predNewVisits +
 					' (' + (sim.visitedCount + sim.predNewVisits) + '/' + PLANETS + ')' +
-					(game.on ? ' · +' + predGain.toFixed(2) : '')
+					(game.on ? ' · +' + predProfitText(sim) : '')
 			: '—';
 		if (predText !== hudPredVisitText) {
 			hudPredVisitText = predText;
 			if (predVisitEl) predVisitEl.textContent = predText;
+		}
+		const profitText = game.on && !routeRule() && sim.predCount >= 2
+			? '+' + predProfitText(sim) + ' · ' + predRateText(sim) +
+				' · ' + sim.predTime.toFixed(1) + ' s'
+			: '—';
+		if (profitText !== hudPredProfitText) {
+			hudPredProfitText = profitText;
+			if (predProfitEl) predProfitEl.textContent = profitText;
 		}
 		const lenText = sim.predCount >= 2 ? Math.round(sim.predLength) + ' px' : '—';
 		if (lenText !== hudLengthText) {
@@ -5852,6 +5992,8 @@
 			if (state === launchState && text === launchNote) return;
 			launchState = state;
 			launchNote = text;
+			launchButton.hidden = false;
+			if (strandedActionsEl) strandedActionsEl.hidden = true;
 			launchButton.disabled = false;
 			launchButton.classList.toggle('exitWarning', warnExit);
 			launchButton.textContent = text;
@@ -5868,11 +6010,48 @@
 		const ledger = slotLedger(slot);
 		const plan = slotPlans[slot];
 		const career = careerRule();
+		const stranded = career && game.career.ended === GravityGame.CAREER_OPEN &&
+			game.career.stranded && gravity.status !== STATUS_FLYING;
+		if (stranded && strandedActionsEl) {
+			launchButton.hidden = true;
+			strandedActionsEl.hidden = false;
+			const c = game.career;
+			const waitBusy = careerWaitBusy();
+			if (launchBuildBtn) {
+				if (c.at < 0) {
+					launchBuildBtn.hidden = true;
+				} else {
+					const first = OrbitTech.CATAPULTS[0];
+					const buildCost = careerCost(c, first.buildCost);
+					const buildPoor = purseTooSmall(c, buildCost);
+					const fresh = padCap(c, first, OrbitTech.BATTERIES[0]);
+					launchBuildBtn.hidden = false;
+					launchBuildBtn.disabled = buildPoor || waitBusy;
+					launchBuildBtn.classList.toggle('costly', buildPoor);
+					launchBuildBtn.textContent = 'buy ' + first.id + ' · ' + costText(buildCost);
+					launchBuildBtn.title = 'build the first catapult on ' + planetName(c.at) +
+						' · full battery lifts ' + c.ship.mass.toFixed(1) + ' t to ' +
+						Math.round(fresh) + ' px/s';
+				}
+			}
+			if (launchEvacBtn) {
+				const evacCost = careerCost(c, GravityGame.CAREER.evacFee);
+				const evacPoor = purseTooSmall(c, evacCost);
+				launchEvacBtn.disabled = waitBusy;
+				launchEvacBtn.classList.toggle('costly', evacPoor);
+				launchEvacBtn.textContent = 'evacuate · ' + costText(evacCost);
+				launchEvacBtn.title = 'fly the ship home to HQ ' + planetName(c.hq) +
+					' for ' + costText(evacCost);
+			}
+		} else {
+			launchButton.hidden = false;
+			if (strandedActionsEl) strandedActionsEl.hidden = true;
+		}
 		const note = career ? careerOverText() || careerPadNote() : '';
 		const broke = game.on && !route && (career ? note !== '' : ledger.purse < MONEY.cost);
 		const state = (blocked || broke ? 1 : 0) + (exitWarning ? 2 : 0) +
 			(broke ? 4 : 0) + (route ? 8 : 0) + (botPlayer ? 16 : 0) +
-			(route && plan.ready ? 32 : 0) + (slot * 64);
+			(route && plan.ready ? 32 : 0) + (slot * 64) + (stranded ? 8192 : 0);
 		if (state === launchState && note === launchNote) return;
 		launchState = state;
 		launchNote = note;
@@ -6157,6 +6336,18 @@
 	}
 	if (careerWaitBtn) careerWaitBtn.addEventListener('click', () => careerAct({ act: 'wait' }));
 	if (careerEvacBtn) careerEvacBtn.addEventListener('click', () => careerAct({ act: 'evac' }));
+	if (launchBuildBtn) {
+		launchBuildBtn.addEventListener('click', () => {
+			if (!careerRule() || careerWaitBusy() || gravity.status === STATUS_FLYING) return;
+			const career = game.career;
+			if (career.ended !== GravityGame.CAREER_OPEN || !career.stranded || career.at < 0) return;
+			careerFollow = true;
+			careerBuild(career, career.at, OrbitTech.KIND_CATAPULT, OrbitTech.CATAPULTS[0]);
+		});
+	}
+	if (launchEvacBtn) {
+		launchEvacBtn.addEventListener('click', () => careerAct({ act: 'evac' }));
+	}
 	if (careerPlanetEl) {
 		const pickPlanet = () => {
 			careerFollow = false;
@@ -6286,8 +6477,12 @@
 	}
 	const tradeControlsEl = $('tradeControls');
 	if (typeof root.ResizeObserver === 'function' && tradeControlsEl) {
-		const footObserver = new root.ResizeObserver(() => reserveTradeFooter());
+		const footObserver = new root.ResizeObserver(() => {
+			reserveTradeFooter();
+			measureHudRects();
+		});
 		footObserver.observe(tradeControlsEl);
+		if (cargoFootEl) footObserver.observe(cargoFootEl);
 	}
 	window.addEventListener('keydown', event => {
 		if (event.key === 'Shift') {

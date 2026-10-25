@@ -1,0 +1,34 @@
+0.4.17 — separate launch/helper bottom panel, inline stranded buy/evacuate, 4x career playback, and predicted profit-3 / rate / TOF
+
+node --check *.js experiments/*.js                          OK
+git diff --check                                            OK
+
+node experiments/gravity_bench.js      BENCH OK
+node experiments/colony_bench.js       COLONY BENCH OK
+node experiments/game_bench.js         GAME BENCH OK
+node experiments/route_bench.js        ROUTE BENCH OK
+node experiments/bot_bench.js          BOT BENCH OK
+node experiments/career_bench.js       CAREER BENCH OK (52 checks)
+node experiments/career_bot_bench.js   CAREER BOT BENCH OK (7 baseline + 2 R&D runs)
+node experiments/dom_smoke.js          SMOKE OK (0.4.0..0.4.17)
+node experiments/layout_check.js       LAYOUT CHECK OK (8 viewports x route + career + stranded cargoFoot)
+
+layout_check summary (cargoHud above cargoFoot above tradeControls, no overlap)
+  route:
+    1440x900 foot 666..829 | trade 839 | use best 156px
+    1280x800 foot 566..729 | trade 739 | use best 156px
+    1280x600 foot 366..529 | trade 539 | use best 156px
+    1024x700 foot 440..603 | trade 614 | use best 156px
+     900x640 foot 382..545 | trade 556 | use best 156px
+     800x560 foot 334..495 | trade 505 | use best 145px
+     520x760 foot 534..695 | trade 705 | use best 145px
+     390x700 foot 474..635 | trade 645 | use best 145px
+  career (with stranded #launchBuild + #launchEvac side-by-side and lost-in-space #launchEvac):
+    1440x900 career foot 631..779 | trade 790 | shop 28 buttons | stranded 128x29px + 128x29px
+    1280x800 career foot 531..679 | trade 690 | shop 28 buttons | stranded 128x29px + 128x29px
+    1280x600 career foot 331..479 | trade 490 | shop 28 buttons | stranded 128x29px + 128x29px
+    1024x700 career foot 425..573 | trade 584 | shop 28 buttons | stranded 128x29px + 128x29px
+     900x640 career foot 369..517 | trade 528 | shop 28 buttons | stranded 128x29px + 128x29px
+     800x560 career foot 316..477 | trade 488 | shop 28 buttons | stranded 108x27px + 108x27px
+     520x760 career foot 516..677 | trade 688 | shop 28 buttons | stranded 108x27px + 108x27px
+     390x700 career foot 430..591 | trade 601 | shop 28 buttons | stranded 108x27px + 108x27px

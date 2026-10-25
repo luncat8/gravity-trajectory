@@ -1324,8 +1324,10 @@ check(career.at === kCargo.endBody && career.stranded, 'landing without a catapu
 check(kScene.game.money.purse >= purse0, 'no launch fee in career: ' + kScene.game.money.purse);
 check(kui.get('cargoStatus').textContent === 'stranded · build or evacuate',
 	'stranded status: ' + kui.get('cargoStatus').textContent);
-check(kui.get('launch').disabled && kui.get('launch').textContent === 'stranded · build or evacuate',
-	'stranded launch button: ' + kui.get('launch').textContent);
+check(kui.get('launch').hidden && !kui.get('strandedActions').hidden &&
+	kui.get('launchBuild').textContent === 'buy EMC-1 · 3.00' &&
+	kui.get('launchEvac').textContent === 'evacuate · 5.00',
+	'stranded launch buttons: ' + kui.get('launchBuild').textContent + ' / ' + kui.get('launchEvac').textContent);
 const strandedAt = career.at;
 check(kui.get('careerPad').innerHTML.includes('no catapult here'),
 	'stranded pad block: ' + kui.get('careerPad').innerHTML);
@@ -2384,6 +2386,135 @@ function protoOf(career, family, id) {
 	check(bui.get('tradeSpeedLabel').textContent === '×1', 'trade time slider label');
 	console.log('0.4.16 verified: wait + flight playback in the bottom trade bar · ' +
 		'2 s eased fast-forward · cost-blocked prices red');
+}
+
+/* 0.4.17: separate cargoFoot panel, inline stranded buy/evacuate buttons,
+ * 4x career playback default/max (×4..×32), and predicted profit-3 / rate / TOF */
+{
+	const fs = require('fs');
+	const path = require('path');
+	const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+	const footMatch = /<aside id="cargoFoot" class="panel"[^>]*>([\s\S]*?)<\/aside>/.exec(html);
+	check(footMatch !== null &&
+		footMatch[1].includes('id="helperGroup"') &&
+		footMatch[1].includes('id="launch"') &&
+		footMatch[1].includes('id="strandedActions"') &&
+		footMatch[1].includes('id="launchBuild"') &&
+		footMatch[1].includes('id="launchEvac"'),
+		'cargoFoot must be a separate bottom panel owning helperGroup, launch, and strandedActions');
+
+	const cEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
+	cEnv.runFrames(2, 16.0);
+	const cui = cEnv.elements;
+	const cScene = cEnv.context.GravityScene;
+	const cSim = cScene.sim;
+	const cCareer = cScene.career;
+
+	/* career playback default is ×4 (4x more than ×1) and max is ×32 (4x more than ×8) */
+	check(cScene.playScale() === 4 && cui.get('playTag').textContent === '×4' &&
+		cui.get('playReset').textContent === '4×' && !cui.get('playFaster').disabled,
+		'career default playback speed must be ×4: ' + cui.get('playTag').textContent);
+	cEnv.click('playFaster');
+	cEnv.click('playFaster');
+	cEnv.click('playFaster');
+	check(cScene.playScale() === 32 && cui.get('playTag').textContent === '×32' &&
+		cui.get('playFaster').disabled,
+		'career max playback speed must be ×32: ' + cui.get('playTag').textContent);
+	cEnv.click('playReset');
+	check(cScene.playScale() === 4 && cui.get('playTag').textContent === '×4',
+		'career playReset must return to ×4: ' + cui.get('playTag').textContent);
+
+	/* predicted route info: profit with separate catapult subtract (e.g. 3.25-3), profit/s, and TOF */
+	const shotAngle = landingAngle(cSim, cCareer.hq, CAREER_TEST_SPEED);
+	check(shotAngle !== null, '0.4.17: no landing shot from HQ');
+	/* age planets so predicted visit + task profit is 3.25 on landing at a padless planet */
+	cScene.game.clockSteps = 20000;
+	cCareer.contract = 0;
+	cCareer.tasks[0].kind = cEnv.context.GravityGame.TASK_DELIVERY;
+	cCareer.tasks[0].state = cEnv.context.GravityGame.TASK_LOADED;
+	cSim.predict(cCareer.hq, shotAngle, CAREER_TEST_SPEED);
+	const targetPlanet = cSim.predBody;
+	const baseVisitGain = cEnv.context.GravityGame.estimateProfit(
+		cScene.game.market, cScene.game.clockSteps, cSim);
+	cCareer.tasks[0].to = targetPlanet;
+	cCareer.tasks[0].deadline = cScene.game.clockSteps + cSim.predSteps + 100;
+	cCareer.tasks[0].reward = +(3.25 - baseVisitGain).toFixed(2);
+	cEnv.dragAim(cCareer.hq, shotAngle, CAREER_TEST_SPEED);
+	cEnv.runFrames(2, 16.0);
+	const tofText = cSim.predTime.toFixed(1) + ' s';
+	const rateText = '+' + (3.25 / cSim.predTime).toFixed(2) + '/s';
+	check(cui.get('predVisitReadout').textContent.endsWith('· +3.25-3'),
+		'predVisitReadout must show +3.25-3 when landing on padless planet: ' +
+		cui.get('predVisitReadout').textContent);
+	check(!cui.get('predProfitRow').hidden &&
+		cui.get('predProfitReadout').textContent === '+3.25-3 · ' + rateText + ' · ' + tofText,
+		'predProfitReadout must show +3.25-3 · rate · TOF: ' +
+		cui.get('predProfitReadout').textContent);
+	check(cui.get('aimReadout').textContent.includes('· +3.25-3 · ' + rateText + ' · ' + tofText),
+		'aimReadout must include +3.25-3, profit/s, and TOF: ' +
+		cui.get('aimReadout').textContent);
+
+	/* when target planet already has a catapult, "-3" is omitted */
+	cCareer.pads[targetPlanet].catapult = cEnv.context.OrbitTech.CATAPULTS[0];
+	cEnv.dragAim(cCareer.hq, shotAngle, CAREER_TEST_SPEED);
+	cEnv.runFrames(2, 16.0);
+	check(cui.get('predVisitReadout').textContent.endsWith('· +3.25') &&
+		cui.get('predProfitReadout').textContent.startsWith('+3.25 · '),
+		'built pad omits -3 subtract: ' + cui.get('predProfitReadout').textContent);
+	cCareer.pads[targetPlanet].catapult = null;
+
+	/* fly to padless planet -> stranded -> inline launchBuild & launchEvac buttons replace #launch */
+	cEnv.click('launch');
+	for (let i = 0; i < 400 && cSim.status === pageSim.STATUS_FLYING; i++) cEnv.runFrames(1, 40.0);
+	check(cCareer.stranded && cCareer.at === targetPlanet, 'ship stranded on padless planet');
+	check(cui.get('launch').hidden && !cui.get('strandedActions').hidden &&
+		!cui.get('launchBuild').hidden && !cui.get('launchEvac').hidden,
+		'stranded state hides #launch and shows #launchBuild + #launchEvac');
+
+	/* cost gate on #launchBuild when purse < 3 */
+	const savedPurse = cCareer.ledger.purse;
+	cCareer.ledger.purse = 2.0;
+	cScene.refreshCareerPanel();
+	check(cui.get('launchBuild').disabled && cui.get('launchBuild').classList.contains('costly') &&
+		cui.get('launchEvac').classList.contains('costly'),
+		'low purse marks launchBuild disabled+costly and launchEvac costly');
+	cCareer.ledger.purse = Math.max(savedPurse, 10);
+	cScene.refreshCareerPanel();
+	check(!cui.get('launchBuild').disabled && !cui.get('launchBuild').classList.contains('costly'),
+		'sufficient purse enables launchBuild');
+
+	/* clicking #launchBuild directly buys EMC-1 on the stranded planet and restores #launch */
+	cEnv.click('launchBuild');
+	check(!cCareer.stranded && cCareer.pads[targetPlanet].catapult.id === 'EMC-1' &&
+		!cui.get('launch').hidden && cui.get('strandedActions').hidden &&
+		cui.get('launch').textContent === 'launch',
+		'launchBuild unstrands ship and restores #launch in place');
+
+	/* lost in space hides #launchBuild and leaves #launchEvac to evacuate home */
+	cCareer.at = -1;
+	cCareer.stranded = true;
+	cScene.refreshCareerPanel();
+	check(cui.get('launch').hidden && !cui.get('strandedActions').hidden &&
+		cui.get('launchBuild').hidden && !cui.get('launchEvac').hidden,
+		'lost in space shows only launchEvac in strandedActions');
+	cEnv.click('launchEvac');
+	check(!cCareer.stranded && cCareer.at === cCareer.hq &&
+		!cui.get('launch').hidden && cui.get('strandedActions').hidden,
+		'launchEvac brings ship back to HQ and restores #launch');
+
+	/* switching out of career resets playback to ×1 with max ×8 */
+	cScene.setPlayMode('tour');
+	cEnv.runFrames(2, 16.0);
+	check(cScene.playScale() === 1 && cui.get('playTag').textContent === '×1' &&
+		cui.get('playReset').textContent === '1×',
+		'leaving career resets playback to ×1: ' + cui.get('playTag').textContent);
+	cEnv.click('playFaster');
+	cEnv.click('playFaster');
+	cEnv.click('playFaster');
+	check(cScene.playScale() === 8 && cui.get('playFaster').disabled,
+		'non-career max playback speed remains ×8');
+	console.log('0.4.17 verified: separate #cargoFoot panel · inline stranded buy/evacuate · ' +
+		'career ×4..×32 playback · +3.25-3 / rate / TOF route prediction');
 }
 
 console.log('paint calls', {

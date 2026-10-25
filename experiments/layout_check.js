@@ -171,10 +171,12 @@ async function scoreboardStable(page) {
 			const label = width + 'x' + height;
 			check(layout.footBottom <= layout.tradeTop,
 				label + ': action row overlaps the trade footer (' + Math.round(layout.footBottom) + ' > ' + Math.round(layout.tradeTop) + ')');
+			check(layout.hudBottom <= layout.footTop + 1,
+				label + ': cargoHud overlaps cargoFoot (' + Math.round(layout.hudBottom) + ' > ' + Math.round(layout.footTop) + ')');
 			check(layout.best[3] <= layout.viewport && layout.best[0] >= 0 && !layout.best[2],
 				label + ': use best is out of view (' + Math.round(layout.best[0]) + '..' + Math.round(layout.best[3]) + ' vs ' + layout.viewport + ')');
-			check(layout.best[3] <= layout.hudBottom + 1,
-				label + ': use best clipped below cargoHud');
+			check(layout.best[3] <= layout.footBottom + 1,
+				label + ': use best clipped below cargoFoot');
 			check(layout.best[5] === 'routeBest',
 				label + ': use best occluded by #' + layout.best[5]);
 			if (planned) check(layout.best[1] > 80, label + ': use best collapsed to ' + Math.round(layout.best[1]) + 'px');
@@ -292,8 +294,51 @@ async function scoreboardStable(page) {
 				};
 			});
 			await page.click('#careerFoldBtn');
+			const strandedLayout = await page.evaluate(() => {
+				const career = GravityScene.career;
+				const other = (career.hq + 1) % 26;
+				career.at = other;
+				career.stranded = true;
+				GravityScene.refreshCareerPanel();
+				const foot = document.getElementById('cargoFoot').getBoundingClientRect();
+				const helper = document.getElementById('helperGroup').getBoundingClientRect();
+				const launch = document.getElementById('launch');
+				const stranded = document.getElementById('strandedActions');
+				const launchHidden = launch.hidden;
+				const strandedShown = !stranded.hidden;
+				const build = document.getElementById('launchBuild').getBoundingClientRect();
+				const evac = document.getElementById('launchEvac').getBoundingClientRect();
+				career.at = -1;
+				GravityScene.refreshCareerPanel();
+				const lostBuildHidden = document.getElementById('launchBuild').hidden;
+				const lostEvac = document.getElementById('launchEvac').getBoundingClientRect();
+				career.at = career.hq;
+				career.stranded = false;
+				GravityScene.refreshCareerPanel();
+				return {
+					helperInFoot: helper.top >= foot.top && helper.bottom <= foot.bottom,
+					launchHidden,
+					strandedShown,
+					buildW: build.width,
+					buildH: build.height,
+					evacW: evac.width,
+					evacH: evac.height,
+					sideBySide: build.right <= evac.left + 1 && evac.right <= foot.right + 1,
+					lostBuildHidden,
+					lostEvacW: lostEvac.width,
+					restoredLaunch: !launch.hidden && stranded.hidden
+				};
+			});
 			check(errors.length === 0, label + ': page error ' + errors.join(' / '));
 			check(layout.footBottom <= layout.tradeTop, label + ': foot row overlaps the trade footer');
+			check(layout.hudBottom <= layout.footTop + 1,
+				label + ': cargoHud overlaps cargoFoot (' + Math.round(layout.hudBottom) + ' > ' + Math.round(layout.footTop) + ')');
+			check(strandedLayout.helperInFoot && strandedLayout.launchHidden &&
+				strandedLayout.strandedShown && strandedLayout.buildW >= 60 &&
+				strandedLayout.evacW >= 60 && strandedLayout.buildH >= 24 &&
+				strandedLayout.sideBySide && strandedLayout.lostBuildHidden &&
+				strandedLayout.lostEvacW >= 120 && strandedLayout.restoredLaunch,
+				label + ': stranded cargoFoot layout invalid ' + JSON.stringify(strandedLayout));
 			check(drawer.leftBottom <= layout.tradeTop + 1, label + ': leftHud overlaps the trade footer');
 			check(drawer.visible && drawer.run && drawer.rivals, label + ': boxes ' + JSON.stringify(drawer));
 			check(drawer.buttons >= 7 && drawer.pad, label + ': shop ' + drawer.buttons + ' buttons');

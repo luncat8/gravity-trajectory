@@ -26,8 +26,9 @@ Open `index.html` (`file://` works, no build, no modules).
 | `experimental` · `g field` slider | system-wide gravity multiplier (`×0…×2`, default `×1`) applied to every body's pull, every rival and every prediction |
 | `experimental` · `catapult` slider | catapult rail-force multiplier (`×0.25…×3`, default `×1`): moves every tier's `maxSpeed`, the career pad cap and the drag range · both sliders stay live in lab and career, and lock at the recorded values while a replay runs (and outside career once a shot is recorded) · replay links carry `&gs=`/`&fs=` only when a scale is not `×1` |
 | `±` trim slider | relative nudge (`-5%…+5%`) of the aim speed, of an armed in-flight `burn Δv`, or of selected gravity when no shot is armed |
-| release drag | arms the shot/plan (or in-flight impulse burn) and draws the predicted trajectory (and, outside `route`, system visits) |
-| enter / launch | fires the vessel under `tour`/`money`/`career`, or pauses / burns / resumes during a `career` flight when fitted with an impulse engine and fuel; disabled for a `route` plan or bot-controlled YOU |
+| release drag | arms the shot/plan (or in-flight impulse burn) and draws the predicted trajectory with profit (and separate `-3` catapult build subtract when landing on a padless career planet, e.g. `+3.25-3`), profit per time of flight (`+0.25/s`), time of flight (`13.0 s`), and system visits |
+| enter / launch (bottom-right panel) | fires the vessel under `tour`/`money`/`career`, or pauses / burns / resumes during a `career` flight when fitted with an impulse engine and fuel; when stranded in career, replaced in place by direct `buy EMC-1 · 3.00` (on a padless planet) and `evacuate · 5.00` buttons; disabled for a `route` plan or bot-controlled YOU |
+| auto helpers (bottom-right panel) | `quick scan`, `scan here` and `tweak best` sit in the separate bottom-right launch panel above `launch` / `clear` / `use best` |
 | esc | closes help, cancels an armed burn / resumes a paused flight, or cancels the aim/plan |
 | clear / clear plan | resets the vessel, or removes the current `route` plan; the saved best remains available |
 | `use best` (route) | restores the longest finished plan for the current start planet, with its exact snapped angle and speed |
@@ -55,7 +56,7 @@ Open `index.html` (`file://` works, no build, no modules).
 | purse & planet profits (game) | starts at `3.00`; each launch costs `1.00` (refused below `1.00`); each planet's fly-visit payout grows with unvisited game time (`+0.25` initial, resets to `+0.00` when visited by you or a rival, `+0.00625/s` up to `+0.75` cap) and is drawn as a live pill under every planet |
 | `restart` / `new seed` | same seed fresh start / random world |
 | `copy replay` / `copy rival` | copies your replay link (with `&rule=` and `&bot=` when active) or Rival 1's solo trajectory link |
-| `play ×N` `−` / `reset` / `+` (bottom trade bar) | live flight playback ×0.25…×8; a replay adds ×0.25…×16 on top — only the pacing changes, never the physics steps or the recorded shots |
+| `play ×N` `−` / `reset` / `+` (bottom trade bar) | live flight playback ×0.25…×8 (×1 default; in `career`, 4× faster default `×4` and range max `×32`); a replay adds ×0.25…×16 on top — only the pacing changes, never the physics steps or the recorded shots |
 | `×1 / ×4 / ×16`, `skip` | replay multiplier / re-simulate the rest of a replay instantly |
 | bottom trade bar | `pause` + `time` slider for the trade-clock rate (simulation minutes per real second), `play` multiplier, the career `wait · 30 min`, and `orbits` / `moons` / `links` / `routes` toggles (hidden under 820 px); its height is reserved out of both HUD columns |
 

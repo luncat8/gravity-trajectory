@@ -378,3 +378,13 @@ single-call value bit for bit. The trade sim is chunk-invariant
 (`advanceTo` drains its event heap to the target), so it can follow arbitrary
 eased targets (`startT + 30 · easeInOut(p)`), which is what makes the planets
 visibly race.
+
+## CSS grid `minmax(0, 1fr)` on readout tables
+
+A `.stats { display: grid }` block without an explicit track template defaults
+to `grid-template-columns: auto` (`minmax(min-content, max-content)`). Putting
+`overflow: hidden; text-overflow: ellipsis; white-space: nowrap` on a child
+flex item (`#aimReadout`) does not stop the grid track itself from expanding to
+`max-content` unless the grid column is `minmax(0, 1fr)` and each `.stat` flex
+row has `min-width: 0`. Always pair `text-overflow: ellipsis` inside a grid row
+with `grid-template-columns: minmax(0, 1fr)` and `min-width: 0`.
