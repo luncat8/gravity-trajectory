@@ -47,7 +47,7 @@
 		tour: { name: RULE_TOUR, capSteps: CAP_STEPS, horizon: null, maxShots: 0, stopOnTour: true, planner: false, solo: false },
 		route: { name: RULE_ROUTE, capSteps: ROUTE_STEPS, horizon: ROUTE_SECONDS, maxShots: 1, stopOnTour: false, planner: true, solo: false },
 		money: { name: RULE_MONEY, capSteps: CAP_STEPS, horizon: null, maxShots: MONEY_SHOTS, stopOnTour: false, planner: false, solo: false },
-		career: { name: RULE_CAREER, capSteps: CAP_STEPS, horizon: null, maxShots: 0, stopOnTour: false, planner: false, solo: true }
+		career: { name: RULE_CAREER, capSteps: CAP_STEPS, horizon: null, maxShots: 0, stopOnTour: false, planner: false, solo: false, humanOnly: true }
 	};
 	const CHEAT_COMMUNISM = 'communism';
 	const CHEAT_ENDGAME = 'endgame';
@@ -372,19 +372,23 @@
 	/* --- career ------------------------------------------------------------ */
 
 	/*
-	 * Career: a launch costs pad energy, never money. The purse grows from the
-	 * shared visit market (the always-available "visit a long-unvisited planet"
-	 * task), delivery contracts (land cargo on a planet, needs a hold) and
-	 * route competitions (one flight from a planet at least `minLength` long).
-	 * Only a planet with a built EM catapult can be launched from: landing
-	 * anywhere else strands the ship until a catapult is bought there or an
-	 * evacuation flies it back to HQ for `evacFee` — more than any delivery
-	 * pays, so a contract is profitable only once its target has a pad.
-	 * The run ends broke (purse below zero, or stranded with no affordable exit)
-	 * or complete (a catapult on every planet; cheat runs never complete).
+	 * Career: launching spends the pad's solar-charged battery. The purse grows
+	 * from the shared visit market (the always-available "visit a long-unvisited
+	 * planet" task), delivery contracts (land cargo on a planet, needs a hold)
+	 * and route competitions (one flight from a planet at least `minLength`
+	 * long). Every planet carries an EMC (electromagnetic catapult) and the
+	 * planet is claimed by whoever owns the best rail on it: your own EMC
+	 * launches for its battery energy alone, a rival player's EMC charges a
+	 * usage tax that scales with the energy of the shot and pays that player,
+	 * and the neutral commercial EMC-1 standing on every planet charges a flat
+	 * fee. So a padless planet is no longer a dead end, only an expensive one.
+	 * The run ends broke (purse below zero, or no affordable exit) or complete
+	 * (a catapult on every planet; cheat runs never complete).
 	 */
 	const CAREER = {
-		evacFee: 5,
+		evacFee: 6,
+		commercialFee: 3,
+		taxPerKwh: 1,
 		endgamePurse: 99,
 		hqMinLight: 0.5,
 		lightFloor: 0.25,
@@ -399,7 +403,9 @@
 		competeMinPx: 1500,
 		competeSpanPx: 1500,
 		competeBase: 2,
-		competeSpan: 2
+		competeSpan: 2,
+		turretMinSec: 2,
+		turretSpanSec: 3
 	};
 	const CARGO_TONS = [4, 8, 16, 24];
 	const BOARD_SIZE = CAREER.deliverySlots + 1;
@@ -415,7 +421,23 @@
 	const CAREER_COMPLETE = 2;
 	const SALT_HQ = 0xca;
 	const SALT_TASK = 0xcb;
+	const SALT_TURRET = 0xcc;
+	const SALT_RIVAL = 0xcd;
 	const WORLD_SEC_PER_MIN = 60;
+	const TAU = Math.PI * 2;
+
+	/*
+	 * The commercial EMC-1 is the fallback pad of every planet: a neutral
+	 * operator keeps it fully charged and charges a flat fee per launch. It is
+	 * one immutable record — nothing drains or upgrades it.
+	 */
+	const COMMERCIAL_PAD = {
+		catapult: OrbitTech.CATAPULTS[0],
+		panel: OrbitTech.PANELS[0],
+		battery: OrbitTech.BATTERIES[0],
+		chargeKwh: OrbitTech.BATTERIES[0].capacity
+	};
+	const OWNER_COMMERCIAL = -1;
 
 	function createPad() {
 		return { catapult: null, panel: null, battery: null, chargeKwh: 0 };
@@ -431,21 +453,184 @@
 		task.state = TASK_OFFERED;
 	}
 
+	/* --- EMC network ------------------------------------------------------- */
+
+	/*
+	 * A galaxy is the shared map of one career run: every actor (you and each
+	 * rival player) owns pads, and `launchPads[planet]` is the EMC each actor
+	 * actually fires from — its own, else the best rival EMC standing there,
+	 * else the commercial one. Sim, bots and benches read that array, so the
+	 * launch gate never has to know who owns what.
+	 */
+	function createGalaxy() {
+		return {
+			seed: 0,
+			actors: [],
+			period: new Float64Array(OrbitWorld.PLANETS),
+			phase: new Float64Array(OrbitWorld.PLANETS)
+		};
+	}
+
+	/* seeded turret: each planet's EMC turns once per 2…5 s of wall clock */
+	function resetGalaxy(galaxy, seed) {
+		galaxy.seed = seed >>> 0;
+		galaxy.actors.length = 0;
+		for (let p = 0; p < OrbitWorld.PLANETS; p++) {
+			galaxy.period[p] = CAREER.turretMinSec + CAREER.turretSpanSec *
+				(OrbitWorld.hashBits(galaxy.seed, p, SALT_TURRET) / 4294967296);
+			galaxy.phase[p] = TAU * (OrbitWorld.hashBits(galaxy.seed,
+				p + OrbitWorld.PLANETS, SALT_TURRET) / 4294967296);
+		}
+	}
+
+	function turretPeriod(galaxy, planet) {
+		return galaxy.period[planet];
+	}
+
+	/* barrel direction (radians) of the planet's EMC after `seconds` */
+	function turretAngle(galaxy, planet, seconds) {
+		return galaxy.phase[planet] + seconds / galaxy.period[planet] * TAU;
+	}
+
+	/* actor index of the best foreign EMC on `planet`, -1 when only the commercial one stands there */
+	function foreignOwner(galaxy, self, planet) {
+		let owner = OWNER_COMMERCIAL;
+		let tier = 0;
+		for (let i = 0; i < galaxy.actors.length; i++) {
+			const actor = galaxy.actors[i];
+			if (actor === self) continue;
+			const pad = actor.pads[planet];
+			if (pad.catapult === null || pad.catapult.tier <= tier) continue;
+			owner = i;
+			tier = pad.catapult.tier;
+		}
+		return owner;
+	}
+
+	/* the pad `career` fires from on `planet` */
+	function padAt(career, planet) {
+		if (career.pads[planet].catapult !== null) return career.pads[planet];
+		if (!career.galaxy) return COMMERCIAL_PAD;
+		const owner = foreignOwner(career.galaxy, career, planet);
+		return owner === OWNER_COMMERCIAL ? COMMERCIAL_PAD : career.galaxy.actors[owner].pads[planet];
+	}
+
+	/* owner index of that pad, -1 for the neutral commercial EMC */
+	function padOwner(career, planet) {
+		if (career.pads[planet].catapult !== null) return career.index;
+		if (!career.galaxy) return OWNER_COMMERCIAL;
+		return foreignOwner(career.galaxy, career, planet);
+	}
+
+	/* planet claim: the highest rail there wins, ties keep the older actor */
+	function claimOwner(galaxy, planet) {
+		let owner = OWNER_COMMERCIAL;
+		let tier = 0;
+		for (let i = 0; i < galaxy.actors.length; i++) {
+			const pad = galaxy.actors[i].pads[planet];
+			if (pad.catapult === null || pad.catapult.tier <= tier) continue;
+			owner = i;
+			tier = pad.catapult.tier;
+		}
+		return owner;
+	}
+
+	/* a build anywhere changes what every actor may fire from, so refresh all */
+	function refreshNetwork(galaxy) {
+		for (let i = 0; i < galaxy.actors.length; i++) {
+			const actor = galaxy.actors[i];
+			for (let p = 0; p < OrbitWorld.PLANETS; p++) actor.launchPads[p] = padAt(actor, p);
+		}
+	}
+
+	/* a solo career has no galaxy: its own launchPads must still mirror padAt */
+	function syncCareerNetwork(career) {
+		if (career.galaxy) {
+			refreshNetwork(career.galaxy);
+			return;
+		}
+		for (let p = 0; p < OrbitWorld.PLANETS; p++) career.launchPads[p] = padAt(career, p);
+	}
+
+	function joinGalaxy(career, galaxy) {
+		career.galaxy = galaxy;
+		career.index = galaxy.actors.indexOf(career);
+		if (career.index < 0) {
+			career.index = galaxy.actors.length;
+			galaxy.actors.push(career);
+		}
+		refreshNetwork(galaxy);
+	}
+
+	/* money the EMC owner charges for a launch at `speed`; 0 on your own pad */
+	function launchFee(career, planet, speed) {
+		const owner = padOwner(career, planet);
+		if (owner === career.index) return 0;
+		if (owner === OWNER_COMMERCIAL) return price(career, CAREER.commercialFee);
+		const pad = padAt(career, planet);
+		return price(career, CAREER.taxPerKwh *
+			OrbitTech.launchEnergy(career.ship.mass, pad.catapult, speed));
+	}
+
+	/*
+	 * Cheapest way off `planet` with a ship of `mass`: your own EMC is free, the
+	 * commercial rail charges its fee while it can lift the ship, and a build or
+	 * an evacuation is the fallback. Infinity when nothing can leave.
+	 */
+	function exitCostAt(career, planet, mass) {
+		if (planet < 0) return price(career, CAREER.evacFee);
+		if (career.pads[planet].catapult !== null) return 0;
+		const lift = OrbitTech.speedLimit(COMMERCIAL_PAD.battery.capacity,
+			mass, COMMERCIAL_PAD.catapult, career.forceScale);
+		const commercial = lift + 1e-9 >= GravitySim.SPEED_MIN
+			? price(career, CAREER.commercialFee) : Infinity;
+		const build = price(career, OrbitTech.CATAPULTS[0].buildCost);
+		const evac = price(career, CAREER.evacFee);
+		return Math.min(commercial, build, evac);
+	}
+
+	function exitCost(career) {
+		return exitCostAt(career, career.at, career.ship.mass);
+	}
+
+	/* rail gate plus the purse: a foreign EMC is only usable while its fee is covered */
+	function careerCanFire(career, sim, planet, speed) {
+		return sim.canFire(planet, speed) && career.ledger.purse + 1e-9 >= launchFee(career, planet, speed);
+	}
+
+	/* full-battery speed cap of the pad `career` fires from on `planet` */
+	function padLift(career, planet, forceScale) {
+		const pad = padAt(career, planet);
+		const cap = OrbitTech.speedLimit(pad.battery.capacity, career.ship.mass,
+			pad.catapult, forceScale === undefined ? career.forceScale : forceScale);
+		return cap;
+	}
+
+	/* deterministic rival seed: own task board, HQ and science hull per player */
+	function rivalSeed(seed, index) {
+		return OrbitWorld.hashBits(seed >>> 0, index + 1, SALT_RIVAL);
+	}
+
 	/* `ledger` is the purse shared with the page's score rows; pads and ship
 	 * are the objects a GravitySim gates on (setLaunchNetwork) */
 	function createCareer(ledger) {
 		const pads = [];
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) pads.push(createPad());
+		const launchPads = [];
+		for (let i = 0; i < OrbitWorld.PLANETS; i++) launchPads.push(COMMERCIAL_PAD);
 		const tasks = [];
 		for (let i = 0; i < BOARD_SIZE; i++) tasks.push(createTask());
 		return {
 			ledger: ledger,
 			seed: 0,
 			cheat: null,
+			galaxy: null,
+			index: 0,
 			hq: -1,
 			at: -1,
 			stranded: false,
 			pads: pads,
+			launchPads: launchPads,
 			padCount: 0,
 			light: new Float64Array(OrbitWorld.PLANETS),
 			ship: {
@@ -465,10 +650,14 @@
 			delivered: 0,
 			competitions: 0,
 			earned: 0,
+			taxPaid: 0,
+			taxEarned: 0,
 			lastEnergy: 0,
+			lastFee: 0,
 			lastReward: 0,
 			lastFuel: 0,
 			lastResearch: 0,
+			forceScale: 1,
 			ended: CAREER_OPEN
 		};
 	}
@@ -494,19 +683,41 @@
 		return OrbitWorld.hashBits(career.seed, career.serial, salt) / 4294967296;
 	}
 
-	/* HQ: a random planet with enough sunlight to run its starter pad */
-	function pickHq(seed, world) {
+	/* HQ: a random sunlit planet that no other player already calls home; when a
+	 * world has fewer sunlit planets than players, the brightest free one is next */
+	function pickHq(seed, world, used) {
 		let count = 0;
 		for (let i = 0; i < world.planetCount; i++) {
-			if (world.planetLight[i] >= CAREER.hqMinLight) count += 1;
+			if (world.planetLight[i] < CAREER.hqMinLight) continue;
+			if (used && used[i]) continue;
+			count += 1;
+		}
+		if (count === 0) {
+			let best = -1;
+			for (let i = 0; i < world.planetCount; i++) {
+				if (used && used[i]) continue;
+				if (best < 0 || world.planetLight[i] > world.planetLight[best]) best = i;
+			}
+			return best < 0 ? 0 : best;
 		}
 		let pick = OrbitWorld.hashBits(seed, 0, SALT_HQ) % count;
 		for (let i = 0; i < world.planetCount; i++) {
 			if (world.planetLight[i] < CAREER.hqMinLight) continue;
+			if (used && used[i]) continue;
 			if (pick === 0) return i;
 			pick -= 1;
 		}
 		return 0;
+	}
+
+	/* HQs already taken by the players of `galaxy` */
+	function hqMask(career) {
+		const used = new Uint8Array(OrbitWorld.PLANETS);
+		const actors = career.galaxy ? career.galaxy.actors : null;
+		for (let i = 0; actors && i < actors.length; i++) {
+			if (actors[i] !== career && actors[i].hq >= 0) used[actors[i].hq] = 1;
+		}
+		return used;
 	}
 
 	/* pad sunlight: orbit light above a floor so no world is dead, star brightness a mild modifier */
@@ -648,8 +859,9 @@
 			pad.chargeKwh = 0;
 		}
 		career.padCount = 0;
+		for (let i = 0; i < OrbitWorld.PLANETS; i++) career.launchPads[i] = COMMERCIAL_PAD;
 		fillLight(career, trade.world);
-		career.hq = pickHq(career.seed, trade.world);
+		career.hq = pickHq(career.seed, trade.world, hqMask(career));
 		career.at = career.hq;
 		career.stranded = false;
 		career.ship.hold = grant.ship.hold;
@@ -677,9 +889,13 @@
 		career.delivered = 0;
 		career.competitions = 0;
 		career.earned = 0;
+		career.taxPaid = 0;
+		career.taxEarned = 0;
 		career.lastEnergy = 0;
+		career.lastFee = 0;
 		career.lastReward = 0;
 		career.lastFuel = 0;
+		career.forceScale = 1;
 		career.ended = CAREER_OPEN;
 		refreshBoard(career, trade, 0);
 	}
@@ -715,21 +931,24 @@
 		sim.relocate(planet);
 	}
 
-	/* a career begins with the vessel on HQ and the sim gating on the network */
-	function startCareer(career, sim, seed, trade, cheat) {
+	/* a career begins with the vessel on HQ and the sim gating on the network;
+	 * every career in one run joins the same galaxy, so pads are shared ground */
+	function startCareer(career, sim, seed, trade, cheat, galaxy) {
+		career.galaxy = galaxy || null;
 		resetCareer(career, seed, trade, cheat);
-		sim.setLaunchNetwork(career.pads, career.ship);
+		career.forceScale = sim.forceScale;
+		if (galaxy) joinGalaxy(career, galaxy);
+		else syncCareerNetwork(career);
+		sim.setLaunchNetwork(career.launchPads, career.ship);
 		placeShip(career, sim, career.hq);
 	}
 
-	/* broke = negative purse, or stranded without the money for any way out
-	 * (a catapult where the vessel sits, or the evacuation) */
+	/* broke = negative purse, or no affordable way off the planet */
 	function checkEnded(career) {
 		if (career.ended !== CAREER_OPEN) return career.ended;
 		const purse = career.ledger.purse;
-		const evac = price(career, CAREER.evacFee);
-		const exit = career.at < 0 ? evac : Math.min(evac, price(career, OrbitTech.CATAPULTS[0].buildCost));
-		if (purse < -1e-9 || (career.stranded && purse + 1e-9 < exit)) career.ended = CAREER_BROKE;
+		if (purse < -1e-9 ||
+			(career.stranded && purse + 1e-9 < exitCost(career))) career.ended = CAREER_BROKE;
 		else if (career.cheat === null && career.padCount === career.pads.length) {
 			career.ended = CAREER_COMPLETE;
 		}
@@ -756,6 +975,7 @@
 			career.stranded = false;
 			refuelShip(career);
 		}
+		syncCareerNetwork(career);
 		checkEnded(career);
 		return true;
 	}
@@ -775,6 +995,7 @@
 			if (kind === OrbitTech.KIND_BATTERY) pad.chargeKwh = item.capacity;
 		}
 		career.ledger.purse -= cost;
+		syncCareerNetwork(career);
 		return true;
 	}
 
@@ -944,13 +1165,31 @@
 
 	/* --- flights ------------------------------------------------------- */
 
-	/* the pad battery pays for the launch; the purse does not */
+	/*
+	 * Your own EMC pays with its battery, a rival player's EMC charges its usage
+	 * tax (the energy of the shot, paid to that player's purse) and the
+	 * commercial EMC charges its flat fee to nobody in particular.
+	 */
 	function careerBeginFlight(career, sim) {
-		const pad = career.pads[sim.origin];
+		const planet = sim.origin;
+		const pad = padAt(career, planet);
+		const owner = padOwner(career, planet);
 		const energy = OrbitTech.launchEnergy(career.ship.mass, pad.catapult, sim.speed);
-		pad.chargeKwh = pad.chargeKwh > energy ? pad.chargeKwh - energy : 0;
+		let fee = 0;
+		if (owner === career.index) pad.chargeKwh = pad.chargeKwh > energy ? pad.chargeKwh - energy : 0;
+		else {
+			fee = launchFee(career, planet, sim.speed);
+			career.ledger.purse -= fee;
+			if (owner !== OWNER_COMMERCIAL) {
+				const host = career.galaxy.actors[owner];
+				host.ledger.purse += fee;
+				host.taxEarned += fee;
+				career.taxPaid += fee;
+			}
+		}
 		refuelShip(career);
-		career.lastEnergy = energy;
+		career.lastEnergy = owner === career.index ? energy : 0;
+		career.lastFee = fee;
 		career.lastReward = 0;
 		career.lastFuel = 0;
 		career.flights += 1;
@@ -1041,6 +1280,9 @@
 		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
 		createCareer, resetCareer, startCareer, checkEnded,
+		COMMERCIAL_PAD, OWNER_COMMERCIAL, createGalaxy, resetGalaxy, rivalSeed,
+		turretPeriod, turretAngle, padAt, padOwner, claimOwner, refreshNetwork,
+		launchFee, exitCost, exitCostAt, careerCanFire, padLift,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart,

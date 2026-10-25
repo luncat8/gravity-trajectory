@@ -70,19 +70,23 @@
 
 	/* Career is a solo economic controller, not another shared-market rival. */
 	const CAREER_ANGLES = 32;
-	const CAREER_FALLBACK_ANGLES = 72;
+	const CAREER_FALLBACK_SCALE = 2.25;
 	const CAREER_HORIZON = 45;
 	const CAREER_SPEED_FRACTIONS = [0.38, 0.55, 0.72, 0.86, 1];
 	const CAREER_TARGET_OFFSETS = 4;
 	const CAREER_TARGET_STEP = 0.035;
 	const CAREER_WAIT_SECONDS = 1800;
 	const CAREER_ENERGY_WAIT_COST = 0.04;
-	const CAREER_BUILT_PAD_VALUE = 1;
+	const CAREER_BUILT_PAD_VALUE = 2.5;
 	const CAREER_NETWORK_PAD_VALUE = 4;
 	const CAREER_SAME_PAD_VALUE = -1;
 	const CAREER_PICKUP_VALUE = 0.35;
 	const CAREER_REFIT_VALUE = 3;
-	const CAREER_PURSE_RESERVE = 6;
+	/* a career rival launches again after this much world time, and keeps this
+	 * much purse back for the commercial EMC's fee when shopping */
+	const CAREER_RIVAL_GAP = Math.round(8 / GravitySim.DT);
+	const CAREER_REBOOT_GAP = Math.round(30 / GravitySim.DT);
+	const CAREER_PURSE_RESERVE = GravityGame.CAREER.commercialFee;
 	const CAREER_LOADED_SPEED = 75;
 	const CAREER_BURN_ANGLES = 24;
 	const CAREER_BURN_FRACTIONS = [0.35, 0.68, 1];
@@ -93,6 +97,8 @@
 		off: {
 			name: GravityGame.BOT_OFF,
 			count: 0,
+			careerCount: 0,
+			careerAngles: 0,
 			angles: 0,
 			speeds: [],
 			horizon: 0,
@@ -104,6 +110,8 @@
 		easy: {
 			name: GravityGame.BOT_EASY,
 			count: 1,
+			careerCount: 1,
+			careerAngles: 16,
 			angles: 14,
 			speeds: [140, 220],
 			horizon: 12,
@@ -115,6 +123,8 @@
 		normal: {
 			name: GravityGame.BOT_NORMAL,
 			count: 1,
+			careerCount: 2,
+			careerAngles: 24,
 			angles: 24,
 			speeds: [115, 175, 245],
 			horizon: 18,
@@ -126,6 +136,8 @@
 		hard: {
 			name: GravityGame.BOT_HARD,
 			count: 2,
+			careerCount: 2,
+			careerAngles: 32,
 			angles: 32,
 			speeds: [105, 160, 215, 275],
 			horizon: 22,
@@ -140,12 +152,14 @@
 		return {
 			sim: new GravitySim(worldW, worldH),
 			ledger: GravityGame.createLedger(),
+			career: null,
 			shots: [],
 			steps: 0,
 			doneSteps: -1,
 			length: 0,
 			basePlanet: 0,
 			readyStep: 0,
+			idleTries: 0,
 			planReady: false,
 			planStep: -1,
 			planStamp: -1,
@@ -224,13 +238,13 @@
 
 		this.careerBest = {
 			origin: -1, body: -1, angle: 0, speed: 0, score: -Infinity,
-			taskPay: 0, padValue: 0, energy: 0, wait: 0, steps: 0
+			taskPay: 0, padValue: 0, energy: 0, wait: 0, fee: 0, steps: 0
 		};
 		this.careerBurnBest = {
 			body: -1, angle: 0, dv: 0, angleU: 0, dvU: 0,
 			score: -Infinity, coastScore: -Infinity, fuelKg: 0, steps: 0
 		};
-		this.careerEval = { taskPay: 0, padValue: 0, energy: 0, wait: 0 };
+		this.careerEval = { taskPay: 0, padValue: 0, energy: 0, wait: 0, fee: 0 };
 		this.careerBuilds = 0;
 		this.careerUpgrades = 0;
 		this.careerResearches = 0;
@@ -262,7 +276,10 @@
 		const changed = this.probe.gravityScale !== gravityScale ||
 			this.probe.forceScale !== forceScale;
 		this.probe.setScales(gravityScale, forceScale);
-		for (let i = 0; i < MAX_RIVALS; i++) this.rivals[i].sim.setScales(gravityScale, forceScale);
+		for (let i = 0; i < MAX_RIVALS; i++) {
+			this.rivals[i].sim.setScales(gravityScale, forceScale);
+			if (this.rivals[i].career) this.rivals[i].career.forceScale = forceScale;
+		}
 		this.player.sim.setScales(gravityScale, forceScale);
 		if (!changed) return;
 		/* a cached plan was searched in the old world */
@@ -324,6 +341,7 @@
 		actor.length = 0;
 		actor.basePlanet = basePlanet;
 		actor.readyStep = 0;
+		actor.idleTries = 0;
 		actor.planReady = false;
 		actor.planStep = -1;
 		actor.planStamp = -1;
@@ -351,13 +369,14 @@
 			this.rivalTypes[index] === GravityGame.PLAYER_BOT;
 	};
 
-	/* a solo rule (career) fields no rivals and never hands YOU to a bot */
+	/* a human-only rule (career) never hands YOU to a bot, but its level does
+	 * decide how many rival career players share the map */
 	GravityBot.prototype.reset = function (seed, rule, level, playerType, rivalTypes) {
 		this.seed = seed >>> 0;
 		this.rule = GravityGame.RULES[rule] ? rule : GravityGame.RULE_TOUR;
-		const solo = this.ruleSpec().solo;
-		this.level = LEVELS[level] && !solo ? level : GravityGame.BOT_OFF;
-		this.playerType = playerType === GravityGame.PLAYER_BOT && !solo
+		const humanOnly = Boolean(this.ruleSpec().humanOnly);
+		this.level = LEVELS[level] && !(this.ruleSpec().solo && humanOnly) ? level : GravityGame.BOT_OFF;
+		this.playerType = playerType === GravityGame.PLAYER_BOT && !humanOnly
 			? GravityGame.PLAYER_BOT : GravityGame.PLAYER_USER;
 		this.playerLevel = this.playerType === GravityGame.PLAYER_BOT
 			? (this.level === GravityGame.BOT_OFF ? GravityGame.BOT_NORMAL : this.level)
@@ -366,7 +385,7 @@
 			this.rivalTypes[i] = rivalTypes && rivalTypes[i] === GravityGame.PLAYER_USER
 				? GravityGame.PLAYER_USER : GravityGame.PLAYER_BOT;
 		}
-		this.count = this.spec().count;
+		this.count = this.ruleSpec().humanOnly ? this.spec().careerCount : this.spec().count;
 		this.jobActive = false;
 		this.jobRival = -1;
 		this.routeCandActor = -1;
@@ -386,6 +405,8 @@
 			const home = this.rivalTypes[i] === GravityGame.PLAYER_BOT
 				? (base0 + i * 13) % PLANETS : -1;
 			this.resetActor(r, home);
+			/* a career run leaves pads on the rival sims; a shared-market run must not inherit them */
+			r.sim.setLaunchNetwork(null, null);
 			r.routeOffset = 0.013 + i * 0.191;
 		}
 		let playerBase = this.playerType === GravityGame.PLAYER_BOT
@@ -406,6 +427,7 @@
 	};
 
 	GravityBot.prototype.rivalDone = function (rival) {
+		if (this.rule === GravityGame.RULE_CAREER) return true;
 		if (this.rule === GravityGame.RULE_ROUTE) return rival.routeDone;
 		const rSpec = this.ruleSpec();
 		if (rSpec.stopOnTour && rival.doneSteps >= 0) return true;
@@ -882,7 +904,7 @@
 
 	GravityBot.prototype.tickPlayer = function (runStep, market, budgetMs) {
 		if (this.playerType !== GravityGame.PLAYER_BOT ||
-			this.rule === GravityGame.RULE_ROUTE) return true;
+			this.rule === GravityGame.RULE_ROUTE || this.rule === GravityGame.RULE_CAREER) return true;
 		const actor = this.player;
 		if (!this.needsLaunch(actor, runStep)) return true;
 		if (this.planValid(actor, runStep, market)) return true;
@@ -901,6 +923,7 @@
 	/* background pre-thinking while the game clock is paused between flights */
 	GravityBot.prototype.tickIdle = function (runStep, market, budgetMs) {
 		if (this.rule === GravityGame.RULE_ROUTE) return this.tickRoute(budgetMs);
+		if (this.rule === GravityGame.RULE_CAREER) return true;
 		if (this.count === 0) return true;
 		if (this.jobActive) {
 			const r = this.actorAt(this.jobRival);
@@ -943,7 +966,8 @@
 	 * playback never stalls a frame; when `sync` is true, drains immediately.
 	 */
 	GravityBot.prototype.prepareStep = function (runStep, market, capSteps, budgetMs, sync) {
-		if (this.rule === GravityGame.RULE_ROUTE || this.count === 0) return true;
+		if (this.rule === GravityGame.RULE_ROUTE || this.rule === GravityGame.RULE_CAREER ||
+			this.count === 0) return true;
 		for (let i = 0; i < this.count; i++) {
 			if (!this.isRivalBot(i)) continue;
 			const rival = this.rivals[i];
@@ -963,7 +987,8 @@
 
 	/* advances all flying rivals by one exact DT step at `runStep` */
 	GravityBot.prototype.stepOne = function (runStep, market) {
-		if (this.rule === GravityGame.RULE_ROUTE || this.count === 0) return;
+		if (this.rule === GravityGame.RULE_ROUTE || this.rule === GravityGame.RULE_CAREER ||
+			this.count === 0) return;
 		const stage = this.spec().stageSteps;
 		const stopOnTour = this.ruleSpec().stopOnTour;
 		for (let i = 0; i < this.count; i++) {
@@ -998,6 +1023,7 @@
 	 * reflects where their run actually ends.
 	 */
 	GravityBot.prototype.settle = function (startRunStep, market, capSteps) {
+		if (this.rule === GravityGame.RULE_CAREER) return startRunStep;
 		if (this.rule === GravityGame.RULE_ROUTE) {
 			while (!this.routeDone()) this.tickRoute(1e9);
 			return startRunStep;
@@ -1035,6 +1061,22 @@
 		const isBot = index === PLAYER_INDEX
 			? this.playerType === GravityGame.PLAYER_BOT
 			: this.isRivalBot(index);
+		if (this.rule === GravityGame.RULE_CAREER) {
+			const career = r.career;
+			return {
+				purse: r.ledger.purse,
+				visited: career ? career.padCount : 0,
+				done: career ? career.ended !== GravityGame.CAREER_OPEN : false,
+				length: 0,
+				shots: career ? career.flights : 0,
+				steps: r.steps,
+				origin: career ? career.at : -1,
+				reason: END_OPEN,
+				body: -1,
+				ready: false,
+				planning: false
+			};
+		}
 		if (this.rule === GravityGame.RULE_ROUTE) {
 			return {
 				purse: r.ledger.purse,
@@ -1235,33 +1277,33 @@
 	GravityBot.prototype.careerBetweenFlights = function (career, sim) {
 		if (career.ended !== GravityGame.CAREER_OPEN) return 0;
 		let actions = 0;
-		if (career.stranded && career.at >= 0 && career.pads[career.at].catapult === null) {
-			const lastPad = career.padCount === PLANETS - 1;
-			const reserve = lastPad ? CAREER_PURSE_RESERVE : 0;
-			if (this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
-				OrbitTech.CATAPULTS[0], reserve)) actions += 1;
+		const evacPrice = careerPrice(career, GravityGame.CAREER.evacFee);
+		if (career.at < 0) {
+			if (career.ledger.purse + 1e-9 >= evacPrice && GravityGame.evacuate(career, sim)) actions += 1;
+			return actions;
 		}
-		if (career.stranded) {
-			const evacPrice = career.cheat === GravityGame.CHEAT_COMMUNISM ? 0 : GravityGame.CAREER.evacFee;
-			if (career.ledger.purse + 1e-9 >= evacPrice && GravityGame.evacuate(career, sim)) {
+		/* the commercial EMC lifts a parked ship for its fee, so a padless planet
+		 * is no dead end; only a load nothing here can lift needs a rescue */
+		if (GravityGame.padLift(career, career.at) + 1e-9 < GravitySim.SPEED_MIN) {
+			if (career.contract >= 0) {
+				GravityGame.dropContract(career);
 				actions += 1;
-			} else if (career.at >= 0 && career.pads[career.at].catapult === null &&
-				this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
-					OrbitTech.CATAPULTS[0], 0)) {
-				/* A final-pad reserve must never make the rescue policy deadlock. */
-				actions += 1;
-			}
+			} else if (this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
+				OrbitTech.CATAPULTS[0], 0)) actions += 1;
+			else if (career.ledger.purse + 1e-9 >= evacPrice &&
+				GravityGame.evacuate(career, sim)) actions += 1;
 		}
 		if (career.ended !== GravityGame.CAREER_OPEN) return actions;
 
-		/* a built pad whose full battery still cannot lift the current ship is a
-		 * dead end (heavy cargo, lowered force scale): repair it before shopping */
-		if (career.at >= 0) {
-			const here = career.pads[career.at];
-			const fullLimit = here.catapult === null ? Infinity : OrbitTech.speedLimit(
-				here.battery.capacity, career.ship.mass, here.catapult, sim.forceScale);
-			if (fullLimit < GravitySim.SPEED_MIN &&
-				this.careerUpgrade(career, sim, GravitySim.SPEED_MIN, 0)) actions += 1;
+		/* a pad whose full battery still cannot lift the current ship is a dead
+		 * end (heavy cargo, lowered force scale): repair it before shopping */
+		if (career.pads[career.at].catapult !== null &&
+			GravityGame.padLift(career, career.at) + 1e-9 < GravitySim.SPEED_MIN &&
+			this.careerUpgrade(career, sim, GravitySim.SPEED_MIN, 0)) actions += 1;
+
+		if (career.pads[career.at].catapult === null) {
+			if (this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
+				OrbitTech.CATAPULTS[0], 0)) actions += 1;
 		}
 
 		if (career.at === career.hq && career.ship.hold === OrbitTech.HOLDS[0]) {
@@ -1280,10 +1322,7 @@
 				if (this.careerUpgrade(career, sim, CAREER_LOADED_SPEED, CAREER_PURSE_RESERVE)) {
 					actions += 1;
 				}
-				const pad = career.pads[career.at];
-				const fullLimit = OrbitTech.speedLimit(pad.battery.capacity,
-					career.ship.mass, pad.catapult, sim.forceScale);
-				if (fullLimit < GravitySim.SPEED_MIN) {
+				if (GravityGame.padLift(career, career.at) + 1e-9 < GravitySim.SPEED_MIN) {
 					GravityGame.dropContract(career);
 					actions += 1;
 				}
@@ -1302,7 +1341,7 @@
 	};
 
 	GravityBot.prototype.careerEnergyWait = function (career, planet, energy) {
-		const pad = career.pads[planet];
+		const pad = GravityGame.padAt(career, planet);
 		const gain = OrbitTech.solarCharge(pad.panel, career.light[planet], CAREER_WAIT_SECONDS);
 		return gain > 0 ? energy / gain : Infinity;
 	};
@@ -1335,11 +1374,11 @@
 		/* landing back on the pad it left pays nothing and only drains the
 		 * battery: better to wait or shop than to fly a pointless bounce */
 		if (body === origin && taskPay <= 0) return -Infinity;
-		const pad = career.pads[body];
+		const own = career.pads[body];
 		let padValue;
 		if (body === origin) padValue = CAREER_SAME_PAD_VALUE;
-		else if (pad.catapult !== null) padValue = CAREER_BUILT_PAD_VALUE + (pad.catapult.tier - 1) * 0.1;
-		else padValue = CAREER_NETWORK_PAD_VALUE - careerPrice(career, OrbitTech.CATAPULTS[0]);
+		else if (own.catapult !== null) padValue = CAREER_BUILT_PAD_VALUE + (own.catapult.tier - 1) * 0.1;
+		else padValue = CAREER_NETWORK_PAD_VALUE - GravityGame.exitCostAt(career, body, career.ship.mass);
 		if (body === career.hq && career.at !== career.hq &&
 			career.ship.hold === OrbitTech.HOLDS[0] &&
 			career.ledger.purse + cashPay + 1e-9 >=
@@ -1347,10 +1386,14 @@
 			padValue += CAREER_REFIT_VALUE;
 		}
 
-		if (pad.catapult === null && body !== origin) {
-			const buildPrice = careerPrice(career, OrbitTech.CATAPULTS[0]);
-			const reserve = career.padCount === PLANETS - 1 ? CAREER_PURSE_RESERVE : 0;
-			if (career.ledger.purse + cashPay + 1e-9 < buildPrice + reserve) return -Infinity;
+		/* a planet without your own EMC is flyable as long as the purse covers
+		 * the way off it (commercial fee, a build or the evacuation) */
+		if (own.catapult === null && body !== origin) {
+			const exit = GravityGame.exitCostAt(career, body, career.ship.mass);
+			const build = careerPrice(career, OrbitTech.CATAPULTS[0]);
+			const reserve = career.padCount === PLANETS - 1 && exit >= build ? CAREER_PURSE_RESERVE : 0;
+			const margin = exit > 0 && Number.isFinite(exit) ? exit * 0.5 : 0;
+			if (career.ledger.purse + cashPay + 1e-9 < exit + reserve + margin) return -Infinity;
 		}
 		this.careerEval.taskPay = taskPay;
 		this.careerEval.padValue = padValue;
@@ -1363,9 +1406,11 @@
 		if (!Number.isFinite(base)) return -Infinity;
 		const energy = sim.launchEnergy(origin, speed);
 		const wait = this.careerEnergyWait(career, origin, energy);
+		const fee = GravityGame.launchFee(career, origin, speed);
 		this.careerEval.energy = energy;
 		this.careerEval.wait = wait;
-		return base - energy * wait * CAREER_ENERGY_WAIT_COST;
+		this.careerEval.fee = fee;
+		return base - energy * wait * CAREER_ENERGY_WAIT_COST - fee;
 	};
 
 	GravityBot.prototype.careerTarget = function (career) {
@@ -1383,7 +1428,7 @@
 	};
 
 	/* Plan only from the ship's built pad; every snapped speed is <= its live cap. */
-	GravityBot.prototype.careerPlan = function (career, sim, market, runStep, fallback) {
+	GravityBot.prototype.careerPlan = function (career, sim, market, runStep, fallback, angles) {
 		const best = this.careerBest;
 		best.origin = -1;
 		best.score = -Infinity;
@@ -1399,30 +1444,30 @@
 		this.probe.fieldRate = sim.fieldRate;
 		this.careerPlans += 1;
 		const target = this.careerTarget(career);
-		const refit = target === career.hq && career.at !== career.hq &&
-			career.ship.hold === OrbitTech.HOLDS[0];
-		const requiredBody = career.contract >= 0 || refit ? target : -1;
+		const requiredBody = career.contract >= 0 ? target : -1;
 		const targetAngle = target >= 0
 			? Math.atan2(sim.planetY[target] - sim.planetY[origin],
 				sim.planetX[target] - sim.planetX[origin]) : 0;
-		const angles = fallback ? CAREER_FALLBACK_ANGLES : CAREER_ANGLES;
+		const fan = angles > 0 ? angles : CAREER_ANGLES;
 		const horizon = fallback ? GravityGame.CAP_SECONDS : CAREER_HORIZON;
 		const extra = target >= 0 && target !== origin ? CAREER_TARGET_OFFSETS * 2 + 1 : 0;
 		let previousSpeedU = -1;
 		let bestAngleU = 0;
 		let bestSpeedU = 0;
 
-		for (let s = 0; s < CAREER_SPEED_FRACTIONS.length; s++) {
+		const angleCount = fallback ? Math.round(fan * CAREER_FALLBACK_SCALE) : fan;
+		const speedCount = fallback ? CAREER_SPEED_FRACTIONS.length : 4;
+		for (let s = 0; s < speedCount; s++) {
 			let speedU = Math.round(limit * CAREER_SPEED_FRACTIONS[s] * GravityGame.SPEED_STEPS);
 			if (speedU > capU) speedU = capU;
 			if (speedU < minU) speedU = minU;
 			if (speedU > capU || speedU === previousSpeedU) continue;
 			previousSpeedU = speedU;
 			const speed = GravityGame.speedOf(speedU);
-			for (let a = 0; a < angles + extra; a++) {
+			for (let a = 0; a < angleCount + extra; a++) {
 				let rawAngle;
-				if (a < angles) rawAngle = (a + 0.5) / angles * Math.PI * 2;
-				else rawAngle = targetAngle + (a - angles - CAREER_TARGET_OFFSETS) * CAREER_TARGET_STEP;
+				if (a < angleCount) rawAngle = (a + 0.5) / angleCount * Math.PI * 2;
+				else rawAngle = targetAngle + (a - angleCount - CAREER_TARGET_OFFSETS) * CAREER_TARGET_STEP;
 				const angleU = GravityGame.angleUnits(rawAngle);
 				const angle = GravityGame.angleOf(angleU);
 				this.probe.visited.set(sim.visited);
@@ -1443,6 +1488,7 @@
 				best.padValue = this.careerEval.padValue;
 				best.energy = this.careerEval.energy;
 				best.wait = this.careerEval.wait;
+				best.fee = this.careerEval.fee;
 				best.steps = this.probe.predSteps;
 				bestAngleU = angleU;
 				bestSpeedU = speedU;
@@ -1523,11 +1569,124 @@
 		return best;
 	};
 
+	/*
+	 * Career rivals: each one is a full `GravityGame` career on the shared map —
+	 * its own HQ, purse, ship, task board, EMC network and science hull — flown
+	 * by the same synchronous controller the benches use. They launch from
+	 * whatever EMC stands on their planet (own, a rival's, or the commercial
+	 * one), so usage tax flows both ways. The world clock only runs while a ship
+	 * flies, so a rival gets its turns during YOUR flight; after landing it sits
+	 * out CAREER_RIVAL_GAP world seconds before the next attempt.
+	 */
+	GravityBot.prototype.startCareers = function (galaxy, seed, trade) {
+		for (let i = 0; i < MAX_RIVALS; i++) {
+			const r = this.rivals[i];
+			r.steps = 0;
+			r.shots.length = 0;
+			r.readyStep = 0;
+			r.idleTries = 0;
+			if (i >= this.count) {
+				r.career = null;
+				continue;
+			}
+			r.sim.setScales(this.probe.gravityScale, this.probe.forceScale);
+			if (!r.career) r.career = GravityGame.createCareer(r.ledger);
+			GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(seed, i), trade, null, galaxy);
+			r.sim.fieldT = trade.t;
+			r.sim.fieldRate = this.probe.fieldRate;
+			r.basePlanet = r.career.hq;
+		}
+	};
+
+	/* one world step for every rival career: charge pads, fly, plan, launch */
+	GravityBot.prototype.stepCareer = function (runStep, market, trade, rate) {
+		for (let i = 0; i < this.count; i++) {
+			const r = this.rivals[i];
+			const career = r.career;
+			if (!career) continue;
+			GravityGame.careerAdvance(career, rate, 1);
+			if (r.sim.status === STATUS_FLYING) {
+				r.sim.stepOne();
+				GravityGame.stepHarvest(r.ledger, market, r.sim, runStep);
+				r.steps += 1;
+				if (r.sim.status === STATUS_FLYING) continue;
+				this.careerLand(r, trade, runStep);
+				continue;
+			}
+			if (career.ended === GravityGame.CAREER_BROKE) {
+				if (runStep >= r.readyStep) this.careerRestart(r, i, trade, runStep);
+				continue;
+			}
+			if (career.ended !== GravityGame.CAREER_OPEN || runStep < r.readyStep) continue;
+			this.careerLaunch(r, market, trade, rate, runStep);
+		}
+	};
+
+	GravityBot.prototype.careerLaunch = function (r, market, trade, rate, runStep) {
+		const career = r.career;
+		const sim = r.sim;
+		const angles = this.spec().careerAngles;
+		let plan = career.at < 0 ? null : this.careerPlan(career, sim, market, runStep, false, angles);
+		if (!plan && career.at >= 0) {
+			plan = this.careerPlan(career, sim, market, runStep, true, angles);
+		}
+		if (!plan) {
+			/* a park no trajectory leaves is a dead end: fly home after a couple of tries */
+			const evac = careerPrice(career, GravityGame.CAREER.evacFee);
+			if (career.stranded && r.idleTries >= 2 && career.ledger.purse + 1e-9 >= evac) {
+				r.idleTries = 0;
+				GravityGame.evacuate(career, sim);
+			} else {
+				r.idleTries += 1;
+			}
+			this.careerBetweenFlights(career, sim);
+			r.readyStep = runStep + CAREER_RIVAL_GAP;
+			return false;
+		}
+		r.idleTries = 0;
+		sim.fieldT = trade.t;
+		sim.fieldRate = rate;
+		sim.stepLimit = GravityGame.CAP_STEPS;
+		sim.limitReason = END_TIME;
+		r.shots.push(GravityGame.createShot(GravityGame.SRC_PLANETS, plan.origin,
+			GravityGame.angleUnits(plan.angle), GravityGame.speedUnits(plan.speed), GravityGame.NO_ABORT));
+		sim.launch(plan.origin, plan.angle, plan.speed);
+		GravityGame.careerBeginFlight(career, sim);
+		r.basePlanet = plan.origin;
+		return true;
+	};
+
+	GravityBot.prototype.careerLand = function (r, trade, runStep) {
+		GravityGame.careerEndFlight(r.career, r.sim, trade, runStep);
+		r.basePlanet = r.career.at;
+		r.readyStep = runStep + CAREER_RIVAL_GAP;
+		r.idleTries = 0;
+		this.careerBetweenFlights(r.career, r.sim);
+	};
+
+	/* a company that runs out of money is wound up and refinanced at its old HQ,
+	 * so the shared map never empties out of rival players */
+	GravityBot.prototype.careerRestart = function (r, index, trade, runStep) {
+		GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(this.seed, index), trade,
+			null, r.career.galaxy);
+		r.basePlanet = r.career.hq;
+		r.shots.length = 0;
+		r.readyStep = runStep + CAREER_REBOOT_GAP;
+		r.idleTries = 0;
+	};
+
+	GravityBot.prototype.careerReady = function (index) {
+		const career = this.rivals[index] ? this.rivals[index].career : null;
+		return Boolean(career) && career.ended === GravityGame.CAREER_OPEN;
+	};
+
 	GravityBot.LEVELS = LEVELS;
 	GravityBot.MAX_RIVALS = MAX_RIVALS;
 	GravityBot.PLAYER_INDEX = PLAYER_INDEX;
 	GravityBot.SLICE_CANDIDATES = SLICE_CANDIDATES;
 	GravityBot.CAREER_WAIT_SECONDS = CAREER_WAIT_SECONDS;
+	GravityBot.CAREER_RIVAL_GAP = CAREER_RIVAL_GAP;
+	GravityBot.CAREER_REBOOT_GAP = CAREER_REBOOT_GAP;
 	GravityBot.CAREER_PURSE_RESERVE = CAREER_PURSE_RESERVE;
 	GravityBot.CAREER_ENERGY_WAIT_COST = CAREER_ENERGY_WAIT_COST;
 

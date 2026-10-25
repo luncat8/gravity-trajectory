@@ -226,11 +226,13 @@
 		},
 		career: {
 			name: 'career · catapult network',
-			goal: 'Build a catapult on every planet.',
+			goal: 'Build a catapult on every planet; rival players build theirs.',
 			score: 'Purse. The career ends complete with all ' + PLANETS + ' catapults, or broke.',
 			detailLabel: 'Network',
-			detail: 'Only a built catapult launches, drawing its solar-charged battery; ship and cargo mass cap the speed. An impulse engine and fuel tank let you pause in flight (Space / P or drag from the ship) to spend fuel on mid-course burns. Landing without a catapult strands the ship: build one there or evacuate to HQ for a fee.',
-			controls: 'Drag from pad to launch · in flight: Space / P or drag ship to burn · Shift = fine · Enter = fire'
+			detail: 'Every planet carries an EMC, and the best rail there claims it. Your own EMC launches on its solar-charged battery; a rival player\'s EMC charges a usage tax that scales with the energy of the shot and pays them; the neutral commercial EMC-1 standing on every planet charges a flat ' +
+				GravityGame.CAREER.commercialFee.toFixed(2) + '. Landing without your own EMC is no dead end — use the commercial rail, build, or evacuate to HQ for ' +
+				GravityGame.CAREER.evacFee.toFixed(2) + '. An impulse engine and fuel tank let you pause in flight (Space / P or drag from the ship) for mid-course burns.',
+			controls: 'Drag from an EMC to aim · the rail fires when its turning barrel reaches the aim · in flight: Space / P or drag ship to burn · Shift = fine'
 		}
 	};
 
@@ -562,8 +564,11 @@
 	const game = { on: false, seed: 0, fixedRate: false, rule: RULE_TOUR, bot: BOT_NORMAL,
 		player: PLAYER_USER, cheat: null,
 		shots: [], steps: 0, clockSteps: 0, doneSteps: -1, length: 0,
-		market: GravityGame.createMarket(), money: GravityGame.createLedger() };
+		market: GravityGame.createMarket(), money: GravityGame.createLedger(),
+		galaxy: GravityGame.createGalaxy() };
 	game.career = GravityGame.createCareer(game.money);
+	/* a career launch is queued until the planet's EMC barrel reaches the aim */
+	const turret = { pending: false, body: -1, angle: 0, speed: 0, fireAt: 0 };
 	const slotTypes = [PLAYER_USER, PLAYER_BOT, PLAYER_BOT];
 	const rivalTypesArg = [PLAYER_BOT, PLAYER_BOT];
 	let activeSlot = 0;
@@ -1171,6 +1176,7 @@
 		gravity.setScales(gravityScale, forceScale);
 		helperProbe.setScales(gravityScale, forceScale);
 		bot.setScales(gravityScale, forceScale);
+		if (game.career) game.career.forceScale = forceScale;
 	}
 
 	function refreshExperimentUi() {
@@ -1329,8 +1335,43 @@
 		dirty = true;
 	}
 
+	/* the barrel must line up with the aimed direction before the rail fires */
+	function cancelTurret() {
+		turret.pending = false;
+	}
+
+	function queueTurretShot(now) {
+		const period = GravityGame.turretPeriod(game.galaxy, aimBody);
+		const gun = GravityGame.turretAngle(game.galaxy, aimBody, now / 1000);
+		let delta = aimAngle - gun;
+		delta -= Math.floor(delta / TAU) * TAU;
+		const wait = delta < 0.02 ? 0 : delta / TAU * period;
+		turret.pending = true;
+		turret.body = aimBody;
+		turret.angle = aimAngle;
+		turret.speed = aimSpeed;
+		turret.fireAt = now + wait * 1000;
+		careerNotice(wait > 0
+			? 'EMC turning · ' + wait.toFixed(1) + ' s to ' + planetName(aimBody)
+			: 'EMC aligned · ' + planetName(aimBody));
+		launchState = -1;
+		hudAt = -Infinity;
+	}
+
+	function tickTurret(now) {
+		if (!turret.pending || now < turret.fireAt) return;
+		turret.pending = false;
+		aimBody = turret.body;
+		aimAngle = turret.angle;
+		aimSpeed = turret.speed;
+		armed = true;
+		careerNotice('');
+		fire(NO_ABORT);
+	}
+
 	function cancelAim() {
 		const sim = activeSim();
+		cancelTurret();
 		aiming = false;
 		armed = false;
 		pressing = false;
@@ -1471,8 +1512,20 @@
 			return;
 		}
 		if (routeRule() && game.on) return;
+		if (turret.pending) {
+			cancelTurret();
+			careerNotice('launch cancelled');
+			launchState = -1;
+			hudAt = -Infinity;
+			return;
+		}
 		if (!armed || !canAimFrom(aimBody) || gameLocked()) return;
 		if (!activeSim().canFire(aimBody, aimSpeed)) return;
+		if (careerRule() && !GravityGame.careerCanFire(game.career, gravity, aimBody, aimSpeed)) return;
+		if (careerRule() && !replay.on) {
+			queueTurretShot(performance.now());
+			return;
+		}
 		fire(NO_ABORT);
 	}
 
@@ -1602,6 +1655,11 @@
 	/* why the armed shot cannot fire from its pad right now ('' when it can) */
 	function careerPadNote() {
 		if (!careerRule() || !armed || aimBody < 0) return '';
+		const career = game.career;
+		const fee = GravityGame.launchFee(career, aimBody, aimSpeed);
+		if (fee > 0 && career.ledger.purse + 1e-9 < fee) {
+			return 'EMC fee ' + fee.toFixed(2) + ' · purse ' + career.ledger.purse.toFixed(2);
+		}
 		if (gravity.canFire(aimBody, aimSpeed)) return '';
 		return 'pad ' + gravity.pads[aimBody].chargeKwh.toFixed(2) + ' kWh · shot ' +
 			gravity.launchEnergy(aimBody, aimSpeed).toFixed(2) + ' · max ' +
@@ -2293,6 +2351,8 @@
 	function clockDriverFlying() {
 		const slot0Flying = gravity.status === STATUS_FLYING;
 		if (replay.on) return slot0Flying;
+		/* career rivals fly on the same clock, so their flights drive it too */
+		if (careerRule() && rivalFlying(true)) return true;
 		if (slot0Flying && !slotIsBot(0)) return true;
 		if (rivalFlying(false)) return true;
 		if (hasLiveUser()) return false;
@@ -2380,7 +2440,7 @@
 			const isActive = isUser && active === s;
 			if (box) {
 				box.checked = isBot;
-				box.disabled = replay.on;
+				box.disabled = replay.on || careerRule();
 			}
 			if (!row) continue;
 			if (s > 0) row.hidden = s - 1 >= bot.count;
@@ -2412,11 +2472,9 @@
 			refreshPlaybackUi();
 		}
 		if (botLevel) game.bot = botLevel;
-		/* a solo rule (career) fields no rivals and is always flown by hand */
-		if (RULES[game.rule].solo) {
-			game.bot = BOT_OFF;
-			playerType = PLAYER_USER;
-		}
+		/* a human-only rule (career) is flown by hand; its rival setting picks
+		 * how many rival career players share the map instead */
+		if (RULES[game.rule].humanOnly) playerType = PLAYER_USER;
 		if (playerType) {
 			game.player = playerType;
 			slotTypes[0] = playerType;
@@ -2448,7 +2506,7 @@
 		bot.reset(seed, game.rule, game.bot, game.player, rivalTypesArg);
 		ensureValidActiveSlot(-1);
 		attachWorld();
-		if (careerRule()) GravityGame.startCareer(game.career, gravity, seed, tradeSim, game.cheat);
+		if (careerRule()) startCareerRun(seed);
 		else gravity.setLaunchNetwork(null, null);
 		careerFollow = true;
 		careerNotice('');
@@ -2456,6 +2514,16 @@
 		launchState = -1;
 		gameLinkEl.hidden = true;
 		refreshGameUi();
+	}
+
+	/* one galaxy per career run: YOU join first, then every rival career, so pads
+	 * and usage tax are shared ground from the first launch */
+	function startCareerRun(seed) {
+		GravityGame.resetGalaxy(game.galaxy, seed);
+		GravityGame.startCareer(game.career, gravity, seed, tradeSim, game.cheat, game.galaxy);
+		bot.startCareers(game.galaxy, seed, tradeSim);
+		game.career.forceScale = gravity.forceScale;
+		cancelTurret();
 	}
 
 	/* one flat row: lab stops the run, every other mode starts its rule at once */
@@ -2532,6 +2600,7 @@
 		const wasCareer = careerRule();
 		cancelCareerWait();
 		stopReplay();
+		cancelTurret();
 		clearBurnAim();
 		linkNote = '';
 		game.on = false;
@@ -2625,6 +2694,13 @@
 			return;
 		}
 		if (replay.on && replay.phase !== PHASE_FLY && now >= replay.until) advanceReplay(now);
+		/* the barrel turns in real time and the world holds still for that beat,
+		 * so the predicted trajectory fires exactly as it was aimed */
+		if (turret.pending) {
+			playAcc = 0;
+			tickTurret(now);
+			return;
+		}
 		const capSteps = ruleSpec().capSteps;
 		if (!clockDriverFlying()) {
 			playAcc = 0;
@@ -2755,7 +2831,8 @@
 				game.doneSteps = game.steps + gravity.visitStep;
 			}
 		}
-		bot.stepOne(game.clockSteps, game.market);
+		if (careerRule()) bot.stepCareer(game.clockSteps, game.market, tradeSim, scene.trade.speed);
+		else bot.stepOne(game.clockSteps, game.market);
 	}
 
 	function settleBotsWhenUsersDone() {
@@ -2832,7 +2909,8 @@
 		}
 		if (careerRule()) {
 			const career = game.career;
-			parts.push('pad −' + career.lastEnergy.toFixed(2) + ' kWh');
+			if (career.lastFee > 0) parts.push('EMC fee −' + career.lastFee.toFixed(2));
+			else parts.push('pad −' + career.lastEnergy.toFixed(2) + ' kWh');
 			if (career.lastFuel > 0) parts.push('fuel −' + career.lastFuel.toFixed(1) + ' kg');
 			if (career.lastReward > 0) parts.push('task +' + career.lastReward.toFixed(2));
 		} else {
@@ -3271,7 +3349,7 @@
 				GravityGame.MONEY_SHOTS + ' shots · ' + time;
 		}
 		if (careerRule()) {
-			const pads = game.career.padCount;
+			const pads = summary.visited;
 			return pads + (pads === 1 ? ' pad · ' : ' pads · ') +
 				summary.shots + (summary.shots === 1 ? ' shot · ' : ' shots · ') + time;
 		}
@@ -3280,6 +3358,9 @@
 	}
 
 	function rivalTagText() {
+		if (careerRule()) {
+			return bot.count === 1 ? '1 rival · flying' : bot.count + ' rivals · flying';
+		}
 		if (routeRule()) {
 			if (bot.routeThinking()) {
 				return 'planning ' + Math.round(bot.routeProgress() * 100) + ' %';
@@ -3315,7 +3396,7 @@
 		}
 		const flyingLength = gravity.status === STATUS_FLYING ? gravity.flightLength : 0;
 		return {
-			visited: gravity.visitedCount,
+			visited: careerRule() ? game.career.padCount : gravity.visitedCount,
 			done: game.doneSteps >= 0,
 			steps: scoreSteps(),
 			shots: game.shots.length,
@@ -3541,14 +3622,39 @@
 			(burnCap < remDv - 0.05 ? ' (burn ' + burnCap.toFixed(1) + ')' : '');
 	}
 
+	/* who owns which planet's EMC claim, counted per player */
+	function claimCounts() {
+		const counts = [0, 0, 0];
+		for (let i = 0; i < PLANETS; i++) {
+			const owner = GravityGame.claimOwner(game.galaxy, i);
+			if (owner >= 0 && owner < counts.length) counts[owner] += 1;
+		}
+		return counts;
+	}
+
+	function claimTag(owner) {
+		if (owner < 0) return 'commercial';
+		return owner === 0 ? 'YOU' : RIVAL_TAGS[owner - 1];
+	}
+
+	function claimLineHtml() {
+		const counts = claimCounts();
+		let text = 'EMC claims · YOU ' + counts[0];
+		for (let i = 1; i <= bot.count && i < counts.length; i++) {
+			text += ' · ' + RIVAL_TAGS[i - 1] + ' ' + counts[i];
+		}
+		return '<div class="careerLine dim">' + text + '</div>';
+	}
+
 	function padBlockHtml(career) {
 		const at = career.at;
 		if (at < 0) return '<div class="careerLine warn">lost in space · evacuate to HQ</div>';
 		const pad = career.pads[at];
 		const ship = career.ship;
 		const cargo = ship.cargoTons > 0 ? ' · cargo ' + ship.cargoTons + ' t' : '';
+		const claim = GravityGame.claimOwner(game.galaxy, at);
 		let html = '<div class="careerLine"><b>' + planetName(at) + (at === career.hq ? ' · HQ' : '') +
-			'</b> · ' + ship.mass.toFixed(1) + ' t' + cargo + '</div>';
+			'</b> · ' + ship.mass.toFixed(1) + ' t' + cargo + ' · ' + claimTag(claim) + ' EMC</div>';
 		html += '<div class="careerLine dim">ship ' + ship.hold.id + ' · ' +
 			(ship.engine ? ship.engine.id : 'no engine') + ' · ' + ship.tank.id +
 			shipImpulseNote(ship) + '</div>';
@@ -3557,13 +3663,21 @@
 			const cost = careerCost(career, first.buildCost);
 			const poor = purseTooSmall(career, cost);
 			const fresh = padCap(career, first, OrbitTech.BATTERIES[0]);
-			html += '<div class="careerLine warn">no catapult here · build one or evacuate</div>' +
+			const fee = careerCost(career, GravityGame.CAREER.commercialFee);
+			const lift = GravityGame.padLift(career, at);
+			const heavy = lift + 1e-9 < GravitySim.SPEED_MIN;
+			html += '<div class="careerLine warn">no EMC here · commercial rail · fee ' +
+				costText(fee) + '</div>' +
+				'<div class="careerLine dim">lifts ' + ship.mass.toFixed(1) + ' t to ' +
+				Math.round(lift) + ' px/s' + (heavy
+					? ' · too heavy · evacuate ' + costText(careerCost(career, GravityGame.CAREER.evacFee))
+					: ' · charged for you') + '</div>' +
 				'<div class="careerRow"><span class="careerBtns">' +
 				shopButton('build ' + first.id + ' here · ' + costText(cost), 'build', 'catapult', 0,
 					poor,
-					'build the first catapult on ' + planetName(at) + ' · full battery lifts ' +
-						ship.mass.toFixed(1) + ' t to ' + Math.round(fresh) + ' px/s', poor) +
-				capHtml(capArrowText(0, fresh)) + '</span></div>';
+					'build your own EMC-1 on ' + planetName(at) + ' · full battery lifts ' +
+						ship.mass.toFixed(1) + ' t to ' + Math.round(fresh) + ' px/s · claims the planet', poor) +
+				capHtml(capArrowText(0, fresh)) + '</span></div>' + claimLineHtml();
 			return html;
 		}
 		const limit = gravity.speedLimit(at);
@@ -3593,6 +3707,7 @@
 			html += '<div class="careerLine warn">cannot lift ' + ship.mass.toFixed(1) +
 				' t · buy a bigger rail below</div>';
 		}
+		html += claimLineHtml();
 		return html;
 	}
 
@@ -4261,14 +4376,16 @@
 		let html = '';
 		for (let i = 0; i < PLANETS; i++) {
 			const pad = career.pads[i];
-			const cap = padCap(career, pad.catapult, pad.battery);
-			/* the cap comes before the tier so a narrow picker clips the gear id,
-			 * not the answer to "can this pad lift the ship?" */
-			const note = pad.catapult === null ? 'no pad'
-				: cap < GravitySim.SPEED_MIN ? 'cannot lift'
+			/* the cap comes before the gear id so a narrow picker clips the tier,
+			 * not the answer to "can the ship leave this planet?" */
+			const cap = GravityGame.padLift(career, i);
+			const note = cap + 1e-9 < GravitySim.SPEED_MIN ? 'cannot lift'
 				: Math.round(cap) + ' px/s';
+			const gear = pad.catapult
+				? pad.catapult.id + ' · ' + claimTag(GravityGame.claimOwner(game.galaxy, i))
+				: 'commercial';
 			html += '<option value="' + i + '">' + planetName(i) + (i === career.hq ? ' ★' : '') +
-				' · ' + note + (pad.catapult ? ' · ' + pad.catapult.id : '') + '</option>';
+				' · ' + note + ' · ' + gear + '</option>';
 		}
 		careerPlanetEl.innerHTML = html;
 		careerPlanetEl.value = String(picked);
@@ -5760,6 +5877,44 @@
 		}
 	}
 
+	/*
+	 * Every player EMC is a claim ring around its planet plus the barrel that
+	 * turns with it, in the owner's colour (mint = YOU, the rival colours after
+	 * it). The neutral commercial rail shows only a dim barrel, so an unclaimed
+	 * planet still reads as "you can leave from here".
+	 */
+	function drawCareerEmc(now) {
+		const galaxy = game.galaxy;
+		if (galaxy.actors.length === 0) return;
+		const px = 1 / view.scale;
+		const seconds = now / 1000;
+		for (let p = 0; p < PLANETS; p++) {
+			const owner = GravityGame.claimOwner(galaxy, p);
+			const x = tradeSim.planetX[p];
+			const y = tradeSim.planetY[p];
+			const r = tradeSim.planetR[p];
+			const angle = GravityGame.turretAngle(galaxy, p, seconds);
+			const cos = Math.cos(angle);
+			const sin = Math.sin(angle);
+			const inner = r + 3.5 * px;
+			const outer = r + 13 * px;
+			ctx.lineWidth = owner < 0 ? 1.2 * px : 2 * px;
+			ctx.strokeStyle = owner < 0 ? 'rgba(150, 178, 204, 0.34)'
+				: owner === 0 ? MINT : RIVAL_COLOURS[owner - 1];
+			ctx.beginPath();
+			ctx.moveTo(x + cos * inner, y + sin * inner);
+			ctx.lineTo(x + cos * outer, y + sin * outer);
+			ctx.stroke();
+			if (owner < 0) continue;
+			ctx.beginPath();
+			ctx.arc(x, y, r + 6.5 * px, 0, TAU);
+			ctx.globalAlpha = 0.5;
+			ctx.lineWidth = 1.3 * px;
+			ctx.stroke();
+			ctx.globalAlpha = 1;
+		}
+	}
+
 	/* pad plate under the landed planet: catapult tier, battery charge, speed cap.
 	 * The string is cached so draw() stays 0-alloc; the key covers every input
 	 * of that text, including ship mass and the force scale. */
@@ -5873,6 +6028,7 @@
 		ctx.translate(view.offX, view.offY);
 		ctx.scale(view.scale, view.scale);
 		drawSystemVisits(now);
+		if (careerRule()) drawCareerEmc(now);
 		drawWells();
 		drawPortVelocities();
 		if (game.on && bot.count > 0) drawRivalsWorld(now);
@@ -6024,6 +6180,17 @@
 				: burnArmed
 				? 'Execute impulse burn and resume flight (Enter) · Escape cancels burn'
 				: 'Drag from the ship to aim a burn, or click / press Space to resume coasting';
+			return;
+		}
+		if (turret.pending) {
+			const left = Math.max(0, turret.fireAt - performance.now()) / 1000;
+			launchButton.hidden = false;
+			if (strandedActionsEl) strandedActionsEl.hidden = true;
+			launchButton.disabled = false;
+			launchButton.classList.remove('costly', 'exitWarning');
+			launchButton.textContent = 'gun · ' + left.toFixed(1) + ' s';
+			launchButton.title = 'The EMC turns its barrel to the aim · click or Esc to cancel';
+			launchState = -1;
 			return;
 		}
 		const route = routeRule();

@@ -29,12 +29,14 @@
 
 	/* --- planet gear --------------------------------------------------- */
 
+	/* an EMC claims the planet it stands on: the rail is the money maker, so the
+	 * whole ladder costs three times what a launch and a task pay */
 	const CATAPULTS = [
-		{ id: 'EMC-1', tier: 1, maxForce: 15, efficiency: 0.62, buildCost: 3.00 },
-		{ id: 'EMC-2', tier: 2, maxForce: 90, efficiency: 0.71, buildCost: 6.00 },
-		{ id: 'EMC-3', tier: 3, maxForce: 135, efficiency: 0.80, buildCost: 10.00 },
-		{ id: 'EMC-4', tier: 4, maxForce: 165, efficiency: 0.85, buildCost: 15.00 },
-		{ id: 'EMC-5', tier: 5, maxForce: 180, efficiency: 0.88, buildCost: 20.00 }
+		{ id: 'EMC-1', tier: 1, maxForce: 15, efficiency: 0.62, buildCost: 9.00 },
+		{ id: 'EMC-2', tier: 2, maxForce: 90, efficiency: 0.71, buildCost: 18.00 },
+		{ id: 'EMC-3', tier: 3, maxForce: 135, efficiency: 0.80, buildCost: 30.00 },
+		{ id: 'EMC-4', tier: 4, maxForce: 165, efficiency: 0.85, buildCost: 45.00 },
+		{ id: 'EMC-5', tier: 5, maxForce: 180, efficiency: 0.88, buildCost: 60.00 }
 	];
 
 	/* kW: SP-1 refills BAT-1 in ~90 flight-seconds of full sunlight at world rate ×1 */

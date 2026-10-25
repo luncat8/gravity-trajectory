@@ -163,7 +163,7 @@ check('copySpec emits the balance line; starter grant is the weak kit', () => {
 	assert.strictEqual(OrbitTech.findKind('catapult', 'EMC-9'), null);
 	const g = OrbitTech.starterGrant();
 	assert.ok(g.pad.catapult === EMC[0] && g.pad.panel === SP[0] && g.pad.battery === BAT[0]);
-	assert.ok(g.ship.hold === HOLD[0] && g.ship.engine === null && g.purse > CAREER.evacFee);
+	assert.ok(g.ship.hold === HOLD[0] && g.ship.engine === null && g.purse >= CAREER.evacFee);
 });
 
 /* §11 balance dump: every tech record as a paste-ready spec line */
@@ -334,7 +334,8 @@ check('career start: HQ pad only, sim gates on the network, link codec carries c
 	assert.strictEqual(GravityGame.decodeLink('#game=1&seed=42&rate=1&rule=career&cheat=free'), null);
 	assert.strictEqual(GravityGame.decodeLink('#game=1&seed=42&rate=1&rule=career&shots=p0.0.3aio'), null);
 	assert.strictEqual(GravityGame.decodeLink('#game=1&seed=42&rate=1&rule=career').cheat, null);
-	assert.ok(!GravityGame.RULES.tour.solo && GravityGame.RULES.career.solo);
+	assert.ok(!GravityGame.RULES.tour.solo && !GravityGame.RULES.career.solo &&
+		GravityGame.RULES.career.humanOnly);
 });
 
 check('career board: deliveries pair an exporting colony with a short one, pay below the evacuation fee', () => {
@@ -389,7 +390,8 @@ check('career flight: launch draws pad energy (no purse fee), landing elsewhere 
 	assert.ok(ledger.fee === 0 && ledger.last === ledger.shotGain);
 	assert.strictEqual(career.at, sim.endBody);
 	assert.ok(career.stranded && career.ended === GravityGame.CAREER_OPEN);
-	assert.ok(!sim.canLaunchFrom(career.at) && !sim.canFire(career.at, 50));
+	assert.ok(career.pads[career.at].catapult === null && sim.canLaunchFrom(career.at));
+	assert.ok(sim.canFire(career.at, GravitySim.SPEED_MIN));
 	assert.ok(!sim.canLaunchFrom(hq), 'the landed rule still binds');
 });
 
@@ -433,7 +435,7 @@ check('career evacuation: fee, ship back on HQ, broke when the purse cannot cove
 	assert.ok(again, 'HQ pad still has charge for a slow shot: limit ' + sim.speedLimit(career.hq));
 	assert.strictEqual(fly(w, career.hq, again.angle, again.speed), GravityGame.CAREER_OPEN);
 	assert.ok(career.stranded);
-	ledger.purse = Math.min(CAREER.evacFee, EMC[0].buildCost) - 0.5;
+	ledger.purse = CAREER.commercialFee - 0.5;
 	assert.strictEqual(GravityGame.checkEnded(career), GravityGame.CAREER_BROKE);
 	assert.strictEqual(career.ended, GravityGame.CAREER_BROKE);
 	/* a negative purse is broke anywhere */
@@ -455,6 +457,7 @@ check('career pads: solar refills on the world clock up to capacity, dim pads sl
 	GravityGame.careerAdvance(career, RATE, Math.round(600 / DT));
 	assert.ok(Math.abs(career.pads[hq].chargeKwh - BAT[0].capacity) < 1e-9, 'capped at capacity');
 	/* darkest pad vs HQ */
+	w.ledger.purse = 20;
 	let dim = 0;
 	for (let p = 1; p < PLANETS; p++) if (career.light[p] < career.light[dim]) dim = p;
 	assert.ok(GravityGame.buildGear(career, dim, 'catapult', EMC[0]));
@@ -668,9 +671,11 @@ check('career bulk upgrade: total before, every built pad after, unbuilt untouch
 	startCareer(w, 42);
 	const { career, ledger } = w;
 	const other = (career.hq + 5) % PLANETS;
+	ledger.purse = 20;
 	GravityGame.buildGear(career, other, 'catapult', EMC[0]);
 	const cost = GravityGame.bulkUpgradeCost(career, 'battery', BAT[2]);
 	assert.strictEqual(cost, 2 * BAT[2].buildCost);
+	ledger.purse = cost - 0.5;
 	assert.ok(!GravityGame.bulkUpgrade(career, 'battery', BAT[2]), 'cannot afford yet');
 	ledger.purse = cost;
 	assert.ok(GravityGame.bulkUpgrade(career, 'battery', BAT[2]));
@@ -1204,7 +1209,7 @@ check('prototypes: research unlocks a rung-placed engine record with career-wide
 	assert.ok(GravityGame.researchPoint(career, 'catapult', [100, 0.76], 'R2'));
 	const cat = GravityGame.prototypeById(career, 'catapult', 'R2');
 	assert.strictEqual(cat.tier, 2.22);
-	assert.strictEqual(cat.buildCost, 6.88);
+	assert.strictEqual(cat.buildCost, 20.64);
 	/* a restart clears the unlocked records along with the hull */
 	startCareer(w, 42);
 	assert.deepStrictEqual(GravityGame.prototypesOf(career, 'engine'), []);
