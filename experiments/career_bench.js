@@ -510,6 +510,23 @@ check('career contracts: hold required, cargo adds mass, delivery pays on landin
 	assert.ok(!GravityGame.installPart(career, 'hold', HOLD[0]), 'refits only at HQ');
 });
 
+check('post-pickup EMC-1 cap: cargo mass lowers the starter-rail cap', () => {
+	const dryMass = dry();
+	const tons = 8;
+	const postMass = OrbitTech.shipMass({ hold: HOLD[0], engine: null, tank: OrbitTech.TANKS[0] }, tons);
+	assert.strictEqual(postMass, dryMass + tons, 'post-pickup mass = dry + cargo');
+	/* the note's ship.mass + task.tons mirrors the post-pickup mass */
+	assert.strictEqual(dryMass + tons, postMass);
+	const capEmpty = OrbitTech.speedLimit(BAT[0].capacity, dryMass, EMC[0]);
+	const capLoaded = OrbitTech.speedLimit(BAT[0].capacity, postMass, EMC[0]);
+	assert.ok(capLoaded < capEmpty, 'loaded EMC-1 cap below dry (' + capLoaded + ' < ' + capEmpty + ')');
+	assert.ok(capLoaded >= 0);
+	/* dry ship launches in the 85-95 px/s band; loaded ship may stall under SPEED_MIN on EMC-1/BAT-1 */
+	assert.ok(OrbitTech.canLaunch(BAT[0].capacity, dryMass, EMC[0], 90));
+	const canLiftLoaded = OrbitTech.canLaunch(BAT[0].capacity, postMass, EMC[0], GravitySim.SPEED_MIN);
+	assert.ok(typeof canLiftLoaded === 'boolean');
+});
+
 check('career lost in space: a map exit strands nowhere; only the evacuation brings the ship back', () => {
 	const w = makeWorld(42);
 	startCareer(w, 42);

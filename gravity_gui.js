@@ -1099,6 +1099,27 @@
 		return '+' + rate.toFixed(2) + '/s';
 	}
 
+	/* While aiming in career at the pickup planet of an accepted delivery that
+	 * is not yet loaded, note the cargo that will be picked up and whether a
+	 * starter EMC-1 there can lift the newly loaded ship. Returns '' when there
+	 * is nothing to report. `postMass` is the ship once the cargo is aboard. */
+	function careerPickupNote(career, planet) {
+		if (!career || career.contract < 0) return '';
+		const task = career.tasks[career.contract];
+		if (task.state !== GravityGame.TASK_ACCEPTED || task.from !== planet) return '';
+		const postMass = career.ship.mass + task.tons;
+		const pad = career.pads[planet];
+		let cap;
+		if (pad.catapult === null || pad.catapult.id !== OrbitTech.CATAPULTS[0].id) {
+			/* a starter EMC-1 with a fresh BAT-1 at full charge */
+			cap = padCapMass(OrbitTech.CATAPULTS[0], OrbitTech.BATTERIES[0], postMass);
+		} else {
+			cap = padCapMass(pad.catapult, pad.battery, postMass);
+		}
+		return ' · loads ' + task.tons + ' t → ' + planetName(task.to) +
+			' · EMC-1: ' + Math.round(cap) + ' px/s';
+	}
+
 	function refreshAimLabel() {
 		const sim = activeSim();
 		if (burnAiming || burnArmed) {
@@ -1131,7 +1152,8 @@
 			: '';
 		aimLabel = Math.round(aimSpeed) + ' px/s · ' + deg.toFixed(1) + '°' +
 			(fine ? ' · fine' : '') +
-			(ceiling < SPEED_MAX - 1e-9 ? ' · max ' + Math.round(ceiling) : '') + visitNote;
+			(ceiling < SPEED_MAX - 1e-9 ? ' · max ' + Math.round(ceiling) : '') + visitNote +
+			(careerRule() ? careerPickupNote(game.career, aimBody) : '');
 	}
 
 	/* the drag maps all of GRIP_MAX onto SPEED_MIN…this planet's real ceiling:
