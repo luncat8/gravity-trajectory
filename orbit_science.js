@@ -42,11 +42,13 @@
 
 	/* One normalized research unit is a deliberate invention step, not one
 	 * arbitrary engineering unit: 10 kN thrust ≈ 1 t engine mass,
-	 * 30 kN rail force ≈ 0.10 efficiency, 50 kg fuel ≈ 0.5 t tank mass. */
+	 * 30 kN rail force ≈ 0.10 efficiency, 50 kg fuel ≈ 0.5 t tank mass,
+	 * 5 kWh battery capacity ≈ 0.001 leak per year. */
 	var METRIC_SCALE = {
 		engine: [0.1, 1.0],
 		catapult: [1 / 30, 10.0],
-		tank: [0.02, 2.0]
+		tank: [0.02, 2.0],
+		battery: [0.2, 1000.0]
 	};
 
 	/* Directional difficulty of extending the researched range: for each axis,
@@ -67,6 +69,10 @@
 		tank: [
 			{ below: 0.20, above: 1.00 },  // fuelCap kg: smaller easy, larger hard
 			{ below: 3.00, above: 0.20 }   // emptyMass t: lighter hard, heavier easy
+		],
+		battery: [
+			{ below: 0.20, above: 1.20 },  // capacity kWh: smaller easy, larger hard
+			{ below: 2.50, above: 0.20 }   // leak /y: tighter hard, leakier easy
 		]
 	};
 

@@ -68,7 +68,7 @@
 		tank: OrbitTech.TANKS,
 		engine: OrbitTech.ENGINES
 	};
-	/* §10 science: the three researchable 2-D parameter spaces and their slider
+	/* §10 science: the researchable 2-D parameter spaces and their slider
 	 * ranges; axis order matches the hull points seeded in GravityGame */
 	const SCIENCE_AXES = {
 		engine: [
@@ -82,6 +82,10 @@
 		tank: [
 			{ key: 'fuelCap', label: 'fuel kg', min: 20, max: 220, step: 5, digits: 0 },
 			{ key: 'emptyMass', label: 'mass t', min: 0.2, max: 2.0, step: 0.05, digits: 2 }
+		],
+		battery: [
+			{ key: 'capacity', label: 'capacity kWh', min: 1, max: 20, step: 0.5, digits: 1 },
+			{ key: 'leak', label: 'leak /y', min: 0.0002, max: 0.0012, step: 0.0001, digits: 4 }
 		]
 	};
 	/* near-hull defaults: the first invention costs ~base fee and fits the
@@ -89,18 +93,20 @@
 	const SCIENCE_DEFAULTS = {
 		engine: { thrust: 26, mass: 1.8 },
 		catapult: { maxForce: 100, efficiency: 0.76 },
-		tank: { fuelCap: 100, emptyMass: 1.0 }
+		tank: { fuelCap: 100, emptyMass: 1.0 },
+		battery: { capacity: 6, leak: 0.0005 }
 	};
 	const SCI_PLOT_COLS = 24;
 	const SCI_PLOT_ROWS = 16;
 	const SCI_PLOT = { width: 220, height: 158, left: 28, top: 6, right: 6, bottom: 30 };
 	const SCI_PLOT_COLORS = ['#16453f', '#185061', '#255c70', '#4f5b58', '#75573e', '#965038', '#b44438'];
 	let scienceFamily = OrbitTech.KIND_ENGINE;
-	const scienceValues = {
-		engine: { thrust: SCIENCE_DEFAULTS.engine.thrust, mass: SCIENCE_DEFAULTS.engine.mass },
-		catapult: { maxForce: SCIENCE_DEFAULTS.catapult.maxForce, efficiency: SCIENCE_DEFAULTS.catapult.efficiency },
-		tank: { fuelCap: SCIENCE_DEFAULTS.tank.fuelCap, emptyMass: SCIENCE_DEFAULTS.tank.emptyMass }
-	};
+	/* the slider draft of every family: a copy of the defaults, editable in place */
+	const scienceValues = {};
+	for (const family in SCIENCE_DEFAULTS) {
+		scienceValues[family] = {};
+		for (const key in SCIENCE_DEFAULTS[family]) scienceValues[family][key] = SCIENCE_DEFAULTS[family][key];
+	}
 	/* one press of wait runs the world clock: 30 world minutes of sunlight */
 	const CAREER_WAIT_MIN = 30;
 	const VIEW_SPACE = 'space';
@@ -3471,18 +3477,23 @@
 			: 'build ' + next.id + ' on ' + planetName(planet);
 		html += shopButton(next.id + ' · ' + costText(buildCost), 'build', row.kind, tierIndex(row.table, next),
 			career.ledger.purse + 1e-9 < buildCost, btnTitle);
-		let count = 0;
-		for (let i = 0; i < career.pads.length; i++) {
-			if (OrbitTech.upgrades(career.pads[i], row.kind, next)) count += 1;
-		}
-		if (count > 0) {
-			const bulkCost = GravityGame.bulkUpgradeCost(career, row.kind, next);
-			html += shopButton('all ' + count + ' · ' + costText(bulkCost), 'bulk', row.kind,
-				tierIndex(row.table, next), career.ledger.purse + 1e-9 < bulkCost,
-				'fit ' + next.id + ' to ' + count + ' built ' + row.label + (count === 1 ? '' : 's'));
-		}
+		html += bulkButtonHtml(career, row, next, 'data-tier="' + tierIndex(row.table, next) + '"');
 		html += copyButtonHtml(row, next);
 		return html + '</span></div>';
+	}
+
+	/* `all N`: one upgrade applied to every already-built facility that is below
+	 * it — a table tier and a researched prototype share the rule and the total */
+	function bulkButtonHtml(career, row, item, ref) {
+		let count = 0;
+		for (let i = 0; i < career.pads.length; i++) {
+			if (OrbitTech.upgrades(career.pads[i], row.kind, item)) count += 1;
+		}
+		if (count === 0) return '';
+		const cost = GravityGame.bulkUpgradeCost(career, row.kind, item);
+		return shopButtonRef('all ' + count + ' · ' + costText(cost), 'bulk', row.kind, ref,
+			career.ledger.purse + 1e-9 < cost,
+			'fit ' + item.id + ' to ' + count + ' built ' + row.label + (count === 1 ? '' : 's'));
 	}
 
 	/* what a part row leads with: hold tons, tank fuel kg, engine thrust kN */
@@ -3590,39 +3601,63 @@
 		return html + copyButtonHtml(row, proto) + '</span></div>';
 	}
 
-	/* a researched catapult is built on a pad under the tech tables' upgrade rule:
-	 * it needs an empty pad or a higher rung than the catapult already there */
-	function protoGearRowHtml(career, planet, proto) {
+	/* a researched pad upgrade is built under the tech tables' upgrade rule: a
+	 * free catapult slot, or a higher rung than what the pad already has (a
+	 * panel/battery needs a catapult first, like every other pad gear) */
+	function gearFits(pad, kind, item) {
+		if (kind === OrbitTech.KIND_CATAPULT) {
+			return pad.catapult === null || OrbitTech.upgrades(pad, kind, item);
+		}
+		return pad.catapult !== null && OrbitTech.upgrades(pad, kind, item);
+	}
+
+	function protoGearRowHtml(career, row, planet, proto) {
 		const pad = career.pads[planet];
-		const fits = pad.catapult === null || OrbitTech.upgrades(pad, OrbitTech.KIND_CATAPULT, proto);
+		const fits = gearFits(pad, row.kind, proto);
 		const cost = careerCost(career, proto.buildCost);
 		let html = '<div class="careerRow"><span class="careerKind">prototype</span>' +
 			'<span class="careerNow">' + proto.id + '</span>' +
-			capHtml(gearCapText(career, planet, pad, OrbitTech.KIND_CATAPULT, proto)) + '<span class="careerBtns">';
-		if (pad.catapult === proto) html += '<i>built</i>';
+			capHtml(gearCapText(career, planet, pad, row.kind, proto)) + '<span class="careerBtns">';
+		if (pad[row.kind] === proto) html += '<i>built</i>';
 		else {
-			html += shopButtonRef('build ' + proto.id + ' · ' + costText(cost), 'build', OrbitTech.KIND_CATAPULT,
+			const why = row.kind !== OrbitTech.KIND_CATAPULT && pad.catapult === null
+				? planetName(planet) + ' has no catapult yet'
+				: proto.id + ' is not above the ' + row.label + ' on ' + planetName(planet);
+			html += shopButtonRef('build ' + proto.id + ' · ' + costText(cost), 'build', row.kind,
 				'data-item="' + proto.id + '"', !fits || career.ledger.purse + 1e-9 < cost,
-				fits ? 'build ' + proto.id + ' on ' + planetName(planet)
-					: proto.id + ' is not above the catapult on ' + planetName(planet));
+				fits ? 'build ' + proto.id + ' on ' + planetName(planet) : why);
 		}
-		return html + copyButtonHtml({ kind: OrbitTech.KIND_CATAPULT, table: OrbitTech.CATAPULTS }, proto) +
-			'</span></div>';
+		html += bulkButtonHtml(career, row, proto, 'data-item="' + proto.id + '"');
+		return html + copyButtonHtml(row, proto) + '</span></div>';
+	}
+
+	/* researched records sit right under their standard ladder rows */
+	function protoGearRowsHtml(career, planet) {
+		let html = '';
+		for (let i = 0; i < GEAR_ROWS.length; i++) {
+			const list = GravityGame.prototypesOf(career, GEAR_ROWS[i].kind) || [];
+			for (let j = 0; j < list.length; j++) html += protoGearRowHtml(career, GEAR_ROWS[i], planet, list[j]);
+		}
+		return html;
+	}
+
+	function protoPartRowsHtml(career) {
+		let html = '';
+		for (let i = 0; i < PART_ROWS.length; i++) {
+			const list = GravityGame.prototypesOf(career, PART_ROWS[i].kind) || [];
+			for (let j = 0; j < list.length; j++) html += protoPartRowHtml(career, PART_ROWS[i], list[j]);
+		}
+		return html;
 	}
 
 	function shopBlockHtml(career) {
 		const planet = careerPickPlanet();
 		let html = '<div class="careerHead">pad on ' + planetName(planet) + '</div>';
 		for (let i = 0; i < GEAR_ROWS.length; i++) html += gearRowHtml(career, GEAR_ROWS[i], planet);
-		const catapults = GravityGame.prototypesOf(career, OrbitTech.KIND_CATAPULT);
-		for (let i = 0; i < catapults.length; i++) html += protoGearRowHtml(career, planet, catapults[i]);
+		html += protoGearRowsHtml(career, planet);
 		html += '<div class="careerHead">ship refit · HQ ' + planetName(career.hq) + '</div>';
 		for (let i = 0; i < PART_ROWS.length; i++) html += partRowHtml(career, PART_ROWS[i]);
-		const tanks = GravityGame.prototypesOf(career, OrbitTech.KIND_TANK);
-		for (let i = 0; i < tanks.length; i++) html += protoPartRowHtml(career, TANK_ROW, tanks[i]);
-		const engines = GravityGame.prototypesOf(career, OrbitTech.KIND_ENGINE);
-		for (let i = 0; i < engines.length; i++) html += protoPartRowHtml(career, ENGINE_ROW, engines[i]);
-		return html;
+		return html + protoPartRowsHtml(career);
 	}
 
 	/* --- §10 science: hull-distance research on custom parameter vectors --- */
@@ -3782,14 +3817,17 @@
 		return html;
 	}
 
+	/* one RU in engineering units: the inverse of the family's metric scale, so
+	 * the line follows the axes and needs no prose per family */
 	function scienceMetricText(family) {
+		const axes = SCIENCE_AXES[family];
+		const scale = OrbitScience.METRIC_SCALE[family];
 		const rate = (OrbitScience.K_DIST * (OrbitScience.TIER_SCALE[family] || 1)).toFixed(2);
-		const axes = family === OrbitTech.KIND_ENGINE
-			? '10 kN thrust = 1 t mass'
-			: family === OrbitTech.KIND_TANK
-			? '50 kg fuel = 0.5 t mass'
-			: '30 kN force = 0.10 efficiency';
-		return 'metric · ' + axes + ' = 1 RU · +' + rate + ' / RU of distance or frontier work';
+		let text = 'metric · 1 RU';
+		for (let i = 0; i < axes.length; i++) {
+			text += ' = ' + (scale ? Number((1 / scale[i]).toPrecision(3)) : '?') + ' ' + axes[i].label;
+		}
+		return text + ' · +' + rate + ' / RU of distance or frontier work';
 	}
 
 	/* the balance knobs themselves, so a player sees why one direction is dear */
@@ -3815,7 +3853,7 @@
 			parts[i] = axes[i].key + ': { below: ' + dirs[i].below.toFixed(2) +
 				', above: ' + dirs[i].above.toFixed(2) + ' }';
 		}
-		const scale = OrbitScience.METRIC_SCALE[family].map(v => Number(v.toFixed(4)));
+		const scale = (OrbitScience.METRIC_SCALE[family] || []).map(v => Number(v.toFixed(4)));
 		return 'frontier: ' + family.toUpperCase() + ' { ' + parts.join(', ') + ' }\n' +
 			'metric: scale [' + scale.join(', ') + '] RU/unit · k ' + OrbitScience.K_DIST.toFixed(2) +
 			' · tier ' + (OrbitScience.TIER_SCALE[family] || 1).toFixed(2);

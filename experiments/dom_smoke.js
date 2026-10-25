@@ -2188,7 +2188,7 @@ function protoOf(career, family, id) {
 	/* switch to tank family in science tab */
 	check(tBlock().includes('tank hull · 3 points'), 'tank hull seeded with 3 points');
 	tClick({ act: 'sciFamily', family: 'tank' });
-	check(/50 kg fuel = 0\.5 t mass = 1 RU/.test(tBlock()) &&
+	check(/metric · 1 RU = 50 fuel kg = 0\.5 mass t/.test(tBlock()) &&
 		/frontier · fuelCap ↓×0\.20 ↑×1\.00 · emptyMass ↓×3\.00 ↑×0\.20/.test(tBlock()),
 		'tank metric and frontier rates shown');
 	tClick({ act: 'sciCopy', family: 'tank' });
@@ -2213,6 +2213,71 @@ function protoOf(career, family, id) {
 	check(/back FT-2/.test(tShop()),
 		'integer-rung prototype offers back-refit to owned FT-2 on the same rung');
 	console.log('0.4.13 verified: 4 collapsible HUD panels · tank science family & frontier · R1 tank prototype refit & same-rung back-refit');
+}
+
+/* --- 0.4.14: battery research family, pad-wide prototype builds & bulk --- */
+{
+	const yEnv = loadPage({ search: '?rule=career&seed=42&rate=1' });
+	yEnv.runFrames(2, 16.0);
+	const yUi = yEnv.elements;
+	const yGame = yEnv.context.GravityGame;
+	const yTech = yEnv.context.OrbitTech;
+	const yCareer = yEnv.context.GravityScene.career;
+	const yBox = yUi.get('careerBox');
+	const yShop = () => yUi.get('careerShop').innerHTML;
+	const yBlock = () => yUi.get('careerScience').innerHTML;
+	function yClick(data) {
+		yEnv.fireElement(yBox, 'click', { target: { dataset: data } });
+	}
+
+	check(/battery hull · 5 points/.test(yBlock()), 'battery hull seeded from BAT-1..BAT-5');
+	yClick({ act: 'careerTab', tab: 'science' });
+	yClick({ act: 'sciFamily', family: 'battery' });
+	check(/metric · 1 RU = 5 capacity kWh = 0\.001 leak \/y/.test(yBlock()) &&
+		/frontier · capacity ↓×0\.20 ↑×1\.20 · leak ↓×2\.50 ↑×0\.20/.test(yBlock()),
+		'battery metric and frontier rates shown');
+	yClick({ act: 'sciCopy', family: 'battery' });
+	check(/^frontier: BATTERY \{ capacity: \{ below: 0\.20, above: 1\.20 \}, leak: \{ below: 2\.50, above: 0\.20 \} \}/.test(yEnv.clipboardText),
+		'battery frontier knobs copied: ' + yEnv.clipboardText);
+
+	/* a second pad first, so the bulk rule has a network to reach */
+	const hq = yCareer.hq;
+	const far = (hq + 5) % yCareer.pads.length;
+	yCareer.ledger.purse = 200;
+	yEnv.setValue('careerPlanet', far);
+	yClick({ act: 'build', kind: 'catapult', tier: '0' });
+	check(yCareer.pads[far].catapult && yCareer.pads[far].catapult.id === 'EMC-1' &&
+		yCareer.pads[far].battery === yTech.BATTERIES[0], 'second pad built on ' + far);
+
+	/* the default battery point is the BAT-3 rung: 6 kWh, 0.0005 leak */
+	yClick({ act: 'careerTab', tab: 'science' });
+	yClick({ act: 'sciAccept', kind: 'battery' });
+	const protoBattery = protoOf(yCareer, 'battery', 'R1');
+	check(protoBattery && protoBattery.capacity === 6 && protoBattery.leak === 0.0005 &&
+		protoBattery.tier === 3, 'battery prototype R1 unlocked on the BAT-3 rung');
+	check(/battery hull · 6 points · R1/.test(yBlock()), 'hull summary names the battery prototype');
+
+	/* the researched battery is pad gear: built per planet, or on every pad at once */
+	yClick({ act: 'careerTab', tab: 'operations' });
+	yEnv.setValue('careerPlanet', hq);
+	check(/data-act="build" data-kind="battery" data-item="R1"/.test(yShop()),
+		'battery prototype build button on the pad');
+	check(/data-act="bulk" data-kind="battery" data-item="R1"[^>]*>all 2 · /.test(yShop()),
+		'battery prototype offers a network-wide upgrade: ' + /data-act="bulk"[^>]*>all[^<]*/.exec(yShop())[0]);
+	yClick({ act: 'bulk', kind: 'battery', item: 'R1' });
+	check(yCareer.pads[hq].battery === protoBattery && yCareer.pads[far].battery === protoBattery,
+		'bulk fitted the researched battery to every built pad');
+	check(Math.abs(yCareer.pads[far].chargeKwh - protoBattery.capacity) < 1e-9,
+		'a bulk battery upgrade arrives charged');
+	check(yCareer.ship.mass === yTech.shipMass(yCareer.ship, 0), 'a pad battery never adds ship mass');
+	check(/<i>built<\/i>/.test(yShop()) && !/data-act="build" data-kind="battery" data-item="R1"/.test(yShop()),
+		'a fitted prototype is marked instead of offered');
+
+	/* a battery is pad gear like a panel: it needs a catapult on that planet */
+	yEnv.setValue('careerPlanet', (hq + 3) % yCareer.pads.length);
+	check(/<button[^>]*data-act="build" data-kind="battery" data-item="R1"[^>]*disabled/.test(yShop()),
+		'a battery prototype is not offered on a catapult-less planet');
+	console.log('0.4.14 verified: battery science family & frontier · R1 pad battery prototype · network-wide bulk build · no ship mass');
 }
 
 console.log('paint calls', {

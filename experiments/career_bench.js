@@ -1205,5 +1205,62 @@ check('tank science & prototypes: seeded FT-1..FT-3 range, directional surcharge
 	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_TANK, OrbitTech.TANKS[0]), 'free swap back to FT-0');
 });
 
+check('science families: one table drives seeding, prototypes and the frontier data', () => {
+	for (const spec of GravityGame.SCIENCE_FAMILIES) {
+		assert.ok(OrbitScience.METRIC_SCALE[spec.kind], spec.kind + ' needs a metric scale');
+		const dim = spec.params(spec.table[0]).length;
+		assert.strictEqual(dim, 2, spec.kind + ' is a 2-D slider plot');
+		assert.strictEqual(OrbitScience.FRONTIER[spec.kind].length, dim, spec.kind + ' frontier row');
+		assert.ok(typeof spec.record === 'function', spec.kind + ' record builder');
+	}
+	assert.deepStrictEqual(GravityGame.SCIENCE_KINDS,
+		[OrbitTech.KIND_ENGINE, OrbitTech.KIND_CATAPULT, OrbitTech.KIND_TANK, OrbitTech.KIND_BATTERY]);
+});
+
+check('battery science: seeded BAT-1..BAT-5 range, leak direction, and a pad-wide prototype', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career } = w;
+	assert.strictEqual(OrbitScience.statsHull(career.science, 'battery').n, BAT.length);
+	const range = OrbitScience.rangeHull(career.science, 'battery');
+	assert.deepStrictEqual(range.min, [BAT[0].capacity, BAT[BAT.length - 1].leak]);
+	assert.deepStrictEqual(range.max, [BAT[BAT.length - 1].capacity, BAT[0].leak]);
+	/* 1 RU = 5 kWh capacity = 0.001 leak: a tighter tank pays ↓×2.50, a bigger one ↑×1.20 */
+	const tight = GravityGame.researchPreview(career, 'battery', [10, 0.0002]);
+	const leaky = GravityGame.researchPreview(career, 'battery', [10, 0.0011]);
+	assert.ok(Math.abs(tight.frontier - 0.25) < 1e-12, 'tight leak frontier ' + tight.frontier);
+	assert.ok(Math.abs(leaky.frontier - 0.02) < 1e-12, 'leaky frontier ' + leaky.frontier);
+	assert.ok(tight.frontier > 12 * leaky.frontier, 'a tighter seal is the dear direction');
+	/* equal 0.1 RU of capacity overshoot: above the range is dear, below is cheap */
+	const above = GravityGame.researchPreview(career, 'battery', [16.5, 0.0006]);
+	const below = GravityGame.researchPreview(career, 'battery', [1.0, 0.0006]);
+	assert.ok(Math.abs(above.frontier - 0.12) < 1e-12 && Math.abs(below.frontier - 0.02) < 1e-12);
+	assert.ok(above.cost > below.cost, 'more capacity costs more than less at equal overshoot');
+	const big = GravityGame.researchPreview(career, 'battery', [20, 0.0006]);
+	assert.ok(Math.abs(big.frontier - 0.96) < 1e-12, 'capacity overshoot ' + big.frontier);
+	const small = GravityGame.researchPreview(career, 'battery', [1, 0.0006]);
+	assert.ok(big.cost > small.cost, 'a bigger battery costs more than a smaller one');
+	/* the invented record lands on the BAT ladder rung of its capacity */
+	career.ledger.purse = 100;
+	assert.ok(GravityGame.researchPoint(career, 'battery', [12, 0.0005], 'R1'));
+	const proto = GravityGame.prototypeById(career, 'battery', 'R1');
+	assert.ok(proto && proto.capacity === 12 && proto.leak === 0.0005);
+	assert.ok(proto.tier > BAT[3].tier && proto.tier < BAT[4].tier, 'rung ' + proto.tier);
+	assert.ok(proto.buildCost > BAT[3].buildCost && proto.buildCost < BAT[4].buildCost);
+	/* the prototype is pad gear: built on every built pad at once, never on the ship */
+	const mass = career.ship.mass;
+	const hq = career.hq;
+	const far = (hq + 5) % career.pads.length;
+	assert.ok(GravityGame.buildGear(career, far, OrbitTech.KIND_CATAPULT, EMC[0]));
+	assert.strictEqual(GravityGame.bulkUpgradeCost(career, 'battery', proto), 2 * proto.buildCost);
+	assert.ok(GravityGame.bulkUpgrade(career, 'battery', proto));
+	assert.strictEqual(career.pads[hq].battery, proto);
+	assert.strictEqual(career.pads[far].battery, proto);
+	assert.strictEqual(career.pads[far].chargeKwh, proto.capacity, 'a fresh battery arrives charged');
+	assert.strictEqual(career.ship.mass, mass, 'pad batteries never add ship mass');
+	assert.strictEqual(GravityGame.bulkUpgradeCost(career, 'battery', proto), 0, 'nothing left to upgrade');
+	assert.ok(!GravityGame.buildGear(career, far, OrbitTech.KIND_BATTERY, proto), 'never a downgrade');
+});
+
 console.log(failures === 0 ? 'CAREER BENCH OK' : 'CAREER BENCH FAILED ' + failures);
 process.exit(failures === 0 ? 0 : 1);

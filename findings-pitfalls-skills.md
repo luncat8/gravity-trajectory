@@ -348,3 +348,19 @@ interpolated from the seeded rungs by the record's defining value
 read off that same rung. Keep the tier ≥ 0.5 so the record still outranks
 the empty slot. Shop buttons then name a record by table tier or by id
 (`data-item`), resolved once by `shopRecord` for both the act and the copy.
+
+## one table, then derive the prose
+
+A feature that ships as "one entry per family" tends to grow a hand-kept list
+per consumer: the kind array, the per-family seed loop, the prototype
+container, the record-builder ternary, the GUI defaults. Each copy is a place
+where a new family silently half-works (empty prototype list, unseeded hull).
+Keep one spec table (`SCIENCE_FAMILIES`: ladder table, axis order, record
+builder) and derive the rest with a loop; then a bench check can assert
+completeness (`every spec has a metric scale, 2-D axes, a frontier row`) so a
+half-added family fails the suite instead of the panel.
+
+The same rule applies to text that restates numbers: `1 RU = 10 thrust kN`
+was a per-family sentence that says exactly `1 / METRIC_SCALE[family][axis]`.
+Deriving it keeps the readout honest after a retune and needs no edit for a new
+family, and duplicated prose is the copy nobody updates.

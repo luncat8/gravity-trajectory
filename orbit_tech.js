@@ -277,6 +277,14 @@
 		};
 	}
 
+	function batteryRecord(id, capacity, leak) {
+		const tier = round2(Math.max(RUNG_MIN, interpolate(BATTERIES, 'capacity', capacity, 'tier')));
+		return {
+			id: id, tier: tier, capacity: capacity, leak: leak,
+			buildCost: round2(interpolate(BATTERIES, 'tier', tier, 'buildCost'))
+		};
+	}
+
 	function starterGrant() {
 		return {
 			purse: 6.00,
@@ -305,7 +313,7 @@
 		launchEnergy, maxSpeed, speedLimit, canLaunch,
 		solarCharge, batteryLeak, impulseDeltaV, impulseFuel, burnMaxDeltaV, burnLimit,
 		upgrades, bulkUpgradeCost, interpolate,
-		engineRecord, catapultRecord, tankRecord, starterGrant, copySpec
+		engineRecord, catapultRecord, tankRecord, batteryRecord, starterGrant, copySpec
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = OrbitTech;

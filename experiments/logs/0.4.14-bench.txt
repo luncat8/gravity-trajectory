@@ -1,0 +1,42 @@
+0.4.14 — fourth science family (battery, pad gear) + one SCIENCE_FAMILIES table
+
+node --check *.js experiments/*.js                          OK
+git diff --check                                            OK
+
+node experiments/gravity_bench.js      BENCH OK
+node experiments/colony_bench.js       COLONY BENCH OK
+node experiments/game_bench.js         GAME BENCH OK
+node experiments/route_bench.js        ROUTE BENCH OK
+node experiments/bot_bench.js          BOT BENCH OK
+node experiments/career_bench.js       CAREER BENCH OK (50 checks)
+node experiments/career_bot_bench.js   CAREER BOT BENCH OK (identical to 0.4.13)
+node experiments/dom_smoke.js          SMOKE OK
+
+career_bench frontier dump (balance knobs, now four families)
+  frontier: ENGINE axis0 { below: 0.20, above: 0.90 }
+  frontier: ENGINE axis1 { below: 3.00, above: 0.20 }
+  frontier: CATAPULT axis0 { below: 0.20, above: 1.00 }
+  frontier: CATAPULT axis1 { below: 0.30, above: 2.50 }
+  frontier: TANK axis0 { below: 0.20, above: 1.00 }
+  frontier: TANK axis1 { below: 3.00, above: 0.20 }
+  frontier: BATTERY axis0 { below: 0.20, above: 1.20 }
+  frontier: BATTERY axis1 { below: 2.50, above: 0.20 }
+
+battery science & prototype checks
+  seeded BAT-1..BAT-5 hull (5 points, range [1.5..16 kWh, 0.0003..0.001 leak])
+  battery (10, 0.0002) tight seal: frontier 0.25 RU at 0.1 RU overshoot
+  battery (10, 0.0011) leaky     : frontier 0.02 RU (↓x2.50 vs ↑x0.20)
+  battery (16.5, 0.0006) above range frontier 0.12 RU > below (1.0) 0.02 RU
+  batteryRecord (12, 0.0005) rung 4.33 between BAT-4 (9.00) and BAT-5 (15.00)
+  bulk upgrade to the prototype: 2 x 10.98, every built pad charged to 12 kWh,
+  ship mass unchanged, second pass costs 0
+
+dom_smoke 0.4.14
+  battery hull 5 points -> 6 after R1 on the BAT-3 rung
+  metric line: 1 RU = 5 capacity kWh = 0.001 leak /y (derived from METRIC_SCALE)
+  frontier line + copy knobs: frontier: BATTERY { capacity: {...}, leak: {...} }
+  shop: build R1 on the selected pad, all 2 ... on the network, disabled without a catapult
+  bulk click -> both pads on R1, far pad charge 6 kWh, ship mass 10.0 t
+
+not verified: layout_check.js (no Chromium / CHROME_PATH in this sandbox); the
+four-button family row wraps at 390 px, needs one visual look.

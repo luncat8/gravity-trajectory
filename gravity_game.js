@@ -527,31 +527,56 @@
 		pad.chargeKwh = battery.capacity;
 	}
 
-	/* researchable parameter spaces, in the axis order the science panel sliders use */
-	const SCIENCE_KINDS = [OrbitTech.KIND_ENGINE, OrbitTech.KIND_CATAPULT, OrbitTech.KIND_TANK];
+	/* Researchable parameter spaces in one table: `params` gives the axes in the
+	 * order the science panel sliders use, `record` turns an invented point back
+	 * into a ladder record. A new family is one entry here plus its slider axes
+	 * in gravity_gui.js; the hull seeding, prototype lists and the accept gate
+	 * all follow. The tier-0 empty slot of a part table is not a known tradeoff,
+	 * so `seedScience` skips it (FT-0 would put the tank range at zero). */
+	const SCIENCE_FAMILIES = [
+		{
+			kind: OrbitTech.KIND_ENGINE, table: OrbitTech.ENGINES,
+			params: e => [e.thrust, e.mass], record: OrbitTech.engineRecord
+		},
+		{
+			kind: OrbitTech.KIND_CATAPULT, table: OrbitTech.CATAPULTS,
+			params: c => [c.maxForce, c.efficiency], record: OrbitTech.catapultRecord
+		},
+		{
+			kind: OrbitTech.KIND_TANK, table: OrbitTech.TANKS,
+			params: t => [t.fuelCap, t.emptyMass], record: OrbitTech.tankRecord
+		},
+		{
+			kind: OrbitTech.KIND_BATTERY, table: OrbitTech.BATTERIES,
+			params: b => [b.capacity, b.leak], record: OrbitTech.batteryRecord
+		}
+	];
+	const SCIENCE_KINDS = SCIENCE_FAMILIES.map(f => f.kind);
 
+	function scienceFamilyOf(kind) {
+		for (let i = 0; i < SCIENCE_FAMILIES.length; i++) {
+			if (SCIENCE_FAMILIES[i].kind === kind) return SCIENCE_FAMILIES[i];
+		}
+		return null;
+	}
+
+	/* one prototype list per family, so a new family needs no edit here */
 	function newPrototypes() {
-		return { engine: [], catapult: [], tank: [] };
+		const out = {};
+		for (let i = 0; i < SCIENCE_KINDS.length; i++) out[SCIENCE_KINDS[i]] = [];
+		return out;
 	}
 
 	/* the tech tree itself is discovered science: its items seed the hull so the
 	 * first custom inventions pay only the distance beyond known tradeoffs */
 	function seedScience(career) {
 		career.science = OrbitScience.createHull();
-		for (let i = 0; i < OrbitTech.ENGINES.length; i++) {
-			const e = OrbitTech.ENGINES[i];
-			OrbitScience.acceptHull(career.science, OrbitTech.KIND_ENGINE, [e.thrust, e.mass], e.id);
-		}
-		for (let i = 0; i < OrbitTech.CATAPULTS.length; i++) {
-			const c = OrbitTech.CATAPULTS[i];
-			OrbitScience.acceptHull(career.science, OrbitTech.KIND_CATAPULT,
-				[c.maxForce, c.efficiency], c.id);
-		}
-		for (let i = 0; i < OrbitTech.TANKS.length; i++) {
-			const t = OrbitTech.TANKS[i];
-			if (t.tier > 0) {
-				OrbitScience.acceptHull(career.science, OrbitTech.KIND_TANK,
-					[t.fuelCap, t.emptyMass], t.id);
+		for (let i = 0; i < SCIENCE_FAMILIES.length; i++) {
+			const spec = SCIENCE_FAMILIES[i];
+			for (let j = 0; j < spec.table.length; j++) {
+				const item = spec.table[j];
+				if (item.tier <= 0) continue;
+				OrbitScience.acceptHull(career.science, spec.kind, spec.params(item), item.id);
 			}
 		}
 	}
@@ -574,12 +599,9 @@
 
 	/* research unlocks its point as a record on the family's ladder (owned, like a part) */
 	function unlockPrototype(career, family, params, id) {
-		const record = family === OrbitTech.KIND_ENGINE
-			? OrbitTech.engineRecord(id, params[0], params[1])
-			: family === OrbitTech.KIND_TANK
-			? OrbitTech.tankRecord(id, params[0], params[1])
-			: OrbitTech.catapultRecord(id, params[0], params[1]);
-		career.prototypes[family].push(record);
+		const spec = scienceFamilyOf(family);
+		if (!spec) return;
+		career.prototypes[family].push(spec.record(id, params[0], params[1]));
 		career.owned[id] = true;
 	}
 
@@ -1019,7 +1041,7 @@
 		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
 		createCareer, resetCareer, startCareer, checkEnded,
-		SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
+		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart,
 		refreshBoard, canAccept, acceptTask, dropContract,
