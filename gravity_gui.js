@@ -126,7 +126,7 @@
 	/* rival search slice budget per frame so frame work stays well under 16.7 ms */
 	const BOT_STEP_MS = 3;
 	const MAX_GAME_STEPS = 256;
-	const PROFIT_MAX_CENTS = 200;
+	const PROFIT_MAX_CENTS = 300;
 	const PROFIT_STRINGS = new Array(PROFIT_MAX_CENTS + 1);
 	for (let c = 0; c <= PROFIT_MAX_CENTS; c++) {
 		PROFIT_STRINGS[c] = '+' + (c / 100).toFixed(2);
@@ -221,7 +221,7 @@
 			goal: 'Finish the 10-launch contract with the largest purse.',
 			score: 'Highest purse. Ties: more systems, fewer launches, less flight time.',
 			detailLabel: 'Money',
-			detail: 'Launch costs 1.00. Entering a system collects its shown profit; profit grows while unvisited, up to +0.75.',
+			detail: 'Launch costs 1.00. Entering a system collects its shown profit; profit grows while unvisited, easing toward +3.00 the longer it waits.',
 			controls: 'Drag from a planet to aim · Shift = fine · Enter = launch'
 		},
 		career: {
@@ -230,9 +230,9 @@
 			score: 'Purse. The career ends complete with all ' + PLANETS + ' catapults, or broke.',
 			detailLabel: 'Network',
 			detail: 'Every planet carries an EMC, and the best rail there claims it. Your own EMC launches on its solar-charged battery; a rival player\'s EMC charges a usage tax that scales with the energy of the shot and pays them; the neutral commercial EMC-1 standing on every planet charges a flat ' +
-				GravityGame.CAREER.commercialFee.toFixed(2) + '. Landing without your own EMC is no dead end — use the commercial rail, build, or evacuate to HQ for ' +
-				GravityGame.CAREER.evacFee.toFixed(2) + '. An impulse engine and fuel tank let you pause in flight (Space / P or drag from the ship) for mid-course burns.',
-			controls: 'Drag from an EMC to aim · the rail fires when its turning barrel reaches the aim · in flight: Space / P or drag ship to burn · Shift = fine'
+				GravityGame.CAREER.commercialFee.toFixed(2) + ' and can be picked on any planet (it never claims it or blocks building yours). Landing without your own EMC is no dead end — launch commercial, build, or evacuate to HQ for ' +
+				GravityGame.CAREER.evacFee.toFixed(2) + '. Any rail fires the moment you launch; the world clock pauses when your flight ends (setting: pause on landing) so you can aim in peace. An impulse engine and fuel tank let you pause in flight (Space / P or drag from the ship) for mid-course burns.',
+			controls: 'Drag from an EMC to aim · Enter launches at once · in flight: Space / P or drag ship to burn · Shift = fine'
 		}
 	};
 
@@ -340,8 +340,9 @@
 	const expForceLabelEl = $('expForceLabel');
 	const expTagEl = $('expTag');
 	const launchButton = $('launch');
-	const strandedActionsEl = $('strandedActions');
+	const planetActionsEl = $('planetActions');
 	const launchBuildBtn = $('launchBuild');
+	const launchCommercialBtn = $('launchCommercial');
 	const launchEvacBtn = $('launchEvac');
 	const clearButton = $('clear');
 	const routeBestBtn = $('routeBest');
@@ -392,6 +393,9 @@
 	const careerTaskEl = $('careerTasks');
 	const careerWaitInfoEl = $('careerWaitInfo');
 	const careerWaitBtn = $('careerWait');
+	const careerClockBtn = $('careerClock');
+	const careerPauseLandEl = $('careerPauseLand');
+	const careerPauseLandLabelEl = $('careerPauseLandLabel');
 	const careerEvacBtn = $('careerEvac');
 	const careerMsgEl = $('careerMsg');
 	const ruleTagEl = $('ruleTag');
@@ -567,8 +571,10 @@
 		market: GravityGame.createMarket(), money: GravityGame.createLedger(),
 		galaxy: GravityGame.createGalaxy() };
 	game.career = GravityGame.createCareer(game.money);
-	/* a career launch is queued until the planet's EMC barrel reaches the aim */
-	const turret = { pending: false, body: -1, angle: 0, speed: 0, fireAt: 0 };
+	/* career world clock: runs while unpaused; by default it pauses when your
+	 * flight ends so you can aim in peace (launching resumes it) */
+	let careerPaused = false;
+	let pauseOnLanding = true;
 	const slotTypes = [PLAYER_USER, PLAYER_BOT, PLAYER_BOT];
 	const rivalTypesArg = [PLAYER_BOT, PLAYER_BOT];
 	let activeSlot = 0;
@@ -1082,20 +1088,23 @@
 		predGain = gain;
 	}
 
-	function predBuildCost(sim) {
+	/* what leaving the predicted landing planet will cost when you hold no
+	 * EMC there: the commercial launch, a rival's tax, a build or evacuation */
+	function predExitCost(sim) {
 		if (!careerRule() || sim.predCount < 2 || sim.predReason !== END_IMPACT || sim.predBody < 0) {
 			return 0;
 		}
 		const pad = game.career.pads[sim.predBody];
 		if (!pad || pad.catapult !== null) return 0;
-		return careerCost(game.career, OrbitTech.CATAPULTS[0].buildCost);
+		const cost = GravityGame.exitCostAt(game.career, sim.predBody, game.career.ship.mass);
+		return Number.isFinite(cost) ? cost : 0;
 	}
 
 	function predProfitText(sim) {
-		const build = predBuildCost(sim);
+		const exit = predExitCost(sim);
 		const gain = predGain.toFixed(2);
-		if (build <= 0) return gain;
-		const sub = Number.isInteger(build) ? String(build) : build.toFixed(2);
+		if (exit <= 0) return gain;
+		const sub = Number.isInteger(exit) ? String(exit) : exit.toFixed(2);
 		return gain + '-' + sub;
 	}
 
@@ -1335,43 +1344,8 @@
 		dirty = true;
 	}
 
-	/* the barrel must line up with the aimed direction before the rail fires */
-	function cancelTurret() {
-		turret.pending = false;
-	}
-
-	function queueTurretShot(now) {
-		const period = GravityGame.turretPeriod(game.galaxy, aimBody);
-		const gun = GravityGame.turretAngle(game.galaxy, aimBody, now / 1000);
-		let delta = aimAngle - gun;
-		delta -= Math.floor(delta / TAU) * TAU;
-		const wait = delta < 0.02 ? 0 : delta / TAU * period;
-		turret.pending = true;
-		turret.body = aimBody;
-		turret.angle = aimAngle;
-		turret.speed = aimSpeed;
-		turret.fireAt = now + wait * 1000;
-		careerNotice(wait > 0
-			? 'EMC turning · ' + wait.toFixed(1) + ' s to ' + planetName(aimBody)
-			: 'EMC aligned · ' + planetName(aimBody));
-		launchState = -1;
-		hudAt = -Infinity;
-	}
-
-	function tickTurret(now) {
-		if (!turret.pending || now < turret.fireAt) return;
-		turret.pending = false;
-		aimBody = turret.body;
-		aimAngle = turret.angle;
-		aimSpeed = turret.speed;
-		armed = true;
-		careerNotice('');
-		fire(NO_ABORT);
-	}
-
 	function cancelAim() {
 		const sim = activeSim();
-		cancelTurret();
 		aiming = false;
 		armed = false;
 		pressing = false;
@@ -1512,20 +1486,11 @@
 			return;
 		}
 		if (routeRule() && game.on) return;
-		if (turret.pending) {
-			cancelTurret();
-			careerNotice('launch cancelled');
-			launchState = -1;
-			hudAt = -Infinity;
-			return;
-		}
 		if (!armed || !canAimFrom(aimBody) || gameLocked()) return;
 		if (!activeSim().canFire(aimBody, aimSpeed)) return;
 		if (careerRule() && !GravityGame.careerCanFire(game.career, gravity, aimBody, aimSpeed)) return;
-		if (careerRule() && !replay.on) {
-			queueTurretShot(performance.now());
-			return;
-		}
+		/* every rail fires at once, at any time; launching resumes the clock */
+		if (careerRule()) setCareerPaused(false);
 		fire(NO_ABORT);
 	}
 
@@ -1648,8 +1613,36 @@
 		if (career.ended === GravityGame.CAREER_BROKE) return 'broke · career over';
 		if (career.ended === GravityGame.CAREER_COMPLETE) return 'catapult network complete';
 		if (!career.stranded) return '';
+		if (career.at < 0) return 'lost in space · evacuate';
+		/* no own EMC here, but a standing rail (commercial or a rival's) that
+		 * can lift the ship is a launch button, not a dead end */
+		if (GravityGame.padLift(career, career.at) + 1e-9 >= GravitySim.SPEED_MIN) return '';
 		/* short enough for the launch button, which must not wrap */
-		return career.at < 0 ? 'lost in space · evacuate' : 'stranded · build or evacuate';
+		return 'stranded · build or evacuate';
+	}
+
+	/* the career clock button mirrors the pause; both career time controls
+	 * live in the trade bar and only show in career runs */
+	function refreshCareerClockUi() {
+		const career = careerRule();
+		if (careerClockBtn) {
+			careerClockBtn.hidden = !career;
+			careerClockBtn.textContent = careerPaused ? '▶ time' : '❚❚ time';
+			careerClockBtn.classList.toggle('on', career && careerPaused);
+			careerClockBtn.title = careerPaused
+				? 'career world clock is paused — click to run time (pads charge, rivals fly, visit profits grow)'
+				: 'career world clock is running — click to pause time and aim in peace';
+		}
+		if (careerPauseLandLabelEl) careerPauseLandLabelEl.hidden = !career;
+		if (careerPauseLandEl) careerPauseLandEl.checked = pauseOnLanding;
+	}
+
+	function setCareerPaused(next) {
+		if (careerPaused === next) return;
+		careerPaused = next;
+		playAcc = 0;
+		refreshCareerClockUi();
+		hudAt = -Infinity;
 	}
 
 	/* why the armed shot cannot fire from its pad right now ('' when it can) */
@@ -2523,7 +2516,9 @@
 		GravityGame.startCareer(game.career, gravity, seed, tradeSim, game.cheat, game.galaxy);
 		bot.startCareers(game.galaxy, seed, tradeSim);
 		game.career.forceScale = gravity.forceScale;
-		cancelTurret();
+		/* the ship starts landed on HQ: the landing pause applies from turn one */
+		careerPaused = pauseOnLanding;
+		refreshCareerClockUi();
 	}
 
 	/* one flat row: lab stops the run, every other mode starts its rule at once */
@@ -2600,7 +2595,7 @@
 		const wasCareer = careerRule();
 		cancelCareerWait();
 		stopReplay();
-		cancelTurret();
+		careerPaused = false;
 		clearBurnAim();
 		linkNote = '';
 		game.on = false;
@@ -2694,15 +2689,23 @@
 			return;
 		}
 		if (replay.on && replay.phase !== PHASE_FLY && now >= replay.until) advanceReplay(now);
-		/* the barrel turns in real time and the world holds still for that beat,
-		 * so the predicted trajectory fires exactly as it was aimed */
-		if (turret.pending) {
+		/* the eased career wait owns the world clock for its 2 s */
+		if (careerWaitBusy()) {
 			playAcc = 0;
-			tickTurret(now);
+			return;
+		}
+		/* a paused career clock freezes everyone — rival companies included —
+		 * so the player can aim while nothing on the shared map changes */
+		if (careerRule() && careerPaused && !replay.on) {
+			playAcc = 0;
 			return;
 		}
 		const capSteps = ruleSpec().capSteps;
-		if (!clockDriverFlying()) {
+		/* in career the clock also runs between flights while unpaused: pads
+		 * charge, visit profits grow and the rival companies fly their turns */
+		const careerIdle = careerRule() && !replay.on && !careerPaused &&
+			game.career.ended === GravityGame.CAREER_OPEN && !clockDriverFlying();
+		if (!clockDriverFlying() && !careerIdle) {
 			playAcc = 0;
 			if (replay.on) return;
 			if (!hasLiveUser()) {
@@ -2740,7 +2743,7 @@
 			}
 		}
 		let stepsDone = 0;
-		while (clockDriverFlying() && playAcc >= DT && stepsDone < MAX_GAME_STEPS) {
+		while ((clockDriverFlying() || careerIdle) && playAcc >= DT && stepsDone < MAX_GAME_STEPS) {
 			if (!bot.prepareStep(game.clockSteps, game.market, capSteps, BOT_STEP_MS, false)) {
 				playAcc = 0;
 				break;
@@ -2754,16 +2757,24 @@
 			playAcc -= DT;
 			stepsDone += 1;
 		}
+		let fieldMoved = false;
 		if (wasSlot0Flying || gravity.status === STATUS_FLYING) {
 			tradeSim.advanceTo(gravity.flightFieldT);
+			fieldMoved = true;
 		} else {
 			for (let i = 0; i < bot.count; i++) {
 				const rSim = bot.rivals[i].sim;
 				if ((wasUserRivalMask & (1 << i)) || rSim.status === STATUS_FLYING) {
 					tradeSim.advanceTo(rSim.flightFieldT);
+					fieldMoved = true;
 					break;
 				}
 			}
+		}
+		/* career steps without a driving human flight (idle clock, or only
+		 * rival companies airborne) still move the trade world the same span */
+		if (!fieldMoved && careerRule() && stepsDone > 0) {
+			tradeSim.advanceTo(tradeSim.t + stepsDone * DT * scene.trade.speed);
 		}
 		if (wasSlot0Flying && gravity.status !== STATUS_FLYING) {
 			if (!clockDriverFlying()) playAcc = 0;
@@ -2859,6 +2870,9 @@
 			else if (career.competitions > competitions) careerPhoto('sport');
 			/* the shop follows the ship again after every landing / stranding */
 			careerFollow = true;
+			/* default: freeze the world clock at flight end (rivals too) so
+			 * the next shot can be aimed in peace; the setting can turn it off */
+			if (pauseOnLanding && !replay.on) setCareerPaused(true);
 		} else GravityGame.endFlight(game.money);
 		game.steps += gravity.liveSteps;
 		game.length += gravity.flightLength;
@@ -3242,7 +3256,7 @@
 			? activeSlotNow > 0 && !playerIsBot()
 				? (route ? 'run · planner · ' : 'run · ') + slotName(activeSlotNow)
 				: route ? 'run · planner · no launch'
-				: career ? 'career · clock runs in flight'
+				: career ? 'career · world clock'
 				: 'run · clock runs in flight'
 			: 'lab · free clock');
 		if (goalRoleEl) {
@@ -3254,6 +3268,7 @@
 		runBoxEl.hidden = !game.on;
 		if (careerBoxEl) careerBoxEl.hidden = !career;
 	if (careerHudEl) careerHudEl.hidden = !career;
+		refreshCareerClockUi();
 		if (rivalGroupEl) rivalGroupEl.hidden = !game.on || RULES[game.rule].solo;
 		syncModeRadios();
 		if (scoreHudEl) scoreHudEl.hidden = !game.on;
@@ -3658,6 +3673,12 @@
 		html += '<div class="careerLine dim">ship ' + ship.hold.id + ' · ' +
 			(ship.engine ? ship.engine.id : 'no engine') + ' · ' + ship.tank.id +
 			shipImpulseNote(ship) + '</div>';
+		if (career.commercialPlanet === at) {
+			const lift = GravityGame.padLift(career, at);
+			html += '<div class="careerLine">commercial EMC-1 selected · fee ' +
+				costText(careerCost(career, GravityGame.CAREER.commercialFee)) +
+				' · lifts to ' + Math.round(lift) + ' px/s</div>';
+		}
 		if (pad.catapult === null) {
 			const first = OrbitTech.CATAPULTS[0];
 			const cost = careerCost(career, first.buildCost);
@@ -4692,18 +4713,23 @@
 		const p = Math.max(0, Math.min(1, (now - anim.start) / CAREER_WAIT_MS));
 		const eased = easeInOut(p);
 		const steps = Math.round(eased * anim.steps);
+		tradeSim.advanceTo(anim.startT + CAREER_WAIT_MIN * eased);
+		gravity.fieldT = tradeSim.t;
 		if (steps > anim.done) {
 			/* recharge from the start snapshot, so the eased chunks land on the
 			 * exact single-call result (leak is exponential, solar is linear) */
 			const pads = anim.career.pads;
 			for (let i = 0; i < pads.length; i++) pads[i].chargeKwh = anim.charges[i];
 			GravityGame.careerAdvance(anim.career, anim.rate, steps);
+			/* the rival companies live the same fast-forwarded steps: they
+			 * charge, launch, fly and harvest while you wait */
+			for (let s = anim.done + 1; s <= steps; s++) {
+				bot.stepCareer(anim.startClock + s, game.market, tradeSim, anim.rate);
+			}
 			game.clockSteps = anim.startClock + steps;
 			anim.done = steps;
 			gravity.predCount = 0;
 		}
-		tradeSim.advanceTo(anim.startT + CAREER_WAIT_MIN * eased);
-		gravity.fieldT = tradeSim.t;
 		if (p < 1) careerWaitProgress(p, eased);
 		else careerWaitFinish();
 	}
@@ -5864,13 +5890,13 @@
 			else if (y > maxY) y = maxY;
 			const onRoute = predHarvestMask[i] === 1;
 			const border = onRoute ? 'rgba(92, 255, 139, 0.85)'
-				: cents >= 60 ? 'rgba(255, 207, 110, 0.42)'
-				: cents >= 35 ? 'rgba(142, 240, 192, 0.28)'
+				: cents >= 100 ? 'rgba(255, 207, 110, 0.42)'
+				: cents >= 50 ? 'rgba(142, 240, 192, 0.28)'
 				: null;
 			plate(x, y, 38, 14, border);
 			ctx.fillStyle = onRoute ? '#9effbe'
-				: cents >= 60 ? GOLD
-				: cents >= 35 ? MINT
+				: cents >= 100 ? GOLD
+				: cents >= 50 ? MINT
 				: cents >= 14 ? 'rgba(210, 230, 246, 0.86)'
 				: 'rgba(128, 156, 184, 0.52)';
 			ctx.fillText(PROFIT_STRINGS[cents], x + 19, y + 7.5);
@@ -5878,22 +5904,24 @@
 	}
 
 	/*
-	 * Every player EMC is a claim ring around its planet plus the barrel that
-	 * turns with it, in the owner's colour (mint = YOU, the rival colours after
-	 * it). The neutral commercial rail shows only a dim barrel, so an unclaimed
-	 * planet still reads as "you can leave from here".
+	 * Every player EMC is a claim ring around its planet plus its barrel, in
+	 * the owner's colour (mint = YOU, the rival colours after it). The barrel
+	 * rests along the last shot fired from the planet and swings to your aim
+	 * while you aim from it — any rail fires at once, in any direction. The
+	 * neutral commercial rail shows only a dim barrel, so an unclaimed planet
+	 * still reads as "you can leave from here".
 	 */
 	function drawCareerEmc(now) {
 		const galaxy = game.galaxy;
 		if (galaxy.actors.length === 0) return;
 		const px = 1 / view.scale;
-		const seconds = now / 1000;
 		for (let p = 0; p < PLANETS; p++) {
 			const owner = GravityGame.claimOwner(galaxy, p);
 			const x = tradeSim.planetX[p];
 			const y = tradeSim.planetY[p];
 			const r = tradeSim.planetR[p];
-			const angle = GravityGame.turretAngle(galaxy, p, seconds);
+			const angle = p === aimBody && (aiming || armed)
+				? aimAngle : GravityGame.barrelAngle(galaxy, p);
 			const cos = Math.cos(angle);
 			const sin = Math.sin(angle);
 			const inner = r + 3.5 * px;
@@ -6171,7 +6199,7 @@
 			launchState = state;
 			launchNote = text;
 			launchButton.hidden = false;
-			if (strandedActionsEl) strandedActionsEl.hidden = true;
+			if (planetActionsEl) planetActionsEl.hidden = true;
 			launchButton.disabled = false;
 			launchButton.classList.toggle('exitWarning', warnExit);
 			launchButton.textContent = text;
@@ -6182,32 +6210,26 @@
 				: 'Drag from the ship to aim a burn, or click / press Space to resume coasting';
 			return;
 		}
-		if (turret.pending) {
-			const left = Math.max(0, turret.fireAt - performance.now()) / 1000;
-			launchButton.hidden = false;
-			if (strandedActionsEl) strandedActionsEl.hidden = true;
-			launchButton.disabled = false;
-			launchButton.classList.remove('costly', 'exitWarning');
-			launchButton.textContent = 'gun · ' + left.toFixed(1) + ' s';
-			launchButton.title = 'The EMC turns its barrel to the aim · click or Esc to cancel';
-			launchState = -1;
-			return;
-		}
 		const route = routeRule();
 		const slot = activeSlotIndex();
 		const botPlayer = slotIsBot(slot);
 		const ledger = slotLedger(slot);
 		const plan = slotPlans[slot];
 		const career = careerRule();
-		const stranded = career && game.career.ended === GravityGame.CAREER_OPEN &&
-			game.career.stranded && gravity.status !== STATUS_FLYING;
-		if (stranded && strandedActionsEl) {
-			launchButton.hidden = true;
-			strandedActionsEl.hidden = false;
-			const c = game.career;
+		/* planet actions beside launch: build yours, fire the commercial rail
+		 * that stands on every planet, or evacuate — shown whenever the career
+		 * ship sits landed (lost in space keeps only the evacuation) */
+		const c = game.career;
+		const landed = career && c.ended === GravityGame.CAREER_OPEN &&
+			gravity.status !== STATUS_FLYING;
+		const showActions = landed && (c.at >= 0 || c.stranded);
+		const commercialOn = showActions && c.at >= 0 && c.commercialPlanet === c.at;
+		launchButton.hidden = showActions && c.at < 0;
+		if (planetActionsEl) planetActionsEl.hidden = !showActions;
+		if (showActions) {
 			const waitBusy = careerWaitBusy();
 			if (launchBuildBtn) {
-				if (c.at < 0) {
+				if (c.at < 0 || c.pads[c.at].catapult !== null) {
 					launchBuildBtn.hidden = true;
 				} else {
 					const first = OrbitTech.CATAPULTS[0];
@@ -6223,24 +6245,56 @@
 						Math.round(fresh) + ' px/s';
 				}
 			}
-			if (launchEvacBtn) {
-				const evacCost = careerCost(c, GravityGame.CAREER.evacFee);
-				const evacPoor = purseTooSmall(c, evacCost);
-				launchEvacBtn.disabled = waitBusy;
-				launchEvacBtn.classList.toggle('costly', evacPoor);
-				launchEvacBtn.textContent = 'evacuate · ' + costText(evacCost);
-				launchEvacBtn.title = 'fly the ship home to HQ ' + planetName(c.hq) +
-					' for ' + costText(evacCost);
+			if (launchCommercialBtn) {
+				if (c.at < 0) {
+					launchCommercialBtn.hidden = true;
+				} else {
+					const fee = careerCost(c, GravityGame.CAREER.commercialFee);
+					const lift = padCap(c, OrbitTech.CATAPULTS[0], OrbitTech.BATTERIES[0]);
+					const canLift = lift + 1e-9 >= SPEED_MIN;
+					const feePoor = purseTooSmall(c, fee);
+					const armedHere = armed && aimBody === c.at;
+					launchCommercialBtn.hidden = false;
+					launchCommercialBtn.disabled = waitBusy || !canLift;
+					launchCommercialBtn.classList.toggle('costly', feePoor);
+					launchCommercialBtn.classList.toggle('on', commercialOn);
+					launchCommercialBtn.textContent = commercialOn && armedHere
+						? 'commercial launch · ' + costText(fee)
+						: 'commercial EMC-1 · ' + costText(fee);
+					launchCommercialBtn.title = !canLift
+						? 'the commercial EMC-1 cannot lift ' + c.ship.mass.toFixed(1) +
+							' t (max ' + Math.round(lift) + ' px/s)'
+						: commercialOn
+						? armedHere
+							? 'fire the armed shot from the commercial EMC-1 for ' + costText(fee)
+							: 'commercial EMC-1 selected · drag from ' + planetName(c.at) +
+								' to aim · click again for the standing rail'
+						: 'launch from the commercial EMC-1 on ' + planetName(c.at) +
+							' · always charged · lifts the ship to ' + Math.round(lift) +
+							' px/s · never claims the planet or blocks building yours';
+				}
 			}
-		} else {
-			launchButton.hidden = false;
-			if (strandedActionsEl) strandedActionsEl.hidden = true;
+			if (launchEvacBtn) {
+				if (!c.stranded) {
+					launchEvacBtn.hidden = true;
+				} else {
+					const evacCost = careerCost(c, GravityGame.CAREER.evacFee);
+					const evacPoor = purseTooSmall(c, evacCost);
+					launchEvacBtn.hidden = false;
+					launchEvacBtn.disabled = waitBusy;
+					launchEvacBtn.classList.toggle('costly', evacPoor);
+					launchEvacBtn.textContent = 'evacuate · ' + costText(evacCost);
+					launchEvacBtn.title = 'fly the ship home to HQ ' + planetName(c.hq) +
+						' for ' + costText(evacCost);
+				}
+			}
 		}
 		const note = career ? careerOverText() || careerPadNote() : '';
 		const broke = game.on && !route && (career ? note !== '' : ledger.purse < MONEY.cost);
 		const state = (blocked || broke ? 1 : 0) + (exitWarning ? 2 : 0) +
 			(broke ? 4 : 0) + (route ? 8 : 0) + (botPlayer ? 16 : 0) +
-			(route && plan.ready ? 32 : 0) + (slot * 64) + (stranded ? 8192 : 0);
+			(route && plan.ready ? 32 : 0) + (slot * 64) + (showActions ? 8192 : 0) +
+			(commercialOn ? 16384 : 0) + (careerPaused ? 32768 : 0);
 		if (state === launchState && note === launchNote) return;
 		launchState = state;
 		launchNote = note;
@@ -6256,7 +6310,9 @@
 			: broke
 			? career ? note : 'purse ' + ledger.purse.toFixed(2) + ' · need ' + MONEY.cost.toFixed(2)
 			: exitWarning ? prefix + 'launch · leaves system'
-			: prefix + 'launch' + (game.on && !career ? ' · ' + MONEY.cost.toFixed(2) : '');
+			: prefix + 'launch' + (commercialOn
+				? ' · commercial ' + costText(careerCost(c, GravityGame.CAREER.commercialFee))
+				: game.on && !career ? ' · ' + MONEY.cost.toFixed(2) : '');
 		launchButton.title = route
 			? 'Route is a planner: the finished traced trajectory is the entry'
 			: botPlayer ? 'Clear bot in the ' + who + ' score row to aim and launch manually'
@@ -6323,7 +6379,9 @@
 		const rest = sim.status === STATUS_ENDED
 			? endText(sim.endReason, sim.endBody)
 			: sim.landedBody >= 0 ? 'landed ' + planetName(sim.landedBody) : 'ready';
-		return game.on ? whoPrefix + rest + ' · clock paused' : rest;
+		if (!game.on) return rest;
+		const clockNote = careerRule() && !careerPaused ? ' · clock runs' : ' · clock paused';
+		return whoPrefix + rest + clockNote;
 	}
 
 	function updateHud(now) {
@@ -6529,13 +6587,55 @@
 		launchBuildBtn.addEventListener('click', () => {
 			if (!careerRule() || careerWaitBusy() || gravity.status === STATUS_FLYING) return;
 			const career = game.career;
-			if (career.ended !== GravityGame.CAREER_OPEN || !career.stranded || career.at < 0) return;
+			if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
+				career.pads[career.at].catapult !== null) return;
 			careerFollow = true;
 			careerBuild(career, career.at, OrbitTech.KIND_CATAPULT, OrbitTech.CATAPULTS[0]);
 		});
 	}
+	if (launchCommercialBtn) {
+		launchCommercialBtn.addEventListener('click', () => {
+			if (!careerRule() || careerWaitBusy() || gravity.status === STATUS_FLYING) return;
+			const career = game.career;
+			if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0) return;
+			if (career.commercialPlanet === career.at) {
+				/* selected and armed: the button is the commercial launch itself */
+				if (armed && aimBody === career.at) {
+					launch();
+					return;
+				}
+				GravityGame.setCommercial(career, -1);
+				careerNotice('standing rail on ' + planetName(career.at));
+			} else {
+				GravityGame.setCommercial(career, career.at);
+				careerNotice('commercial EMC-1 · ' + planetName(career.at) + ' · drag to aim');
+			}
+			/* the drag range follows the newly selected rail's ceiling */
+			if ((armed || aiming) && aimBody === career.at) {
+				placeGripFromSpeed();
+				dirty = true;
+			}
+			launchState = -1;
+			careerChanged();
+		});
+	}
 	if (launchEvacBtn) {
 		launchEvacBtn.addEventListener('click', () => careerAct({ act: 'evac' }));
+	}
+	if (careerClockBtn) {
+		careerClockBtn.addEventListener('click', () => {
+			if (careerRule()) setCareerPaused(!careerPaused);
+		});
+	}
+	if (careerPauseLandEl) {
+		careerPauseLandEl.addEventListener('change', () => {
+			pauseOnLanding = careerPauseLandEl.checked;
+			/* apply at once while landed, so the setting is never a surprise */
+			if (careerRule() && gravity.status !== STATUS_FLYING) {
+				setCareerPaused(pauseOnLanding);
+			}
+			refreshCareerClockUi();
+		});
 	}
 	if (careerPlanetEl) {
 		const pickPlanet = () => {
@@ -6760,6 +6860,9 @@
 		selectUserSlot: selectUserSlot,
 		careerAct,
 		careerWait,
+		careerPaused: () => careerPaused,
+		setCareerPaused,
+		pauseOnLanding: () => pauseOnLanding,
 		careerNotice,
 		careerPickPlanet,
 		refreshCareerPanel,
@@ -6798,6 +6901,8 @@
 	game.player = slotTypes[0];
 
 	refreshPlaybackUi();
+	if (careerPauseLandEl) pauseOnLanding = careerPauseLandEl.checked;
+	refreshCareerClockUi();
 	gravity.horizon = Number(horizonSlider.value);
 	horizonLabel.textContent = gravity.horizon + ' s';
 	if (horizonTagEl) horizonTagEl.textContent = gravity.horizon + ' s';

@@ -271,6 +271,40 @@ check('a shot that lands back on its own pad with no pay is never a plan', () =>
 	assert.ok(plan && plan.body !== origin, 'the opening plan bounces on its own pad');
 });
 
+check('padless solvency gate counts this flight\'s launch fee', () => {
+	const w = makeWorld(42);
+	const other = (w.career.hq + 1) % PLANETS;
+	w.career.at = other;
+	w.sim.relocate(other);
+	w.bot.probe.fieldT = w.sim.fieldT;
+	w.bot.probe.fieldRate = w.sim.fieldRate;
+	w.bot.probe.visited.set(w.sim.visited);
+	w.bot.probe.visitedCount = w.sim.visitedCount;
+	/* a commercial shot off the padless planet onto another padless planet */
+	let speed = 80;
+	let body = -1;
+	for (let a = 0; a < 160 && body < 0; a++) {
+		w.bot.probe.predictFast(other, a / 160 * Math.PI * 2, speed, GravityGame.CAP_SECONDS);
+		if (w.bot.probe.predReason === GravitySim.END_IMPACT &&
+			w.bot.probe.predBody !== other && w.bot.probe.predBody !== w.career.hq) {
+			body = w.bot.probe.predBody;
+		}
+	}
+	assert.ok(body >= 0, 'fixture found no padless landing');
+	const cash = GravityGame.estimateProfit(w.market, 0, w.bot.probe);
+	const exit = GravityGame.exitCostAt(w.career, body, w.career.ship.mass);
+	const fee = GravityGame.launchFee(w.career, other, speed);
+	assert.ok(fee > 0 && exit > 0, 'fixture must fly commercial off a padless planet');
+	/* enough for the old gate (purse + cash >= exit + margin), short once
+	 * this flight's own fee is counted: the shot must not score */
+	w.ledger.purse = fee + exit * 1.5 - cash - 0.5;
+	assert.strictEqual(w.bot.careerScoreProbe(w.career, w.sim, other, speed, w.market, 0),
+		-Infinity, 'a landing the purse cannot leave must not score');
+	w.ledger.purse += 1;
+	assert.ok(Number.isFinite(w.bot.careerScoreProbe(w.career, w.sim, other, speed, w.market, 0)),
+		'the same shot must score once the exit is covered after the fee');
+});
+
 check('idle controller buys a hold and pads, and upgrades a weak loaded pad', () => {
 	const w = makeWorld(42);
 	w.ledger.purse = 40;

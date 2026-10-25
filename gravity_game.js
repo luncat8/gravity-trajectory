@@ -73,14 +73,16 @@
 	/*
 	 * Per-planet growing visit profit: each launch costs 1.00 from a tight
 	 * starting purse of 3.00; every planet starts with 40 s of accrued age
-	 * (+0.25) and grows +0.00625 per flight-second (+0.25 per 40 s) up to 0.75.
+	 * (≈ +0.24) and grows toward the 3.00 cap along a saturation curve whose
+	 * slope starts at +0.00625 per flight-second (+0.25 per 40 s) and eases
+	 * off as the value nears the cap, reaching it only at infinite age.
 	 * Entering a planet's port orbit collects its value and resets it to 0.00.
 	 */
 	const MONEY = {
 		cost: 1,
 		k: 0.00625,
 		initSec: 40,
-		cap: 0.75,
+		cap: 3,
 		purse0: 3
 	};
 	const PURSE_PRESETS = { tight: 2, standard: 3, relaxed: 6 };
@@ -272,11 +274,11 @@
 		market.stamp += 1;
 	}
 
+	/* cap·(1 − e^(−k·age/cap)): initial slope k, asymptote cap at infinite age */
 	function planetProfitAtStep(lastStep, runStep) {
 		const age = (runStep - lastStep) * GravitySim.DT;
 		if (age <= 0) return 0;
-		const pay = age * MONEY.k;
-		return pay > MONEY.cap ? MONEY.cap : pay;
+		return -MONEY.cap * Math.expm1(-age * MONEY.k / MONEY.cap);
 	}
 
 	function planetProfit(market, planet, runStep) {
@@ -403,9 +405,7 @@
 		competeMinPx: 1500,
 		competeSpanPx: 1500,
 		competeBase: 2,
-		competeSpan: 2,
-		turretMinSec: 2,
-		turretSpanSec: 3
+		competeSpan: 2
 	};
 	const CARGO_TONS = [4, 8, 16, 24];
 	const BOARD_SIZE = CAREER.deliverySlots + 1;
@@ -421,7 +421,7 @@
 	const CAREER_COMPLETE = 2;
 	const SALT_HQ = 0xca;
 	const SALT_TASK = 0xcb;
-	const SALT_TURRET = 0xcc;
+	const SALT_BARREL = 0xcc;
 	const SALT_RIVAL = 0xcd;
 	const WORLD_SEC_PER_MIN = 60;
 	const TAU = Math.PI * 2;
@@ -466,30 +466,23 @@
 		return {
 			seed: 0,
 			actors: [],
-			period: new Float64Array(OrbitWorld.PLANETS),
-			phase: new Float64Array(OrbitWorld.PLANETS)
+			barrel: new Float64Array(OrbitWorld.PLANETS)
 		};
 	}
 
-	/* seeded turret: each planet's EMC turns once per 2…5 s of wall clock */
+	/* every EMC fires at any time in any direction; its barrel simply rests
+	 * along the last shot fired from the planet (seeded before the first) */
 	function resetGalaxy(galaxy, seed) {
 		galaxy.seed = seed >>> 0;
 		galaxy.actors.length = 0;
 		for (let p = 0; p < OrbitWorld.PLANETS; p++) {
-			galaxy.period[p] = CAREER.turretMinSec + CAREER.turretSpanSec *
-				(OrbitWorld.hashBits(galaxy.seed, p, SALT_TURRET) / 4294967296);
-			galaxy.phase[p] = TAU * (OrbitWorld.hashBits(galaxy.seed,
-				p + OrbitWorld.PLANETS, SALT_TURRET) / 4294967296);
+			galaxy.barrel[p] = TAU * (OrbitWorld.hashBits(galaxy.seed, p, SALT_BARREL) / 4294967296);
 		}
 	}
 
-	function turretPeriod(galaxy, planet) {
-		return galaxy.period[planet];
-	}
-
-	/* barrel direction (radians) of the planet's EMC after `seconds` */
-	function turretAngle(galaxy, planet, seconds) {
-		return galaxy.phase[planet] + seconds / galaxy.period[planet] * TAU;
+	/* resting barrel direction (radians) of the planet's EMC */
+	function barrelAngle(galaxy, planet) {
+		return galaxy.barrel[planet];
 	}
 
 	/* actor index of the best foreign EMC on `planet`, -1 when only the commercial one stands there */
@@ -507,8 +500,11 @@
 		return owner;
 	}
 
-	/* the pad `career` fires from on `planet` */
+	/* the pad `career` fires from on `planet`: the commercial EMC-1 stands on
+	 * every planet and wins whenever it is the chosen rail, else your own EMC,
+	 * else the best rival EMC, else the commercial one again */
 	function padAt(career, planet) {
+		if (career.commercialPlanet === planet) return COMMERCIAL_PAD;
 		if (career.pads[planet].catapult !== null) return career.pads[planet];
 		if (!career.galaxy) return COMMERCIAL_PAD;
 		const owner = foreignOwner(career.galaxy, career, planet);
@@ -517,9 +513,17 @@
 
 	/* owner index of that pad, -1 for the neutral commercial EMC */
 	function padOwner(career, planet) {
+		if (career.commercialPlanet === planet) return OWNER_COMMERCIAL;
 		if (career.pads[planet].catapult !== null) return career.index;
 		if (!career.galaxy) return OWNER_COMMERCIAL;
 		return foreignOwner(career.galaxy, career, planet);
+	}
+
+	/* choose (planet >= 0) or drop (-1) the commercial rail for the next launch;
+	 * it never claims the planet and never blocks building your own EMC there */
+	function setCommercial(career, planet) {
+		career.commercialPlanet = planet;
+		syncCareerNetwork(career);
 	}
 
 	/* planet claim: the highest rail there wins, ties keep the older actor */
@@ -574,8 +578,9 @@
 
 	/*
 	 * Cheapest way off `planet` with a ship of `mass`: your own EMC is free, the
-	 * commercial rail charges its fee while it can lift the ship, and a build or
-	 * an evacuation is the fallback. Infinity when nothing can leave.
+	 * commercial rail charges its fee while it can lift the ship, a rival rail
+	 * its usage tax at the slowest firable shot, and a build or an evacuation
+	 * is the fallback. Infinity when nothing can leave.
 	 */
 	function exitCostAt(career, planet, mass) {
 		if (planet < 0) return price(career, CAREER.evacFee);
@@ -584,9 +589,20 @@
 			mass, COMMERCIAL_PAD.catapult, career.forceScale);
 		const commercial = lift + 1e-9 >= GravitySim.SPEED_MIN
 			? price(career, CAREER.commercialFee) : Infinity;
+		let foreign = Infinity;
+		const owner = padOwner(career, planet);
+		if (owner !== OWNER_COMMERCIAL && owner !== career.index) {
+			const pad = padAt(career, planet);
+			const railLift = OrbitTech.speedLimit(pad.battery.capacity,
+				mass, pad.catapult, career.forceScale);
+			if (railLift + 1e-9 >= GravitySim.SPEED_MIN) {
+				foreign = price(career, CAREER.taxPerKwh *
+					OrbitTech.launchEnergy(mass, pad.catapult, GravitySim.SPEED_MIN));
+			}
+		}
 		const build = price(career, OrbitTech.CATAPULTS[0].buildCost);
 		const evac = price(career, CAREER.evacFee);
-		return Math.min(commercial, build, evac);
+		return Math.min(commercial, foreign, build, evac);
 	}
 
 	function exitCost(career) {
@@ -629,6 +645,7 @@
 			hq: -1,
 			at: -1,
 			stranded: false,
+			commercialPlanet: -1,
 			pads: pads,
 			launchPads: launchPads,
 			padCount: 0,
@@ -864,6 +881,7 @@
 		career.hq = pickHq(career.seed, trade.world, hqMask(career));
 		career.at = career.hq;
 		career.stranded = false;
+		career.commercialPlanet = -1;
 		career.ship.hold = grant.ship.hold;
 		career.ship.engine = grant.ship.engine;
 		career.ship.tank = grant.ship.tank;
@@ -926,6 +944,7 @@
 	/* places the idle vessel on a planet and syncs the sim's landed base */
 	function placeShip(career, sim, planet) {
 		career.at = planet;
+		setCommercial(career, -1);
 		career.stranded = career.pads[planet].catapult === null;
 		if (!career.stranded) refuelShip(career);
 		sim.relocate(planet);
@@ -975,6 +994,8 @@
 			career.stranded = false;
 			refuelShip(career);
 		}
+		/* a fresh own rail replaces a commercial choice made for the same planet */
+		if (fresh && career.commercialPlanet === planet) career.commercialPlanet = -1;
 		syncCareerNetwork(career);
 		checkEnded(career);
 		return true;
@@ -1172,6 +1193,7 @@
 	 */
 	function careerBeginFlight(career, sim) {
 		const planet = sim.origin;
+		if (career.galaxy) career.galaxy.barrel[planet] = sim.angle;
 		const pad = padAt(career, planet);
 		const owner = padOwner(career, planet);
 		const energy = OrbitTech.launchEnergy(career.ship.mass, pad.catapult, sim.speed);
@@ -1230,6 +1252,8 @@
 		const landed = sim.endReason === GravitySim.END_IMPACT && sim.endBody >= 0;
 		if (landed) settleLanding(career, sim, sim.endBody, step);
 		career.at = landed ? sim.endBody : -1;
+		/* the commercial choice bought one launch; the next planet starts fresh */
+		setCommercial(career, -1);
 		career.stranded = !landed || career.pads[sim.endBody].catapult === null;
 		if (!career.stranded) refuelShip(career);
 		refreshBoard(career, trade, step);
@@ -1281,7 +1305,7 @@
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
 		createCareer, resetCareer, startCareer, checkEnded,
 		COMMERCIAL_PAD, OWNER_COMMERCIAL, createGalaxy, resetGalaxy, rivalSeed,
-		turretPeriod, turretAngle, padAt, padOwner, claimOwner, refreshNetwork,
+		barrelAngle, padAt, padOwner, claimOwner, refreshNetwork, setCommercial,
 		launchFee, exitCost, exitCostAt, careerCanFire, padLift,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById,

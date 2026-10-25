@@ -83,8 +83,10 @@
 	const CAREER_PICKUP_VALUE = 0.35;
 	const CAREER_REFIT_VALUE = 3;
 	/* a career rival launches again after this much world time, and keeps this
-	 * much purse back for the commercial EMC's fee when shopping */
+	 * much purse back for the commercial EMC's fee when shopping; the phase
+	 * staggers the companies so they never all plan on the same world step */
 	const CAREER_RIVAL_GAP = Math.round(8 / GravitySim.DT);
+	const CAREER_RIVAL_PHASE = Math.round(3 / GravitySim.DT);
 	const CAREER_REBOOT_GAP = Math.round(30 / GravitySim.DT);
 	const CAREER_PURSE_RESERVE = GravityGame.CAREER.commercialFee;
 	const CAREER_LOADED_SPEED = 75;
@@ -159,6 +161,7 @@
 			length: 0,
 			basePlanet: 0,
 			readyStep: 0,
+			gapPhase: 0,
 			idleTries: 0,
 			planReady: false,
 			planStep: -1,
@@ -1301,6 +1304,10 @@
 			GravityGame.padLift(career, career.at) + 1e-9 < GravitySim.SPEED_MIN &&
 			this.careerUpgrade(career, sim, GravitySim.SPEED_MIN, 0)) actions += 1;
 
+		/* claim the planet under the ship whenever the build is affordable:
+		 * the very next launch is then free (no 3.00 commercial fee to keep a
+		 * reserve for), so the pad's effective premium over one commercial
+		 * launch is only the difference — and it stays claimed */
 		if (career.pads[career.at].catapult === null) {
 			if (this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
 				OrbitTech.CATAPULTS[0], 0)) actions += 1;
@@ -1347,7 +1354,7 @@
 	};
 
 	/* Landing + harvest + contract + solvency value of the trace in `probe`. */
-	GravityBot.prototype.careerScoreFlight = function (career, origin, market, runStep, flownLen) {
+	GravityBot.prototype.careerScoreFlight = function (career, origin, market, runStep, flownLen, fee) {
 		const probe = this.probe;
 		const body = probe.predBody;
 		if (probe.predReason !== END_IMPACT || body < 0) return -Infinity;
@@ -1387,13 +1394,16 @@
 		}
 
 		/* a planet without your own EMC is flyable as long as the purse covers
-		 * the way off it (commercial fee, a build or the evacuation) */
-		if (own.catapult === null && body !== origin) {
+		 * the way off it (commercial fee, a build or the evacuation) — after
+		 * paying THIS flight's launch fee, which the old gate forgot and so
+		 * happily landed with less than the exit in hand. A same-planet bounce
+		 * off a padless world pays that fee again too, so it is gated alike. */
+		if (own.catapult === null) {
 			const exit = GravityGame.exitCostAt(career, body, career.ship.mass);
 			const build = careerPrice(career, OrbitTech.CATAPULTS[0]);
 			const reserve = career.padCount === PLANETS - 1 && exit >= build ? CAREER_PURSE_RESERVE : 0;
 			const margin = exit > 0 && Number.isFinite(exit) ? exit * 0.5 : 0;
-			if (career.ledger.purse + cashPay + 1e-9 < exit + reserve + margin) return -Infinity;
+			if (career.ledger.purse - (fee || 0) + cashPay + 1e-9 < exit + reserve + margin) return -Infinity;
 		}
 		this.careerEval.taskPay = taskPay;
 		this.careerEval.padValue = padValue;
@@ -1402,11 +1412,14 @@
 
 	/* Scores the trace already in `probe`; `careerEval` exposes its money terms. */
 	GravityBot.prototype.careerScoreProbe = function (career, sim, origin, speed, market, runStep) {
-		const base = this.careerScoreFlight(career, origin, market, runStep, 0);
+		const fee = GravityGame.launchFee(career, origin, speed);
+		const base = this.careerScoreFlight(career, origin, market, runStep, 0, fee);
 		if (!Number.isFinite(base)) return -Infinity;
 		const energy = sim.launchEnergy(origin, speed);
-		const wait = this.careerEnergyWait(career, origin, energy);
-		const fee = GravityGame.launchFee(career, origin, speed);
+		/* only your own battery needs recharge time; a foreign or commercial
+		 * rail is paid in money (the fee), not in waiting */
+		const wait = GravityGame.padOwner(career, origin) === career.index
+			? this.careerEnergyWait(career, origin, energy) : 0;
 		this.careerEval.energy = energy;
 		this.careerEval.wait = wait;
 		this.careerEval.fee = fee;
@@ -1427,7 +1440,8 @@
 		return -1;
 	};
 
-	/* Plan only from the ship's built pad; every snapped speed is <= its live cap. */
+	/* Plan only from the rail the ship stands on (own, rival or commercial);
+	 * every snapped speed is <= its live cap. */
 	GravityBot.prototype.careerPlan = function (career, sim, market, runStep, fallback, angles) {
 		const best = this.careerBest;
 		best.origin = -1;
@@ -1574,16 +1588,18 @@
 	 * its own HQ, purse, ship, task board, EMC network and science hull — flown
 	 * by the same synchronous controller the benches use. They launch from
 	 * whatever EMC stands on their planet (own, a rival's, or the commercial
-	 * one), so usage tax flows both ways. The world clock only runs while a ship
-	 * flies, so a rival gets its turns during YOUR flight; after landing it sits
-	 * out CAREER_RIVAL_GAP world seconds before the next attempt.
+	 * one), so usage tax flows both ways. The career clock runs whenever it is
+	 * not landing-paused, so the companies launch, fly and shop on world time
+	 * whether or not your ship is in the air; after landing a rival sits out
+	 * CAREER_RIVAL_GAP world seconds (plus its phase) before the next attempt.
 	 */
 	GravityBot.prototype.startCareers = function (galaxy, seed, trade) {
 		for (let i = 0; i < MAX_RIVALS; i++) {
 			const r = this.rivals[i];
 			r.steps = 0;
 			r.shots.length = 0;
-			r.readyStep = 0;
+			r.gapPhase = i * CAREER_RIVAL_PHASE;
+			r.readyStep = r.gapPhase;
 			r.idleTries = 0;
 			if (i >= this.count) {
 				r.career = null;
@@ -1630,6 +1646,19 @@
 		if (!plan && career.at >= 0) {
 			plan = this.careerPlan(career, sim, market, runStep, true, angles);
 		}
+		/* no shot from the standing rail (drained battery, weak pad): the
+		 * commercial EMC-1 is always charged, so try once more on it */
+		if (!plan && career.at >= 0 && career.commercialPlanet !== career.at &&
+			GravityGame.padOwner(career, career.at) !== GravityGame.OWNER_COMMERCIAL) {
+			GravityGame.setCommercial(career, career.at);
+			if (GravityGame.padLift(career, career.at) + 1e-9 >= GravitySim.SPEED_MIN &&
+				career.ledger.purse + 1e-9 >=
+					GravityGame.launchFee(career, career.at, GravitySim.SPEED_MIN)) {
+				plan = this.careerPlan(career, sim, market, runStep, false, angles);
+				if (!plan) plan = this.careerPlan(career, sim, market, runStep, true, angles);
+			}
+			if (!plan) GravityGame.setCommercial(career, -1);
+		}
 		if (!plan) {
 			/* a park no trajectory leaves is a dead end: fly home after a couple of tries */
 			const evac = careerPrice(career, GravityGame.CAREER.evacFee);
@@ -1640,7 +1669,7 @@
 				r.idleTries += 1;
 			}
 			this.careerBetweenFlights(career, sim);
-			r.readyStep = runStep + CAREER_RIVAL_GAP;
+			r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
 			return false;
 		}
 		r.idleTries = 0;
@@ -1659,7 +1688,7 @@
 	GravityBot.prototype.careerLand = function (r, trade, runStep) {
 		GravityGame.careerEndFlight(r.career, r.sim, trade, runStep);
 		r.basePlanet = r.career.at;
-		r.readyStep = runStep + CAREER_RIVAL_GAP;
+		r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
 		r.idleTries = 0;
 		this.careerBetweenFlights(r.career, r.sim);
 	};
@@ -1671,7 +1700,7 @@
 			null, r.career.galaxy);
 		r.basePlanet = r.career.hq;
 		r.shots.length = 0;
-		r.readyStep = runStep + CAREER_REBOOT_GAP;
+		r.readyStep = runStep + CAREER_REBOOT_GAP + r.gapPhase;
 		r.idleTries = 0;
 	};
 

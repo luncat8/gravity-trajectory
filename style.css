@@ -671,18 +671,19 @@ body {
 }
 
 #launch,
-#strandedActions {
+#planetActions {
 	grid-column: 1 / -1;
 }
 
-.strandedActions {
+.planetActions {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 6px;
 	min-width: 0;
 }
 
-.strandedActions button {
-	flex: 1 1 0;
+.planetActions button {
+	flex: 1 1 45%;
 	min-width: 0;
 	padding: 5px 8px;
 }
@@ -1255,6 +1256,21 @@ polyline.sciKnownHull {
 	flex: none;
 }
 
+.careerPauseLand {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--dim);
+	font-size: 11px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.careerPauseLand input {
+	margin: 0;
+	accent-color: var(--accent);
+}
+
 /* keep the bar still while the label runs wait · 30 min → waiting · 100 % */
 #careerWait {
 	min-width: 96px;
@@ -1407,7 +1423,7 @@ polyline.sciKnownHull {
 		padding: 9px 12px 10px;
 	}
 
-	.strandedActions button {
+	.planetActions button {
 		padding: 5px 6px;
 		font-size: 11px;
 	}

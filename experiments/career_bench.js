@@ -445,6 +445,50 @@ check('career evacuation: fee, ship back on HQ, broke when the purse cannot cove
 	assert.strictEqual(GravityGame.checkEnded(v.career), GravityGame.CAREER_BROKE);
 });
 
+check('commercial EMC-1: chosen on any planet, never claims or blocks building', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, sim, ledger } = w;
+	const hq = career.hq;
+	assert.strictEqual(GravityGame.padAt(career, hq), career.pads[hq]);
+	assert.strictEqual(GravityGame.launchFee(career, hq, 60), 0);
+	/* the commercial rail can be picked even under your own standing EMC */
+	GravityGame.setCommercial(career, hq);
+	assert.strictEqual(GravityGame.padAt(career, hq), GravityGame.COMMERCIAL_PAD);
+	assert.strictEqual(GravityGame.padOwner(career, hq), GravityGame.OWNER_COMMERCIAL);
+	assert.strictEqual(GravityGame.launchFee(career, hq, 60), CAREER.commercialFee);
+	assert.strictEqual(sim.pads[hq], GravityGame.COMMERCIAL_PAD);
+	const shot = findShot(w, hq, -1);
+	assert.ok(shot, 'no shot off the commercial rail');
+	fly(w, hq, shot.angle, shot.speed);
+	assert.strictEqual(career.lastFee, CAREER.commercialFee);
+	assert.strictEqual(career.lastEnergy, 0, 'commercial launch spent the own battery');
+	assert.strictEqual(career.taxPaid, 0, 'commercial fee goes to nobody in particular');
+	assert.strictEqual(career.commercialPlanet, -1, 'the choice buys exactly one launch');
+	assert.ok(career.stranded, 'landed away from the own network');
+	/* choosing it on the landing planet never blocks claiming that planet */
+	const here = career.at;
+	ledger.purse = 20;
+	GravityGame.setCommercial(career, here);
+	assert.ok(GravityGame.buildGear(career, here, 'catapult', EMC[0]), 'build blocked by the commercial choice');
+	assert.strictEqual(career.commercialPlanet, -1);
+	assert.strictEqual(GravityGame.padAt(career, here), career.pads[here]);
+});
+
+check('EMC barrel rests along the last shot fired from its planet', () => {
+	const w = makeWorld(7);
+	const galaxy = GravityGame.createGalaxy();
+	GravityGame.resetGalaxy(galaxy, 7);
+	GravityGame.startCareer(w.career, w.sim, 7, w.trade, null, galaxy);
+	GravityGame.resetMarket(w.market);
+	const hq = w.career.hq;
+	const shot = findShot(w, hq, -1);
+	assert.ok(shot);
+	fly(w, hq, shot.angle, shot.speed);
+	assert.ok(Math.abs(GravityGame.barrelAngle(galaxy, hq) - shot.angle) < 1e-12,
+		'barrel ' + GravityGame.barrelAngle(galaxy, hq) + ' vs shot ' + shot.angle);
+});
+
 check('career pads: solar refills on the world clock up to capacity, dim pads slower', () => {
 	const w = makeWorld(42);
 	startCareer(w, 42);

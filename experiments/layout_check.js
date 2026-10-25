@@ -303,40 +303,47 @@ async function scoreboardStable(page) {
 				const foot = document.getElementById('cargoFoot').getBoundingClientRect();
 				const helper = document.getElementById('helperGroup').getBoundingClientRect();
 				const launch = document.getElementById('launch');
-				const stranded = document.getElementById('strandedActions');
-				const launchHidden = launch.hidden;
-				const strandedShown = !stranded.hidden;
+				const actions = document.getElementById('planetActions');
+				const launchShown = !launch.hidden;
+				const actionsShown = !actions.hidden;
 				const build = document.getElementById('launchBuild').getBoundingClientRect();
+				const commercial = document.getElementById('launchCommercial').getBoundingClientRect();
 				const evac = document.getElementById('launchEvac').getBoundingClientRect();
 				career.at = -1;
 				GravityScene.refreshCareerPanel();
-				const lostBuildHidden = document.getElementById('launchBuild').hidden;
+				const lostBuildHidden = document.getElementById('launchBuild').hidden &&
+					document.getElementById('launchCommercial').hidden;
 				const lostEvac = document.getElementById('launchEvac').getBoundingClientRect();
 				career.at = career.hq;
 				career.stranded = false;
 				GravityScene.refreshCareerPanel();
 				return {
 					helperInFoot: helper.top >= foot.top && helper.bottom <= foot.bottom,
-					launchHidden,
-					strandedShown,
+					launchShown,
+					actionsShown,
 					buildW: build.width,
 					buildH: build.height,
+					commercialW: commercial.width,
+					commercialH: commercial.height,
 					evacW: evac.width,
 					evacH: evac.height,
-					sideBySide: build.right <= evac.left + 1 && evac.right <= foot.right + 1,
+					insideFoot: build.right <= foot.right + 1 && commercial.right <= foot.right + 1 &&
+						evac.right <= foot.right + 1,
 					lostBuildHidden,
 					lostEvacW: lostEvac.width,
-					restoredLaunch: !launch.hidden && stranded.hidden
+					restoredLaunch: !launch.hidden &&
+						!document.getElementById('launchCommercial').hidden
 				};
 			});
 			check(errors.length === 0, label + ': page error ' + errors.join(' / '));
 			check(layout.footBottom <= layout.tradeTop, label + ': foot row overlaps the trade footer');
 			check(layout.hudBottom <= layout.footTop + 1,
 				label + ': cargoHud overlaps cargoFoot (' + Math.round(layout.hudBottom) + ' > ' + Math.round(layout.footTop) + ')');
-			check(strandedLayout.helperInFoot && strandedLayout.launchHidden &&
-				strandedLayout.strandedShown && strandedLayout.buildW >= 60 &&
-				strandedLayout.evacW >= 60 && strandedLayout.buildH >= 24 &&
-				strandedLayout.sideBySide && strandedLayout.lostBuildHidden &&
+			check(strandedLayout.helperInFoot && strandedLayout.launchShown &&
+				strandedLayout.actionsShown && strandedLayout.buildW >= 60 &&
+				strandedLayout.commercialW >= 60 && strandedLayout.evacW >= 60 &&
+				strandedLayout.buildH >= 24 && strandedLayout.commercialH >= 24 &&
+				strandedLayout.insideFoot && strandedLayout.lostBuildHidden &&
 				strandedLayout.lostEvacW >= 120 && strandedLayout.restoredLaunch,
 				label + ': stranded cargoFoot layout invalid ' + JSON.stringify(strandedLayout));
 			check(drawer.leftBottom <= layout.tradeTop + 1, label + ': leftHud overlaps the trade footer');

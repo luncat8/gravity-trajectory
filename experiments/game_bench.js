@@ -387,11 +387,12 @@ function benchRoute() {
 
 /*
  * Two greedy tours on seed 31 rate 3 under the per-planet growing profit
- * market (purse0 = 3.00, cost = 1.00, k = 0.00625/s, cap = 0.75), played at x8.
+ * market (purse0 = 3.00, cost = 1.00, initial slope k = 0.00625/s easing
+ * asymptotically to the 3.00 cap), played at x8.
  */
 const MONEY_TOURS = [
-	{ horizon: 12, shots: 9, purse: 4.8954 },
-	{ horizon: 60, shots: 6, purse: 10.1067 }
+	{ horizon: 12, shots: 9, purse: 4.2620 },
+	{ horizon: 60, shots: 6, purse: 9.1819 }
 ];
 
 function playMoneyTour(horizon) {

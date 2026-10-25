@@ -388,3 +388,28 @@ flex item (`#aimReadout`) does not stop the grid track itself from expanding to
 `max-content` unless the grid column is `minmax(0, 1fr)` and each `.stat` flex
 row has `min-width: 0`. Always pair `text-overflow: ellipsis` inside a grid row
 with `grid-template-columns: minmax(0, 1fr)` and `min-width: 0`.
+
+## a solvency gate must count the fee of the action it gates
+
+`careerScoreFlight` refused landings on padless planets unless the purse plus
+the flight's cash could pay the next exit — but never subtracted the launch
+fee of the very flight being scored, and exempted same-planet bounces entirely
+(`body !== origin`). Once commercial launches became a normal bot path (3.00
+a flight), a bot at purse 5.00 paid 3.00 to bounce `P2 → P2`, landed with 3.43,
+did it again and went broke at 1.52. Gate on the balance *after* the action:
+`purse − fee + cash >= exit + reserve + exit·0.5`, bounces included — bouncing
+off a padless planet leaves you exactly as stranded as a fresh landing. The
+mirror-image mistake was just as bad: reserving exit cash when *building* on
+the planet under the ship. After a build here the next exit is free, so the
+reserve only pushed bots into bleeding commercial fees instead of claiming the
+planet. A gate that imagines the wrong post-action state is worse than none.
+
+## slope-preserving saturation for a shared payout curve
+
+Turning a linear-then-clamp market (`min(age·k, cap)`) into an asymptotic one
+with a bigger cap (`cap·(1 − e^(−age·k/cap))`, written `-cap·expm1(...)` for
+exact agreement across call sites) keeps the early-game slope — and every
+bot weight and bench constant tuned against it — while only the rarely
+reached tail grows: 8 s ≈ 0.0496, 80 s ≈ 0.46, 200 s ≈ 1.02, 480 s ≈ 1.90,
+2000 s ≈ 2.95. The new money in a run is then bounded by how long rivals
+leave planets unvisited, which is exactly the behaviour the rule rewards.

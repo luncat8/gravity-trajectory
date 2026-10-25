@@ -606,8 +606,8 @@ env.calls.texts.length = 0;
 env.runFrames(1, 16.0);
 check(ui.get('rivalTag').textContent.startsWith('thinking '),
 	'rival did not show sliced thinking tag: ' + ui.get('rivalTag').textContent);
-check(env.calls.texts.includes('+0.25') && env.calls.texts.includes('R1'),
-	'canvas did not draw +0.25 planet profit pills and R1 tag: ' + env.calls.texts.join(' '));
+check(env.calls.texts.includes('+0.24') && env.calls.texts.includes('R1'),
+	'canvas did not draw +0.24 planet profit pills and R1 tag: ' + env.calls.texts.join(' '));
 env.runFrames(8, 16.0);
 check(ui.get('modeTag').textContent === 'run · clock runs in flight', 'game mode tag: ' + ui.get('modeTag').textContent);
 check(!ui.get('runBox').hidden && game.on && game.seed === 7, 'game box / seed');
@@ -1147,7 +1147,7 @@ console.log('solo money:', soloShots, 'shots · broke flight landed · purse', s
 
 /* career via ?rule=career: ship on HQ, only its pad launches, a landing elsewhere strands */
 const CAREER_TEST_SPEED = 90;
-/* a career click queues the shot: the EMC turns its barrel to the aim and fires */
+/* a career click fires at once; the loop only covers a frame of latency */
 function careerLaunch(env, sim) {
 	env.click('launch');
 	for (let i = 0; i < 900 && sim.status !== pageSim.STATUS_FLYING; i++) env.runFrames(1, 16.0);
@@ -1320,41 +1320,74 @@ check(!kui.get('launch').disabled && kui.get('launch').textContent === 'launch',
 	'career launch label: ' + kui.get('launch').textContent);
 const charge0 = career.pads[career.hq].chargeKwh;
 const purse0 = kScene.game.money.purse;
-careerEnv.click('launch');
+/* default pause on landing: the career starts landed, so the world clock
+ * (rivals included) is frozen until the player launches or resumes it */
+check(kScene.careerPaused() && kScene.pauseOnLanding() && kui.get('careerPauseLand').checked &&
+	!kui.get('careerClock').hidden && !kui.get('careerPauseLandLabel').hidden,
+	'career clock must start landing-paused with its controls visible');
+const clockAtAim = kScene.game.clockSteps;
+careerEnv.runFrames(30, 16.0);
+check(kScene.game.clockSteps === clockAtAim && kScene.bot.rivals[0].shots.length === 0,
+	'a landing-paused career clock must not step, rivals included');
+careerEnv.dragAim(career.hq, landingShot, CAREER_TEST_SPEED);
 careerEnv.runFrames(2, 16.0);
-/* the EMC turns its barrel to the aim instead of firing on the click */
-check(kCargo.status !== kSim.STATUS_FLYING && career.flights === 0 &&
-	kui.get('launch').textContent.startsWith('gun · '),
-	'career click must queue the shot: ' + kui.get('launch').textContent);
-const clockAtQueue = kScene.game.clockSteps;
-let queueFrames = 0;
-for (; kCargo.status !== kSim.STATUS_FLYING && queueFrames < 900; queueFrames++) {
-	careerEnv.runFrames(1, 16.0);
-}
-check(kCargo.status === kSim.STATUS_FLYING && career.flights === 1 && queueFrames > 0,
-	'career flight did not start after the barrel turned');
-check(kScene.game.clockSteps === clockAtQueue, 'the career clock must stay frozen while the barrel turns');
+careerEnv.click('launch');
+/* every rail fires at once: no barrel queue between click and flight */
+check(kCargo.status === kSim.STATUS_FLYING && career.flights === 1 && !kScene.careerPaused(),
+	'career click must launch at once and resume the clock');
 check(career.pads[career.hq].chargeKwh < charge0, 'launch did not draw the pad battery');
 for (let i = 0; i < 400 && kCargo.status === kSim.STATUS_FLYING; i++) careerEnv.runFrames(1, 40.0);
 check(kCargo.status === kSim.STATUS_ENDED && kCargo.endReason === kSim.END_IMPACT, 'career flight end ' + kCargo.endReason);
 check(career.at === kCargo.endBody && career.stranded, 'landing without a catapult must strand');
+check(kScene.careerPaused(), 'the clock must pause again at landing (default setting)');
 check(kScene.game.money.purse >= purse0, 'no launch fee in career: ' + kScene.game.money.purse);
-check(kui.get('cargoStatus').textContent === 'stranded · build or evacuate',
-	'stranded status: ' + kui.get('cargoStatus').textContent);
-check(kui.get('launch').hidden && !kui.get('strandedActions').hidden &&
+check(kui.get('cargoStatus').textContent === 'impact P' + career.at + ' · clock paused',
+	'stranded-but-launchable status: ' + kui.get('cargoStatus').textContent);
+check(!kui.get('launch').hidden && !kui.get('planetActions').hidden &&
 	kui.get('launchBuild').textContent === 'buy EMC-1 · 9.00' &&
+	kui.get('launchCommercial').textContent === 'commercial EMC-1 · 3.00' &&
 	kui.get('launchEvac').textContent === 'evacuate · 6.00',
-	'stranded launch buttons: ' + kui.get('launchBuild').textContent + ' / ' + kui.get('launchEvac').textContent);
+	'planet action buttons: ' + kui.get('launchBuild').textContent + ' / ' +
+		kui.get('launchCommercial').textContent + ' / ' + kui.get('launchEvac').textContent);
 const strandedAt = career.at;
 check(kui.get('careerPad').innerHTML.includes('no EMC here'),
 	'stranded pad block: ' + kui.get('careerPad').innerHTML);
 check(!kui.get('careerEvac').disabled && kui.get('careerEvac').textContent === 'evacuate · 6.00',
 	'stranded evacuate button: ' + kui.get('careerEvac').textContent);
+/* the commercial launch, end to end: pick the rail, aim, fire from its button */
+let commercialShot = null;
+for (let a = 0; a < 72 && commercialShot === null; a++) {
+	const angle = a / 72 * Math.PI * 2;
+	kCargo.predict(strandedAt, angle, CAREER_TEST_SPEED);
+	if (kCargo.predReason === kSim.END_IMPACT && kCargo.predBody !== strandedAt &&
+		kCargo.predBody !== career.hq) commercialShot = angle;
+}
+check(commercialShot !== null, 'no commercial landing shot from P' + strandedAt);
+careerEnv.click('launchCommercial');
+check(career.commercialPlanet === strandedAt && kui.get('launchCommercial').classList.contains('on'),
+	'commercial rail not selected on P' + strandedAt);
+careerEnv.dragAim(strandedAt, commercialShot, CAREER_TEST_SPEED);
+careerEnv.runFrames(2, 16.0);
+check(kui.get('launchCommercial').textContent === 'commercial launch · 3.00' &&
+	kui.get('launch').textContent === 'launch · commercial 3.00',
+	'armed commercial labels: ' + kui.get('launchCommercial').textContent +
+		' / ' + kui.get('launch').textContent);
 const purseStranded = kScene.game.money.purse;
+careerEnv.click('launchCommercial');
+check(kCargo.status === kSim.STATUS_FLYING && career.lastFee === 3 &&
+	Math.abs(kScene.game.money.purse - (purseStranded - 3)) < 1e-9,
+	'commercial launch must fire at once for exactly 3.00: fee ' + career.lastFee +
+		' purse ' + kScene.game.money.purse);
+for (let i = 0; i < 400 && kCargo.status === kSim.STATUS_FLYING; i++) careerEnv.runFrames(1, 40.0);
+check(kCargo.status === kSim.STATUS_ENDED && career.commercialPlanet === -1 && career.stranded,
+	'commercial flight must land and drop the one-launch rail choice');
+/* the commercial launch above already spent half the starter purse */
+kScene.game.money.purse = 20;
+const purseBeforeEvac = kScene.game.money.purse;
 careerEnv.click('careerEvac');
 careerEnv.runFrames(8, 40.0);
 check(career.at === career.hq && !career.stranded, 'evacuate button did not bring the ship home');
-check(Math.abs(kScene.game.money.purse - (purseStranded - 6)) < 1e-9,
+check(Math.abs(kScene.game.money.purse - (purseBeforeEvac - 6)) < 1e-9,
 	'evacuation fee: ' + kScene.game.money.purse);
 check(kui.get('careerEvac').disabled, 'evacuate stays enabled at HQ');
 check(kui.get('careerMsg').textContent.startsWith('evacuated to HQ P' + career.hq),
@@ -1763,9 +1796,14 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	const settledSteps = pScene.game.clockSteps - stepsBefore;
 	let profitAfter = 0;
 	for (let i = 0; i < 26; i++) profitAfter += pGame.planetProfit(pScene.game.market, i, pScene.game.clockSteps);
+	/* kWh and steps settle exactly as previewed; visit profit grows as
+	 * previewed minus whatever the rival companies harvest while living
+	 * through the same fast-forward on the shared market */
 	check(Math.abs(settledKwh - pre.hereGain) < 1e-9 && settledSteps === pre.steps &&
-		Math.abs((profitAfter - profitBefore) - pre.profitGain) < 1e-9,
-		'wait settlement preview matches actual settled kWh, steps and visit profit');
+		profitAfter - profitBefore <= pre.profitGain + 1e-9,
+		'wait settlement preview matches settled kWh and steps, visits grow net of rival harvests');
+	check(pScene.bot.rivals[0].shots.length + pScene.bot.rivals[1].shots.length > 0,
+		'rival companies must live (launch) during a career wait');
 	const afterAim = pScene.aimState();
 	check(afterAim.ceiling > beforeAim.ceiling && afterAim.grip < beforeAim.grip - 5,
 		'careerWait re-places armed grip onto the recharged range');
@@ -2419,10 +2457,11 @@ function protoOf(career, family, id) {
 	check(footMatch !== null &&
 		footMatch[1].includes('id="helperGroup"') &&
 		footMatch[1].includes('id="launch"') &&
-		footMatch[1].includes('id="strandedActions"') &&
+		footMatch[1].includes('id="planetActions"') &&
 		footMatch[1].includes('id="launchBuild"') &&
+		footMatch[1].includes('id="launchCommercial"') &&
 		footMatch[1].includes('id="launchEvac"'),
-		'cargoFoot must be a separate bottom panel owning helperGroup, launch, and strandedActions');
+		'cargoFoot must be a separate bottom panel owning helperGroup, launch, and planetActions');
 
 	const cEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
 	cEnv.runFrames(2, 16.0);
@@ -2445,7 +2484,9 @@ function protoOf(career, family, id) {
 	check(cScene.playScale() === 4 && cui.get('playTag').textContent === '×4',
 		'career playReset must return to ×4: ' + cui.get('playTag').textContent);
 
-	/* predicted route info: profit with separate catapult subtract (e.g. 3.25-9), profit/s, and TOF */
+	/* predicted route info: profit with separate exit-cost subtract (the
+	 * cheapest way off a padless landing — commercial launch, tax, build or
+	 * evacuation), profit/s, and TOF */
 	const shotAngle = landingAngle(cSim, cCareer.hq, CAREER_TEST_SPEED);
 	check(shotAngle !== null, '0.4.17: no landing shot from HQ');
 	/* age planets so predicted visit + task profit is 3.25 on landing at a padless planet */
@@ -2464,33 +2505,36 @@ function protoOf(career, family, id) {
 	cEnv.runFrames(2, 16.0);
 	const tofText = cSim.predTime.toFixed(1) + ' s';
 	const rateText = '+' + (3.25 / cSim.predTime).toFixed(2) + '/s';
-	check(cui.get('predVisitReadout').textContent.endsWith('· +3.25-9'),
-		'predVisitReadout must show +3.25-9 when landing on padless planet: ' +
+	const exitCost = cEnv.context.GravityGame.exitCostAt(cCareer, targetPlanet, cCareer.ship.mass);
+	const gainText = '+3.25-' + (Number.isInteger(exitCost) ? String(exitCost) : exitCost.toFixed(2));
+	check(cui.get('predVisitReadout').textContent.endsWith('· ' + gainText),
+		'predVisitReadout must show ' + gainText + ' when landing on padless planet: ' +
 		cui.get('predVisitReadout').textContent);
 	check(!cui.get('predProfitRow').hidden &&
-		cui.get('predProfitReadout').textContent === '+3.25-9 · ' + rateText + ' · ' + tofText,
-		'predProfitReadout must show +3.25-9 · rate · TOF: ' +
+		cui.get('predProfitReadout').textContent === gainText + ' · ' + rateText + ' · ' + tofText,
+		'predProfitReadout must show ' + gainText + ' · rate · TOF: ' +
 		cui.get('predProfitReadout').textContent);
-	check(cui.get('aimReadout').textContent.includes('· +3.25-9 · ' + rateText + ' · ' + tofText),
-		'aimReadout must include +3.25-9, profit/s, and TOF: ' +
+	check(cui.get('aimReadout').textContent.includes('· ' + gainText + ' · ' + rateText + ' · ' + tofText),
+		'aimReadout must include ' + gainText + ', profit/s, and TOF: ' +
 		cui.get('aimReadout').textContent);
 
-	/* when target planet already has a catapult, "-3" is omitted */
+	/* when target planet already has a catapult, the exit subtract is omitted */
 	cCareer.pads[targetPlanet].catapult = cEnv.context.OrbitTech.CATAPULTS[0];
 	cEnv.dragAim(cCareer.hq, shotAngle, CAREER_TEST_SPEED);
 	cEnv.runFrames(2, 16.0);
 	check(cui.get('predVisitReadout').textContent.endsWith('· +3.25') &&
 		cui.get('predProfitReadout').textContent.startsWith('+3.25 · '),
-		'built pad omits -9 subtract: ' + cui.get('predProfitReadout').textContent);
+		'built pad omits exit subtract: ' + cui.get('predProfitReadout').textContent);
 	cCareer.pads[targetPlanet].catapult = null;
 
-	/* fly to padless planet -> stranded -> inline launchBuild & launchEvac buttons replace #launch */
-	check(careerLaunch(cEnv, cSim), 'the EMC never turned to the aim');
+	/* fly to padless planet -> stranded -> planet actions sit beside #launch */
+	check(careerLaunch(cEnv, cSim), 'career launch never fired');
 	for (let i = 0; i < 400 && cSim.status === pageSim.STATUS_FLYING; i++) cEnv.runFrames(1, 40.0);
 	check(cCareer.stranded && cCareer.at === targetPlanet, 'ship stranded on padless planet');
-	check(cui.get('launch').hidden && !cui.get('strandedActions').hidden &&
-		!cui.get('launchBuild').hidden && !cui.get('launchEvac').hidden,
-		'stranded state hides #launch and shows #launchBuild + #launchEvac');
+	check(!cui.get('launch').hidden && !cui.get('planetActions').hidden &&
+		!cui.get('launchBuild').hidden && !cui.get('launchCommercial').hidden &&
+		!cui.get('launchEvac').hidden,
+		'stranded state keeps #launch and shows build + commercial + evacuate');
 
 	/* cost gate on #launchBuild when purse < 3 */
 	const savedPurse = cCareer.ledger.purse;
@@ -2504,24 +2548,48 @@ function protoOf(career, family, id) {
 	check(!cui.get('launchBuild').disabled && !cui.get('launchBuild').classList.contains('costly'),
 		'sufficient purse enables launchBuild');
 
-	/* clicking #launchBuild directly buys EMC-1 on the stranded planet and restores #launch */
+	/* clicking #launchBuild directly buys EMC-1 on the stranded planet; the
+	 * commercial button stays (it stands on every planet), build/evac leave */
 	cEnv.click('launchBuild');
 	check(!cCareer.stranded && cCareer.pads[targetPlanet].catapult.id === 'EMC-1' &&
-		!cui.get('launch').hidden && cui.get('strandedActions').hidden &&
+		!cui.get('launch').hidden && !cui.get('planetActions').hidden &&
+		cui.get('launchBuild').hidden && !cui.get('launchCommercial').hidden &&
+		cui.get('launchEvac').hidden &&
 		cui.get('launch').textContent === 'launch',
-		'launchBuild unstrands ship and restores #launch in place');
+		'launchBuild unstrands ship; commercial stays available beside #launch');
 
-	/* lost in space hides #launchBuild and leaves #launchEvac to evacuate home */
+	/* lost in space hides build/commercial and leaves #launchEvac to go home */
 	cCareer.at = -1;
 	cCareer.stranded = true;
 	cScene.refreshCareerPanel();
-	check(cui.get('launch').hidden && !cui.get('strandedActions').hidden &&
-		cui.get('launchBuild').hidden && !cui.get('launchEvac').hidden,
-		'lost in space shows only launchEvac in strandedActions');
+	check(cui.get('launch').hidden && !cui.get('planetActions').hidden &&
+		cui.get('launchBuild').hidden && cui.get('launchCommercial').hidden &&
+		!cui.get('launchEvac').hidden,
+		'lost in space shows only launchEvac in planetActions');
+	cCareer.ledger.purse = 20;
 	cEnv.click('launchEvac');
 	check(!cCareer.stranded && cCareer.at === cCareer.hq &&
-		!cui.get('launch').hidden && cui.get('strandedActions').hidden,
+		!cui.get('launch').hidden && !cui.get('launchCommercial').hidden,
 		'launchEvac brings ship back to HQ and restores #launch');
+
+	/* pause-on-landing setting: off = the career clock runs while landed */
+	const clockBeforeIdle = cScene.game.clockSteps;
+	cEnv.toggle('careerPauseLand');
+	check(!cScene.pauseOnLanding() && !cScene.careerPaused(),
+		'unchecking pause on landing must resume the clock at once');
+	cEnv.runFrames(30, 16.0);
+	check(cScene.game.clockSteps > clockBeforeIdle,
+		'unpaused career clock must step between flights (pads charge, rivals fly)');
+	cEnv.toggle('careerPauseLand');
+	check(cScene.pauseOnLanding() && cScene.careerPaused(),
+		'checking pause on landing must pause the clock at once');
+	cEnv.click('careerClock');
+	check(!cScene.careerPaused(), 'the time button resumes a paused career clock');
+	cEnv.click('careerClock');
+	const clockPausedAgain = cScene.game.clockSteps;
+	cEnv.runFrames(30, 16.0);
+	check(cScene.careerPaused() && cScene.game.clockSteps === clockPausedAgain,
+		'the time button pauses the career clock again, rivals included');
 
 	/* switching out of career resets playback to ×1 with max ×8 */
 	cScene.setPlayMode('tour');
@@ -2535,9 +2603,11 @@ function protoOf(career, family, id) {
 	check(cScene.playScale() === 8 && cui.get('playFaster').disabled,
 		'non-career max playback speed remains ×8');
 	console.log('0.4.17 verified: separate #cargoFoot panel · inline stranded buy/evacuate · ' +
-		'career ×4..×32 playback · +3.25-9 / rate / TOF route prediction');
-	console.log('0.4.19 verified: queued turret launch · commercial rail + EMC claims · ' +
+		'career ×4..×32 playback · +3.25-exit / rate / TOF route prediction');
+	console.log('0.4.19 verified: commercial rail + EMC claims · ' +
 		'flying rival careers · 9.00 pads / 6.00 evacuation');
+	console.log('0.4.20 verified: instant launch at any time · commercial EMC-1 button on every planet · ' +
+		'asymptotic visit profit →3.00 · continuous career clock with pause on landing');
 }
 
 console.log('paint calls', {

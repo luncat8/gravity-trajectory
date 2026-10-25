@@ -68,15 +68,20 @@ function buildStaticWorld(seed) {
 function benchEconomy() {
 	const m = GravityGame.createMarket();
 	const p0 = GravityGame.planetProfit(m, 0, 0);
-	check(Math.abs(p0 - 0.25) < 1e-12, 'initial planet profit expected 0.25, got ' + p0);
+	check(Math.abs(p0 - 0.23986675611203023) < 1e-12, 'initial planet profit expected ≈0.24, got ' + p0);
 	m.lastVisitStep[0] = 600;
 	check(GravityGame.planetProfit(m, 0, 600) === 0, 'freshly visited planet must pay 0');
 	const after8s = GravityGame.planetProfit(m, 0, 600 + 8 * 120);
 	const after80s = GravityGame.planetProfit(m, 0, 600 + 80 * 120);
 	const after200s = GravityGame.planetProfit(m, 0, 600 + 200 * 120);
-	check(Math.abs(after8s - 0.05) < 1e-12, '8s unvisited profit expected 0.05, got ' + after8s);
-	check(Math.abs(after80s - 0.50) < 1e-12, '80s unvisited profit expected 0.50, got ' + after80s);
-	check(Math.abs(after200s - GravityGame.MONEY.cap) < 1e-12, 'cap profit expected 0.75, got ' + after200s);
+	const after2000s = GravityGame.planetProfit(m, 0, 600 + 2000 * 120);
+	check(Math.abs(after8s - 0.04958563853514754) < 1e-12, '8s unvisited profit expected ≈0.0496, got ' + after8s);
+	check(Math.abs(after80s - 0.4605548253281578) < 1e-12, '80s unvisited profit expected ≈0.4606, got ' + after80s);
+	/* asymptotic: keeps growing past the old 0.75 cap, easing toward 3.00
+	 * without reaching it at any finite age that still resolves in float */
+	check(after200s > 1 && after2000s > after200s && after2000s < GravityGame.MONEY.cap &&
+		after2000s > 0.98 * GravityGame.MONEY.cap,
+		'asymptotic profit expected →3.00, got 200s=' + after200s + ' 2000s=' + after2000s);
 
 	/* exact parity between estimateProfit (from predictFast) and live stepHarvest */
 	const { sim } = buildStaticWorld(31);
