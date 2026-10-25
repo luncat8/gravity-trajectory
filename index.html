@@ -74,9 +74,7 @@
 			<div id="careerPad" class="careerBlock"></div>
 			<div id="careerTasks" class="careerBlock"></div>
 			<div id="careerShop" class="careerBlock"></div>
-			<div id="careerWaitInfo" class="careerLine dim"></div>
 			<div class="actions careerActions">
-				<button id="careerWait" class="miniBtn" title="run the world clock so every pad charges">wait · 30 min</button>
 				<button id="careerEvac" class="miniBtn" title="fly the ship home to HQ for a fee">evacuate</button>
 			</div>
 		</div>
@@ -227,15 +225,6 @@
 		</label>
 	</div>
 
-	<div id="playbackGroup" class="group">
-		<div class="caption"><span>playback</span><span id="playTag">×1</span></div>
-		<div class="actions playActions">
-			<button id="playSlower" class="miniBtn" title="slower · physics unchanged">− slower</button>
-			<button id="playReset" class="miniBtn" title="back to real time">×1</button>
-			<button id="playFaster" class="miniBtn" title="faster · physics unchanged">+ faster</button>
-		</div>
-	</div>
-
 	<div id="helperGroup" class="group">
 		<div class="caption"><span>auto helpers</span><span id="helperTag">ready</span></div>
 		<div class="actions helperActions">
@@ -301,17 +290,25 @@
 </aside>
 
 <footer id="tradeControls">
+	<button id="careerWait" class="miniBtn" title="run the world clock so every pad charges" hidden>wait · 30 min</button>
 	<button id="tradePause" title="space">pause</button>
-	<label class="ctl" title="trade simulation minutes per real second">speed
+	<label class="ctl" title="trade simulation minutes per real second">time
 		<input id="tradeSpeed" type="range" min="0.5" max="12" step="0.5" value="0.5">
 		<output id="tradeSpeedLabel">×0.5</output>
 	</label>
+	<span id="playbackGroup" class="tradePlay" title="flight playback · only the wall-clock pace changes">
+		<span class="tradeLabel">play <b id="playTag">×1</b></span>
+		<button id="playSlower" class="miniBtn" title="slower · physics unchanged">−</button>
+		<button id="playReset" class="miniBtn" title="back to real time">reset</button>
+		<button id="playFaster" class="miniBtn" title="faster · physics unchanged">+</button>
+	</span>
 	<span class="opts">
 		<label><input id="showOrbits" type="checkbox" checked> orbits</label>
 		<label><input id="showMoons" type="checkbox" checked> moons</label>
 		<label><input id="showLinks" type="checkbox" checked> links</label>
 		<label><input id="showRoutes" type="checkbox" checked> routes</label>
 	</span>
+	<span id="careerWaitInfo" class="careerLine dim" hidden></span>
 </footer>
 
 <script src="exec_queue.js"></script>

@@ -1520,16 +1520,47 @@ shopCareer.pads[far].chargeKwh = 0.1;
 const waitSteps = sScene.game.clockSteps;
 const waitTrade = shopEnv.context.OrbitScene.sim.t;
 shopEnv.click('careerWait');
+shopEnv.click('careerWait');
 const waitRate = shopEnv.context.OrbitScene.trade.speed;
-check(sScene.game.clockSteps === waitSteps + Math.round(30 / (pageSim.DT * waitRate)),
+/* the wait is a 2 s ease-in-out fast-forward, not an instant clock jump */
+const waitTotal = Math.round(30 / (pageSim.DT * waitRate));
+check(sui.get('careerWait').textContent.startsWith('waiting · '),
+	'wait did not start its fast-forward: ' + sui.get('careerWait').textContent);
+check(sui.get('careerWaitInfo').textContent.startsWith('fast-forward · '),
+	'wait progress line missing: ' + sui.get('careerWaitInfo').textContent);
+shopEnv.runFrames(60, 16.0);
+check(sScene.game.clockSteps > waitSteps && sScene.game.clockSteps < waitSteps + waitTotal,
+	'wait was not eased across the 2 s: ' + (sScene.game.clockSteps - waitSteps) + ' / ' + waitTotal);
+check(shopEnv.context.OrbitScene.sim.t > waitTrade &&
+	shopEnv.context.OrbitScene.sim.t < waitTrade + 30,
+	'wait did not move the trade world during the fast-forward');
+shopEnv.runFrames(80, 16.0);
+check(sScene.game.clockSteps === waitSteps + waitTotal,
 	'wait advanced ' + (sScene.game.clockSteps - waitSteps) + ' steps, not 30 world minutes');
 check(Math.abs(shopEnv.context.OrbitScene.sim.t - (waitTrade + 30)) < 1e-6,
 	'wait moved the world ' + (shopEnv.context.OrbitScene.sim.t - waitTrade) + ' minutes');
+check(sui.get('careerWait').textContent === 'wait · 30 min' &&
+	sui.get('careerWaitInfo').textContent.startsWith('wait → '),
+	'wait did not settle back to its preview line');
 check(shopCareer.pads[far].chargeKwh > 0.1, 'wait did not charge the far pad: ' + shopCareer.pads[far].chargeKwh);
 check(/^waited 30 min · P\d+ pad (\+\d+\.\d\d kWh|already full|has no catapult)$/.test(
 	sui.get('careerMsg').textContent), 'wait note: ' + sui.get('careerMsg').textContent);
 taskClick(shopEnv, sui, { act: 'drop' });
 check(shopCareer.contract === -1 && shopCareer.ship.cargoTons === 0, 'drop kept the contract');
+/* an unaffordable price stays readable in red, not dim like a state gate */
+const shopCheat = shopCareer.cheat;
+const shopPurse = shopCareer.ledger.purse;
+shopCareer.cheat = null;
+shopCareer.ledger.purse = 0;
+sScene.refreshCareerPanel();
+check(/<button class="miniBtn costly"[^>]*data-act="build"[^>]* disabled/.test(sui.get('careerShop').innerHTML),
+	'cost-blocked shop button is not marked costly');
+check(/<button class="miniBtn"[^>]*data-act="copy"/.test(sui.get('careerShop').innerHTML) &&
+	!/<button class="miniBtn costly"[^>]*data-act="copy"/.test(sui.get('careerShop').innerHTML),
+	'copy rows must stay free of the cost class');
+shopCareer.cheat = shopCheat;
+shopCareer.ledger.purse = shopPurse;
+sScene.refreshCareerPanel();
 console.log('career drawer:', 'built P' + far, '· bulk EMC-2 · hold', shopCareer.ship.hold.id,
 	'· wait', sui.get('careerMsg').textContent);
 /* the whole gate: land without a catapult, build one from the pad block, launch again */
@@ -1703,6 +1734,8 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	let profitBefore = 0;
 	for (let i = 0; i < 26; i++) profitBefore += pGame.planetProfit(pScene.game.market, i, stepsBefore);
 	pEnv.click('careerWait');
+	/* the 2 s fast-forward settles in exactly one chunk at the end */
+	pEnv.runFrames(130, 16.0);
 	const settledKwh = pCareer.pads[hq].chargeKwh - chargeBefore;
 	const settledSteps = pScene.game.clockSteps - stepsBefore;
 	let profitAfter = 0;
@@ -1984,6 +2017,15 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	check(sciBlock().includes('data-sci-axis="maxForce"') && sciBlock().includes('data-sci-axis="efficiency"') &&
 		/class="miniBtn on" data-act="sciFamily" data-family="catapult"/.test(sciBlock()),
 		'catapult research space: ' + sciBlock().slice(0, 200));
+
+	/* a fee the purse cannot cover keeps its price red, not dim */
+	const purseRich = sciCareer.ledger.purse;
+	sciCareer.ledger.purse = 0;
+	sciScene.refreshCareerPanel();
+	check(/<button class="miniBtn costly" id="sciAccept"/.test(sciBlock()),
+		'research fee blocked by the purse is not marked costly');
+	sciCareer.ledger.purse = purseRich;
+	sciScene.refreshCareerPanel();
 
 	/* research is HQ-only: away from HQ the accept is disabled and clicks refuse */
 	sciCareer.at = (sciCareer.hq + 1) % pageWorld.PLANETS;
@@ -2323,6 +2365,25 @@ function protoOf(career, family, id) {
 		shopHtml.indexOf('↳ tank') < shopHtml.indexOf('>engine<'),
 		'grouped shop prototype rows show parent-aligned inline stats');
 	console.log('0.4.15 verified: 36x24 directional cost surface · hard-edge SVG lines · bot R&D · grouped shop prototype stats');
+}
+
+/* 0.4.16: the trade bar owns wait + flight playback, wait is eased, prices red */
+{
+	const bar = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
+	bar.runFrames(2, 16.0);
+	const bui = bar.elements;
+	const bScene = bar.context.GravityScene;
+	check(!bui.get('careerWait').hidden && bui.get('careerWaitInfo').hidden === false,
+		'career wait is not visible in the trade bar');
+	bScene.setPlayMode('lab');
+	bar.runFrames(2, 16.0);
+	check(bui.get('careerWait').hidden && bui.get('careerWaitInfo').hidden,
+		'career wait did not hide outside career');
+	check(bui.get('playbackGroup').hidden === false && bui.get('playTag').textContent === '×1',
+		'flight playback did not stay in lab');
+	check(bui.get('tradeSpeedLabel').textContent === '×1', 'trade time slider label');
+	console.log('0.4.16 verified: wait + flight playback in the bottom trade bar · ' +
+		'2 s eased fast-forward · cost-blocked prices red');
 }
 
 console.log('paint calls', {

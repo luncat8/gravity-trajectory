@@ -364,3 +364,17 @@ The same rule applies to text that restates numbers: `1 RU = 10 thrust kN`
 was a per-family sentence that says exactly `1 / METRIC_SCALE[family][axis]`.
 Deriving it keeps the readout honest after a retune and needs no edit for a new
 family, and duplicated prose is the copy nobody updates.
+
+## animating a settlement that must stay exact
+
+`GravityGame.careerAdvance` is not chunk-invariant: `batteryLeak` is
+exponential (`charge · e^(−k·minutes)`) while `solarCharge` is linear, so
+`careerAdvance(n)` does not equal n calls with `careerAdvance(1)`. When a
+fast-forward animates the world in eased chunks but the UI and benches assert
+the exact instant-wait result, snapshot the accumulator at the click
+(`Float64Array.from(pads, p => p.chargeKwh)`) and recharge from that snapshot
+with the cumulative step count each frame; the last call then lands on the
+single-call value bit for bit. The trade sim is chunk-invariant
+(`advanceTo` drains its event heap to the target), so it can follow arbitrary
+eased targets (`startT + 30 · easeInOut(p)`), which is what makes the planets
+visibly race.

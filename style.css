@@ -735,6 +735,14 @@ input:disabled {
 	cursor: default;
 }
 
+/* the purse, not a state gate (HQ only, cargo too big, no catapult), is what
+ * blocks this price: keep it readable and red instead of dim */
+button.costly:disabled {
+	border-color: rgba(255, 148, 120, 0.32);
+	color: var(--warn);
+	opacity: 1;
+}
+
 #runBox {
 	margin-top: 7px;
 }
@@ -1087,11 +1095,6 @@ polyline.sciKnownHull {
 	text-overflow: ellipsis;
 }
 
-#careerWaitInfo {
-	margin: 5px 0 3px;
-	font-size: 10px;
-}
-
 .careerActions {
 	flex-wrap: wrap;
 	gap: 5px;
@@ -1209,6 +1212,55 @@ polyline.sciKnownHull {
 	min-width: 30px;
 }
 
+/* career wait and flight playback live in the trade bar, next to the clock */
+#careerWait,
+#playbackGroup {
+	flex: none;
+}
+
+/* keep the bar still while the label runs wait · 30 min → waiting · 100 % */
+#careerWait {
+	min-width: 96px;
+	text-align: center;
+}
+
+#playbackGroup {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding-left: 10px;
+	border-left: 1px solid var(--line);
+}
+
+#playbackGroup .miniBtn {
+	padding: 2px 7px;
+	font-variant-numeric: tabular-nums;
+}
+
+.tradeLabel {
+	color: var(--dim);
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.tradeLabel b {
+	color: var(--text);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+	letter-spacing: 0;
+}
+
+#careerWaitInfo {
+	flex: 1 1 100%;
+	max-width: 100%;
+	text-align: center;
+	font-size: 10px;
+}
+
 .opts {
 	display: flex;
 	gap: 10px;
@@ -1236,6 +1288,19 @@ polyline.sciKnownHull {
 		left: 14px;
 		right: auto;
 		width: min(318px, calc(100vw - 336px));
+	}
+
+	/* keep the main trade row unwrapped: wait + time + play + toggles */
+	#tradeControls {
+		gap: 8px;
+	}
+
+	#tradeControls .ctl input[type="range"] {
+		width: 76px;
+	}
+
+	#careerWait {
+		min-width: 84px;
 	}
 }
 
@@ -1325,6 +1390,17 @@ polyline.sciKnownHull {
 		padding: 8px;
 		transform: none;
 		justify-content: space-between;
+		gap: 5px 8px;
+	}
+
+	#playbackGroup {
+		padding-left: 0;
+		border-left: 0;
+	}
+
+	#careerWaitInfo {
+		font-size: 9px;
+		white-space: normal;
 	}
 
 	.opts {
@@ -1372,17 +1448,11 @@ polyline.sciKnownHull {
 	}
 }
 
-.playActions .miniBtn {
-	flex: 1;
-	padding: 4px 8px;
-	font-variant-numeric: tabular-nums;
-}
-
 /* postcard popup: bottom-left, above the trade footer, aspect kept */
 .photoCard {
 	position: fixed;
 	left: 14px;
-	bottom: 64px;
+	bottom: var(--footReserve, 64px);
 	z-index: 5;
 	width: min(340px, calc(100vw - 28px));
 	max-height: min(52vh, 430px);
@@ -1575,7 +1645,7 @@ polyline.sciKnownHull {
 @media (max-width: 820px) {
 	.photoCard {
 		left: 8px;
-		bottom: 60px;
+		bottom: var(--footReserve, 60px);
 	}
 }
 

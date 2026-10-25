@@ -110,8 +110,10 @@
 		scienceValues[family] = {};
 		for (const key in SCIENCE_DEFAULTS[family]) scienceValues[family][key] = SCIENCE_DEFAULTS[family][key];
 	}
-	/* one press of wait runs the world clock: 30 world minutes of sunlight */
+	/* one press of wait runs the world clock: 30 world minutes of sunlight,
+	 * eased over 2 s so the trade sky visibly fast-forwards */
 	const CAREER_WAIT_MIN = 30;
+	const CAREER_WAIT_MS = 2000;
 	const VIEW_SPACE = 'space';
 	const VIEW_FIELD = 'field';
 	/* refit button `data-tier` that empties the engine slot (the tech tables have no `null` record) */
@@ -768,6 +770,9 @@
 			leftHudEl.style.setProperty('--footReserve', reserve);
 			leftHudEl.style.setProperty('--hudMaxH', maxH);
 		}
+		/* the postcard sits just above the bar, taller in career (wait line) */
+		const rootEl = root.document && root.document.documentElement;
+		if (rootEl && rootEl.style) rootEl.style.setProperty('--footReserve', reserve);
 	}
 
 	function worldX(clientX) {
@@ -2201,6 +2206,7 @@
 	 * slot, and in the flown rules after the goal is met or purse cannot launch. */
 	function gameLocked() {
 		if (!game.on) return false;
+		if (careerWaitBusy()) return true;
 		const slot = activeSlotIndex();
 		const sim = slotSim(slot);
 		if (replay.on || sim.status === STATUS_FLYING || slotIsBot(slot)) return true;
@@ -2287,6 +2293,7 @@
 	}
 
 	function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
+		cancelCareerWait();
 		stopReplay();
 		linkNote = '';
 		game.on = true;
@@ -2412,6 +2419,7 @@
 
 	/* back to lab: the world stays, the clock returns to real time, a running flight continues */
 	function stopGame() {
+		cancelCareerWait();
 		stopReplay();
 		clearBurnAim();
 		linkNote = '';
@@ -3101,7 +3109,7 @@
 		horizonSlider.disabled = route;
 		if (cargoHintEl) {
 			cargoHintEl.innerHTML = career
-				? 'drag from pad to launch · in flight: <b>Space</b> / drag ship to burn<br><b>wait</b> charges pads · build pads, refit at HQ and take deliveries'
+				? 'drag from pad to launch · in flight: <b>Space</b> / drag ship to burn<br><b>wait</b> in the bottom bar charges pads · build pads, refit at HQ and take deliveries'
 				: route
 				? playerIsBot()
 					? 'bot plans ' + slotName(activeSlotIndex()) + ' · longest finished plan leads'
@@ -3246,6 +3254,9 @@
 	/* the planet selector follows the ship until the player picks one */
 	let careerFollow = true;
 
+	/* the running fast-forward: its clock starts at the click and clears on finish */
+	let careerWaitAnim = null;
+
 	function careerCost(career, value) {
 		return career.cheat === GravityGame.CHEAT_COMMUNISM ? 0 : value;
 	}
@@ -3351,14 +3362,22 @@
 		careerMsgEl.hidden = text === '';
 	}
 
-	function shopButton(label, act, kind, tier, disabled, title) {
-		return shopButtonRef(label, act, kind, 'data-tier="' + tier + '"', disabled, title);
+	function shopButton(label, act, kind, tier, disabled, title, costly) {
+		return shopButtonRef(label, act, kind, 'data-tier="' + tier + '"', disabled, title, costly);
 	}
 
-	/* `ref` names the record: a table tier, or the id of a research prototype */
-	function shopButtonRef(label, act, kind, ref, disabled, title) {
-		return '<button class="miniBtn" data-act="' + act + '" data-kind="' + kind + '" ' + ref +
+	/* `ref` names the record: a table tier, or the id of a research prototype;
+	 * `costly` marks the purse itself as the blocker, so the price stays red
+	 * instead of fading like a state gate (HQ only, cargo, no catapult) */
+	function shopButtonRef(label, act, kind, ref, disabled, title, costly) {
+		return '<button class="miniBtn' + (disabled && costly ? ' costly' : '') +
+			'" data-act="' + act + '" data-kind="' + kind + '" ' + ref +
 			(disabled ? ' disabled' : '') + ' title="' + title + '">' + label + '</button>';
+	}
+
+	/* a price the purse cannot cover (free under the communism cheat) */
+	function purseTooSmall(career, price) {
+		return career.ledger.purse + 1e-9 < price;
 	}
 
 	function recordRef(table, item) {
@@ -3420,13 +3439,14 @@
 		if (pad.catapult === null) {
 			const first = OrbitTech.CATAPULTS[0];
 			const cost = careerCost(career, first.buildCost);
+			const poor = purseTooSmall(career, cost);
 			const fresh = padCap(career, first, OrbitTech.BATTERIES[0]);
 			html += '<div class="careerLine warn">no catapult here · build one or evacuate</div>' +
 				'<div class="careerRow"><span class="careerBtns">' +
 				shopButton('build ' + first.id + ' here · ' + costText(cost), 'build', 'catapult', 0,
-					career.ledger.purse + 1e-9 < cost,
+					poor,
 					'build the first catapult on ' + planetName(at) + ' · full battery lifts ' +
-						ship.mass.toFixed(1) + ' t to ' + Math.round(fresh) + ' px/s') +
+						ship.mass.toFixed(1) + ' t to ' + Math.round(fresh) + ' px/s', poor) +
 				capHtml(capArrowText(0, fresh)) + '</span></div>';
 			return html;
 		}
@@ -3472,6 +3492,7 @@
 			return html + '<i>needs a catapult</i></span></div>';
 		}
 		const buildCost = careerCost(career, next.buildCost);
+		const poor = purseTooSmall(career, buildCost);
 		const btnTitle = row.kind === OrbitTech.KIND_PANEL && cur
 			? 'build ' + next.id + ' on ' + planetName(planet) + ' · +' +
 				waitGain(career, planet, cur) + ' → +' + waitGain(career, planet, next) +
@@ -3479,7 +3500,7 @@
 				panelReadySec(career, planet, pad, next) + ' s'
 			: 'build ' + next.id + ' on ' + planetName(planet);
 		html += shopButton(next.id + ' · ' + costText(buildCost), 'build', row.kind, tierIndex(row.table, next),
-			career.ledger.purse + 1e-9 < buildCost, btnTitle);
+			poor, btnTitle, poor);
 		html += bulkButtonHtml(career, row, next, 'data-tier="' + tierIndex(row.table, next) + '"');
 		html += copyButtonHtml(row, next);
 		return html + '</span></div>';
@@ -3494,9 +3515,11 @@
 		}
 		if (count === 0) return '';
 		const cost = GravityGame.bulkUpgradeCost(career, row.kind, item);
+		const poor = purseTooSmall(career, cost);
 		return shopButtonRef('all ' + count + ' · ' + costText(cost), 'bulk', row.kind, ref,
-			career.ledger.purse + 1e-9 < cost,
-			'fit ' + item.id + ' to ' + count + ' built ' + row.label + (count === 1 ? '' : 's'));
+			poor,
+			'fit ' + item.id + ' to ' + count + ' built ' + row.label + (count === 1 ? '' : 's'),
+			poor);
 	}
 
 	/* what a part row leads with: hold tons, tank fuel kg, engine thrust kN */
@@ -3561,9 +3584,10 @@
 			(fits ? '' : ' · drops ' + career.ship.cargoTons + ' t cargo first');
 		const label = back ? 'back ' + name
 			: (owned ? 'fit ' : 'buy ') + name + ' · ' + costText(price);
+		const poor = purseTooSmall(career, price);
 		return shopButton(label, 'part', row.kind,
 			item === null ? NO_TIER : tierIndex(row.table, item),
-			!atHq || !fits || career.ledger.purse + 1e-9 < price, title);
+			!atHq || !fits || poor, title, poor && atHq && fits);
 	}
 
 	function partRowHtml(career, row) {
@@ -3637,13 +3661,14 @@
 			capHtml(cap ? stat + ' · ' + cap : stat) + '<span class="careerBtns">';
 		if (pad[row.kind] === proto) html += '<i>built</i>';
 		else {
+			const poor = purseTooSmall(career, cost);
 			const why = row.kind !== OrbitTech.KIND_CATAPULT && pad.catapult === null
 				? planetName(planet) + ' has no catapult yet'
 				: proto.id + ' is not above the ' + row.label + ' on ' + planetName(planet);
 			html += shopButtonRef('build ' + proto.id + ' · ' + costText(cost), 'build', row.kind,
-				'data-item="' + proto.id + '"', !fits || career.ledger.purse + 1e-9 < cost,
+				'data-item="' + proto.id + '"', !fits || poor,
 				fits ? 'build ' + proto.id + ' on ' + planetName(planet) + ' · ' +
-					protoGearNoteText(row.kind, proto) : why);
+					protoGearNoteText(row.kind, proto) : why, poor && fits);
 		}
 		html += bulkButtonHtml(career, row, proto, 'data-item="' + proto.id + '"');
 		return html + copyButtonHtml(row, proto) + '</span></div>';
@@ -3921,11 +3946,13 @@
 	function scienceAcceptButton(career, family) {
 		const cost = GravityGame.researchCost(career, family, scienceParams(family));
 		const atHq = career.at === career.hq && career.ended === GravityGame.CAREER_OPEN;
-		const disabled = !atHq || !Number.isFinite(cost) || career.ledger.purse + 1e-9 < cost;
+		const poor = !Number.isFinite(cost) || purseTooSmall(career, cost);
+		const disabled = !atHq || poor;
 		const why = !atHq ? 'research is done back at HQ ' + planetName(career.hq)
-			: disabled ? 'the purse cannot cover the research fee'
+			: poor ? 'the purse cannot cover the research fee'
 			: 'accept this point into the knowledge hull';
-		return '<button class="miniBtn" id="sciAccept" data-act="sciAccept" data-kind="' + family + '"' +
+		return '<button class="miniBtn' + (poor && atHq ? ' costly' : '') +
+			'" id="sciAccept" data-act="sciAccept" data-kind="' + family + '"' +
 			(disabled ? ' disabled' : '') + ' title="' + why + '">research · ' + costText(cost) + '</button>';
 	}
 
@@ -4003,7 +4030,9 @@
 		if (acceptEl) {
 			const cost = GravityGame.researchCost(career, family, scienceParams(family));
 			const atHq = career.at === career.hq && career.ended === GravityGame.CAREER_OPEN;
-			acceptEl.disabled = !atHq || !Number.isFinite(cost) || career.ledger.purse + 1e-9 < cost;
+			const poor = !Number.isFinite(cost) || purseTooSmall(career, cost);
+			acceptEl.disabled = !atHq || poor;
+			acceptEl.classList.toggle('costly', atHq && poor);
 			acceptEl.textContent = 'research · ' + costText(cost);
 		}
 	}
@@ -4187,7 +4216,12 @@
 	}
 
 	function refreshCareerWaitUi(career, ended) {
-		careerWaitBtn.disabled = ended || gravity.status === STATUS_FLYING;
+		const busy = careerWaitBusy();
+		careerWaitBtn.disabled = busy || ended || gravity.status === STATUS_FLYING;
+		careerWaitBtn.classList.toggle('on', busy);
+		if (!busy) careerWaitBtn.textContent = 'wait · ' + CAREER_WAIT_MIN + ' min';
+		/* the running fast-forward keeps its own live progress line */
+		if (busy) return;
 		if (ended) {
 			if (careerWaitInfoEl) {
 				careerWaitInfoEl.textContent = '';
@@ -4261,6 +4295,9 @@
 	function refreshCareerPanel() {
 		if (!careerBoxEl) return;
 		refreshCareerTabs();
+		/* the wait button sits in the bottom trade bar, so it follows the rule */
+		careerWaitBtn.hidden = !careerRule();
+		if (careerWaitInfoEl && !careerRule()) careerWaitInfoEl.hidden = true;
 		if (!careerRule()) {
 			careerPadEl.innerHTML = '';
 			careerShopEl.innerHTML = '';
@@ -4350,29 +4387,103 @@
 		careerChanged();
 	}
 
-	/* let the world clock run so every pad charges (and the board ages) */
+	function careerWaitBusy() {
+		return careerWaitAnim !== null;
+	}
+
+	/* cubic ease-in-out: the fast-forward starts gently, races, then settles */
+	function easeInOut(p) {
+		const q = p < 0.5 ? 2 * p : 2 - 2 * p;
+		return p < 0.5 ? q * q * q / 2 : 1 - q * q * q / 2;
+	}
+
+	function careerWaitProgress(p, eased) {
+		const pct = Math.round(p * 100);
+		if (pct === careerWaitAnim.pct) return;
+		careerWaitAnim.pct = pct;
+		careerWaitBtn.textContent = 'waiting · ' + pct + ' %';
+		if (!careerWaitInfoEl) return;
+		careerWaitInfoEl.hidden = false;
+		careerWaitInfoEl.className = 'careerLine dim';
+		/* the minutes are the eased world time, the % is wall-clock progress */
+		careerWaitInfoEl.textContent = 'fast-forward · ' + (CAREER_WAIT_MIN * eased).toFixed(1) +
+			' / ' + CAREER_WAIT_MIN + ' min · ' + pct + ' %';
+	}
+
+	/* the whole settled result lands exactly on the old instant wait */
+	function careerWaitFinish() {
+		const anim = careerWaitAnim;
+		careerWaitAnim = null;
+		const career = anim.career;
+		const pad = career.pads[anim.planet];
+		const after = pad.catapult === null ? 0 : pad.chargeKwh;
+		const gain = after - anim.before;
+		GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
+		GravityGame.checkEnded(career);
+		gravity.predCount = 0;
+		careerNotice('waited ' + CAREER_WAIT_MIN + ' min · ' + planetName(anim.planet) + ' pad ' +
+			(gain > 0.005 ? '+' + gain.toFixed(2) + ' kWh'
+				: pad.catapult === null ? 'has no catapult' : 'already full'));
+		careerWaitBtn.classList.remove('on');
+		careerChanged();
+	}
+
+	/* the world advances in eased chunks each frame: the trade planets visibly
+	 * race, pads charge and the board ages exactly as one instant wait did */
+	function careerWaitTick(now) {
+		const anim = careerWaitAnim;
+		if (anim === null) return;
+		const p = Math.max(0, Math.min(1, (now - anim.start) / CAREER_WAIT_MS));
+		const eased = easeInOut(p);
+		const steps = Math.round(eased * anim.steps);
+		if (steps > anim.done) {
+			/* recharge from the start snapshot, so the eased chunks land on the
+			 * exact single-call result (leak is exponential, solar is linear) */
+			const pads = anim.career.pads;
+			for (let i = 0; i < pads.length; i++) pads[i].chargeKwh = anim.charges[i];
+			GravityGame.careerAdvance(anim.career, anim.rate, steps);
+			game.clockSteps = anim.startClock + steps;
+			anim.done = steps;
+			gravity.predCount = 0;
+		}
+		tradeSim.advanceTo(anim.startT + CAREER_WAIT_MIN * eased);
+		gravity.fieldT = tradeSim.t;
+		if (p < 1) careerWaitProgress(p, eased);
+		else careerWaitFinish();
+	}
+
+	/* one press starts the 2 s fast-forward; only the end settles the board */
 	function careerWait() {
-		if (!careerRule() || gravity.status === STATUS_FLYING) return;
+		if (!careerRule() || careerWaitBusy() || gravity.status === STATUS_FLYING) return;
 		const career = game.career;
 		if (career.ended !== GravityGame.CAREER_OPEN) return;
 		const planet = career.at >= 0 ? career.at : career.hq;
 		const pad = career.pads[planet];
-		const before = pad.catapult === null ? 0 : pad.chargeKwh;
 		const rate = scene.trade.speed;
-		const steps = Math.max(1, Math.round(CAREER_WAIT_MIN / (DT * rate)));
-		GravityGame.careerAdvance(career, rate, steps);
-		game.clockSteps += steps;
-		tradeSim.advanceTo(tradeSim.t + CAREER_WAIT_MIN);
-		GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
-		GravityGame.checkEnded(career);
-		gravity.fieldT = tradeSim.t;
-		gravity.predCount = 0;
-		const after = pad.catapult === null ? 0 : pad.chargeKwh;
-		const gain = after - before;
-		careerNotice('waited ' + CAREER_WAIT_MIN + ' min · ' + planetName(planet) + ' pad ' +
-			(gain > 0.005 ? '+' + gain.toFixed(2) + ' kWh'
-				: pad.catapult === null ? 'has no catapult' : 'already full'));
-		careerChanged();
+		careerWaitAnim = {
+			career: career,
+			planet: planet,
+			before: pad.catapult === null ? 0 : pad.chargeKwh,
+			charges: Float64Array.from(career.pads, p => p.chargeKwh),
+			rate: rate,
+			steps: Math.max(1, Math.round(CAREER_WAIT_MIN / (DT * rate))),
+			done: 0,
+			pct: -1,
+			start: performance.now(),
+			startClock: game.clockSteps,
+			startT: tradeSim.t
+		};
+		careerWaitBtn.disabled = true;
+		careerWaitBtn.classList.add('on');
+		careerWaitProgress(0, 0);
+		hudAt = -Infinity;
+	}
+
+	function cancelCareerWait() {
+		if (careerWaitAnim === null) return;
+		careerWaitAnim = null;
+		careerWaitBtn.classList.remove('on');
+		careerWaitBtn.textContent = 'wait · ' + CAREER_WAIT_MIN + ' min';
 	}
 
 	function careerEvacuate() {
@@ -4391,7 +4502,8 @@
 		if (!careerRule()) return;
 		const act = data.act;
 		if (act === 'careerTab') return careerSelectTab(data.tab);
-		if (gravity.status === STATUS_FLYING) return;
+		/* the eased world clock owns the career for its 2 s */
+		if (careerWaitBusy() || gravity.status === STATUS_FLYING) return;
 		const career = game.career;
 		if (act === 'wait') return careerWait();
 		if (act === 'evac') return careerEvacuate();
@@ -5766,6 +5878,8 @@
 		launchNote = note;
 		launchButton.disabled = route || botPlayer || blocked || broke;
 		launchButton.classList.toggle('exitWarning', exitWarning);
+		/* only a missing launch fee is a price; a career pad note is a state gate */
+		launchButton.classList.toggle('costly', broke && !career);
 		const who = slotName(slot);
 		const prefix = game.on && slot > 0 ? who + ' · ' : '';
 		launchButton.textContent = route
@@ -5907,6 +6021,7 @@
 		const dt = Math.min(0.1, rawMs / 1000);
 		lastFrame = now;
 
+		if (careerWaitBusy()) careerWaitTick(now);
 		if (game.on) stepGame(now, dt);
 		if (helperState.active) helperTick(HELPER_BUDGET_MS);
 		syncField();
