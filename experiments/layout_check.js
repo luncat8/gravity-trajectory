@@ -239,7 +239,8 @@ async function scoreboardStable(page) {
 					rivals: document.getElementById('rivalGroup').hidden,
 					scrollWidth: box.scrollWidth,
 					width: rect.width,
-					inside: rect.left >= hud.left - 1 && rect.right <= hud.right + 1,
+					inside: rect.left >= hud.left - 1 && rect.right <= hud.right + 1 &&
+						hud.right <= leftRect.right + 1,
 					buttons: box.querySelectorAll('button').length,
 					pad: document.getElementById('careerPad').textContent.indexOf('kWh') >= 0,
 					pushedDown: scoreRect.bottom <= hud.top + 1 && hud.bottom <= tradeRect.top + 1 && hud.height >= 400,
@@ -247,6 +248,25 @@ async function scoreboardStable(page) {
 					leftScrolls: left.scrollHeight > left.clientHeight
 				};
 			});
+			await page.click('#careerBox [data-act="careerTab"][data-tab="science"]');
+			const sciLayout = [];
+			for (const family of ['engine', 'catapult', 'tank', 'battery']) {
+				await page.click('#careerBox [data-act="sciFamily"][data-family="' + family + '"]');
+				sciLayout.push(await page.evaluate(fam => {
+					const box = document.getElementById('careerBox');
+					const hud = document.getElementById('careerHud').getBoundingClientRect();
+					const left = document.getElementById('leftHud').getBoundingClientRect();
+					const plot = document.getElementById('sciCostPlot').getBoundingClientRect();
+					return {
+						family: fam,
+						overflow: box.scrollWidth - box.clientWidth,
+						hudOverflow: hud.right - left.right,
+						plotW: plot.width,
+						plotH: plot.height
+					};
+				}, family));
+			}
+			await page.click('#careerBox [data-act="careerTab"][data-tab="operations"]');
 			await page.evaluate(() => {
 				const left = document.getElementById('leftHud');
 				left.scrollTop = left.scrollHeight;
@@ -279,6 +299,10 @@ async function scoreboardStable(page) {
 			check(drawer.buttons >= 7 && drawer.pad, label + ': shop ' + drawer.buttons + ' buttons');
 			check(drawer.scrollWidth <= drawer.width + 1 && drawer.inside,
 				label + ': drawer overflows ' + drawer.scrollWidth + ' > ' + Math.round(drawer.width));
+			for (const s of sciLayout) {
+				check(s.overflow <= 1 && s.hudOverflow <= 1 && s.plotW >= 100 && s.plotH >= 60,
+					label + ' science/' + s.family + ': ' + JSON.stringify(s));
+			}
 			check(drawer.pushedDown, label + ': panels do not push each other top-to-down');
 			check(afterScroll.tradeVisible, label + ': scrolling leftHud column does not reveal tradeHud');
 			check(afterFold.folded && afterFold.careerH <= 64 && afterFold.tradePulledUp,

@@ -243,45 +243,54 @@
 	}
 
 	/* a custom record sits on the ladder it was invented next to: its rung follows
-	 * the force or thrust, and isp, build cost come from that same rung. The rung
-	 * never drops below RUNG_MIN, so it still outranks the empty slot. */
+	 * the primary stat, and isp / build cost come from that same rung. Neither the
+	 * rung nor the build cost drops below a floor, so weak prototypes stay valid. */
 	const RUNG_MIN = 0.5;
+	const COST_MIN = 0.25;
 
 	function round2(x) {
 		return Math.round(x * 100) / 100;
 	}
 
+	function rungOf(table, key, value) {
+		return round2(Math.max(RUNG_MIN, interpolate(table, key, value, 'tier')));
+	}
+
+	function rungCost(table, tier) {
+		return round2(Math.max(COST_MIN, interpolate(table, 'tier', tier, 'buildCost')));
+	}
+
 	function engineRecord(id, thrust, mass) {
-		const tier = round2(Math.max(RUNG_MIN, interpolate(ENGINES, 'thrust', thrust, 'tier')));
+		const tier = rungOf(ENGINES, 'thrust', thrust);
 		return {
 			id: id, tier: tier, thrust: thrust,
-			isp: round2(interpolate(ENGINES, 'tier', tier, 'isp')),
+			isp: round2(Math.max(100, interpolate(ENGINES, 'tier', tier, 'isp'))),
 			mass: mass,
-			buildCost: round2(interpolate(ENGINES, 'tier', tier, 'buildCost'))
+			buildCost: rungCost(ENGINES, tier)
 		};
 	}
 
 	function catapultRecord(id, maxForce, efficiency) {
-		const tier = round2(Math.max(RUNG_MIN, interpolate(CATAPULTS, 'maxForce', maxForce, 'tier')));
+		const tier = rungOf(CATAPULTS, 'maxForce', maxForce);
 		return {
 			id: id, tier: tier, maxForce: maxForce, efficiency: efficiency,
-			buildCost: round2(interpolate(CATAPULTS, 'tier', tier, 'buildCost'))
+			buildCost: rungCost(CATAPULTS, tier)
 		};
 	}
 
 	function tankRecord(id, fuelCap, emptyMass) {
-		const tier = round2(Math.max(RUNG_MIN, interpolate(TANKS, 'fuelCap', fuelCap, 'tier')));
+		const tier = rungOf(TANKS, 'fuelCap', fuelCap);
 		return {
 			id: id, tier: tier, fuelCap: fuelCap, emptyMass: emptyMass,
-			buildCost: round2(interpolate(TANKS, 'tier', tier, 'buildCost'))
+			buildCost: rungCost(TANKS, tier)
 		};
 	}
 
 	function batteryRecord(id, capacity, leak) {
-		const tier = round2(Math.max(RUNG_MIN, interpolate(BATTERIES, 'capacity', capacity, 'tier')));
+		const tier = rungOf(BATTERIES, 'capacity', capacity);
 		return {
 			id: id, tier: tier, capacity: capacity, leak: leak,
-			buildCost: round2(interpolate(BATTERIES, 'tier', tier, 'buildCost'))
+			buildCost: rungCost(BATTERIES, tier)
 		};
 	}
 

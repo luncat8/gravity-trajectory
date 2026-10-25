@@ -233,6 +233,8 @@
 		this.careerEval = { taskPay: 0, padValue: 0, energy: 0, wait: 0 };
 		this.careerBuilds = 0;
 		this.careerUpgrades = 0;
+		this.careerResearches = 0;
+		this.careerUseResearch = false;
 		this.careerPlans = 0;
 		this.careerBurnsPlanned = 0;
 
@@ -374,6 +376,7 @@
 		this.careerBurnBest.body = -1;
 		this.careerBuilds = 0;
 		this.careerUpgrades = 0;
+		this.careerResearches = 0;
 		this.careerPlans = 0;
 		this.careerBurnsPlanned = 0;
 
@@ -1084,11 +1087,29 @@
 
 	/* --- solo career controller ---------------------------------------- */
 
-	function careerNextItem(table, current) {
+	const RESEARCH_BRIDGE_RAIL = [52, 0.67];
+	const RESEARCH_LIGHT_TANK = [50, 0.45];
+	const RESEARCH_LIGHT_ENGINE = [16, 0.85];
+
+	/* Lowest rung above `current` across both the stock table and unlocked
+	 * prototypes, breaking ties on cheaper build cost. */
+	function careerNextItem(career, kind, table, current) {
+		const minTier = current === null ? -Infinity : current.tier;
+		let best = null;
 		for (let i = 0; i < table.length; i++) {
-			if (current === null || table[i].tier > current.tier) return table[i];
+			const item = table[i];
+			if (item.tier <= minTier) continue;
+			if (!best || item.tier < best.tier ||
+				(item.tier === best.tier && item.buildCost < best.buildCost)) best = item;
 		}
-		return null;
+		const protos = career.prototypes ? career.prototypes[kind] : null;
+		for (let i = 0; protos && i < protos.length; i++) {
+			const item = protos[i];
+			if (item.tier <= minTier) continue;
+			if (!best || item.tier < best.tier ||
+				(item.tier === best.tier && item.buildCost < best.buildCost)) best = item;
+		}
+		return best;
 	}
 
 	function careerPrice(career, item) {
@@ -1102,6 +1123,52 @@
 		if (fresh) this.careerBuilds += 1;
 		else this.careerUpgrades += 1;
 		return true;
+	};
+
+	/* HQ R&D: unlock a mid-rung bridge rail when pads will need upgrades, then a
+	 * lightweight composite tank + thruster kit and fit it for mid-flight burns. */
+	GravityBot.prototype.careerResearch = function (career, sim, reserve) {
+		if (career.ended !== GravityGame.CAREER_OPEN || career.at !== career.hq) return null;
+		const keep = reserve === undefined ? CAREER_PURSE_RESERVE : reserve;
+		if (GravityGame.prototypesOf(career, OrbitTech.KIND_CATAPULT).length === 0 &&
+			(sim.forceScale < 0.85 || career.ship.hold.capacity >= 8)) {
+			const fee = GravityGame.researchCost(career, OrbitTech.KIND_CATAPULT, RESEARCH_BRIDGE_RAIL);
+			const proto = OrbitTech.catapultRecord('R', RESEARCH_BRIDGE_RAIL[0], RESEARCH_BRIDGE_RAIL[1]);
+			if (career.ledger.purse + 1e-9 >= fee + careerPrice(career, proto) + keep) {
+				const label = GravityGame.researchLabel(career);
+				if (GravityGame.researchPoint(career, OrbitTech.KIND_CATAPULT, RESEARCH_BRIDGE_RAIL, label)) {
+					this.careerResearches += 1;
+					return OrbitTech.KIND_CATAPULT + ':' + label;
+				}
+			}
+		}
+		if (career.ship.tank.tier === 0 &&
+			GravityGame.prototypesOf(career, OrbitTech.KIND_TANK).length === 0) {
+			const fee = GravityGame.researchCost(career, OrbitTech.KIND_TANK, RESEARCH_LIGHT_TANK);
+			if (career.ledger.purse + 1e-9 >= fee + keep) {
+				const label = GravityGame.researchLabel(career);
+				if (GravityGame.researchPoint(career, OrbitTech.KIND_TANK, RESEARCH_LIGHT_TANK, label)) {
+					GravityGame.installPart(career, OrbitTech.KIND_TANK,
+						GravityGame.prototypeById(career, OrbitTech.KIND_TANK, label));
+					this.careerResearches += 1;
+					return OrbitTech.KIND_TANK + ':' + label;
+				}
+			}
+		}
+		if (career.ship.engine === null && career.ship.tank.fuelCap > 0 &&
+			GravityGame.prototypesOf(career, OrbitTech.KIND_ENGINE).length === 0) {
+			const fee = GravityGame.researchCost(career, OrbitTech.KIND_ENGINE, RESEARCH_LIGHT_ENGINE);
+			if (career.ledger.purse + 1e-9 >= fee + keep) {
+				const label = GravityGame.researchLabel(career);
+				if (GravityGame.researchPoint(career, OrbitTech.KIND_ENGINE, RESEARCH_LIGHT_ENGINE, label)) {
+					GravityGame.installPart(career, OrbitTech.KIND_ENGINE,
+						GravityGame.prototypeById(career, OrbitTech.KIND_ENGINE, label));
+					this.careerResearches += 1;
+					return OrbitTech.KIND_ENGINE + ':' + label;
+				}
+			}
+		}
+		return null;
 	};
 
 	GravityBot.prototype.careerNextPad = function (career) {
@@ -1151,11 +1218,11 @@
 			const forceLimit = OrbitTech.maxSpeed(career.ship.mass, pad.catapult, sim.forceScale);
 			let kind = forceLimit < wantedSpeed ? OrbitTech.KIND_CATAPULT : OrbitTech.KIND_BATTERY;
 			let table = kind === OrbitTech.KIND_CATAPULT ? OrbitTech.CATAPULTS : OrbitTech.BATTERIES;
-			let item = careerNextItem(table, pad[kind]);
+			let item = careerNextItem(career, kind, table, pad[kind]);
 			if (!item) {
 				kind = kind === OrbitTech.KIND_CATAPULT ? OrbitTech.KIND_BATTERY : OrbitTech.KIND_CATAPULT;
 				table = kind === OrbitTech.KIND_CATAPULT ? OrbitTech.CATAPULTS : OrbitTech.BATTERIES;
-				item = careerNextItem(table, pad[kind]);
+				item = careerNextItem(career, kind, table, pad[kind]);
 			}
 			const needed = fullLimit < GravitySim.SPEED_MIN;
 			if (!this.careerBuyGear(career, planet, kind, item, needed ? 0 : reserve)) break;
@@ -1201,6 +1268,9 @@
 			const hold = OrbitTech.HOLDS[1];
 			if (career.ledger.purse + 1e-9 >= careerPrice(career, hold) + CAREER_PURSE_RESERVE &&
 				GravityGame.installPart(career, OrbitTech.KIND_HOLD, hold)) actions += 1;
+		}
+		if (this.careerUseResearch && career.at === career.hq) {
+			while (this.careerResearch(career, sim, CAREER_PURSE_RESERVE)) actions += 1;
 		}
 		if (this.careerAccept(career)) actions += 1;
 

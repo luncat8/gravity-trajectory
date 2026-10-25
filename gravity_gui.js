@@ -73,19 +73,19 @@
 	const SCIENCE_AXES = {
 		engine: [
 			{ key: 'thrust', label: 'thrust kN', min: 4, max: 60, step: 0.5, digits: 1 },
-			{ key: 'mass', label: 'mass t', min: 0.5, max: 4, step: 0.1, digits: 1 }
+			{ key: 'mass', label: 'mass t', min: 0.2, max: 3.6, step: 0.1, digits: 1 }
 		],
 		catapult: [
-			{ key: 'maxForce', label: 'force kN', min: 10, max: 220, step: 1, digits: 0 },
-			{ key: 'efficiency', label: 'efficiency', min: 0.5, max: 0.95, step: 0.01, digits: 2 }
+			{ key: 'maxForce', label: 'force kN', min: 10, max: 230, step: 1, digits: 0 },
+			{ key: 'efficiency', label: 'efficiency', min: 0.5, max: 0.98, step: 0.01, digits: 2 }
 		],
 		tank: [
 			{ key: 'fuelCap', label: 'fuel kg', min: 20, max: 220, step: 5, digits: 0 },
-			{ key: 'emptyMass', label: 'mass t', min: 0.2, max: 2.0, step: 0.05, digits: 2 }
+			{ key: 'emptyMass', label: 'mass t', min: 0.15, max: 1.9, step: 0.05, digits: 2 }
 		],
 		battery: [
-			{ key: 'capacity', label: 'capacity kWh', min: 1, max: 20, step: 0.5, digits: 1 },
-			{ key: 'leak', label: 'leak /y', min: 0.0002, max: 0.0012, step: 0.0001, digits: 4 }
+			{ key: 'capacity', label: 'capacity kWh', min: 1, max: 22, step: 0.5, digits: 1 },
+			{ key: 'leak', label: 'leak /y', min: 0.0001, max: 0.0012, step: 0.0001, digits: 4 }
 		]
 	};
 	/* near-hull defaults: the first invention costs ~base fee and fits the
@@ -96,10 +96,13 @@
 		tank: { fuelCap: 100, emptyMass: 1.0 },
 		battery: { capacity: 6, leak: 0.0005 }
 	};
-	const SCI_PLOT_COLS = 24;
-	const SCI_PLOT_ROWS = 16;
-	const SCI_PLOT = { width: 220, height: 158, left: 28, top: 6, right: 6, bottom: 30 };
-	const SCI_PLOT_COLORS = ['#16453f', '#185061', '#255c70', '#4f5b58', '#75573e', '#965038', '#b44438'];
+	const SCI_PLOT_COLS = 36;
+	const SCI_PLOT_ROWS = 24;
+	const SCI_PLOT = { width: 224, height: 158, left: 36, top: 6, right: 6, bottom: 30 };
+	const SCI_PLOT_KNOWN = '#164c42';
+	const SCI_PLOT_STOPS = [
+		[17, 39, 62], [27, 82, 108], [158, 104, 52], [204, 78, 46], [230, 54, 48]
+	];
 	let scienceFamily = OrbitTech.KIND_ENGINE;
 	/* the slider draft of every family: a copy of the defaults, editable in place */
 	const scienceValues = {};
@@ -3584,7 +3587,7 @@
 	 * free at HQ, and the fitted one is marked instead of offered */
 	function protoPartRowHtml(career, row, proto) {
 		const fitted = career.ship[row.kind] === proto;
-		let html = '<div class="careerRow"><span class="careerKind">prototype</span>' +
+		let html = '<div class="careerRow"><span class="careerKind">↳ ' + row.label + '</span>' +
 			'<span class="careerNow">' + proto.id + '</span>' +
 			capHtml(partCapText(career, row, proto, undefined)) + '<span class="careerBtns">';
 		if (fitted) html += '<i>fitted</i>';
@@ -3611,13 +3614,27 @@
 		return pad.catapult !== null && OrbitTech.upgrades(pad, kind, item);
 	}
 
+	function protoGearStatText(kind, proto) {
+		if (kind === OrbitTech.KIND_CATAPULT) return proto.maxForce + ' kN';
+		if (kind === OrbitTech.KIND_BATTERY) return proto.capacity + ' kWh';
+		return proto.power + ' kW';
+	}
+
+	function protoGearNoteText(kind, proto) {
+		if (kind === OrbitTech.KIND_CATAPULT) return proto.maxForce + ' kN · eff ' + proto.efficiency;
+		if (kind === OrbitTech.KIND_BATTERY) return proto.capacity + ' kWh · leak ' + proto.leak + '/y';
+		return proto.power + ' kW';
+	}
+
 	function protoGearRowHtml(career, row, planet, proto) {
 		const pad = career.pads[planet];
 		const fits = gearFits(pad, row.kind, proto);
 		const cost = careerCost(career, proto.buildCost);
-		let html = '<div class="careerRow"><span class="careerKind">prototype</span>' +
+		const cap = gearCapText(career, planet, pad, row.kind, proto);
+		const stat = protoGearStatText(row.kind, proto);
+		let html = '<div class="careerRow"><span class="careerKind">↳ ' + row.label + '</span>' +
 			'<span class="careerNow">' + proto.id + '</span>' +
-			capHtml(gearCapText(career, planet, pad, row.kind, proto)) + '<span class="careerBtns">';
+			capHtml(cap ? stat + ' · ' + cap : stat) + '<span class="careerBtns">';
 		if (pad[row.kind] === proto) html += '<i>built</i>';
 		else {
 			const why = row.kind !== OrbitTech.KIND_CATAPULT && pad.catapult === null
@@ -3625,39 +3642,30 @@
 				: proto.id + ' is not above the ' + row.label + ' on ' + planetName(planet);
 			html += shopButtonRef('build ' + proto.id + ' · ' + costText(cost), 'build', row.kind,
 				'data-item="' + proto.id + '"', !fits || career.ledger.purse + 1e-9 < cost,
-				fits ? 'build ' + proto.id + ' on ' + planetName(planet) : why);
+				fits ? 'build ' + proto.id + ' on ' + planetName(planet) + ' · ' +
+					protoGearNoteText(row.kind, proto) : why);
 		}
 		html += bulkButtonHtml(career, row, proto, 'data-item="' + proto.id + '"');
 		return html + copyButtonHtml(row, proto) + '</span></div>';
 	}
 
-	/* researched records sit right under their standard ladder rows */
-	function protoGearRowsHtml(career, planet) {
-		let html = '';
-		for (let i = 0; i < GEAR_ROWS.length; i++) {
-			const list = GravityGame.prototypesOf(career, GEAR_ROWS[i].kind) || [];
-			for (let j = 0; j < list.length; j++) html += protoGearRowHtml(career, GEAR_ROWS[i], planet, list[j]);
-		}
-		return html;
-	}
-
-	function protoPartRowsHtml(career) {
-		let html = '';
-		for (let i = 0; i < PART_ROWS.length; i++) {
-			const list = GravityGame.prototypesOf(career, PART_ROWS[i].kind) || [];
-			for (let j = 0; j < list.length; j++) html += protoPartRowHtml(career, PART_ROWS[i], list[j]);
-		}
-		return html;
-	}
-
 	function shopBlockHtml(career) {
 		const planet = careerPickPlanet();
 		let html = '<div class="careerHead">pad on ' + planetName(planet) + '</div>';
-		for (let i = 0; i < GEAR_ROWS.length; i++) html += gearRowHtml(career, GEAR_ROWS[i], planet);
-		html += protoGearRowsHtml(career, planet);
+		for (let i = 0; i < GEAR_ROWS.length; i++) {
+			const row = GEAR_ROWS[i];
+			html += gearRowHtml(career, row, planet);
+			const list = GravityGame.prototypesOf(career, row.kind) || [];
+			for (let j = 0; j < list.length; j++) html += protoGearRowHtml(career, row, planet, list[j]);
+		}
 		html += '<div class="careerHead">ship refit · HQ ' + planetName(career.hq) + '</div>';
-		for (let i = 0; i < PART_ROWS.length; i++) html += partRowHtml(career, PART_ROWS[i]);
-		return html + protoPartRowsHtml(career);
+		for (let i = 0; i < PART_ROWS.length; i++) {
+			const row = PART_ROWS[i];
+			html += partRowHtml(career, row);
+			const list = GravityGame.prototypesOf(career, row.kind) || [];
+			for (let j = 0; j < list.length; j++) html += protoPartRowHtml(career, row, list[j]);
+		}
+		return html;
 	}
 
 	/* --- §10 science: hull-distance research on custom parameter vectors --- */
@@ -3730,8 +3738,8 @@
 		return '<' + tag + ' class="sciKnownHull" points="' + points.join(' ') + '"/>';
 	}
 
-	/* dashed bounds of the per-axis researched range: outside these lines the
-	 * directional frontier difficulty starts to add research work */
+	/* dashed bounds of the per-axis researched range: easy edges stay cool,
+	 * hard frontier edges (weight >= 1) highlight warm where cost steepens */
 	function scienceRangeHtml(career, family, axes) {
 		const range = OrbitScience.rangeHull(career.science, family);
 		if (!range) return '';
@@ -3740,16 +3748,39 @@
 		const y0 = sciencePlotY(axes[1], Math.min(axes[1].max, range.max[1]));
 		const y1 = sciencePlotY(axes[1], Math.max(axes[1].min, range.min[1]));
 		if (x1 - x0 < 0.5 || y1 - y0 < 0.5) return '';
-		return '<rect class="sciRange" x="' + x0.toFixed(2) + '" y="' + y0.toFixed(2) +
+		let html = '<rect class="sciRange" x="' + x0.toFixed(2) + '" y="' + y0.toFixed(2) +
 			'" width="' + (x1 - x0).toFixed(2) + '" height="' + (y1 - y0).toFixed(2) +
 			'"><title>researched range: outside it new work has a directional cost</title></rect>';
+		const dirs = OrbitScience.FRONTIER[family];
+		if (!dirs) return html;
+		const xa = x0.toFixed(2), xb = x1.toFixed(2), ya = y0.toFixed(2), yb = y1.toFixed(2);
+		if (dirs[0].below >= 1 && range.min[0] > axes[0].min) {
+			html += '<line class="sciRangeHard" x1="' + xa + '" y1="' + ya + '" x2="' + xa + '" y2="' + yb + '"/>';
+		}
+		if (dirs[0].above >= 1 && range.max[0] < axes[0].max) {
+			html += '<line class="sciRangeHard" x1="' + xb + '" y1="' + ya + '" x2="' + xb + '" y2="' + yb + '"/>';
+		}
+		if (dirs[1].below >= 1 && range.min[1] > axes[1].min) {
+			html += '<line class="sciRangeHard" x1="' + xa + '" y1="' + yb + '" x2="' + xb + '" y2="' + yb + '"/>';
+		}
+		if (dirs[1].above >= 1 && range.max[1] < axes[1].max) {
+			html += '<line class="sciRangeHard" x1="' + xa + '" y1="' + ya + '" x2="' + xb + '" y2="' + ya + '"/>';
+		}
+		return html;
 	}
 
-	function scienceCostColor(cost, base, max) {
-		if (max <= base + 1e-9) return SCI_PLOT_COLORS[0];
-		const t = Math.sqrt(Math.max(0, (cost - base) / (max - base)));
-		const index = Math.min(SCI_PLOT_COLORS.length - 1, Math.floor(t * SCI_PLOT_COLORS.length));
-		return SCI_PLOT_COLORS[index];
+	function scienceCostColor(inside, cost, base, max) {
+		if (inside) return SCI_PLOT_KNOWN;
+		if (max <= base + 1e-9) return 'rgb(' + SCI_PLOT_STOPS[0].join(',') + ')';
+		const t = Math.pow(Math.min(1, Math.max(0, (cost - base) / (max - base))), 0.78);
+		const pos = t * (SCI_PLOT_STOPS.length - 1);
+		const i = Math.min(SCI_PLOT_STOPS.length - 2, Math.floor(pos));
+		const f = pos - i;
+		const a = SCI_PLOT_STOPS[i];
+		const b = SCI_PLOT_STOPS[i + 1];
+		return 'rgb(' + Math.round(a[0] + (b[0] - a[0]) * f) + ',' +
+			Math.round(a[1] + (b[1] - a[1]) * f) + ',' +
+			Math.round(a[2] + (b[2] - a[2]) * f) + ')';
 	}
 
 	/* x/y are the two engineering parameters; colour is the actual career fee.
@@ -3760,31 +3791,37 @@
 		const plotHeight = SCI_PLOT.height - SCI_PLOT.top - SCI_PLOT.bottom;
 		const cellWidth = plotWidth / SCI_PLOT_COLS;
 		const cellHeight = plotHeight / SCI_PLOT_ROWS;
-		const costs = new Array(SCI_PLOT_COLS * SCI_PLOT_ROWS);
+		const total = SCI_PLOT_COLS * SCI_PLOT_ROWS;
+		const costs = new Array(total);
+		const insides = new Array(total);
 		let max = 0;
 		for (let row = 0; row < SCI_PLOT_ROWS; row++) {
 			const y = axes[1].max - (row + 0.5) / SCI_PLOT_ROWS * (axes[1].max - axes[1].min);
 			for (let col = 0; col < SCI_PLOT_COLS; col++) {
 				const x = axes[0].min + (col + 0.5) / SCI_PLOT_COLS * (axes[0].max - axes[0].min);
-				const cost = GravityGame.researchCost(career, family, [x, y]);
-				costs[row * SCI_PLOT_COLS + col] = cost;
+				const p = GravityGame.researchPreview(career, family, [x, y]);
+				const cost = Number.isFinite(p.cost) ? careerCost(career, p.cost) : Infinity;
+				const k = row * SCI_PLOT_COLS + col;
+				costs[k] = cost;
+				insides[k] = p.inside;
 				if (cost > max) max = cost;
 			}
 		}
 		const base = careerCost(career, OrbitScience.BASE_PRICE[family]);
 		let html = '<div class="sciPlotWrap"><svg id="sciCostPlot" class="sciPlot" viewBox="0 0 ' +
 			SCI_PLOT.width + ' ' + SCI_PLOT.height + '" role="img" aria-label="' + family +
-			' research fee over ' + axes[0].label + ' and ' + axes[1].label + '">';
+			' research fee over ' + axes[0].label + ' and ' + axes[1].label + '">' +
+			'<g shape-rendering="crispEdges">';
 		for (let row = 0; row < SCI_PLOT_ROWS; row++) {
 			for (let col = 0; col < SCI_PLOT_COLS; col++) {
-				const cost = costs[row * SCI_PLOT_COLS + col];
+				const k = row * SCI_PLOT_COLS + col;
 				html += '<rect x="' + (SCI_PLOT.left + col * cellWidth).toFixed(2) + '" y="' +
-					(SCI_PLOT.top + row * cellHeight).toFixed(2) + '" width="' + (cellWidth + 0.08).toFixed(2) +
-					'" height="' + (cellHeight + 0.08).toFixed(2) + '" fill="' +
-					scienceCostColor(cost, base, max) + '"/>';
+					(SCI_PLOT.top + row * cellHeight).toFixed(2) + '" width="' + (cellWidth + 0.25).toFixed(2) +
+					'" height="' + (cellHeight + 0.25).toFixed(2) + '" fill="' +
+					scienceCostColor(insides[k], costs[k], base, max) + '"/>';
 			}
 		}
-		html += '<rect class="sciPlotFrame" x="' + SCI_PLOT.left + '" y="' + SCI_PLOT.top +
+		html += '</g><rect class="sciPlotFrame" x="' + SCI_PLOT.left + '" y="' + SCI_PLOT.top +
 			'" width="' + plotWidth + '" height="' + plotHeight + '"/>';
 		html += scienceRangeHtml(career, family, axes);
 		html += scienceHullOutlineHtml(career, family, axes);
@@ -3803,16 +3840,16 @@
 			scienceAxisText(axes[0], axes[0].min) + '</text>';
 		html += '<text class="sciPlotTick" x="' + (SCI_PLOT.width - SCI_PLOT.right) +
 			'" y="140" text-anchor="end">' + scienceAxisText(axes[0], axes[0].max) + '</text>';
-		html += '<text class="sciPlotTick" x="24" y="9" text-anchor="end">' +
+		html += '<text class="sciPlotTick" x="' + (SCI_PLOT.left - 3) + '" y="9" text-anchor="end">' +
 			scienceAxisText(axes[1], axes[1].max) + '</text>';
-		html += '<text class="sciPlotTick" x="24" y="131" text-anchor="end">' +
+		html += '<text class="sciPlotTick" x="' + (SCI_PLOT.left - 3) + '" y="131" text-anchor="end">' +
 			scienceAxisText(axes[1], axes[1].min) + '</text>';
 		html += '<text class="sciPlotLabel" x="' + (SCI_PLOT.left + plotWidth / 2) +
 			'" y="154" text-anchor="middle">' + axes[0].label + '</text>';
-		html += '<text class="sciPlotLabel" transform="translate(7 67) rotate(-90)" text-anchor="middle">' +
+		html += '<text class="sciPlotLabel" transform="translate(6 67) rotate(-90)" text-anchor="middle">' +
 			axes[1].label + '</text>';
 		html += '</svg><div class="sciPlotLegend"><span><i></i>known ' + costText(base) +
-			'</span><span>max shown ' + costText(max) + '</span><span>◎ draft</span>' +
+			'</span><span><i class="sciRamp"></i>max ' + costText(max) + '</span><span>◎ draft</span>' +
 			'<span>┄ researched range</span></div></div>';
 		return html;
 	}

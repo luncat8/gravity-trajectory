@@ -43,36 +43,35 @@
 	/* One normalized research unit is a deliberate invention step, not one
 	 * arbitrary engineering unit: 10 kN thrust ≈ 1 t engine mass,
 	 * 30 kN rail force ≈ 0.10 efficiency, 50 kg fuel ≈ 0.5 t tank mass,
-	 * 5 kWh battery capacity ≈ 0.001 leak per year. */
+	 * 5 kWh battery capacity ≈ 0.0004 leak per year. */
 	var METRIC_SCALE = {
 		engine: [0.1, 1.0],
 		catapult: [1 / 30, 10.0],
 		tank: [0.02, 2.0],
-		battery: [0.2, 1000.0]
+		battery: [0.2, 2500.0]
 	};
 
-	/* Directional difficulty of extending the researched range: for each axis,
-	 * `below` weights one RU of overshoot under the smallest discovered value,
-	 * `above` one RU over the largest. Engineering intuition, not geometry:
-	 * shedding mass is hard (3.00) while adding it is cheap (0.20); pushing
-	 * efficiency past its known maximum is hard (2.50). Families or axes not
-	 * listed keep the plain hull price (no frontier surcharge). */
+	/* Directional difficulty per axis: `below` weights stepping toward smaller
+	 * values, `above` toward larger ones. A value < 1 relaxes hull distance in
+	 * the easy direction (adding mass, lowering efficiency or thrust, allowing
+	 * more leak requires little new science); beyond the researched range
+	 * [min, max], `below`/`above` also adds uncharted-frontier work per RU. */
 	var FRONTIER = {
 		engine: [
-			{ below: 0.20, above: 0.90 },  // thrust kN: weaker easy, stronger hard
-			{ below: 3.00, above: 0.20 }   // mass t: lighter hard, heavier easy
+			{ below: 0.10, above: 1.00 },  // thrust kN: weaker easy, stronger hard
+			{ below: 3.00, above: 0.10 }   // mass t: lighter hard, heavier easy
 		],
 		catapult: [
-			{ below: 0.20, above: 1.00 },  // maxForce kN
-			{ below: 0.30, above: 2.50 }   // efficiency
+			{ below: 0.10, above: 1.00 },  // maxForce kN: weaker easy, stronger hard
+			{ below: 0.10, above: 2.50 }   // efficiency: lower easy, higher hard
 		],
 		tank: [
-			{ below: 0.20, above: 1.00 },  // fuelCap kg: smaller easy, larger hard
-			{ below: 3.00, above: 0.20 }   // emptyMass t: lighter hard, heavier easy
+			{ below: 0.10, above: 1.00 },  // fuelCap kg: smaller easy, larger hard
+			{ below: 3.00, above: 0.10 }   // emptyMass t: lighter hard, heavier easy
 		],
 		battery: [
-			{ below: 0.20, above: 1.20 },  // capacity kWh: smaller easy, larger hard
-			{ below: 2.50, above: 0.20 }   // leak /y: tighter hard, leakier easy
+			{ below: 0.10, above: 1.20 },  // capacity kWh: smaller easy, larger hard
+			{ below: 2.50, above: 0.10 }   // leak /y: tighter hard, leakier easy
 		]
 	};
 
@@ -235,22 +234,13 @@
 		return true;
 	}
 
-	/* Distance from the target to conv(points). Vertices are translated so the
-	 * target is the origin; the major cycle adds the vertex most against the
-	 * current nearest point until no vertex improves it (optimality certificate). */
-	function nearestHullDist(points, target, scale) {
-		var n = points.length;
-		var dim = target.length;
-		var xs = new Array(n);
-		var idx, lam, x, i, d, pick, pv, v, xx, nn, cycle;
+	/* Min-norm point of conv(xs): starts from the shortest vertex and adds the
+	 * vertex most against the current iterate until no vertex improves it. */
+	function wolfeMinNorm(xs, absFloor2) {
+		var n = xs.length;
+		var idx, lam, x, i, pick, pv, v, xx, nn, cycle;
 		var bestNorm = Infinity, best = 0;
-		var absFloor = WOLFE_EPS * (1 + normTarget(target, scale));
-		var absFloor2 = absFloor * absFloor;
 		for (i = 0; i < n; i++) {
-			xs[i] = new Array(dim);
-			for (d = 0; d < dim; d++) {
-				xs[i][d] = (points[i].params[d] - target[d]) * (scale ? scale[d] : 1);
-			}
 			nn = dot(xs[i], xs[i]);
 			if (nn < bestNorm) {
 				bestNorm = nn;
@@ -280,6 +270,75 @@
 		return Math.sqrt(dot(x, x));
 	}
 
+	/* Euclidean distance from the target to conv(points) in normalized RU. */
+	function nearestHullDist(points, target, scale) {
+		var n = points.length;
+		var dim = target.length;
+		var xs = new Array(n);
+		var absFloor = WOLFE_EPS * (1 + normTarget(target, scale));
+		var i, d;
+		for (i = 0; i < n; i++) {
+			xs[i] = new Array(dim);
+			for (d = 0; d < dim; d++) {
+				xs[i][d] = (points[i].params[d] - target[d]) * (scale ? scale[d] : 1);
+			}
+		}
+		return wolfeMinNorm(xs, absFloor * absFloor);
+	}
+
+	/* Asymmetric hull distance: stepping from a hull point x to target along axis d
+	 * weights below-x steps by min(1, below) and above-x steps by min(1, above).
+	 * Each asymmetric axis lifts by one slack coordinate (M, beta·M) with
+	 * beta = cEasy / sqrt(cHard² - cEasy²), reducing to exact Wolfe min-norm. */
+	function directionalHullDist(points, target, scale, dirs) {
+		var n = points.length;
+		var dim = target.length;
+		var cNeg = new Array(dim);
+		var cPos = new Array(dim);
+		var extra = 0;
+		var i, d, cHard, cEasy, sgn, unit, beta, maxAbs, a, M, next, shifted, slot;
+		for (d = 0; d < dim; d++) {
+			cNeg[d] = d < dirs.length ? Math.min(1, dirs[d].below) : 1;
+			cPos[d] = d < dirs.length ? Math.min(1, dirs[d].above) : 1;
+			if (Math.min(cNeg[d], cPos[d]) < Math.max(cNeg[d], cPos[d]) - 1e-15) extra++;
+		}
+		var xs = new Array(n);
+		for (i = 0; i < n; i++) {
+			xs[i] = new Array(dim + extra).fill(0);
+			for (d = 0; d < dim; d++) {
+				cHard = Math.max(cNeg[d], cPos[d]);
+				sgn = cNeg[d] >= cPos[d] ? 1 : -1;
+				unit = scale ? scale[d] : 1;
+				xs[i][d] = cHard * sgn * (points[i].params[d] - target[d]) * unit;
+			}
+		}
+		slot = dim;
+		for (d = 0; d < dim; d++) {
+			cHard = Math.max(cNeg[d], cPos[d]);
+			cEasy = Math.min(cNeg[d], cPos[d]);
+			if (cEasy >= cHard - 1e-15) continue;
+			beta = cEasy / Math.sqrt(cHard * cHard - cEasy * cEasy);
+			maxAbs = 0;
+			for (i = 0; i < xs.length; i++) {
+				a = Math.abs(xs[i][d]);
+				if (a > maxAbs) maxAbs = a;
+			}
+			M = maxAbs + 1;
+			next = new Array(xs.length * 2);
+			for (i = 0; i < xs.length; i++) {
+				next[2 * i] = xs[i];
+				shifted = xs[i].slice();
+				shifted[d] += M;
+				shifted[slot] = beta * M;
+				next[2 * i + 1] = shifted;
+			}
+			xs = next;
+			slot++;
+		}
+		var absFloor = WOLFE_EPS * (1 + normTarget(target, scale));
+		return wolfeMinNorm(xs, absFloor * absFloor);
+	}
+
 	function normTarget(target, scale) {
 		var norm = 0;
 		for (var d = 0; d < target.length; d++) {
@@ -289,12 +348,16 @@
 		return Math.sqrt(norm);
 	}
 
-	/* distance in normalized research units; omitted scale keeps raw geometry */
-	function distToHull(f, target, scale) {
+	/* distance in normalized research units; omitted scale/dirs keeps raw geometry */
+	function distToHull(f, target, scale, dirs) {
 		if (f.n === 0) return { inside: false, dist: Infinity };
-		var dist = nearestHullDist(f.points, target, scale);
-		var inside = dist <= INSIDE_EPS * (1 + normTarget(target, scale));
-		return { inside: inside, dist: inside ? 0 : dist };
+		var plain = nearestHullDist(f.points, target, scale);
+		var inside = plain <= INSIDE_EPS * (1 + normTarget(target, scale));
+		if (inside) return { inside: true, dist: 0 };
+		return {
+			inside: false,
+			dist: dirs ? directionalHullDist(f.points, target, scale, dirs) : plain
+		};
 	}
 
 	/* research fee for one preview: base fee, plus k·(hull distance + frontier
@@ -313,7 +376,7 @@
 		if (!f || f.n === 0) {
 			return { inside: false, dist: Infinity, frontier: 0, cost: Infinity };
 		}
-		var t = distToHull(f, params, METRIC_SCALE[family]);
+		var t = distToHull(f, params, METRIC_SCALE[family], FRONTIER[family]);
 		t.frontier = t.inside ? 0 : frontierWork(hull, family, params);
 		t.cost = priceOf(family, t);
 		return t;

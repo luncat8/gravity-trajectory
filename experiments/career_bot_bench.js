@@ -104,11 +104,20 @@ function fly(w, plan) {
 	sim.limitReason = GravitySim.END_TIME;
 	sim.launch(plan.origin, plan.angle, plan.speed);
 	GravityGame.careerBeginFlight(career, sim);
+	let flightStep = 0;
 	while (sim.status === GravitySim.STATUS_FLYING) {
 		w.step += 1;
+		flightStep += 1;
 		sim.stepOne();
 		GravityGame.stepHarvest(ledger, market, sim, w.step);
 		GravityGame.careerAdvance(career, RATE, 1);
+		if (w.bot.careerUseResearch && flightStep === 24 &&
+			career.ship.engine !== null && career.ship.fuelKg > 0.5) {
+			const burn = w.bot.careerBurnPlan(career, sim, market, w.step);
+			if (burn && GravityGame.careerBurn(career, sim, burn.angle, burn.dv)) {
+				w.burns = (w.burns || 0) + 1;
+			}
+		}
 		assert.ok(w.step < 100000000, 'flight step guard');
 	}
 	trade.advanceTo(sim.flightFieldT);
@@ -116,9 +125,10 @@ function fly(w, plan) {
 	return GravityGame.careerEndFlight(career, sim, trade, w.step);
 }
 
-function runCareer(seed, trace, gravityScale = 1, forceScale = 1) {
+function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = false) {
 	const w = makeWorld(seed, gravityScale, forceScale);
 	const { bot, career, sim } = w;
+	bot.careerUseResearch = useResearch;
 	let waits = 0;
 	let fallbacks = 0;
 	let dropped = 0;
@@ -173,6 +183,8 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1) {
 		pads: career.padCount,
 		builds: bot.careerBuilds,
 		upgrades: bot.careerUpgrades,
+		researches: bot.careerResearches,
+		burns: w.burns || 0,
 		delivered: career.delivered,
 		evacuations: career.evacuations,
 		visited: sim.visitedCount,
@@ -408,6 +420,27 @@ for (const world of SCALED_WORLDS) {
 			assert.ok(r.flights > 0 && r.flights < MAX_FLIGHTS, 'flight guard');
 		});
 	}
+}
+
+/* 0.4.15 research-enabled careers: HQ R&D unlocks bridge rails + composite tank/engine
+ * prototypes and uses mid-flight burns while still meeting the 6.00 purse gate */
+for (const cfg of [
+	{ seed: 42, gravity: 1.4, force: 0.6, label: 'hostile bridge-rail R&D' },
+	{ seed: 42, gravity: 0.8, force: 1.5, label: 'friendly-rail R&D' }
+]) {
+	check('research career seed ' + cfg.seed + ' (' + cfg.label +
+		'): 26 pads, R&D used, and purse >= 6.00', () => {
+		const r = runCareer(cfg.seed, process.env.TRACE === '1', cfg.gravity, cfg.force, true);
+		console.log('  research s' + cfg.seed + ' g' + cfg.gravity + ' f' + cfg.force + ': ' +
+			(r.ended === GravityGame.CAREER_COMPLETE ? 'complete' : 'ENDED ' + r.ended) +
+			' · purse ' + r.purse.toFixed(2) + ' · earned ' + r.earned.toFixed(2) +
+			' · pads ' + r.pads + ' · flights ' + r.flights + ' · deliveries ' + r.delivered +
+			' · researches ' + r.researches + ' · upgrades ' + r.upgrades + ' · burns ' + r.burns);
+		assert.strictEqual(r.ended, GravityGame.CAREER_COMPLETE, 'research career did not complete');
+		assert.strictEqual(r.pads, PLANETS);
+		assert.ok(r.researches >= 1, 'bot did not unlock any research prototype');
+		assert.ok(r.purse + 1e-9 >= PURSE_BASELINE, 'research purse gate missed: ' + r.purse);
+	});
 }
 
 console.log(failures === 0 ? 'CAREER BOT BENCH OK' : 'CAREER BOT BENCH FAILED ' + failures);

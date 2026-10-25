@@ -1,0 +1,39 @@
+0.4.15 — directional hull-distance cost plot + 0.4.14 review polish + career bot R&D
+
+node --check *.js experiments/*.js                          OK
+git diff --check                                            OK
+
+node experiments/gravity_bench.js      BENCH OK
+node experiments/colony_bench.js       COLONY BENCH OK
+node experiments/game_bench.js         GAME BENCH OK
+node experiments/route_bench.js        ROUTE BENCH OK
+node experiments/bot_bench.js          BOT BENCH OK
+node experiments/career_bench.js       CAREER BENCH OK (52 checks)
+node experiments/career_bot_bench.js   CAREER BOT BENCH OK (7 baseline + 2 R&D runs)
+node experiments/dom_smoke.js          SMOKE OK (0.4.0..0.4.15)
+node experiments/layout_check.js       LAYOUT CHECK OK (8 viewports x operations + 4 science plots)
+
+career_bench frontier dump (retuned easy=0.10 / hard=1.00..3.00, battery 1 RU = 0.0004 leak/y)
+  frontier: ENGINE axis0 { below: 0.10, above: 1.00 }
+  frontier: ENGINE axis1 { below: 3.00, above: 0.10 }
+  frontier: CATAPULT axis0 { below: 0.10, above: 1.00 }
+  frontier: CATAPULT axis1 { below: 0.10, above: 2.50 }
+  frontier: TANK axis0 { below: 0.10, above: 1.00 }
+  frontier: TANK axis1 { below: 3.00, above: 0.10 }
+  frontier: BATTERY axis0 { below: 0.10, above: 1.20 }
+  frontier: BATTERY axis1 { below: 2.50, above: 0.10 }
+
+directional hull distance & plot verification
+  engine [12, 2.5] (weak & heavy inside range) : $2.90 vs [40, 1.0] (strong & light): $11.00
+  engine [26, 3.0] (+0.5 RU heavy)             : $2.96 (frontier 0.05) vs [26, 0.5] (-0.5 RU light): $17.44 (frontier 1.50)
+  engine [4, 3.5] (weak & heavy corner)        : $3.38 vs [4, 0.4] (weak & ultralight): $21.92
+  catapult [100, 0.57] (-0.5 RU sloppy)        : $4.50 vs [100, 0.93] (+0.5 RU super): $16.08
+  catapult [220, 0.52] (strong & sloppy)       : $15.65 vs [220, 0.96] (strong & super): $38.64
+  tank [90, 1.65] (+0.5 RU heavy)              : $2.10 vs [90, 0.25] (-0.5 RU composite): $15.40
+  battery [10, 0.0011] (+0.25 RU leaky)        : $1.31 vs [10, 0.0002] (-0.25 RU tight): $5.44
+  200 random asymmetric 2-D hulls vs bruteDirHullDist: max error < 1e-12
+
+career_bot_bench runs
+  baseline (no R&D, bit-identical): s7 9.95 · s31 8.72 · s42 6.54 · s913 6.35 · s42 g0.8 f1.5 10.83 · s7 g0.8 f1.5 6.60 · s42 g1.4 f0.6 6.32
+  research s42 g1.4 f0.6 (hostile bridge-rail R&D): complete · purse 6.79 · pads 26 · flights 78 · researches 2 · upgrades 8
+  research s42 g0.8 f1.5 (friendly-rail R&D)      : complete · purse 7.42 · pads 26 · flights 19 · researches 2 · upgrades 0

@@ -763,11 +763,13 @@ input:disabled {
 
 .careerTab {
 	min-width: 0;
+	overflow: hidden;
 	padding: 3px 5px;
 	border-color: transparent;
 	border-radius: 6px;
 	font-size: 10px;
 	letter-spacing: 0.06em;
+	text-overflow: ellipsis;
 	text-transform: uppercase;
 }
 
@@ -908,13 +910,19 @@ input:disabled {
 	border-bottom: 0;
 }
 
-.sciFamilyRow .careerBtns,
+.sciFamilyRow .careerBtns {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 4px;
+	width: 100%;
+	margin-left: 0;
+}
+
 .sciAcceptRow .careerBtns {
 	width: 100%;
 	margin-left: 0;
 }
 
-.sciFamilyRow .miniBtn,
 .sciAcceptRow .miniBtn {
 	flex: 1 1 0;
 }
@@ -942,16 +950,24 @@ input:disabled {
 
 .sciRange {
 	fill: none;
-	stroke: rgba(233, 196, 122, 0.7);
-	stroke-width: 0.8;
-	stroke-dasharray: 3 2.5;
+	stroke: rgba(154, 198, 228, 0.45);
+	stroke-width: 0.75;
+	stroke-dasharray: 2.6 2.4;
+	pointer-events: none;
+}
+
+.sciRangeHard {
+	fill: none;
+	stroke: rgba(244, 158, 98, 0.92);
+	stroke-width: 1.05;
+	stroke-dasharray: 3.2 2.2;
 	pointer-events: none;
 }
 
 .sciKnownHull {
-	fill: rgba(142, 240, 192, 0.12);
+	fill: rgba(142, 240, 192, 0.14);
 	stroke: var(--mint);
-	stroke-width: 1.1;
+	stroke-width: 1.15;
 	stroke-linejoin: round;
 	pointer-events: none;
 }
@@ -1005,24 +1021,29 @@ polyline.sciKnownHull {
 	height: 6px;
 	margin-right: 3px;
 	border-radius: 2px;
-	background: #16453f;
+	background: #164c42;
+}
+
+.sciPlotLegend i.sciRamp {
+	width: 16px;
+	background: linear-gradient(90deg, #11273e 0%, #1b526c 26%, #9e6834 56%, #cc4e2e 80%, #e63630 100%);
 }
 
 /* research sliders: fill the row, wrap before the drawer can overflow */
 .careerRow.sciAxis {
-	gap: 6px;
+	gap: 5px;
 }
 
 .careerRow.sciAxis input[type="range"] {
-	flex: 1 1 120px;
-	min-width: 60px;
+	flex: 1 1 64px;
+	min-width: 48px;
 	max-width: 100%;
 	accent-color: var(--accent);
 }
 
 .sciVal {
 	flex: none;
-	min-width: 46px;
+	min-width: 38px;
 	color: var(--dim);
 	text-align: right;
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1329,6 +1350,13 @@ polyline.sciKnownHull {
 @media (max-width: 599px) {
 	#leftHud {
 		width: 158px;
+	}
+
+	.careerTab,
+	.sciFamilyRow .miniBtn {
+		padding: 3px 3px;
+		font-size: 9px;
+		letter-spacing: 0.02em;
 	}
 }
 

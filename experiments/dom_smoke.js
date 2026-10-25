@@ -2113,11 +2113,11 @@ function protoOf(career, family, id) {
 
 	check(/class="sciRange"/.test(fBlock()) && /researched range/.test(fBlock()),
 		'researched range drawn and labelled on the cost plot');
-	check(/frontier · thrust ↓×0\.20 ↑×0\.90 · mass ↓×3\.00 ↑×0\.20/.test(fBlock()),
+	check(/frontier · thrust ↓×0\.10 ↑×1\.00 · mass ↓×3\.00 ↑×0\.10/.test(fBlock()),
 		'engine frontier rates shown: ' + fBlock().slice(-400));
 	check(/data-act="sciCopy" data-family="engine"/.test(fBlock()), 'frontier copy button');
 	fClick({ act: 'sciCopy', family: 'engine' });
-	check(/^frontier: ENGINE \{ thrust: \{ below: 0\.20, above: 0\.90 \}, mass: \{ below: 3\.00, above: 0\.20 \} \}/.test(fEnv.clipboardText),
+	check(/^frontier: ENGINE \{ thrust: \{ below: 0\.10, above: 1\.00 \}, mass: \{ below: 3\.00, above: 0\.10 \} \}/.test(fEnv.clipboardText),
 		'frontier knobs copied: ' + fEnv.clipboardText);
 	const light = fGame.researchPreview(fCareer, 'engine', [26, 0.5]);
 	const heavy = fGame.researchPreview(fCareer, 'engine', [26, 3.0]);
@@ -2132,7 +2132,7 @@ function protoOf(career, family, id) {
 		'frontier surcharge in the live preview: ' + /id="sciPreview"[^>]*>([^<]+)/.exec(fBlock())[1]);
 
 	fClick({ act: 'sciFamily', family: 'catapult' });
-	check(/efficiency ↓×0\.30 ↑×2\.50/.test(fBlock()), 'catapult frontier rates shown');
+	check(/efficiency ↓×0\.10 ↑×2\.50/.test(fBlock()), 'catapult frontier rates shown');
 	const low = fGame.researchPreview(fCareer, 'catapult', [100, 0.57]);
 	const high = fGame.researchPreview(fCareer, 'catapult', [100, 0.93]);
 	check(high.frontier > low.frontier && high.cost > low.cost, 'higher efficiency is dearer');
@@ -2189,10 +2189,10 @@ function protoOf(career, family, id) {
 	check(tBlock().includes('tank hull · 3 points'), 'tank hull seeded with 3 points');
 	tClick({ act: 'sciFamily', family: 'tank' });
 	check(/metric · 1 RU = 50 fuel kg = 0\.5 mass t/.test(tBlock()) &&
-		/frontier · fuelCap ↓×0\.20 ↑×1\.00 · emptyMass ↓×3\.00 ↑×0\.20/.test(tBlock()),
+		/frontier · fuelCap ↓×0\.10 ↑×1\.00 · emptyMass ↓×3\.00 ↑×0\.10/.test(tBlock()),
 		'tank metric and frontier rates shown');
 	tClick({ act: 'sciCopy', family: 'tank' });
-	check(/^frontier: TANK \{ fuelCap: \{ below: 0\.20, above: 1\.00 \}, emptyMass: \{ below: 3\.00, above: 0\.20 \} \}/.test(tEnv.clipboardText),
+	check(/^frontier: TANK \{ fuelCap: \{ below: 0\.10, above: 1\.00 \}, emptyMass: \{ below: 3\.00, above: 0\.10 \} \}/.test(tEnv.clipboardText),
 		'tank frontier knobs copied: ' + tEnv.clipboardText);
 
 	/* research a tank prototype at integer rung (90 kg = FT-2 rung 2) and verify back-refit to FT-2 */
@@ -2233,11 +2233,11 @@ function protoOf(career, family, id) {
 	check(/battery hull · 5 points/.test(yBlock()), 'battery hull seeded from BAT-1..BAT-5');
 	yClick({ act: 'careerTab', tab: 'science' });
 	yClick({ act: 'sciFamily', family: 'battery' });
-	check(/metric · 1 RU = 5 capacity kWh = 0\.001 leak \/y/.test(yBlock()) &&
-		/frontier · capacity ↓×0\.20 ↑×1\.20 · leak ↓×2\.50 ↑×0\.20/.test(yBlock()),
+	check(/metric · 1 RU = 5 capacity kWh = 0\.0004 leak \/y/.test(yBlock()) &&
+		/frontier · capacity ↓×0\.10 ↑×1\.20 · leak ↓×2\.50 ↑×0\.10/.test(yBlock()),
 		'battery metric and frontier rates shown');
 	yClick({ act: 'sciCopy', family: 'battery' });
-	check(/^frontier: BATTERY \{ capacity: \{ below: 0\.20, above: 1\.20 \}, leak: \{ below: 2\.50, above: 0\.20 \} \}/.test(yEnv.clipboardText),
+	check(/^frontier: BATTERY \{ capacity: \{ below: 0\.10, above: 1\.20 \}, leak: \{ below: 2\.50, above: 0\.10 \} \}/.test(yEnv.clipboardText),
 		'battery frontier knobs copied: ' + yEnv.clipboardText);
 
 	/* a second pad first, so the bulk rule has a network to reach */
@@ -2278,6 +2278,51 @@ function protoOf(career, family, id) {
 	check(/<button[^>]*data-act="build" data-kind="battery" data-item="R1"[^>]*disabled/.test(yShop()),
 		'a battery prototype is not offered on a catapult-less planet');
 	console.log('0.4.14 verified: battery science family & frontier · R1 pad battery prototype · network-wide bulk build · no ship mass');
+}
+
+/* --- 0.4.15: directional cost plot surface, hard-edge highlights & grouped shop prototypes --- */
+{
+	const dEnv = loadPage({ search: '?rule=career&seed=42&rate=1' });
+	dEnv.runFrames(2, 16.0);
+	const dUi = dEnv.elements;
+	const dBot = new dEnv.context.GravityBot();
+	const dSim = dEnv.context.GravityScene.sim;
+	const dCareer = dEnv.context.GravityScene.career;
+	const dBox = dUi.get('careerBox');
+	const dShop = () => dUi.get('careerShop').innerHTML;
+	const dBlock = () => dUi.get('careerScience').innerHTML;
+	function dClick(data) {
+		dEnv.fireElement(dBox, 'click', { target: { dataset: data } });
+	}
+
+	dClick({ act: 'careerTab', tab: 'science' });
+	const cells = dBlock().match(/<rect x="[^"]+" y="[^"]+" width="[^"]+" height="[^"]+" fill="rgb\(\d+,\d+,\d+\)"\/>/g) || [];
+	check(cells.length >= 840 && /class="sciRangeHard"/.test(dBlock()),
+		'36x24 directional cost plot cells & hard-edge highlight lines rendered (' + cells.length + ' unknown cells)');
+	/* first row is top of plot (max mass = 3.6 t = easy navy); last row is bottom (min mass = 0.2 t = hard warm) */
+	const parseRgb = rect => rect.match(/rgb\((\d+),(\d+),(\d+)\)/).slice(1).map(Number);
+	const topLeft = parseRgb(cells[0]);
+	const bottomLeft = parseRgb(cells[cells.length - 36]);
+	check(bottomLeft[0] > topLeft[0] + 100 && topLeft[2] > topLeft[0],
+		'plot renders easy heavy top cool ' + topLeft.join(',') + ' vs hard light bottom warm ' + bottomLeft.join(','));
+
+	/* career bot R&D unlocks bridge rail + ultralight tank + ultralight engine and groups them in shop */
+	dCareer.ledger.purse = 40;
+	dEnv.context.GravityGame.installPart(dCareer, dEnv.context.OrbitTech.KIND_HOLD,
+		dEnv.context.OrbitTech.HOLDS[1]);
+	check(dBot.careerResearch(dCareer, dSim, 6) === 'catapult:R1', 'bot researches bridge catapult R1');
+	check(dBot.careerResearch(dCareer, dSim, 6) === 'tank:R2', 'bot researches ultralight tank R2');
+	check(dBot.careerResearch(dCareer, dSim, 6) === 'engine:R3', 'bot researches ultralight engine R3');
+	check(dBot.careerResearch(dCareer, dSim, 6) === null, 'bot finishes its planned R&D goals cleanly');
+	dEnv.context.GravityScene.refreshCareerPanel();
+	const shopHtml = dShop();
+	check(/↳ catapult<\/span><span class="careerNow">R1<\/span><span class="careerCap">52 kN/.test(shopHtml) &&
+		/↳ tank<\/span><span class="careerNow">R2<\/span><span class="careerCap">50 kg/.test(shopHtml) &&
+		/↳ engine<\/span><span class="careerNow">R3<\/span><span class="careerCap">16 kN/.test(shopHtml) &&
+		shopHtml.indexOf('↳ catapult') < shopHtml.indexOf('>panel<') &&
+		shopHtml.indexOf('↳ tank') < shopHtml.indexOf('>engine<'),
+		'grouped shop prototype rows show parent-aligned inline stats');
+	console.log('0.4.15 verified: 36x24 directional cost surface · hard-edge SVG lines · bot R&D · grouped shop prototype stats');
 }
 
 console.log('paint calls', {
