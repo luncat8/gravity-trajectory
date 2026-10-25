@@ -52,10 +52,11 @@
 		{ kind: OrbitTech.KIND_PANEL, label: 'panel', table: OrbitTech.PANELS },
 		{ kind: OrbitTech.KIND_BATTERY, label: 'battery', table: OrbitTech.BATTERIES }
 	];
+	const TANK_ROW = { kind: OrbitTech.KIND_TANK, label: 'tank', table: OrbitTech.TANKS };
 	const ENGINE_ROW = { kind: OrbitTech.KIND_ENGINE, label: 'engine', table: OrbitTech.ENGINES };
 	const PART_ROWS = [
 		{ kind: OrbitTech.KIND_HOLD, label: 'hold', table: OrbitTech.HOLDS },
-		{ kind: OrbitTech.KIND_TANK, label: 'tank', table: OrbitTech.TANKS },
+		TANK_ROW,
 		ENGINE_ROW
 	];
 	/* one lookup for every shop button: kind → item table */
@@ -67,7 +68,7 @@
 		tank: OrbitTech.TANKS,
 		engine: OrbitTech.ENGINES
 	};
-	/* §10 science: the two researchable 2-D parameter spaces and their slider
+	/* §10 science: the three researchable 2-D parameter spaces and their slider
 	 * ranges; axis order matches the hull points seeded in GravityGame */
 	const SCIENCE_AXES = {
 		engine: [
@@ -77,13 +78,18 @@
 		catapult: [
 			{ key: 'maxForce', label: 'force kN', min: 10, max: 220, step: 1, digits: 0 },
 			{ key: 'efficiency', label: 'efficiency', min: 0.5, max: 0.95, step: 0.01, digits: 2 }
+		],
+		tank: [
+			{ key: 'fuelCap', label: 'fuel kg', min: 20, max: 220, step: 5, digits: 0 },
+			{ key: 'emptyMass', label: 'mass t', min: 0.2, max: 2.0, step: 0.05, digits: 2 }
 		]
 	};
 	/* near-hull defaults: the first invention costs ~base fee and fits the
 	 * starter purse, while pushing a slider outward shows the k·dist growth */
 	const SCIENCE_DEFAULTS = {
 		engine: { thrust: 26, mass: 1.8 },
-		catapult: { maxForce: 100, efficiency: 0.76 }
+		catapult: { maxForce: 100, efficiency: 0.76 },
+		tank: { fuelCap: 100, emptyMass: 1.0 }
 	};
 	const SCI_PLOT_COLS = 24;
 	const SCI_PLOT_ROWS = 16;
@@ -92,7 +98,8 @@
 	let scienceFamily = OrbitTech.KIND_ENGINE;
 	const scienceValues = {
 		engine: { thrust: SCIENCE_DEFAULTS.engine.thrust, mass: SCIENCE_DEFAULTS.engine.mass },
-		catapult: { maxForce: SCIENCE_DEFAULTS.catapult.maxForce, efficiency: SCIENCE_DEFAULTS.catapult.efficiency }
+		catapult: { maxForce: SCIENCE_DEFAULTS.catapult.maxForce, efficiency: SCIENCE_DEFAULTS.catapult.efficiency },
+		tank: { fuelCap: SCIENCE_DEFAULTS.tank.fuelCap, emptyMass: SCIENCE_DEFAULTS.tank.emptyMass }
 	};
 	/* one press of wait runs the world clock: 30 world minutes of sunlight */
 	const CAREER_WAIT_MIN = 30;
@@ -316,6 +323,7 @@
 	const launchButton = $('launch');
 	const clearButton = $('clear');
 	const routeBestBtn = $('routeBest');
+	const leftHudEl = $('leftHud');
 	const cargoHudEl = $('cargoHud');
 	const careerHudEl = $('careerHud');
 	const cargoFootEl = $('cargoFoot');
@@ -325,6 +333,9 @@
 	const playbackGroupEl = $('playbackGroup');
 	const helpBtn = $('helpBtn');
 	const foldBtn = $('foldBtn');
+	const scoreFoldBtn = $('scoreFoldBtn');
+	const careerFoldBtn = $('careerFoldBtn');
+	const tradeFoldBtn = $('tradeFoldBtn');
 	const helpDrawer = $('helpDrawer');
 	const helpClose = $('helpClose');
 	const helpRuleNameEl = $('helpRuleName');
@@ -726,7 +737,7 @@
 		return false;
 	}
 
-	/* the wrapped trade footer grows; the cargo panel stops above it so its launch row stays reachable */
+	/* the wrapped trade footer grows; both HUD columns stop above it so their bottom controls stay reachable */
 	function reserveTradeFooter() {
 		if (!cargoHudEl) return;
 		const vv = root.visualViewport;
@@ -740,9 +751,14 @@
 		if (rect && rect.height > 0 && rect.height < vh * 0.5) {
 			bottomY = Math.min(bottomY, rect.top - 10);
 		}
-		const maxH = Math.max(180, Math.floor(bottomY - hudTop));
-		cargoHudEl.style.setProperty('--footReserve', Math.ceil(vh - bottomY) + 'px');
-		cargoHudEl.style.setProperty('--hudMaxH', maxH + 'px');
+		const maxH = Math.max(180, Math.floor(bottomY - hudTop)) + 'px';
+		const reserve = Math.ceil(vh - bottomY) + 'px';
+		cargoHudEl.style.setProperty('--footReserve', reserve);
+		cargoHudEl.style.setProperty('--hudMaxH', maxH);
+		if (leftHudEl && leftHudEl.style) {
+			leftHudEl.style.setProperty('--footReserve', reserve);
+			leftHudEl.style.setProperty('--hudMaxH', maxH);
+		}
 	}
 
 	function worldX(clientX) {
@@ -3478,11 +3494,15 @@
 	}
 
 	/* heaviest owned tier below the fitted one: the free way back to a lighter
-	 * ship; null when nothing lighter is owned (a hold/tank always has a tier 0) */
+	 * ship; null when nothing lighter is owned (a hold/tank always has a tier 0).
+	 * When a prototype is fitted, an owned ladder item on that same integer rung
+	 * is also offered so the player can always swap back to the standard part. */
 	function lighterTier(career, table, cur) {
-		const below = cur === null ? 0 : cur.tier;
+		if (cur === null) return null;
+		const proto = tierIndex(table, cur) < 0;
 		for (let i = table.length - 1; i >= 0; i--) {
-			if (table[i].tier < below && career.owned[table[i].id]) return table[i];
+			const ok = proto ? table[i].tier <= cur.tier : table[i].tier < cur.tier;
+			if (ok && career.owned[table[i].id]) return table[i];
 		}
 		return null;
 	}
@@ -3549,20 +3569,25 @@
 		return html + '</span></div>';
 	}
 
-	/* a researched engine is owned like a bought part: refit free at HQ, and the
-	 * fitted one is marked instead of offered */
-	function protoEngineRowHtml(career, proto) {
-		const fitted = career.ship.engine === proto;
+	/* a researched ship part (engine or tank) is owned like a bought part: refit
+	 * free at HQ, and the fitted one is marked instead of offered */
+	function protoPartRowHtml(career, row, proto) {
+		const fitted = career.ship[row.kind] === proto;
 		let html = '<div class="careerRow"><span class="careerKind">prototype</span>' +
 			'<span class="careerNow">' + proto.id + '</span>' +
-			capHtml(partCapText(career, ENGINE_ROW, proto, undefined)) + '<span class="careerBtns">';
+			capHtml(partCapText(career, row, proto, undefined)) + '<span class="careerBtns">';
 		if (fitted) html += '<i>fitted</i>';
 		else {
-			html += shopButtonRef('fit ' + proto.id, 'part', ENGINE_ROW.kind, 'data-item="' + proto.id + '"',
+			const mass = OrbitTech.refitMass(career.ship, row.kind, proto, career.ship.cargoTons);
+			const dv = OrbitTech.refitDeltaV(career.ship, row.kind, proto, career.ship.cargoTons);
+			const note = row.kind === OrbitTech.KIND_ENGINE ? ' · isp ' + proto.isp
+				: row.kind === OrbitTech.KIND_TANK ? ' · empty ' + proto.emptyMass + ' t' : '';
+			const dvNote = dv > 0 ? ' · Δv ' + dv.toFixed(1) + ' px/s' : '';
+			html += shopButtonRef('fit ' + proto.id, 'part', row.kind, 'data-item="' + proto.id + '"',
 				career.at !== career.hq, 'refit ' + proto.id + ' at HQ ' + planetName(career.hq) +
-				' · ' + partStatText(ENGINE_ROW.kind, proto) + ' · isp ' + proto.isp);
+				' · ' + partStatText(row.kind, proto) + note + ' · ship ' + mass.toFixed(1) + ' t' + dvNote);
 		}
-		return html + copyButtonHtml(ENGINE_ROW, proto) + '</span></div>';
+		return html + copyButtonHtml(row, proto) + '</span></div>';
 	}
 
 	/* a researched catapult is built on a pad under the tech tables' upgrade rule:
@@ -3593,8 +3618,10 @@
 		for (let i = 0; i < catapults.length; i++) html += protoGearRowHtml(career, planet, catapults[i]);
 		html += '<div class="careerHead">ship refit · HQ ' + planetName(career.hq) + '</div>';
 		for (let i = 0; i < PART_ROWS.length; i++) html += partRowHtml(career, PART_ROWS[i]);
+		const tanks = GravityGame.prototypesOf(career, OrbitTech.KIND_TANK);
+		for (let i = 0; i < tanks.length; i++) html += protoPartRowHtml(career, TANK_ROW, tanks[i]);
 		const engines = GravityGame.prototypesOf(career, OrbitTech.KIND_ENGINE);
-		for (let i = 0; i < engines.length; i++) html += protoEngineRowHtml(career, engines[i]);
+		for (let i = 0; i < engines.length; i++) html += protoPartRowHtml(career, ENGINE_ROW, engines[i]);
 		return html;
 	}
 
@@ -3759,6 +3786,8 @@
 		const rate = (OrbitScience.K_DIST * (OrbitScience.TIER_SCALE[family] || 1)).toFixed(2);
 		const axes = family === OrbitTech.KIND_ENGINE
 			? '10 kN thrust = 1 t mass'
+			: family === OrbitTech.KIND_TANK
+			? '50 kg fuel = 0.5 t mass'
 			: '30 kN force = 0.10 efficiency';
 		return 'metric · ' + axes + ' = 1 RU · +' + rate + ' / RU of distance or frontier work';
 	}
@@ -4413,13 +4442,15 @@
 		}
 	}
 
-	/* a planet disc or paused ship hidden under the cargo panel still aims: the
+	/* a planet disc or paused ship hidden under a HUD panel still aims: the
 	 * press is taken over only on a launchable pad or impulse ship, never a control */
 	function hudPadPress(event) {
 		const node = event.target;
-		if (!node || node === tradeCanvas || !cargoHudEl) return false;
-		if (typeof cargoHudEl.contains !== 'function' || !cargoHudEl.contains(node)) return false;
-		if (node.closest && node.closest('button, input, select, label, textarea')) return false;
+		if (!node || node === tradeCanvas) return false;
+		const inCargo = Boolean(cargoHudEl && typeof cargoHudEl.contains === 'function' && cargoHudEl.contains(node));
+		const inLeft = Boolean(leftHudEl && typeof leftHudEl.contains === 'function' && leftHudEl.contains(node));
+		if (!inCargo && !inLeft) return false;
+		if (node.closest && node.closest('button, input, select, label, textarea, .scoreEntry')) return false;
 		const wx = worldX(event.clientX);
 		const wy = worldY(event.clientY);
 		if (canImpulse() && shipAt(wx, wy)) return true;
@@ -6035,13 +6066,22 @@
 			if (!helpPinned) setHelpOpen(false, true);
 		});
 	}
-	if (foldBtn && cargoHudEl) {
-		foldBtn.addEventListener('click', () => {
-			hudFolded = !hudFolded;
-			cargoHudEl.classList.toggle('folded', hudFolded);
-			foldBtn.textContent = hudFolded ? '+' : '−';
+	function bindFold(btn, panel) {
+		if (!btn || !panel) return;
+		btn.addEventListener('click', () => {
+			const folded = !panel.classList.contains('folded');
+			panel.classList.toggle('folded', folded);
+			if (panel === cargoHudEl) hudFolded = folded;
+			btn.textContent = folded ? '+' : '−';
+			btn.title = folded ? 'expand panel' : 'minimize panel';
+			if (btn.setAttribute) btn.setAttribute('aria-expanded', folded ? 'false' : 'true');
+			measureHudRects();
 		});
 	}
+	bindFold(foldBtn, cargoHudEl);
+	bindFold(scoreFoldBtn, scoreHudEl);
+	bindFold(careerFoldBtn, careerHudEl);
+	bindFold(tradeFoldBtn, $('tradeHud'));
 	if (helpClose) helpClose.addEventListener('click', () => setHelpOpen(false));
 	window.addEventListener('pointerdown', onPointerDown);
 	window.addEventListener('pointermove', onPointerMove);

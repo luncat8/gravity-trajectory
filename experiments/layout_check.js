@@ -222,28 +222,67 @@ async function scoreboardStable(page) {
 			await page.waitForSelector('#careerBox');
 			const label = width + 'x' + height + ' career';
 			const layout = await measure(page);
-const drawer = await page.evaluate(() => {
-	const box = document.getElementById('careerBox');
-	const panel = document.getElementById('careerHud');
-	const hud = panel.getBoundingClientRect();
-	const rect = box.getBoundingClientRect();
-	return {
-		visible: !box.hidden,
-		run: !document.getElementById('runBox').hidden,
-		rivals: document.getElementById('rivalGroup').hidden,
-		scrollWidth: box.scrollWidth,
-		width: rect.width,
-		inside: rect.left >= hud.left - 1 && rect.right <= hud.right + 1,
-		buttons: box.querySelectorAll('button').length,
-		pad: document.getElementById('careerPad').textContent.indexOf('kWh') >= 0
-	};
-});
+			const drawer = await page.evaluate(() => {
+				const box = document.getElementById('careerBox');
+				const panel = document.getElementById('careerHud');
+				const left = document.getElementById('leftHud');
+				const score = document.getElementById('scoreHud');
+				const trade = document.getElementById('tradeHud');
+				const hud = panel.getBoundingClientRect();
+				const rect = box.getBoundingClientRect();
+				const leftRect = left.getBoundingClientRect();
+				const scoreRect = score.getBoundingClientRect();
+				const tradeRect = trade.getBoundingClientRect();
+				return {
+					visible: !box.hidden,
+					run: !document.getElementById('runBox').hidden,
+					rivals: document.getElementById('rivalGroup').hidden,
+					scrollWidth: box.scrollWidth,
+					width: rect.width,
+					inside: rect.left >= hud.left - 1 && rect.right <= hud.right + 1,
+					buttons: box.querySelectorAll('button').length,
+					pad: document.getElementById('careerPad').textContent.indexOf('kWh') >= 0,
+					pushedDown: scoreRect.bottom <= hud.top + 1 && hud.bottom <= tradeRect.top + 1 && hud.height >= 400,
+					leftBottom: leftRect.bottom,
+					leftScrolls: left.scrollHeight > left.clientHeight
+				};
+			});
+			await page.evaluate(() => {
+				const left = document.getElementById('leftHud');
+				left.scrollTop = left.scrollHeight;
+			});
+			const afterScroll = await page.evaluate(() => {
+				const leftRect = document.getElementById('leftHud').getBoundingClientRect();
+				const tradeRect = document.getElementById('tradeHud').getBoundingClientRect();
+				return {
+					tradeVisible: tradeRect.top >= leftRect.top - 1 && tradeRect.bottom <= leftRect.bottom + 2
+				};
+			});
+			await page.evaluate(() => { document.getElementById('leftHud').scrollTop = 0; });
+			await page.click('#careerFoldBtn');
+			const afterFold = await page.evaluate(() => {
+				const panel = document.getElementById('careerHud');
+				const scoreRect = document.getElementById('scoreHud').getBoundingClientRect();
+				const careerRect = panel.getBoundingClientRect();
+				const tradeRect = document.getElementById('tradeHud').getBoundingClientRect();
+				return {
+					folded: panel.classList.contains('folded'),
+					careerH: careerRect.height,
+					tradePulledUp: tradeRect.top <= scoreRect.bottom + careerRect.height + 20
+				};
+			});
+			await page.click('#careerFoldBtn');
 			check(errors.length === 0, label + ': page error ' + errors.join(' / '));
 			check(layout.footBottom <= layout.tradeTop, label + ': foot row overlaps the trade footer');
+			check(drawer.leftBottom <= layout.tradeTop + 1, label + ': leftHud overlaps the trade footer');
 			check(drawer.visible && drawer.run && drawer.rivals, label + ': boxes ' + JSON.stringify(drawer));
 			check(drawer.buttons >= 7 && drawer.pad, label + ': shop ' + drawer.buttons + ' buttons');
 			check(drawer.scrollWidth <= drawer.width + 1 && drawer.inside,
 				label + ': drawer overflows ' + drawer.scrollWidth + ' > ' + Math.round(drawer.width));
+			check(drawer.pushedDown, label + ': panels do not push each other top-to-down');
+			check(afterScroll.tradeVisible, label + ': scrolling leftHud column does not reveal tradeHud');
+			check(afterFold.folded && afterFold.careerH <= 64 && afterFold.tradePulledUp,
+				label + ': folding careerHud failed ' + JSON.stringify(afterFold));
 			console.log(label, 'foot', Math.round(layout.footTop) + '..' + Math.round(layout.footBottom),
 				'| trade', Math.round(layout.tradeTop), '| shop', drawer.buttons, 'buttons');
 			await page.close();

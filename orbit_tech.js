@@ -269,6 +269,14 @@
 		};
 	}
 
+	function tankRecord(id, fuelCap, emptyMass) {
+		const tier = round2(Math.max(RUNG_MIN, interpolate(TANKS, 'fuelCap', fuelCap, 'tier')));
+		return {
+			id: id, tier: tier, fuelCap: fuelCap, emptyMass: emptyMass,
+			buildCost: round2(interpolate(TANKS, 'tier', tier, 'buildCost'))
+		};
+	}
+
 	function starterGrant() {
 		return {
 			purse: 6.00,
@@ -296,7 +304,8 @@
 		shipMass, partMass, refitMass, shipDeltaV, refitDeltaV, refitBurnLimit,
 		launchEnergy, maxSpeed, speedLimit, canLaunch,
 		solarCharge, batteryLeak, impulseDeltaV, impulseFuel, burnMaxDeltaV, burnLimit,
-		upgrades, bulkUpgradeCost, interpolate, engineRecord, catapultRecord, starterGrant, copySpec
+		upgrades, bulkUpgradeCost, interpolate,
+		engineRecord, catapultRecord, tankRecord, starterGrant, copySpec
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = OrbitTech;

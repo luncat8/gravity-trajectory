@@ -41,11 +41,12 @@
 	};
 
 	/* One normalized research unit is a deliberate invention step, not one
-	 * arbitrary engineering unit: 10 kN thrust ≈ 1 t engine mass, and
-	 * 30 kN rail force ≈ 0.10 efficiency. Unknown families stay unscaled. */
+	 * arbitrary engineering unit: 10 kN thrust ≈ 1 t engine mass,
+	 * 30 kN rail force ≈ 0.10 efficiency, 50 kg fuel ≈ 0.5 t tank mass. */
 	var METRIC_SCALE = {
 		engine: [0.1, 1.0],
-		catapult: [1 / 30, 10.0]
+		catapult: [1 / 30, 10.0],
+		tank: [0.02, 2.0]
 	};
 
 	/* Directional difficulty of extending the researched range: for each axis,
@@ -62,6 +63,10 @@
 		catapult: [
 			{ below: 0.20, above: 1.00 },  // maxForce kN
 			{ below: 0.30, above: 2.50 }   // efficiency
+		],
+		tank: [
+			{ below: 0.20, above: 1.00 },  // fuelCap kg: smaller easy, larger hard
+			{ below: 3.00, above: 0.20 }   // emptyMass t: lighter hard, heavier easy
 		]
 	};
 

@@ -1166,5 +1166,44 @@ check('prototypes: communism builds and fits them free', () => {
 	assert.strictEqual(career.ledger.purse, purse);
 });
 
+check('tank science & prototypes: seeded FT-1..FT-3 range, directional surcharge, and HQ refit', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career } = w;
+	assert.ok(GravityGame.SCIENCE_KINDS.includes(OrbitTech.KIND_TANK));
+	const st = OrbitScience.statsHull(career.science, 'tank');
+	assert.strictEqual(st.n, 3, 'FT-1..FT-3 seed the tank hull (FT-0 empty slot excluded)');
+	const range = OrbitScience.rangeHull(career.science, 'tank');
+	assert.deepStrictEqual(range.min, [40, 0.5]);
+	assert.deepStrictEqual(range.max, [160, 1.4]);
+	/* 0.5 RU below min emptyMass (0.25 t) is much dearer than 0.5 RU above max (1.65 t) */
+	const light = GravityGame.researchPreview(career, 'tank', [90, 0.25]);
+	const heavy = GravityGame.researchPreview(career, 'tank', [90, 1.65]);
+	assert.ok(Math.abs(light.frontier - 1.5) < 1e-12 && Math.abs(heavy.frontier - 0.1) < 1e-12);
+	assert.ok(light.cost > heavy.cost, 'composite ultralight tank costs more than heavy tank');
+	/* 1.0 RU above max fuelCap (210 kg) is dearer than 0.5 RU below min (15 kg) */
+	const big = GravityGame.researchPreview(career, 'tank', [210, 0.9]);
+	const small = GravityGame.researchPreview(career, 'tank', [15, 0.9]);
+	assert.ok(big.frontier > small.frontier && big.cost > small.cost);
+	/* unlock and fit a custom tank prototype at HQ */
+	career.ledger.purse = 100;
+	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, OrbitTech.ENGINES[0]));
+	const purseBefore = career.ledger.purse;
+	const fee = GravityGame.researchCost(career, 'tank', [115, 0.65]);
+	assert.ok(GravityGame.researchPoint(career, 'tank', [115, 0.65], 'R1'));
+	assert.ok(Math.abs(career.ledger.purse - (purseBefore - fee)) < 1e-9);
+	const proto = GravityGame.prototypeById(career, 'tank', 'R1');
+	assert.ok(proto && proto.id === 'R1' && proto.fuelCap === 115 && proto.emptyMass === 0.65);
+	assert.ok(proto.tier > 2 && proto.tier < 3 && proto.buildCost > 3.5 && proto.buildCost < 7);
+	const purseAfterResearch = career.ledger.purse;
+	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_TANK, proto));
+	assert.strictEqual(career.ship.tank, proto);
+	assert.strictEqual(career.ship.fuelKg, 115);
+	assert.strictEqual(career.ledger.purse, purseAfterResearch, 'owned tank prototype fits free at HQ');
+	assert.strictEqual(career.ship.mass, OrbitTech.shipMass(career.ship, 0));
+	assert.ok(OrbitTech.shipDeltaV(career.ship, 0) > 15);
+	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_TANK, OrbitTech.TANKS[0]), 'free swap back to FT-0');
+});
+
 console.log(failures === 0 ? 'CAREER BENCH OK' : 'CAREER BENCH FAILED ' + failures);
 process.exit(failures === 0 ? 0 : 1);

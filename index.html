@@ -18,7 +18,10 @@
 				<div class="kicker">game scoreboard</div>
 				<div id="scoreRuleTag" class="scoreRuleTag">tour · 120 s cap</div>
 			</div>
-			<div id="rivalRow" class="scoreStanding" hidden><b id="rivalReadout">—</b></div>
+			<div class="headBtns">
+				<div id="rivalRow" class="scoreStanding" hidden><b id="rivalReadout">—</b></div>
+				<button id="scoreFoldBtn" class="miniBtn" data-fold="scoreHud" title="minimize panel" aria-expanded="true">−</button>
+			</div>
 		</div>
 		<div class="scoreRows">
 			<div id="scorePlayer" class="scoreEntry scorePlayer isUser isActive" role="button" tabindex="0">
@@ -48,8 +51,16 @@
 		</div>
 </aside>
 <aside id="careerHud" class="panel" hidden aria-label="career drawer">
-	<div id="careerBox" class="group" hidden>
-		<div class="caption"><span>career</span><span id="careerTag">—</span></div>
+	<div class="panelHead">
+		<div>
+			<div class="kicker">career</div>
+			<div id="careerTag" class="roleTag">—</div>
+		</div>
+		<div class="headBtns">
+			<button id="careerFoldBtn" class="miniBtn" data-fold="careerHud" title="minimize panel" aria-expanded="true">−</button>
+		</div>
+	</div>
+	<div id="careerBox" hidden>
 		<div class="careerTabs" role="tablist" aria-label="career sections">
 			<button id="careerOperationsTab" class="careerTab on" data-act="careerTab" data-tab="operations"
 				role="tab" aria-selected="true" aria-controls="careerOperations">operations</button>
@@ -76,19 +87,28 @@
 	</div>
 </aside>
 <header id="tradeHud" class="panel">
-		<div class="kicker">orbital trade · background</div>
-		<div class="clock" id="tradeClock">t+ 07:00</div>
-		<div class="stats">
-			<div class="stat"><span>ports</span><b id="tradePorts">—</b></div>
-			<div class="stat"><span>ships</span><b id="tradeShips">—</b></div>
-			<div class="stat"><span>delivered</span><b id="tradeDelivered">—</b></div>
-			<div class="stat"><span>colonies</span><b id="tradeColonies">—</b></div>
-			<div class="stat"><span>aim error</span><b id="tradeAim">—</b></div>
+		<div class="panelHead">
+			<div>
+				<div class="kicker">orbital trade · background</div>
+				<div class="clock" id="tradeClock">t+ 07:00</div>
+			</div>
+			<div class="headBtns">
+				<button id="tradeFoldBtn" class="miniBtn" data-fold="tradeHud" title="minimize panel" aria-expanded="true">−</button>
+			</div>
 		</div>
-		<div id="tradeLegend">
-			<span class="good ice">ice</span>
-			<span class="good ore">ore</span>
-			<span class="good gas">gas</span>
+		<div id="tradeBody">
+			<div class="stats">
+				<div class="stat"><span>ports</span><b id="tradePorts">—</b></div>
+				<div class="stat"><span>ships</span><b id="tradeShips">—</b></div>
+				<div class="stat"><span>delivered</span><b id="tradeDelivered">—</b></div>
+				<div class="stat"><span>colonies</span><b id="tradeColonies">—</b></div>
+				<div class="stat"><span>aim error</span><b id="tradeAim">—</b></div>
+			</div>
+			<div id="tradeLegend">
+				<span class="good ice">ice</span>
+				<span class="good ore">ore</span>
+				<span class="good gas">gas</span>
+			</div>
 		</div>
 	</header>
 </div>
@@ -101,7 +121,7 @@
 		</div>
 		<div class="headBtns">
 			<button id="helpBtn" class="miniBtn" title="mission & controls (?)">? help</button>
-			<button id="foldBtn" class="miniBtn" title="minimize panel">−</button>
+			<button id="foldBtn" class="miniBtn" data-fold="cargoHud" title="minimize panel" aria-expanded="true">−</button>
 		</div>
 	</div>
 	<div id="cargoBody">

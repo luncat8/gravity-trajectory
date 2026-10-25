@@ -98,7 +98,23 @@ body {
 	flex-direction: column;
 	gap: 8px;
 	width: 238px;
-	pointer-events: none;
+	max-height: calc(100vh - 88px);
+	max-height: var(--hudMaxH, calc(100dvh - 88px));
+	overflow-y: auto;
+	overflow-x: hidden;
+	overscroll-behavior: contain;
+	scrollbar-width: thin;
+	scrollbar-color: rgba(126, 180, 230, 0.28) transparent;
+	pointer-events: auto;
+}
+
+#leftHud::-webkit-scrollbar {
+	width: 6px;
+}
+
+#leftHud::-webkit-scrollbar-thumb {
+	border-radius: 3px;
+	background: rgba(126, 180, 230, 0.28);
 }
 
 #leftHud > .panel {
@@ -107,15 +123,10 @@ body {
 	right: auto;
 	bottom: auto;
 	left: auto;
+	flex: none;
 	width: 100%;
 	min-width: 0;
-	pointer-events: none;
-}
-
-#leftHud > #careerHud {
 	pointer-events: auto;
-	max-height: calc(100vh - 28px);
-	overflow-y: auto;
 }
 
 #cargoHud {
@@ -165,8 +176,19 @@ body {
 }
 
 #cargoHud.folded #cargoBody,
-#cargoHud.folded #cargoFoot {
+#cargoHud.folded #cargoFoot,
+#scoreHud.folded .scoreRows,
+#careerHud.folded #careerBox,
+#tradeHud.folded #tradeBody {
 	display: none;
+}
+
+#tradeHud.folded .clock {
+	margin-bottom: 0;
+}
+
+#careerBox {
+	margin-top: 6px;
 }
 
 #scoreHud {
@@ -857,6 +879,10 @@ input:disabled {
 
 /* what the pad (or a row's next tier) can fire with the ship as loaded now */
 .careerCap {
+	max-width: 100%;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	color: var(--dim);
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-size: 10px;
@@ -1196,7 +1222,7 @@ polyline.sciKnownHull {
 	#leftHud {
 		top: 8px;
 		left: 8px;
-		width: 158px;
+		width: 220px;
 		gap: 6px;
 	}
 
@@ -1236,19 +1262,12 @@ polyline.sciKnownHull {
 		font-size: 8px;
 	}
 
-	#tradeHud .kicker,
-	#tradeHud .stats,
-	#tradeLegend {
-		display: none;
-	}
-
 	#tradeHud {
 		padding: 9px 11px;
 	}
 
 	#tradeHud .clock {
-		margin: 0;
-		font-size: 16px;
+		font-size: 15px;
 	}
 
 	#cargoHud {
@@ -1304,6 +1323,12 @@ polyline.sciKnownHull {
 	#routeBest {
 		padding: 6px 7px;
 		font-size: 11px;
+	}
+}
+
+@media (max-width: 599px) {
+	#leftHud {
+		width: 158px;
 	}
 }
 

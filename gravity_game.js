@@ -528,10 +528,10 @@
 	}
 
 	/* researchable parameter spaces, in the axis order the science panel sliders use */
-	const SCIENCE_KINDS = [OrbitTech.KIND_ENGINE, OrbitTech.KIND_CATAPULT];
+	const SCIENCE_KINDS = [OrbitTech.KIND_ENGINE, OrbitTech.KIND_CATAPULT, OrbitTech.KIND_TANK];
 
 	function newPrototypes() {
-		return { engine: [], catapult: [] };
+		return { engine: [], catapult: [], tank: [] };
 	}
 
 	/* the tech tree itself is discovered science: its items seed the hull so the
@@ -546,6 +546,13 @@
 			const c = OrbitTech.CATAPULTS[i];
 			OrbitScience.acceptHull(career.science, OrbitTech.KIND_CATAPULT,
 				[c.maxForce, c.efficiency], c.id);
+		}
+		for (let i = 0; i < OrbitTech.TANKS.length; i++) {
+			const t = OrbitTech.TANKS[i];
+			if (t.tier > 0) {
+				OrbitScience.acceptHull(career.science, OrbitTech.KIND_TANK,
+					[t.fuelCap, t.emptyMass], t.id);
+			}
 		}
 	}
 
@@ -569,6 +576,8 @@
 	function unlockPrototype(career, family, params, id) {
 		const record = family === OrbitTech.KIND_ENGINE
 			? OrbitTech.engineRecord(id, params[0], params[1])
+			: family === OrbitTech.KIND_TANK
+			? OrbitTech.tankRecord(id, params[0], params[1])
 			: OrbitTech.catapultRecord(id, params[0], params[1]);
 		career.prototypes[family].push(record);
 		career.owned[id] = true;

@@ -2149,6 +2149,72 @@ function protoOf(career, family, id) {
 		'light-vs-heavy fee · live surcharge readout · efficiency direction · range expands on research');
 }
 
+/* --- 0.4.13: collapsible HUD panels, tank research family & integer-rung prototype refit --- */
+{
+	const tEnv = loadPage({ search: '?rule=career&seed=42&rate=1' });
+	tEnv.runFrames(2, 16.0);
+	const tUi = tEnv.elements;
+	const tScene = tEnv.context.GravityScene;
+	const tGame = tEnv.context.GravityGame;
+	const tTech = tEnv.context.OrbitTech;
+	const tCareer = tScene.career;
+	const tBox = tUi.get('careerBox');
+	const tShop = () => tUi.get('careerShop').innerHTML;
+	const tBlock = () => tUi.get('careerScience').innerHTML;
+	function tClick(data) {
+		tEnv.fireElement(tBox, 'click', { target: { dataset: data } });
+	}
+
+	/* all 4 HUD panels fold and unfold cleanly via their header buttons */
+	for (const [btnId, panelId] of [
+		['scoreFoldBtn', 'scoreHud'],
+		['careerFoldBtn', 'careerHud'],
+		['tradeFoldBtn', 'tradeHud'],
+		['foldBtn', 'cargoHud']
+	]) {
+		const btn = tUi.get(btnId);
+		const panel = tUi.get(panelId);
+		check(btn && panel && !panel.classList.contains('folded'), panelId + ' starts expanded');
+		tEnv.click(btnId);
+		check(panel.classList.contains('folded') && btn.textContent === '+' &&
+			btn.title === 'expand panel' && btn.attributes['aria-expanded'] === 'false',
+			panelId + ' folds on click');
+		tEnv.click(btnId);
+		check(!panel.classList.contains('folded') && btn.textContent === '−' &&
+			btn.title === 'minimize panel' && btn.attributes['aria-expanded'] === 'true',
+			panelId + ' unfolds on second click');
+	}
+
+	/* switch to tank family in science tab */
+	check(tBlock().includes('tank hull · 3 points'), 'tank hull seeded with 3 points');
+	tClick({ act: 'sciFamily', family: 'tank' });
+	check(/50 kg fuel = 0\.5 t mass = 1 RU/.test(tBlock()) &&
+		/frontier · fuelCap ↓×0\.20 ↑×1\.00 · emptyMass ↓×3\.00 ↑×0\.20/.test(tBlock()),
+		'tank metric and frontier rates shown');
+	tClick({ act: 'sciCopy', family: 'tank' });
+	check(/^frontier: TANK \{ fuelCap: \{ below: 0\.20, above: 1\.00 \}, emptyMass: \{ below: 3\.00, above: 0\.20 \} \}/.test(tEnv.clipboardText),
+		'tank frontier knobs copied: ' + tEnv.clipboardText);
+
+	/* research a tank prototype at integer rung (90 kg = FT-2 rung 2) and verify back-refit to FT-2 */
+	tCareer.ledger.purse = 100;
+	tGame.installPart(tCareer, tTech.KIND_TANK, tTech.TANKS[1]);
+	tGame.installPart(tCareer, tTech.KIND_TANK, tTech.TANKS[2]);
+	tEnv.fireElement(tBox, 'input',
+		{ target: { dataset: { sciFamily: 'tank', sciAxis: 'fuelCap' }, value: '90' } });
+	tEnv.fireElement(tBox, 'input',
+		{ target: { dataset: { sciFamily: 'tank', sciAxis: 'emptyMass' }, value: '0.65' } });
+	tClick({ act: 'sciAccept', kind: 'tank' });
+	const protoTank = protoOf(tCareer, 'tank', 'R1');
+	check(protoTank && protoTank.tier === 2 && protoTank.fuelCap === 90 && protoTank.emptyMass === 0.65,
+		'tank prototype R1 unlocked on rung 2');
+	tClick({ act: 'part', kind: 'tank', item: 'R1' });
+	check(tCareer.ship.tank === protoTank && tCareer.ship.fuelKg === 90,
+		'tank prototype R1 fitted free at HQ');
+	check(/back FT-2/.test(tShop()),
+		'integer-rung prototype offers back-refit to owned FT-2 on the same rung');
+	console.log('0.4.13 verified: 4 collapsible HUD panels · tank science family & frontier · R1 tank prototype refit & same-rung back-refit');
+}
+
 console.log('paint calls', {
 	fillText: env.calls.fillText,
 	stroke: env.calls.stroke,
