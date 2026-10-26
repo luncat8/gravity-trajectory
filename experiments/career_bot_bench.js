@@ -660,5 +660,111 @@ check('patient company: a losing plan that cannot claim a pad is sat out, never 
 	assert.strictEqual(r.waitTries, 0, 'a taken shot resets the patience');
 });
 
+check('flat fees are priced as fees: a lost or stranded ship evacuates', () => {
+	const w = makeWorld(42);
+	const career = w.career;
+	w.ledger.purse = 8;
+	/* a ship that left the map: the idle controller must bring it home */
+	career.at = -1;
+	career.stranded = true;
+	assert.ok(w.bot.careerBetweenFlights(career, w.sim) > 0,
+		'the idle controller ignored a ship in space');
+	assert.strictEqual(career.at, career.hq, 'the lost ship did not come home');
+	assert.strictEqual(career.evacuations, 1);
+	/* a stranded landing: the launch path evacuates after two planless tries */
+	/* below the 9.00 pad price the idle shop cannot claim the planet, so the
+	 * only way out is the 6.00 evacuation the old fee bug made unaffordable */
+	const other = (career.hq + 1) % PLANETS;
+	career.at = other;
+	career.stranded = true;
+	w.sim.relocate(other);
+	w.ledger.purse = 8;
+	const r = w.bot.rivals[0];
+	r.career = career;
+	r.sim = w.sim;
+	r.idleTries = 0;
+	w.bot.careerPlan = () => null;
+	w.bot.traceReset();
+	for (let i = 0; i < 3; i++) {
+		assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, RATE, 1000 + i * 600), false);
+	}
+	assert.strictEqual(career.evacuations, 2, 'the stranded ship never evacuated');
+	assert.strictEqual(career.at, career.hq);
+	assert.ok(w.bot.trace.some(line => line.includes('evacuated to P')),
+		'the evacuation is missing from the decision trace');
+});
+
+check('an unreachable contract is dropped instead of parking a company forever', () => {
+	const w = makeWorld(42);
+	const career = w.career;
+	const r = w.bot.rivals[0];
+	r.career = career;
+	r.sim = w.sim;
+	r.idleTries = 0;
+	w.ledger.purse = 20;
+	/* a starter hold cannot load these tasks; fit the 24 t one at HQ */
+	const OrbitTechBench = require(path.join(root, 'orbit_tech.js'));
+	assert.ok(GravityGame.installPart(career, OrbitTechBench.KIND_HOLD,
+		OrbitTechBench.HOLDS[2]), 'the test hold did not fit');
+	let accepted = false;
+	for (let i = 0; i < GravityGame.BOARD_SIZE && !accepted; i++) {
+		accepted = GravityGame.acceptTask(career, i);
+	}
+	assert.ok(accepted && career.contract >= 0, 'no contract to test with');
+	w.bot.careerPlan = () => null;
+	/* the idle shop would immediately take a fresh offer; this check is about
+	 * the planless recovery itself */
+	w.bot.careerBetweenFlights = () => 0;
+	w.bot.traceReset();
+	const step = 900;
+	for (let i = 0; i < 3; i++) {
+		assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, RATE, step + i * 600), false);
+	}
+	assert.strictEqual(career.contract, -1, 'the stale contract was never dropped');
+	assert.strictEqual(r.idleTries, 0, 'a recovery must reset the idle counter');
+	assert.ok(w.bot.trace.some(line => line.includes('dropped the unreachable contract')),
+		'the contract drop is missing from the decision trace');
+	assert.ok(r.readyStep <= step + 1201, 'the company must retry at once');
+});
+
+check('a finished career gives its queued pad charge back', () => {
+	const galaxy = GravityGame.createGalaxy();
+	GravityGame.resetGalaxy(galaxy, 42);
+	const w = makeWorld(42);
+	w.bot.reset(42, GravityGame.RULE_CAREER, GravityGame.BOT_EASY);
+	w.bot.startCareers(galaxy, 42, w.trade);
+	const r = w.bot.rivals[0];
+	const pad = r.career.pads[r.career.hq];
+	GravityGame.reserveEnergy(pad, 0.5);
+	r.turret = { pad: pad, energy: 0.5, fireAt: 99999 };
+	r.career.ended = GravityGame.CAREER_COMPLETE;
+	w.bot.stepCareer(100, w.market, w.trade, RATE);
+	assert.strictEqual(r.turret, null, 'the queue outlived the company');
+	assert.strictEqual(pad.reservedKwh, 0, 'the reserved charge was never released');
+});
+
+check('the decision log shows live state, reasons and stays bounded', () => {
+	const galaxy = GravityGame.createGalaxy();
+	GravityGame.resetGalaxy(galaxy, 42);
+	const w = makeWorld(42);
+	w.bot.reset(42, GravityGame.RULE_CAREER, GravityGame.BOT_EASY);
+	w.bot.startCareers(galaxy, 42, w.trade);
+	for (let step = 1; step <= 4000; step++) w.bot.stepCareer(step, w.market, w.trade, RATE);
+	const log = w.bot.decisionLog(4000, 'bench · career');
+	assert.ok(log.startsWith('gravity cargo · bot decisions'), 'missing log title');
+	assert.ok(log.includes('bench · career'), 'missing page header');
+	assert.ok(/R1 · .*purse .*pads .*flights/.test(log), 'missing live state: ' + log);
+	assert.ok(log.includes('kWh →'), 'the live rail is missing');
+	assert.ok(log.includes('decisions ('), 'the decisions section is missing');
+	assert.ok(/] R1 (plan|queue|fire|land|sit|no shot|commercial)/.test(log),
+		'no rival decisions were recorded');
+	assert.ok(w.bot.trace.length <= GravityBot.TRACE_MAX, 'the trace is unbounded');
+	for (let i = 0; i < GravityBot.TRACE_MAX * 2; i++) w.bot.traceAdd(0, 'test', '', i);
+	assert.strictEqual(w.bot.trace.length, GravityBot.TRACE_MAX,
+		'the ring buffer must evict old lines');
+	const short = w.bot.actorStateShort(0, 4000);
+	assert.ok(short.length > 0 && short.length < 80, 'unusable short state: ' + short);
+});
+
 console.log(failures === 0 ? 'CAREER BOT BENCH OK' : 'CAREER BOT BENCH FAILED ' + failures);
 process.exit(failures === 0 ? 0 : 1);

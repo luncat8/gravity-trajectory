@@ -431,6 +431,10 @@
 	const gameNewSeedBtn = $('gameNewSeed');
 	const gameCopyBtn = $('gameCopy');
 	const botCopyBtn = $('botCopy');
+	const botLogBtn = $('botLog');
+	const botLogBoxEl = $('botLogBox');
+	const botLogTextEl = $('botLogText');
+	const botLogCloseBtn = $('botLogClose');
 	const replaySpeedBtn = $('replaySpeed');
 	const replaySkipBtn = $('replaySkip');
 	const gameLinkEl = $('gameLink');
@@ -526,6 +530,7 @@
 	let hudPlayerMetaText = '';
 	const hudRivalScoreTexts = ['', ''];
 	const hudRivalMetaTexts = ['', ''];
+	const hudRivalStateTexts = ['', ''];
 	let hudPurseText = '';
 	let hudRuleText = '';
 	let hudRivalTagText = '';
@@ -2236,7 +2241,16 @@
 						pressing = false;
 						savedArmed = false;
 						placeGripFromSpeed();
-						dirty = true;
+						if (careerRule()) {
+							/* the scan traced the rule cap, not the shorter
+							 * preview slider: show that landing too, so the
+							 * armed shot's preview and launch book agree */
+							activeSim().predictFull(aimBody, aimAngle, aimSpeed,
+								Math.min(GravityGame.CAP_SECONDS,
+									best.steps * GravitySim.DT + 0.2));
+							refreshPredGain();
+							dirty = false;
+						} else dirty = true;
 						hudAt = -Infinity;
 						if (helperProgressFillEl) helperProgressFillEl.style.width = '100%';
 						setTimeout(() => { if (helperProgressFillEl && !helperState.active) helperProgressFillEl.style.width = '0%'; }, 900);
@@ -2680,6 +2694,7 @@
 		if (routeRule()) bot.useField(gravity, mode);
 		launchState = -1;
 		gameLinkEl.hidden = true;
+		hideBotLog();
 		refreshGameUi();
 	}
 
@@ -2790,6 +2805,7 @@
 		gravity.limitReason = END_TIME;
 		launchState = -1;
 		gameLinkEl.hidden = true;
+		hideBotLog();
 		refreshSelected();
 		refreshGameUi();
 	}
@@ -3352,6 +3368,48 @@
 		gameLinkEl.select();
 	}
 
+	/* --- rival decisions: a copyable log and a read-only snapshot -------- */
+
+	function botLogHeader() {
+		return game.rule + ' · ' + game.bot + ' · ' + bot.count + ' rivals · seed ' +
+			game.seed + ' · t+ ' + (game.clockSteps * DT).toFixed(1) +
+			' s (step ' + game.clockSteps + ') · ×' + scene.trade.speed +
+			' · g ×' + gravityScale.toFixed(2) + ' · force ×' + forceScale.toFixed(2) +
+			' · ' + (gravity.fieldStatic ? 'planets · static · lists on' : 'ports · moving · lists off') +
+			(careerRule() && careerPaused ? ' · world clock paused' : '');
+	}
+
+	function hideBotLog() {
+		if (!botLogBoxEl) return;
+		botLogBoxEl.hidden = true;
+		if (botLogTextEl) botLogTextEl.value = '';
+	}
+
+	/* without a clipboard the panel is the copy source: select the whole log */
+	function showBotLog() {
+		if (!botLogTextEl || !botLogBoxEl) return;
+		botLogBoxEl.hidden = false;
+		botLogTextEl.focus();
+		botLogTextEl.select();
+	}
+
+	function copyBotLog() {
+		if (!game.on || !botLogBtn || !botLogTextEl || !botLogBoxEl) return;
+		const text = bot.decisionLog(game.clockSteps, botLogHeader());
+		botLogTextEl.value = text;
+		botLogBoxEl.hidden = false;
+		if (botLogBoxEl.scrollIntoView) botLogBoxEl.scrollIntoView({ block: 'nearest' });
+		const clipboard = navigator.clipboard;
+		if (!clipboard) {
+			showBotLog();
+			return;
+		}
+		clipboard.writeText(text).then(() => {
+			botLogBtn.textContent = 'copied ✓';
+			setTimeout(() => { botLogBtn.textContent = 'copy bot log'; }, 1600);
+		}, showBotLog);
+	}
+
 	function loadLink() {
 		if (!GravityGame.isGameLink(location.hash)) return false;
 		const link = GravityGame.decodeLink(location.hash);
@@ -3496,6 +3554,11 @@
 			botCopyBtn.hidden = game.bot === BOT_OFF;
 			botCopyBtn.disabled = flightLock || bot.count === 0 ||
 				bot.rivals[rIdx].shots.length === 0;
+		}
+		if (botLogBtn) {
+			const hasBots = game.on && (bot.count > 0 || playerIsBot());
+			botLogBtn.hidden = !hasBots;
+			if (!hasBots) hideBotLog();
 		}
 		if (rivalRowEl) rivalRowEl.hidden = game.bot === BOT_OFF;
 		if (purseRowEl) purseRowEl.hidden = route;
@@ -5266,11 +5329,16 @@
 				hudRivalScoreTexts[i] = rivalScore;
 				rivalScoreEls[i].textContent = rivalScore;
 			}
-			const rivalMeta = scoreMeta(summary);
+			const rivalMeta = scoreMeta(summary) + ' · ' +
+				bot.actorStateShort(i, game.clockSteps);
 			if (rivalMeta !== hudRivalMetaTexts[i]) {
 				hudRivalMetaTexts[i] = rivalMeta;
 				rivalMetaEls[i].textContent = rivalMeta;
-				rivalMetaEls[i].title = rivalMeta;
+			}
+			const rivalState = bot.actorStatus(i, game.clockSteps);
+			if (rivalState !== hudRivalStateTexts[i]) {
+				hudRivalStateTexts[i] = rivalState;
+				rivalMetaEls[i].title = rivalState;
 			}
 		}
 		if (game.bot !== BOT_OFF && rivalEl) {
@@ -7171,6 +7239,8 @@
 	});
 	gameCopyBtn.addEventListener('click', copyLink);
 	if (botCopyBtn) botCopyBtn.addEventListener('click', copyBotLink);
+	if (botLogBtn) botLogBtn.addEventListener('click', copyBotLog);
+	if (botLogCloseBtn) botLogCloseBtn.addEventListener('click', hideBotLog);
 	replaySpeedBtn.addEventListener('click', () => {
 		replay.speed = (replay.speed + 1) % REPLAY_SPEEDS.length;
 		refreshGameUi();

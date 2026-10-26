@@ -104,9 +104,12 @@
 	const CAREER_MIN_SCORE = 0;
 	/* patient companies: sit out this much world time, but never more than
 	 * CAREER_SIT_TRIES times in a row */
-	const CAREER_SIT_GAP = Math.round(60 / GravitySim.DT);
-	const CAREER_SIT_TRIES = 6;
+	const CAREER_SIT_GAP = Math.round(30 / GravitySim.DT);
+	const CAREER_SIT_TRIES = 4;
 	const PRED_LOG_MAX = GravitySim.PRED_LOG_MAX;
+	/* decisions are rare, so the trace keeps whole lines and stays bounded */
+	const TRACE_MAX = 240;
+	const BOARD_TICK_STEPS = Math.round(1 / GravitySim.DT);
 
 	const LEVELS = {
 		off: {
@@ -176,6 +179,7 @@
 			readyStep: 0,
 			gapPhase: 0,
 			idleTries: 0,
+			waitTries: 0,
 			turret: null,
 			planReady: false,
 			planStep: -1,
@@ -212,6 +216,8 @@
 		this.rivals = [createRival(worldW, worldH), createRival(worldW, worldH)];
 		/* the GUI's own actor when YOU is set to bot; its sim mirrors the GUI sim */
 		this.player = createRival(worldW, worldH);
+		for (let i = 0; i < MAX_RIVALS; i++) this.rivals[i].index = i;
+		this.player.index = PLAYER_INDEX;
 
 		this.level = GravityGame.BOT_OFF;
 		this.playerType = GravityGame.PLAYER_USER;
@@ -262,7 +268,7 @@
 			body: -1, angle: 0, dv: 0, angleU: 0, dvU: 0,
 			score: -Infinity, coastScore: -Infinity, fuelKg: 0, steps: 0
 		};
-		this.careerEval = { taskPay: 0, padValue: 0, builds: false, energy: 0, wait: 0, fee: 0 };
+		this.careerEval = { taskPay: 0, padValue: 0, builds: false, energy: 0, wait: 0, fee: 0, reject: '' };
 		/* the winning trace's visit log, copied before the fan moves on */
 		this.careerLogPlanet = new Int32Array(PRED_LOG_MAX);
 		this.careerLogStep = new Int32Array(PRED_LOG_MAX);
@@ -273,6 +279,15 @@
 		this.careerUseResearch = false;
 		this.careerPlans = 0;
 		this.careerBurnsPlanned = 0;
+		/* per-attempt diagnostics: counters only, no fan-loop allocations */
+		this.careerScan = {
+			step: -1, tried: 0, impacts: 0, finite: 0, bounce: 0, exit: 0,
+			noImpact: 0, book: 0
+		};
+		/* bounded decision trace and the last line per actor (0..1 rivals, 2 YOU) */
+		this.trace = [];
+		this.lastDecision = ['', '', ''];
+		this.worldStep = 0;
 
 		const self = this;
 		this.fillPlanets = function (t, outX, outY, count) {
@@ -283,6 +298,66 @@
 			}
 		};
 	}
+
+	/* --- decision trace ------------------------------------------------- */
+
+	function worldClock(step) {
+		return 't+ ' + (step * GravitySim.DT).toFixed(1);
+	}
+
+	function signed(value) {
+		if (!Number.isFinite(value)) return String(value);
+		return (value >= 0 ? '+' : '') + value.toFixed(2);
+	}
+
+	function actorLabel(index) {
+		if (index < 0) return 'page';
+		return index === PLAYER_INDEX ? 'YOU' : 'R' + (index + 1);
+	}
+
+	/* flat fees are numbers; `careerPrice` reads item.buildCost and must not be
+	 * handed one (an undefined price made every evacuation unaffordable) */
+	function careerFee(career, value) {
+		return career.cheat === GravityGame.CHEAT_COMMUNISM ? 0 : value;
+	}
+
+	GravityBot.prototype.traceAdd = function (index, decision, detail, step) {
+		const line = '[' + worldClock(step) + '] ' + actorLabel(index) + ' ' + decision +
+			(detail ? ' · ' + detail : '');
+		this.trace.push(line);
+		if (this.trace.length > TRACE_MAX) this.trace.shift();
+		if (index >= 0 && index < this.lastDecision.length) this.lastDecision[index] = line;
+	};
+
+	GravityBot.prototype.traceReset = function () {
+		this.trace.length = 0;
+		for (let i = 0; i < this.lastDecision.length; i++) this.lastDecision[i] = '';
+	};
+
+	GravityBot.prototype.traceHeaders = function (step) {
+		const actors = [];
+		for (let i = 0; i < this.count; i++) {
+			if (this.isRivalBot(i)) actors.push(this.actorStatus(i, step));
+		}
+		if (this.playerType === GravityGame.PLAYER_BOT &&
+			this.rule !== GravityGame.RULE_CAREER &&
+			this.rule !== GravityGame.RULE_ROUTE) actors.push(this.actorStatus(PLAYER_INDEX, step));
+		return actors;
+	};
+
+	/* the copyable log: live state first, then the newest decisions */
+	GravityBot.prototype.decisionLog = function (step, header) {
+		const lines = ['gravity cargo · bot decisions', header || '', ''];
+		const states = this.traceHeaders(step);
+		for (let i = 0; i < states.length; i++) lines.push(states[i]);
+		lines.push('', 'decisions (' + this.trace.length + ' of the last ' + TRACE_MAX + ', newest last):');
+		if (this.trace.length === 0) {
+			lines.push('(none yet · the world clock may be paused)');
+		} else {
+			for (let i = 0; i < this.trace.length; i++) lines.push(this.trace[i]);
+		}
+		return lines.join('\n');
+	};
 
 	GravityBot.prototype.attachWorld = function (tradeSim) {
 		this.tradeSim = tradeSim;
@@ -364,6 +439,7 @@
 		actor.basePlanet = basePlanet;
 		actor.readyStep = 0;
 		actor.idleTries = 0;
+		actor.waitTries = 0;
 		actor.planReady = false;
 		actor.planStep = -1;
 		actor.planStamp = -1;
@@ -413,6 +489,10 @@
 		this.routeCandActor = -1;
 		this.routeTurn = 0;
 		this.probe.clear();
+		this.worldStep = 0;
+		this.traceReset();
+		this.traceAdd(-1, 'start', this.rule + ' · ' + this.level + ' · ' + this.count +
+			' rivals · seed ' + this.seed, 0);
 		this.careerBest.origin = -1;
 		this.careerBurnBest.body = -1;
 		this.careerBuilds = 0;
@@ -426,6 +506,7 @@
 			const r = this.rivals[i];
 			const home = this.rivalTypes[i] === GravityGame.PLAYER_BOT
 				? (base0 + i * 13) % PLANETS : -1;
+			this.careerDropQueue(r);
 			this.resetActor(r, home);
 			/* a career run leaves pads on the rival sims; a shared-market run must not inherit them */
 			r.sim.setLaunchNetwork(null, null);
@@ -580,6 +661,9 @@
 		}
 		if (actor.routeStage > stopStage) {
 			actor.routeDone = true;
+			this.traceAdd(index, 'route ready', 'P' + actor.routeOrigin + ' · ' +
+				Math.round(actor.routeLength) + ' px · ' + actor.routeVisits +
+				' systems · ' + actor.routeDoneCount + ' candidates', this.worldStep);
 			return;
 		}
 		if ((actor.routeStage & 1) === 1) {
@@ -869,7 +953,12 @@
 	};
 
 	GravityBot.prototype.finishJob = function () {
-		const rival = this.actorAt(this.jobRival);
+		const who = this.jobRival;
+		const rival = this.actorAt(who);
+		this.traceAdd(who, 'plan', 'P' + this.jobOrigin + ' → angle ' +
+			GravityGame.angleOf(this.bestAngleU).toFixed(2) + ' v' +
+			GravityGame.speedOf(this.bestSpeedU).toFixed(0) + ' · score ' +
+			signed(this.bestScore) + ' · ' + this.jobIndex + ' candidates', this.jobRunStep);
 		rival.planReady = true;
 		rival.planStep = this.jobRunStep;
 		rival.planStamp = this.jobStamp;
@@ -944,6 +1033,7 @@
 
 	/* background pre-thinking while the game clock is paused between flights */
 	GravityBot.prototype.tickIdle = function (runStep, market, budgetMs) {
+		this.worldStep = runStep;
 		if (this.rule === GravityGame.RULE_ROUTE) return this.tickRoute(budgetMs);
 		if (this.rule === GravityGame.RULE_CAREER) return true;
 		if (this.count === 0) return true;
@@ -967,7 +1057,7 @@
 		return true;
 	};
 
-	GravityBot.prototype.launchRival = function (rival, capSteps) {
+	GravityBot.prototype.launchRival = function (rival, capSteps, runStep) {
 		const angle = GravityGame.angleOf(rival.planAngleU);
 		const speed = GravityGame.speedOf(rival.planSpeedU);
 		rival.sim.stepLimit = capSteps;
@@ -979,6 +1069,9 @@
 		rival.sim.launch(rival.planOrigin, angle, speed);
 		GravityGame.beginFlight(rival.ledger, rival.sim);
 		rival.planReady = false;
+		this.traceAdd(rival.index, 'launch', 'P' + rival.planOrigin + ' angle ' +
+			angle.toFixed(2) + ' v' + speed.toFixed(0) + ' · purse ' +
+			rival.ledger.purse.toFixed(2), runStep === undefined ? this.jobRunStep : runStep);
 	};
 
 	/*
@@ -988,6 +1081,7 @@
 	 * playback never stalls a frame; when `sync` is true, drains immediately.
 	 */
 	GravityBot.prototype.prepareStep = function (runStep, market, capSteps, budgetMs, sync) {
+		this.worldStep = runStep;
 		if (this.rule === GravityGame.RULE_ROUTE || this.rule === GravityGame.RULE_CAREER ||
 			this.count === 0) return true;
 		for (let i = 0; i < this.count; i++) {
@@ -1002,13 +1096,14 @@
 				if (sync) this.drainJob();
 				else if (!this.stepJob(budgetMs, SLICE_CANDIDATES)) return false;
 			}
-			this.launchRival(rival, capSteps);
+			this.launchRival(rival, capSteps, runStep);
 		}
 		return true;
 	};
 
 	/* advances all flying rivals by one exact DT step at `runStep` */
 	GravityBot.prototype.stepOne = function (runStep, market) {
+		this.worldStep = runStep;
 		if (this.rule === GravityGame.RULE_ROUTE || this.rule === GravityGame.RULE_CAREER ||
 			this.count === 0) return;
 		const stage = this.spec().stageSteps;
@@ -1027,6 +1122,12 @@
 				rival.length += rival.sim.flightLength;
 				if (rival.sim.landedBody >= 0) rival.basePlanet = rival.sim.landedBody;
 				if (this.isRivalBot(i)) rival.readyStep = runStep + stage;
+				if (this.isRivalBot(i)) this.traceAdd(i, 'land',
+					(rival.sim.endReason === END_IMPACT
+						? 'P' + rival.sim.endBody : rival.sim.endReason === END_EXIT
+							? 'left the map' : 'flight cap') +
+					' · purse ' + rival.ledger.purse.toFixed(2) + ' · ' +
+					rival.sim.visitedCount + ' systems · ' + this.rivalDoneWhy(rival), runStep);
 			}
 		}
 	};
@@ -1299,7 +1400,7 @@
 	GravityBot.prototype.careerBetweenFlights = function (career, sim) {
 		if (career.ended !== GravityGame.CAREER_OPEN) return 0;
 		let actions = 0;
-		const evacPrice = careerPrice(career, GravityGame.CAREER.evacFee);
+		const evacPrice = careerFee(career, GravityGame.CAREER.evacFee);
 		if (career.at < 0) {
 			if (career.ledger.purse + 1e-9 >= evacPrice && GravityGame.evacuate(career, sim)) actions += 1;
 			return actions;
@@ -1380,6 +1481,160 @@
 		return tries < CAREER_SIT_TRIES;
 	};
 
+	/* --- live state and refusal reasons --------------------------------- */
+
+	function ownerText(career, owner, pad) {
+		if (owner === career.index) return 'own EMC-' + (pad.catapult.tier + 1);
+		if (owner === GravityGame.OWNER_COMMERCIAL) return 'commercial EMC-1';
+		return (owner === 0 ? 'YOU' : 'R' + owner) + ' rail';
+	}
+
+	/* the rail under the ship, its live cap and the money that gates a launch */
+	GravityBot.prototype.careerRailText = function (career, sim) {
+		if (career.at < 0) {
+			return 'ship in space · evac ' +
+				careerFee(career, GravityGame.CAREER.evacFee).toFixed(2) +
+				' · purse ' + career.ledger.purse.toFixed(2);
+		}
+		const at = career.at;
+		const pad = GravityGame.padAt(career, at);
+		const owner = GravityGame.padOwner(career, at);
+		const exit = GravityGame.exitCostAt(career, at, career.ship.mass);
+		return 'P' + at + ' · ' + ownerText(career, owner, pad) + ' · ' +
+			pad.chargeKwh.toFixed(2) + '/' + pad.battery.capacity.toFixed(2) + ' kWh → ' +
+			sim.speedLimit(at).toFixed(0) + ' px/s (min ' + GravitySim.SPEED_MIN + ') · fee ' +
+			GravityGame.launchFee(career, at, GravitySim.SPEED_MIN).toFixed(2) +
+			' · purse ' + career.ledger.purse.toFixed(2) + ' · exit ' +
+			(Number.isFinite(exit) ? exit.toFixed(2) : 'impossible');
+	};
+
+	/* candidate counts from the failed search, so "cannot fly" has a cause */
+	GravityBot.prototype.careerNoPlanWhy = function (career, sim) {
+		const at = career.at;
+		if (at < 0) {
+			return 'ship in space · evac ' +
+				careerFee(career, GravityGame.CAREER.evacFee).toFixed(2) +
+				' · purse ' + career.ledger.purse.toFixed(2);
+		}
+		if (!sim.canLaunchFrom(at)) return 'P' + at + ' cannot launch (ship not landed)';
+		const min = GravitySim.SPEED_MIN;
+		const cap = sim.speedLimit(at);
+		if (cap + 1e-9 < min) {
+			return 'P' + at + ' pad cap ' + cap.toFixed(1) + ' < min ' + min +
+				' px/s (charge ' + GravityGame.padAt(career, at).chargeKwh.toFixed(2) + ' kWh)';
+		}
+		const fee = GravityGame.launchFee(career, at, min);
+		if (career.ledger.purse + 1e-9 < fee) {
+			return 'purse ' + career.ledger.purse.toFixed(2) + ' < rail fee ' + fee.toFixed(2);
+		}
+		const scan = this.careerScan;
+		if (career.contract >= 0) {
+			const task = career.tasks[career.contract];
+			const target = task.state === GravityGame.TASK_LOADED ? task.to : task.from;
+			return 'contract wants P' + target + ' · no fan shot lands there (' +
+				scan.tried + ' traces)';
+		}
+		if (scan.tried > 0 && scan.impacts === 0) {
+			return 'fan ' + scan.tried + ' traces · no impact · book ' + scan.book;
+		}
+		return 'fan ' + scan.tried + ' traces · ' + scan.impacts + ' impacts · ' +
+			scan.finite + ' payable · ' + scan.bounce + ' bounces · ' +
+			scan.exit + ' insolvent · ' + scan.noImpact + ' no landing · book ' + scan.book;
+	};
+
+	GravityBot.prototype.rivalDoneWhy = function (r) {
+		const spec = this.ruleSpec();
+		if (this.rule === GravityGame.RULE_ROUTE) {
+			return r.routeDone ? 'plan ready' : 'tracing one plan';
+		}
+		if (spec.stopOnTour && r.doneSteps >= 0) return 'tour complete';
+		if (spec.maxShots > 0 && r.shots.length >= spec.maxShots) {
+			return r.shots.length + '-shot cap reached';
+		}
+		if (r.shots.length >= MAX_BOT_SHOTS) return 'safety shot cap';
+		if (r.sim.status !== STATUS_FLYING && r.ledger.purse < MONEY.cost) {
+			return 'purse ' + r.ledger.purse.toFixed(2) + ' < launch fee ' + MONEY.cost.toFixed(2);
+		}
+		return 'active';
+	};
+
+	GravityBot.prototype.actorStateShort = function (index, runStep) {
+		const r = this.actorAt(index);
+		if (this.rule === GravityGame.RULE_CAREER) {
+			const career = r.career;
+			if (!career) return 'no company';
+			if (career.ended === GravityGame.CAREER_BROKE) {
+				return 'broke · restart in ' + Math.max(0, (r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s';
+			}
+			if (career.ended !== GravityGame.CAREER_OPEN) return 'complete';
+			if (career.at < 0) {
+				const fee = careerFee(career, GravityGame.CAREER.evacFee);
+				return career.ledger.purse + 1e-9 >= fee
+					? 'in space · evacuating'
+					: 'in space · purse ' + career.ledger.purse.toFixed(2) +
+						' < evac ' + fee.toFixed(2);
+			}
+			if (r.sim.status === STATUS_FLYING) return 'flying';
+			if (r.turret) {
+				return 'queued · barrel in ' + Math.max(0, (r.turret.fireAt - runStep) * GravitySim.DT).toFixed(1) + ' s';
+			}
+			if (runStep < r.readyStep) {
+				const why = r.waitTries > 0
+					? 'sitting ' + r.waitTries + '/' + CAREER_SIT_TRIES
+					: r.idleTries > 0 ? 'no shot' : 'gap';
+				return why + ' · retry in ' + ((r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s';
+			}
+			return 'ready';
+		}
+		if (r.sim.status === STATUS_FLYING) return 'flying';
+		if (this.rivalDone(r)) return this.rivalDoneWhy(r);
+		if (this.jobActive && this.jobRival === index) {
+			return 'thinking ' + Math.round(this.progress() * 100) + '%';
+		}
+		if (runStep < r.readyStep) {
+			return 'gap · ' + ((r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s';
+		}
+		return 'ready';
+	};
+
+	/* multi-line live state: state, money, rail, saved shots, last decision */
+	GravityBot.prototype.actorStatus = function (index, runStep) {
+		const label = actorLabel(index);
+		const r = this.actorAt(index);
+		const short = this.actorStateShort(index, runStep);
+		const lines = [];
+		if (this.rule === GravityGame.RULE_CAREER) {
+			const career = r.career;
+			if (!career) return label + ' · no company';
+			const place = career.at < 0 ? 'in space'
+				: 'P' + career.at + (r.sim.status === STATUS_FLYING ? ' · in flight' : '');
+			lines.push(label + ' · ' + short + ' · ' + place +
+				' · purse ' + career.ledger.purse.toFixed(2) + ' · ' + career.padCount +
+				' pads · ' + career.flights + ' flights');
+			lines.push('    ' + this.careerRailText(career, r.sim));
+			let book = 0;
+			for (let i = 0; i < career.launchBook.entries.length; i++) {
+				if (career.launchBook.entries[i].origin === career.at) book += 1;
+			}
+			let extra = 'book ' + book + ' from here · sit ' + r.waitTries + '/' +
+				CAREER_SIT_TRIES + ' · idle ' + r.idleTries;
+			if (career.contract >= 0) {
+				const task = career.tasks[career.contract];
+				extra += ' · contract → P' + (task.state === GravityGame.TASK_LOADED ? task.to : task.from);
+			}
+			if (r.turret) extra += ' · queued v' + r.turret.speed.toFixed(0);
+			lines.push('    ' + extra);
+		} else {
+			lines.push(label + ' · ' + short + ' · ' + r.shots.length + ' shots · purse ' +
+				r.ledger.purse.toFixed(2) + ' · ' + r.sim.visitedCount + ' systems · ' +
+				(r.steps * GravitySim.DT).toFixed(1) + ' s');
+			lines.push('    ' + this.rivalDoneWhy(r) + ' · next in ' +
+				Math.max(0, (r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s');
+		}
+		if (this.lastDecision[index]) lines.push('    last: ' + this.lastDecision[index]);
+		return lines.join('\n');
+	};
+
 	GravityBot.prototype.careerEnergyWait = function (career, planet, energy) {
 		const pad = GravityGame.padAt(career, planet);
 		const gain = OrbitTech.solarCharge(pad.panel, career.light[planet], CAREER_WAIT_SECONDS);
@@ -1393,6 +1648,7 @@
 	 */
 	GravityBot.prototype.careerScoreFacts = function (career, origin, market, runStep,
 		flownLen, fee, body, visitPay, length, steps) {
+		this.careerEval.reject = '';
 		let taskPay = visitPay;
 		let cashPay = visitPay;
 		if (career.contract >= 0) {
@@ -1414,7 +1670,10 @@
 
 		/* landing back on the pad it left pays nothing and only drains the
 		 * battery: better to wait or shop than to fly a pointless bounce */
-		if (body === origin && taskPay <= 0) return -Infinity;
+		if (body === origin && taskPay <= 0) {
+			this.careerEval.reject = 'bounce';
+			return -Infinity;
+		}
 		const own = career.pads[body];
 		let padValue;
 		if (body === origin) padValue = CAREER_SAME_PAD_VALUE;
@@ -1442,7 +1701,10 @@
 			const exit = GravityGame.exitCostAt(career, body, career.ship.mass);
 			const reserve = career.padCount === PLANETS - 1 && exit >= build ? CAREER_PURSE_RESERVE : 0;
 			const margin = exit > 0 && Number.isFinite(exit) ? exit * 0.5 : 0;
-			if (career.ledger.purse - (fee || 0) + cashPay + 1e-9 < exit + reserve + margin) return -Infinity;
+			if (career.ledger.purse - (fee || 0) + cashPay + 1e-9 < exit + reserve + margin) {
+				this.careerEval.reject = 'exit';
+				return -Infinity;
+			}
 		}
 		this.careerEval.taskPay = taskPay;
 		this.careerEval.padValue = padValue;
@@ -1452,7 +1714,10 @@
 	/* Landing + harvest + contract + solvency value of the trace in `probe`. */
 	GravityBot.prototype.careerScoreFlight = function (career, origin, market, runStep, flownLen, fee) {
 		const probe = this.probe;
-		if (probe.predReason !== END_IMPACT || probe.predBody < 0) return -Infinity;
+		if (probe.predReason !== END_IMPACT || probe.predBody < 0) {
+			this.careerEval.reject = 'noImpact';
+			return -Infinity;
+		}
 		return this.careerScoreFacts(career, origin, market, runStep, flownLen, fee,
 			probe.predBody, GravityGame.estimateProfit(market, runStep, probe),
 			probe.predLength, probe.predSteps);
@@ -1560,11 +1825,27 @@
 
 	/* Plan only from the rail the ship stands on (own, rival or commercial);
 	 * every snapped speed is <= its live cap. */
+	GravityBot.prototype.careerScanReset = function (runStep) {
+		const scan = this.careerScan;
+		if (scan.step === runStep) return;
+		scan.step = runStep;
+		scan.tried = 0;
+		scan.impacts = 0;
+		scan.finite = 0;
+		scan.bounce = 0;
+		scan.exit = 0;
+		scan.noImpact = 0;
+		scan.book = 0;
+	};
+
 	GravityBot.prototype.careerPlan = function (career, sim, market, runStep, fallback, angles) {
 		const best = this.careerBest;
+		const scan = this.careerScan;
+		this.careerScanReset(runStep);
 		best.origin = -1;
 		best.score = -Infinity;
 		best.builds = false;
+		best.fromBook = false;
 		if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
 			!sim.canLaunchFrom(career.at)) return null;
 		const origin = career.at;
@@ -1598,10 +1879,12 @@
 				const entry = book.entries[i];
 				if (entry.origin !== origin || entry.speedU > capU || entry.speedU < minU) continue;
 				if (requiredBody >= 0 && entry.body !== requiredBody) continue;
+				scan.book += 1;
 				const score = this.careerScoreStored(career, sim, market, runStep, entry);
 				if (!(score > best.score + 1e-12)) continue;
 				this.careerTakeBest(entry.origin, entry.angleU, entry.speedU, score,
 					entry.body, entry.length, entry.steps);
+				best.fromBook = true;
 			}
 			bestAngleU = best.origin >= 0 ? best.angleU : 0;
 			bestSpeedU = best.origin >= 0 ? best.speedU : 0;
@@ -1627,8 +1910,14 @@
 				this.probe.visited.set(sim.visited);
 				this.probe.visitedCount = sim.visitedCount;
 				this.probe.predictFast(origin, angle, speed, horizon);
+				scan.tried += 1;
+				if (this.probe.predReason === END_IMPACT && this.probe.predBody >= 0) scan.impacts += 1;
 				if (requiredBody >= 0 && this.probe.predBody !== requiredBody) continue;
 				const score = this.careerScoreProbe(career, sim, origin, speed, market, runStep);
+				if (Number.isFinite(score)) scan.finite += 1;
+				else if (this.careerEval.reject === 'bounce') scan.bounce += 1;
+				else if (this.careerEval.reject === 'exit') scan.exit += 1;
+				else scan.noImpact += 1;
 				const better = score > best.score + 1e-12 ||
 					(Math.abs(score - best.score) <= 1e-12 && best.origin >= 0 &&
 						(angleU < bestAngleU || (angleU === bestAngleU && speedU < bestSpeedU)));
@@ -1636,6 +1925,7 @@
 				this.careerTakeBest(origin, angleU, speedU, score, this.probe.predBody,
 					this.probe.predLength, this.probe.predSteps);
 				this.careerLogStore(this.probe);
+				best.fromBook = false;
 				bestAngleU = angleU;
 				bestSpeedU = speedU;
 			}
@@ -1746,11 +2036,26 @@
 			r.sim.fieldT = trade.t;
 			r.sim.fieldRate = this.probe.fieldRate;
 			r.basePlanet = r.career.hq;
+			this.traceAdd(i, 'start', 'HQ P' + r.career.hq + ' · purse ' +
+				r.career.ledger.purse.toFixed(2) + ' · first try in ' +
+				(r.readyStep * GravitySim.DT).toFixed(1) + ' s', 0);
 		}
 	};
 
+	/* an idle board ages on the world clock: without this a contract with an
+	 * unreachable target never expires, because landing was the only refresh */
+	function boardStale(career, runStep) {
+		for (let i = 0; i < GravityGame.BOARD_SIZE; i++) {
+			const task = career.tasks[i];
+			if (task.kind !== GravityGame.TASK_NONE && runStep > task.deadline) return true;
+		}
+		return false;
+	}
+
 	/* one world step for every rival career: charge pads, fly, plan, launch */
 	GravityBot.prototype.stepCareer = function (runStep, market, trade, rate) {
+		this.worldStep = runStep;
+		const boardTick = runStep % BOARD_TICK_STEPS === 0;
 		for (let i = 0; i < this.count; i++) {
 			const r = this.rivals[i];
 			const career = r.career;
@@ -1764,11 +2069,23 @@
 				this.careerLand(r, trade, runStep);
 				continue;
 			}
+			if (boardTick && career.ended === GravityGame.CAREER_OPEN &&
+				boardStale(career, runStep)) {
+				GravityGame.refreshBoard(career, trade, runStep);
+				this.traceAdd(i, 'board', 'expired contracts cleared', runStep);
+			}
+			/* a finished company must give its queued pad charge back */
+			if (career.ended !== GravityGame.CAREER_OPEN && r.turret) {
+				this.traceAdd(i, 'queue dropped', 'career ended', runStep);
+				this.careerDropQueue(r);
+				GravityGame.setCommercial(career, -1);
+			}
 			if (career.ended === GravityGame.CAREER_BROKE) {
 				if (runStep >= r.readyStep) this.careerRestart(r, i, trade, runStep);
 				continue;
 			}
-			if (career.ended !== GravityGame.CAREER_OPEN || runStep < r.readyStep) continue;
+			if (career.ended !== GravityGame.CAREER_OPEN) continue;
+			if (runStep < r.readyStep) continue;
 			this.careerLaunch(r, market, trade, rate, runStep);
 		}
 	};
@@ -1783,6 +2100,7 @@
 	GravityBot.prototype.careerLaunch = function (r, market, trade, rate, runStep) {
 		const career = r.career;
 		const sim = r.sim;
+		const who = r.index;
 		const angles = this.spec().careerAngles;
 		let shot = null;
 		if (r.turret) {
@@ -1793,6 +2111,7 @@
 			shot = r.turret;
 			r.turret = null;
 		} else {
+			this.careerScanReset(runStep);
 			let plan = career.at < 0 ? null : this.careerPlan(career, sim, market, runStep, false, angles);
 			if (!plan && career.at >= 0) {
 				plan = this.careerPlan(career, sim, market, runStep, true, angles);
@@ -1802,33 +2121,65 @@
 			if (!plan && career.at >= 0 && career.commercialPlanet !== career.at &&
 				GravityGame.padOwner(career, career.at) !== GravityGame.OWNER_COMMERCIAL) {
 				GravityGame.setCommercial(career, career.at);
+				const fallbackFee = GravityGame.launchFee(career, career.at, GravitySim.SPEED_MIN);
 				if (GravityGame.padLift(career, career.at) + 1e-9 >= GravitySim.SPEED_MIN &&
-					career.ledger.purse + 1e-9 >=
-						GravityGame.launchFee(career, career.at, GravitySim.SPEED_MIN)) {
+					career.ledger.purse + 1e-9 >= fallbackFee) {
 					plan = this.careerPlan(career, sim, market, runStep, false, angles);
 					if (!plan) plan = this.careerPlan(career, sim, market, runStep, true, angles);
 				}
 				if (!plan) GravityGame.setCommercial(career, -1);
+				this.traceAdd(who, 'commercial', (plan ? 'found a shot' : 'still no shot') +
+					' · fee ' + fallbackFee.toFixed(2) +
+					' · purse ' + career.ledger.purse.toFixed(2), runStep);
 			}
 			if (!plan) {
-				/* a park no trajectory leaves is a dead end: fly home after a couple of tries */
-				const evac = careerPrice(career, GravityGame.CAREER.evacFee);
+				const why = this.careerNoPlanWhy(career, sim);
+				const evac = careerFee(career, GravityGame.CAREER.evacFee);
+				let recovery = '';
+				r.idleTries += 1;
+				/* a park no trajectory leaves is a dead end: fly home after a
+				 * couple of tries; a contract whose target cannot be reached is
+				 * dropped, exactly as the solo controller does */
 				if (career.stranded && r.idleTries >= 2 && career.ledger.purse + 1e-9 >= evac) {
-					r.idleTries = 0;
-					GravityGame.evacuate(career, sim);
-				} else {
-					r.idleTries += 1;
+					if (GravityGame.evacuate(career, sim)) recovery = 'evacuated to P' + career.at;
+				} else if (career.contract >= 0 && r.idleTries >= 3) {
+					GravityGame.dropContract(career);
+					GravityGame.refreshBoard(career, trade, runStep);
+					recovery = 'dropped the unreachable contract';
 				}
+				const wasAt = career.at;
 				this.careerBetweenFlights(career, sim);
-				r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
+				if (!recovery && wasAt < 0 && career.at >= 0) recovery = 'evacuated to P' + career.at;
+				if (recovery) r.idleTries = 0;
+				const gap = recovery ? 1 : CAREER_RIVAL_GAP + r.gapPhase;
+				r.readyStep = runStep + gap;
+				this.traceAdd(who, 'no shot', why + ' · idle ' + r.idleTries +
+					(recovery ? ' · ' + recovery : '') + ' · ' +
+					(gap === 1 ? 'retry next step' :
+						'retry in ' + (gap * GravitySim.DT).toFixed(1) + ' s'), runStep);
 				return false;
 			}
+			this.traceAdd(who, 'plan', 'P' + plan.origin + '→P' + plan.body +
+				' v' + plan.speed.toFixed(0) + ' score ' + signed(plan.score) +
+				' pay ' + signed(plan.taskPay) + ' pad ' + signed(plan.padValue) +
+				' fee ' + plan.fee.toFixed(2) + ' · ' +
+				(plan.fromBook ? 'book reuse' : 'fan ' + this.careerScan.tried + ' traces') +
+				' · EMC build ' + (plan.builds ? 'affordable' : 'no'), runStep);
 			r.idleTries = 0;
 			if (this.careerShouldWait(plan, r.waitTries)) {
 				r.waitTries += 1;
+				/* the commercial choice bought one attempt only: a sit must not
+				 * leave the company paying its fee again after its own pad charged */
+				GravityGame.setCommercial(career, -1);
 				this.careerBetweenFlights(career, sim);
 				r.readyStep = runStep + CAREER_SIT_GAP + r.gapPhase;
+				this.traceAdd(who, 'sit', 'score ' + signed(plan.score) +
+					' · no EMC build · sit ' + r.waitTries + '/' + CAREER_SIT_TRIES +
+					' · retry in ' + ((r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s', runStep);
 				return false;
+			}
+			if (r.waitTries >= CAREER_SIT_TRIES) {
+				this.traceAdd(who, 'forced', 'patience spent · taking the least bad shot', runStep);
 			}
 			r.waitTries = 0;
 			/* queue the shot: the first to queue claims the pad charge, then the
@@ -1845,10 +2196,17 @@
 				origin: plan.origin,
 				angle: plan.angle,
 				speed: plan.speed,
+				body: plan.body,
+				score: plan.score,
 				fireAt: runStep + Math.ceil(wait / GravitySim.DT),
 				pad: pad,
 				energy: energy
 			};
+			this.traceAdd(who, 'queue', 'P' + plan.origin + ' angle ' + plan.angle.toFixed(2) +
+				' v' + plan.speed.toFixed(0) + ' → P' + plan.body + ' · ' +
+				ownerText(career, GravityGame.padOwner(career, plan.origin), pad) +
+				' · ' + energy.toFixed(2) + ' kWh · barrel in ' +
+				((r.turret.fireAt - runStep) * GravitySim.DT).toFixed(1) + ' s', runStep);
 			return false;
 		}
 		/* fire the queued shot */
@@ -1864,16 +2222,24 @@
 		sim.launch(origin, angle, speed);
 		GravityGame.careerBeginFlight(career, sim);
 		r.basePlanet = origin;
+		this.traceAdd(who, 'fire', 'P' + origin + ' v' + speed.toFixed(0) +
+			' → P' + shot.body + ' · score ' + signed(shot.score) +
+			' · purse ' + career.ledger.purse.toFixed(2), runStep);
 		return true;
 	};
 
 	GravityBot.prototype.careerLand = function (r, trade, runStep) {
-		GravityGame.careerEndFlight(r.career, r.sim, trade, runStep);
-		r.basePlanet = r.career.at;
+		const career = r.career;
+		GravityGame.careerEndFlight(career, r.sim, trade, runStep);
+		r.basePlanet = career.at;
 		r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
 		r.idleTries = 0;
 		r.waitTries = 0;
-		this.careerBetweenFlights(r.career, r.sim);
+		this.careerBetweenFlights(career, r.sim);
+		this.traceAdd(r.index, 'land', (career.at < 0 ? 'lost in space' : 'P' + career.at) +
+			' · purse ' + career.ledger.purse.toFixed(2) + ' · ' + career.padCount + ' pads · ' +
+			(career.at < 0 || career.stranded ? 'no own EMC here' : 'own rail') +
+			' · next in ' + ((r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s', runStep);
 	};
 
 	/* a company that runs out of money is wound up and refinanced at its old HQ,
@@ -1887,6 +2253,8 @@
 		r.idleTries = 0;
 		r.waitTries = 0;
 		this.careerDropQueue(r);
+		this.traceAdd(index, 'restart', 'broke · fresh HQ P' + r.career.hq +
+			' · retry in ' + ((r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s', runStep);
 	};
 
 	GravityBot.prototype.careerReady = function (index) {
@@ -1907,6 +2275,7 @@
 	GravityBot.CAREER_MIN_SCORE = CAREER_MIN_SCORE;
 	GravityBot.CAREER_SIT_GAP = CAREER_SIT_GAP;
 	GravityBot.CAREER_SIT_TRIES = CAREER_SIT_TRIES;
+	GravityBot.TRACE_MAX = TRACE_MAX;
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = GravityBot;
 	else root.GravityBot = GravityBot;

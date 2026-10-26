@@ -169,10 +169,17 @@
 			<button id="gameNewSeed" class="miniBtn" title="random world">new seed</button>
 			<button id="gameCopy" class="miniBtn" title="link with seed, rate and every launch">copy replay</button>
 			<button id="botCopy" class="miniBtn" title="copy rival shot list as a replay link" hidden>copy rival</button>
+			<button id="botLog" class="miniBtn" title="copy the last rival decisions and why a rival is waiting · click again to refresh" hidden>copy bot log</button>
 			<button id="replaySpeed" class="miniBtn" title="replay speed" hidden>×1</button>
 			<button id="replaySkip" class="miniBtn" title="re-simulate the rest instantly" hidden>skip</button>
 		</div>
 		<input id="gameLink" type="text" readonly hidden aria-label="replay link">
+		<div id="botLogBox" class="botLogBox" hidden>
+			<div class="botLogHead"><span>rival decisions · snapshot</span>
+				<button id="botLogClose" class="miniBtn" title="hide the log panel">close ×</button>
+			</div>
+			<textarea id="botLogText" class="botLogText" readonly spellcheck="false" aria-label="bot decision log"></textarea>
+		</div>
 	</div>
 
 	<div id="viewGroup" class="group">

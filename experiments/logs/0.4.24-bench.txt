@@ -1,0 +1,38 @@
+0.4.24 — copyable bot decision log, career dead-end recovery, helper preview matches its scan
+
+node --check *.js experiments/*.js                          OK
+git diff --check                                            OK
+
+node experiments/gravity_bench.js      BENCH OK
+node experiments/colony_bench.js       COLONY BENCH OK
+node experiments/game_bench.js         GAME BENCH OK
+node experiments/route_bench.js        ROUTE BENCH OK
+node experiments/bot_bench.js          BOT BENCH OK (6 exact 1-cand sync matches, buffers 0-alloc, worst slice 3.72 ms)
+node experiments/career_bench.js       CAREER BENCH OK (launch book checks pass)
+node experiments/career_bot_bench.js   CAREER BOT BENCH OK (+4: flat-fee evacuation, contract drop, queue release, bounded log)
+  scaled career s42 g1.4 f0.6: complete · 293 flights · waits 501 (unchanged)
+  starter grind s7/31/42/913: complete · 69/83/69/68 flights
+node experiments/dom_smoke.js          SMOKE OK (0.4.0..0.4.24)
+  new: clipboard copy == panel text, file:// textarea fallback, close clears,
+       paused-clock note, live rival decisions, rival meta state/title, bot-off hidden
+node experiments/layout_check.js       SKIPPED (no CHROME_PATH)
+
+profit + EMC helper, 15 fresh pages (seed 42)
+  armed preview lands on a padless planet:  15/15
+  before the fix, re-predicting the armed aim with the 60 s preview: 8/12
+  predictFull(120 s) average: 5.9 ms per trace
+
+rival probe (node experiments/career_rival_probe.js), grounded idle streak
+  before, 100 000 steps, IDLE=7200
+    seed  7   longest 271.0 s / 137.8 s   flights 13 / 16
+    seed 42   longest  11.6 s / 482.4 s   flights 20 /  7
+  after, 120 000 steps, IDLE=7200
+    seed  7   longest  78.8 s / 111.6 s   flights 21 / 17
+    seed 31   longest  12.6 s /  77.2 s   flights 25 / 20
+    seed 42   longest  11.1 s /  78.1 s   flights 24 / 20
+    seed 913  longest  12.0 s /  55.0 s   flights 23 / 20
+
+Sample decision line (seed 7, contract deadlock and its recovery):
+  [t+ 779.6] R1 no shot · contract wants P12 · no fan shot lands there (447 traces) · idle 1 · retry in 8.0 s
+  [t+ 795.6] R1 no shot · ... · idle 0 · dropped the unreachable contract · retry next step
+  [t+ 795.6] R1 plan · P3→P4 v85 score +4.72 pay +3.98 pad +1.00 fee 0.00 · fan 447 traces · EMC build no

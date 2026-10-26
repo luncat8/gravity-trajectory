@@ -435,3 +435,43 @@ player click", and the user wanted it back. When a test celebrates a removed
 behaviour, grep the plan/draft docs for that behaviour first: the test may be
 pinning the regression. Tests and docs disagreeing is a review signal, not a
 coin flip — resolve it with the author (or the draft) before shipping.
+
+## a price helper that takes records cannot price a flat fee
+
+`careerPrice(career, item)` returns `item.buildCost` and the career bot passed
+`CAREER.evacFee` (the number 6) to it. `undefined` compared as "unaffordable"
+forever, so a rival that left the map (`at = -1`) or landed on a park it could
+not leave never evacuated. `checkEnded` did not mark it broke either, because
+the purse still covered the stated exit cost — a perfectly invisible deadlock.
+Keep two helpers: one for records, one for numbers, and unit-test the recovery
+path with a real purse below the EMC build price (otherwise the idle shop
+claims the planet first and hides the bug).
+
+The same review found a rival task board that only aged on landing: an accepted
+contract whose target the current rail could not reach rejected every fan shot
+and never expired, so the company retried the same impossible plan forever.
+Idle loops need the board clock and a bounded "drop the contract" recovery,
+exactly as the solo career controller already had.
+
+## diagnosing "the bot is doing nothing"
+
+Put a bounded ring of formatted lines at the *decision sites* (plan, queue,
+fire, land, refusal), not in the per-frame loop, and compute the live state at
+copy time: planet, purse, rail owner, charge → speed cap, fee, exit cost,
+saved shots, active contract, retry time. A `no shot` line that says "pad cap
+28 < min 30", "purse 1.20 < fee 3.00" or "contract wants P12 · 0 fan shots"
+answers the user's question without a debugger. The fan only increments
+counters; the strings are built on the rare refusal. `file://` has no clipboard
+permission, so the copy button must also open a read-only textarea with the
+log selected — the panel is the primary path, not a fallback.
+
+## an armed helper shot must preview what the scan traced
+
+Career helper scans trace the rule cap (120 s), while the page preview obeys a
+60 s slider and `predict()` caps at `MAX_STEPS` (7350 steps = 61.25 s). A shot
+that landed at 70 s was therefore armed with a preview that said "time", and a
+smoke test that re-predicted it with `sim.predict` failed about a third of the
+time. Raising the global horizon is wrong: `predict()` would hit its step cap
+with `END_OPEN` and `routeDrain` spins when a stub clock does not advance. Fix
+it at the arming site — `predictFull(aim, scanHorizon)` once, with
+`dirty = false` — so the canvas, the launch book and the launch itself agree.

@@ -724,6 +724,8 @@ check(ui.get('playerScoreMeta').textContent.endsWith('purse ' + endPurse.toFixed
 	'player score details have no purse: ' + ui.get('playerScoreMeta').textContent);
 check(ui.get('rivalScore1').textContent !== '—' && ui.get('rivalMeta1').textContent.includes('purse '),
 	'R1 score row not populated: ' + ui.get('rivalScore1').textContent + ' · ' + ui.get('rivalMeta1').textContent);
+check(ui.get('rivalMeta1').title.includes('last:') &&
+	!ui.get('botLog').hidden, 'rival row has no live bot state / log button');
 console.log('game score:', ui.get('gameScore').textContent, '· R1', ui.get('rivalScore1').textContent,
 	'·', ui.get('cargoStatus').textContent,
 	'· watched at ×4 then reset');
@@ -2761,10 +2763,12 @@ function protoOf(career, family, id) {
 	for (; lui.get('helperStop').hidden !== true && lGuard < 500; lGuard++) lEnv.runFrames(1, 16.0);
 	lEnv.runFrames(2, 16.0);
 	const emcAim = lScene.aimState();
-	lSim.predict(lCareer.hq, emcAim.angle, emcAim.speed);
+	/* the helper arms a full rule-cap preview: a second, shorter prediction
+	 * would hide the landing it found and make this check a coin flip */
 	check(lSim.predReason === lSimCtor.END_IMPACT && lSim.predBody >= 0 &&
 		lCareer.pads[lSim.predBody].catapult === null && lSim.predBody !== lCareer.hq,
-		'profit + EMC must land on a padless planet: ' + lSim.predBody);
+		'profit + EMC must land on a padless planet: ' + lSim.predBody +
+		' · reason ' + lSim.predReason);
 	/* the build is paid after landing: purse + harvest − the EMC fee must cover it */
 	const emcCost = lCareer.cheat === lGame.CHEAT_COMMUNISM ? 0
 		: lEnv.context.OrbitTech.CATAPULTS[0].buildCost;
@@ -2787,6 +2791,64 @@ function protoOf(career, family, id) {
 		'the list returns with the static field: ' + lui.get('careerLaunchList').innerHTML);
 	console.log('0.4.23 verified: launch list saves found shots (loops and other-owner EMC ' +
 		'landings), best profit / profit + EMC helpers, kWh launch label');
+}
+
+
+/* --- 0.4.24: copyable rival decisions -------------------------------- */
+{
+	const bEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
+	bEnv.runFrames(3, 16.0);
+	const bui = bEnv.elements;
+	check(!bui.get('botLog').hidden, 'career rivals need a copy bot log button');
+	check(bui.get('botLogBox').hidden, 'the log panel starts closed');
+	bEnv.click('botLog');
+	const pausedLog = bui.get('botLogText').value;
+	check(!bui.get('botLogBox').hidden &&
+		pausedLog.startsWith('gravity cargo · bot decisions') &&
+		pausedLog.includes('career · normal · 2 rivals · seed 42') &&
+		pausedLog.includes('R1 ·') && pausedLog.includes('kWh →') &&
+		pausedLog.includes('decisions ('),
+		'the file:// fallback must show the whole log: ' + pausedLog.slice(0, 220));
+	check(pausedLog.includes('world clock paused'),
+		'a paused world must say why nobody moves: ' + pausedLog.slice(0, 220));
+	check(bui.get('botLog').textContent !== 'copied ✓',
+		'without a clipboard the button must not claim a copy');
+
+	/* resume the world clock: rivals decide, the refreshed log records it */
+	bEnv.click('careerClock');
+	bEnv.runFrames(400, 16.0);
+	bEnv.click('botLog');
+	const liveLog = bui.get('botLogText').value;
+	check(/\] R1 (plan|queue|fire|land|sit|no shot|commercial) ·/.test(liveLog),
+		'rival decisions never reached the log: ' + liveLog.slice(-300));
+	check(liveLog.includes('retry in') || liveLog.includes('barrel in') ||
+		liveLog.includes('next in'), 'the log has no reason for a wait');
+	check(bui.get('rivalMeta1').textContent.includes(' · ') &&
+		bui.get('rivalMeta1').title.includes('last:'),
+		'the rival row must show its live state: ' + bui.get('rivalMeta1').textContent);
+	bEnv.click('botLogClose');
+	check(bui.get('botLogBox').hidden && bui.get('botLogText').value === '',
+		'closing the log panel must clear it');
+	console.log('0.4.24 verified: copy bot log (clipboard + file:// panel), live rival state ' +
+		'in the scoreboard, reasons for queues and waits');
+}
+
+/* the clipboard path copies exactly what the panel shows */
+{
+	const cEnv = loadPage({ search: '?rule=career&seed=7&rate=1' });
+	cEnv.runFrames(3, 16.0);
+	const cui = cEnv.elements;
+	cEnv.click('botLog');
+	const copied = cEnv.clipboardText || '';
+	check(copied.startsWith('gravity cargo · bot decisions') &&
+		copied.includes('R1 ·') && copied.includes('decisions ('),
+		'the clipboard did not receive the decision log: ' + copied.slice(0, 200));
+	check(cui.get('botLogText').value === copied,
+		'the panel and the clipboard must hold the same snapshot');
+	cEnv.choose('botOff');
+	cEnv.runFrames(2, 16.0);
+	check(cui.get('botLog').hidden && cui.get('botLogBox').hidden,
+		'a run with no rivals must hide the bot log');
 }
 
 console.log('paint calls', {
