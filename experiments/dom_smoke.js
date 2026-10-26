@@ -1147,7 +1147,8 @@ console.log('solo money:', soloShots, 'shots · broke flight landed · purse', s
 
 /* career via ?rule=career: ship on HQ, only its pad launches, a landing elsewhere strands */
 const CAREER_TEST_SPEED = 90;
-/* a career click fires at once; the loop only covers a frame of latency */
+/* a career click queues the shot: the loop waits out the barrel wind-up
+ * (one turn per 2…5 s, so at most 5 s) plus a frame of latency */
 function careerLaunch(env, sim) {
 	env.click('launch');
 	for (let i = 0; i < 900 && sim.status !== pageSim.STATUS_FLYING; i++) env.runFrames(1, 16.0);
@@ -1332,12 +1333,38 @@ check(kScene.game.clockSteps === clockAtAim && kScene.bot.rivals[0].shots.length
 careerEnv.dragAim(career.hq, landingShot, CAREER_TEST_SPEED);
 careerEnv.runFrames(2, 16.0);
 careerEnv.click('launch');
-/* every rail fires at once: no barrel queue between click and flight */
-check(kCargo.status === kSim.STATUS_FLYING && career.flights === 1 && !kScene.careerPaused(),
-	'career click must launch at once and resume the clock');
+careerEnv.runFrames(2, 16.0);
+/* the EMC turns its barrel to the aim instead of firing on the click */
+check(kCargo.status !== kSim.STATUS_FLYING && career.flights === 0 &&
+	kui.get('launch').textContent.startsWith('gun · '),
+	'career click must queue the shot: ' + kui.get('launch').textContent);
+	check(kui.get('planetActions').hidden && kui.get('careerWait').disabled,
+		'the queued launch hides planet actions and blocks wait');
+	/* a second click cancels the queue and restores the landed controls */
+	careerEnv.click('launch');
+	check(kCargo.status !== kSim.STATUS_FLYING && kui.get('launch').textContent === 'launch' &&
+		kui.get('careerMsg').textContent === 'launch cancelled' &&
+		!kui.get('planetActions').hidden && !kui.get('careerWait').disabled,
+		'cancelled queue must restore the launch state: ' + kui.get('launch').textContent +
+		' / ' + kui.get('careerMsg').textContent);
+	careerEnv.click('launch');
+	check(kui.get('launch').textContent.startsWith('gun · '),
+		're-queue after cancel: ' + kui.get('launch').textContent);
+	const clockAtQueue = kScene.game.clockSteps;
+	let queueFrames = 0;
+	for (; kCargo.status !== kSim.STATUS_FLYING && queueFrames < 900; queueFrames++) {
+		careerEnv.runFrames(1, 16.0);
+	}
+check(kCargo.status === kSim.STATUS_FLYING && career.flights === 1 && queueFrames > 0,
+	'career flight did not start after the barrel turned');
+check(kScene.game.clockSteps === clockAtQueue, 'the career clock must stay frozen while the barrel turns');
+check(!kScene.careerPaused(), 'the queued liftoff resumes the career clock automatically');
 check(career.pads[career.hq].chargeKwh < charge0, 'launch did not draw the pad battery');
 for (let i = 0; i < 400 && kCargo.status === kSim.STATUS_FLYING; i++) careerEnv.runFrames(1, 40.0);
-check(kCargo.status === kSim.STATUS_ENDED && kCargo.endReason === kSim.END_IMPACT, 'career flight end ' + kCargo.endReason);
+	check(kCargo.status === kSim.STATUS_ENDED && kCargo.endReason === kSim.END_IMPACT, 'career flight end ' + kCargo.endReason);
+	check(kCargo.trailCount === 0 && kCargo.predCount === 0,
+		'a landed flight must clean its finished trajectories: trail ' +
+		kCargo.trailCount + ' pred ' + kCargo.predCount);
 check(career.at === kCargo.endBody && career.stranded, 'landing without a catapult must strand');
 check(kScene.careerPaused(), 'the clock must pause again at landing (default setting)');
 check(kScene.game.money.purse >= purse0, 'no launch fee in career: ' + kScene.game.money.purse);
@@ -1374,9 +1401,18 @@ check(kui.get('launchCommercial').textContent === 'commercial launch · 3.00' &&
 		' / ' + kui.get('launch').textContent);
 const purseStranded = kScene.game.money.purse;
 careerEnv.click('launchCommercial');
-check(kCargo.status === kSim.STATUS_FLYING && career.lastFee === 3 &&
+/* every career rail queues: the commercial one fires when its barrel aligns */
+check(kCargo.status !== kSim.STATUS_FLYING && kui.get('launch').textContent.startsWith('gun · '),
+	'commercial click must queue on the turning barrel: ' + kui.get('launch').textContent);
+let commFrames = 0;
+for (; kCargo.status !== kSim.STATUS_FLYING && commFrames < 900; commFrames++) {
+	careerEnv.runFrames(1, 16.0);
+}
+check(kCargo.status === kSim.STATUS_FLYING && commFrames > 0,
+	'commercial flight did not start after the barrel turned');
+check(career.lastFee === 3 &&
 	Math.abs(kScene.game.money.purse - (purseStranded - 3)) < 1e-9,
-	'commercial launch must fire at once for exactly 3.00: fee ' + career.lastFee +
+	'commercial launch must fire for exactly 3.00: fee ' + career.lastFee +
 		' purse ' + kScene.game.money.purse);
 for (let i = 0; i < 400 && kCargo.status === kSim.STATUS_FLYING; i++) careerEnv.runFrames(1, 40.0);
 check(kCargo.status === kSim.STATUS_ENDED && career.commercialPlanet === -1 && career.stranded,
@@ -2606,8 +2642,37 @@ function protoOf(career, family, id) {
 		'career ×4..×32 playback · +3.25-exit / rate / TOF route prediction');
 	console.log('0.4.19 verified: commercial rail + EMC claims · ' +
 		'flying rival careers · 9.00 pads / 6.00 evacuation');
-	console.log('0.4.20 verified: instant launch at any time · commercial EMC-1 button on every planet · ' +
+	console.log('0.4.20 verified: commercial EMC-1 button on every planet · ' +
 		'asymptotic visit profit →3.00 · continuous career clock with pause on landing');
+}
+
+/* --- 0.4.21: slow frames stretch the wait; it still settles exactly --- */
+{
+	const wEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
+	wEnv.runFrames(2, 16.0);
+	const wui = wEnv.elements;
+	const wScene = wEnv.context.GravityScene;
+	const wStepsBefore = wScene.game.clockSteps;
+	const wPre = wScene.waitSettlement();
+	/* each frame credits at most 20 ms: after 12 × 60 ms frames the wait
+	 * shows 12 %, not the 36 % a fixed 2 s deadline would have drawn */
+	wEnv.click('careerWait');
+	wEnv.runFrames(12, 60.0);
+	check(wui.get('careerWait').textContent === 'waiting · 12 %',
+		'slow wait frames must credit only their 20 ms budget: ' +
+		wui.get('careerWait').textContent);
+	let wGuard = 0;
+	for (; wui.get('careerWait').textContent.startsWith('waiting') && wGuard < 300; wGuard++) {
+		wEnv.runFrames(1, 16.0);
+	}
+	check(wui.get('careerWait').textContent === 'wait · 30 min' && wGuard > 50,
+		'the stretched wait must still finish and settle its preview line: ' +
+		wui.get('careerWait').textContent + ' after ' + wGuard + ' frames');
+	check(wScene.game.clockSteps === wStepsBefore + wPre.steps,
+		'the stretched wait must settle the exact step count: ' +
+		(wScene.game.clockSteps - wStepsBefore) + ' vs ' + wPre.steps);
+	console.log('0.4.21 verified: queued barrel launch (frozen clock) · wait credits 20 ms/frame ' +
+		'so slow machines stretch the 2 s · landed flights leave no trail');
 }
 
 console.log('paint calls', {

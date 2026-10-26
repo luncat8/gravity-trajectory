@@ -111,9 +111,12 @@
 		for (const key in SCIENCE_DEFAULTS[family]) scienceValues[family][key] = SCIENCE_DEFAULTS[family][key];
 	}
 	/* one press of wait runs the world clock: 30 world minutes of sunlight,
-	 * eased over 2 s so the trade sky visibly fast-forwards */
+	 * eased over 2 s so the trade sky visibly fast-forwards; each frame may
+	 * credit at most WAIT_FRAME_MS (a 50 fps budget), so a slow machine
+	 * stretches the wait past 2 s instead of freezing the view */
 	const CAREER_WAIT_MIN = 30;
 	const CAREER_WAIT_MS = 2000;
+	const WAIT_FRAME_MS = 20;
 	const VIEW_SPACE = 'space';
 	const VIEW_FIELD = 'field';
 	/* refit button `data-tier` that empties the engine slot (the tech tables have no `null` record) */
@@ -231,8 +234,8 @@
 			detailLabel: 'Network',
 			detail: 'Every planet carries an EMC, and the best rail there claims it. Your own EMC launches on its solar-charged battery; a rival player\'s EMC charges a usage tax that scales with the energy of the shot and pays them; the neutral commercial EMC-1 standing on every planet charges a flat ' +
 				GravityGame.CAREER.commercialFee.toFixed(2) + ' and can be picked on any planet (it never claims it or blocks building yours). Landing without your own EMC is no dead end — launch commercial, build, or evacuate to HQ for ' +
-				GravityGame.CAREER.evacFee.toFixed(2) + '. Any rail fires the moment you launch; the world clock pauses when your flight ends (setting: pause on landing) so you can aim in peace. An impulse engine and fuel tank let you pause in flight (Space / P or drag from the ship) for mid-course burns.',
-			controls: 'Drag from an EMC to aim · Enter launches at once · in flight: Space / P or drag ship to burn · Shift = fine'
+				GravityGame.CAREER.evacFee.toFixed(2) + '. Every EMC barrel turns one full circle every 2…5 s: your launch waits for the barrel to line up with the aim, then fires by itself (a click or Esc cancels the queue). The world clock holds still while the barrel winds and pauses when your flight ends (setting: pause on landing) so you can aim in peace. An impulse engine and fuel tank let you pause in flight (Space / P or drag from the ship) for mid-course burns.',
+			controls: 'Drag from an EMC to aim · launch queues the shot until the barrel aligns (2…5 s a turn) · in flight: Space / P or drag ship to burn · Shift = fine'
 		}
 	};
 
@@ -575,6 +578,8 @@
 	 * flight ends so you can aim in peace (launching resumes it) */
 	let careerPaused = false;
 	let pauseOnLanding = true;
+	/* a career launch is queued until the planet's EMC barrel reaches the aim */
+	const turret = { pending: false, body: -1, angle: 0, speed: 0, fireAt: 0 };
 	const slotTypes = [PLAYER_USER, PLAYER_BOT, PLAYER_BOT];
 	const rivalTypesArg = [PLAYER_BOT, PLAYER_BOT];
 	let activeSlot = 0;
@@ -1315,6 +1320,8 @@
 			hudAt = -Infinity;
 			return;
 		}
+		/* re-aiming rewrites the queued shot, so the pending one is cancelled */
+		cancelTurret();
 		blockedPlanet = -1;
 		blockedKind = 0;
 		blockedBy = -1;
@@ -1344,8 +1351,53 @@
 		dirty = true;
 	}
 
+	/* the barrel must line up with the aimed direction before the rail fires */
+	function cancelTurret() {
+		if (!turret.pending) return;
+		turret.pending = false;
+		careerNotice('');
+		launchState = -1;
+		hudAt = -Infinity;
+		refreshGameUi();
+		refreshCareerWaitUi(game.career, game.career.ended !== GravityGame.CAREER_OPEN);
+	}
+
+	function queueTurretShot(now) {
+		const period = GravityGame.turretPeriod(game.galaxy, aimBody);
+		const gun = GravityGame.turretAngle(game.galaxy, aimBody, now / 1000);
+		let delta = aimAngle - gun;
+		delta -= Math.floor(delta / TAU) * TAU;
+		const wait = delta < 0.02 ? 0 : delta / TAU * period;
+		turret.pending = true;
+		turret.body = aimBody;
+		turret.angle = aimAngle;
+		turret.speed = aimSpeed;
+		turret.fireAt = now + wait * 1000;
+		careerNotice(wait > 0
+			? 'EMC turning · ' + wait.toFixed(1) + ' s to ' + planetName(aimBody)
+			: 'EMC aligned · ' + planetName(aimBody));
+		launchState = -1;
+		hudAt = -Infinity;
+		refreshGameUi();
+		careerWaitBtn.disabled = true;
+	}
+
+	function tickTurret(now) {
+		if (!turret.pending || now < turret.fireAt) return;
+		turret.pending = false;
+		aimBody = turret.body;
+		aimAngle = turret.angle;
+		aimSpeed = turret.speed;
+		armed = true;
+		careerNotice('');
+		/* the liftoff fires the queued shot and resumes the career clock */
+		if (careerRule()) setCareerPaused(false);
+		fire(NO_ABORT);
+	}
+
 	function cancelAim() {
 		const sim = activeSim();
+		cancelTurret();
 		aiming = false;
 		armed = false;
 		pressing = false;
@@ -1486,10 +1538,19 @@
 			return;
 		}
 		if (routeRule() && game.on) return;
+		if (turret.pending) {
+			cancelTurret();
+			careerNotice('launch cancelled');
+			return;
+		}
 		if (!armed || !canAimFrom(aimBody) || gameLocked()) return;
 		if (!activeSim().canFire(aimBody, aimSpeed)) return;
 		if (careerRule() && !GravityGame.careerCanFire(game.career, gravity, aimBody, aimSpeed)) return;
-		/* every rail fires at once, at any time; launching resumes the clock */
+		/* in career the click queues the shot: the barrel winds to the aim */
+		if (careerRule() && !replay.on) {
+			queueTurretShot(performance.now());
+			return;
+		}
 		if (careerRule()) setCareerPaused(false);
 		fire(NO_ABORT);
 	}
@@ -2512,6 +2573,7 @@
 	/* one galaxy per career run: YOU join first, then every rival career, so pads
 	 * and usage tax are shared ground from the first launch */
 	function startCareerRun(seed) {
+		cancelTurret();
 		GravityGame.resetGalaxy(game.galaxy, seed);
 		GravityGame.startCareer(game.career, gravity, seed, tradeSim, game.cheat, game.galaxy);
 		bot.startCareers(game.galaxy, seed, tradeSim);
@@ -2595,6 +2657,7 @@
 		const wasCareer = careerRule();
 		cancelCareerWait();
 		stopReplay();
+		cancelTurret();
 		careerPaused = false;
 		clearBurnAim();
 		linkNote = '';
@@ -2689,6 +2752,13 @@
 			return;
 		}
 		if (replay.on && replay.phase !== PHASE_FLY && now >= replay.until) advanceReplay(now);
+		/* the barrel turns in real time and the world holds still for that beat,
+		 * so the predicted trajectory fires exactly as it was aimed */
+		if (turret.pending) {
+			playAcc = 0;
+			tickTurret(now);
+			return;
+		}
 		/* the eased career wait owns the world clock for its 2 s */
 		if (careerWaitBusy()) {
 			playAcc = 0;
@@ -3246,11 +3316,13 @@
 	/* control locks and button states; runs on game state changes, not per frame */
 	function refreshGameUi() {
 		const route = routeRule();
+		const career = careerRule();
 		const anyFlying = clockDriverFlying();
 		const activeFlying = activeSim().status === STATUS_FLYING;
-		const flightLock = game.on && (anyFlying || replay.on);
+		const flightLock = game.on && (career
+			? activeFlying || turret.pending || replay.on
+			: anyFlying || replay.on);
 		const activeSlotNow = activeSlotIndex();
-		const career = careerRule();
 		/* "run" matches the run box: the rule itself is named in its caption */
 		modeTagEl.textContent = linkNote || (game.on
 			? activeSlotNow > 0 && !playerIsBot()
@@ -4471,7 +4543,8 @@
 
 	function refreshCareerWaitUi(career, ended) {
 		const busy = careerWaitBusy();
-		careerWaitBtn.disabled = busy || ended || gravity.status === STATUS_FLYING;
+		careerWaitBtn.disabled = busy || ended || turret.pending ||
+			gravity.status === STATUS_FLYING;
 		careerWaitBtn.classList.toggle('on', busy);
 		if (!busy) careerWaitBtn.textContent = 'wait · ' + CAREER_WAIT_MIN + ' min';
 		/* the running fast-forward keeps its own live progress line */
@@ -4706,11 +4779,17 @@
 	}
 
 	/* the world advances in eased chunks each frame: the trade planets visibly
-	 * race, pads charge and the board ages exactly as one instant wait did */
+	 * race, pads charge and the board ages exactly as one instant wait did.
+	 * Each frame credits at most WAIT_FRAME_MS toward the wait, so below
+	 * ~50 fps the wall-clock run stretches past 2 s and every frame keeps a
+	 * bounded step chunk — slow machines slow down instead of freezing. */
 	function careerWaitTick(now) {
 		const anim = careerWaitAnim;
 		if (anim === null) return;
-		const p = Math.max(0, Math.min(1, (now - anim.start) / CAREER_WAIT_MS));
+		const dt = now - anim.last;
+		anim.last = now;
+		if (dt > 0) anim.credit += dt < WAIT_FRAME_MS ? dt : WAIT_FRAME_MS;
+		const p = anim.credit < CAREER_WAIT_MS ? anim.credit / CAREER_WAIT_MS : 1;
 		const eased = easeInOut(p);
 		const steps = Math.round(eased * anim.steps);
 		tradeSim.advanceTo(anim.startT + CAREER_WAIT_MIN * eased);
@@ -4736,7 +4815,8 @@
 
 	/* one press starts the 2 s fast-forward; only the end settles the board */
 	function careerWait() {
-		if (!careerRule() || careerWaitBusy() || gravity.status === STATUS_FLYING) return;
+		if (!careerRule() || careerWaitBusy() || turret.pending ||
+			gravity.status === STATUS_FLYING) return;
 		const career = game.career;
 		if (career.ended !== GravityGame.CAREER_OPEN) return;
 		const planet = career.at >= 0 ? career.at : career.hq;
@@ -4751,7 +4831,8 @@
 			steps: Math.max(1, Math.round(CAREER_WAIT_MIN / (DT * rate))),
 			done: 0,
 			pct: -1,
-			start: performance.now(),
+			credit: 0,
+			last: performance.now(),
 			startClock: game.clockSteps,
 			startT: tradeSim.t
 		};
@@ -4785,7 +4866,7 @@
 		const act = data.act;
 		if (act === 'careerTab') return careerSelectTab(data.tab);
 		/* the eased world clock owns the career for its 2 s */
-		if (careerWaitBusy() || gravity.status === STATUS_FLYING) return;
+		if (careerWaitBusy() || turret.pending || gravity.status === STATUS_FLYING) return;
 		const career = game.career;
 		if (act === 'wait') return careerWait();
 		if (act === 'evac') return careerEvacuate();
@@ -5098,6 +5179,8 @@
 		const delta = value - trimLast;
 		trimLast = value;
 		if (delta === 0) return;
+		/* a trim rewrites the queued shot's speed, so the pending one is cancelled */
+		cancelTurret();
 		const factor = 1 + delta / 100;
 		if (burnArmed && canImpulse()) {
 			const ceiling = gravity.burnLimit();
@@ -5906,22 +5989,21 @@
 	/*
 	 * Every player EMC is a claim ring around its planet plus its barrel, in
 	 * the owner's colour (mint = YOU, the rival colours after it). The barrel
-	 * rests along the last shot fired from the planet and swings to your aim
-	 * while you aim from it — any rail fires at once, in any direction. The
-	 * neutral commercial rail shows only a dim barrel, so an unclaimed planet
-	 * still reads as "you can leave from here".
+	 * turns once per 2…5 s of wall clock and the queued launch fires when it
+	 * lines up with the aim. The neutral commercial rail shows only a dim
+	 * barrel, so an unclaimed planet still reads as "you can leave from here".
 	 */
 	function drawCareerEmc(now) {
 		const galaxy = game.galaxy;
 		if (galaxy.actors.length === 0) return;
 		const px = 1 / view.scale;
+		const seconds = now / 1000;
 		for (let p = 0; p < PLANETS; p++) {
 			const owner = GravityGame.claimOwner(galaxy, p);
 			const x = tradeSim.planetX[p];
 			const y = tradeSim.planetY[p];
 			const r = tradeSim.planetR[p];
-			const angle = p === aimBody && (aiming || armed)
-				? aimAngle : GravityGame.barrelAngle(galaxy, p);
+			const angle = GravityGame.turretAngle(galaxy, p, seconds);
 			const cos = Math.cos(angle);
 			const sin = Math.sin(angle);
 			const inner = r + 3.5 * px;
@@ -6208,6 +6290,17 @@
 				: burnArmed
 				? 'Execute impulse burn and resume flight (Enter) · Escape cancels burn'
 				: 'Drag from the ship to aim a burn, or click / press Space to resume coasting';
+			return;
+		}
+		if (turret.pending) {
+			const left = Math.max(0, turret.fireAt - performance.now()) / 1000;
+			launchButton.hidden = false;
+			if (planetActionsEl) planetActionsEl.hidden = true;
+			launchButton.disabled = false;
+			launchButton.classList.remove('costly', 'exitWarning');
+			launchButton.textContent = 'gun · ' + left.toFixed(1) + ' s';
+			launchButton.title = 'The EMC turns its barrel to the aim · click or Esc to cancel';
+			launchState = -1;
 			return;
 		}
 		const route = routeRule();

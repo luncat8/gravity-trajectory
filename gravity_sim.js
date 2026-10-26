@@ -836,7 +836,10 @@
 		}
 		this.status = STATUS_ENDED;
 		this.acc = 0;
-		this.recordTrail();
+		/* a finished flight leaves no trail behind: once the ship is down the
+		 * view is clean for the next aim (the prediction clears in the frame loop) */
+		this.trailCount = 0;
+		this.trailStride = TRAIL_STRIDE;
 	};
 
 	/* one fixed DT physics step; shared by real-time step(dt) and exact-step game races */

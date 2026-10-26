@@ -413,3 +413,25 @@ bot weight and bench constant tuned against it — while only the rarely
 reached tail grows: 8 s ≈ 0.0496, 80 s ≈ 0.46, 200 s ≈ 1.02, 480 s ≈ 1.90,
 2000 s ≈ 2.95. The new money in a run is then bounded by how long rivals
 leave planets unvisited, which is exactly the behaviour the rule rewards.
+
+## credit, don't deadline, an eased fast-forward
+
+A fixed wall-clock deadline (`p = (now − start) / 2000`) makes an eased
+fast-forward self-destruct under load: fewer frames inside the deadline mean
+bigger step chunks per frame, heavier frames, fewer frames — a freeze spiral.
+Credit each frame with at most a budget (`min(dt, 20 ms)`, a 50 fps line)
+toward the nominal duration instead. A healthy 60 fps run still finishes on
+time (16.7 < 20), a slow machine stretches the wall time while every frame
+keeps a bounded chunk (≤ budget/2000 of the work), and because the credit is
+monotonic and uncapped in total there is no feedback to oscillate — the eased
+settlement math at the end stays bit-identical.
+
+## a draft doc outranks a bench that asserts a feature's absence
+
+0.4.20 deleted the career turret queue and `dom_smoke` asserted the deletion
+("every rail fires at once: no barrel queue") — but the human design draft
+still specified "EMC rotates with planet, 2...5sec/turn; it launch not when
+player click", and the user wanted it back. When a test celebrates a removed
+behaviour, grep the plan/draft docs for that behaviour first: the test may be
+pinning the regression. Tests and docs disagreeing is a review signal, not a
+coin flip — resolve it with the author (or the draft) before shipping.

@@ -475,18 +475,20 @@ check('commercial EMC-1: chosen on any planet, never claims or blocks building',
 	assert.strictEqual(GravityGame.padAt(career, here), career.pads[here]);
 });
 
-check('EMC barrel rests along the last shot fired from its planet', () => {
-	const w = makeWorld(7);
+check('EMC barrels turn once per 2…5 s and sweep a full circle', () => {
 	const galaxy = GravityGame.createGalaxy();
 	GravityGame.resetGalaxy(galaxy, 7);
-	GravityGame.startCareer(w.career, w.sim, 7, w.trade, null, galaxy);
-	GravityGame.resetMarket(w.market);
-	const hq = w.career.hq;
-	const shot = findShot(w, hq, -1);
-	assert.ok(shot);
-	fly(w, hq, shot.angle, shot.speed);
-	assert.ok(Math.abs(GravityGame.barrelAngle(galaxy, hq) - shot.angle) < 1e-12,
-		'barrel ' + GravityGame.barrelAngle(galaxy, hq) + ' vs shot ' + shot.angle);
+	for (let p = 0; p < PLANETS; p++) {
+		const period = GravityGame.turretPeriod(galaxy, p);
+		assert.ok(period >= 2 && period <= 5, 'period of P' + p + ': ' + period);
+		const a0 = GravityGame.turretAngle(galaxy, p, 12.5);
+		const a1 = GravityGame.turretAngle(galaxy, p, 12.5 + period);
+		const sweep = Math.abs(a1 - a0 - Math.PI * 2);
+		assert.ok(sweep < 1e-9, 'one period must sweep 2π on P' + p + ': ' + sweep);
+		const a2 = GravityGame.turretAngle(galaxy, p, 12.5 + period / 2);
+		const half = Math.abs(a2 - a0 - Math.PI);
+		assert.ok(half < 1e-9, 'half a period must sweep π on P' + p + ': ' + half);
+	}
 });
 
 check('career pads: solar refills on the world clock up to capacity, dim pads slower', () => {

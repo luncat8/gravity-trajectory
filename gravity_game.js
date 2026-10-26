@@ -405,7 +405,9 @@
 		competeMinPx: 1500,
 		competeSpanPx: 1500,
 		competeBase: 2,
-		competeSpan: 2
+		competeSpan: 2,
+		turretMinSec: 2,
+		turretSpanSec: 3
 	};
 	const CARGO_TONS = [4, 8, 16, 24];
 	const BOARD_SIZE = CAREER.deliverySlots + 1;
@@ -421,7 +423,7 @@
 	const CAREER_COMPLETE = 2;
 	const SALT_HQ = 0xca;
 	const SALT_TASK = 0xcb;
-	const SALT_BARREL = 0xcc;
+	const SALT_TURRET = 0xcc;
 	const SALT_RIVAL = 0xcd;
 	const WORLD_SEC_PER_MIN = 60;
 	const TAU = Math.PI * 2;
@@ -466,23 +468,31 @@
 		return {
 			seed: 0,
 			actors: [],
-			barrel: new Float64Array(OrbitWorld.PLANETS)
+			period: new Float64Array(OrbitWorld.PLANETS),
+			phase: new Float64Array(OrbitWorld.PLANETS)
 		};
 	}
 
-	/* every EMC fires at any time in any direction; its barrel simply rests
-	 * along the last shot fired from the planet (seeded before the first) */
+	/* seeded turret: each planet's EMC turns once per 2…5 s of wall clock, so
+	 * a queued launch fires when the barrel lines up with the player's aim */
 	function resetGalaxy(galaxy, seed) {
 		galaxy.seed = seed >>> 0;
 		galaxy.actors.length = 0;
 		for (let p = 0; p < OrbitWorld.PLANETS; p++) {
-			galaxy.barrel[p] = TAU * (OrbitWorld.hashBits(galaxy.seed, p, SALT_BARREL) / 4294967296);
+			galaxy.period[p] = CAREER.turretMinSec + CAREER.turretSpanSec *
+				(OrbitWorld.hashBits(galaxy.seed, p, SALT_TURRET) / 4294967296);
+			galaxy.phase[p] = TAU * (OrbitWorld.hashBits(galaxy.seed,
+				p + OrbitWorld.PLANETS, SALT_TURRET) / 4294967296);
 		}
 	}
 
-	/* resting barrel direction (radians) of the planet's EMC */
-	function barrelAngle(galaxy, planet) {
-		return galaxy.barrel[planet];
+	function turretPeriod(galaxy, planet) {
+		return galaxy.period[planet];
+	}
+
+	/* barrel direction (radians) of the planet's EMC after `seconds` */
+	function turretAngle(galaxy, planet, seconds) {
+		return galaxy.phase[planet] + seconds / galaxy.period[planet] * TAU;
 	}
 
 	/* actor index of the best foreign EMC on `planet`, -1 when only the commercial one stands there */
@@ -1193,7 +1203,6 @@
 	 */
 	function careerBeginFlight(career, sim) {
 		const planet = sim.origin;
-		if (career.galaxy) career.galaxy.barrel[planet] = sim.angle;
 		const pad = padAt(career, planet);
 		const owner = padOwner(career, planet);
 		const energy = OrbitTech.launchEnergy(career.ship.mass, pad.catapult, sim.speed);
@@ -1305,7 +1314,7 @@
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
 		createCareer, resetCareer, startCareer, checkEnded,
 		COMMERCIAL_PAD, OWNER_COMMERCIAL, createGalaxy, resetGalaxy, rivalSeed,
-		barrelAngle, padAt, padOwner, claimOwner, refreshNetwork, setCommercial,
+		turretPeriod, turretAngle, padAt, padOwner, claimOwner, refreshNetwork, setCommercial,
 		launchFee, exitCost, exitCostAt, careerCanFire, padLift,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById,
