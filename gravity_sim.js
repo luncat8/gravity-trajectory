@@ -259,11 +259,13 @@
 		return OrbitTech.launchEnergy(this.ship.mass, this.pads[planet].catapult, speed);
 	};
 
-	/* fastest shot the pad affords now, capped at the world ceiling SPEED_MAX */
+	/* fastest shot the pad affords now, capped at the world ceiling SPEED_MAX;
+	 * charge already claimed by a queued launch cannot be aimed with again */
 	GravitySim.prototype.speedLimit = function (planet) {
 		if (this.pads === null) return SPEED_MAX;
 		const pad = this.pads[planet];
-		const limit = OrbitTech.speedLimit(pad.chargeKwh, this.ship.mass, pad.catapult, this.forceScale);
+		const free = pad.chargeKwh - pad.reservedKwh;
+		const limit = OrbitTech.speedLimit(free, this.ship.mass, pad.catapult, this.forceScale);
 		return limit > SPEED_MAX ? SPEED_MAX : limit;
 	};
 

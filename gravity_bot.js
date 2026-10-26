@@ -43,6 +43,7 @@
 	const END_TIME = GravitySim.END_TIME;
 	const MONEY = GravityGame.MONEY;
 	const END_OPEN = GravitySim.END_OPEN;
+	const TAU = Math.PI * 2;
 	/* Route is a planner contest. One prefix search serves every skill level:
 	 * easy stops after stage 1, normal after stage 3, hard after stage 5, so a
 	 * stronger bot has evaluated every candidate a weaker bot saw, then more. */
@@ -163,6 +164,7 @@
 			readyStep: 0,
 			gapPhase: 0,
 			idleTries: 0,
+			turret: null,
 			planReady: false,
 			planStep: -1,
 			planStamp: -1,
@@ -1601,6 +1603,7 @@
 			r.gapPhase = i * CAREER_RIVAL_PHASE;
 			r.readyStep = r.gapPhase;
 			r.idleTries = 0;
+			this.careerDropQueue(r);
 			if (i >= this.count) {
 				r.career = null;
 				continue;
@@ -1638,50 +1641,90 @@
 		}
 	};
 
+	/* a rival that is wound up or restarted gives its queued claim back */
+	GravityBot.prototype.careerDropQueue = function (r) {
+		if (!r.turret) return;
+		GravityGame.releaseEnergy(r.turret.pad, r.turret.energy);
+		r.turret = null;
+	};
+
 	GravityBot.prototype.careerLaunch = function (r, market, trade, rate, runStep) {
 		const career = r.career;
 		const sim = r.sim;
 		const angles = this.spec().careerAngles;
-		let plan = career.at < 0 ? null : this.careerPlan(career, sim, market, runStep, false, angles);
-		if (!plan && career.at >= 0) {
-			plan = this.careerPlan(career, sim, market, runStep, true, angles);
-		}
-		/* no shot from the standing rail (drained battery, weak pad): the
-		 * commercial EMC-1 is always charged, so try once more on it */
-		if (!plan && career.at >= 0 && career.commercialPlanet !== career.at &&
-			GravityGame.padOwner(career, career.at) !== GravityGame.OWNER_COMMERCIAL) {
-			GravityGame.setCommercial(career, career.at);
-			if (GravityGame.padLift(career, career.at) + 1e-9 >= GravitySim.SPEED_MIN &&
-				career.ledger.purse + 1e-9 >=
-					GravityGame.launchFee(career, career.at, GravitySim.SPEED_MIN)) {
-				plan = this.careerPlan(career, sim, market, runStep, false, angles);
-				if (!plan) plan = this.careerPlan(career, sim, market, runStep, true, angles);
+		let shot = null;
+		if (r.turret) {
+			/* a queued shot waits for the EMC barrel to turn to the aim on the same
+		 * in-game clock the player's turret uses; guest or owner of the pad does
+		 * not matter, the rail that fires spends its own charge */
+			if (runStep < r.turret.fireAt) return false;
+			shot = r.turret;
+			r.turret = null;
+		} else {
+			let plan = career.at < 0 ? null : this.careerPlan(career, sim, market, runStep, false, angles);
+			if (!plan && career.at >= 0) {
+				plan = this.careerPlan(career, sim, market, runStep, true, angles);
 			}
-			if (!plan) GravityGame.setCommercial(career, -1);
-		}
-		if (!plan) {
-			/* a park no trajectory leaves is a dead end: fly home after a couple of tries */
-			const evac = careerPrice(career, GravityGame.CAREER.evacFee);
-			if (career.stranded && r.idleTries >= 2 && career.ledger.purse + 1e-9 >= evac) {
-				r.idleTries = 0;
-				GravityGame.evacuate(career, sim);
-			} else {
-				r.idleTries += 1;
+			/* no shot from the standing rail (drained battery, weak pad): the
+			 * commercial EMC-1 is always charged, so try once more on it */
+			if (!plan && career.at >= 0 && career.commercialPlanet !== career.at &&
+				GravityGame.padOwner(career, career.at) !== GravityGame.OWNER_COMMERCIAL) {
+				GravityGame.setCommercial(career, career.at);
+				if (GravityGame.padLift(career, career.at) + 1e-9 >= GravitySim.SPEED_MIN &&
+					career.ledger.purse + 1e-9 >=
+						GravityGame.launchFee(career, career.at, GravitySim.SPEED_MIN)) {
+					plan = this.careerPlan(career, sim, market, runStep, false, angles);
+					if (!plan) plan = this.careerPlan(career, sim, market, runStep, true, angles);
+				}
+				if (!plan) GravityGame.setCommercial(career, -1);
 			}
-			this.careerBetweenFlights(career, sim);
-			r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
+			if (!plan) {
+				/* a park no trajectory leaves is a dead end: fly home after a couple of tries */
+				const evac = careerPrice(career, GravityGame.CAREER.evacFee);
+				if (career.stranded && r.idleTries >= 2 && career.ledger.purse + 1e-9 >= evac) {
+					r.idleTries = 0;
+					GravityGame.evacuate(career, sim);
+				} else {
+					r.idleTries += 1;
+				}
+				this.careerBetweenFlights(career, sim);
+				r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
+				return false;
+			}
+			r.idleTries = 0;
+			/* queue the shot: the first to queue claims the pad charge, then the
+			 * barrel turns on the same in-game clock the player's turret uses */
+			const period = GravityGame.turretPeriod(career.galaxy, plan.origin);
+			const gun = GravityGame.turretAngle(career.galaxy, plan.origin, runStep * GravitySim.DT);
+			let delta = plan.angle - gun;
+			delta -= Math.floor(delta / TAU) * TAU;
+			const wait = delta < 0.02 ? 0 : delta / TAU * period;
+			const pad = GravityGame.padAt(career, plan.origin);
+			const energy = OrbitTech.launchEnergy(career.ship.mass, pad.catapult, plan.speed);
+			GravityGame.reserveEnergy(pad, energy);
+			r.turret = {
+				origin: plan.origin,
+				angle: plan.angle,
+				speed: plan.speed,
+				fireAt: runStep + Math.ceil(wait / GravitySim.DT),
+				pad: pad,
+				energy: energy
+			};
 			return false;
 		}
-		r.idleTries = 0;
+		/* fire the queued shot */
+		const origin = shot.origin;
+		const angle = shot.angle;
+		const speed = shot.speed;
 		sim.fieldT = trade.t;
 		sim.fieldRate = rate;
 		sim.stepLimit = GravityGame.CAP_STEPS;
 		sim.limitReason = END_TIME;
-		r.shots.push(GravityGame.createShot(GravityGame.SRC_PLANETS, plan.origin,
-			GravityGame.angleUnits(plan.angle), GravityGame.speedUnits(plan.speed), GravityGame.NO_ABORT));
-		sim.launch(plan.origin, plan.angle, plan.speed);
+		r.shots.push(GravityGame.createShot(GravityGame.SRC_PLANETS, origin,
+			GravityGame.angleUnits(angle), GravityGame.speedUnits(speed), GravityGame.NO_ABORT));
+		sim.launch(origin, angle, speed);
 		GravityGame.careerBeginFlight(career, sim);
-		r.basePlanet = plan.origin;
+		r.basePlanet = origin;
 		return true;
 	};
 
@@ -1702,6 +1745,7 @@
 		r.shots.length = 0;
 		r.readyStep = runStep + CAREER_REBOOT_GAP + r.gapPhase;
 		r.idleTries = 0;
+		this.careerDropQueue(r);
 	};
 
 	GravityBot.prototype.careerReady = function (index) {

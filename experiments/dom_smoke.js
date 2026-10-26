@@ -1207,7 +1207,11 @@ check(limit > 85 && limit < 95, 'HQ speed limit ' + limit);
  * the armed shot is always one the starter rail can fire */
 careerEnv.dragAim(career.hq, 0.7, 200);
 careerEnv.runFrames(2, 16.0);
-check(!kui.get('launch').disabled && kui.get('launch').textContent === 'launch',
+/* an own EMC launch shows the pad energy the shot spends */
+const clampEnergy = OrbitTech.launchEnergy(career.ship.mass,
+	career.pads[career.hq].catapult, kScene.aimState().speed);
+check(!kui.get('launch').disabled &&
+	kui.get('launch').textContent === 'launch, ' + clampEnergy.toFixed(2) + ' kW',
 	'a drag past the pad cap must clamp to a firable shot: ' + kui.get('launch').textContent);
 check(kui.get('aimReadout').textContent.startsWith(Math.round(limit) + ' px/s ') &&
 	kui.get('aimReadout').textContent.includes('max ' + Math.round(limit)),
@@ -1317,7 +1321,10 @@ for (let a = 0; a < 72 && !landingShot; a++) {
 check(landingShot !== null, 'no landing shot from HQ at ' + CAREER_TEST_SPEED + ' px/s');
 careerEnv.dragAim(career.hq, landingShot, CAREER_TEST_SPEED);
 careerEnv.runFrames(2, 16.0);
-check(!kui.get('launch').disabled && kui.get('launch').textContent === 'launch',
+const ownedEnergy = OrbitTech.launchEnergy(career.ship.mass,
+	career.pads[career.hq].catapult, kScene.aimState().speed);
+const ownedLabel = 'launch, ' + ownedEnergy.toFixed(2) + ' kW';
+check(!kui.get('launch').disabled && kui.get('launch').textContent === ownedLabel,
 	'career launch label: ' + kui.get('launch').textContent);
 const charge0 = career.pads[career.hq].chargeKwh;
 const purse0 = kScene.game.money.purse;
@@ -1342,7 +1349,7 @@ check(kCargo.status !== kSim.STATUS_FLYING && career.flights === 0 &&
 		'the queued launch hides planet actions and blocks wait');
 	/* a second click cancels the queue and restores the landed controls */
 	careerEnv.click('launch');
-	check(kCargo.status !== kSim.STATUS_FLYING && kui.get('launch').textContent === 'launch' &&
+	check(kCargo.status !== kSim.STATUS_FLYING && kui.get('launch').textContent === ownedLabel &&
 		kui.get('careerMsg').textContent === 'launch cancelled' &&
 		!kui.get('planetActions').hidden && !kui.get('careerWait').disabled,
 		'cancelled queue must restore the launch state: ' + kui.get('launch').textContent +
@@ -1357,8 +1364,11 @@ check(kCargo.status !== kSim.STATUS_FLYING && career.flights === 0 &&
 	}
 check(kCargo.status === kSim.STATUS_FLYING && career.flights === 1 && queueFrames > 0,
 	'career flight did not start after the barrel turned');
-check(kScene.game.clockSteps === clockAtQueue, 'the career clock must stay frozen while the barrel turns');
+check(kScene.game.clockSteps > clockAtQueue,
+	'career time must run while the barrel turns: ' + clockAtQueue + ' -> ' + kScene.game.clockSteps);
 check(!kScene.careerPaused(), 'the queued liftoff resumes the career clock automatically');
+check(career.pads[career.hq].reservedKwh === 0,
+	'the fired shot must give its reserved pad energy back: ' + career.pads[career.hq].reservedKwh);
 check(career.pads[career.hq].chargeKwh < charge0, 'launch did not draw the pad battery');
 for (let i = 0; i < 400 && kCargo.status === kSim.STATUS_FLYING; i++) careerEnv.runFrames(1, 40.0);
 	check(kCargo.status === kSim.STATUS_ENDED && kCargo.endReason === kSim.END_IMPACT, 'career flight end ' + kCargo.endReason);
@@ -1396,7 +1406,7 @@ check(career.commercialPlanet === strandedAt && kui.get('launchCommercial').clas
 careerEnv.dragAim(strandedAt, commercialShot, CAREER_TEST_SPEED);
 careerEnv.runFrames(2, 16.0);
 check(kui.get('launchCommercial').textContent === 'commercial launch · 3.00' &&
-	kui.get('launch').textContent === 'launch · commercial 3.00',
+	kui.get('launch').textContent === 'launch, 3.00',
 	'armed commercial labels: ' + kui.get('launchCommercial').textContent +
 		' / ' + kui.get('launch').textContent);
 const purseStranded = kScene.game.money.purse;
@@ -1692,7 +1702,8 @@ buildEnv.fireElement(bui.get('careerBox'), 'click',
 check(!bCareer.stranded && bCareer.pads[bCareer.at].catapult.id === 'EMC-1' && bCareer.padCount === 2,
 	'pad block build did not unstrand: ' + bCareer.padCount);
 buildEnv.runFrames(2, 16.0);
-check(bui.get('launch').textContent === 'launch',
+check(bui.get('launch').textContent === 'launch, ' + OrbitTech.launchEnergy(bCareer.ship.mass,
+	bCareer.pads[bCareer.at].catapult, bScene.aimState().speed).toFixed(2) + ' kW',
 	'new pad launch state: ' + bui.get('launch').textContent);
 const secondAngle = landingAngle(bCargo, bCareer.at, CAREER_TEST_SPEED);
 check(secondAngle !== null, 'build env: no second flight from the new pad');
@@ -2591,7 +2602,8 @@ function protoOf(career, family, id) {
 		!cui.get('launch').hidden && !cui.get('planetActions').hidden &&
 		cui.get('launchBuild').hidden && !cui.get('launchCommercial').hidden &&
 		cui.get('launchEvac').hidden &&
-		cui.get('launch').textContent === 'launch',
+		cui.get('launch').textContent === 'launch, ' + OrbitTech.launchEnergy(cCareer.ship.mass,
+			cCareer.pads[targetPlanet].catapult, cScene.aimState().speed).toFixed(2) + ' kW',
 		'launchBuild unstrands ship; commercial stays available beside #launch');
 
 	/* lost in space hides build/commercial and leaves #launchEvac to go home */
@@ -2671,8 +2683,10 @@ function protoOf(career, family, id) {
 	check(wScene.game.clockSteps === wStepsBefore + wPre.steps,
 		'the stretched wait must settle the exact step count: ' +
 		(wScene.game.clockSteps - wStepsBefore) + ' vs ' + wPre.steps);
-	console.log('0.4.21 verified: queued barrel launch (frozen clock) · wait credits 20 ms/frame ' +
+	console.log('0.4.21 verified: queued barrel launch · wait credits 20 ms/frame ' +
 		'so slow machines stretch the 2 s · landed flights leave no trail');
+	console.log('0.4.22 verified: launch label shows pad energy or fallback price · ' +
+		'career turret and scene pulse run on in-game time and hold still when paused');
 }
 
 console.log('paint calls', {

@@ -122,6 +122,8 @@
 	let hoverLine1 = '';
 	let hoverLine2 = '';
 	let framePulse = 0.5;
+	/* a frozen world clock (paused career) stops the ambient pulse too */
+	let pulseFrozen = false;
 	let hudAt = -Infinity;
 	let lastFrame = performance.now();
 
@@ -848,7 +850,7 @@
 	let showBackdrop = true;
 
 	function draw(now) {
-		framePulse = 0.5 + 0.5 * Math.sin(now * 0.005);
+		if (!pulseFrozen) framePulse = 0.5 + 0.5 * Math.sin(now * 0.005);
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 		if (showBackdrop) ctx.drawImage(backdrop, 0, 0);
@@ -1032,6 +1034,10 @@
 		setSpeed: setSpeedValue,
 		setGameClock: setGameClock,
 		lockSpeed: lockSpeed,
+		/* freezes the ambient pulse: a paused world clock shows a still world */
+		setFrozen: on => {
+			pulseFrozen = Boolean(on);
+		},
 		setBackdrop: on => {
 			showBackdrop = Boolean(on);
 		},

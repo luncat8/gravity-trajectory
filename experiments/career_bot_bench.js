@@ -501,5 +501,38 @@ for (const cfg of [
 	});
 }
 
+check('career rivals queue on the EMC barrel: the shot fires only once it lines up', () => {
+	const galaxy = GravityGame.createGalaxy();
+	GravityGame.resetGalaxy(galaxy, 42);
+	const w = makeWorld(42);
+	w.ledger.purse = 60;
+	w.bot.reset(42, GravityGame.RULE_CAREER, GravityGame.BOT_EASY);
+	assert.strictEqual(w.bot.count, 1, 'one rival career');
+	w.bot.startCareers(galaxy, 42, w.trade);
+	const r = w.bot.rivals[0];
+	assert.ok(r.career && r.career.galaxy === galaxy, 'the rival career missed the galaxy');
+	let step = 0;
+	while (step < 20000 && !r.turret && r.sim.status !== GravitySim.STATUS_FLYING) {
+		step += 1;
+		w.bot.stepCareer(step, w.market, w.trade, RATE);
+	}
+	assert.ok(r.turret, 'the rival never queued a shot');
+	assert.notStrictEqual(r.sim.status, GravitySim.STATUS_FLYING,
+		'the queued shot left before the barrel lined up');
+	assert.ok(r.turret.fireAt >= step, 'the queue must wait for a later step');
+	const commercial = r.turret.pad === GravityGame.COMMERCIAL_PAD;
+	assert.strictEqual(r.turret.pad.reservedKwh, commercial ? 0 : r.turret.energy,
+		'the queued shot must reserve the pad charge it needs');
+	const fireAt = r.turret.fireAt;
+	while (step < fireAt + 2 && r.sim.status !== GravitySim.STATUS_FLYING) {
+		step += 1;
+		w.bot.stepCareer(step, w.market, w.trade, RATE);
+	}
+	assert.strictEqual(r.sim.status, GravitySim.STATUS_FLYING, 'the aligned shot never fired');
+	assert.strictEqual(r.turret, null, 'the fired shot keeps its queue entry');
+	assert.strictEqual(r.turret === null && r.career.pads[r.sim.origin].reservedKwh, 0,
+		'the fired shot must release its reservation');
+});
+
 console.log(failures === 0 ? 'CAREER BOT BENCH OK' : 'CAREER BOT BENCH FAILED ' + failures);
 process.exit(failures === 0 ? 0 : 1);

@@ -437,12 +437,32 @@
 		catapult: OrbitTech.CATAPULTS[0],
 		panel: OrbitTech.PANELS[0],
 		battery: OrbitTech.BATTERIES[0],
-		chargeKwh: OrbitTech.BATTERIES[0].capacity
+		chargeKwh: OrbitTech.BATTERIES[0].capacity,
+		reservedKwh: 0
 	};
 	const OWNER_COMMERCIAL = -1;
 
+	/* `reservedKwh` is the charge queued launches have already claimed */
 	function createPad() {
-		return { catapult: null, panel: null, battery: null, chargeKwh: 0 };
+		return { catapult: null, panel: null, battery: null, chargeKwh: 0, reservedKwh: 0 };
+	}
+
+	/*
+	 * A queued launch claims the energy of its shot from the pad battery before
+	 * the barrel lines up, so whoever queued first gets the charge — the owner
+	 * of the rail and a guest on it alike. The reservation lowers everyone's
+	 * launch ceiling (GravitySim.speedLimit) until the shot fires or is
+	 * cancelled, and the neutral commercial rail (kept charged by its operator)
+	 * never reserves nor drains.
+	 */
+	function reserveEnergy(pad, energy) {
+		if (!pad || pad === COMMERCIAL_PAD || !(energy > 0)) return;
+		pad.reservedKwh += energy;
+	}
+
+	function releaseEnergy(pad, energy) {
+		if (!pad || pad === COMMERCIAL_PAD || !(energy > 0)) return;
+		pad.reservedKwh = pad.reservedKwh > energy ? pad.reservedKwh - energy : 0;
 	}
 
 	function createTask() {
@@ -473,7 +493,7 @@
 		};
 	}
 
-	/* seeded turret: each planet's EMC turns once per 2…5 s of wall clock, so
+	/* seeded turret: each planet's EMC turns once per 2…5 s of in-game career time, so
 	 * a queued launch fires when the barrel lines up with the player's aim */
 	function resetGalaxy(galaxy, seed) {
 		galaxy.seed = seed >>> 0;
@@ -884,6 +904,7 @@
 			pad.panel = null;
 			pad.battery = null;
 			pad.chargeKwh = 0;
+			pad.reservedKwh = 0;
 		}
 		career.padCount = 0;
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) career.launchPads[i] = COMMERCIAL_PAD;
@@ -1197,29 +1218,31 @@
 	/* --- flights ------------------------------------------------------- */
 
 	/*
-	 * Your own EMC pays with its battery, a rival player's EMC charges its usage
-	 * tax (the energy of the shot, paid to that player's purse) and the
-	 * commercial EMC charges its flat fee to nobody in particular.
+	 * Every EMC pad spends its own battery charge on the shot it fires, whether
+	 * the launcher owns the rail or is only a guest on it. The neutral
+	 * commercial EMC-1, kept charged by its operator, never runs dry and
+	 * charges a flat fee instead. A rival-owned rail also charges its usage tax
+	 * (the energy of the shot, paid to that player's purse).
 	 */
 	function careerBeginFlight(career, sim) {
 		const planet = sim.origin;
 		const pad = padAt(career, planet);
 		const owner = padOwner(career, planet);
 		const energy = OrbitTech.launchEnergy(career.ship.mass, pad.catapult, sim.speed);
-		let fee = 0;
-		if (owner === career.index) pad.chargeKwh = pad.chargeKwh > energy ? pad.chargeKwh - energy : 0;
-		else {
-			fee = launchFee(career, planet, sim.speed);
-			career.ledger.purse -= fee;
-			if (owner !== OWNER_COMMERCIAL) {
-				const host = career.galaxy.actors[owner];
-				host.ledger.purse += fee;
-				host.taxEarned += fee;
-				career.taxPaid += fee;
-			}
+		if (owner !== OWNER_COMMERCIAL) {
+			pad.chargeKwh = pad.chargeKwh > energy ? pad.chargeKwh - energy : 0;
+			releaseEnergy(pad, energy);
+		}
+		const fee = launchFee(career, planet, sim.speed);
+		career.ledger.purse -= fee;
+		if (owner !== OWNER_COMMERCIAL && owner !== career.index) {
+			const host = career.galaxy.actors[owner];
+			host.ledger.purse += fee;
+			host.taxEarned += fee;
+			career.taxPaid += fee;
 		}
 		refuelShip(career);
-		career.lastEnergy = owner === career.index ? energy : 0;
+		career.lastEnergy = owner === OWNER_COMMERCIAL ? 0 : energy;
 		career.lastFee = fee;
 		career.lastReward = 0;
 		career.lastFuel = 0;
@@ -1315,7 +1338,7 @@
 		createCareer, resetCareer, startCareer, checkEnded,
 		COMMERCIAL_PAD, OWNER_COMMERCIAL, createGalaxy, resetGalaxy, rivalSeed,
 		turretPeriod, turretAngle, padAt, padOwner, claimOwner, refreshNetwork, setCommercial,
-		launchFee, exitCost, exitCostAt, careerCanFire, padLift,
+		launchFee, exitCost, exitCostAt, careerCanFire, padLift, reserveEnergy, releaseEnergy,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart,

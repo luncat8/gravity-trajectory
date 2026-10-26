@@ -1430,5 +1430,65 @@ check('battery science: seeded BAT-1..BAT-5 range, leak direction, and a pad-wid
 	assert.ok(!GravityGame.buildGear(career, far, OrbitTech.KIND_BATTERY, proto), 'never a downgrade');
 });
 
+check('guest launch: a rival rail lifts the shot, drains its own battery and pays its owner', () => {
+	const galaxy = GravityGame.createGalaxy();
+	GravityGame.resetGalaxy(galaxy, 42);
+	const host = makeWorld(42);
+	const guest = makeWorld(42);
+	GravityGame.startCareer(host.career, host.sim, 42, host.trade, null, galaxy);
+	GravityGame.startCareer(guest.career, guest.sim, 42, guest.trade, null, galaxy);
+	/* a planet the guest never claimed, where the rival built a stronger rail */
+	const planet = (guest.career.hq + 3) % PLANETS;
+	assert.notStrictEqual(planet, guest.career.hq);
+	assert.strictEqual(guest.career.pads[planet].catapult, null, 'unclaimed planet needed');
+	host.ledger.purse = 100;
+	assert.ok(GravityGame.buildGear(host.career, planet, OrbitTech.KIND_CATAPULT, EMC[1]));
+	guest.career.at = planet;
+	guest.career.stranded = true;
+	guest.sim.relocate(planet);
+	const pad = GravityGame.padAt(guest.career, planet);
+	assert.strictEqual(pad, host.career.pads[planet], 'the guest must fire from the rival rail');
+	const shot = findShot(guest, planet, -1);
+	assert.ok(shot, 'no landing shot from the shared planet');
+	const energy = guest.sim.launchEnergy(planet, shot.speed);
+	const fee = GravityGame.launchFee(guest.career, planet, shot.speed);
+	assert.ok(fee > 0, 'a rival rail charges its usage tax: ' + fee);
+	const hostCharge0 = pad.chargeKwh;
+	const hostPurse0 = host.ledger.purse;
+	const guestPurse0 = guest.ledger.purse;
+	assert.ok(pad.chargeKwh >= energy, 'the rival pad holds the charge for this shot');
+	guest.sim.launch(planet, shot.angle, shot.speed);
+	GravityGame.careerBeginFlight(guest.career, guest.sim);
+	assert.ok(pad.chargeKwh <= hostCharge0 - energy + 1e-9,
+		'guest launch must drain the host battery: ' + hostCharge0 + ' -> ' + pad.chargeKwh);
+	assert.ok(Math.abs(host.ledger.purse - (hostPurse0 + fee)) < 1e-9, 'usage tax reaches the owner');
+	assert.strictEqual(guest.ledger.purse, guestPurse0 - fee, 'the guest pays the tax');
+	assert.strictEqual(pad.reservedKwh, 0, 'a fired shot releases its reservation');
+});
+
+check('queued launch reserves pad energy: the ceiling drops until it fires or cancels', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { sim, career } = w;
+	const planet = career.at;
+	const pad = career.pads[planet];
+	const full = sim.speedLimit(planet);
+	assert.ok(full > GravitySim.SPEED_MIN, 'starter pad must lift the ship');
+	const energy = OrbitTech.launchEnergy(career.ship.mass, pad.catapult, full);
+	GravityGame.reserveEnergy(pad, energy);
+	assert.ok(sim.speedLimit(planet) < full, 'a reservation must lower the launch ceiling');
+	assert.ok(!sim.canFire(planet, full), 'the reserved energy is no longer aimable');
+	GravityGame.releaseEnergy(pad, energy);
+	assert.ok(Math.abs(sim.speedLimit(planet) - full) < 1e-9, 'release restores the ceiling');
+	assert.strictEqual(pad.reservedKwh, 0);
+	/* the commercial rail is kept charged by its operator: no reservation, no drain */
+	GravityGame.setCommercial(career, planet);
+	const commercial = GravityGame.padAt(career, planet);
+	GravityGame.reserveEnergy(commercial, 1);
+	assert.strictEqual(commercial.reservedKwh, 0);
+	GravityGame.releaseEnergy(commercial, 1);
+	assert.strictEqual(commercial.reservedKwh, 0);
+});
+
 console.log(failures === 0 ? 'CAREER BENCH OK' : 'CAREER BENCH FAILED ' + failures);
 process.exit(failures === 0 ? 0 : 1);
