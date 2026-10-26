@@ -795,10 +795,10 @@ button.costly:disabled {
 	gap: 6px 12px;
 }
 
-/* career drawer: operations / science tabs, pad, shop and research lab */
+/* career drawer: upgrades / shots / science tabs, pad, shop and research lab */
 .careerTabs {
 	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
+	grid-template-columns: repeat(3, minmax(0, 1fr));
 	gap: 3px;
 	margin: 2px 0 6px;
 	padding: 2px;
@@ -824,7 +824,8 @@ button.costly:disabled {
 	background: rgba(255, 207, 110, 0.12);
 }
 
-#careerOperations,
+#careerUpgrades,
+#careerShots,
 #careerSciencePanel {
 	min-width: 0;
 }
@@ -949,6 +950,19 @@ button.costly:disabled {
 	color: var(--dim);
 	font-style: normal;
 	font-size: 10px;
+}
+
+/* why a saved shot cannot fire: its own line under the row, because a disabled
+ * button does not show a tooltip */
+.careerWhy {
+	flex: 1 1 100%;
+	padding-left: 55px;
+	color: var(--warn);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 9.5px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 /* science: the fee surface is an inline SVG so file:// needs no library */

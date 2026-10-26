@@ -1584,6 +1584,45 @@ check('launch book: rows from other planets leave before the current pad', () =>
 	assert.strictEqual(there, GravityGame.BOOK_MAX - 1, 'a row from another planet had to leave');
 });
 
+/* --- rail facts: one source for the list, the button and the bot log ---- */
+
+check('rail facts: the line, the block reasons and careerCanFire agree', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42, null);
+	const at = w.career.at;
+	const line = GravityGame.railText(w.career, w.sim, at);
+	assert.ok(/^P\d+ · (own EMC-\d|commercial EMC-1|(YOU|R\d) rail) · [\d.]+\/[\d.]+ kWh → \d+ px\/s \(min \d+\) · fee [\d.]+ · purse [\d.]+ · exit ([\d.]+|impossible)$/.test(line), line);
+	assert.strictEqual(GravityGame.railBlock(w.career, w.sim, at, GravitySim.SPEED_MIN), '',
+		'a fresh career fires from its own rail');
+	assert.ok(GravityGame.careerCanFire(w.career, w.sim, at, GravitySim.SPEED_MIN));
+	/* cap: the saved speed is above what the live charge buys */
+	const cap = w.sim.speedLimit(at);
+	assert.strictEqual(GravityGame.railBlock(w.career, w.sim, at, cap + 1),
+		'cap ' + cap.toFixed(0) + ' < ' + (cap + 1).toFixed(0) + ' px/s');
+	assert.ok(!GravityGame.careerCanFire(w.career, w.sim, at, cap + 1),
+		'careerCanFire must agree with the block reason');
+	/* another planet: the ship is not on that rail */
+	const far = (at + 1) % PLANETS;
+	assert.strictEqual(GravityGame.railBlock(w.career, w.sim, far, GravitySim.SPEED_MIN),
+		'shot leaves from P' + far);
+	/* in space: only the evacuation is left */
+	assert.strictEqual(GravityGame.railText(w.career, w.sim, -1),
+		'ship in space · evac ' + GravityGame.CAREER.evacFee.toFixed(2) +
+			' · purse ' + w.career.ledger.purse.toFixed(2));
+	w.career.at = -1;
+	assert.strictEqual(GravityGame.railBlock(w.career, w.sim, at, GravitySim.SPEED_MIN),
+		'ship in space');
+	w.career.at = at;
+	/* fee: a commercial rail the purse cannot pay */
+	GravityGame.setCommercial(w.career, at);
+	w.career.ledger.purse = 0;
+	assert.strictEqual(GravityGame.railBlock(w.career, w.sim, at, GravitySim.SPEED_MIN),
+		'fee ' + GravityGame.CAREER.commercialFee.toFixed(2) + ' > purse 0.00');
+	assert.ok(!GravityGame.careerCanFire(w.career, w.sim, at, GravitySim.SPEED_MIN));
+	const paid = GravityGame.railText(w.career, w.sim, at);
+	assert.ok(paid.includes('commercial EMC-1') && paid.includes('purse 0.00'), paid);
+});
+
 check('launch book: every career owns one and a restart clears it', () => {
 	const trade = new Sim(42);
 	trade.advanceTo(420);

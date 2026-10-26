@@ -268,7 +268,7 @@ async function scoreboardStable(page) {
 					};
 				}, family));
 			}
-			await page.click('#careerBox [data-act="careerTab"][data-tab="operations"]');
+			await page.click('#careerBox [data-act="careerTab"][data-tab="upgrades"]');
 			await page.evaluate(() => {
 				const left = document.getElementById('leftHud');
 				left.scrollTop = left.scrollHeight;

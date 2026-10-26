@@ -458,8 +458,8 @@ exactly as the solo career controller already had.
 Put a bounded ring of formatted lines at the *decision sites* (plan, queue,
 fire, land, refusal), not in the per-frame loop, and compute the live state at
 copy time: planet, purse, rail owner, charge → speed cap, fee, exit cost,
-saved shots, active contract, retry time. A `no shot` line that says "pad cap
-28 < min 30", "purse 1.20 < fee 3.00" or "contract wants P12 · 0 fan shots"
+saved shots, active contract, retry time. A `no shot` line that says "cap
+28 < 30 px/s", "fee 3.00 > purse 1.20" or "contract wants P12 · 0 fan shots"
 answers the user's question without a debugger. The fan only increments
 counters; the strings are built on the rare refusal. `file://` has no clipboard
 permission, so the copy button must also open a read-only textarea with the
@@ -475,3 +475,28 @@ time. Raising the global horizon is wrong: `predict()` would hit its step cap
 with `END_OPEN` and `routeDrain` spins when a stub clock does not advance. Fix
 it at the arming site — `predictFull(aim, scanHorizon)` once, with
 `dirty = false` — so the canvas, the launch book and the launch itself agree.
+
+## a disabled button has no tooltip, so print the reason
+
+`title` on a `disabled` button is invisible in Chrome and Safari (no mouse
+events reach the element). Any "why can't I press this" text must live in the
+row itself: a `flex: 1 1 100%` line under the row, aligned with the label. The
+same string should be the refusal the click handler returns, so a forced or
+stale DOM state cannot tell a different story than the row — one function
+(`railBlock`) returning `'' | 'cap 33 < 61 px/s' | 'fee 3.00 > purse 0.50'`
+gives the list, the launch gate and the bot log one vocabulary.
+
+Two consequences for cache keys: a list keyed on "book version + planet + mode"
+keeps a stale verdict when the pad charge, the purse or the rail owner moves —
+key on the numbers the rows print (charge, purse, tag) or the row will show a
+cap it no longer has.
+
+## seed a search with what is already known
+
+A background scan that ignores a saved result can return worse than the list it
+sits next to. Price the stored result with the *same* money table the scan
+uses (`estimateProfitLog` instead of `estimateProfit` feeds the identical
+facts), then put it into the search's `best` slot before the first candidate:
+the scan has to beat it, the saved shot costs no trace, and the report names
+the source (`launch list` vs `best money shot`). No "good enough" threshold is
+needed — the seed is free, so the scan can still run.

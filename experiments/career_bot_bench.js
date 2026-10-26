@@ -766,5 +766,32 @@ check('the decision log shows live state, reasons and stays bounded', () => {
 	assert.ok(short.length > 0 && short.length < 80, 'unusable short state: ' + short);
 });
 
+check('the no-shot reason uses the rail facts the page list prints', () => {
+	const w = makeWorld(42);
+	w.bot.reset(42, GravityGame.RULE_CAREER, GravityGame.BOT_OFF);
+	w.career.ledger.purse = 30;
+	const at = w.career.at;
+	assert.ok(w.bot.careerNoPlanWhy(w.career, w.sim).includes('fan 0 traces'),
+		'a clear rail falls through to the scan counts');
+	/* a drained rail: the shared block names the cap and the charge behind it */
+	const pad = w.career.pads[at];
+	const charge = pad.chargeKwh;
+	pad.chargeKwh = 0;
+	const capped = w.bot.careerNoPlanWhy(w.career, w.sim);
+	assert.ok(capped.startsWith('P' + at + ' cap '), capped);
+	assert.ok(capped.includes('charge 0.00 kWh'), capped);
+	pad.chargeKwh = charge;
+	/* a commercial rail the purse cannot pay: the same fee words as the row */
+	GravityGame.setCommercial(w.career, at);
+	w.career.ledger.purse = 0;
+	const poor = w.bot.careerNoPlanWhy(w.career, w.sim);
+	assert.ok(poor.startsWith('P' + at + ' fee ' + GravityGame.CAREER.commercialFee.toFixed(2) +
+		' > purse 0.00'), poor);
+	GravityGame.setCommercial(w.career, -1);
+	w.career.ledger.purse = 30;
+	assert.ok(w.bot.careerNoPlanWhy(w.career, w.sim).includes('fan '),
+		'a clear rail must fall through to the scan counts');
+});
+
 console.log(failures === 0 ? 'CAREER BOT BENCH OK' : 'CAREER BOT BENCH FAILED ' + failures);
 process.exit(failures === 0 ? 0 : 1);

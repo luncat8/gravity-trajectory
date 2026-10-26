@@ -389,9 +389,11 @@
 	const careerPadEl = $('careerPad');
 	const careerShopEl = $('careerShop');
 	const careerScienceEl = $('careerScience');
-	const careerOperationsEl = $('careerOperations');
+	const careerUpgradesEl = $('careerUpgrades');
+	const careerShotsEl = $('careerShots');
 	const careerSciencePanelEl = $('careerSciencePanel');
-	const careerOperationsTabEl = $('careerOperationsTab');
+	const careerUpgradesTabEl = $('careerUpgradesTab');
+	const careerShotsTabEl = $('careerShotsTab');
 	const careerScienceTabEl = $('careerScienceTab');
 	const careerTaskEl = $('careerTasks');
 	const careerLaunchListEl = $('careerLaunchList');
@@ -554,7 +556,8 @@
 	const helperProbe = new GravitySim(OrbitSim.WORLD_W, OrbitSim.WORLD_H);
 	const helperState = {
 		active: false, mode: '', goal: 'score', candidates: null, index: 0,
-		best: null, bestScore: -Infinity, horizon: 60, startedAt: 0
+		best: null, bestScore: -Infinity, horizon: 60, startedAt: 0,
+		fromBook: false
 	};
 	let helperHudTag = 'ready';
 
@@ -1893,7 +1896,8 @@
 			helperProfitBtn.title = landed < 0
 				? 'career · land somewhere to scan for money shots'
 				: 'scan 34 aims from ' + planetName(landed) +
-					' · rank by money (visits + tasks − EMC fee − exit cost)';
+					' · rank by money (visits + tasks − EMC fee − exit cost)' +
+					' · a saved shot that pays more wins';
 		}
 		if (helperEmcBtn) {
 			helperEmcBtn.hidden = !career;
@@ -1902,7 +1906,7 @@
 			helperEmcBtn.title = landed < 0
 				? 'career · land somewhere to scan'
 				: 'scan from ' + planetName(landed) + ' for the best money shot that lands where an ' +
-					'EMC-1 can be built';
+					'EMC-1 can be built · a saved shot that pays more wins';
 		}
 		if (helperStopBtn) helperStopBtn.hidden = !helperState.active;
 		if (helperProgressEl) helperProgressEl.hidden = !helperState.active;
@@ -1947,7 +1951,7 @@
 		if (careerRule() && helperState.goal !== 'score') {
 			if (probe.predReason !== END_IMPACT || probe.predBody < 0) return -1e12;
 			const money = traceMoney(probe, origin, GravityGame.speedOf(cand.speedU));
-			if (!(game.career.ledger.purse + money.cash - money.fee + 1e-9 >= money.exit)) return -1e11;
+			if (!moneyFlyable(money)) return -1e11;
 			if (helperState.goal === 'profitEmc' && !money.builds) return -1e12;
 			return money.net;
 		}
@@ -2079,7 +2083,9 @@
 		helperProbe.routeBegin(cand.origin, angle, speed, helperState.horizon);
 	}
 
-	function helperRun(candidates, mode, goal) {
+	/* `seed` is a saved shot already known to be worth `score`: the scan has to
+	 * beat it, so a press never returns worse than the launch list */
+	function helperRun(candidates, mode, goal, seed) {
 		if (!candidates || candidates.length === 0) return;
 		helperAttachWorld();
 		helperState.active = true;
@@ -2087,8 +2093,9 @@
 		helperState.goal = goal || 'score';
 		helperState.candidates = candidates;
 		helperState.index = 0;
-		helperState.best = null;
-		helperState.bestScore = -Infinity;
+		helperState.best = seed || null;
+		helperState.bestScore = seed ? seed.score : -Infinity;
+		helperState.fromBook = Boolean(seed);
 		helperState.startedAt = performance.now();
 		if (routeRule()) helperState.horizon = ruleSpec().horizon;
 		/* a career flight is capped by the rule, not by the preview slider */
@@ -2157,15 +2164,52 @@
 		return out;
 	}
 
+	/* the seed slot: a saved shot priced for the scan, reused between presses */
+	const helperSeed = { origin: -1, angleU: 0, speedU: 0, length: 0, steps: 0,
+		reason: END_IMPACT, body: -1, score: -Infinity };
+
+	/*
+	 * The best saved shot from this rail for the money buttons, priced at the
+	 * live market and the live cap without spending a trace. It seeds the scan,
+	 * so a search only replaces it with something that actually pays more.
+	 */
+	function helperBookSeed(career, origin, requireEmc) {
+		if (!GravityGame.bookReady(career.launchBook, pageBookTag())) return null;
+		const entries = career.launchBook.entries;
+		const cap = speedCeiling(origin);
+		let best = null;
+		for (let i = 0; i < entries.length; i++) {
+			const entry = entries[i];
+			if (entry.origin !== origin) continue;
+			if (GravityGame.speedOf(entry.speedU) > cap + 1e-9) continue;
+			const money = storedMoney(entry);
+			const score = money.net;
+			if (!moneyFlyable(money)) continue;
+			if (requireEmc && !money.builds) continue;
+			if (best !== null && score <= best.score) continue;
+			helperSeed.origin = entry.origin;
+			helperSeed.angleU = entry.angleU;
+			helperSeed.speedU = entry.speedU;
+			helperSeed.length = entry.length;
+			helperSeed.steps = entry.steps;
+			helperSeed.body = entry.body;
+			helperSeed.score = score;
+			best = helperSeed;
+		}
+		return best;
+	}
+
 	function helperStartProfit(requireEmc) {
 		if (helperState.active || replay.on || playerIsBot()) return;
-		if (!careerRule() || gameLocked()) return;
+		if (!careerRule() || gameLocked() || !gravity.fieldStatic) return;
 		const origin = game.career.at;
 		if (origin < 0 || gravity.status === STATUS_FLYING) return;
+		if (game.career.ended !== GravityGame.CAREER_OPEN) return;
 		const cands = helperMakeProfit(origin, requireEmc ? 26 : 34, requireEmc);
 		if (cands.length === 0) return;
 		helperRun(cands, requireEmc ? 'profit + EMC' : 'best profit',
-			requireEmc ? 'profitEmc' : 'profit');
+			requireEmc ? 'profitEmc' : 'profit',
+			helperBookSeed(game.career, origin, requireEmc));
 	}
 
 	function helperStartTweak() {
@@ -2209,6 +2253,7 @@
 					if (careerRule()) saveTrace(helperProbe, cand.origin, cand.angleU, cand.speedU);
 					if (score > helperState.bestScore) {
 						helperState.bestScore = score;
+						helperState.fromBook = false;
 						helperState.best = {
 							origin: cand.origin, angleU: cand.angleU, speedU: cand.speedU,
 							length: helperProbe.predLength, steps: helperProbe.predSteps,
@@ -2228,10 +2273,10 @@
 					helperState.candidates = null;
 					if (best && best.score > -1e11) {
 						if (careerRule()) {
-							careerNotice(best.score > -1e11 && helperState.goal !== 'score'
-								? 'best money shot · ' + planetName(best.body) +
-									' · ' + signedMoney(best.score)
-								: '');
+							careerNotice(helperState.goal === 'score' ? ''
+								: (helperState.fromBook ? 'launch list' : 'best money shot') +
+									' · ' + planetName(best.body) + ' · ' +
+									signedMoney(best.score));
 						}
 						aimBody = best.origin;
 						aimAngle = GravityGame.angleOf(best.angleU);
@@ -4651,33 +4696,61 @@
 			gravity.forceScale, gravity.strength, gravity.bodyCount);
 	}
 
-	/* money one finished trace is worth: harvest and contract pay, minus the EMC
-	 * fee and the cost of leaving a landing planet that has no EMC of yours */
-	function traceMoney(probe, origin, speed) {
+	/* one scratch result: callers read it before the next pricing call */
+	const shotMoney = { cash: 0, fee: 0, exit: 0, net: 0, builds: false };
+
+	/* A fresh trace and a stored visit log differ only in the harvest they
+	 * price, so both feed this table: contract and competition pay, the launch
+	 * fee and the cost of leaving the landing planet. */
+	function moneyFacts(origin, speed, body, steps, length, visitPay) {
 		const career = game.career;
-		let cash = GravityGame.estimateProfit(game.market, game.clockSteps, probe);
+		let cash = visitPay;
 		if (career.contract >= 0) {
 			const task = career.tasks[career.contract];
-			if (task.state === GravityGame.TASK_LOADED && probe.predBody === task.to) cash += task.reward;
+			if (task.state === GravityGame.TASK_LOADED && body === task.to) cash += task.reward;
 		}
 		const compete = career.tasks[GravityGame.COMPETE_SLOT];
 		if (compete.kind === GravityGame.TASK_COMPETE && origin === compete.planet &&
-			probe.predLength >= compete.minLength &&
-			game.clockSteps + probe.predSteps <= compete.deadline) cash += compete.reward;
+			length >= compete.minLength &&
+			game.clockSteps + steps <= compete.deadline) cash += compete.reward;
 		const fee = GravityGame.launchFee(career, origin, speed);
-		const own = career.pads[probe.predBody];
-		const padless = own.catapult === null && probe.predBody !== origin;
-		const exit = padless ? GravityGame.exitCostAt(career, probe.predBody, career.ship.mass) : 0;
+		const padless = career.pads[body].catapult === null && body !== origin;
+		const exit = padless ? GravityGame.exitCostAt(career, body, career.ship.mass) : 0;
 		const leave = Number.isFinite(exit) ? exit : 1e6;
-		return {
-			cash: cash,
-			fee: fee,
-			exit: leave,
-			net: cash - fee - leave,
-			builds: padless &&
-				career.ledger.purse + cash - fee + 1e-9 >=
-					careerCost(career, OrbitTech.CATAPULTS[0].buildCost)
-		};
+		shotMoney.cash = cash;
+		shotMoney.fee = fee;
+		shotMoney.exit = leave;
+		shotMoney.net = cash - fee - leave;
+		shotMoney.builds = padless &&
+			career.ledger.purse + cash - fee + 1e-9 >=
+				careerCost(career, OrbitTech.CATAPULTS[0].buildCost);
+		return shotMoney;
+	}
+
+	function traceMoney(probe, origin, speed) {
+		return moneyFacts(origin, speed, probe.predBody, probe.predSteps, probe.predLength,
+			GravityGame.estimateProfit(game.market, game.clockSteps, probe));
+	}
+
+	/* a saved trace priced at the live market: not one trace is spent */
+	function storedMoney(entry) {
+		return moneyFacts(entry.origin, GravityGame.speedOf(entry.speedU), entry.body,
+			entry.steps, entry.length,
+			GravityGame.estimateProfitLog(game.market, game.clockSteps,
+				entry.logPlanet, entry.logStep, entry.logCount));
+	}
+
+	/* the two live gates the launch button applies: the fee is covered and the
+	 * landing can be left again */
+	function moneyFlyable(money) {
+		const purse = game.career.ledger.purse;
+		return purse + 1e-9 >= money.fee &&
+			purse + money.cash - money.fee + 1e-9 >= money.exit;
+	}
+
+	function escapeHtml(text) {
+		return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;');
 	}
 
 	/* one finished page trace joins the career's book */
@@ -4712,82 +4785,109 @@
 
 	const bookOrder = new Int32Array(GravityGame.BOOK_MAX);
 	const bookNet = new Float64Array(GravityGame.BOOK_MAX);
+	const bookFire = new Uint8Array(GravityGame.BOOK_MAX);
 
-	/* entries that start on `planet`, best live money first (insertion sort) */
-	function rankLaunchList(career, planet) {
+	/* what stops a saved shot now: a moving field voids the path itself, the
+	 * rest is the live rail gate the bot log prints */
+	function launchBlock(career, entry, speed) {
+		if (!gravity.fieldStatic) return 'moving field';
+		if (playerIsBot()) return 'bot controls the ship';
+		return GravityGame.railBlock(career, gravity, entry.origin, speed) ||
+			(turret.pending ? 'a shot is already queued'
+				: careerWaitBusy() ? 'the clock is settling a wait' : '');
+	}
+
+	/* the whole book, fireable rows first, best live money first (insertion
+	 * sort over at most BOOK_MAX rows: a drawer refresh, not a frame) */
+	function rankLaunchList(career) {
 		const book = career.launchBook;
 		let count = 0;
 		for (let i = 0; i < book.entries.length && count < bookOrder.length; i++) {
 			const entry = book.entries[i];
-			if (entry.origin !== planet) continue;
-			const visitPay = GravityGame.estimateProfitLog(game.market, game.clockSteps,
-				entry.logPlanet, entry.logStep, entry.logCount);
-			const own = career.pads[entry.body];
-			const exit = own.catapult === null && entry.body !== planet
-				? GravityGame.exitCostAt(career, entry.body, career.ship.mass) : 0;
-			const fee = GravityGame.launchFee(career, planet, GravityGame.speedOf(entry.speedU));
-			const net = visitPay - fee - (Number.isFinite(exit) ? exit : 1e6);
+			const net = storedMoney(entry).net;
+			const fire = launchBlock(career, entry, GravityGame.speedOf(entry.speedU)) === '' ? 1 : 0;
 			let j = count - 1;
-			while (j >= 0 && bookNet[j] < net) {
+			while (j >= 0 && (bookFire[j] < fire || (bookFire[j] === fire && bookNet[j] < net))) {
 				bookOrder[j + 1] = bookOrder[j];
 				bookNet[j + 1] = bookNet[j];
+				bookFire[j + 1] = bookFire[j];
 				j -= 1;
 			}
 			bookOrder[j + 1] = i;
 			bookNet[j + 1] = net;
+			bookFire[j + 1] = fire;
 			count += 1;
 		}
 		return count;
 	}
 
-	function launchRowHtml(career, at, index, net) {
+	function launchRowHtml(career, index, net) {
 		const entry = career.launchBook.entries[index];
 		const speed = GravityGame.speedOf(entry.speedU);
-		const kind = entry.body === at ? 'loop'
+		const kind = entry.body === entry.origin ? 'loop'
 			: career.pads[entry.body].catapult === null ? 'EMC' : 'pad';
-		const load = entry.body === at ? 'returns to ' + planetName(at)
+		const load = entry.body === entry.origin ? 'returns to ' + planetName(entry.origin)
 			: career.pads[entry.body].catapult === null
 				? 'lands where no own EMC stands · another owner\'s rail or a build'
 				: 'lands on your own EMC';
-		const flying = gravity.status === STATUS_FLYING;
-		const rail = gravity.canFire(entry.origin, speed);
-		const ready = !flying && rail &&
-			GravityGame.careerCanFire(career, gravity, entry.origin, speed);
-		const why = flying ? 'a flight is under way'
-			: !rail ? 'the pad cannot fire ' + Math.round(speed) + ' px/s yet'
-			: 'the purse cannot cover this EMC fee';
-		const title = (ready ? 'arm this saved shot · ' : why + ' · ') +
-			planetName(entry.origin) + ' → ' + planetName(entry.body) +
+		const block = launchBlock(career, entry, speed);
+		const title = (block === '' ? 'arm this saved shot'
+				: 'cannot fire · ' + block + ' · use stays off until it clears') +
+			' · P' + entry.origin + ' → ' + planetName(entry.body) +
 			' · ' + Math.round(entry.length) + ' px · ' + entry.logCount + ' systems · ' + load;
-		return '<div class="careerRow"><span class="careerKind">' + kind + '</span>' +
+		return '<div class="careerRow' + (block === '' ? '' : ' dim') + '">' +
+			'<span class="careerKind">' + kind + '</span>' +
 			'<span class="careerNow">' + planetName(entry.body) + ' · ' +
 			entry.time.toFixed(1) + ' s · ' + signedMoney(net) + '</span>' +
 			'<span class="careerBtns"><button class="miniBtn" data-act="book" data-entry="' +
-			index + '"' + (ready ? '' : ' disabled') + ' title="' + title + '">use</button></span></div>';
+			index + '"' + (block === '' ? '' : ' disabled') + ' title="' +
+			escapeHtml(title) + '">use</button></span>' +
+			(block === '' ? '' : '<span class="careerWhy">' + escapeHtml(block) + '</span>') +
+			'</div>';
 	}
 
-	/* one block in the career drawer: the stored shots from the planet here */
+	/* the shared rail line is longer than the drawer: break it before the fee */
+	function railLinesHtml(rail) {
+		const cut = rail.indexOf(' · fee ');
+		if (cut < 0) return '<div class="careerLine dim">' + escapeHtml(rail) + '</div>';
+		return '<div class="careerLine dim" title="' + escapeHtml(rail) + '">' +
+			escapeHtml(rail.slice(0, cut)) + '</div>' +
+			'<div class="careerLine dim">' + escapeHtml(rail.slice(cut + 3)) + '</div>';
+	}
+
+	/* the shots tab: the live rail line, then every saved shot with its gate */
 	function launchListHtml(career) {
 		const head = '<div class="careerHead">launch list</div>';
-		if (!gravity.fieldStatic) return head + '<div class="careerLine warn">off · gravity bodies move</div>';
-		const at = career.at;
-		if (at < 0) return head + '<div class="careerLine warn">off · no ship</div>';
-		if (!GravityGame.bookReady(career.launchBook, pageBookTag())) {
-			return head + '<div class="careerLine dim">empty · aim or scan from ' + planetName(at) + '</div>';
+		const book = career.launchBook;
+		const html = head + railLinesHtml(GravityGame.railText(career, gravity, career.at));
+		if (book.entries.length === 0) {
+			return html + '<div class="careerLine dim">empty · aim or scan to save a shot</div>';
 		}
-		const count = rankLaunchList(career, at);
-		if (count === 0) {
-			return head + '<div class="careerLine dim">nothing from ' + planetName(at) +
-				' · aim or scan to save one</div>';
+		if (!gravity.fieldStatic) {
+			return html + '<div class="careerLine warn">paused · gravity bodies move · ' +
+				'paths only hold in a static field</div>' + launchRowsHtml(career);
 		}
-		let html = head + '<div class="careerLine dim">' + count + ' saved from ' +
-			planetName(at) + ' · best first</div>';
-		for (let i = 0; i < count; i++) html += launchRowHtml(career, at, bookOrder[i], bookNet[i]);
+		if (!GravityGame.bookReady(book, pageBookTag())) {
+			return html + '<div class="careerLine warn">stale · ' + book.entries.length +
+				' saved in another field · these paths no longer hold</div>' +
+				'<div class="careerLine dim"><button class="miniBtn" data-act="bookDrop">clear</button>' +
+				' · a gravity edit makes every saved aim stale</div>';
+		}
+		return html + launchRowsHtml(career);
+	}
+
+	function launchRowsHtml(career) {
+		const count = rankLaunchList(career);
+		let fire = 0;
+		for (let i = 0; i < count; i++) fire += bookFire[i];
+		let html = '<div class="careerLine dim">' + count + ' saved · ' +
+			fire + ' fireable here · best money first</div>';
+		for (let i = 0; i < count; i++) html += launchRowHtml(career, bookOrder[i], bookNet[i]);
 		return html;
 	}
 
-	/* the list re-renders when the book, the ship or the field changed, and
-	 * every so often so the live money figures follow the market */
+	/* the list re-renders when the book, the ship, the field, the rail or the
+	 * purse changed, and every so often so the money follows the market */
 	let launchListKey = '';
 	function refreshLaunchList(force) {
 		if (!careerLaunchListEl) return;
@@ -4799,30 +4899,43 @@
 			return;
 		}
 		const career = game.career;
-		const key = career.launchBook.version + '|' + career.at + '|' + (gravity.fieldStatic ? 1 : 0) +
-			'|' + Math.round(game.clockSteps / 240);
+		const pad = career.at >= 0 ? GravityGame.padAt(career, career.at) : null;
+		const key = career.launchBook.version + '|' + pageBookTag() + '|' + career.at + '|' +
+			(gravity.fieldStatic ? 1 : 0) + '|' + gravity.status + '|' +
+			(turret.pending ? 1 : 0) + '|' + (careerWaitBusy() ? 1 : 0) + '|' +
+			(pad ? Math.round(pad.chargeKwh * 100) : -1) + '|' +
+			Math.round(career.ledger.purse * 100) + '|' + Math.round(game.clockSteps / 240);
 		if (!force && key === launchListKey) return;
 		launchListKey = key;
 		careerLaunchListEl.innerHTML = launchListHtml(career);
 	}
 
-	/* arm a saved shot: the list's one click, then the launch button fires it */
+	/* a stale book cannot be flown: drop it by hand instead of losing it
+	 * silently on the next save */
+	function dropStaleBook() {
+		const book = game.career.launchBook;
+		if (book.entries.length === 0) return;
+		const count = book.entries.length;
+		GravityGame.resetLaunchBook(book);
+		careerNotice('cleared ' + count + ' stale saved shots');
+		refreshLaunchList(true);
+	}
+
+	/* arm a saved shot: the list's one click, then the launch button fires it.
+	 * The tag and the rail gate are refused with the words the row shows. */
 	function useBookEntry(index) {
 		if (!careerRule() || careerWaitBusy() || turret.pending) return;
 		const career = game.career;
 		const entry = career.launchBook.entries[index];
 		if (!entry) return;
+		if (!GravityGame.bookReady(career.launchBook, pageBookTag())) {
+			careerNotice('saved shot is stale · the gravity field changed · clear the list or scan again');
+			return;
+		}
 		const speed = GravityGame.speedOf(entry.speedU);
-		if (!canAimFrom(entry.origin)) {
-			careerNotice('saved shot leaves from ' + planetName(entry.origin));
-			return;
-		}
-		if (!gravity.canFire(entry.origin, speed)) {
-			careerNotice('the pad cannot fire ' + Math.round(speed) + ' px/s yet');
-			return;
-		}
-		if (!GravityGame.careerCanFire(career, gravity, entry.origin, speed)) {
-			careerNotice('the purse cannot cover this EMC fee');
+		const block = launchBlock(career, entry, speed);
+		if (block !== '') {
+			careerNotice('saved shot is not firable · ' + block);
 			return;
 		}
 		aimBody = entry.origin;
@@ -4975,26 +5088,33 @@
 		}
 	}
 
-	let careerTab = 'operations';
+	/* one row per career tab: the pad and the shop, the saved shots, research */
+	let careerTab = 'upgrades';
+	const careerTabs = [
+		{ name: 'upgrades', button: careerUpgradesTabEl, panel: careerUpgradesEl },
+		{ name: 'shots', button: careerShotsTabEl, panel: careerShotsEl },
+		{ name: 'science', button: careerScienceTabEl, panel: careerSciencePanelEl }
+	];
 
 	function refreshCareerTabs() {
-		if (!careerOperationsEl || !careerSciencePanelEl) return;
-		const science = careerTab === 'science';
-		careerOperationsEl.hidden = science;
-		careerSciencePanelEl.hidden = !science;
-		const tabs = [careerOperationsTabEl, careerScienceTabEl];
-		for (let i = 0; i < tabs.length; i++) {
-			const on = (i === 1) === science;
-			tabs[i].classList.toggle('on', on);
-			tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
-			tabs[i].tabIndex = on ? 0 : -1;
+		for (let i = 0; i < careerTabs.length; i++) {
+			const tab = careerTabs[i];
+			if (!tab.button || !tab.panel) continue;
+			const on = tab.name === careerTab;
+			tab.panel.hidden = !on;
+			tab.button.classList.toggle('on', on);
+			tab.button.setAttribute('aria-selected', on ? 'true' : 'false');
+			tab.button.tabIndex = on ? 0 : -1;
 		}
 	}
 
 	function careerSelectTab(tab) {
-		if (tab !== 'operations' && tab !== 'science') return;
-		careerTab = tab;
-		refreshCareerTabs();
+		for (let i = 0; i < careerTabs.length; i++) {
+			if (careerTabs[i].name !== tab) continue;
+			careerTab = tab;
+			refreshCareerTabs();
+			return;
+		}
 	}
 
 	function refreshCareerPanel() {
@@ -5245,6 +5365,7 @@
 		if (!careerRule()) return;
 		const act = data.act;
 		if (act === 'careerTab') return careerSelectTab(data.tab);
+		if (act === 'bookDrop') return dropStaleBook();
 		/* the eased world clock owns the career for its 2 s */
 		if (careerWaitBusy() || turret.pending || gravity.status === STATUS_FLYING) return;
 		const career = game.career;

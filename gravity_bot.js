@@ -1483,49 +1483,15 @@
 
 	/* --- live state and refusal reasons --------------------------------- */
 
-	function ownerText(career, owner, pad) {
-		if (owner === career.index) return 'own EMC-' + (pad.catapult.tier + 1);
-		if (owner === GravityGame.OWNER_COMMERCIAL) return 'commercial EMC-1';
-		return (owner === 0 ? 'YOU' : 'R' + owner) + ' rail';
-	}
-
-	/* the rail under the ship, its live cap and the money that gates a launch */
-	GravityBot.prototype.careerRailText = function (career, sim) {
-		if (career.at < 0) {
-			return 'ship in space · evac ' +
-				careerFee(career, GravityGame.CAREER.evacFee).toFixed(2) +
-				' · purse ' + career.ledger.purse.toFixed(2);
-		}
-		const at = career.at;
-		const pad = GravityGame.padAt(career, at);
-		const owner = GravityGame.padOwner(career, at);
-		const exit = GravityGame.exitCostAt(career, at, career.ship.mass);
-		return 'P' + at + ' · ' + ownerText(career, owner, pad) + ' · ' +
-			pad.chargeKwh.toFixed(2) + '/' + pad.battery.capacity.toFixed(2) + ' kWh → ' +
-			sim.speedLimit(at).toFixed(0) + ' px/s (min ' + GravitySim.SPEED_MIN + ') · fee ' +
-			GravityGame.launchFee(career, at, GravitySim.SPEED_MIN).toFixed(2) +
-			' · purse ' + career.ledger.purse.toFixed(2) + ' · exit ' +
-			(Number.isFinite(exit) ? exit.toFixed(2) : 'impossible');
-	};
-
 	/* candidate counts from the failed search, so "cannot fly" has a cause */
 	GravityBot.prototype.careerNoPlanWhy = function (career, sim) {
 		const at = career.at;
-		if (at < 0) {
-			return 'ship in space · evac ' +
-				careerFee(career, GravityGame.CAREER.evacFee).toFixed(2) +
-				' · purse ' + career.ledger.purse.toFixed(2);
-		}
+		if (at < 0) return GravityGame.railText(career, sim, at);
 		if (!sim.canLaunchFrom(at)) return 'P' + at + ' cannot launch (ship not landed)';
-		const min = GravitySim.SPEED_MIN;
-		const cap = sim.speedLimit(at);
-		if (cap + 1e-9 < min) {
-			return 'P' + at + ' pad cap ' + cap.toFixed(1) + ' < min ' + min +
-				' px/s (charge ' + GravityGame.padAt(career, at).chargeKwh.toFixed(2) + ' kWh)';
-		}
-		const fee = GravityGame.launchFee(career, at, min);
-		if (career.ledger.purse + 1e-9 < fee) {
-			return 'purse ' + career.ledger.purse.toFixed(2) + ' < rail fee ' + fee.toFixed(2);
+		const block = GravityGame.railBlock(career, sim, at, GravitySim.SPEED_MIN);
+		if (block !== '') {
+			return 'P' + at + ' ' + block + ' · charge ' +
+				GravityGame.padAt(career, at).chargeKwh.toFixed(2) + ' kWh';
 		}
 		const scan = this.careerScan;
 		if (career.contract >= 0) {
@@ -1611,7 +1577,7 @@
 			lines.push(label + ' · ' + short + ' · ' + place +
 				' · purse ' + career.ledger.purse.toFixed(2) + ' · ' + career.padCount +
 				' pads · ' + career.flights + ' flights');
-			lines.push('    ' + this.careerRailText(career, r.sim));
+			lines.push('    ' + GravityGame.railText(career, r.sim, career.at));
 			let book = 0;
 			for (let i = 0; i < career.launchBook.entries.length; i++) {
 				if (career.launchBook.entries[i].origin === career.at) book += 1;
@@ -2204,7 +2170,7 @@
 			};
 			this.traceAdd(who, 'queue', 'P' + plan.origin + ' angle ' + plan.angle.toFixed(2) +
 				' v' + plan.speed.toFixed(0) + ' → P' + plan.body + ' · ' +
-				ownerText(career, GravityGame.padOwner(career, plan.origin), pad) +
+				GravityGame.railOwnerText(career, plan.origin) +
 				' · ' + energy.toFixed(2) + ' kWh · barrel in ' +
 				((r.turret.fireAt - runStep) * GravitySim.DT).toFixed(1) + ' s', runStep);
 			return false;

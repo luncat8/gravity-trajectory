@@ -647,9 +647,56 @@
 		return exitCostAt(career, career.at, career.ship.mass);
 	}
 
-	/* rail gate plus the purse: a foreign EMC is only usable while its fee is covered */
+	/* who owns the rail on `planet`, named as the page and the bot log read it */
+	function railOwnerText(career, planet) {
+		const owner = padOwner(career, planet);
+		if (owner === career.index) return 'own EMC-' + (padAt(career, planet).catapult.tier + 1);
+		if (owner === OWNER_COMMERCIAL) return 'commercial EMC-1';
+		return (owner === 0 ? 'YOU' : 'R' + owner) + ' rail';
+	}
+
+	/*
+	 * The live numbers behind every launch gate: the rail under the ship, its
+	 * charge and the speed that buys, the fee and the purse. The launch list
+	 * and the bot decision log both print this line, so a player and a rival
+	 * never read two different stories about the same pad.
+	 */
+	function railText(career, sim, planet) {
+		if (planet < 0) {
+			return 'ship in space · evac ' + price(career, CAREER.evacFee).toFixed(2) +
+				' · purse ' + career.ledger.purse.toFixed(2);
+		}
+		const pad = padAt(career, planet);
+		const exit = exitCostAt(career, planet, career.ship.mass);
+		return 'P' + planet + ' · ' + railOwnerText(career, planet) + ' · ' +
+			pad.chargeKwh.toFixed(2) + '/' + pad.battery.capacity.toFixed(2) + ' kWh → ' +
+			sim.speedLimit(planet).toFixed(0) + ' px/s (min ' + GravitySim.SPEED_MIN + ') · fee ' +
+			launchFee(career, planet, GravitySim.SPEED_MIN).toFixed(2) +
+			' · purse ' + career.ledger.purse.toFixed(2) + ' · exit ' +
+			(Number.isFinite(exit) ? exit.toFixed(2) : 'impossible');
+	}
+
+	/*
+	 * The one reason a shot at `speed` cannot leave `planet` now, in the words
+	 * the launch list prints under a row and the bot log puts on a "no shot"
+	 * line. '' means firable.
+	 */
+	function railBlock(career, sim, planet, speed) {
+		if (career.at < 0) return 'ship in space';
+		if (career.at !== planet) return 'shot leaves from P' + planet;
+		if (!sim.canLaunchFrom(planet)) return 'no rail under the ship';
+		const cap = sim.speedLimit(planet);
+		if (speed > cap + 1e-9) return 'cap ' + cap.toFixed(0) + ' < ' + speed.toFixed(0) + ' px/s';
+		const fee = launchFee(career, planet, speed);
+		if (career.ledger.purse + 1e-9 < fee) {
+			return 'fee ' + fee.toFixed(2) + ' > purse ' + career.ledger.purse.toFixed(2);
+		}
+		return '';
+	}
+
+	/* the rail gate plus the purse, spelled by the same facts the list prints */
 	function careerCanFire(career, sim, planet, speed) {
-		return sim.canFire(planet, speed) && career.ledger.purse + 1e-9 >= launchFee(career, planet, speed);
+		return railBlock(career, sim, planet, speed) === '';
 	}
 
 	/* full-battery speed cap of the pad `career` fires from on `planet` */
@@ -1459,6 +1506,7 @@
 		COMMERCIAL_PAD, OWNER_COMMERCIAL, createGalaxy, resetGalaxy, rivalSeed,
 		turretPeriod, turretAngle, padAt, padOwner, claimOwner, refreshNetwork, setCommercial,
 		launchFee, exitCost, exitCostAt, careerCanFire, padLift, reserveEnergy, releaseEnergy,
+		railOwnerText, railText, railBlock,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart,

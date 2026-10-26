@@ -1,0 +1,25 @@
+0.4.25 — launch list tab, shared rail facts, book-seeded money helpers
+
+node --check *.js experiments/*.js                          OK
+git diff --check                                            OK
+
+node experiments/gravity_bench.js      BENCH OK (worst slice 2.13 ms of the 10 ms cap)
+node experiments/colony_bench.js       COLONY BENCH OK (1622/1622 checks)
+node experiments/game_bench.js         GAME BENCH OK (1872 flights, 0 outcome flips, drift max 2.4e-8 px)
+node experiments/route_bench.js        ROUTE BENCH OK (probe/path/field buffers keep identity)
+node experiments/bot_bench.js          BOT BENCH OK (6 exact 1-cand sync matches, buffers 0-alloc,
+                                       easy/normal/hard 4.70/15.39/36.37 ms, worst slice 3.68 ms)
+node experiments/career_bench.js       CAREER BENCH OK (+ rail facts: line, cap/fee/space/other-planet
+                                       reasons, careerCanFire agreement)
+node experiments/career_bot_bench.js   CAREER BOT BENCH OK (+ no-shot reason uses the shared block)
+  careers unchanged: s7 58 · s31 66 · s42 53 · s913 57 flights · g1.4 f0.6 293 flights · waits 501
+  scaled/research careers: complete, 26 pads each
+node experiments/dom_smoke.js          SMOKE OK (0.4.0 … 0.4.25)
+  new: three tabs (upgrades / shots / science, upgrades first) ·
+       the list prints the same rail line as the bot log ·
+       drained pad row "cap X < Y px/s", use click refused with the same words ·
+       commercial rail "fee 3.00 > purse 0.50", same refusal ·
+       gravity edit => "stale · N saved in another field" + clear button ·
+       helper keeps the saved shot the scan cannot beat (notice "launch list · P6 · +…") ·
+       empty book leaves the find to the scan ("best money shot · …")
+node experiments/layout_check.js       SKIPPED (no CHROME_PATH)

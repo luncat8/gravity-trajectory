@@ -2410,7 +2410,7 @@ function protoOf(career, family, id) {
 	check(/battery hull · 6 points · R1/.test(yBlock()), 'hull summary names the battery prototype');
 
 	/* the researched battery is pad gear: built per planet, or on every pad at once */
-	yClick({ act: 'careerTab', tab: 'operations' });
+	yClick({ act: 'careerTab', tab: 'upgrades' });
 	yEnv.setValue('careerPlanet', hq);
 	check(/data-act="build" data-kind="battery" data-item="R1"/.test(yShop()),
 		'battery prototype build button on the pad');
@@ -2752,8 +2752,8 @@ function protoOf(career, family, id) {
 	lEnv.runFrames(2, 16.0);
 	check(lGuard < 400 && !lui.get('launch').disabled,
 		'best profit must arm a fireable shot (frames ' + lGuard + ')');
-	check(lui.get('careerMsg').textContent.startsWith('best money shot'),
-		'best profit reports its find: ' + lui.get('careerMsg').textContent);
+	check(/^(best money shot|launch list) · /.test(lui.get('careerMsg').textContent),
+		'best profit reports its find and its source: ' + lui.get('careerMsg').textContent);
 	check(lCareer.launchBook.entries.length > 1,
 		'a profit scan must save what it traced: ' + lCareer.launchBook.entries.length);
 
@@ -2783,8 +2783,10 @@ function protoOf(career, family, id) {
 	lEnv.choose('srcPorts');
 	lEnv.runFrames(2, 16.0);
 	const movingList = lui.get('careerLaunchList').innerHTML;
-	check(movingList.includes('off · gravity bodies move'),
-		'a moving field must switch the launch list off: ' + movingList);
+	check(movingList.includes('paused · gravity bodies move') &&
+		movingList.includes('careerWhy') &&
+		!/data-act="book" data-entry="\d+"(?! disabled)/.test(movingList),
+		'a moving field must pause every saved shot and say why: ' + movingList.slice(0, 400));
 	lEnv.choose('srcPlanets');
 	lEnv.runFrames(2, 16.0);
 	check(/data-act="book"/.test(lui.get('careerLaunchList').innerHTML),
@@ -2831,6 +2833,151 @@ function protoOf(career, family, id) {
 		'closing the log panel must clear it');
 	console.log('0.4.24 verified: copy bot log (clipboard + file:// panel), live rival state ' +
 		'in the scoreboard, reasons for queues and waits');
+}
+
+/* --- 0.4.25: launch list tab, rail facts, book-seeded helpers -------- */
+{
+	const tEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
+	tEnv.runFrames(2, 16.0);
+	const tui = tEnv.elements;
+	const tGame = tEnv.context.GravityGame;
+	const tSimCtor = tEnv.context.GravitySim;
+	const tScene = tEnv.context.GravityScene;
+	const tCareer = tScene.career;
+	const tSim = tScene.sim;
+	const tBox = tui.get('careerBox');
+	const tList = () => tui.get('careerLaunchList').innerHTML;
+	const tArm = () => /data-act="book" data-entry="\d+"(?! disabled)/.test(tList());
+	const tClick = data => tEnv.fireElement(tBox, 'click', { target: { dataset: data } });
+	const tLanding = speed => {
+		for (let a = 0; a < 72; a++) {
+			const angle = a / 72 * Math.PI * 2;
+			tSim.predict(tCareer.hq, angle, speed);
+			if (tSim.predReason === tSimCtor.END_IMPACT && tSim.predBody !== tCareer.hq) return angle;
+		}
+		return null;
+	};
+
+	/* tabs: one job each, upgrades first, the list in its own panel */
+	const pageHtml = require('fs').readFileSync(
+		require('path').join(__dirname, '..', 'index.html'), 'utf8');
+	check(/data-tab="upgrades"[^>]*>upgrades</.test(pageHtml) &&
+		/data-tab="shots"[^>]*>shots</.test(pageHtml) &&
+		/data-tab="science"[^>]*>science</.test(pageHtml) &&
+		!/data-tab="operations"/.test(pageHtml),
+		'career tabs must read upgrades / shots / science');
+	check(!tui.get('careerUpgrades').hidden && tui.get('careerShots').hidden &&
+		tui.get('careerSciencePanel').hidden,
+		'upgrades is the first tab and only it is open');
+	tClick({ act: 'careerTab', tab: 'shots' });
+	tEnv.runFrames(2, 16.0);
+	check(!tui.get('careerShots').hidden && tui.get('careerUpgrades').hidden &&
+		tui.get('careerShotsTab').attributes['aria-selected'] === 'true' &&
+		tui.get('careerUpgradesTab').attributes['aria-selected'] === 'false',
+		'the shots tab must own the launch list');
+	check(tList().includes('launch list') && tList().includes('empty'),
+		'a fresh career lists nothing: ' + tList());
+	const railLine = tGame.railText(tCareer, tSim, tCareer.at);
+	const railCut = railLine.indexOf(' · fee ');
+	check(railCut > 0 && tList().includes(railLine.slice(0, railCut)) &&
+		tList().includes(railLine.slice(railCut + 3)),
+		'the list must print the rail line the bot log prints: ' + tList().slice(0, 240));
+
+	/* the save speed stays under the weakest rail the ship may stand on, so the
+	 * fee case below is not pre-empted by a cap reason */
+	tGame.setCommercial(tCareer, tCareer.hq);
+	tEnv.runFrames(1, 16.0);
+	const commercialCap = tSim.speedLimit(tCareer.hq);
+	tGame.setCommercial(tCareer, -1);
+	tEnv.runFrames(1, 16.0);
+	const shotSpeed = Math.max(tSimCtor.SPEED_MIN, Math.min(CAREER_TEST_SPEED, commercialCap - 1));
+	const tAngle = tLanding(shotSpeed);
+	check(tAngle !== null, 'no landing shot for the 0.4.25 fixture at ' + shotSpeed);
+	tEnv.dragAim(tCareer.hq, tAngle, shotSpeed);
+	tEnv.runFrames(4, 16.0);
+	const tSaved = tCareer.launchBook.entries[0];
+	check(tCareer.launchBook.entries.length === 1 && tSaved.origin === tCareer.hq,
+		'the armed preview must join the book: ' + tCareer.launchBook.entries.length);
+	check(tArm(), 'a saved shot under the live rail is firable: ' + tList());
+
+	/* a drained pad: the row states the cap, the use click refuses with it */
+	const tPad = tCareer.pads[tCareer.hq];
+	tPad.chargeKwh = 0;
+	tEnv.runFrames(1, 16.0);
+	check(/careerWhy">cap [\d.]+ &lt; \d+ px\/s/.test(tList()) && !tArm(),
+		'a drained pad must name its cap blocker: ' + tList().slice(0, 320));
+	tClick({ act: 'book', entry: 0 });
+	tEnv.runFrames(1, 16.0);
+	check(tui.get('careerMsg').textContent.startsWith('saved shot is not firable · cap '),
+		'the use click must refuse with the cap reason: ' + tui.get('careerMsg').textContent);
+
+	/* a commercial rail the purse cannot pay: the row names fee against purse */
+	tPad.chargeKwh = tPad.battery.capacity;
+	tGame.setCommercial(tCareer, tCareer.hq);
+	tCareer.ledger.purse = 0.5;
+	tEnv.runFrames(2, 16.0);
+	check(/careerWhy">fee [\d.]+ &gt; purse 0\.50/.test(tList()),
+		'a foreign rail must name its fee blocker: ' + tList().slice(0, 320));
+	tClick({ act: 'book', entry: 0 });
+	tEnv.runFrames(1, 16.0);
+	check(tui.get('careerMsg').textContent.startsWith('saved shot is not firable · fee '),
+		'the use click must refuse with the fee reason: ' + tui.get('careerMsg').textContent);
+	tGame.setCommercial(tCareer, -1);
+	tCareer.ledger.purse = 6;
+	tEnv.runFrames(2, 16.0);
+	check(tArm(), 'the shot returns when the purse and the rail do: ' + tList().slice(0, 240));
+
+	/* a gravity edit voids every path: the list names it stale and clears */
+	tSim.strength[0] = tSim.strength[0] + 0.5;
+	tEnv.runFrames(2, 16.0);
+	const tStale = tList();
+	check(tStale.includes('stale · ') && tStale.includes('data-act="bookDrop"') &&
+		!/data-act="book"/.test(tStale),
+		'a changed field must mark the book stale and offer a clear: ' + tStale.slice(0, 320));
+	tClick({ act: 'book', entry: 0 });
+	tEnv.runFrames(1, 16.0);
+	check(tui.get('careerMsg').textContent.startsWith('saved shot is stale'),
+		'a stale use must be refused: ' + tui.get('careerMsg').textContent);
+	tClick({ act: 'bookDrop' });
+	tEnv.runFrames(2, 16.0);
+	check(tCareer.launchBook.entries.length === 0 && tList().includes('empty'),
+		'the clear button must drop the stale list: ' + tList());
+
+	/* the helper keeps a saved shot that no fresh aim pays more than */
+	const tAngle2 = tLanding(CAREER_TEST_SPEED);
+	check(tAngle2 !== null, 'no landing shot for the seeded helper fixture');
+	tEnv.dragAim(tCareer.hq, tAngle2, CAREER_TEST_SPEED);
+	tEnv.runFrames(4, 16.0);
+	check(tCareer.launchBook.entries.length === 1, 'the fixture shot must rejoin the book');
+	const tSeed = tCareer.launchBook.entries[0];
+	/* 64 visits, a world-minute each: no short fresh trace can pay this much */
+	tSeed.logCount = tGame.BOOK_LOG_MAX;
+	for (let i = 0; i < tSeed.logCount; i++) {
+		tSeed.logPlanet[i] = tSeed.body;
+		tSeed.logStep[i] = i * 30000;
+	}
+	tEnv.click('helperProfit');
+	let tGuard = 0;
+	for (; tui.get('helperStop').hidden !== true && tGuard < 600; tGuard++) tEnv.runFrames(1, 16.0);
+	tEnv.runFrames(2, 16.0);
+	check(tui.get('careerMsg').textContent.startsWith('launch list · '),
+		'best profit must keep the saved shot the scan cannot beat: ' +
+			tui.get('careerMsg').textContent);
+	const tAim = tScene.aimState();
+	check(Math.abs(tAim.angle - tGame.angleOf(tSeed.angleU)) < 1e-9 &&
+		Math.abs(tAim.speed - tGame.speedOf(tSeed.speedU)) < 1e-9,
+		'the helper must arm the saved aim: ' + tAim.angle + '/' + tAim.speed);
+
+	/* an empty book leaves the scan to find and report a fresh shot */
+	tGame.resetLaunchBook(tCareer.launchBook);
+	tEnv.click('helperProfit');
+	tGuard = 0;
+	for (; tui.get('helperStop').hidden !== true && tGuard < 600; tGuard++) tEnv.runFrames(1, 16.0);
+	tEnv.runFrames(2, 16.0);
+	check(tui.get('careerMsg').textContent.startsWith('best money shot · '),
+		'an empty list must leave the find to the scan: ' + tui.get('careerMsg').textContent);
+	console.log('0.4.25 verified: upgrades / shots / science tabs · rail line and row reasons ' +
+		'(cap, fee) · stale book with a clear button · book-seeded money helper');
 }
 
 /* the clipboard path copies exactly what the panel shows */

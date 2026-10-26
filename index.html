@@ -62,22 +62,26 @@
 	</div>
 	<div id="careerBox" hidden>
 		<div class="careerTabs" role="tablist" aria-label="career sections">
-			<button id="careerOperationsTab" class="careerTab on" data-act="careerTab" data-tab="operations"
-				role="tab" aria-selected="true" aria-controls="careerOperations">operations</button>
+			<button id="careerUpgradesTab" class="careerTab on" data-act="careerTab" data-tab="upgrades"
+				role="tab" aria-selected="true" aria-controls="careerUpgrades">upgrades</button>
+			<button id="careerShotsTab" class="careerTab" data-act="careerTab" data-tab="shots"
+				role="tab" aria-selected="false" aria-controls="careerShots" tabindex="-1">shots</button>
 			<button id="careerScienceTab" class="careerTab" data-act="careerTab" data-tab="science"
 				role="tab" aria-selected="false" aria-controls="careerSciencePanel" tabindex="-1">science</button>
 		</div>
-		<div id="careerOperations" role="tabpanel" aria-labelledby="careerOperationsTab">
+		<div id="careerUpgrades" role="tabpanel" aria-labelledby="careerUpgradesTab">
 			<label class="ctl careerPick" title="planet whose pad the shop builds on">planet
 				<select id="careerPlanet" aria-label="build planet"></select>
 			</label>
 			<div id="careerPad" class="careerBlock"></div>
 			<div id="careerTasks" class="careerBlock"></div>
-			<div id="careerLaunchList" class="careerBlock"></div>
 			<div id="careerShop" class="careerBlock"></div>
 			<div class="actions careerActions">
 				<button id="careerEvac" class="miniBtn" title="fly the ship home to HQ for a fee">evacuate</button>
 			</div>
+		</div>
+		<div id="careerShots" role="tabpanel" aria-labelledby="careerShotsTab" hidden>
+			<div id="careerLaunchList" class="careerBlock"></div>
 		</div>
 		<div id="careerSciencePanel" role="tabpanel" aria-labelledby="careerScienceTab" hidden>
 			<div id="careerScience" class="careerBlock"></div>
