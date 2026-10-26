@@ -95,6 +95,18 @@
 	const CAREER_BURN_FRACTIONS = [0.35, 0.68, 1];
 	const CAREER_BURN_FUEL_COST = 0.008;
 	const CAREER_BURN_MIN_GAIN = 0.25;
+	/* a stored trajectory at this score is worth flying as it stands, so the
+	 * fan can be skipped (book entries score without a trace). A fan winner
+	 * sits near 6, so this bar skips only shots that are as good as a search
+	 * would usually find. */
+	const CAREER_BOOK_ENOUGH = 6;
+	/* below this a plan is a donation unless it lands where an EMC can be built */
+	const CAREER_MIN_SCORE = 0;
+	/* patient companies: sit out this much world time, but never more than
+	 * CAREER_SIT_TRIES times in a row */
+	const CAREER_SIT_GAP = Math.round(60 / GravitySim.DT);
+	const CAREER_SIT_TRIES = 6;
+	const PRED_LOG_MAX = GravitySim.PRED_LOG_MAX;
 
 	const LEVELS = {
 		off: {
@@ -242,14 +254,19 @@
 		this.bestSpeedU = 0;
 
 		this.careerBest = {
-			origin: -1, body: -1, angle: 0, speed: 0, score: -Infinity,
-			taskPay: 0, padValue: 0, energy: 0, wait: 0, fee: 0, steps: 0
+			origin: -1, body: -1, angleU: 0, speedU: 0, angle: 0, speed: 0,
+			score: -Infinity, taskPay: 0, padValue: 0, energy: 0, wait: 0, fee: 0,
+			builds: false, length: 0, steps: 0
 		};
 		this.careerBurnBest = {
 			body: -1, angle: 0, dv: 0, angleU: 0, dvU: 0,
 			score: -Infinity, coastScore: -Infinity, fuelKg: 0, steps: 0
 		};
-		this.careerEval = { taskPay: 0, padValue: 0, energy: 0, wait: 0, fee: 0 };
+		this.careerEval = { taskPay: 0, padValue: 0, builds: false, energy: 0, wait: 0, fee: 0 };
+		/* the winning trace's visit log, copied before the fan moves on */
+		this.careerLogPlanet = new Int32Array(PRED_LOG_MAX);
+		this.careerLogStep = new Int32Array(PRED_LOG_MAX);
+		this.careerLogCount = 0;
 		this.careerBuilds = 0;
 		this.careerUpgrades = 0;
 		this.careerResearches = 0;
@@ -1349,18 +1366,33 @@
 		return actions;
 	};
 
+	/*
+	 * Patience: a losing flight that cannot claim a pad only burns the pad
+	 * charge and the purse. Sitting the gap out lets the pads recharge, the
+	 * board rotate and the visit profits grow, and the next plan is priced in
+	 * that richer world. A padless landing that can pay for its own starter EMC
+	 * is progress, so it is flown; after CAREER_SIT_TRIES skips the least bad
+	 * shot is taken anyway, so a company can never sit forever.
+	 */
+	GravityBot.prototype.careerShouldWait = function (plan, tries) {
+		if (plan.builds) return false;
+		if (plan.score >= CAREER_MIN_SCORE) return false;
+		return tries < CAREER_SIT_TRIES;
+	};
+
 	GravityBot.prototype.careerEnergyWait = function (career, planet, energy) {
 		const pad = GravityGame.padAt(career, planet);
 		const gain = OrbitTech.solarCharge(pad.panel, career.light[planet], CAREER_WAIT_SECONDS);
 		return gain > 0 ? energy / gain : Infinity;
 	};
 
-	/* Landing + harvest + contract + solvency value of the trace in `probe`. */
-	GravityBot.prototype.careerScoreFlight = function (career, origin, market, runStep, flownLen, fee) {
-		const probe = this.probe;
-		const body = probe.predBody;
-		if (probe.predReason !== END_IMPACT || body < 0) return -Infinity;
-		const visitPay = GravityGame.estimateProfit(market, runStep, probe);
+	/*
+	 * Landing + harvest + contract + solvency value of one trace. Only the
+	 * facts differ between a fresh probe and a stored trajectory, so both feed
+	 * this: `visitPay` is the harvest, `length`/`steps` the path and arrival.
+	 */
+	GravityBot.prototype.careerScoreFacts = function (career, origin, market, runStep,
+		flownLen, fee, body, visitPay, length, steps) {
 		let taskPay = visitPay;
 		let cashPay = visitPay;
 		if (career.contract >= 0) {
@@ -1373,9 +1405,9 @@
 			}
 		}
 		const compete = career.tasks[GravityGame.COMPETE_SLOT];
-		const totalLen = (flownLen || 0) + probe.predLength;
+		const totalLen = (flownLen || 0) + length;
 		if (compete.kind === GravityGame.TASK_COMPETE && origin === compete.planet &&
-			totalLen >= compete.minLength && runStep + probe.predSteps <= compete.deadline) {
+			totalLen >= compete.minLength && runStep + steps <= compete.deadline) {
 			taskPay += compete.reward;
 			cashPay += compete.reward;
 		}
@@ -1394,6 +1426,12 @@
 				careerPrice(career, OrbitTech.HOLDS[1]) + CAREER_PURSE_RESERVE) {
 			padValue += CAREER_REFIT_VALUE;
 		}
+		/* a padless landing that can pay for its own starter EMC is progress
+		 * even when the flight itself does not pay: patient companies only sit
+		 * out flights that cannot claim anything */
+		const build = careerPrice(career, OrbitTech.CATAPULTS[0]);
+		this.careerEval.builds = own.catapult === null &&
+			career.ledger.purse + cashPay - (fee || 0) + 1e-9 >= build;
 
 		/* a planet without your own EMC is flyable as long as the purse covers
 		 * the way off it (commercial fee, a build or the evacuation) — after
@@ -1402,7 +1440,6 @@
 		 * off a padless world pays that fee again too, so it is gated alike. */
 		if (own.catapult === null) {
 			const exit = GravityGame.exitCostAt(career, body, career.ship.mass);
-			const build = careerPrice(career, OrbitTech.CATAPULTS[0]);
 			const reserve = career.padCount === PLANETS - 1 && exit >= build ? CAREER_PURSE_RESERVE : 0;
 			const margin = exit > 0 && Number.isFinite(exit) ? exit * 0.5 : 0;
 			if (career.ledger.purse - (fee || 0) + cashPay + 1e-9 < exit + reserve + margin) return -Infinity;
@@ -1412,11 +1449,17 @@
 		return taskPay + padValue;
 	};
 
-	/* Scores the trace already in `probe`; `careerEval` exposes its money terms. */
-	GravityBot.prototype.careerScoreProbe = function (career, sim, origin, speed, market, runStep) {
-		const fee = GravityGame.launchFee(career, origin, speed);
-		const base = this.careerScoreFlight(career, origin, market, runStep, 0, fee);
-		if (!Number.isFinite(base)) return -Infinity;
+	/* Landing + harvest + contract + solvency value of the trace in `probe`. */
+	GravityBot.prototype.careerScoreFlight = function (career, origin, market, runStep, flownLen, fee) {
+		const probe = this.probe;
+		if (probe.predReason !== END_IMPACT || probe.predBody < 0) return -Infinity;
+		return this.careerScoreFacts(career, origin, market, runStep, flownLen, fee,
+			probe.predBody, GravityGame.estimateProfit(market, runStep, probe),
+			probe.predLength, probe.predSteps);
+	};
+
+	/* pad energy, the recharge wait it costs and the EMC fee of one shot */
+	GravityBot.prototype.careerScoreTail = function (career, sim, origin, speed, base, fee) {
 		const energy = sim.launchEnergy(origin, speed);
 		/* only your own battery needs recharge time; a foreign or commercial
 		 * rail is paid in money (the fee), not in waiting */
@@ -1426,6 +1469,27 @@
 		this.careerEval.wait = wait;
 		this.careerEval.fee = fee;
 		return base - energy * wait * CAREER_ENERGY_WAIT_COST - fee;
+	};
+
+	/* Scores the trace already in `probe`; `careerEval` exposes its money terms. */
+	GravityBot.prototype.careerScoreProbe = function (career, sim, origin, speed, market, runStep) {
+		const fee = GravityGame.launchFee(career, origin, speed);
+		const base = this.careerScoreFlight(career, origin, market, runStep, 0, fee);
+		if (!Number.isFinite(base)) return -Infinity;
+		return this.careerScoreTail(career, sim, origin, speed, base, fee);
+	};
+
+	/* The same score for a stored trajectory: its visit log re-prices exactly at
+	 * the live market, so the book needs no trace (its CPU saving). */
+	GravityBot.prototype.careerScoreStored = function (career, sim, market, runStep, entry) {
+		const speed = GravityGame.speedOf(entry.speedU);
+		const fee = GravityGame.launchFee(career, entry.origin, speed);
+		const visitPay = GravityGame.estimateProfitLog(market, runStep,
+			entry.logPlanet, entry.logStep, entry.logCount);
+		const base = this.careerScoreFacts(career, entry.origin, market, runStep, 0, fee,
+			entry.body, visitPay, entry.length, entry.steps);
+		if (!Number.isFinite(base)) return -Infinity;
+		return this.careerScoreTail(career, sim, entry.origin, speed, base, fee);
 	};
 
 	GravityBot.prototype.careerTarget = function (career) {
@@ -1442,12 +1506,65 @@
 		return -1;
 	};
 
+	/* the world a stored trajectory was traced in (`career.launchBook`) */
+	GravityBot.prototype.careerBookTag = function () {
+		const probe = this.probe;
+		return GravityGame.launchBookTag(probe.fieldStatic, probe.gravityScale,
+			probe.forceScale, probe.strength, probe.bodyCount);
+	};
+
+	/* copy the finished trace out of the probe, so the next candidate cannot
+	 * overwrite the winner before it is saved */
+	GravityBot.prototype.careerLogStore = function (probe) {
+		const count = probe.predLogCount;
+		const logPlanet = this.careerLogPlanet;
+		const logStep = this.careerLogStep;
+		for (let i = 0; i < count; i++) {
+			logPlanet[i] = probe.predLogPlanet[i];
+			logStep[i] = probe.predLogStep[i];
+		}
+		this.careerLogCount = count;
+	};
+
+	GravityBot.prototype.careerTakeBest = function (origin, angleU, speedU, score, body, length, steps) {
+		const best = this.careerBest;
+		best.origin = origin;
+		best.body = body;
+		best.angleU = angleU;
+		best.speedU = speedU;
+		best.angle = GravityGame.angleOf(angleU);
+		best.speed = GravityGame.speedOf(speedU);
+		best.score = score;
+		best.taskPay = this.careerEval.taskPay;
+		best.padValue = this.careerEval.padValue;
+		best.energy = this.careerEval.energy;
+		best.wait = this.careerEval.wait;
+		best.fee = this.careerEval.fee;
+		best.builds = this.careerEval.builds;
+		best.length = length;
+		best.steps = steps;
+	};
+
+	/* the fan winner joins the book, so the next plan can score it for free */
+	GravityBot.prototype.careerSaveBest = function (career, tag) {
+		if (this.careerLogCount === 0 || this.careerBest.origin < 0) return;
+		const best = this.careerBest;
+		GravityGame.recordLaunch(career.launchBook, tag, {
+			origin: best.origin, angleU: best.angleU, speedU: best.speedU,
+			body: best.body, steps: best.steps, time: best.steps * GravitySim.DT,
+			length: best.length, score: best.score,
+			logPlanet: this.careerLogPlanet, logStep: this.careerLogStep,
+			logCount: this.careerLogCount
+		});
+	};
+
 	/* Plan only from the rail the ship stands on (own, rival or commercial);
 	 * every snapped speed is <= its live cap. */
 	GravityBot.prototype.careerPlan = function (career, sim, market, runStep, fallback, angles) {
 		const best = this.careerBest;
 		best.origin = -1;
 		best.score = -Infinity;
+		best.builds = false;
 		if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
 			!sim.canLaunchFrom(career.at)) return null;
 		const origin = career.at;
@@ -1470,6 +1587,27 @@
 		let previousSpeedU = -1;
 		let bestAngleU = 0;
 		let bestSpeedU = 0;
+		this.careerLogCount = 0;
+
+		/* the book first: entries traced from this pad re-price from their visit
+		 * log alone, so not one trace is spent on them */
+		const book = career.launchBook;
+		const tag = this.careerBookTag();
+		if (GravityGame.bookReady(book, tag)) {
+			for (let i = 0; i < book.entries.length; i++) {
+				const entry = book.entries[i];
+				if (entry.origin !== origin || entry.speedU > capU || entry.speedU < minU) continue;
+				if (requiredBody >= 0 && entry.body !== requiredBody) continue;
+				const score = this.careerScoreStored(career, sim, market, runStep, entry);
+				if (!(score > best.score + 1e-12)) continue;
+				this.careerTakeBest(entry.origin, entry.angleU, entry.speedU, score,
+					entry.body, entry.length, entry.steps);
+			}
+			bestAngleU = best.origin >= 0 ? best.angleU : 0;
+			bestSpeedU = best.origin >= 0 ? best.speedU : 0;
+		}
+		/* a known shot worth flying ends the search here: the book's CPU win */
+		if (best.origin >= 0 && best.score >= CAREER_BOOK_ENOUGH) return best;
 
 		const angleCount = fallback ? Math.round(fan * CAREER_FALLBACK_SCALE) : fan;
 		const speedCount = fallback ? CAREER_SPEED_FRACTIONS.length : 4;
@@ -1495,21 +1633,14 @@
 					(Math.abs(score - best.score) <= 1e-12 && best.origin >= 0 &&
 						(angleU < bestAngleU || (angleU === bestAngleU && speedU < bestSpeedU)));
 				if (!better) continue;
-				best.origin = origin;
-				best.body = this.probe.predBody;
-				best.angle = angle;
-				best.speed = speed;
-				best.score = score;
-				best.taskPay = this.careerEval.taskPay;
-				best.padValue = this.careerEval.padValue;
-				best.energy = this.careerEval.energy;
-				best.wait = this.careerEval.wait;
-				best.fee = this.careerEval.fee;
-				best.steps = this.probe.predSteps;
+				this.careerTakeBest(origin, angleU, speedU, score, this.probe.predBody,
+					this.probe.predLength, this.probe.predSteps);
+				this.careerLogStore(this.probe);
 				bestAngleU = angleU;
 				bestSpeedU = speedU;
 			}
 		}
+		if (best.origin >= 0) this.careerSaveBest(career, tag);
 		return best.origin >= 0 ? best : null;
 	};
 
@@ -1603,6 +1734,7 @@
 			r.gapPhase = i * CAREER_RIVAL_PHASE;
 			r.readyStep = r.gapPhase;
 			r.idleTries = 0;
+			r.waitTries = 0;
 			this.careerDropQueue(r);
 			if (i >= this.count) {
 				r.career = null;
@@ -1692,6 +1824,13 @@
 				return false;
 			}
 			r.idleTries = 0;
+			if (this.careerShouldWait(plan, r.waitTries)) {
+				r.waitTries += 1;
+				this.careerBetweenFlights(career, sim);
+				r.readyStep = runStep + CAREER_SIT_GAP + r.gapPhase;
+				return false;
+			}
+			r.waitTries = 0;
 			/* queue the shot: the first to queue claims the pad charge, then the
 			 * barrel turns on the same in-game clock the player's turret uses */
 			const period = GravityGame.turretPeriod(career.galaxy, plan.origin);
@@ -1733,6 +1872,7 @@
 		r.basePlanet = r.career.at;
 		r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
 		r.idleTries = 0;
+		r.waitTries = 0;
 		this.careerBetweenFlights(r.career, r.sim);
 	};
 
@@ -1745,6 +1885,7 @@
 		r.shots.length = 0;
 		r.readyStep = runStep + CAREER_REBOOT_GAP + r.gapPhase;
 		r.idleTries = 0;
+		r.waitTries = 0;
 		this.careerDropQueue(r);
 	};
 
@@ -1762,6 +1903,10 @@
 	GravityBot.CAREER_REBOOT_GAP = CAREER_REBOOT_GAP;
 	GravityBot.CAREER_PURSE_RESERVE = CAREER_PURSE_RESERVE;
 	GravityBot.CAREER_ENERGY_WAIT_COST = CAREER_ENERGY_WAIT_COST;
+	GravityBot.CAREER_BOOK_ENOUGH = CAREER_BOOK_ENOUGH;
+	GravityBot.CAREER_MIN_SCORE = CAREER_MIN_SCORE;
+	GravityBot.CAREER_SIT_GAP = CAREER_SIT_GAP;
+	GravityBot.CAREER_SIT_TRIES = CAREER_SIT_TRIES;
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = GravityBot;
 	else root.GravityBot = GravityBot;

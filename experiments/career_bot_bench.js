@@ -134,6 +134,16 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = 
 	w.ledger.purse = startPurse;
 	const { bot, career, sim } = w;
 	bot.careerUseResearch = useResearch;
+	/* CPU meter: candidate traces the controller spent. NOBOOK=1 disables the
+	 * launch book, so two runs show what remembering buys. */
+	let traces = 0;
+	const traceFast = bot.probe.predictFast;
+	bot.probe.predictFast = function (...args) {
+		traces += 1;
+		return traceFast.apply(this, args);
+	};
+	if (process.env.NOBOOK) bot.careerBookTag = () => NaN;
+	const planTrace = [];
 	let waits = 0;
 	let fallbacks = 0;
 	let dropped = 0;
@@ -143,7 +153,9 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = 
 		if (career.ended !== GravityGame.CAREER_OPEN) break;
 		/* a padless planet is no dead end: the commercial EMC lifts every ship */
 		assert.ok(career.at >= 0, 'idle policy lost the ship');
+		let mark = traces;
 		let plan = bot.careerPlan(career, sim, w.market, w.step, false);
+		planTrace.push(traces - mark);
 		if (!plan) {
 			plan = bot.careerPlan(career, sim, w.market, w.step, true);
 			if (plan) fallbacks += 1;
@@ -197,7 +209,10 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = 
 		waits,
 		fallbacks,
 		dropped,
-		boosts
+		boosts,
+		traces,
+		planTrace,
+		plans: bot.careerPlans
 	};
 }
 
@@ -448,12 +463,23 @@ for (const seed of SEEDS) {
 			' · purse ' + r.purse.toFixed(2) + ' · earned ' + r.earned.toFixed(2) +
 			' · pads ' + r.pads + ' · flights ' + r.flights + ' · deliveries ' + r.delivered +
 			' · upgrades ' + r.upgrades + ' · waits ' + r.waits + ' · fallbacks ' + r.fallbacks +
-			' · evac ' + r.evacuations);
+			' · evac ' + r.evacuations + ' · plans ' + r.plans + ' · traces ' + r.traces);
 		assert.strictEqual(r.ended, GravityGame.CAREER_COMPLETE, 'career did not complete');
 		assert.strictEqual(r.pads, PLANETS);
 		assert.ok(r.purse + 1e-9 >= 0, 'purse went negative: ' + r.purse);
 		assert.ok(r.flights > 0 && r.flights < MAX_FLIGHTS, 'flight guard');
 		assert.ok(r.builds >= PLANETS - 1, 'not all pads were bought through the controller');
+		if (process.env.CPU === '1') {
+			const hist = [0, 0, 0, 0];
+			for (const n of r.planTrace) {
+				if (n === 0) hist[0] += 1;
+				else if (n <= 50) hist[1] += 1;
+				else if (n <= 250) hist[2] += 1;
+				else hist[3] += 1;
+			}
+			console.log('  CPU s' + seed + ' plans ' + r.planTrace.length + ' (book ' + hist[0] +
+				', <=50 ' + hist[1] + ', <=250 ' + hist[2] + ', big ' + hist[3] + ') traces ' + r.traces);
+		}
 	});
 }
 
@@ -532,6 +558,106 @@ check('career rivals queue on the EMC barrel: the shot fires only once it lines 
 	assert.strictEqual(r.turret, null, 'the fired shot keeps its queue entry');
 	assert.strictEqual(r.turret === null && r.career.pads[r.sim.origin].reservedKwh, 0,
 		'the fired shot must release its reservation');
+});
+
+check('career plan saves its winner and reuses it without tracing again', () => {
+	const w = makeWorld(42);
+	const plan = w.bot.careerPlan(w.career, w.sim, w.market, w.step, false);
+	assert.ok(plan, 'no opening plan');
+	const book = w.career.launchBook;
+	assert.strictEqual(book.entries.length, 1, 'the winner did not reach the book');
+	const entry = book.entries[0];
+	assert.strictEqual(entry.origin, plan.origin);
+	assert.strictEqual(entry.angleU, plan.angleU);
+	assert.strictEqual(entry.speedU, plan.speedU);
+	assert.strictEqual(entry.body, plan.body);
+	assert.ok(entry.logCount > 0, 'a saved trace must keep its visit log');
+	/* the stored log re-prices to the very same score a fresh trace gives */
+	const stored = w.bot.careerScoreStored(w.career, w.sim, w.market, w.step, entry);
+	assert.ok(Math.abs(stored - plan.score) < 1e-9, 'stored ' + stored + ' vs plan ' + plan.score);
+	/* a good stored shot ends the search: the second plan spends no trace */
+	assert.ok(plan.score >= GravityBot.CAREER_BOOK_ENOUGH,
+		'fixture plan must clear the book bar: ' + plan.score);
+	let traces = 0;
+	const original = w.bot.probe.predictFast;
+	w.bot.probe.predictFast = function (...args) {
+		traces += 1;
+		return original.apply(this, args);
+	};
+	const again = w.bot.careerPlan(w.career, w.sim, w.market, w.step, false);
+	w.bot.probe.predictFast = original;
+	assert.strictEqual(traces, 0, 'the book must answer without tracing');
+	assert.strictEqual(again.angleU, plan.angleU);
+	assert.strictEqual(again.speedU, plan.speedU);
+	assert.ok(Math.abs(again.score - plan.score) < 1e-9);
+	/* a saved speed above the live pad cap is skipped: the fan must run */
+	const speeds = book.entries.map(e => e.speedU);
+	for (let i = 0; i < book.entries.length; i++) {
+		book.entries[i].speedU = GravityGame.speedUnits(GravitySim.SPEED_MAX);
+	}
+	traces = 0;
+	w.bot.probe.predictFast = function (...args) {
+		traces += 1;
+		return original.apply(this, args);
+	};
+	const stale = w.bot.careerPlan(w.career, w.sim, w.market, w.step, false);
+	w.bot.probe.predictFast = original;
+	for (let i = 0; i < book.entries.length; i++) book.entries[i].speedU = speeds[i];
+	assert.ok(traces > 0, 'a stored speed the pad cannot fire must not end the search');
+	assert.ok(stale && stale.speed <= w.sim.speedLimit(w.career.at) + 1e-9,
+		'the plan exceeds the live pad cap');
+	/* and a drained pad is searched from scratch, never above its live cap */
+	const pad = w.career.pads[w.career.at];
+	const charge = pad.chargeKwh;
+	pad.chargeKwh = 0.8;
+	const low = w.bot.careerPlan(w.career, w.sim, w.market, w.step, true);
+	pad.chargeKwh = charge;
+	assert.ok(!low || low.speed <= w.sim.speedLimit(w.career.at) + 1e-9,
+		'a drained pad must never plan above its cap');
+});
+
+check('patient company: a losing plan that cannot claim a pad is sat out, never forever', () => {
+	const w = makeWorld(42);
+	/* the queue waits for the EMC barrel, so the career needs its galaxy clock */
+	const galaxy = GravityGame.createGalaxy();
+	GravityGame.resetGalaxy(galaxy, 42);
+	w.career.galaxy = galaxy;
+	const r = w.bot.rivals[0];
+	r.career = w.career;
+	r.waitTries = 0;
+	/* a padless landing that can pay for its own EMC is progress, so it flies */
+	assert.strictEqual(w.bot.careerShouldWait({ score: -5, builds: true }, 0), false);
+	/* a paying plan is flown */
+	assert.strictEqual(w.bot.careerShouldWait({ score: 2, builds: false }, 0), false);
+	/* a losing one is not */
+	assert.strictEqual(w.bot.careerShouldWait({ score: -0.5, builds: false }, 0), true);
+	assert.strictEqual(
+		w.bot.careerShouldWait({ score: -0.5, builds: false }, GravityBot.CAREER_SIT_TRIES - 1), true);
+	assert.strictEqual(
+		w.bot.careerShouldWait({ score: -0.5, builds: false }, GravityBot.CAREER_SIT_TRIES), false,
+		'the sit budget must expire, or a company could wait forever');
+	/* the launch path really sits: no queue entry, a longer gap, no energy claimed */
+	const plan = w.bot.careerPlan(w.career, w.sim, w.market, w.step, false);
+	assert.ok(plan, 'no plan to test the sit with');
+	w.bot.careerPlan = function () {
+		return { origin: w.career.hq, body: (w.career.hq + 1) % PLANETS, angle: 0.3,
+			speed: GravitySim.SPEED_MIN, score: -1, builds: false, taskPay: -1, padValue: 0,
+			energy: 0, wait: 0, fee: 0, steps: 10 };
+	};
+	const step = 500;
+	assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, RATE, step), false);
+	assert.strictEqual(r.turret, null, 'a losing plan must not reserve pad charge');
+	assert.strictEqual(r.waitTries, 1);
+	assert.ok(r.readyStep >= step + GravityBot.CAREER_SIT_GAP, 'the company must sit the gap');
+	assert.ok(r.career.pads[r.career.at].reservedKwh === 0, 'no energy is claimed while sitting');
+	/* after the budget it takes the least bad shot anyway */
+	for (let i = 1; i < GravityBot.CAREER_SIT_TRIES; i++) {
+		assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, RATE, step + i), false);
+	}
+	assert.strictEqual(r.waitTries, GravityBot.CAREER_SIT_TRIES, 'the sit budget must count up');
+	assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, RATE, step + 100), false);
+	assert.ok(r.turret, 'the company never stopped waiting');
+	assert.strictEqual(r.waitTries, 0, 'a taken shot resets the patience');
 });
 
 console.log(failures === 0 ? 'CAREER BOT BENCH OK' : 'CAREER BOT BENCH FAILED ' + failures);

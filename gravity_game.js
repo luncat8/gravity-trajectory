@@ -98,7 +98,10 @@
 	const SHOT_FORM = /^([pm])(\d{1,2})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})(?:\.([0-9a-z]{1,4}))?$/;
 	const BURN_FORM = /^b([0-9a-z]{1,4})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})$/;
 	const END_FORM = /^(\d{1,2})\.(\d{1,9})$/;
-	const estScratch = new Int32Array(OrbitWorld.PLANETS);
+		const estScratch = new Int32Array(OrbitWorld.PLANETS);
+	/* launch book: saved career trajectories and the visit log each one keeps */
+	const BOOK_MAX = 10;
+	const BOOK_LOG_MAX = 64;
 
 	function angleUnits(angle) {
 		return (Math.round(angle / ANGLE_UNIT) % ANGLE_STEPS + ANGLE_STEPS) % ANGLE_STEPS;
@@ -356,19 +359,24 @@
 		return ledger.shotGain;
 	}
 
-	/* exact predicted harvest along a traced probe without mutating the live market */
-	function estimateProfit(market, baseStep, sim) {
-		const count = sim.predLogCount;
+	/* exact predicted harvest of one visit log without mutating the live market */
+	function estimateProfitLog(market, baseStep, planets, steps, count) {
 		if (count === 0) return 0;
 		estScratch.set(market.lastVisitStep);
 		let total = 0;
 		for (let i = 0; i < count; i++) {
-			const planet = sim.predLogPlanet[i];
-			const at = baseStep + sim.predLogStep[i];
+			const planet = planets[i];
+			const at = baseStep + steps[i];
 			total += planetProfitAtStep(estScratch[planet], at);
 			estScratch[planet] = at;
 		}
 		return total;
+	}
+
+	/* exact predicted harvest along a traced probe */
+	function estimateProfit(market, baseStep, sim) {
+		return estimateProfitLog(market, baseStep, sim.predLogPlanet, sim.predLogStep,
+			sim.predLogCount);
 	}
 
 	/* --- career ------------------------------------------------------------ */
@@ -676,6 +684,7 @@
 			at: -1,
 			stranded: false,
 			commercialPlanet: -1,
+			launchBook: createLaunchBook(),
 			pads: pads,
 			launchPads: launchPads,
 			padCount: 0,
@@ -913,6 +922,7 @@
 		career.at = career.hq;
 		career.stranded = false;
 		career.commercialPlanet = -1;
+		resetLaunchBook(career.launchBook);
 		career.ship.hold = grant.ship.hold;
 		career.ship.engine = grant.ship.engine;
 		career.ship.tank = grant.ship.tank;
@@ -1302,6 +1312,114 @@
 		return true;
 	}
 
+	/* --- launch book --------------------------------------------------- */
+
+	/*
+	 * A launch book keeps career trajectories that were already traced, so a
+	 * planner can re-fly one instead of searching for it again. Each entry
+	 * stores the aim in engine units plus the visit log of its trace: pricing
+	 * that log at the live market gives the harvest exactly, so a stored shot
+	 * scores like a fresh trace without running one. The list is per career, so
+	 * the player and every rival company remember their own finds.
+	 */
+
+	/* the world a trace was made in: a different tag makes stored paths stale */
+	function launchBookTag(fieldStatic, gravityScale, forceScale, strength, count) {
+		let tag = fieldStatic ? 0x9e3779b9 : 0x85ebca6b;
+		for (let i = 0; i < count; i++) {
+			tag = Math.imul(tag ^ (Math.round(strength[i] * 100) + i * 31), 0x01000193) >>> 0;
+		}
+		tag = Math.imul(tag ^ Math.round(gravityScale * 100), 0x01000193) >>> 0;
+		return Math.imul(tag ^ Math.round(forceScale * 100), 0x01000193) >>> 0;
+	}
+
+	function createLaunchBook() {
+		return { entries: [], tag: 0, version: 0 };
+	}
+
+	function resetLaunchBook(book) {
+		book.entries.length = 0;
+		book.tag = 0;
+		book.version += 1;
+	}
+
+	function bookReady(book, tag) {
+		return book.tag === tag;
+	}
+
+	/* planets a trace entered as a bit mask: two shots with one mask harvest
+	 * the same systems, so only the faster arrival is worth keeping */
+	function launchMask(planets, count) {
+		let mask = 0;
+		for (let i = 0; i < count; i++) mask |= 1 << planets[i];
+		return mask;
+	}
+
+	function findLaunchEntry(book, origin, body, mask) {
+		for (let i = 0; i < book.entries.length; i++) {
+			const entry = book.entries[i];
+			if (entry.origin === origin && entry.body === body && entry.mask === mask) return i;
+		}
+		return -1;
+	}
+
+	/*
+	 * The weakest score leaves first; rows from other planets go before the
+	 * current one, so a company that moved on does not starve the pad it stands
+	 * on. `origin` is the trace being saved.
+	 */
+	function pruneLaunchBook(book, origin) {
+		while (book.entries.length > BOOK_MAX) {
+			let worst = -1;
+			let fallback = 0;
+			for (let i = 0; i < book.entries.length; i++) {
+				const entry = book.entries[i];
+				if (entry.score < book.entries[fallback].score) fallback = i;
+				if (entry.origin === origin) continue;
+				if (worst < 0 || entry.score < book.entries[worst].score) worst = i;
+			}
+			book.entries.splice(worst < 0 ? fallback : worst, 1);
+		}
+	}
+
+	/*
+	 * Save one finished trace; `trace` carries origin, angleU, speedU, body,
+	 * steps, time, length, score and the visit log arrays. Same start planet,
+	 * landing and visited set: the slower arrival never replaces the faster one.
+	 */
+	function recordLaunch(book, tag, trace) {
+		if (book.tag !== tag) {
+			resetLaunchBook(book);
+			book.tag = tag;
+		}
+		const count = trace.logCount < BOOK_LOG_MAX ? trace.logCount : BOOK_LOG_MAX;
+		const mask = launchMask(trace.logPlanet, count);
+		const at = findLaunchEntry(book, trace.origin, trace.body, mask);
+		if (at >= 0 && book.entries[at].steps <= trace.steps) return book.entries[at];
+		const entry = at >= 0 ? book.entries[at] : null;
+		const out = entry || { logPlanet: new Int32Array(BOOK_LOG_MAX), logStep: new Int32Array(BOOK_LOG_MAX) };
+		out.origin = trace.origin;
+		out.angleU = trace.angleU;
+		out.speedU = trace.speedU;
+		out.body = trace.body;
+		out.steps = trace.steps;
+		out.time = trace.time;
+		out.length = trace.length;
+		out.mask = mask;
+		out.score = trace.score;
+		out.logCount = count;
+		for (let i = 0; i < count; i++) {
+			out.logPlanet[i] = trace.logPlanet[i];
+			out.logStep[i] = trace.logStep[i];
+		}
+		if (entry === null) {
+			book.entries.push(out);
+			pruneLaunchBook(book, trace.origin);
+		}
+		book.version += 1;
+		return out;
+	}
+
 	/* > 0 when actor `a` beats `b` under `ruleName` */
 	function compareScores(ruleName, a, b) {
 		if (ruleName === RULE_ROUTE) {
@@ -1331,7 +1449,9 @@
 		createBurn, encodeBurn, createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
 		initSteps, createMarket, resetMarket, planetProfit,
 		createLedger, resetLedger, beginFlight, stepHarvest, endFlight,
-		estimateProfit, compareScores,
+		estimateProfit, estimateProfitLog, compareScores,
+		BOOK_MAX, BOOK_LOG_MAX, createLaunchBook, resetLaunchBook, launchBookTag, bookReady,
+		launchMask, recordLaunch, pruneLaunchBook,
 		CAREER, BOARD_SIZE, COMPETE_SLOT, CARGO_TONS,
 		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,

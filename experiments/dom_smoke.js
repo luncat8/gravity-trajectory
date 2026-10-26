@@ -1211,7 +1211,7 @@ careerEnv.runFrames(2, 16.0);
 const clampEnergy = OrbitTech.launchEnergy(career.ship.mass,
 	career.pads[career.hq].catapult, kScene.aimState().speed);
 check(!kui.get('launch').disabled &&
-	kui.get('launch').textContent === 'launch, ' + clampEnergy.toFixed(2) + ' kW',
+	kui.get('launch').textContent === 'launch, ' + clampEnergy.toFixed(2) + ' kWh',
 	'a drag past the pad cap must clamp to a firable shot: ' + kui.get('launch').textContent);
 check(kui.get('aimReadout').textContent.startsWith(Math.round(limit) + ' px/s ') &&
 	kui.get('aimReadout').textContent.includes('max ' + Math.round(limit)),
@@ -1323,7 +1323,7 @@ careerEnv.dragAim(career.hq, landingShot, CAREER_TEST_SPEED);
 careerEnv.runFrames(2, 16.0);
 const ownedEnergy = OrbitTech.launchEnergy(career.ship.mass,
 	career.pads[career.hq].catapult, kScene.aimState().speed);
-const ownedLabel = 'launch, ' + ownedEnergy.toFixed(2) + ' kW';
+const ownedLabel = 'launch, ' + ownedEnergy.toFixed(2) + ' kWh';
 check(!kui.get('launch').disabled && kui.get('launch').textContent === ownedLabel,
 	'career launch label: ' + kui.get('launch').textContent);
 const charge0 = career.pads[career.hq].chargeKwh;
@@ -1703,7 +1703,7 @@ check(!bCareer.stranded && bCareer.pads[bCareer.at].catapult.id === 'EMC-1' && b
 	'pad block build did not unstrand: ' + bCareer.padCount);
 buildEnv.runFrames(2, 16.0);
 check(bui.get('launch').textContent === 'launch, ' + OrbitTech.launchEnergy(bCareer.ship.mass,
-	bCareer.pads[bCareer.at].catapult, bScene.aimState().speed).toFixed(2) + ' kW',
+	bCareer.pads[bCareer.at].catapult, bScene.aimState().speed).toFixed(2) + ' kWh',
 	'new pad launch state: ' + bui.get('launch').textContent);
 const secondAngle = landingAngle(bCargo, bCareer.at, CAREER_TEST_SPEED);
 check(secondAngle !== null, 'build env: no second flight from the new pad');
@@ -2603,7 +2603,7 @@ function protoOf(career, family, id) {
 		cui.get('launchBuild').hidden && !cui.get('launchCommercial').hidden &&
 		cui.get('launchEvac').hidden &&
 		cui.get('launch').textContent === 'launch, ' + OrbitTech.launchEnergy(cCareer.ship.mass,
-			cCareer.pads[targetPlanet].catapult, cScene.aimState().speed).toFixed(2) + ' kW',
+			cCareer.pads[targetPlanet].catapult, cScene.aimState().speed).toFixed(2) + ' kWh',
 		'launchBuild unstrands ship; commercial stays available beside #launch');
 
 	/* lost in space hides build/commercial and leaves #launchEvac to go home */
@@ -2687,6 +2687,106 @@ function protoOf(career, family, id) {
 		'so slow machines stretch the 2 s · landed flights leave no trail');
 	console.log('0.4.22 verified: launch label shows pad energy or fallback price · ' +
 		'career turret and scene pulse run on in-game time and hold still when paused');
+}
+
+/* --- 0.4.23: launch list, career profit helpers, kWh label --- */
+{
+	const lEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
+	lEnv.runFrames(2, 16.0);
+	const lui = lEnv.elements;
+	const lScene = lEnv.context.GravityScene;
+	const lGame = lEnv.context.GravityGame;
+	const lSim = lScene.sim;
+	const lSimCtor = lEnv.context.GravitySim;
+	const lCareer = lScene.career;
+	const lBox = lui.get('careerBox');
+	check(lui.get('careerLaunchList').innerHTML.includes('launch list') &&
+		lui.get('careerLaunchList').innerHTML.includes('empty'),
+		'a fresh career lists nothing: ' + lui.get('careerLaunchList').innerHTML);
+	check(!lui.get('helperProfit').hidden && !lui.get('helperEmc').hidden &&
+		lui.get('helperProfit').textContent === 'best profit' &&
+		lui.get('helperEmc').textContent === 'profit + EMC',
+		'career shows the two profit helpers: ' + lui.get('helperProfit').textContent +
+			' / ' + lui.get('helperEmc').textContent);
+	check(!lui.get('helperProfit').disabled, 'the profit helper is ready on a landed ship');
+
+	/* an armed preview that lands joins the list */
+	let lAngle = null;
+	for (let a = 0; a < 72 && lAngle === null; a++) {
+		const angle = a / 72 * Math.PI * 2;
+		lSim.predict(lCareer.hq, angle, CAREER_TEST_SPEED);
+		if (lSim.predReason === lSimCtor.END_IMPACT && lSim.predBody !== lCareer.hq) lAngle = angle;
+	}
+	check(lAngle !== null, 'no landing shot for the launch list fixture');
+	lEnv.dragAim(lCareer.hq, lAngle, CAREER_TEST_SPEED);
+	lEnv.runFrames(4, 16.0);
+	check(lCareer.launchBook.entries.length === 1,
+		'the armed preview must be saved: ' + lCareer.launchBook.entries.length);
+	const savedAim = lScene.aimState();
+	const listed = lui.get('careerLaunchList').innerHTML;
+	check(/data-act="book" data-entry="\d+"/.test(listed),
+		'a saved shot needs a use button: ' + listed);
+	check(/careerKind">(loop|EMC|pad)</.test(listed), 'a saved shot needs a kind tag: ' + listed);
+	const entryTag = /data-act="book" data-entry="(\d+)"/.exec(listed);
+
+	/* a different aim, then one click on the list restores the saved one */
+	lEnv.dragAim(lCareer.hq, (lAngle + 0.35) % (Math.PI * 2), CAREER_TEST_SPEED);
+	lEnv.runFrames(2, 16.0);
+	lEnv.fireElement(lBox, 'click', { target: { dataset: { act: 'book', entry: entryTag[1] } } });
+	lEnv.runFrames(2, 16.0);
+	const reAim = lScene.aimState();
+	check(Math.abs(reAim.angle - savedAim.angle) < 1e-9 &&
+		Math.abs(reAim.speed - savedAim.speed) < 1e-9,
+		'the list must restore the saved aim: ' + reAim.angle + ' vs ' + savedAim.angle);
+	check(lui.get('careerMsg').textContent.startsWith('armed from list'),
+		'the list states what it armed: ' + lui.get('careerMsg').textContent);
+	check(lui.get('launch').textContent.endsWith('kWh'),
+		'the launch button labels pad energy in kWh: ' + lui.get('launch').textContent);
+
+	/* best profit: a sliced scan that leaves an armed money shot behind */
+	lEnv.click('helperProfit');
+	let lGuard = 0;
+	for (; lui.get('helperStop').hidden !== true && lGuard < 400; lGuard++) lEnv.runFrames(1, 16.0);
+	lEnv.runFrames(2, 16.0);
+	check(lGuard < 400 && !lui.get('launch').disabled,
+		'best profit must arm a fireable shot (frames ' + lGuard + ')');
+	check(lui.get('careerMsg').textContent.startsWith('best money shot'),
+		'best profit reports its find: ' + lui.get('careerMsg').textContent);
+	check(lCareer.launchBook.entries.length > 1,
+		'a profit scan must save what it traced: ' + lCareer.launchBook.entries.length);
+
+	/* profit + EMC: the armed shot lands where a starter EMC can be built */
+	lEnv.click('helperEmc');
+	lGuard = 0;
+	for (; lui.get('helperStop').hidden !== true && lGuard < 500; lGuard++) lEnv.runFrames(1, 16.0);
+	lEnv.runFrames(2, 16.0);
+	const emcAim = lScene.aimState();
+	lSim.predict(lCareer.hq, emcAim.angle, emcAim.speed);
+	check(lSim.predReason === lSimCtor.END_IMPACT && lSim.predBody >= 0 &&
+		lCareer.pads[lSim.predBody].catapult === null && lSim.predBody !== lCareer.hq,
+		'profit + EMC must land on a padless planet: ' + lSim.predBody);
+	/* the build is paid after landing: purse + harvest − the EMC fee must cover it */
+	const emcCost = lCareer.cheat === lGame.CHEAT_COMMUNISM ? 0
+		: lEnv.context.OrbitTech.CATAPULTS[0].buildCost;
+	const emcCash = lCareer.ledger.purse +
+		lGame.estimateProfit(lScene.game.market, lScene.game.clockSteps, lSim) -
+		lGame.launchFee(lCareer, lCareer.hq, emcAim.speed);
+	check(emcCash + 1e-9 >= emcCost,
+		'the EMC helper must keep the build affordable: purse + harvest ' + emcCash.toFixed(2) +
+			' vs ' + emcCost.toFixed(2));
+
+	/* moving gravity bodies switch the list off, it comes back with static planets */
+	lEnv.choose('srcPorts');
+	lEnv.runFrames(2, 16.0);
+	const movingList = lui.get('careerLaunchList').innerHTML;
+	check(movingList.includes('off · gravity bodies move'),
+		'a moving field must switch the launch list off: ' + movingList);
+	lEnv.choose('srcPlanets');
+	lEnv.runFrames(2, 16.0);
+	check(/data-act="book"/.test(lui.get('careerLaunchList').innerHTML),
+		'the list returns with the static field: ' + lui.get('careerLaunchList').innerHTML);
+	console.log('0.4.23 verified: launch list saves found shots (loops and other-owner EMC ' +
+		'landings), best profit / profit + EMC helpers, kWh launch label');
 }
 
 console.log('paint calls', {

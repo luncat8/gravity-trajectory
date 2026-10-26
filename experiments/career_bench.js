@@ -1490,5 +1490,112 @@ check('queued launch reserves pad energy: the ceiling drops until it fires or ca
 	assert.strictEqual(commercial.reservedKwh, 0);
 });
 
+/* --- launch book -------------------------------------------------------- */
+
+/* a trace shaped like the ones recordLaunch stores (units, not radians) */
+function bookTrace(origin, body, speedU, planets, logSteps, score) {
+	const logPlanet = Int32Array.from(planets);
+	const logStep = Int32Array.from(logSteps);
+	const steps = logSteps[logSteps.length - 1];
+	return {
+		origin: origin, body: body, angleU: 11, speedU: speedU,
+		steps: steps, time: steps * GravitySim.DT, length: steps, score: score,
+		logPlanet: logPlanet, logStep: logStep, logCount: logStep.length
+	};
+}
+
+check('launch book: same start, landing and visited set keep only the faster arrival', () => {
+	const book = GravityGame.createLaunchBook();
+	const tag = 7;
+	GravityGame.recordLaunch(book, tag, bookTrace(3, 5, 30, [5, 9], [400, 900], 2));
+	const kept = GravityGame.recordLaunch(book, tag, bookTrace(3, 5, 31, [5, 9], [300, 800], 2));
+	assert.strictEqual(book.entries.length, 1);
+	assert.strictEqual(kept.steps, 800, 'the faster arrival wins');
+	assert.strictEqual(kept.speedU, 31);
+	const slower = GravityGame.recordLaunch(book, tag, bookTrace(3, 5, 32, [5, 9], [500, 1000], 2));
+	assert.strictEqual(slower.steps, 800, 'a slower arrival must not replace the faster one');
+	assert.strictEqual(slower.speedU, 31);
+	assert.strictEqual(book.entries.length, 1);
+	/* another visited set is another harvest, so it earns its own row */
+	GravityGame.recordLaunch(book, tag, bookTrace(3, 5, 33, [5, 9, 11], [500, 1000, 1200], 1));
+	assert.strictEqual(book.entries.length, 2);
+	/* and another landing from the same planets is a different row too */
+	GravityGame.recordLaunch(book, tag, bookTrace(3, 6, 34, [5, 9], [400, 900], 1));
+	assert.strictEqual(book.entries.length, 3);
+});
+
+check('launch book: capped, weakest score leaves first, and a new world clears the list', () => {
+	const book = GravityGame.createLaunchBook();
+	const tag = 3;
+	for (let i = 0; i < GravityGame.BOOK_MAX + 2; i++) {
+		GravityGame.recordLaunch(book, tag, bookTrace(1, i, 40, [i], [100], i));
+	}
+	assert.strictEqual(book.entries.length, GravityGame.BOOK_MAX);
+	let weakest = Infinity;
+	for (let i = 0; i < book.entries.length; i++) weakest = Math.min(weakest, book.entries[i].score);
+	assert.ok(weakest >= 2, 'the two weakest scores must have left: ' + weakest);
+	assert.ok(GravityGame.bookReady(book, tag));
+	assert.ok(!GravityGame.bookReady(book, tag + 1), 'another field makes the list stale');
+	const version = book.version;
+	GravityGame.recordLaunch(book, tag + 1, bookTrace(2, 4, 41, [4], [120], 5));
+	assert.strictEqual(book.entries.length, 1, 'a new field starts a clean list');
+	assert.ok(book.version > version, 'the page must see the list changed');
+	assert.ok(GravityGame.bookReady(book, tag + 1));
+	GravityGame.resetLaunchBook(book);
+	assert.strictEqual(book.entries.length, 0);
+});
+
+check('launch book: a stored visit log re-prices exactly at the live market', () => {
+	const market = GravityGame.createMarket();
+	const planets = Int32Array.from([4, 9]);
+	const steps = Int32Array.from([100, 700]);
+	const want = GravityGame.planetProfit(market, 4, 100) + GravityGame.planetProfit(market, 9, 700);
+	const got = GravityGame.estimateProfitLog(market, 0, planets, steps, 2);
+	assert.ok(Math.abs(got - want) < 1e-12, got + ' vs ' + want);
+	/* a planet entered twice inside one trace pays the second time from the first */
+	const twice = Int32Array.from([4, 4]);
+	const twoSteps = Int32Array.from([100, 900]);
+	market.lastVisitStep[4] = 100;
+	const second = GravityGame.planetProfit(market, 4, 900);
+	market.lastVisitStep[4] = -GravityGame.initSteps();
+	const repeat = GravityGame.planetProfit(market, 4, 100) + second;
+	const repeatGot = GravityGame.estimateProfitLog(market, 0, twice, twoSteps, 2);
+	assert.ok(Math.abs(repeatGot - repeat) < 1e-12, repeatGot + ' vs ' + repeat);
+	assert.strictEqual(GravityGame.estimateProfitLog(market, 0, planets, steps, 0), 0);
+});
+
+check('launch book: rows from other planets leave before the current pad', () => {
+	const book = GravityGame.createLaunchBook();
+	const tag = 9;
+	/* fill the book from a planet the ship has left, with strong scores */
+	for (let i = 0; i < GravityGame.BOOK_MAX; i++) {
+		GravityGame.recordLaunch(book, tag, bookTrace(4, 10 + i, 40, [10 + i], [200], 9));
+	}
+	/* a weak find from the planet under the ship still earns its row */
+	GravityGame.recordLaunch(book, tag, bookTrace(7, 3, 41, [3], [150], 0.5));
+	assert.strictEqual(book.entries.length, GravityGame.BOOK_MAX);
+	let here = 0;
+	let there = 0;
+	for (let i = 0; i < book.entries.length; i++) {
+		if (book.entries[i].origin === 7) here += 1;
+		else there += 1;
+	}
+	assert.strictEqual(here, 1, 'the current pad must keep its row');
+	assert.strictEqual(there, GravityGame.BOOK_MAX - 1, 'a row from another planet had to leave');
+});
+
+check('launch book: every career owns one and a restart clears it', () => {
+	const trade = new Sim(42);
+	trade.advanceTo(420);
+	const career = GravityGame.createCareer(GravityGame.createLedger());
+	GravityGame.startCareer(career, new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H),
+		42, trade, null);
+	GravityGame.recordLaunch(career.launchBook, 5,
+		bookTrace(career.hq, career.hq, 40, [career.hq], [100], 1));
+	assert.strictEqual(career.launchBook.entries.length, 1);
+	GravityGame.resetCareer(career, 42, trade, null);
+	assert.strictEqual(career.launchBook.entries.length, 0, 'a restarted career starts empty');
+});
+
 console.log(failures === 0 ? 'CAREER BENCH OK' : 'CAREER BENCH FAILED ' + failures);
 process.exit(failures === 0 ? 0 : 1);
