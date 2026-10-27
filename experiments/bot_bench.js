@@ -4,8 +4,8 @@
  * 1. per-planet growing profit curve, estimateProfit === stepHarvest parity,
  *    and 4-archetype balance sweep (lazy/casual go broke; blind loses to
  *    profit-aware rivals; smart wins by routing near long-unvisited planets)
- * 2. difficulty ladder across tour and money; route checks same-start
- *    prefix monotonicity and aggregate search gains, plus rivalLink replay
+ * 2. uniform-field difficulty ladder across rules; route checks same-start
+ *    prefix monotonicity and aggregate search gains; seeded rivalLink replay
  * 3. sliced stepJob vs synchronous chooseSync exact identity + zero allocation
  * 4. decision latency & per-slice wall budget
  * 5. contested race cross-cadence replay invariance (144 Hz, jitter, x16, skip)
@@ -301,10 +301,13 @@ function benchScoreSummary() {
 
 /* 2. bot difficulty ladder across rules + rivalLink replay verification */
 function benchLadder() {
-	function runSoloBot(seed, ruleName, level) {
+	function runSoloBot(seed, ruleName, level, seededField) {
 		const { trade } = buildStaticWorld(seed);
 		const bot = new GravityBot(Sim.WORLD_W, Sim.WORLD_H);
 		bot.attachWorld(trade);
+		if (seededField) {
+			for (let p = 0; p < PLANETS; p++) bot.strength[p] = GravityGame.planetGravity(seed, p);
+		}
 		bot.reset(seed, ruleName, level);
 		const market = GravityGame.createMarket();
 		const capSteps = GravityGame.RULES[ruleName].capSteps;
@@ -346,9 +349,10 @@ function benchLadder() {
 					' H:' + hard.best.visited + '/$' + hard.best.purse.toFixed(1));
 			}
 
-			/* verify rivalLink replays cleanly on seed 7 */
+			/* replay against the GUI's seeded field, independent of the balance control */
 			if (seed === 7) {
-				const page = loadPage({ hash: '#' + normal.link });
+				const seeded = runSoloBot(seed, ruleName, GravityGame.BOT_NORMAL, true);
+				const page = loadPage({ hash: '#' + seeded.link });
 				page.runFrames(1, 16.7);
 				page.click('replaySkip');
 				page.runFrames(1, 16.7);

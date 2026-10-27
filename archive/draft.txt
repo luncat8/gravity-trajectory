@@ -102,4 +102,56 @@ if planet selected and some best route already recorded - then improve it by onl
 
 start each adjustments after user click button try with random - so next press will not calculate same attempts again.
 
-## if not yet - implement url parameters to run specific game mode to fast start visual test
+## url parameters to run specific game mode to fast start visual test
+
+
+
+## default game mode career. save last used mode
+
+## possible change number of players, planets
+
+add buttons to change number of players
++- near score in top left panel
+
+
+add number input  to change number of planets
+in system visited x / 26
+13 is new default for career. 26 - default for other modes.
+increase - add random
+decrease - remove random without refund, keep 1st HQ of each player
+
+## balance plan 
+task to balance career also against 12 planets
+i think speed of grow profit of visit should be faster on smaller planets number. so 13 planets will be 2x more regeneration of profit per time then 26 planets.
+and this probably enough to keep balance.
+
+
+hard bots need give more search time then easy. probably measure in startup and split available time 
+
+
+## random gravity of planets -1...+5
+but 1st HQ is 1
+
+slider G-field increase max to 9x
+
+## HTML GUI
+remove abort button in career
+
+remove line: seed, rate.
+move seed to url.
+
+move "drag from pad to" to help. split help by all and specific to game mode. it is already have some - so deduplicate help.
+
+
+1
+in in Help replace "selected mode" with actually name of current mode
+
+2
+prevent bot landing on planet where gravity and no enough EMC or no cost to build or no profit or other reason prevent to launch from it.
+2b
+also add this to auto-helpers and aim tooltip color as warning. greenish - profit, current - loose, reddish - cant launch from destination
+
+3
+calibrate gravity max and random. so from 10 free planets 2-4 are not possible to launch until upgrade EMC.
+
+

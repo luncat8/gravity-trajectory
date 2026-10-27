@@ -238,7 +238,7 @@ async function scoreboardStable(page) {
 				return {
 					visible: !box.hidden,
 					run: !document.getElementById('runBox').hidden,
-					rivals: document.getElementById('rivalGroup').hidden,
+					rivals: !document.getElementById('rivalGroup').hidden,
 					scrollWidth: box.scrollWidth,
 					width: rect.width,
 					inside: rect.left >= hud.left - 1 && rect.right <= hud.right + 1 &&
@@ -250,6 +250,33 @@ async function scoreboardStable(page) {
 					leftScrolls: left.scrollHeight > left.clientHeight
 				};
 			});
+			await page.evaluate(() => GravityScene.setHelpOpen(true));
+			await new Promise(resolve => setTimeout(resolve, 200));
+			const helpLayout = await page.evaluate(() => {
+				const drawer = document.getElementById('helpDrawer');
+				const bounds = drawer.getBoundingClientRect();
+				return {
+					open: drawer.classList.contains('open'),
+					common: document.getElementById('helpControls').textContent,
+					mode: document.getElementById('helpModeControls').textContent,
+					left: bounds.left, right: bounds.right, bottom: bounds.bottom,
+					overflow: drawer.scrollWidth - drawer.clientWidth,
+					clearHidden: document.getElementById('clear').hidden &&
+						getComputedStyle(document.getElementById('clear')).display === 'none' &&
+						document.getElementById('clear').getBoundingClientRect().width === 0,
+					seedRow: !!document.getElementById('gameSeed'),
+					hint: !!document.getElementById('cargoHint'),
+					seed: new URL(location.href).searchParams.get('seed')
+				};
+			});
+			await page.evaluate(() => GravityScene.setHelpOpen(false));
+			check(helpLayout.open && helpLayout.common.includes('Drag from a planet or pad') &&
+				helpLayout.mode.includes('Space / P') && helpLayout.clearHidden &&
+				!helpLayout.seedRow && !helpLayout.hint && helpLayout.seed === '42',
+				label + ': help/seed/abort UI ' + JSON.stringify(helpLayout));
+			check(helpLayout.left >= 0 && helpLayout.right <= width &&
+				helpLayout.bottom <= height && helpLayout.overflow <= 1,
+				label + ': help drawer overflows ' + JSON.stringify(helpLayout));
 			await page.click('#careerBox [data-act="careerTab"][data-tab="science"]');
 			const sciLayout = [];
 			for (const family of ['engine', 'catapult', 'tank', 'battery']) {
@@ -359,6 +386,21 @@ async function scoreboardStable(page) {
 			check(afterScroll.tradeVisible, label + ': scrolling leftHud column does not reveal tradeHud');
 			check(afterFold.folded && afterFold.careerH <= 64 && afterFold.tradePulledUp,
 				label + ': folding careerHud failed ' + JSON.stringify(afterFold));
+			if (width === 1280 && height === 800) {
+				const seed = await page.evaluate(() => {
+					Math.random = () => 0.123456;
+					document.getElementById('gameNewSeed').click();
+					return new URL(location.href).searchParams.get('seed');
+				});
+				check(seed && seed !== '42', label + ': new seed did not update the address');
+				await page.reload();
+				const restored = await page.evaluate(() => ({
+					seed: String(GravityScene.game.seed), mode: GravityScene.playMode(),
+					hqGravity: GravityScene.sim.strength[GravityScene.career.hq]
+				}));
+				check(restored.seed === seed && restored.mode === 'career' && restored.hqGravity === 1,
+					label + ': seeded URL reload ' + JSON.stringify(restored));
+			}
 			console.log(label, 'foot', Math.round(layout.footTop) + '..' + Math.round(layout.footBottom),
 				'| trade', Math.round(layout.tradeTop), '| shop', drawer.buttons, 'buttons');
 			await page.close();

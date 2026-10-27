@@ -32,7 +32,7 @@
 	const SPEED_MAX = 320;
 	const GRIP_MAX = 240;
 	const STRENGTH_MIN = -2;
-	const STRENGTH_MAX = 2;
+	const STRENGTH_MAX = 5;
 	const HORIZON = 60;
 	const FLY_HORIZON = 240;
 	const MAX_STEPS = 7350;
@@ -916,10 +916,6 @@
 			guard += 1;
 		}
 		if (this.acc >= DT) this.acc = 0;
-	};
-
-	GravitySim.prototype.abort = function () {
-		if (this.status === STATUS_FLYING) this.finish(END_ABORT, NO_BODY);
 	};
 
 	GravitySim.prototype.clear = function () {

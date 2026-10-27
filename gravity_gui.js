@@ -192,8 +192,10 @@
 	const REPEL_DASH = [0, 0];
 	const SYS_DASH = [0, 0];
 	const LOCK_DASH = [0, 0];
-	/* Help shows only the selected rule: goal, score, and the one limit that
-	 * changes how that score is earned. Everything else stays out of the drawer. */
+	const COMMON_HELP = 'Drag from a planet or pad to aim; hold Shift for 1/20 fine control. ' +
+		'Release to preview; in flight modes, Enter or launch fires and landing stages the next shot. ' +
+		'Esc cancels an aim or queued launch. Planet gravity is seeded from −1 to +5; ' +
+		'negative gravity repels. The seed is in the URL.';
 	const RULE_HELP = {
 		lab: {
 			name: 'lab',
@@ -201,41 +203,43 @@
 			score: 'No score.',
 			detailLabel: '',
 			detail: '',
-			controls: 'Drag from a planet to aim · Shift = fine · Enter = launch'
+			controls: ''
 		},
 		tour: {
 			name: 'tour',
-			goal: 'Enter all ' + PLANETS + ' planet systems.',
+			goal: 'Enter every planet system.',
 			score: 'Most systems. Ties: fewer launches, less flight time, higher purse.',
 			detailLabel: 'Limit',
 			detail: '120 s per flight. Launch costs 1.00; entering a system collects its shown profit.',
-			controls: 'Drag from a planet to aim · Shift = fine · Enter = launch'
+			controls: ''
 		},
 		route: {
 			name: 'route · longest trajectory',
 			goal: 'Plan one trajectory with the greatest distance.',
 			score: 'Trajectory length only, until it lands or leaves the map. Systems and purse do not score.',
 			detailLabel: 'Start',
-			detail: 'Choose any free planet. A planet claimed by another player cannot be selected. No launch is needed—the finished traced plan is your entry.',
-			controls: 'Drag from a free planet to plan · Shift = fine · use best restores the longest finished plan'
+			detail: 'Choose an unclaimed planet. No launch is needed—the finished traced plan is your entry.',
+			controls: 'Use best restores your longest finished plan.'
 		},
 		money: {
 			name: 'money',
-			goal: 'Finish the 10-launch contract with the largest purse.',
+			goal: 'Finish the 10-launch contract.',
 			score: 'Highest purse. Ties: more systems, fewer launches, less flight time.',
 			detailLabel: 'Money',
 			detail: 'Launch costs 1.00. Entering a system collects its shown profit; profit grows while unvisited, easing toward +3.00 the longer it waits.',
-			controls: 'Drag from a planet to aim · Shift = fine · Enter = launch'
+			controls: ''
 		},
 		career: {
 			name: 'career · catapult network',
-			goal: 'Build a catapult on every planet; rival players build theirs.',
-			score: 'Purse. The career ends complete with all ' + PLANETS + ' catapults, or broke.',
+			goal: 'Build a catapult on every active planet; rival players build theirs.',
+			score: 'Purse. The run ends on completion or when you go broke.',
 			detailLabel: 'Network',
-			detail: 'Every planet carries an EMC, and the best rail there claims it. Any EMC pad you fire from spends its battery charge on the shot - your own, or a rival\'s pad you launch from as a guest (that rail also charges its usage tax) - and whoever queued the launch first reserved the energy; the neutral commercial EMC-1 standing on every planet charges a flat ' +
-				GravityGame.CAREER.commercialFee.toFixed(2) + ' and can be picked on any planet (it never claims it or blocks building yours). Landing without your own EMC is no dead end — launch commercial, build, or evacuate to HQ for ' +
-				GravityGame.CAREER.evacFee.toFixed(2) + '. Every EMC barrel turns one full circle every 2…5 s of world time: your launch waits for the barrel to line up with the aim, then fires by itself (a click or Esc cancels the queue). The career lives on the world clock - pause it and the barrels, pads and rivals hold still (setting: pause on landing) so you can aim in peace. An impulse engine and fuel tank let you pause in flight (Space / P or drag from the ship) for mid-course burns.',
-			controls: 'Drag from an EMC to aim · launch queues the shot until the barrel aligns (2…5 s a turn) · in flight: Space / P or drag ship to burn · Shift = fine'
+			detail: 'Start at your own HQ (g = 1). Your EMC claims its planet; each planet also offers a commercial EMC-1 for ' +
+				GravityGame.CAREER.commercialFee.toFixed(2) + ' per launch. An owned or rival pad spends battery charge; guests also pay the owner. ' +
+				'A queued shot reserves its energy and fires when the barrel aligns (one turn every 2…5 s). ' +
+				'The career runs on the world clock; pause on landing holds it still. Evacuation to HQ costs ' +
+				GravityGame.CAREER.evacFee.toFixed(2) + '.',
+			controls: 'Wait charges pads. With an impulse engine and fuel, use Space / P or drag the ship in flight to aim a burn.'
 		}
 	};
 
@@ -247,6 +251,7 @@
 	const predHarvestMask = new Uint8Array(PLANETS);
 
 	/* per-mode strength kept across switches; port strength keyed by parent planet */
+	const planetBaseStrength = new Float64Array(PLANETS).fill(1);
 	const planetStrength = new Float64Array(PLANETS).fill(1);
 	const portPlanetStrength = new Float64Array(PLANETS).fill(1);
 	const portStrength = new Float64Array(OrbitSim.PORTS).fill(1);
@@ -265,7 +270,7 @@
 	function fillPorts(t, outX, outY, count) {
 		for (let p = 0; p < count; p++) {
 			const planet = fieldPortPlanet[p];
-			portStrength[p] = portPlanetStrength[planet];
+			portStrength[p] = planetMask[planet] ? portPlanetStrength[planet] : 0;
 			const angle = tradeSim.orbitPhase[planet] + tradeSim.orbitOmega[planet] * t;
 			const rx = tradeSim.orbitRX[planet] * Math.cos(angle);
 			const ry = tradeSim.orbitRY[planet] * Math.sin(angle);
@@ -296,7 +301,7 @@
 			const planet = tradeSim.portPlanet[p];
 			if (fieldPortPlanet[p] !== planet) {
 				fieldPortPlanet[p] = planet;
-				portStrength[p] = portPlanetStrength[planet];
+				portStrength[p] = planetMask[planet] ? portPlanetStrength[planet] : 0;
 				changed = true;
 			}
 		}
@@ -383,7 +388,7 @@
 	const helpDetailLabelEl = $('helpDetailLabel');
 	const helpDetailEl = $('helpDetail');
 	const helpControlsEl = $('helpControls');
-	const cargoHintEl = $('cargoHint');
+	const helpModeControlsEl = $('helpModeControls');
 	const tradeCanvas = $('c');
 	const modeTagEl = $('modeTag');
 	const modeEls = [
@@ -433,7 +438,6 @@
 	const botEasyEl = $('botEasy');
 	const botNormalEl = $('botNormal');
 	const botHardEl = $('botHard');
-	const gameSeedEl = $('gameSeed');
 	const gameScoreEl = $('gameScore');
 	const gamePurseEl = $('gamePurse');
 	const purseRowEl = $('purseRow');
@@ -512,6 +516,7 @@
 	let blockedBy = -1;
 	let helpRule = 'lab';
 	let helpOpen = false;
+	let loadingUrl = false;
 	let helpPinned = false;
 	let ruleHelpHold = false;
 	let hudFolded = false;
@@ -540,7 +545,6 @@
 	let hudPredProfitText = '';
 	let hudLengthText = '';
 	let hudPathText = '';
-	let hudSeedText = '';
 	let hudScoreText = '';
 	let hudPlayerMetaText = '';
 	const hudRivalScoreTexts = ['', ''];
@@ -694,11 +698,12 @@
 		if (helpDetailRowEl) helpDetailRowEl.hidden = help.detail === '';
 		if (helpDetailLabelEl) helpDetailLabelEl.textContent = help.detailLabel;
 		if (helpDetailEl) helpDetailEl.textContent = help.detail;
-		if (helpControlsEl) {
-			helpControlsEl.textContent = helpRule === RULE_ROUTE &&
-				game.on && game.player === PLAYER_BOT
-				? 'A bot plans your one trajectory · the leader updates live'
-				: help.controls;
+		if (helpControlsEl) helpControlsEl.textContent = COMMON_HELP;
+		if (helpModeControlsEl) {
+			const controls = helpRule === RULE_ROUTE && game.on && game.player === PLAYER_BOT
+				? 'A bot plans your trajectory; the leader updates live.' : help.controls;
+			helpModeControlsEl.textContent = controls;
+			helpModeControlsEl.hidden = controls === '';
 		}
 	}
 
@@ -1006,7 +1011,7 @@
 			for (let p = 0; p < tradeSim.portCount; p++) {
 				const planet = tradeSim.portPlanet[p];
 				fieldPortPlanet[p] = planet;
-				portStrength[p] = portPlanetStrength[planet];
+				portStrength[p] = planetMask[planet] ? portPlanetStrength[planet] : 0;
 			}
 			gravity.setField(tradeSim.portCount, portRadius, portStrength, fillPorts, false);
 			sourceTagEl.textContent = 'ports · moving';
@@ -1024,6 +1029,9 @@
 		if (!gravity.setStrength(body, value)) return false;
 		if (mode === MODE_PORTS && body >= 0 && body < gravity.bodyCount) {
 			portPlanetStrength[fieldPortPlanet[body]] = gravity.strength[body];
+		} else if (mode === MODE_PLANETS) {
+			planetBaseStrength[body] = gravity.strength[body];
+			bot.strength[body] = gravity.strength[body];
 		}
 		syncPlanetGravity();
 		return true;
@@ -1701,6 +1709,7 @@
 		applyMode();
 		if (activeSim().status === STATUS_FLYING) dirty = true;
 		hudAt = -Infinity;
+		syncSeedUrl(replay.on);
 	}
 
 	function fieldChanged() {
@@ -2683,12 +2692,9 @@
 	/* inactive planets carry no gravity: the field and every bot sim skip them */
 	function syncPlanetStrengths() {
 		for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
-			if (planetMask[i]) {
-				if (planetStrength[i] === 0) planetStrength[i] = 1;
-			} else {
-				planetStrength[i] = 0;
-			}
+			planetStrength[i] = planetMask[i] ? planetBaseStrength[i] : 0;
 		}
+		bot.strength.set(planetStrength);
 	}
 
 	/* push the current subset into the career, market, field, scene and bot */
@@ -2798,7 +2804,7 @@
 		return free;
 	}
 
-	/* the trade world may have been rebuilt with fresh arrays: re-wire the field, strengths back to 1 */
+	/* Rebuild strengths from the world seed without consuming the trade random stream. */
 	function attachWorld() {
 		gravity.setPlanets(
 			PLANETS,
@@ -2807,9 +2813,10 @@
 			tradeSim.orbitTiltCos, tradeSim.orbitTiltSin
 		);
 		bot.attachWorld(tradeSim);
-		planetStrength.fill(1);
-		portPlanetStrength.fill(1);
-		portStrength.fill(1);
+		for (let p = 0; p < PLANETS; p++) {
+			planetBaseStrength[p] = GravityGame.planetGravity(tradeSim.seed, p);
+			portPlanetStrength[p] = planetBaseStrength[p];
+		}
 		syncPlanetStrengths();
 		cancelAim();
 		hoverBody = -1;
@@ -2862,6 +2869,43 @@
 				? slotName(s) + ' · active user'
 				: 'Click to play as ' + slotName(s);
 		}
+	}
+
+	/* Keep the address shareable without navigating or overwriting a replay hash. */
+	function syncSeedUrl(keepReplay = false) {
+		if (loadingUrl) return;
+		const params = new URLSearchParams(location.search);
+		params.set('seed', String(game.on ? game.seed : tradeSim.seed));
+		params.set('mode', game.on ? game.rule : PLAY_LAB);
+		params.delete('game');
+		params.delete('rule');
+		params.delete('source');
+		if (mode === MODE_PORTS) params.set('src', 'ports');
+		else params.delete('src');
+		params.delete('player');
+		if (game.on && game.player === PLAYER_BOT) params.set('you', PLAYER_BOT);
+		else params.delete('you');
+		if (game.on && game.bot !== BOT_NORMAL) params.set('bot', game.bot);
+		else params.delete('bot');
+		if (game.on && game.cheat) params.set('cheat', game.cheat);
+		else params.delete('cheat');
+		if (game.on && game.fixedRate) {
+			params.set('rate', String(scene.trade.speed));
+			params.delete('speed');
+		} else {
+			params.delete('rate');
+			if (scene.trade.speed !== 0.5) params.set('speed', String(scene.trade.speed));
+			else params.delete('speed');
+		}
+		if (!keepReplay) {
+			params.delete('shots');
+			params.delete('end');
+			params.delete('len');
+		}
+		const hash = keepReplay || !GravityGame.isGameLink(location.hash) ? location.hash : '';
+		const base = location.href.split('#')[0].split('?')[0];
+		try { root.history.replaceState(null, '', base + '?' + params.toString() + hash); }
+		catch (e) { /* Some file:// viewers do not permit history updates. */ }
 	}
 
 	function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
@@ -2932,6 +2976,7 @@
 		gameLinkEl.hidden = true;
 		hideBotLog();
 		refreshGameUi();
+		syncSeedUrl();
 	}
 
 	/* one galaxy per career run: YOU join first, then every rival career, so pads
@@ -2940,6 +2985,12 @@
 		cancelTurret();
 		GravityGame.resetGalaxy(game.galaxy, seed);
 		GravityGame.startCareer(game.career, gravity, seed, tradeSim, game.cheat, game.galaxy);
+		const hq = game.career.hq;
+		planetBaseStrength[hq] = 1;
+		portPlanetStrength[hq] = 1;
+		syncPlanetStrengths();
+		if (mode === MODE_PORTS) gravity.refreshField();
+		syncPlanetGravity();
 		bot.startCareers(game.galaxy, seed, tradeSim);
 		bot.setPlanetMask(planetMask, planetCount);
 		game.career.forceScale = gravity.forceScale;
@@ -3088,6 +3139,7 @@
 		hideBotLog();
 		refreshSelected();
 		refreshGameUi();
+		syncSeedUrl();
 	}
 
 	function launchPlayerBotIfReady(budgetMs, force) {
@@ -3419,25 +3471,6 @@
 			signedMoney(m.last), parts.join(' · '));
 	}
 
-	function abortFlight() {
-		clearBurnAim();
-		const slot = activeSlotIndex();
-		const sim = slotSim(slot);
-		if (replay.on || sim.status !== STATUS_FLYING) return;
-		const shots = slotShots(slot);
-		shots[shots.length - 1].abort = sim.liveSteps;
-		sim.abort();
-		if (slot === 0) {
-			endGameFlight();
-			return;
-		}
-		const r = bot.rivals[slot - 1];
-		GravityGame.endFlight(r.ledger);
-		r.steps += sim.liveSteps;
-		r.length += sim.flightLength;
-		endUserRivalFlight(slot - 1);
-	}
-
 	function startReplay(shots, end, length) {
 		clearBurnAim();
 		replay.on = true;
@@ -3698,18 +3731,20 @@
 			refreshGameUi();
 			return false;
 		}
+		loadingUrl = true;
 		scene.setSpeed(link.rate);
 		setExperimentScales(link.gravityScale, link.forceScale);
 		startGame(link.seed, true, link.rule, link.bot, link.player, link.cheat);
 		if (link.shots.length > 0) startReplay(link.shots, link.end, link.length);
+		loadingUrl = false;
+		syncSeedUrl(true);
 		return true;
 	}
 
 	function loadSearchParams() {
 		const search = location.search || '';
 		if (!search || search === '?') return false;
-		let params;
-		try { params = new URLSearchParams(search); } catch (e) { return false; }
+		const params = new URLSearchParams(search);
 		const viewParam = params.get('view');
 		if (viewParam === VIEW_FIELD || viewParam === VIEW_SPACE) setViewMode(viewParam);
 		const hasGameHint = params.has('mode') || params.has('game') || params.has('rule') ||
@@ -3718,31 +3753,36 @@
 		if (!hasGameHint) return false;
 		const modeParam = params.get('mode');
 		const gameParam = params.get('game');
-		/* `?mode=` takes a rule name too: ?mode=career === ?rule=career */
 		const modeRule = modeParam && RULES[modeParam] ? modeParam : null;
 		const shouldGame = modeParam === 'game' || gameParam === '1' || modeRule !== null ||
 			params.has('rule') || params.has('seed') || params.has('rate') || params.has('bot');
+		const seedStr = params.get('seed');
+		const seedNum = seedStr !== null ? Number(seedStr) : tradeSim.seed;
+		if (seedStr !== null && (!Number.isInteger(seedNum) || seedNum < 1 || seedNum > 0xffffffff)) return false;
+		const rateStr = params.get('rate');
+		const speedStr = rateStr !== null ? rateStr : params.get('speed');
+		const rateNum = speedStr !== null ? Number(speedStr) : scene.trade.speed;
+		if (speedStr !== null && (!Number.isFinite(rateNum) || rateNum < 0.5 || rateNum > 12)) return false;
+		const sourceStr = params.get('src') || params.get('source');
 		if (modeParam === PLAY_LAB) {
+			loadingUrl = true;
 			stopGame();
-			const src = params.get('src') || params.get('source');
-			if (src === 'ports') setSource(MODE_PORTS);
-			else if (src === 'planets') setSource(MODE_PLANETS);
-			const spd = params.get('speed') || params.get('rate');
-			if (spd !== null) scene.setSpeed(Number(spd));
+			if (seedNum !== tradeSim.seed) {
+				scene.reset(seedNum);
+				clearCargo();
+				attachWorld();
+			}
+			if (sourceStr === 'ports' || sourceStr === 'port') setSource(MODE_PORTS);
+			else if (sourceStr === 'planets' || sourceStr === 'planet') setSource(MODE_PLANETS);
+			if (speedStr !== null) scene.setSpeed(rateNum);
+			loadingUrl = false;
+			syncSeedUrl(true);
 			return true;
 		}
 		if (!shouldGame) return false;
-		let seedStr = params.get('seed');
-		let rateStr = params.get('rate') || params.get('speed');
 		let ruleStr = params.get('rule');
-		let botStr = params.get('bot');
-		let playerStr = params.get('player') || params.get('you');
-		let sourceStr = params.get('src') || params.get('source');
-		let seedNum = seedStr !== null ? Number(seedStr) : tradeSim.seed;
-		if (seedStr !== null && (!Number.isInteger(seedNum) || seedNum < 1 || seedNum > 0xffffffff)) return false;
-		if (seedStr === null) seedNum = tradeSim.seed;
-		let rateNum = rateStr !== null ? Number(rateStr) : scene.trade.speed;
-		if (rateStr !== null && (!Number.isFinite(rateNum) || rateNum < 0.5 || rateNum > 12)) return false;
+		const botStr = params.get('bot');
+		const playerStr = params.get('player') || params.get('you');
 		if (ruleStr !== null && !RULES[ruleStr]) return false;
 		if (!ruleStr && modeRule) ruleStr = modeRule;
 		if (!ruleStr) ruleStr = RULE_TOUR;
@@ -3750,7 +3790,8 @@
 		if (playerStr !== null && !(playerStr in GravityGame.PLAYER_TYPES)) return false;
 		const cheatStr = params.get('cheat');
 		if (cheatStr !== null && !(ruleStr === RULE_CAREER && GravityGame.CHEATS[cheatStr])) return false;
-		if (rateStr !== null) scene.setSpeed(rateNum);
+		loadingUrl = true;
+		if (speedStr !== null) scene.setSpeed(rateNum);
 		startGame(seedNum, rateStr !== null, ruleStr, botStr || undefined, playerStr || undefined,
 			cheatStr || undefined);
 		if (sourceStr === 'ports' || sourceStr === 'port') setSource(MODE_PORTS);
@@ -3765,6 +3806,8 @@
 			const link = GravityGame.decodeLink(fakeHash);
 			if (link && link.shots.length > 0) startReplay(link.shots, link.end, link.length);
 		}
+		loadingUrl = false;
+		syncSeedUrl(true);
 		return true;
 	}
 
@@ -3824,10 +3867,9 @@
 		if (expGravityEl) expGravityEl.disabled = experimentLock;
 		if (expForceEl) expForceEl.disabled = experimentLock;
 		scene.lockSpeed(game.on && (route || game.fixedRate || anyShots || replay.on));
-		clearButton.textContent = route ? 'clear plan' : game.on ? 'abort' : 'clear';
-		clearButton.disabled = route
-			? replay.on || playerIsBot()
-			: game.on && (!activeFlying || replay.on);
+		clearButton.hidden = game.on && !route;
+		clearButton.textContent = route ? 'clear plan' : 'clear';
+		clearButton.disabled = route && (replay.on || playerIsBot());
 		gameCopyBtn.disabled = flightLock;
 		if (botCopyBtn) {
 			const rIdx = activeSlotIndex() === 1 && bot.count > 1 ? 1 : 0;
@@ -3846,15 +3888,7 @@
 		if (visitLabelEl) visitLabelEl.textContent = route ? 'route score' : 'systems visited';
 		if (predVisitLabelEl) predVisitLabelEl.textContent = route ? 'plan end' : 'pred visits';
 		horizonSlider.disabled = route;
-		if (cargoHintEl) {
-			cargoHintEl.innerHTML = career
-				? 'drag from pad to launch · in flight: <b>Space</b> / drag ship to burn<br><b>wait</b> in the bottom bar charges pads · build pads, refit at HQ and take deliveries'
-				: route
-				? playerIsBot()
-					? 'bot plans ' + slotName(activeSlotIndex()) + ' · longest finished plan leads'
-					: 'drag from a free planet · longest finished trajectory leads<br><b>use best</b> restores your longest plan · see <b>? help</b>'
-				: 'drag from planet to aim · shift = 1/20 fine · enter launches<br>land on a planet to stage next launch · see <b>? help</b> for the selected rule';
-		}
+
 		replaySpeedBtn.hidden = !replay.on || replay.route;
 		replaySkipBtn.hidden = !replay.on;
 		replaySpeedBtn.textContent = '×' + REPLAY_SPEEDS[replay.speed];
@@ -5674,11 +5708,7 @@
 			botCopyBtn.disabled = replay.on || bot.count === 0 ||
 				bot.rivals[rIdx].shots.length === 0;
 		}
-		const seedText = 'seed ' + game.seed + ' · ×' + scene.trade.speed;
-		if (seedText !== hudSeedText) {
-			hudSeedText = seedText;
-			gameSeedEl.textContent = seedText;
-		}
+
 		const player = playerSummary();
 		const score = scoreValue(player);
 		if (score !== hudScoreText) {
@@ -7433,6 +7463,7 @@
 	}
 	srcPlanetsEl.addEventListener('change', () => setSource(MODE_PLANETS));
 	srcPortsEl.addEventListener('change', () => setSource(MODE_PORTS));
+	$('tradeSpeed').addEventListener('input', () => syncSeedUrl(replay.on));
 	trimSlider.addEventListener('input', onTrimInput);
 	trimSlider.addEventListener('change', resetTrim);
 	if (expGravityEl) {
@@ -7463,8 +7494,7 @@
 		if (helperState.active) { helperStop(); return; }
 		if (playerIsBot()) return;
 		if (routeRule()) clearRoutePlan();
-		else if (game.on) abortFlight();
-		else clearCargo();
+		else if (!game.on) clearCargo();
 	});
 	/* the flat mode row replaces the old mode + rule groups */
 	for (let mIdx = 0; mIdx < modeEls.length; mIdx++) {
@@ -7844,10 +7874,13 @@
 	applyPlanetUniverse();
 	attachWorld();
 	refreshExperimentUi();
-	if (!loadSearchParams() && !loadLink()) {
+	const initialView = new URLSearchParams(location.search).get('view');
+	if (initialView === VIEW_FIELD || initialView === VIEW_SPACE) setViewMode(initialView);
+	if (!loadLink() && !loadSearchParams()) {
 		const last = loadLastMode();
 		if (last) setPlayMode(last);
 		else refreshGameUi();
+		syncSeedUrl();
 	}
 
 	resizeOverlay();
