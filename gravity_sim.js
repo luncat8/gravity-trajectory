@@ -67,6 +67,9 @@
 		this.worldH = worldH;
 
 		this.planetCount = 0;
+		/* null = every configured planet is in play; a Uint8Array marks the
+		 * subset a run may visit / crash on, so the world size can change live */
+		this.planetMask = null;
 		this.planetX = null;
 		this.planetY = null;
 		this.planetR = null;
@@ -189,6 +192,17 @@
 			this.sysInvRY[i] = 1 / ry;
 			this.sysBoundR2[i] = major * major;
 		}
+	};
+
+	/* the run's active planet subset; `null` keeps every planet in play */
+	GravitySim.prototype.setPlanetMask = function (mask) {
+		this.planetMask = mask || null;
+	};
+
+	/* a configured planet the run may actually enter / land on */
+	GravitySim.prototype.planetActive = function (planet) {
+		return planet >= 0 && planet < this.planetCount &&
+			(!this.planetMask || this.planetMask[planet] === 1);
 	};
 
 	/* fillField(t, outX, outY, count) writes gravity body positions at field time t */
@@ -341,6 +355,7 @@
 		const invRY = this.sysInvRY;
 		let added = 0;
 		for (let i = 0; i < count; i++) {
+			if (this.planetMask && !this.planetMask[i]) continue;
 			if (mask[i]) continue;
 			const dx = x - px[i];
 			const dy = y - py[i];
@@ -371,6 +386,10 @@
 		const invRY = this.sysInvRY;
 		let entered = 0;
 		for (let i = 0; i < count; i++) {
+			if (this.planetMask && !this.planetMask[i]) {
+				prevInside[i] = 0;
+				continue;
+			}
 			const dx = x - px[i];
 			const dy = y - py[i];
 			if (dx * dx + dy * dy > bound[i]) {
@@ -455,6 +474,7 @@
 		const pr = usePlanets ? this.planetR : this.bodyR;
 		const count = usePlanets ? this.planetCount : this.bodyCount;
 		for (let i = 0; i < count; i++) {
+			if (this.planetMask && !this.planetMask[i]) continue;
 			const dx = px[i] - x;
 			const dy = py[i] - y;
 			const reach = pr[i] + CARGO_R;

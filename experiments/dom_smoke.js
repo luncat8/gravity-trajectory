@@ -1170,7 +1170,7 @@ check(kScene.game.rule === 'career' && kScene.bot.count === 2 && kScene.bot.play
 check(career.at === career.hq && kCargo.landedBody === career.hq && career.padCount === 1, 'career start on HQ');
 check(kui.get('cargoStatus').textContent === 'landed P' + career.hq + ' · clock paused',
 	'career status: ' + kui.get('cargoStatus').textContent);
-check(kui.get('ruleTag').textContent === 'career · 1 / 26 pads', 'career rule tag: ' + kui.get('ruleTag').textContent);
+check(kui.get('ruleTag').textContent === 'career · 1 / 13 pads', 'career rule tag: ' + kui.get('ruleTag').textContent);
 check(kui.get('rivalTag').textContent === '2 rivals · flying' && !kui.get('rivalRow').hidden &&
 	!kui.get('rivalGroup').hidden, 'career shows flying rivals: ' + kui.get('rivalTag').textContent);
 check(kui.get('modeCareer').checked && !kui.get('modeLab').checked && !kui.get('modeTour').checked &&
@@ -1480,9 +1480,9 @@ check(modeParamEnv.context.GravityScene.rule() === 'career' &&
 const cheatEnv = loadPage({ hash: '#game=1&seed=42&rate=1&rule=career&cheat=endgame', clipboard: false });
 cheatEnv.runFrames(2, 16.0);
 const cheatCareer = cheatEnv.context.GravityScene.career;
-check(cheatCareer.cheat === 'endgame' && cheatCareer.padCount === pageWorld.PLANETS &&
+check(cheatCareer.cheat === 'endgame' && cheatCareer.padCount === 13 &&
 	cheatEnv.context.GravityScene.game.money.purse === kGame.CAREER.endgamePurse, 'endgame cheat link');
-check(cheatEnv.elements.get('ruleTag').textContent === 'career · 26 / 26 pads · endgame',
+check(cheatEnv.elements.get('ruleTag').textContent === 'career · 13 / 13 pads · endgame',
 	'cheat rule tag: ' + cheatEnv.elements.get('ruleTag').textContent);
 cheatEnv.click('gameCopy');
 check(cheatEnv.elements.get('gameLink').value.endsWith('&rule=career&cheat=endgame'), 'cheat survives the link');
@@ -2552,10 +2552,15 @@ function protoOf(career, family, id) {
 	cCareer.tasks[0].reward = +(3.25 - baseVisitGain).toFixed(2);
 	cEnv.dragAim(cCareer.hq, shotAngle, CAREER_TEST_SPEED);
 	cEnv.runFrames(2, 16.0);
-	const tofText = cSim.predTime.toFixed(1) + ' s';
-	const rateText = '+' + (3.25 / cSim.predTime).toFixed(2) + '/s';
+	/* the readout's rate uses the unrounded predicted gain, so derive the
+	 * expectation from the same values the HUD shows */
+	const actualGain = cScene.predGain();
+	const actualPredTime = cScene.predTime();
+	const tofText = actualPredTime.toFixed(1) + ' s';
+	const rateText = '+' + (actualGain / actualPredTime).toFixed(2) + '/s';
 	const exitCost = cEnv.context.GravityGame.exitCostAt(cCareer, targetPlanet, cCareer.ship.mass);
-	const gainText = '+3.25-' + (Number.isInteger(exitCost) ? String(exitCost) : exitCost.toFixed(2));
+	const gainText = '+' + actualGain.toFixed(2) + '-' +
+		(Number.isInteger(exitCost) ? String(exitCost) : exitCost.toFixed(2));
 	check(cui.get('predVisitReadout').textContent.endsWith('· ' + gainText),
 		'predVisitReadout must show ' + gainText + ' when landing on padless planet: ' +
 		cui.get('predVisitReadout').textContent);
@@ -2996,6 +3001,76 @@ function protoOf(career, family, id) {
 	cEnv.runFrames(2, 16.0);
 	check(cui.get('botLog').hidden && cui.get('botLogBox').hidden,
 		'a run with no rivals must hide the bot log');
+}
+
+/* the planet-count control lives in the top-left scoreboard, not the right panel */
+{
+	const fs = require('fs');
+	const path = require('path');
+	const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+	const scoreBlock = /<aside id="scoreHud"[\s\S]*?<\/aside>/.exec(html)[0];
+	const cargoBlock = /<aside id="cargoHud"[\s\S]*?<\/aside>/.exec(html)[0];
+	check(scoreBlock.includes('id="planetCountInput"'), 'planet count input is in the scoreboard');
+	check(!cargoBlock.includes('planetCountInput'), 'planet count input left the right panel');
+	check(scoreBlock.includes('id="planetRow"') && scoreBlock.includes('id="playerCountRow"'),
+		'scoreboard owns the pads/planets row and the player +/- row');
+}
+
+/* configurable planet count + player count */
+{
+	const gEnv = loadPage({ search: '?rule=tour&seed=11&rate=1', clipboard: false });
+	gEnv.runFrames(2, 16.0);
+	const gui = gEnv.elements;
+	const g = gEnv.context.GravityScene;
+	check(String(gui.get('planetCountInput').value) === '26', 'tour planet input defaults to 26');
+	check(g.planetCount() === 26, 'tour planet universe is 26');
+	check(String(gui.get('playerCountValue').textContent) === '2', 'tour player count follows the rival level (2)');
+	check(g.bot.count === 1, 'tour has one rival by default');
+	gui.get('playerCountUp').listeners.click[0]();
+	gEnv.runFrames(2, 16.0);
+	check(String(gui.get('playerCountValue').textContent) === '3' && g.bot.count === 2,
+		'player + adds a rival: ' + gui.get('playerCountValue').textContent + ' · ' + g.bot.count);
+	gui.get('playerCountDown').listeners.click[0]();
+	gEnv.runFrames(2, 16.0);
+	check(String(gui.get('playerCountValue').textContent) === '2' && g.bot.count === 1,
+		'player − removes a rival: ' + gui.get('playerCountValue').textContent + ' · ' + g.bot.count);
+	gui.get('planetCountInput').value = '10';
+	gui.get('planetCountInput').listeners.change[0]();
+	gEnv.runFrames(2, 16.0);
+	check(g.planetCount() === 10 && String(gui.get('planetCountInput').value) === '10',
+		'planet input sets the universe: ' + g.planetCount());
+	/* the setting survives a restart */
+	gEnv.click('gameRestart');
+	gEnv.runFrames(2, 16.0);
+	check(g.planetCount() === 10, 'planet universe persists across restart: ' + g.planetCount());
+}
+
+/* career defaults to 13 planets and keeps its two rivals; the scoreboard
+ * shows pads/planets on one line and the rule tag drops the pad count */
+{
+	const cEnv = loadPage({ search: '?rule=career&seed=11&rate=1', clipboard: false });
+	cEnv.runFrames(2, 16.0);
+	const cui = cEnv.elements;
+	const cg = cEnv.context.GravityScene;
+	check(String(cui.get('planetCountInput').value) === '13' && cg.planetCount() === 13,
+		'career planet input defaults to 13: ' + cui.get('planetCountInput').value);
+	check(String(cui.get('playerCountValue').textContent) === '3' && cg.bot.count === 2,
+		'career keeps two rivals: ' + cui.get('playerCountValue').textContent + ' · ' + cg.bot.count);
+	check(cg.freePlanetCount() === 10, 'free planets = 13 − 3 HQs: ' + cg.freePlanetCount());
+	check(cui.get('scoreRuleTag').textContent === 'career',
+		'career scoreboard tag drops the pad count: ' + cui.get('scoreRuleTag').textContent);
+	check(!cui.get('planetPadsLabel').hidden &&
+		String(cui.get('padCount').textContent) === '1' && String(cui.get('padTotal').textContent) === '13',
+		'scoreboard shows the pads/planets line: ' + cui.get('padCount').textContent + ' / ' + cui.get('padTotal').textContent);
+	const purseBefore = cg.game.money.purse;
+	cui.get('planetCountInput').value = '12';
+	cui.get('planetCountInput').listeners.change[0]();
+	cEnv.runFrames(2, 16.0);
+	check(cg.planetCount() === 12 && cg.career.planetCount === 12,
+		'career planet universe shrinks to 12: ' + cg.planetCount());
+	check(cg.game.money.purse <= purseBefore, 'removing a planet does not refund');
+	check(String(cui.get('padTotal').textContent) === '12',
+		'pads total follows the universe: ' + cui.get('padTotal').textContent);
 }
 
 console.log('paint calls', {

@@ -241,6 +241,72 @@ body {
 	margin-top: 8px;
 }
 
+.playerCountRow {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	margin-top: 6px;
+	padding: 3px 6px;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	background: rgba(126, 180, 230, 0.035);
+	color: var(--dim);
+	font-size: 11px;
+}
+
+.playerCountRow .miniBtn {
+	flex: none;
+	min-width: 20px;
+	padding: 1px 5px;
+	text-align: center;
+}
+
+.playerCountLabel {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.playerCountLabel b {
+	color: var(--text);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-variant-numeric: tabular-nums;
+}
+
+.planetRow {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 6px;
+	padding: 3px 6px;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	background: rgba(126, 180, 230, 0.035);
+	color: var(--dim);
+	font-size: 11px;
+}
+
+.planetRow .planetPadsLabel,
+.planetRow .planetPlanetsLabel {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.planetRow .planetPadsLabel b,
+.planetRow .planetPlanetsLabel {
+	color: var(--text);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-variant-numeric: tabular-nums;
+}
+
+.planetRowSep {
+	color: var(--dim);
+}
+
 .scoreEntry {
 	display: grid;
 	grid-template-columns: 42px minmax(0, 1fr);
@@ -509,6 +575,22 @@ body {
 
 .stat.goalStat b {
 	color: var(--mint);
+}
+
+#planetCountInput {
+	flex: 1 1 4.5em;
+	min-width: 0;
+	width: 4.5em;
+	padding: 1px 4px;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	background: var(--panel);
+	color: var(--mint);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: inherit;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
 }
 
 #gamePurse.loss,

@@ -266,7 +266,8 @@
 	function createMarket() {
 		const market = {
 			lastVisitStep: new Int32Array(OrbitWorld.PLANETS),
-			stamp: 0
+			stamp: 0,
+			k: MONEY.k
 		};
 		resetMarket(market);
 		return market;
@@ -275,17 +276,18 @@
 	function resetMarket(market) {
 		market.lastVisitStep.fill(-initSteps());
 		market.stamp += 1;
+		market.k = MONEY.k;
 	}
 
 	/* cap·(1 − e^(−k·age/cap)): initial slope k, asymptote cap at infinite age */
-	function planetProfitAtStep(lastStep, runStep) {
+	function planetProfitAtStep(lastStep, runStep, k) {
 		const age = (runStep - lastStep) * GravitySim.DT;
 		if (age <= 0) return 0;
-		return -MONEY.cap * Math.expm1(-age * MONEY.k / MONEY.cap);
+		return -MONEY.cap * Math.expm1(-age * (k === undefined ? MONEY.k : k) / MONEY.cap);
 	}
 
 	function planetProfit(market, planet, runStep) {
-		return planetProfitAtStep(market.lastVisitStep[planet], runStep);
+		return planetProfitAtStep(market.lastVisitStep[planet], runStep, market.k);
 	}
 
 	/* `fee` is what the current flight's launch cost, so `last` nets it out */
@@ -367,7 +369,7 @@
 		for (let i = 0; i < count; i++) {
 			const planet = planets[i];
 			const at = baseStep + steps[i];
-			total += planetProfitAtStep(estScratch[planet], at);
+			total += planetProfitAtStep(estScratch[planet], at, market.k);
 			estScratch[planet] = at;
 		}
 		return total;
@@ -377,6 +379,28 @@
 	function estimateProfit(market, baseStep, sim) {
 		return estimateProfitLog(market, baseStep, sim.predLogPlanet, sim.predLogStep,
 			sim.predLogCount);
+	}
+
+	/* the generated universe is always PLANET_MAX planets; a run plays a subset.
+	 * `mask[i] === 1` marks a planet in play and `count` is how many there are.
+	 * The visit profit grows faster on a smaller world (k scales by
+	 * PLANET_MAX / count) so a 13-planet career regenerates profit 2× as fast
+	 * as the 26-planet default and the economy keeps pace. */
+	function setCareerUniverse(career, mask, count) {
+		career.planetMask = mask;
+		career.planetCount = count;
+	}
+
+	function applyMarketUniverse(market, mask, count) {
+		market.planetMask = mask;
+		market.planetCount = count;
+		market.k = MONEY.k * (OrbitWorld.PLANETS / count);
+	}
+
+	/* a planet of the run's universe is in play when it is not masked out */
+	function planetInPlay(career, planet) {
+		return planet >= 0 && planet < OrbitWorld.PLANETS &&
+			(!career.planetMask || career.planetMask[planet] === 1);
 	}
 
 	/* --- career ------------------------------------------------------------ */
@@ -727,6 +751,9 @@
 			cheat: null,
 			galaxy: null,
 			index: 0,
+			/* the run's active planet subset; null = every planet in play */
+			planetMask: null,
+			planetCount: OrbitWorld.PLANETS,
 			hq: -1,
 			at: -1,
 			stranded: false,
@@ -786,25 +813,46 @@
 		return OrbitWorld.hashBits(career.seed, career.serial, salt) / 4294967296;
 	}
 
-	/* HQ: a random sunlit planet that no other player already calls home; when a
-	 * world has fewer sunlit planets than players, the brightest free one is next */
-	function pickHq(seed, world, used) {
-		let count = 0;
-		for (let i = 0; i < world.planetCount; i++) {
+	/* a uniform draw over the run's in-play planets */
+	function activePlanetDraw(career) {
+		const count = career.planetCount || OrbitWorld.PLANETS;
+		let pick = Math.floor(draw01(career, SALT_TASK) * count);
+		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+			if (career.planetMask && career.planetMask[i] === 0) continue;
+			if (pick === 0) return i;
+			pick -= 1;
+		}
+		return 0;
+	}
+
+	/* a colony sits on a planet of the run only when that planet is in play */
+	function colonyInPlay(career, colony) {
+		return planetInPlay(career, colony.planet);
+	}
+
+	/* HQ: a random sunlit planet in play that no other player already calls home;
+	 * when the world has fewer sunlit planets than players, the brightest free
+	 * one is next. `mask`/`count` restrict the choice to the run's planets. */
+	function pickHq(seed, world, used, mask, count) {
+		let count2 = 0;
+		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+			if (mask && mask[i] === 0) continue;
 			if (world.planetLight[i] < CAREER.hqMinLight) continue;
 			if (used && used[i]) continue;
-			count += 1;
+			count2 += 1;
 		}
-		if (count === 0) {
+		if (count2 === 0) {
 			let best = -1;
-			for (let i = 0; i < world.planetCount; i++) {
+			for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+				if (mask && mask[i] === 0) continue;
 				if (used && used[i]) continue;
 				if (best < 0 || world.planetLight[i] > world.planetLight[best]) best = i;
 			}
 			return best < 0 ? 0 : best;
 		}
-		let pick = OrbitWorld.hashBits(seed, 0, SALT_HQ) % count;
-		for (let i = 0; i < world.planetCount; i++) {
+		let pick = OrbitWorld.hashBits(seed, 0, SALT_HQ) % count2;
+		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+			if (mask && mask[i] === 0) continue;
 			if (world.planetLight[i] < CAREER.hqMinLight) continue;
 			if (used && used[i]) continue;
 			if (pick === 0) return i;
@@ -827,7 +875,12 @@
 	function fillLight(career, world) {
 		const lumNorm = OrbitWorld.clamp01(Math.sqrt(world.lum) / 1.5);
 		const star = 0.5 + 0.5 * lumNorm;
-		for (let i = 0; i < world.planetCount; i++) {
+		const mask = career.planetMask;
+		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+			if (mask && mask[i] === 0) {
+				career.light[i] = 0;
+				continue;
+			}
 			career.light[i] = (CAREER.lightFloor + (1 - CAREER.lightFloor) * world.planetLight[i]) * star;
 		}
 	}
@@ -965,7 +1018,8 @@
 		career.padCount = 0;
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) career.launchPads[i] = COMMERCIAL_PAD;
 		fillLight(career, trade.world);
-		career.hq = pickHq(career.seed, trade.world, hqMask(career));
+		career.hq = pickHq(career.seed, trade.world, hqMask(career),
+			career.planetMask, career.planetCount);
 		career.at = career.hq;
 		career.stranded = false;
 		career.commercialPlanet = -1;
@@ -1017,6 +1071,7 @@
 	/* endgame cheat: every pad at top tier, every ship part owned and the ship fully fitted */
 	function fitEndgame(career) {
 		for (let i = 0; i < career.pads.length; i++) {
+			if (career.planetMask && career.planetMask[i] === 0) continue;
 			fitPad(career, i, topTier(OrbitTech.CATAPULTS), topTier(OrbitTech.PANELS),
 				topTier(OrbitTech.BATTERIES));
 		}
@@ -1056,7 +1111,7 @@
 		const purse = career.ledger.purse;
 		if (purse < -1e-9 ||
 			(career.stranded && purse + 1e-9 < exitCost(career))) career.ended = CAREER_BROKE;
-		else if (career.cheat === null && career.padCount === career.pads.length) {
+		else if (career.cheat === null && career.padCount === career.planetCount) {
 			career.ended = CAREER_COMPLETE;
 		}
 		return career.ended;
@@ -1148,15 +1203,18 @@
 		let src = null;
 		let good = -1;
 		for (let k = 0; k < count && good < 0; k++) {
-			src = colonies[(first + k) % count];
-			good = OrbitEcon.bestExport(src);
+			const colony = colonies[(first + k) % count];
+			if (!colonyInPlay(career, colony)) continue;
+			src = colony;
+			good = OrbitEcon.bestExport(colony);
 		}
-		if (good < 0) return false;
+		if (good < 0 || !src) return false;
 		let dst = null;
 		let bestShort = 0;
 		let lowSupply = 2;
 		for (let k = 0; k < count; k++) {
 			const colony = colonies[k];
+			if (!colonyInPlay(career, colony)) continue;
 			if (colony === src) continue;
 			const short = OrbitEcon.goodShortfall(colony, good);
 			const supply = OrbitEcon.marketSupply(colony, good);
@@ -1166,6 +1224,7 @@
 			bestShort = short;
 			lowSupply = supply;
 		}
+		if (!dst) return false;
 		const tons = CARGO_TONS[Math.floor(draw01(career, SALT_TASK) * CARGO_TONS.length)];
 		const scarcity = 1 - OrbitEcon.marketSupply(dst, good);
 		const dist = Math.min(planetDistance(trade, src.planet, dst.planet), CAREER.deliveryDistPx);
@@ -1188,7 +1247,7 @@
 	function makeCompete(career, step, task) {
 		task.kind = TASK_COMPETE;
 		task.state = TASK_OFFERED;
-		task.planet = Math.floor(draw01(career, SALT_TASK) * OrbitWorld.PLANETS);
+		task.planet = activePlanetDraw(career);
 		task.minLength = Math.round((CAREER.competeMinPx + draw01(career, SALT_TASK) * CAREER.competeSpanPx) / 50) * 50;
 		task.reward = round2(CAREER.competeBase + draw01(career, SALT_TASK) * CAREER.competeSpan);
 		task.from = -1;
@@ -1497,6 +1556,7 @@
 		initSteps, createMarket, resetMarket, planetProfit,
 		createLedger, resetLedger, beginFlight, stepHarvest, endFlight,
 		estimateProfit, estimateProfitLog, compareScores,
+		setCareerUniverse, applyMarketUniverse, planetInPlay, colonyInPlay, activePlanetDraw,
 		BOOK_MAX, BOOK_LOG_MAX, createLaunchBook, resetLaunchBook, launchBookTag, bookReady,
 		launchMask, recordLaunch, pruneLaunchBook,
 		CAREER, BOARD_SIZE, COMPETE_SLOT, CARGO_TONS,
