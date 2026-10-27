@@ -62,7 +62,10 @@ function makePaint(calls) {
 		restore() {}, translate() {}, scale() {}, setLineDash() {},
 		fillText(text) {
 			calls.fillText += 1;
-			if (calls.texts.length < 64) calls.texts.push(String(text));
+			if (calls.texts.length < 64) {
+				calls.texts.push(String(text));
+				calls.textColors.push(this.fillStyle);
+			}
 		},
 		stroke() { calls.stroke += 1; },
 		fill() { calls.fill += 1; },
@@ -120,7 +123,10 @@ function makeElement(spec, paint, webglFactory) {
  * options.clipboard: false removes navigator.clipboard (insecure-context fallback)
  */
 function loadPage(options = {}) {
-	const calls = { fillText: 0, stroke: 0, fill: 0, putImageData: 0, lastImageData: null, texts: [] };
+	const calls = {
+		fillText: 0, stroke: 0, fill: 0, putImageData: 0, lastImageData: null,
+		texts: [], textColors: []
+	};
 	const paint = makePaint(calls);
 	const elements = new Map();
 	for (const spec of ELEMENTS) elements.set(spec.id, makeElement(spec, paint, options.webglFactory));

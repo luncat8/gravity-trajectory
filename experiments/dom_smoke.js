@@ -2564,9 +2564,8 @@ function protoOf(career, family, id) {
 	check(cScene.playScale() === 4 && cui.get('playTag').textContent === '×4',
 		'career playReset must return to ×4: ' + cui.get('playTag').textContent);
 
-	/* predicted route info: profit with separate exit-cost subtract (the
-	 * cheapest way off a padless landing — commercial launch, tax, build or
-	 * evacuation), profit/s, and TOF */
+	/* predicted route info includes launch fee and a sampled viable departure;
+	 * profit/s and time of flight remain visible beside the net outcome. */
 	const shotAngle = landingAngle(cSim, cCareer.hq, CAREER_TEST_SPEED);
 	check(shotAngle !== null, '0.4.17: no landing shot from HQ');
 	/* age planets so predicted visit + task profit is 3.25 on landing at a padless planet */
@@ -2589,28 +2588,50 @@ function protoOf(career, family, id) {
 	const actualPredTime = cScene.predTime();
 	const tofText = actualPredTime.toFixed(1) + ' s';
 	const rateText = '+' + (actualGain / actualPredTime).toFixed(2) + '/s';
-	const exitCost = cEnv.context.GravityGame.exitCostAt(cCareer, targetPlanet, cCareer.ship.mass);
-	const gainText = '+' + actualGain.toFixed(2) + '-' +
-		(Number.isInteger(exitCost) ? String(exitCost) : exitCost.toFixed(2));
-	check(cui.get('predVisitReadout').textContent.endsWith('· ' + gainText),
-		'predVisitReadout must show ' + gainText + ' when landing on padless planet: ' +
+	const fee = cEnv.context.GravityGame.launchFee(cCareer, cCareer.hq, CAREER_TEST_SPEED);
+	const arrivalMass = cScene.bot.careerArrivalMass(cCareer, targetPlanet);
+	const departure = cScene.bot.careerDeparture(cCareer, targetPlanet,
+		cCareer.ledger.purse + actualGain - fee, arrivalMass, cSim);
+	check(departure.ok && departure.source === 'commercial',
+		'padless destination must use its affordable commercial departure');
+	const net = actualGain - fee - departure.cost;
+	const netText = (net >= 0 ? '+' : '−') + Math.abs(net).toFixed(2);
+	check(cui.get('predVisitReadout').textContent.endsWith('· ' + netText),
+		'predVisitReadout must show net outcome ' + netText + ': ' +
 		cui.get('predVisitReadout').textContent);
 	check(!cui.get('predProfitRow').hidden &&
-		cui.get('predProfitReadout').textContent === gainText + ' · ' + rateText + ' · ' + tofText,
-		'predProfitReadout must show ' + gainText + ' · rate · TOF: ' +
+		cui.get('predProfitReadout').textContent === netText + ' · ' + rateText + ' · ' + tofText,
+		'predProfitReadout must show ' + netText + ' · rate · TOF: ' +
 		cui.get('predProfitReadout').textContent);
-	check(cui.get('aimReadout').textContent.includes('· ' + gainText + ' · ' + rateText + ' · ' + tofText),
-		'aimReadout must include ' + gainText + ', profit/s, and TOF: ' +
+	check(cui.get('aimReadout').textContent.includes('· ' + netText + ' · ' + rateText + ' · ' + tofText),
+		'aimReadout must include net outcome, profit/s, and TOF: ' +
 		cui.get('aimReadout').textContent);
+	check(cScene.aimGuidance() === 1 && cui.get('predProfitReadout').classList.contains('profitable'),
+		'positive net outcome must use profitable guidance');
 
-	/* when target planet already has a catapult, the exit subtract is omitted */
-	cCareer.pads[targetPlanet].catapult = cEnv.context.OrbitTech.CATAPULTS[0];
+	/* A built high-tier destination pad is physically launchable and has no
+	 * departure fee; the readout then reports the full projected payout. */
+	const targetPad = cCareer.pads[targetPlanet];
+	const savedCatapult = targetPad.catapult;
+	const savedBattery = targetPad.battery;
+	const savedCharge = targetPad.chargeKwh;
+	targetPad.catapult = cEnv.context.OrbitTech.CATAPULTS[4];
+	targetPad.battery = cEnv.context.OrbitTech.BATTERIES[4];
+	targetPad.chargeKwh = targetPad.battery.capacity;
 	cEnv.dragAim(cCareer.hq, shotAngle, CAREER_TEST_SPEED);
 	cEnv.runFrames(2, 16.0);
-	check(cui.get('predVisitReadout').textContent.endsWith('· +3.25') &&
-		cui.get('predProfitReadout').textContent.startsWith('+3.25 · '),
-		'built pad omits exit subtract: ' + cui.get('predProfitReadout').textContent);
-	cCareer.pads[targetPlanet].catapult = null;
+	const ownDeparture = cScene.bot.careerDeparture(cCareer, targetPlanet,
+		cCareer.ledger.purse + actualGain - fee, arrivalMass, cSim);
+	const ownNet = actualGain - fee - ownDeparture.cost;
+	const ownNetText = (ownNet >= 0 ? '+' : '−') + Math.abs(ownNet).toFixed(2);
+	check(ownDeparture.ok && ownDeparture.source === 'own' && ownDeparture.cost === 0 &&
+		cui.get('predVisitReadout').textContent.endsWith('· ' + ownNetText) &&
+		cui.get('predProfitReadout').textContent.startsWith(ownNetText + ' · '),
+		'owned launchable pad should remove the departure cost: ' +
+		cui.get('predProfitReadout').textContent);
+	targetPad.catapult = savedCatapult;
+	targetPad.battery = savedBattery;
+	targetPad.chargeKwh = savedCharge;
 
 	/* fly to padless planet -> stranded -> planet actions sit beside #launch */
 	check(careerLaunch(cEnv, cSim), 'career launch never fired');
@@ -2689,7 +2710,7 @@ function protoOf(career, family, id) {
 	check(cScene.playScale() === 8 && cui.get('playFaster').disabled,
 		'non-career max playback speed remains ×8');
 	console.log('0.4.17 verified: separate #cargoFoot panel · inline stranded buy/evacuate · ' +
-		'career ×4..×32 playback · +3.25-exit / rate / TOF route prediction');
+		'career ×4..×32 playback · net outcome / rate / TOF route prediction');
 	console.log('0.4.19 verified: commercial rail + EMC claims · ' +
 		'flying rival careers · 9.00 pads / 6.00 evacuation');
 	console.log('0.4.20 verified: commercial EMC-1 button on every planet · ' +

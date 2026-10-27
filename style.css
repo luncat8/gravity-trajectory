@@ -580,6 +580,24 @@ body {
 	white-space: nowrap;
 }
 
+#aimReadout.profitable,
+#predVisitReadout.profitable,
+#predProfitReadout.profitable {
+	color: var(--mint);
+}
+
+#aimReadout.neutral,
+#predVisitReadout.neutral,
+#predProfitReadout.neutral {
+	color: var(--text);
+}
+
+#aimReadout.unlaunchable,
+#predVisitReadout.unlaunchable,
+#predProfitReadout.unlaunchable {
+	color: var(--warn);
+}
+
 .stat.goalStat b {
 	color: var(--mint);
 }

@@ -22,14 +22,16 @@ let zeroSeed = 0;
 for (let seed = 1; seed <= 200; seed++) {
 	for (let p = 0; p < PLANETS; p++) {
 		const g = Game.planetGravity(seed, p);
-		assert.ok(g >= -1 && g <= 5, 'out-of-range gravity');
+		assert.ok(g >= Game.PLANET_GRAVITY_MIN && g <= Game.PLANET_GRAVITY_MAX,
+			'out-of-range gravity');
 		assert.ok(Math.abs(g * 20 - Math.round(g * 20)) < 1e-9, 'gravity is not on the 0.05 grid');
 		assert.strictEqual(g, Game.planetGravity(seed, p));
 		values.add(g);
 		if (g === 0 && !zeroSeed) zeroSeed = seed;
 	}
 }
-assert.ok(values.has(-1) && values.has(0) && values.has(5) && values.size === 121);
+assert.ok(values.has(-1) && values.has(0) && values.has(3.5) &&
+	!values.has(5) && values.size === 91);
 assert.ok(zeroSeed > 0);
 assert.ok(/id="gravity"[^>]*max="5"/.test(html));
 assert.ok(/id="expGravity"[^>]*max="9"/.test(html));
@@ -154,15 +156,18 @@ const sharedHelp = ui.get('helpControls').textContent;
 assert.match(sharedHelp, /Drag from a planet or pad/);
 assert.match(sharedHelp, /Shift/);
 help.fireElement(ui.get('modeRoute'), 'pointerenter', { pointerType: 'mouse' });
+assert.strictEqual(ui.get('helpModeTitle').textContent, 'route · longest trajectory');
 assert.strictEqual(ui.get('helpControls').textContent, sharedHelp);
 assert.match(ui.get('helpDetail').textContent, /No launch is needed/);
 assert.match(ui.get('helpModeControls').textContent, /Use best/);
 help.fireElement(ui.get('modeCareer'), 'pointerenter', { pointerType: 'mouse' });
+assert.strictEqual(ui.get('helpModeTitle').textContent, 'career · catapult network');
 assert.strictEqual(ui.get('helpControls').textContent, sharedHelp);
 assert.match(ui.get('helpDetail').textContent, /HQ \(g = 1\)/);
 assert.match(ui.get('helpModeControls').textContent, /Space \/ P/);
 assert.ok(!ui.get('helpModeControls').textContent.includes('Drag from a planet'));
 help.choose('modeTour');
+assert.strictEqual(ui.get('helpModeTitle').textContent, 'tour');
 assert.ok(ui.get('clear').hidden, 'flown games must not show an abort button');
 help.choose('modeRoute');
 assert.ok(!ui.get('clear').hidden && ui.get('clear').textContent === 'clear plan');

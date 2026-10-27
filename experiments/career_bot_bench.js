@@ -310,9 +310,9 @@ check('padless solvency gate counts this flight\'s launch fee', () => {
 	const exit = GravityGame.exitCostAt(w.career, body, w.career.ship.mass);
 	const fee = GravityGame.launchFee(w.career, other, speed);
 	assert.ok(fee > 0 && exit > 0, 'fixture must fly commercial off a padless planet');
-	/* enough for the old gate (purse + cash >= exit + margin), short once
-	 * this flight's own fee is counted: the shot must not score */
-	w.ledger.purse = fee + exit * 1.5 - cash - 0.5;
+	/* the launch fee is covered, but the harvest leaves less than the sampled
+	 * exit price: the shot must not score */
+	w.ledger.purse = fee + exit - cash - 0.5;
 	assert.strictEqual(w.bot.careerScoreProbe(w.career, w.sim, other, speed, w.market, 0),
 		-Infinity, 'a landing the purse cannot leave must not score');
 	w.ledger.purse += 1;

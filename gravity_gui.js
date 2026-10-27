@@ -194,7 +194,7 @@
 	const LOCK_DASH = [0, 0];
 	const COMMON_HELP = 'Drag from a planet or pad to aim; hold Shift for 1/20 fine control. ' +
 		'Release to preview; in flight modes, Enter or launch fires and landing stages the next shot. ' +
-		'Esc cancels an aim or queued launch. Planet gravity is seeded from −1 to +5; ' +
+		'Esc cancels an aim or queued launch. Planet gravity is seeded from −1 to +3.5; ' +
 		'negative gravity repels. The seed is in the URL.';
 	const RULE_HELP = {
 		lab: {
@@ -381,6 +381,7 @@
 	const tradeFoldBtn = $('tradeFoldBtn');
 	const helpDrawer = $('helpDrawer');
 	const helpClose = $('helpClose');
+	const helpModeTitleEl = $('helpModeTitle');
 	const helpRuleNameEl = $('helpRuleName');
 	const helpGoalEl = $('helpGoal');
 	const helpScoreEl = $('helpScore');
@@ -537,6 +538,7 @@
 	let selectedLabel = '';
 	let hoverLabel = '';
 	let aimLabel = '';
+	let aimGuidance = 0;
 	let hudAimText = '';
 	let hudTagText = '';
 	let hudVisitText = '';
@@ -557,6 +559,7 @@
 	let hudRivalText = '';
 	let hudReplayText = '';
 	let predGain = 0;
+	const aimEconomics = { state: 0, launchable: true, fee: 0, exit: 0, net: 0, source: '' };
 	let launchState = -1;
 	let launchNote = '';
 	let linkNote = '';
@@ -692,6 +695,7 @@
 	function updateHelp(rule) {
 		helpRule = RULE_HELP[rule] ? rule : selectedHelpRule();
 		const help = RULE_HELP[helpRule];
+		if (helpModeTitleEl) helpModeTitleEl.textContent = help.name;
 		if (helpRuleNameEl) helpRuleNameEl.textContent = help.name;
 		if (helpGoalEl) helpGoalEl.textContent = help.goal;
 		if (helpScoreEl) helpScoreEl.textContent = help.score;
@@ -1155,24 +1159,40 @@
 		predGain = gain;
 	}
 
-	/* what leaving the predicted landing planet will cost when you hold no
-	 * EMC there: the commercial launch, a rival's tax, a build or evacuation */
-	function predExitCost(sim) {
-		if (!careerRule() || sim.predCount < 2 || sim.predReason !== END_IMPACT || sim.predBody < 0) {
-			return 0;
-		}
-		const pad = game.career.pads[sim.predBody];
-		if (!pad || pad.catapult !== null) return 0;
-		const cost = GravityGame.exitCostAt(game.career, sim.predBody, game.career.ship.mass);
-		return Number.isFinite(cost) ? cost : 0;
+	function predictedCareerEconomics(sim) {
+		const out = aimEconomics;
+		out.state = 0;
+		out.launchable = true;
+		out.fee = 0;
+		out.exit = 0;
+		out.net = predGain;
+		out.source = '';
+		if (!careerRule() || sim.predCount < 2 || sim.predReason !== END_IMPACT ||
+			sim.predBody < 0) return out;
+		const career = game.career;
+		const origin = sim.status === STATUS_FLYING ? sim.origin
+			: aimBody >= 0 ? aimBody : career.at;
+		const fee = sim.status === STATUS_FLYING ? 0
+			: GravityGame.launchFee(career, origin, aimSpeed);
+		const cash = career.ledger.purse + predGain - fee;
+		const mass = bot.careerArrivalMass(career, sim.predBody);
+		const departure = bot.careerDeparture(career, sim.predBody, cash, mass, gravity);
+		out.fee = fee;
+		out.exit = departure.cost;
+		out.source = departure.source;
+		out.launchable = career.ledger.purse + 1e-9 >= fee && departure.ok;
+		out.net = predGain - fee - (departure.ok ? departure.cost : 0);
+		out.state = !out.launchable ? 2 : out.net > 1e-9 ? 1 : 0;
+		return out;
 	}
 
-	function predProfitText(sim) {
-		const exit = predExitCost(sim);
-		const gain = predGain.toFixed(2);
-		if (exit <= 0) return gain;
-		const sub = Number.isInteger(exit) ? String(exit) : exit.toFixed(2);
-		return gain + '-' + sub;
+	function predProfitText(sim, economics) {
+		if (careerRule()) {
+			const money = economics || predictedCareerEconomics(sim);
+			if (!money.launchable) return signedMoney(predGain) + ' · no exit';
+			return signedMoney(money.net);
+		}
+		return signedMoney(predGain);
 	}
 
 	function predRateText(sim) {
@@ -1203,12 +1223,16 @@
 
 	function refreshAimLabel() {
 		const sim = activeSim();
+		aimGuidance = 0;
 		if (burnAiming || burnArmed) {
 			const deg = ((-burnAngle * 180 / Math.PI) % 360 + 360) % 360;
 			const ship = game.career.ship;
 			const usedKg = OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg);
+			const economics = sim.predCount >= 2 && careerRule()
+				? predictedCareerEconomics(sim) : null;
+			if (economics) aimGuidance = economics.state;
 			const visitNote = sim.predCount >= 2
-				? ' · +' + predProfitText(sim) + ' · ' + predRateText(sim) +
+				? ' · ' + predProfitText(sim, economics) + ' · ' + predRateText(sim) +
 					' · ' + sim.predTime.toFixed(1) + ' s · +' + sim.predNewVisits +
 					' (' + sim.predVisits + ' sys)'
 				: '';
@@ -1222,12 +1246,15 @@
 		}
 		const deg = ((-aimAngle * 180 / Math.PI) % 360 + 360) % 360;
 		const ceiling = aimBody >= 0 ? speedCeiling(aimBody) : SPEED_MAX;
+		const economics = sim.predCount >= 2 && careerRule()
+			? predictedCareerEconomics(sim) : null;
+		if (economics) aimGuidance = economics.state;
 		const visitNote = sim.predCount >= 2
 			? routeRule()
 				? ' · ' + Math.round(sim.predLength) + ' px · ' +
 					sim.predTime.toFixed(1) + ' s' +
 					(sim.routeActive ? ' · tracing' : '')
-				: (game.on ? ' · +' + predProfitText(sim) + ' · ' + predRateText(sim) : '') +
+				: (game.on ? ' · ' + predProfitText(sim, economics) + ' · ' + predRateText(sim) : '') +
 					' · ' + sim.predTime.toFixed(1) + ' s · +' +
 					sim.predNewVisits + ' (' + sim.predVisits + ' sys)'
 			: '';
@@ -1995,14 +2022,15 @@
 			if (probe.predReason === END_IMPACT || probe.predReason === END_EXIT) return probe.predLength;
 			return -1e12;
 		}
-		/* the two career money buttons: rank by money alone, and only accept a
-		 * landing the purse can leave (or, for EMC, one that can build) */
-		if (careerRule() && helperState.goal !== 'score') {
-			if (probe.predReason !== END_IMPACT || probe.predBody < 0) return -1e12;
-			const money = traceMoney(probe, origin, GravityGame.speedOf(cand.speedU));
-			if (!moneyFlyable(money)) return -1e11;
-			if (helperState.goal === 'profitEmc' && !money.builds) return -1e12;
-			return money.net;
+		let careerMoney = null;
+		if (careerRule()) {
+			if (probe.predReason !== END_IMPACT || probe.predBody < 0) return -Infinity;
+			careerMoney = traceMoney(probe, origin, GravityGame.speedOf(cand.speedU));
+			if (!moneyFlyable(careerMoney)) return -Infinity;
+			if (helperState.goal !== 'score') {
+				if (helperState.goal === 'profitEmc' && !careerMoney.builds) return -Infinity;
+				return careerMoney.net;
+			}
 		}
 		const profit = game.on ? GravityGame.estimateProfit(game.market, game.clockSteps, probe) : 0;
 		const lands = probe.predReason === END_IMPACT && probe.predBody !== origin ? 1 : 0;
@@ -2010,13 +2038,8 @@
 		const newVisits = probe.predNewVisits;
 		let score = lands * 12 - samePad * 35 - (probe.predReason === END_EXIT ? 220 : 0);
 		if (careerRule()) {
-			if (probe.predReason !== END_IMPACT) return -1e12;
 			const career = game.career;
 			const body = probe.predBody;
-			if (career.pads[body].catapult === null && body !== origin &&
-				career.ledger.purse + profit + 1e-9 < OrbitTech.CATAPULTS[0].buildCost) {
-				return -1e11;
-			}
 			if (career.contract >= 0) {
 				const task = career.tasks[career.contract];
 				if (task.state === GravityGame.TASK_LOADED && body === task.to) score += task.reward * 40;
@@ -4975,7 +4998,10 @@
 	}
 
 	/* one scratch result: callers read it before the next pricing call */
-	const shotMoney = { cash: 0, fee: 0, exit: 0, net: 0, builds: false };
+	const shotMoney = {
+		cash: 0, fee: 0, exit: Infinity, net: -Infinity,
+		builds: false, launchable: false, source: ''
+	};
 
 	/* A fresh trace and a stored visit log differ only in the harvest they
 	 * price, so both feed this table: contract and competition pay, the launch
@@ -4992,16 +5018,17 @@
 			length >= compete.minLength &&
 			game.clockSteps + steps <= compete.deadline) cash += compete.reward;
 		const fee = GravityGame.launchFee(career, origin, speed);
-		const padless = career.pads[body].catapult === null && body !== origin;
-		const exit = padless ? GravityGame.exitCostAt(career, body, career.ship.mass) : 0;
-		const leave = Number.isFinite(exit) ? exit : 1e6;
+		const available = career.ledger.purse + cash - fee;
+		const mass = bot.careerArrivalMass(career, body);
+		const departure = bot.careerDeparture(career, body, available, mass, gravity);
+		const padless = career.pads[body].catapult === null;
 		shotMoney.cash = cash;
 		shotMoney.fee = fee;
-		shotMoney.exit = leave;
-		shotMoney.net = cash - fee - leave;
-		shotMoney.builds = padless &&
-			career.ledger.purse + cash - fee + 1e-9 >=
-				careerCost(career, OrbitTech.CATAPULTS[0].buildCost);
+		shotMoney.exit = departure.ok ? departure.cost : Infinity;
+		shotMoney.net = departure.ok ? cash - fee - departure.cost : -Infinity;
+		shotMoney.builds = padless && (departure.builds || departure.canBuildStarter);
+		shotMoney.launchable = career.ledger.purse + 1e-9 >= fee && departure.ok;
+		shotMoney.source = departure.source;
 		return shotMoney;
 	}
 
@@ -5021,9 +5048,7 @@
 	/* the two live gates the launch button applies: the fee is covered and the
 	 * landing can be left again */
 	function moneyFlyable(money) {
-		const purse = game.career.ledger.purse;
-		return purse + 1e-9 >= money.fee &&
-			purse + money.cash - money.fee + 1e-9 >= money.exit;
+		return money.launchable && game.career.ledger.purse + 1e-9 >= money.fee;
 	}
 
 	function escapeHtml(text) {
@@ -6608,7 +6633,8 @@
 			if (x < 8) x = 8;
 		}
 		plate(x, y, width, 20);
-		ctx.fillStyle = fine ? ICE : GOLD;
+		ctx.fillStyle = !careerRule() || aimGuidance === 0
+			? fine ? ICE : GOLD : aimGuidance === 1 ? MINT : WARN;
 		ctx.textAlign = 'left';
 		ctx.textBaseline = 'middle';
 		ctx.fillText(aimLabel, x + 10, y + 10.5);
@@ -6992,6 +7018,25 @@
 	function updateLiveHud() {
 		const sim = activeSim();
 		const plan = activeRoutePlan();
+		const guidedCareer = careerRule() && sim.predCount >= 2 &&
+			(aiming || armed || burnAiming || burnArmed || sim.status === STATUS_FLYING);
+		const economics = guidedCareer ? predictedCareerEconomics(sim) : null;
+		aimGuidance = economics ? economics.state : 0;
+		if (aimEl) {
+			aimEl.classList.toggle('profitable', guidedCareer && aimGuidance === 1);
+			aimEl.classList.toggle('neutral', guidedCareer && aimGuidance === 0);
+			aimEl.classList.toggle('unlaunchable', guidedCareer && aimGuidance === 2);
+		}
+		if (predVisitEl) {
+			predVisitEl.classList.toggle('profitable', guidedCareer && aimGuidance === 1);
+			predVisitEl.classList.toggle('neutral', guidedCareer && aimGuidance === 0);
+			predVisitEl.classList.toggle('unlaunchable', guidedCareer && aimGuidance === 2);
+		}
+		if (predProfitEl) {
+			predProfitEl.classList.toggle('profitable', guidedCareer && aimGuidance === 1);
+			predProfitEl.classList.toggle('neutral', guidedCareer && aimGuidance === 0);
+			predProfitEl.classList.toggle('unlaunchable', guidedCareer && aimGuidance === 2);
+		}
 		const text = aiming || armed || burnAiming || burnArmed ? aimLabel : '—';
 		if (text !== hudAimText) {
 			hudAimText = text;
@@ -7030,14 +7075,14 @@
 				? sim.routeActive ? 'tracing…' : endText(sim.predReason, sim.predBody)
 				: sim.predVisits + ' sys · +' + sim.predNewVisits +
 					' (' + (sim.visitedCount + sim.predNewVisits) + '/' + planetCount + ')' +
-					(game.on ? ' · +' + predProfitText(sim) : '')
+					(game.on ? ' · ' + predProfitText(sim, economics) : '')
 			: '—';
 		if (predText !== hudPredVisitText) {
 			hudPredVisitText = predText;
 			if (predVisitEl) predVisitEl.textContent = predText;
 		}
 		const profitText = game.on && !routeRule() && sim.predCount >= 2
-			? '+' + predProfitText(sim) + ' · ' + predRateText(sim) +
+			? predProfitText(sim, economics) + ' · ' + predRateText(sim) +
 				' · ' + sim.predTime.toFixed(1) + ' s'
 			: '—';
 		if (profitText !== hudPredProfitText) {
@@ -7825,6 +7870,7 @@
 		planetCount: () => planetCount,
 		freePlanetCount: freePlanetCount,
 		predGain: () => predGain,
+		aimGuidance: () => aimGuidance,
 		predTime: () => activeSim().predTime,
 		speedCeiling,
 		experimentScales: () => ({ gravity: gravityScale, force: forceScale }),

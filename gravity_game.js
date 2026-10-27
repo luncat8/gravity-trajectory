@@ -97,7 +97,7 @@
 	const NO_ABORT = -1;
 	const SALT_GRAVITY = 0xce;
 	const PLANET_GRAVITY_MIN = -1;
-	const PLANET_GRAVITY_MAX = 5;
+	const PLANET_GRAVITY_MAX = 3.5;
 	const PLANET_GRAVITY_STEPS = 20;
 	const PLANET_GRAVITY_CHOICES = (PLANET_GRAVITY_MAX - PLANET_GRAVITY_MIN) * PLANET_GRAVITY_STEPS + 1;
 	const SHOT_FORM = /^([pm])(\d{1,2})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})(?:\.([0-9a-z]{1,4}))?$/;
@@ -1562,6 +1562,7 @@
 		PLAYER_USER, PLAYER_BOT, PLAYER_TYPES,
 		CHEAT_COMMUNISM, CHEAT_ENDGAME, CHEATS,
 		SRC_PLANETS, SRC_PORTS, NO_ABORT, MONEY, PURSE_PRESETS, EXPERIMENT,
+		PLANET_GRAVITY_MIN, PLANET_GRAVITY_MAX, PLANET_GRAVITY_STEPS,
 		planetGravity, angleUnits, angleOf, speedUnits, speedOf,
 		createBurn, encodeBurn, createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
 		initSteps, createMarket, resetMarket, planetProfit,
