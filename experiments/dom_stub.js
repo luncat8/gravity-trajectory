@@ -157,6 +157,14 @@ function loadPage(options = {}) {
 			}
 		},
 		location: location,
+		history: {
+			replaceState(state, title, href) {
+				const url = new URL(href, location.href);
+				location.href = url.href;
+				location.search = url.search;
+				location.hash = url.hash;
+			}
+		},
 		navigator: options.clipboard === false ? {} : { clipboard: clipboard },
 		URLSearchParams: URLSearchParams,
 		innerWidth: 1280,

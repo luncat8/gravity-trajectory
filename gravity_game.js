@@ -88,13 +88,18 @@
 	const PURSE_PRESETS = { tight: 2, standard: 3, relaxed: 6 };
 	/* experimental settings panel bounds; links carry the two multipliers */
 	const EXPERIMENT = {
-		gravityMin: 0, gravityMax: 2,
+		gravityMin: 0, gravityMax: 9,
 		forceMin: 0.25, forceMax: 3
 	};
 	const SRC_PLANETS = 0;
 	const SRC_PORTS = 1;
 	const SRC_CODES = 'pm';
 	const NO_ABORT = -1;
+	const SALT_GRAVITY = 0xce;
+	const PLANET_GRAVITY_MIN = -1;
+	const PLANET_GRAVITY_MAX = 5;
+	const PLANET_GRAVITY_STEPS = 20;
+	const PLANET_GRAVITY_CHOICES = (PLANET_GRAVITY_MAX - PLANET_GRAVITY_MIN) * PLANET_GRAVITY_STEPS + 1;
 	const SHOT_FORM = /^([pm])(\d{1,2})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})(?:\.([0-9a-z]{1,4}))?$/;
 	const BURN_FORM = /^b([0-9a-z]{1,4})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})$/;
 	const END_FORM = /^(\d{1,2})\.(\d{1,9})$/;
@@ -102,6 +107,12 @@
 	/* launch book: saved career trajectories and the visit log each one keeps */
 	const BOOK_MAX = 10;
 	const BOOK_LOG_MAX = 64;
+
+	/* A separate seed stream keeps gravity stable when planets are added or removed. */
+	function planetGravity(seed, planet) {
+		const step = Math.floor(OrbitWorld.hash01(seed, planet, SALT_GRAVITY) * PLANET_GRAVITY_CHOICES);
+		return (step + PLANET_GRAVITY_MIN * PLANET_GRAVITY_STEPS) / PLANET_GRAVITY_STEPS;
+	}
 
 	function angleUnits(angle) {
 		return (Math.round(angle / ANGLE_UNIT) % ANGLE_STEPS + ANGLE_STEPS) % ANGLE_STEPS;
@@ -1551,7 +1562,7 @@
 		PLAYER_USER, PLAYER_BOT, PLAYER_TYPES,
 		CHEAT_COMMUNISM, CHEAT_ENDGAME, CHEATS,
 		SRC_PLANETS, SRC_PORTS, NO_ABORT, MONEY, PURSE_PRESETS, EXPERIMENT,
-		angleUnits, angleOf, speedUnits, speedOf,
+		planetGravity, angleUnits, angleOf, speedUnits, speedOf,
 		createBurn, encodeBurn, createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
 		initSteps, createMarket, resetMarket, planetProfit,
 		createLedger, resetLedger, beginFlight, stepHarvest, endFlight,

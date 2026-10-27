@@ -4,7 +4,7 @@
  * 1. trade world: advanceTo in random chunks vs one jump; reset vs new Sim
  * 2. replay link codec round trip + rejects; aim grid idempotence
  * 3. a scripted game played through the page at 60 Hz (planets, moving ports,
- *    one abort), then its copied link replayed at 144 Hz, with jittery frames,
+ *    natural flight endings), then its copied link replayed at 144 Hz, with jittery frames,
  *    at x16 and via skip: every end state must match bit for bit
  * 4. cross-engine proxy: 1-ulp launch-angle nudge and 1-ulp port-position
  *    nudge at every field fill; outcome flips and end-point drift
@@ -94,7 +94,7 @@ function benchCodec() {
 				GravityGame.speedUnits(GravitySim.SPEED_MIN + rand() * (GravitySim.SPEED_MAX - GravitySim.SPEED_MIN)),
 				planner || rand() >= 0.2 ? GravityGame.NO_ABORT : Math.floor(rand() * cap)));
 		}
-		const gravityScale = n % 7 === 0 ? Math.round(rand() * 20) / 10 : 1;
+		const gravityScale = n % 7 === 0 ? Math.round(rand() * 90) / 10 : 1;
 		const forceScale = n % 5 === 0 ? Math.round((0.25 + rand() * 2.75) * 100) / 100 : 1;
 		const game = { seed: 1 + Math.floor(rand() * 4e9), rate: (1 + Math.floor(rand() * 24)) / 2,
 			rule, bot, player, gravityScale, forceScale, shots, visited: Math.floor(rand() * 27),
@@ -119,7 +119,7 @@ function benchCodec() {
 		'game=1&seed=5&rate=1&rule=route&shots=p0.0.3aio_p1.0.3aio',
 		'game=1&seed=5&rate=1&rule=route&shots=p0.0.3aio.1',
 		'game=1&seed=5&rate=1&rule=route&shots=p0.0.3aio&len=-1',
-		'game=1&seed=5&rate=1&gs=2.05', 'game=1&seed=5&rate=1&gs=-0.1',
+		'game=1&seed=5&rate=1&gs=9.05', 'game=1&seed=5&rate=1&gs=-0.1',
 		'game=1&seed=5&rate=1&gs=1.234', 'game=1&seed=5&rate=1&fs=0.1',
 		'game=1&seed=5&rate=1&fs=3.01', 'game=1&seed=5&rate=1&gs=abc',
 		'game=1&seed=5&rate=1&fs='];
@@ -212,7 +212,7 @@ function chooseShot(page, horizon = 20) {
 
 const SCRIPT = [
 	{ src: 'srcPlanets' }, { src: 'srcPlanets' }, { src: 'srcPlanets' },
-	{ src: 'srcPorts' }, { src: 'srcPorts', abortFrames: 45 }, { src: 'srcPorts' },
+	{ src: 'srcPorts' }, { src: 'srcPorts' }, { src: 'srcPorts' },
 	{ src: 'srcPlanets' }, { src: 'srcPlanets' }
 ];
 
@@ -232,7 +232,6 @@ function playScript() {
 		page.click('launch');
 		if (scene.game.shots.length !== fired + 1) throw new Error('scripted shot did not fire');
 		for (let f = 0; cargo.status === STATUS_FLYING; f++) {
-			if (f === step.abortFrames) page.click('clear');
 			page.runFrames(1, 16.7);
 		}
 		ends.push(endName(cargo.endReason) + (cargo.endReason === END_IMPACT ? ' P' + cargo.endBody : ''));
@@ -391,8 +390,8 @@ function benchRoute() {
  * asymptotically to the 3.00 cap), played at x8.
  */
 const MONEY_TOURS = [
-	{ horizon: 12, shots: 9, purse: 4.2620 },
-	{ horizon: 60, shots: 6, purse: 9.1819 }
+	{ horizon: 12, shots: 11, purse: 0.1935 },
+	{ horizon: 60, shots: 6, purse: 10.6310 }
 ];
 
 function playMoneyTour(horizon) {
@@ -443,25 +442,39 @@ function benchMoney() {
 }
 
 /*
- * A run that burns its purse with short aborted shots (an abort keeps only
- * what it entered, the launch fee is gone): launches are then refused, and the
- * recorded link still replays and verifies.
+ * A run that burns its purse with low-profit natural flights: launches are
+ * refused when broke, and the recorded link still replays and verifies.
  */
 function benchBroke() {
 	const page = loadPage({ hash: '#game=1&seed=31&rate=3' });
 	const scene = page.context.GravityScene;
 	const cargo = scene.sim;
 	page.runFrames(2, 16.7);
+	for (let i = 0; i < 3; i++) page.click('playFaster');
 	while (scene.game.money.purse >= 1 && scene.game.shots.length < 30) {
-		page.dragAim(cargo.landedBody >= 0 ? cargo.landedBody : 0, 0.7, 120);
+		const origin = cargo.landedBody >= 0 ? cargo.landedBody : 0;
+		let angle = 0;
+		let speed = 30;
+		let fewest = Infinity;
+		for (let a = 0; a < 72 && fewest > 0; a++) {
+			for (const v of [30, 60, 120, 200, 320]) {
+				const trial = a / 72 * Math.PI * 2;
+				cargo.predict(origin, trial, v);
+				if (cargo.predNewVisits < fewest) {
+					fewest = cargo.predNewVisits;
+					angle = trial;
+					speed = v;
+				}
+			}
+		}
+		page.dragAim(origin, angle, speed);
 		page.runFrames(1, 16.7);
 		const fired = scene.game.shots.length;
 		page.click('launch');
 		if (scene.game.shots.length !== fired + 1) throw new Error('waste shot did not fire');
-		for (let f = 0; f < 45 && cargo.status === STATUS_FLYING; f++) page.runFrames(1, 16.7);
-		page.click('clear');
 		let guard = 0;
 		while (cargo.status === STATUS_FLYING && guard++ < 2000) page.runFrames(1, 16.7);
+		check(cargo.status !== STATUS_FLYING, 'waste shot did not finish');
 	}
 	check(scene.game.money.purse < 1, 'the run did not go broke: ' + scene.game.money.purse);
 	const brokePurse = scene.game.money.purse;

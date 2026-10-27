@@ -1,7 +1,7 @@
 /*
  * Headless smoke test: loads the page scripts in a vm with a stub DOM/canvas,
  * runs frames, aims a shot, edits gravity, checks the clocks stay separate and
- * walks through game mode (frozen clock, locks, abort, replay link).
+ * walks through game mode (frozen clock, locks, completed flight, replay link).
  * Run: node experiments/dom_smoke.js
  */
 'use strict';
@@ -570,7 +570,7 @@ if (ui.get('visitReadout').textContent !== visitedAfterHop1) {
 console.log('grand tour verified:', cappedBefore, '->', continuedInFlight,
 	'| visited', visitedAfterHop1, '| next base P' + tour.end);
 
-/* game mode: seeded world, clock frozen between flights, locks, abort, replay link */
+/* game mode: seeded world, clock frozen between flights, locks, replay link */
 function check(ok, message) {
 	if (!ok) throw new Error(message);
 }
@@ -621,14 +621,14 @@ check(sim.t === 420 && ui.get('tradeClock').textContent === 't+ 07:00', 'world n
 check(ui.get('expClock').textContent === 'game + 00:00.0', 'game clock: ' + ui.get('expClock').textContent);
 check(ui.get('gamePurse').textContent === '3.00', 'purse stat: ' + ui.get('gamePurse').textContent);
 check(ui.get('tradePause').disabled && ui.get('gravity').disabled, 'pause / gravity not locked');
-check(ui.get('clear').textContent === 'abort' && ui.get('clear').disabled, 'abort button state');
+check(ui.get('clear').hidden && !ui.get('gameSeed'), 'game hides clear/abort and the seed/rate row');
 check(!ui.get('tradeSpeed').disabled, 'rate locked before the first shot');
 env.setValue('tradeSpeed', 2);
 const idleMoonX = scene.moons.x[0];
 env.runFrames(120, 16.0);
 check(sim.t === 420 && scene.moons.x[0] === idleMoonX, 'world moved while no cargo flies');
 console.log('game idle: trade', ui.get('tradeClock').textContent, '· clock', ui.get('expClock').textContent,
-	'· seed', ui.get('gameSeed').textContent, '· rival', ui.get('rivalReadout').textContent);
+	'· seed in URL', new URL(env.context.location.href).searchParams.get('seed'), '· rival', ui.get('rivalReadout').textContent);
 
 /* playback changes only the pace of the flight; physics steps stay identical */
 check(gScene.playScale() === 1 && ui.get('playTag').textContent === '×1', 'playback default');
@@ -646,7 +646,7 @@ check(ui.get('playSlower').disabled, 'slower not disabled at 0.25x');
 env.click('playReset');
 check(gScene.playScale() === 1 && !ui.get('playFaster').disabled, 'playback reset');
 
-const longShot = findShot((g, p) => g.predTime > 4 && g.predReason !== pageSim.END_EXIT);
+const longShot = findShot(g => g.predTime > 4 && g.predReason === pageSim.END_EXIT);
 dragShot(longShot);
 check(!ui.get('launch').disabled, 'game shot did not arm');
 check(ui.get('launch').textContent === 'launch · 1.00', 'launch fee label: ' + ui.get('launch').textContent);
@@ -661,24 +661,28 @@ check(cargo.angle === pageGame.angleOf(shot0.angle) && cargo.speed === pageGame.
 check(sim.t === cargo.flightFieldT && sim.t > 420, 'trade clock not locked to the flight clock');
 check(ui.get('tradeSpeed').disabled && ui.get('srcPorts').disabled && ui.get('launch').disabled,
 	'flight locks missing');
-check(!ui.get('clear').disabled && ui.get('cargoStatus').textContent === 'in flight · clock runs',
+check(ui.get('clear').hidden && ui.get('cargoStatus').textContent === 'in flight · clock runs',
 	'flight state: ' + ui.get('cargoStatus').textContent);
 check(scene.moons.x[0] !== idleMoonX, 'moons frozen during flight');
-const abortSteps = cargo.liveSteps;
 env.click('clear');
+check(cargo.status === pageSim.STATUS_FLYING && shot0.abort === pageGame.NO_ABORT,
+	'a hidden clear button must not abort a game flight');
+env.click('playFaster');
+env.click('playFaster');
+for (let i = 0; i < 2000 && cargo.status === pageSim.STATUS_FLYING; i++) env.runFrames(1, 16.0);
+env.click('playReset');
 env.runFrames(3, 16.0);
-check(shot0.abort === abortSteps && cargo.endReason === pageSim.END_ABORT && game.steps === abortSteps,
-	'abort not recorded at step ' + abortSteps);
-check(ui.get('cargoStatus').textContent === 'aborted · clock paused', 'status ' + ui.get('cargoStatus').textContent);
-/* money: the aborted shot paid its 1.00 launch cost and kept any non-launch
-   planets harvested before abort; the toast waits behind the entry postcard */
+const firstSteps = cargo.liveSteps;
+check(cargo.status === pageSim.STATUS_ENDED && cargo.endReason === pageSim.END_EXIT && game.steps === firstSteps,
+	'the first game flight did not finish naturally');
+/* The finished shot pays its launch cost and keeps the harvested profit. */
 const MINUS = '\u2212';
 const purse1 = game.money.purse;
 const net1 = purse1 - pageGame.MONEY.purse0;
-check(purse1 >= 2.0, 'abort purse dropped below 2.00: ' + purse1);
+check(purse1 >= 2.0, 'purse dropped below 2.00: ' + purse1);
 check(ui.get('gamePurse').textContent === purse1.toFixed(2) + ' · last ' +
 	(net1 < 0 ? MINUS : '+') + Math.abs(net1).toFixed(2),
-	'purse stat after abort: ' + ui.get('gamePurse').textContent);
+	'purse stat after flight: ' + ui.get('gamePurse').textContent);
 check(pagePhoto.toastQueued(), 'money toast not queued behind the entry card');
 pagePhoto.hide();
 check(pagePhoto.visible() && ui.get('photoTitle').textContent ===
@@ -687,12 +691,12 @@ check(pagePhoto.visible() && ui.get('photoTitle').textContent ===
 	ui.get('photoCaption').textContent.includes('purse ' + purse1.toFixed(2)),
 	'money toast: ' + ui.get('photoKicker').textContent + ' / ' +
 	ui.get('photoTitle').textContent + ' / ' + ui.get('photoCaption').textContent);
-console.log('money after abort: purse', purse1.toFixed(2), '· toast',
+console.log('money after flight: purse', purse1.toFixed(2), '· toast',
 	ui.get('photoCaption').textContent);
 const pausedT = sim.t;
 env.runFrames(60, 16.0);
 check(sim.t === pausedT, 'world moved after the flight ended');
-console.log('game flight: aborted at step', abortSteps, '· trade t+', (sim.t - 420).toFixed(3),
+console.log('game flight: finished at step', firstSteps, '· trade t+', (sim.t - 420).toFixed(3),
 	'min · clock', ui.get('expClock').textContent);
 
 const landShot = findShot((g, p) => g.predReason === pageSim.END_IMPACT && g.predBody !== p && g.predTime < 8);
@@ -704,12 +708,12 @@ for (let i = 0; i < 2000 && cargo.status === pageSim.STATUS_FLYING; i++) env.run
 env.calls.texts.length = 0;
 env.runFrames(2, 16.0);
 const profitLabels = env.calls.texts.filter(t => /^\+\d+\.\d{2}$/.test(t));
-check(profitLabels.includes('+0.00') && profitLabels.some(t => Number(t) > 0.25),
+check(profitLabels.some(t => Number(t) <= 0.06) && profitLabels.some(t => Number(t) >= 0.25),
 	'canvas planet-profit labels did not reset on visit and grow over game time: ' + profitLabels.join(' '));
 env.click('playReset');
 check(gScene.playScale() === 1, 'playback did not reset after the flight');
 check(cargo.status === pageSim.STATUS_ENDED && game.shots.length === 2, 'second game flight did not end');
-check(game.steps === abortSteps + cargo.liveSteps, 'game steps do not add up');
+check(game.steps === firstSteps + cargo.liveSteps, 'game steps do not add up');
 /* a landing card owns the slot this frame, so no money toast is queued */
 check(!pagePhoto.toastQueued() && pagePhoto.visible(), 'landing card vs money toast');
 const endX = cargo.cargo.x;
@@ -735,7 +739,7 @@ const link = env.clipboardText || '';
 check(link.startsWith(env.context.location.href.split('#')[0] + '#game=1&seed=7&rate=2&bot=normal&shots='), 'link: ' + link);
 const decoded = pageGame.decodeLink(link.slice(link.indexOf('#')));
 check(decoded && decoded.bot === 'normal' && decoded.shots.length === 2 &&
-	decoded.shots[0].abort === abortSteps &&
+	decoded.shots[0].abort === pageGame.NO_ABORT &&
 	decoded.end.visited === endVisited && decoded.end.steps === endSteps, 'link does not carry the run');
 console.log('replay link:', link.slice(link.indexOf('#')));
 
@@ -1109,7 +1113,8 @@ const challenge = loadPage({ hash: '#game=1&seed=42&rate=1', clipboard: false })
 challenge.runFrames(2, 16.0);
 const cui = challenge.elements;
 check(challenge.context.GravityScene.game.seed === 42 && challenge.context.OrbitScene.sim.seed === 42, 'challenge seed');
-check(cui.get('tradeSpeed').disabled && cui.get('gameSeed').textContent === 'seed 42 · ×1', 'challenge rate not fixed');
+check(cui.get('tradeSpeed').disabled && new URL(challenge.context.location.href).searchParams.get('seed') === '42',
+	'challenge rate not fixed or seed missing from URL');
 challenge.click('gameCopy');
 check(!cui.get('gameLink').hidden && cui.get('gameLink').value.endsWith('#game=1&seed=42&rate=1'), 'copy fallback');
 challenge.setHash('#game=1&seed=0&rate=1');
@@ -1318,9 +1323,18 @@ let landingShot = null;
 for (let a = 0; a < 72 && !landingShot; a++) {
 	const angle = a / 72 * Math.PI * 2;
 	kCargo.predict(career.hq, angle, CAREER_TEST_SPEED);
-	if (kCargo.predReason === kSim.END_IMPACT && kCargo.predBody !== career.hq) landingShot = angle;
+	if (kCargo.predReason !== kSim.END_IMPACT || kCargo.predBody === career.hq) continue;
+	const destination = kCargo.predBody;
+	for (let b = 0; b < 72; b++) {
+		kCargo.predict(destination, b / 72 * Math.PI * 2, CAREER_TEST_SPEED);
+		if (kCargo.predReason === kSim.END_IMPACT && kCargo.predBody !== destination &&
+			kCargo.predBody !== career.hq) {
+			landingShot = angle;
+			break;
+		}
+	}
 }
-check(landingShot !== null, 'no landing shot from HQ at ' + CAREER_TEST_SPEED + ' px/s');
+check(landingShot !== null, 'no two-leg landing chain from HQ at ' + CAREER_TEST_SPEED + ' px/s');
 careerEnv.dragAim(career.hq, landingShot, CAREER_TEST_SPEED);
 careerEnv.runFrames(2, 16.0);
 const ownedEnergy = OrbitTech.launchEnergy(career.ship.mass,
@@ -1707,8 +1721,17 @@ buildEnv.runFrames(2, 16.0);
 check(bui.get('launch').textContent === 'launch, ' + OrbitTech.launchEnergy(bCareer.ship.mass,
 	bCareer.pads[bCareer.at].catapult, bScene.aimState().speed).toFixed(2) + ' kWh',
 	'new pad launch state: ' + bui.get('launch').textContent);
-const secondAngle = landingAngle(bCargo, bCareer.at, CAREER_TEST_SPEED);
-check(secondAngle !== null, 'build env: no second flight from the new pad');
+let secondAngle = 0;
+let secondTime = 0;
+for (let a = 0; a < 72; a++) {
+	const angle = a / 72 * Math.PI * 2;
+	bCargo.predict(bCareer.at, angle, CAREER_TEST_SPEED);
+	if (bCargo.predTime > secondTime) {
+		secondAngle = angle;
+		secondTime = bCargo.predTime;
+	}
+}
+check(secondTime > 0.5, 'build env: no observable flight from the new pad');
 const padCharge = bCareer.pads[bCareer.at].chargeKwh;
 buildEnv.dragAim(bCareer.at, secondAngle, CAREER_TEST_SPEED);
 buildEnv.runFrames(2, 16.0);
@@ -1837,20 +1860,26 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	const chargeBefore = pCareer.pads[hq].chargeKwh;
 	const stepsBefore = pScene.game.clockSteps;
 	let profitBefore = 0;
-	for (let i = 0; i < 26; i++) profitBefore += pGame.planetProfit(pScene.game.market, i, stepsBefore);
+	for (let i = 0; i < 26; i++) {
+		if (pScene.game.market.planetMask[i]) profitBefore += pGame.planetProfit(pScene.game.market, i, stepsBefore);
+	}
 	pEnv.click('careerWait');
 	/* the 2 s fast-forward settles in exactly one chunk at the end */
 	pEnv.runFrames(130, 16.0);
 	const settledKwh = pCareer.pads[hq].chargeKwh - chargeBefore;
 	const settledSteps = pScene.game.clockSteps - stepsBefore;
 	let profitAfter = 0;
-	for (let i = 0; i < 26; i++) profitAfter += pGame.planetProfit(pScene.game.market, i, pScene.game.clockSteps);
+	for (let i = 0; i < 26; i++) {
+		if (pScene.game.market.planetMask[i]) profitAfter += pGame.planetProfit(pScene.game.market, i, pScene.game.clockSteps);
+	}
 	/* kWh and steps settle exactly as previewed; visit profit grows as
 	 * previewed minus whatever the rival companies harvest while living
 	 * through the same fast-forward on the shared market */
 	check(Math.abs(settledKwh - pre.hereGain) < 1e-9 && settledSteps === pre.steps &&
 		profitAfter - profitBefore <= pre.profitGain + 1e-9,
-		'wait settlement preview matches settled kWh and steps, visits grow net of rival harvests');
+		'wait settlement: charge ' + settledKwh + ' / ' + pre.hereGain +
+		' · steps ' + settledSteps + ' / ' + pre.steps +
+		' · profit ' + (profitAfter - profitBefore) + ' / ' + pre.profitGain);
 	check(pScene.bot.rivals[0].shots.length + pScene.bot.rivals[1].shots.length > 0,
 		'rival companies must live (launch) during a career wait');
 	const afterAim = pScene.aimState();
@@ -2039,7 +2068,9 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	const rBurnDvU = rGame.speedUnits(18);
 	rSim1.burn(rGame.angleOf(rBurnAngleU), rGame.speedOf(rBurnDvU));
 	rScene1.game.shots[0].burns.push(rGame.createBurn(rBurnStep, rBurnAngleU, rBurnDvU));
-	for (let i = 0; i < 600 && rSim1.status === pageSim.STATUS_FLYING; i++) rEnv1.runFrames(1, 40.0);
+	for (let i = 0; i < 3; i++) rEnv1.click('playFaster');
+	for (let i = 0; i < 2000 && rSim1.status === pageSim.STATUS_FLYING; i++) rEnv1.runFrames(1, 40.0);
+	check(rSim1.status === pageSim.STATUS_ENDED, 'burn fixture must finish before copying');
 	rEnv1.click('gameCopy');
 	const burnReplayUrl = rEnv1.clipboardText;
 	check(burnReplayUrl && burnReplayUrl.includes('-b' + rBurnStep.toString(36) + '.'),
