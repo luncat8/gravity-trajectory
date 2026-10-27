@@ -2393,6 +2393,12 @@
 						hudAt = -Infinity;
 						if (helperProgressFillEl) helperProgressFillEl.style.width = '100%';
 						setTimeout(() => { if (helperProgressFillEl && !helperState.active) helperProgressFillEl.style.width = '0%'; }, 900);
+					} else if (careerRule() && helperState.goal !== 'score') {
+						/* nothing flyable was found: say so instead of leaving the
+						 * previously armed shot standing in as a false find */
+						careerNotice(helperState.goal === 'profitEmc'
+							? 'no EMC-buildable landing'
+							: 'no paying shot found');
 					}
 					helperUpdateUi();
 					break;

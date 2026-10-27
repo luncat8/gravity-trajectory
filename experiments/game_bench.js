@@ -223,6 +223,9 @@ function playScript() {
 	page.runFrames(2, 16.7);
 	const ends = [];
 	for (const step of SCRIPT) {
+		/* the seeded gravity range decides how many aims the tour needs; once
+		 * the 26th system is entered the run locks and refuses more shots */
+		if (scene.game.doneSteps >= 0) break;
 		page.choose(step.src);
 		page.runFrames(1, 16.7);
 		const shot = chooseShot(page);
@@ -387,11 +390,12 @@ function benchRoute() {
 /*
  * Two greedy tours on seed 31 rate 3 under the per-planet growing profit
  * market (purse0 = 3.00, cost = 1.00, initial slope k = 0.00625/s easing
- * asymptotically to the 3.00 cap), played at x8.
+ * asymptotically to the 3.00 cap), played at x8. Shot counts and purses are
+ * the deterministic baseline of the current seeded gravity range (−1…3.5).
  */
 const MONEY_TOURS = [
-	{ horizon: 12, shots: 11, purse: 0.1935 },
-	{ horizon: 60, shots: 6, purse: 10.6310 }
+	{ horizon: 12, shots: 9, purse: 5.2025 },
+	{ horizon: 60, shots: 4, purse: 11.0147 }
 ];
 
 function playMoneyTour(horizon) {

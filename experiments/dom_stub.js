@@ -179,6 +179,13 @@ function loadPage(options = {}) {
 	};
 	context.window = context;
 	vm.createContext(context);
+	/* the page draws helper aims, roster spawns and new seeds from Math.random;
+	 * pin it so every run of the same page plays the same random presses */
+	vm.runInContext('let rngState = 2026;' +
+		'Math.random = function () {' +
+		'rngState = (Math.imul(rngState, 1664525) + 1013904223) >>> 0;' +
+		'return rngState / 4294967296;' +
+		'};', context, { filename: 'dom-stub-rng.js' });
 	SCRIPTS.forEach((file, i) => vm.runInContext(SOURCES[i], context, { filename: file }));
 
 	function fire(listeners, type, event) {
