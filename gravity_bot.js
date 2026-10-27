@@ -396,6 +396,18 @@
 		sim.setField(PLANETS, trade.planetR, this.strength, this.fillPlanets, true);
 	};
 
+	/* the run's active planet subset: every bot-owned sim and career mirrors it */
+	GravityBot.prototype.setPlanetMask = function (mask, count) {
+		this.probe.setPlanetMask(mask);
+		this.player.sim.setPlanetMask(mask);
+		for (let i = 0; i < MAX_RIVALS; i++) {
+			this.rivals[i].sim.setPlanetMask(mask);
+			if (this.rivals[i].career) {
+				GravityGame.setCareerUniverse(this.rivals[i].career, mask, count);
+			}
+		}
+	};
+
 	GravityBot.prototype.spec = function () {
 		return LEVELS[this.level] || LEVELS.off;
 	};
@@ -469,7 +481,7 @@
 
 	/* a human-only rule (career) never hands YOU to a bot, but its level does
 	 * decide how many rival career players share the map */
-	GravityBot.prototype.reset = function (seed, rule, level, playerType, rivalTypes) {
+	GravityBot.prototype.reset = function (seed, rule, level, playerType, rivalTypes, rivalCount) {
 		this.seed = seed >>> 0;
 		this.rule = GravityGame.RULES[rule] ? rule : GravityGame.RULE_TOUR;
 		const humanOnly = Boolean(this.ruleSpec().humanOnly);
@@ -484,6 +496,11 @@
 				? GravityGame.PLAYER_USER : GravityGame.PLAYER_BOT;
 		}
 		this.count = this.ruleSpec().humanOnly ? this.spec().careerCount : this.spec().count;
+		/* the scoreboard +/- sets the number of players directly, so it wins
+		 * over the difficulty level's rival count */
+		if (rivalCount !== undefined && rivalCount !== null) {
+			this.count = rivalCount < 0 ? 0 : (rivalCount > MAX_RIVALS ? MAX_RIVALS : rivalCount);
+		}
 		this.jobActive = false;
 		this.jobRival = -1;
 		this.routeCandActor = -1;

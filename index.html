@@ -23,6 +23,11 @@
 				<button id="scoreFoldBtn" class="miniBtn" data-fold="scoreHud" title="minimize panel" aria-expanded="true">−</button>
 			</div>
 		</div>
+		<div id="playerCountRow" class="playerCountRow">
+			<button id="playerCountDown" class="miniBtn" title="one fewer player">−</button>
+			<span class="playerCountLabel"><b id="playerCountValue">1</b> players</span>
+			<button id="playerCountUp" class="miniBtn" title="one more player">+</button>
+		</div>
 		<div class="scoreRows">
 			<div id="scorePlayer" class="scoreEntry scorePlayer isUser isActive" role="button" tabindex="0">
 				<span class="scoreName scoreActorName">
@@ -132,6 +137,7 @@
 	<div class="stats">
 		<div class="stat"><span>status</span><b id="cargoStatus">ready</b></div>
 		<div class="stat goalStat"><span id="visitLabel">systems visited</span><b id="visitReadout">0 / 26</b></div>
+		<div class="stat goalStat"><span>planets</span><input id="planetCountInput" class="planetCountInput" type="number" min="4" max="26" step="1" value="26"></div>
 		<div class="stat goalStat"><span id="predVisitLabel">pred visits</span><b id="predVisitReadout">—</b></div>
 		<div id="predProfitRow" class="stat goalStat" hidden><span>pred profit</span><b id="predProfitReadout">—</b></div>
 		<div id="flightRow" class="stat"><span>flight</span><b id="cargoFlight">—</b></div>
@@ -144,8 +150,8 @@
 	<div class="group">
 		<div class="caption"><span>mode</span><span id="modeTag">lab · free clock</span></div>
 		<div class="radioRow modeRow" role="radiogroup" aria-label="mode">
-			<label title="catapult network: rival players, EMC claims, usage tax"><input id="modeCareer" type="radio" name="playMode" value="career"> career</label>
-			<label title="free clock, editable gravity"><input id="modeLab" type="radio" name="playMode" value="lab" checked> lab</label>
+			<label title="catapult network: rival players, EMC claims, usage tax"><input id="modeCareer" type="radio" name="playMode" value="career" checked> career</label>
+			<label title="free clock, editable gravity"><input id="modeLab" type="radio" name="playMode" value="lab"> lab</label>
 			<label title="visit every planet system within the flight cap"><input id="modeTour" type="radio" name="playMode" value="tour"> visit all tour</label>
 			<label title="plan the longest single trajectory"><input id="modeRoute" type="radio" name="playMode" value="route"> route length</label>
 			<label title="collect planet visit profit for 10 launches"><input id="modeMoney" type="radio" name="playMode" value="money"> money for visit</label>

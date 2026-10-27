@@ -99,6 +99,15 @@
 	const glows = GOOD_GLOWS.map(makeGlow);
 	const colonyGlow = makeGlow(COLONY_GLOW);
 
+	/* the cargo layer's active planet subset; null = every planet drawn */
+	let planetMask = null;
+	function planetInPlay(planet) {
+		return !planetMask || planetMask[planet] === 1;
+	}
+	function setPlanetMask(mask) {
+		planetMask = mask || null;
+	}
+
 	const sim = new OrbitSim(7);
 	sim.step(START_MINUTES);
 	initMoonSystems();
@@ -288,6 +297,7 @@
 		let best = reach * reach;
 		let hit = -1;
 		for (let p = 0; p < sim.portCount; p++) {
+			if (!planetInPlay(sim.portPlanet[p])) continue;
 			const dx = portPX[p] - wx;
 			const dy = portPY[p] - wy;
 			const dist = dx * dx + dy * dy;
@@ -455,6 +465,7 @@
 		ctx.beginPath();
 		for (let i = 0; i < trackCount; i++) {
 			const p = trackPlanet[i];
+			if (!planetInPlay(p)) continue;
 			const a = trackA[i];
 			const focus = a * trackE[i];
 			ctx.moveTo(
@@ -474,6 +485,7 @@
 
 	function drawMoons(front) {
 		for (let i = 0; i < moonCount; i++) {
+			if (!planetInPlay(moonPlanet[i])) continue;
 			if ((moonWZ[i] >= 0) !== front) continue;
 			const x = moonWX[i];
 			const y = moonWY[i];
@@ -516,6 +528,7 @@
 	function drawOrbits() {
 		ctx.lineWidth = 1;
 		for (let planet = 0; planet < OrbitSim.PLANETS; planet++) {
+			if (!planetInPlay(planet)) continue;
 			const port = sim.planetPort[planet];
 			const active = port !== NO_PORT;
 			const colour = active ? GOOD_COLORS[sim.portSpec[port]] : '#3a5573';
@@ -539,11 +552,12 @@
 	function drawLinks() {
 		ctx.beginPath();
 		for (let p = 0; p < sim.portCount; p++) {
+			if (!planetInPlay(sim.portPlanet[p])) continue;
 			const base = p * OrbitSim.MAX_LINKS;
 			const count = sim.partnerCount[p];
 			for (let k = 0; k < count; k++) {
 				const q = sim.partners[base + k];
-				if (q === NO_PORT || q <= p) continue;
+				if (q === NO_PORT || q <= p || !planetInPlay(sim.portPlanet[q])) continue;
 				ctx.moveTo(portPX[p], portPY[p]);
 				ctx.lineTo(portPX[q], portPY[q]);
 			}
@@ -556,6 +570,7 @@
 
 	function drawPlanets() {
 		for (let planet = 0; planet < OrbitSim.PLANETS; planet++) {
+			if (!planetInPlay(planet)) continue;
 			const port = sim.planetPort[planet];
 			const state = sim.planetState[planet];
 			const x = sim.planetX[planet];
@@ -595,6 +610,7 @@
 		ctx.lineWidth = 1;
 		for (let p = 0; p < sim.portCount; p++) {
 			if (sim.builderActive[p] === 0) continue;
+			if (!planetInPlay(sim.portPlanet[p])) continue;
 			const span = sim.builderArrive[p] - sim.builderDepart[p];
 			let f = span > 0 ? (sim.t - sim.builderDepart[p]) / span : 1;
 			if (f < 0) f = 0;
@@ -635,6 +651,7 @@
 	function drawRoutes() {
 		for (let ship = 0; ship < sim.shipCount; ship++) {
 			if (sim.shipState[ship] === 0) continue;
+			if (!planetInPlay(sim.shipHome[ship])) continue;
 			const good = sim.shipGood[ship];
 			const colour = good === NO_GOOD ? '#8aa6bd' : GOOD_COLORS[good];
 			ctx.beginPath();
@@ -660,6 +677,7 @@
 			const spec = sim.portSpec[p];
 			const colour = GOOD_COLORS[spec];
 			const planet = sim.portPlanet[p];
+			if (!planetInPlay(planet)) continue;
 			const x = portPX[p];
 			const y = portPY[p];
 			ctx.beginPath();
@@ -691,6 +709,7 @@
 		}
 
 		for (let p = 0; p < sim.portCount; p++) {
+			if (!planetInPlay(sim.portPlanet[p])) continue;
 			const grown = sim.portProgress[p] / EXPAND_COST;
 			const progress = grown > 1 ? 1 : grown;
 			const ready = progress >= 1;
@@ -712,6 +731,7 @@
 
 	function drawShips() {
 		for (let ship = 0; ship < sim.shipCount; ship++) {
+			if (!planetInPlay(sim.shipHome[ship])) continue;
 			const x = shipPX[ship];
 			const y = shipPY[ship];
 			const angle = shipAngle[ship];
@@ -749,7 +769,7 @@
 	}
 
 	function drawHoverWorld() {
-		if (hoverPort < 0) return;
+		if (hoverPort < 0 || !planetInPlay(sim.portPlanet[hoverPort])) return;
 		const spec = sim.portSpec[hoverPort];
 		const colour = GOOD_COLORS[spec];
 		const x = portPX[hoverPort];
@@ -893,6 +913,13 @@
 			hoverLine2 = '';
 			return;
 		}
+		if (!planetInPlay(sim.portPlanet[hoverPort])) {
+			hoverPort = -1;
+			hoverTitle = '';
+			hoverLine1 = '';
+			hoverLine2 = '';
+			return;
+		}
 		const spec = sim.portSpec[hoverPort];
 		const progress = Math.min(1, sim.portProgress[hoverPort] / EXPAND_COST);
 		const planet = sim.portPlanet[hoverPort];
@@ -1030,6 +1057,7 @@
 		view: view,
 		trade: tradeState,
 		planetG: planetG,
+		setPlanetMask: setPlanetMask,
 		reset: resetWorld,
 		setSpeed: setSpeedValue,
 		setGameClock: setGameClock,

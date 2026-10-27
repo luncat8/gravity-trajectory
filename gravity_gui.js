@@ -279,6 +279,10 @@
 	function syncPlanetGravity() {
 		if (!scene.planetG) return;
 		for (let p = 0; p < PLANETS; p++) {
+			if (!planetMask[p]) {
+				scene.planetG[p] = 0;
+				continue;
+			}
 			const port = tradeSim.planetPort[p];
 			scene.planetG[p] = mode === MODE_PORTS && port !== NO_PORT
 				? portPlanetStrength[p]
@@ -313,6 +317,10 @@
 	const statusEl = $('cargoStatus');
 	const visitEl = $('visitReadout');
 	const visitLabelEl = $('visitLabel');
+	const planetCountInputEl = $('planetCountInput');
+	const playerCountValueEl = $('playerCountValue');
+	const playerCountDownEl = $('playerCountDown');
+	const playerCountUpEl = $('playerCountUp');
 	const predVisitEl = $('predVisitReadout');
 	const predVisitLabelEl = $('predVisitLabel');
 	const predProfitRowEl = $('predProfitRow');
@@ -580,11 +588,35 @@
 	 * market = per-planet visit clock shared with rivals, money = player purse ledger
 	 */
 	const game = { on: false, seed: 0, fixedRate: false, rule: RULE_TOUR, bot: BOT_NORMAL,
-		player: PLAYER_USER, cheat: null,
+		player: PLAYER_USER, cheat: null, playerCount: 0,
 		shots: [], steps: 0, clockSteps: 0, doneSteps: -1, length: 0,
 		market: GravityGame.createMarket(), money: GravityGame.createLedger(),
 		galaxy: GravityGame.createGalaxy() };
 	game.career = GravityGame.createCareer(game.money);
+	/* the run's planet universe: a subset of the 26 generated planets. Career
+	 * starts on 13, every other rule on all 26; the number input and the
+	 * scoreboard +/- change it live — increase adds a random planet, decrease
+	 * removes a random one (no refund) while every player's first HQ stays. */
+	const PLANET_UNIVERSE_MIN = 4;
+	const PLANET_UNIVERSE_MAX = PLANETS;
+	const PLANET_CAREER_DEFAULT = 13;
+	const PLANET_DEFAULT = PLANETS;
+	const planetMask = new Uint8Array(PLANET_UNIVERSE_MAX);
+	let planetCount = PLANET_DEFAULT;
+	/* last used game mode, restored on load */
+	const MODE_STORAGE = 'gravity.lastMode';
+	function loadLastMode() {
+		try {
+			const value = root.localStorage && root.localStorage.getItem(MODE_STORAGE);
+			if (value && (RULES[value] || value === PLAY_LAB)) return value;
+		} catch (e) { /* private mode */ }
+		return null;
+	}
+	function saveLastMode(rule) {
+		try {
+			if (root.localStorage) root.localStorage.setItem(MODE_STORAGE, rule);
+		} catch (e) { /* private mode */ }
+	}
 	/* career world clock: runs while unpaused; by default it pauses when your
 	 * flight ends so you can aim in peace (launching resumes it) */
 	let careerPaused = false;
@@ -840,6 +872,7 @@
 		let best = -1;
 		let bestD2 = Infinity;
 		for (let i = 0; i < PLANETS; i++) {
+			if (!planetMask[i]) continue;
 			const dx = tradeSim.planetX[i] - wx;
 			const dy = tradeSim.planetY[i] - wy;
 			const d2 = dx * dx + dy * dy;
@@ -938,6 +971,7 @@
 	function photoTick() {
 		if (!root.PhotoDeck || !tradeSim.planetType) return;
 		for (let i = 0; i < PLANETS; i++) {
+			if (!planetMask[i]) continue;
 			if (gravity.visited[i] !== 1 || photoSpace[i] === 1) continue;
 			photoSpace[i] = 1;
 			root.PhotoDeck.show('space', tradeSim.planetType[i], i);
@@ -975,7 +1009,7 @@
 		} else {
 			gravity.setField(PLANETS, tradeSim.planetR, planetStrength, fillPlanets, true);
 			sourceTagEl.textContent = 'planets';
-			sourceTagEl.title = PLANETS + ' planets';
+			sourceTagEl.title = planetCount + ' planets';
 		}
 		syncUserRivalFields();
 		syncPlanetGravity();
@@ -1935,6 +1969,7 @@
 	function helperAttachWorld() {
 		helperProbe.setPlanets(PLANETS, tradeSim.planetX, tradeSim.planetY, tradeSim.planetR,
 			tradeSim.orbitRX, tradeSim.orbitRY, tradeSim.orbitTiltCos, tradeSim.orbitTiltSin);
+		helperProbe.setPlanetMask(planetMask);
 		helperProbe.setField(gravity.bodyCount, gravity.bodyR, gravity.strength, gravity.fillField, gravity.fieldStatic);
 		helperProbe.fieldT = gravity.fieldT;
 		helperProbe.fieldRate = gravity.fieldRate;
@@ -1981,7 +2016,7 @@
 			}
 			score += profit * 28 + newVisits * 4 - probe.predTime * 0.12;
 		} else if (game.on && ruleSpec().stopOnTour) {
-			const wouldComplete = activeSim().visitedCount + newVisits >= PLANETS;
+			const wouldComplete = activeSim().visitedCount + newVisits >= planetCount;
 			score += (wouldComplete ? 80 : 0) + newVisits * 12 + profit * 18 - probe.predTime * 0.16;
 		} else if (game.on && moneyRule()) {
 			score += profit * 30 + newVisits * 3 - probe.predTime * 0.14;
@@ -2011,8 +2046,8 @@
 			attempts += 1;
 			let planet;
 			if (fixedOrigin >= 0) planet = fixedOrigin;
-			else if (selected >= 0 && Math.random() < 0.42) planet = selected;
-			else planet = Math.floor(Math.random() * PLANETS);
+			else if (selected >= 0 && planetMask[selected] && Math.random() < 0.42) planet = selected;
+			else planet = randomActivePlanet();
 			if (route && routeOccupiedBy(planet) >= 0) continue;
 			if (!route && !game.on && planet >= PLANETS) continue;
 			if (game.on && !route && !canAimFrom(planet)) continue;
@@ -2140,6 +2175,7 @@
 		const span = Math.max(0, cap - SPEED_MIN);
 		const near = [];
 		for (let p = 0; p < PLANETS; p++) {
+			if (!planetMask[p]) continue;
 			if (p === origin || career.pads[p].catapult !== null) continue;
 			const dx = gravity.planetX[p] - gravity.planetX[origin];
 			const dy = gravity.planetY[p] - gravity.planetY[origin];
@@ -2613,6 +2649,132 @@
 		return ruleSpec().stopOnTour && game.doneSteps >= 0 ? game.doneSteps : gameSteps();
 	}
 
+	/* --- planet universe ------------------------------------------------- */
+
+	const MAX_PLAYERS = scoreRowEls.length;
+
+	function planetUniverseDefault(rule) {
+		return rule === RULE_CAREER ? PLANET_CAREER_DEFAULT : PLANET_DEFAULT;
+	}
+
+	/* a uniform draw over the run's in-play planets */
+	function randomActivePlanet() {
+		let pick = Math.floor(Math.random() * planetCount);
+		for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
+			if (!planetMask[i]) continue;
+			if (pick === 0) return i;
+			pick -= 1;
+		}
+		return -1;
+	}
+
+	function initPlanetUniverse(n) {
+		const count = Math.max(PLANET_UNIVERSE_MIN, Math.min(n, PLANET_UNIVERSE_MAX));
+		planetMask.fill(0);
+		for (let i = 0; i < count; i++) planetMask[i] = 1;
+		planetCount = count;
+	}
+
+	/* inactive planets carry no gravity: the field and every bot sim skip them */
+	function syncPlanetStrengths() {
+		for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
+			if (planetMask[i]) {
+				if (planetStrength[i] === 0) planetStrength[i] = 1;
+			} else {
+				planetStrength[i] = 0;
+			}
+		}
+	}
+
+	/* push the current subset into the career, market, field, scene and bot */
+	function applyPlanetUniverse() {
+		GravityGame.setCareerUniverse(game.career, planetMask, planetCount);
+		GravityGame.applyMarketUniverse(game.market, planetMask, planetCount);
+		gravity.setPlanetMask(planetMask);
+		helperProbe.setPlanetMask(planetMask);
+		if (scene.setPlanetMask) scene.setPlanetMask(planetMask);
+		if (bot.setPlanetMask) bot.setPlanetMask(planetMask, planetCount);
+		syncPlanetStrengths();
+		applyMode();
+		refreshPlanetUniverseUi();
+	}
+
+	/* every planet a player calls home, or the ship currently sits on, is kept */
+	function isProtectedPlanet(planet) {
+		if (game.career.hq === planet || game.career.at === planet) return true;
+		if (gravity.landedBody === planet) return true;
+		const galaxy = game.galaxy;
+		if (!galaxy) return false;
+		for (let i = 0; i < galaxy.actors.length; i++) {
+			const actor = galaxy.actors[i];
+			if (actor.hq === planet || actor.at === planet) return true;
+		}
+		return false;
+	}
+
+	/* a removed planet loses its pads (no refund) so re-adding it starts fresh */
+	function clearPlanetPads(planet) {
+		const actors = game.galaxy ? game.galaxy.actors : [game.career];
+		for (let i = 0; i < actors.length; i++) {
+			const career = actors[i];
+			const pad = career.pads[planet];
+			if (!pad) continue;
+			if (pad.catapult !== null) {
+				career.padCount = career.padCount > 0 ? career.padCount - 1 : 0;
+			}
+			pad.catapult = null;
+			pad.panel = null;
+			pad.battery = null;
+			pad.chargeKwh = 0;
+			pad.reservedKwh = 0;
+		}
+		if (game.career.commercialPlanet === planet) game.career.commercialPlanet = -1;
+		if (game.galaxy) GravityGame.refreshNetwork(game.galaxy);
+	}
+
+	/* grow or shrink the active subset by the requested amount, one random
+	 * planet per step, refusing to touch a protected planet */
+	function setPlanetUniverseSize(next) {
+		const count = Math.max(PLANET_UNIVERSE_MIN, Math.min(next, PLANET_UNIVERSE_MAX));
+		if (count === planetCount) return false;
+		if (count > planetCount) {
+			const need = count - planetCount;
+			const free = [];
+			for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
+				if (!planetMask[i]) free.push(i);
+			}
+			if (free.length < need) return false;
+			for (let k = 0; k < need; k++) {
+				const j = k + Math.floor(Math.random() * (free.length - k));
+				const swap = free[k];
+				free[k] = free[j];
+				free[j] = swap;
+				planetMask[free[k]] = 1;
+			}
+		} else {
+			const need = planetCount - count;
+			const removable = [];
+			for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
+				if (!planetMask[i]) continue;
+				if (isProtectedPlanet(i)) continue;
+				removable.push(i);
+			}
+			if (removable.length < need) return false;
+			for (let k = 0; k < need; k++) {
+				const j = k + Math.floor(Math.random() * (removable.length - k));
+				const swap = removable[k];
+				removable[k] = removable[j];
+				removable[j] = swap;
+				const pick = removable[k];
+				planetMask[pick] = 0;
+				clearPlanetPads(pick);
+			}
+		}
+		planetCount = count;
+		applyPlanetUniverse();
+		return true;
+	}
+
 	/* the trade world may have been rebuilt with fresh arrays: re-wire the field, strengths back to 1 */
 	function attachWorld() {
 		gravity.setPlanets(
@@ -2625,6 +2787,7 @@
 		planetStrength.fill(1);
 		portPlanetStrength.fill(1);
 		portStrength.fill(1);
+		syncPlanetStrengths();
 		cancelAim();
 		hoverBody = -1;
 		hoverPlanet = -1;
@@ -2694,6 +2857,8 @@
 			refreshPlaybackUi();
 		}
 		if (botLevel) game.bot = botLevel;
+		/* 0 means "follow the difficulty level's rival count" */
+		if (game.playerCount > 0) game.playerCount = Math.max(1, Math.min(MAX_PLAYERS, game.playerCount));
 		/* a human-only rule (career) is flown by hand; its rival setting picks
 		 * how many rival career players share the map instead */
 		if (RULES[game.rule].humanOnly) playerType = PLAYER_USER;
@@ -2725,7 +2890,10 @@
 		clearCargo();
 		gravity.fieldT = tradeSim.t;
 		gravity.fieldRate = scene.trade.speed;
-		bot.reset(seed, game.rule, game.bot, game.player, rivalTypesArg);
+		bot.reset(seed, game.rule, game.bot, game.player, rivalTypesArg,
+			game.playerCount > 0 ? game.playerCount - 1 : undefined);
+		initPlanetUniverse(planetUniverseDefault(game.rule));
+		applyPlanetUniverse();
 		ensureValidActiveSlot(-1);
 		attachWorld();
 		if (careerRule()) startCareerRun(seed);
@@ -2750,6 +2918,7 @@
 		GravityGame.resetGalaxy(game.galaxy, seed);
 		GravityGame.startCareer(game.career, gravity, seed, tradeSim, game.cheat, game.galaxy);
 		bot.startCareers(game.galaxy, seed, tradeSim);
+		bot.setPlanetMask(planetMask, planetCount);
 		game.career.forceScale = gravity.forceScale;
 		/* the ship starts landed on HQ: the landing pause applies from turn one */
 		careerPaused = pauseOnLanding;
@@ -2762,6 +2931,7 @@
 	function setPlayMode(next) {
 		if (next === PLAY_LAB) {
 			if (game.on) stopGame();
+			saveLastMode(PLAY_LAB);
 			updateRuleHelp(PLAY_LAB);
 			syncModeRadios();
 			return;
@@ -2774,6 +2944,7 @@
 			updateRuleHelp(next);
 			return;
 		}
+		saveLastMode(next);
 		updateRuleHelp(next);
 		startGame(game.on ? game.seed : tradeSim.seed, game.on ? game.fixedRate : false, next);
 	}
@@ -2781,6 +2952,40 @@
 	function setBot(next) {
 		if (next === game.bot) return;
 		startGame(game.seed, game.fixedRate, game.rule, next, game.player, game.cheat);
+	}
+
+	/* the scoreboard +/- sets how many players share the run; a human-only rule
+	 * keeps YOU human and the rest are rival careers. 0 means the difficulty
+	 * level picks the rival count */
+	function playerCountShown() {
+		return game.playerCount > 0 ? game.playerCount : 1 + bot.count;
+	}
+
+	function setPlayerCount(delta) {
+		const current = playerCountShown();
+		const count = Math.max(1, Math.min(MAX_PLAYERS, current + delta));
+		if (count === current) return;
+		game.playerCount = count;
+		if (game.on) startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player, game.cheat);
+		else {
+			syncScoreControls(false);
+			refreshPlanetUniverseUi();
+		}
+	}
+
+	/* the planet-count input and the player +/- reflect the live state */
+	function refreshPlanetUniverseUi() {
+		if (planetCountInputEl) {
+			if (document.activeElement !== planetCountInputEl) {
+				planetCountInputEl.value = planetCount;
+			}
+			planetCountInputEl.min = PLANET_UNIVERSE_MIN;
+			planetCountInputEl.max = PLANET_UNIVERSE_MAX;
+		}
+		const shown = playerCountShown();
+		if (playerCountValueEl) playerCountValueEl.textContent = shown;
+		if (playerCountDownEl) playerCountDownEl.disabled = shown <= 1;
+		if (playerCountUpEl) playerCountUpEl.disabled = shown >= MAX_PLAYERS;
 	}
 
 	function setSlotType(slot, next) {
@@ -3086,7 +3291,7 @@
 		if (gravity.status === STATUS_FLYING) {
 			gravity.stepOne();
 			GravityGame.stepHarvest(game.money, game.market, gravity, game.clockSteps);
-			if (ruleSpec().stopOnTour && gravity.visitedCount === PLANETS && game.doneSteps < 0) {
+			if (ruleSpec().stopOnTour && gravity.visitedCount === planetCount && game.doneSteps < 0) {
 				game.doneSteps = game.steps + gravity.visitStep;
 			}
 		}
@@ -3106,7 +3311,7 @@
 	function endGameFlight() {
 		clearBurnAim();
 		const spec = ruleSpec();
-		if (spec.stopOnTour && gravity.visitedCount === PLANETS && game.doneSteps < 0) {
+		if (spec.stopOnTour && gravity.visitedCount === planetCount && game.doneSteps < 0) {
 			game.doneSteps = game.steps + gravity.visitStep;
 		}
 		if (careerRule()) {
@@ -3639,7 +3844,7 @@
 			return summary.ready ? Math.round(summary.length) + ' px' : 'planning…';
 		}
 		if (moneyRule() || careerRule()) return summary.purse.toFixed(2) + ' purse';
-		return summary.visited + ' / ' + PLANETS + (summary.done ? ' ✓' : '');
+		return summary.visited + ' / ' + planetCount + (summary.done ? ' ✓' : '');
 	}
 
 	function scoreMeta(summary) {
@@ -3752,7 +3957,7 @@
 
 	function careerRuleText() {
 		const career = game.career;
-		const pads = career.padCount + ' / ' + PLANETS + ' pads';
+		const pads = career.padCount + ' / ' + planetCount + ' pads';
 		if (career.ended === GravityGame.CAREER_BROKE) return 'career · broke · ' + pads;
 		if (career.ended === GravityGame.CAREER_COMPLETE) return 'career · complete';
 		return 'career · ' + pads + (career.cheat ? ' · ' + career.cheat : '');
@@ -4959,6 +5164,7 @@
 		const picked = careerPickPlanet();
 		let html = '';
 		for (let i = 0; i < PLANETS; i++) {
+			if (!planetMask[i]) continue;
 			const pad = career.pads[i];
 			/* the cap comes before the gear id so a narrow picker clips the tier,
 			 * not the answer to "can the ship leave this planet?" */
@@ -5010,6 +5216,7 @@
 		let profitGain = 0;
 		let growingPlanets = 0;
 		for (let i = 0; i < PLANETS; i++) {
+			if (!planetMask[i]) continue;
 			const d = GravityGame.planetProfit(game.market, i, nextStep) -
 				GravityGame.planetProfit(game.market, i, game.clockSteps);
 			if (d > 1e-6) {
@@ -5731,6 +5938,7 @@
 		SYS_DASH[0] = 5 * px;
 		SYS_DASH[1] = 5 * px;
 		for (let i = 0; i < PLANETS; i++) {
+			if (!planetMask[i]) continue;
 			const wasVisited = sim.visited[i] === 1;
 			const willVisit = activePred && sim.predVisit[i] === 1;
 			if (!wasVisited && !willVisit) continue;
@@ -6466,6 +6674,7 @@
 		const maxX = window.innerWidth - 42;
 		const maxY = window.innerHeight - 18;
 		for (let i = 0; i < PLANETS; i++) {
+			if (!planetMask[i]) continue;
 			const val = GravityGame.planetProfit(game.market, i, step);
 			let cents = Math.round(val * 100);
 			if (cents < 0) cents = 0;
@@ -6509,6 +6718,7 @@
 		 * barrel does not rotate then */
 		const seconds = game.clockSteps * DT;
 		for (let p = 0; p < PLANETS; p++) {
+			if (!planetMask[p]) continue;
 			const owner = GravityGame.claimOwner(galaxy, p);
 			const x = tradeSim.planetX[p];
 			const y = tradeSim.planetY[p];
@@ -6728,7 +6938,7 @@
 		const visitText = routeRule()
 			? plan.ready ? Math.round(plan.length) + ' px'
 				: sim.predCount >= 2 ? 'tracing…' : '—'
-			: sim.visitedCount + ' / ' + PLANETS;
+			: sim.visitedCount + ' / ' + planetCount;
 		if (visitText !== hudVisitText) {
 			hudVisitText = visitText;
 			if (visitEl) visitEl.textContent = visitText;
@@ -6737,7 +6947,7 @@
 			? routeRule()
 				? sim.routeActive ? 'tracing…' : endText(sim.predReason, sim.predBody)
 				: sim.predVisits + ' sys · +' + sim.predNewVisits +
-					' (' + (sim.visitedCount + sim.predNewVisits) + '/' + PLANETS + ')' +
+					' (' + (sim.visitedCount + sim.predNewVisits) + '/' + planetCount + ')' +
 					(game.on ? ' · +' + predProfitText(sim) : '')
 			: '—';
 		if (predText !== hudPredVisitText) {
@@ -7353,6 +7563,18 @@
 	if (botEasyEl) botEasyEl.addEventListener('change', () => setBot(BOT_EASY));
 	if (botNormalEl) botNormalEl.addEventListener('change', () => setBot(BOT_NORMAL));
 	if (botHardEl) botHardEl.addEventListener('change', () => setBot(BOT_HARD));
+	/* the number input sets the run's planet count; +/- in the scoreboard set
+	 * how many players share it. Both restart the run so the world rebuilds */
+	if (planetCountInputEl) {
+		planetCountInputEl.addEventListener('change', () => {
+			const value = Math.round(Number(planetCountInputEl.value));
+			if (!Number.isFinite(value) || !setPlanetUniverseSize(value)) {
+				planetCountInputEl.value = planetCount;
+			}
+		});
+	}
+	if (playerCountDownEl) playerCountDownEl.addEventListener('click', () => setPlayerCount(-1));
+	if (playerCountUpEl) playerCountUpEl.addEventListener('click', () => setPlayerCount(1));
 	gameRestartBtn.addEventListener('click', () =>
 		startGame(game.seed, game.fixedRate, undefined, undefined, undefined, game.cheat));
 	gameNewSeedBtn.addEventListener('click', () => {
@@ -7516,6 +7738,11 @@
 		fieldRenderer: () => fieldRenderer,
 		playMode: () => (game.on ? game.rule : PLAY_LAB),
 		setPlayMode,
+		setPlayerCount,
+		setPlanetUniverseSize,
+		planetCount: () => planetCount,
+		predGain: () => predGain,
+		predTime: () => activeSim().predTime,
 		speedCeiling,
 		experimentScales: () => ({ gravity: gravityScale, force: forceScale }),
 		careerPadInfo: () => (game.career ? careerPadPlate(game.career) : null),
@@ -7560,9 +7787,15 @@
 	gravity.fieldT = tradeSim.t;
 	gravity.fieldRate = tradeRate();
 	updateRuleHelp(selectedHelpRule());
+	initPlanetUniverse(PLANET_DEFAULT);
+	applyPlanetUniverse();
 	attachWorld();
 	refreshExperimentUi();
-	if (!loadSearchParams() && !loadLink()) refreshGameUi();
+	if (!loadSearchParams() && !loadLink()) {
+		const last = loadLastMode();
+		if (last) setPlayMode(last);
+		else refreshGameUi();
+	}
 
 	resizeOverlay();
 	refreshSelected();
