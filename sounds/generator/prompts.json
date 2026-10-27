@@ -1,0 +1,82 @@
+{
+	"aim": [
+		{
+			"id": "amp-sustain",
+			"seconds": 7,
+			"steps": 8,
+			"text": "TrackType: Instrument, a single sustained low electric guitar note through an extremely high-gain distorted amplifier, rich buzzing harmonics and controlled feedback, close recorded, steady intensity, no chord changes, isolated guitar. Length: 7 seconds"
+		},
+		{
+			"id": "feedback-edge",
+			"seconds": 8,
+			"steps": 10,
+			"text": "TrackType: Instrument, one long heavy electric guitar tone held on the same pitch, saturated high-gain fuzz and smooth amplifier feedback, dark sci-fi tension, continuous sustain rather than a melody, solo instrument. Length: 8 seconds"
+		},
+		{
+			"id": "metal-drone",
+			"seconds": 6,
+			"steps": 8,
+			"text": "TrackType: SFX, sustained distorted electric guitar power-note drone, thick overdriven amp buzz with a subtle wavering feedback overtone, steady and aggressive, no drums or voices. Length: 6 seconds"
+		}
+	],
+	"armed": [
+		{
+			"id": "cymbal-tremolo",
+			"seconds": 6,
+			"steps": 8,
+			"text": "TrackType: Instrument, soft continuous cymbal roll played rapidly with mallets on a ride cymbal, delicate shimmering metallic tremolo, steady and suspenseful, close stereo recording, no big crash or drums. Length: 6 seconds"
+		},
+		{
+			"id": "brush-shimmer",
+			"seconds": 7,
+			"steps": 10,
+			"text": "TrackType: SFX, airy bright cymbal shimmer, fast gentle brush roll on a suspended crash cymbal, even continuous sparkling metallic wash, quiet anticipation, no isolated impact. Length: 7 seconds"
+		},
+		{
+			"id": "space-ride",
+			"seconds": 5,
+			"steps": 8,
+			"text": "TrackType: SFX, a rapid soft tremolo on a large ride cymbal, fine metallic hiss and warm sparkling overtones hanging steadily in a spacious sci-fi room, no beat or speech. Length: 5 seconds"
+		}
+	],
+	"launch": [
+		{
+			"id": "thunder-crack",
+			"seconds": 4,
+			"steps": 8,
+			"text": "TrackType: SFX, a single massive low-frequency thunder strike, deep explosive sub-bass impact immediately followed by a long rolling rumble and distant echo fading away, cinematic, no rain. Length: 4 seconds"
+		},
+		{
+			"id": "rail-thunder",
+			"seconds": 4,
+			"steps": 10,
+			"text": "TrackType: SFX, electromagnetic launch impact like deep thunder, one weighty low boom, layered cavernous reflections and a gritty rumbling tail that fades into silence, wide stereo. Length: 4 seconds"
+		},
+		{
+			"id": "distant-boom",
+			"seconds": 4.5,
+			"steps": 8,
+			"text": "TrackType: SFX, a single low cinematic thunderclap heard across a vast valley, powerful bass thump and several diminishing rolling echoes, decays naturally, no music. Length: 4.5 seconds"
+		}
+	],
+	"fly": [
+		{
+			"id": "space-rock",
+			"seconds": 10,
+			"steps": 8,
+			"text": "TrackType: Music, VocalType: Instrumental, short energetic sci-fi space rock cue with overdriven electric guitar, pulsing bass, punchy drums and swirling analog synthesizers, soaring forward motion, no vocals, ending in a gentle fade. BPM: 120. Length: 10 seconds"
+		},
+		{
+			"id": "cosmic-groove",
+			"seconds": 10,
+			"steps": 10,
+			"text": "TrackType: Music, VocalType: Instrumental, retro-futuristic space rock instrumental, crunchy guitar riff over a driving bass groove and tight drums, shimmering cosmic synths and a spacious stereo echo, fades out. BPM: 112. Length: 10 seconds"
+		},
+		{
+			"id": "orbital-riff",
+			"seconds": 10,
+			"steps": 8,
+			"text": "TrackType: Music, VocalType: Instrumental, psychedelic science-fiction rock voyage, melodic distorted guitar, motorik drums, warm bass and sweeping synthesizer arpeggios, propulsive and adventurous, short fade out. BPM: 128. Length: 10 seconds"
+		}
+	]
+}

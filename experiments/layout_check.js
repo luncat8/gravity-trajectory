@@ -48,7 +48,10 @@ async function measure(page) {
 		const launch = rect('launch');
 		const best = rect('routeBest');
 		const clear = rect('clear');
+		const sound = rect('soundToggle');
+		const role = rect('goalRole');
 		const hudRect = hud.getBoundingClientRect();
+		const soundHit = document.elementFromPoint(sound.left + sound.width * 0.5, sound.top + sound.height * 0.5);
 		const bestHit = best.width > 0 && best.height > 0
 			? document.elementFromPoint(best.left + best.width * 0.5, best.top + best.height * 0.5)
 			: null;
@@ -58,6 +61,8 @@ async function measure(page) {
 			launch: [launch.top, launch.height],
 			best: [best.top, best.width, document.getElementById('routeBest').hidden,
 				best.bottom, best.height, bestHit ? bestHit.id : ''],
+			sound: [sound.left, sound.right, sound.top, sound.bottom, role.right,
+				soundHit ? soundHit.id : '', hudRect.left, hudRect.right],
 			clearTop: clear.top,
 			scrollable: body.scrollHeight > body.clientHeight + 1,
 			hudBottom: hudRect.bottom
@@ -181,6 +186,10 @@ async function scoreboardStable(page) {
 				label + ': use best occluded by #' + layout.best[5]);
 			if (planned) check(layout.best[1] > 80, label + ': use best collapsed to ' + Math.round(layout.best[1]) + 'px');
 			check(layout.launch[1] > 20, label + ': launch row collapsed');
+			check(layout.sound[0] >= layout.sound[6] && layout.sound[1] <= layout.sound[7] &&
+				layout.sound[0] >= layout.sound[4] - 1 && layout.sound[2] >= 0 &&
+				layout.sound[3] <= height && layout.sound[5] === 'soundToggle',
+				label + ': sound control clipped or overlaps the title ' + JSON.stringify(layout.sound));
 			check(errors.length === 0, label + ': page error ' + errors.join(' / '));
 			await dragAimAndWatchRow(page);
 			await scoreboardStable(page);

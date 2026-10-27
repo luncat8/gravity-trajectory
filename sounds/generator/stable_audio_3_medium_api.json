@@ -1,0 +1,10 @@
+{
+	"4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "stable_audio_3_medium.safetensors"}},
+	"10": {"class_type": "CLIPLoader", "inputs": {"clip_name": "t5gemma_b_b_ul2.safetensors", "type": "stable_audio", "device": "default"}},
+	"6": {"class_type": "CLIPTextEncode", "inputs": {"text": "TrackType: SFX, low thunder with echoes. Length: 4 seconds", "clip": ["10", 0]}},
+	"7": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["10", 0]}},
+	"11": {"class_type": "EmptyLatentAudio", "inputs": {"seconds": 4, "batch_size": 1}},
+	"3": {"class_type": "KSampler", "inputs": {"seed": 4100, "steps": 8, "cfg": 1.0, "sampler_name": "lcm", "scheduler": "simple", "denoise": 1.0, "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["11", 0]}},
+	"12": {"class_type": "VAEDecodeAudio", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
+	"13": {"class_type": "SaveAudioAdvanced", "inputs": {"filename_prefix": "gravity-sounds/launch/thunder", "format": "flac", "audio": ["12", 0]}}
+}

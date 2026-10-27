@@ -500,3 +500,25 @@ facts), then put it into the search's `best` slot before the first candidate:
 the scan has to beat it, the saved shot costs no trace, and the report names
 the source (`launch list` vs `best money shot`). No "good enough" threshold is
 needed — the seed is free, so the scan can still run.
+
+## local ComfyUI audio, file:// and loop seams
+
+Stable Audio 3 Medium's official ComfyUI graph uses T5Gemma via a separate
+`CLIPLoader` (`stable_audio`), `EmptyLatentAudio` and the distilled LCM/simple,
+8-step, CFG 1 settings. It saves under the history output key `audio`, not
+`images`; a successful history entry without an audio file is still a failure.
+Attach the same `extra_data.extra_pnginfo.workflow` metadata as the photo queue
+and persist every accepted prompt before submitting the next one. Treat a
+reported server failure or interrupted queue as resumable, never as a finished
+file. Small-SFX and `_base` checkpoints are not automatically interchangeable
+with Medium's settings; see `sounds/generator/model-research.md`.
+
+For a `file://` game, play selected WAVs directly with an `Audio` element:
+Chromium may load a file successfully but output silence when it is routed
+through `createMediaElementSource` because the file is cross-origin. Fade its
+native volume instead; use Web Audio for the procedural synth only. Create or
+resume the audio context from a user gesture and guard old delayed fades with a
+playback token so a rapid re-aim does not stop its newly restarted loop. To make a loop from a generated non-looping clip,
+play its middle then crossfade its tail into its head; the end now meets the
+first middle sample. Keep the raw take and audition the seam—crossfading cannot
+repair a bad musical phrase.
