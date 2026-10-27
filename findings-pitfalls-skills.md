@@ -500,3 +500,69 @@ facts), then put it into the search's `best` slot before the first candidate:
 the scan has to beat it, the saved shot costs no trace, and the report names
 the source (`launch list` vs `best money shot`). No "good enough" threshold is
 needed — the seed is free, so the scan can still run.
+
+## local ComfyUI audio, file:// and loop seams
+
+Stable Audio 3 Medium's official ComfyUI graph uses T5Gemma via a separate
+`CLIPLoader` (`stable_audio`), `EmptyLatentAudio` and the distilled LCM/simple,
+8-step, CFG 1 settings. It saves under the history output key `audio`, not
+`images`; a successful history entry without an audio file is still a failure.
+Attach the same `extra_data.extra_pnginfo.workflow` metadata as the photo queue
+and persist every accepted prompt before submitting the next one. Treat a
+reported server failure or interrupted queue as resumable, never as a finished
+file. Small-SFX and `_base` checkpoints are not automatically interchangeable
+with Medium's settings; see `sounds/generator/model-research.md`.
+
+For a `file://` game, play selected WAVs directly with an `Audio` element:
+Chromium may load a file successfully but output silence when it is routed
+through `createMediaElementSource` because the file is cross-origin. Fade its
+native volume instead; use Web Audio for the procedural synth only. Create or
+resume the audio context from a user gesture and guard old delayed fades with a
+playback token so a rapid re-aim does not stop its newly restarted loop. To make a loop from a generated non-looping clip,
+play its middle then crossfade its tail into its head; the end now meets the
+first middle sample. Keep the raw take and audition the seam—crossfading cannot
+repair a bad musical phrase.
+
+## parallel agent branches with unrelated git histories
+
+When an agent works on a copy and pushes a branch with its own `first commit`
+(no merge base with main), do not merge with `--allow-unrelated-histories`:
+every file becomes an add/add conflict. Find the branch commit whose tree
+matches main's pre-divergence content (`git diff --stat main <branch-commit>`
+shrinks to only one side's changes), then three-way merge with that tree as the
+base and keep both parents, so the branch's history is re-attached instead of
+discarded:
+
+	git merge-recursive <matching-tree-commit> -- HEAD <branch-tip>
+	# resolve, git add, then
+	git commit-tree $(git write-tree) -p HEAD -p <branch-tip> -m "merge …"
+
+`git replace --graft <main-commit> <matching-commit>` sounds simpler, but this
+git (2.39) ignores the replacement during `log`/`merge-base` traversal, so the
+graft silently fails to relate the histories.
+
+## deterministic smoke runs and what pinning Math.random exposed
+
+The page draws helper aims, roster spawns and new seeds from `Math.random`, so
+`dom_smoke.js` was a lottery: rerunning gave different helper finds. Pin
+`Math.random` to a seeded LCG inside the vm context (dom_stub.js) and every run
+plays the same presses; pick a seed that exercises the retry paths. Pinning
+exposed two real fragilities worth the rule:
+
+- A money helper that finds nothing used to arm nothing and stay silent, leaving
+  the previous shot armed as a false find. Report the empty result
+  (`no EMC-buildable landing`) and let the caller decide.
+- `recordLaunch` dedups by rewriting the existing entry object in place. A test
+  that grabs `launchBook.entries[i]` and mutates it as a fixture can have its
+  values rewritten mid-press by the scan's own traces; snapshot the values it
+  asserts against instead of holding the object.
+
+## balance changes invalidate hardcoded bench baselines
+
+Changing a seeded world parameter (planet gravity range −1…5 → −1…3.5) changes
+every scripted outcome downstream: `game_bench`'s fixed shot count and greedy
+money-tour purse pins went stale, and the scripted tour now completes in fewer
+shots, which correctly locks the run. After touching world generation, rerun
+every bench, not only the focused tests for the changed feature; a scripted
+player should stop at the game's own goal (`game.doneSteps >= 0`), not at a
+hardcoded script length.

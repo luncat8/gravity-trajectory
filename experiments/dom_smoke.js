@@ -2814,17 +2814,28 @@ function protoOf(career, family, id) {
 	check(lCareer.launchBook.entries.length > 1,
 		'a profit scan must save what it traced: ' + lCareer.launchBook.entries.length);
 
-	/* profit + EMC: the armed shot lands where a starter EMC can be built */
-	lEnv.click('helperEmc');
-	lGuard = 0;
-	for (; lui.get('helperStop').hidden !== true && lGuard < 500; lGuard++) lEnv.runFrames(1, 16.0);
-	lEnv.runFrames(2, 16.0);
+	/* profit + EMC: the armed shot lands where a starter EMC can be built.
+	 * A press draws random aims, so it can honestly find nothing; the notice
+	 * says so and the press repeats, bounded, until it arms a build */
+	let emcPresses = 0;
+	let emcArmed = false;
+	while (emcPresses < 6 && !emcArmed) {
+		lEnv.click('helperEmc');
+		emcPresses += 1;
+		lGuard = 0;
+		for (; lui.get('helperStop').hidden !== true && lGuard < 500; lGuard++) lEnv.runFrames(1, 16.0);
+		lEnv.runFrames(2, 16.0);
+		emcArmed = lSim.predReason === lSimCtor.END_IMPACT && lSim.predBody >= 0 &&
+			lCareer.pads[lSim.predBody].catapult === null && lSim.predBody !== lCareer.hq;
+		if (!emcArmed && emcPresses < 6) {
+			check(lui.get('careerMsg').textContent === 'no EMC-buildable landing',
+				'an empty EMC scan must say so: ' + lui.get('careerMsg').textContent);
+		}
+	}
 	const emcAim = lScene.aimState();
 	/* the helper arms a full rule-cap preview: a second, shorter prediction
 	 * would hide the landing it found and make this check a coin flip */
-	check(lSim.predReason === lSimCtor.END_IMPACT && lSim.predBody >= 0 &&
-		lCareer.pads[lSim.predBody].catapult === null && lSim.predBody !== lCareer.hq,
-		'profit + EMC must land on a padless planet: ' + lSim.predBody +
+	check(emcArmed, 'profit + EMC must land on a padless planet: ' + lSim.predBody +
 		' · reason ' + lSim.predReason);
 	/* the build is paid after landing: purse + harvest − the EMC fee must cover it */
 	const emcCost = lCareer.cheat === lGame.CHEAT_COMMUNISM ? 0
@@ -3013,6 +3024,9 @@ function protoOf(career, family, id) {
 		tSeed.logPlanet[i] = tSeed.body;
 		tSeed.logStep[i] = i * 30000;
 	}
+	/* a scan trace can land on the same dedup key and rewrite this entry
+	 * object mid-press; the armed aim must match the seed as pressed */
+	const tSeedAim = { angleU: tSeed.angleU, speedU: tSeed.speedU };
 	tEnv.click('helperProfit');
 	let tGuard = 0;
 	for (; tui.get('helperStop').hidden !== true && tGuard < 600; tGuard++) tEnv.runFrames(1, 16.0);
@@ -3021,8 +3035,8 @@ function protoOf(career, family, id) {
 		'best profit must keep the saved shot the scan cannot beat: ' +
 			tui.get('careerMsg').textContent);
 	const tAim = tScene.aimState();
-	check(Math.abs(tAim.angle - tGame.angleOf(tSeed.angleU)) < 1e-9 &&
-		Math.abs(tAim.speed - tGame.speedOf(tSeed.speedU)) < 1e-9,
+	check(Math.abs(tAim.angle - tGame.angleOf(tSeedAim.angleU)) < 1e-9 &&
+		Math.abs(tAim.speed - tGame.speedOf(tSeedAim.speedU)) < 1e-9,
 		'the helper must arm the saved aim: ' + tAim.angle + '/' + tAim.speed);
 
 	/* an empty book leaves the scan to find and report a fresh shot */
