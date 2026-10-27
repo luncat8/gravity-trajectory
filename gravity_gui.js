@@ -375,6 +375,12 @@
 	const horizonGroupEl = $('horizonGroup');
 	const playbackGroupEl = $('playbackGroup');
 	const helpBtn = $('helpBtn');
+	const soundToggle = $('soundToggle');
+	let soundEnabled = true;
+	try { soundEnabled = root.localStorage.getItem('gravity-sound-enabled') !== 'false'; }
+	catch (err) { /* localStorage can be unavailable on file://. */ }
+	const sound = root.GravitySound.create({ enabled: soundEnabled });
+	let soundFlightSim = null;
 	const foldBtn = $('foldBtn');
 	const scoreFoldBtn = $('scoreFoldBtn');
 	const careerFoldBtn = $('careerFoldBtn');
@@ -1375,6 +1381,13 @@
 		pendGripY = wy;
 	}
 
+	function syncSoundLoop() {
+		if (replay.on) sound.setLoop('idle');
+		else if (aiming) sound.setLoop('aim');
+		else if (armed && !routeRule()) sound.setLoop('armed');
+		else sound.setLoop('idle');
+	}
+
 	function takeOverAim(now) {
 		if (!canAimFrom(pressPlanet)) {
 			pressing = false;
@@ -1396,6 +1409,7 @@
 		aimBody = pressPlanet;
 		aiming = true;
 		armed = false;
+		syncSoundLoop();
 		gripX = pendGripX;
 		gripY = pendGripY;
 		updateAim();
@@ -1478,6 +1492,7 @@
 		pressing = false;
 		savedArmed = false;
 		dirty = false;
+		syncSoundLoop();
 		if (game.on && routeRule() && !replay.on) resetSlotRoutePlan(activeSlotIndex());
 		if (sim.status !== STATUS_FLYING) sim.predCount = 0;
 		else dirty = true;
@@ -1639,6 +1654,10 @@
 		predictShot();
 		dirty = false;
 		sim.launch(aimBody, aimAngle, aimSpeed);
+		if (!replay.on && (!game.on || !slotIsBot(slot))) {
+			sound.launch();
+			soundFlightSim = sim;
+		}
 		if (game.on) {
 			if (careerRule()) {
 				GravityGame.careerBeginFlight(game.career, sim);
@@ -1673,6 +1692,8 @@
 	}
 
 	function clearCargo() {
+		sound.reset();
+		soundFlightSim = null;
 		photoSpace.fill(0);
 		photoLanded.fill(0);
 		photoCareer.fill(0);
@@ -3472,6 +3493,8 @@
 	}
 
 	function startReplay(shots, end, length) {
+		sound.reset();
+		soundFlightSim = null;
 		clearBurnAim();
 		replay.on = true;
 		replay.shots = shots;
@@ -5795,6 +5818,7 @@
 	}
 
 	function onPointerDown(event) {
+		sound.unlock();
 		if (event.button !== 0 || (event.target !== tradeCanvas && !hudPadPress(event))) return;
 		const wx = worldX(event.clientX);
 		const wy = worldY(event.clientY);
@@ -5955,6 +5979,7 @@
 			if (routeRule() && !replay.on) resetSlotRoutePlan(activeSlotIndex());
 		}
 		savedArmed = false;
+		syncSoundLoop();
 		refreshAimLabel();
 		hudAt = -Infinity;
 	}
@@ -7381,6 +7406,11 @@
 		if (helperState.active) helperTick(HELPER_BUDGET_MS);
 		syncField();
 		if (!game.on) gravity.step(dt * playScale());
+		if (soundFlightSim && soundFlightSim.status !== STATUS_FLYING) {
+			sound.stopFlight();
+			soundFlightSim = null;
+		}
+		syncSoundLoop();
 		photoTick();
 
 		/* adaptive 60 fps budget: update every frame at 60 fps, throttle if slower */
@@ -7701,6 +7731,24 @@
 	bindFold(careerFoldBtn, careerHudEl);
 	bindFold(tradeFoldBtn, $('tradeHud'));
 	if (helpClose) helpClose.addEventListener('click', () => setHelpOpen(false));
+	function refreshSoundToggle() {
+		if (!soundToggle) return;
+		soundToggle.textContent = soundEnabled ? 'sound on' : 'sound off';
+		soundToggle.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
+	}
+	refreshSoundToggle();
+	if (soundToggle) soundToggle.addEventListener('click', () => {
+		soundEnabled = !soundEnabled;
+		sound.setEnabled(soundEnabled);
+		refreshSoundToggle();
+		try { root.localStorage.setItem('gravity-sound-enabled', String(soundEnabled)); }
+		catch (err) { /* Sound still works without persistent preferences. */ }
+	});
+	window.addEventListener('blur', () => sound.setActive(false));
+	window.addEventListener('focus', () => sound.setActive(true));
+	if (document.addEventListener) document.addEventListener('visibilitychange', () => {
+		sound.setActive(!document.hidden);
+	});
 	window.addEventListener('pointerdown', onPointerDown);
 	window.addEventListener('pointermove', onPointerMove);
 	window.addEventListener('pointerup', onPointerUp);
@@ -7722,6 +7770,7 @@
 		if (cargoFootEl) footObserver.observe(cargoFootEl);
 	}
 	window.addEventListener('keydown', event => {
+		sound.unlock();
 		if (event.key === 'Shift') {
 			fine = true;
 			refreshAimLabel();
@@ -7788,6 +7837,7 @@
 
 	root.GravityScene = {
 		sim: gravity,
+		sound: sound,
 		activeSim: activeSim,
 		bot: bot,
 		game: game,
