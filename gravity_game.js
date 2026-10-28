@@ -1054,10 +1054,10 @@
 		return null;
 	}
 
-	/* invent a parameter point at HQ: the purse pays the hull-distance fee and
-	 * the point expands the career's knowledge hull for the next invention */
+	/* invent a parameter point: the purse pays the hull-distance fee and the
+	 * point expands the career's knowledge hull regardless of ship position */
 	function researchPoint(career, family, params, label) {
-		if (career.ended !== CAREER_OPEN || career.at !== career.hq) return false;
+		if (career.ended !== CAREER_OPEN) return false;
 		if (SCIENCE_KINDS.indexOf(family) < 0) return false;
 		const p = OrbitScience.previewHull(career.science, family, params);
 		if (!Number.isFinite(p.cost)) return false;

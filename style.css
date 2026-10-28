@@ -728,6 +728,11 @@ body {
 	text-transform: none;
 }
 
+.ctl input[type="checkbox"] {
+	margin: 0;
+	accent-color: var(--accent);
+}
+
 .radioRow {
 	display: flex;
 	gap: 14px;
@@ -738,7 +743,8 @@ body {
 	flex-wrap: wrap;
 }
 
-.radioRow label {
+.radioRow label,
+.viewCheck {
 	display: flex;
 	align-items: center;
 	gap: 5px;
@@ -747,11 +753,17 @@ body {
 	cursor: pointer;
 }
 
-.radioRow label:has(input:checked) {
+.viewCheck {
+	margin-top: 6px;
+}
+
+.radioRow label:has(input:checked),
+.viewCheck:has(input:checked) {
 	color: var(--text);
 }
 
-.radioRow input {
+.radioRow input,
+.viewCheck input {
 	margin: 0;
 	accent-color: var(--accent);
 }

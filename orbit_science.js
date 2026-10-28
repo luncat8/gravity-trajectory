@@ -29,11 +29,14 @@
 	var INSIDE_EPS = 1e-9; // relative to the target magnitude
 	var WOLFE_EPS = 1e-12;
 	var MAX_CYCLES = 64;
-	var K_DIST = 6.0; // purse per normalized research unit outside the hull
+	/* 1.5x discount across recombination fees, hull distance, and frontier work */
+	var PRICE_SCALE = 1 / 1.5;
+	var DEFAULT_BASE = 1.00 * PRICE_SCALE;
+	var K_DIST = 6.0 * PRICE_SCALE; // purse per normalized research unit outside the hull
 
 	var BASE_PRICE = {
-		engine: 2.00, catapult: 3.00, panel: 1.50, battery: 1.00,
-		hold: 1.00, tank: 1.00
+		engine: 2.00 * PRICE_SCALE, catapult: 3.00 * PRICE_SCALE, panel: 1.50 * PRICE_SCALE,
+		battery: 1.00 * PRICE_SCALE, hold: 1.00 * PRICE_SCALE, tank: 1.00 * PRICE_SCALE
 	};
 	var TIER_SCALE = {
 		engine: 1.00, catapult: 1.20, panel: 0.90, battery: 1.00,
@@ -364,7 +367,7 @@
 	 * work) in normalized RU. The `inside` short circuit keeps recombinations
 	 * at exactly the base fee, even at a range edge. */
 	function priceOf(family, t) {
-		var base = BASE_PRICE[family] || 1.00;
+		var base = BASE_PRICE[family] || DEFAULT_BASE;
 		var rate = K_DIST * (TIER_SCALE[family] || 1.00);
 		if (t.inside) return base;
 		return base + rate * (t.dist + t.frontier);
@@ -387,7 +390,7 @@
 		var f = ensureHull(hull, family, params.length);
 		f.points.push({ params: params.slice(), label: label || '' });
 		f.n = f.points.length;
-		return { inside: true, dist: 0, frontier: 0, cost: BASE_PRICE[family] || 1.00 };
+		return { inside: true, dist: 0, frontier: 0, cost: BASE_PRICE[family] || DEFAULT_BASE };
 	}
 
 	function statsHull(hull, family) {
@@ -432,7 +435,7 @@
 		distToHull: distToHull,
 		normalizedParams: normalizedParams,
 		ensure: ensure, preview: preview, accept: accept, stats: stats,
-		BASE_PRICE: BASE_PRICE, FRONTIER: FRONTIER,
+		BASE_PRICE: BASE_PRICE, DEFAULT_BASE: DEFAULT_BASE, FRONTIER: FRONTIER,
 		TIER_SCALE: TIER_SCALE, METRIC_SCALE: METRIC_SCALE, K_DIST: K_DIST
 	};
 

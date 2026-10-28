@@ -345,6 +345,8 @@
 	const viewTagEl = $('viewTag');
 	const viewSpaceEl = $('viewSpace');
 	const viewFieldEl = $('viewField');
+	const careerCleanEl = $('careerClean');
+	const careerCleanLabelEl = $('careerCleanLabel');
 	const sourceTagEl = $('sourceTag');
 	const srcPlanetsEl = $('srcPlanets');
 	const srcPortsEl = $('srcPorts');
@@ -500,6 +502,8 @@
 	let mode = MODE_PLANETS;
 	let viewMode = VIEW_SPACE;
 	let viewDesired = VIEW_SPACE;
+	/* career clean canvas: hides thick orbit visit highlights + past flight trails */
+	let cleanCareerView = true;
 	let pressing = false;
 	let pressPlanet = -1;
 	let pressClientX = 0;
@@ -755,6 +759,8 @@
 	function refreshViewUi() {
 		if (viewSpaceEl) viewSpaceEl.checked = viewMode === VIEW_SPACE;
 		if (viewFieldEl) viewFieldEl.checked = viewMode === VIEW_FIELD;
+		if (careerCleanLabelEl) careerCleanLabelEl.hidden = !careerRule();
+		if (careerCleanEl) careerCleanEl.checked = cleanCareerView;
 		if (!viewTagEl) return;
 		if (viewMode !== VIEW_FIELD || !fieldRenderer) {
 			const lost = fieldRenderer !== null && fieldRenderer.backend() === 'lost';
@@ -1352,7 +1358,7 @@
 		const nextGravity = Math.round(Number(expGravityEl.value) * 100) / 100;
 		const nextForce = Math.round(Number(expForceEl.value) * 100) / 100;
 		if (nextGravity !== gravityScale || nextForce !== forceScale) experimentTouched = true;
-		setExperimentScales(nextGravity, nextForce);
+		setExperimentScales(nextGravity, nextForce, harvestTick);
 		clampArmedToPad();
 		/* the drawer prints the pad's cap: re-render it or the number goes stale */
 		if (careerRule()) refreshCareerPanel();
@@ -3920,7 +3926,9 @@
 		}
 		runBoxEl.hidden = !game.on;
 		if (careerBoxEl) careerBoxEl.hidden = !career;
-	if (careerHudEl) careerHudEl.hidden = !career;
+		if (careerHudEl) careerHudEl.hidden = !career;
+		if (careerCleanLabelEl) careerCleanLabelEl.hidden = !career;
+		if (careerCleanEl) careerCleanEl.checked = cleanCareerView;
 		refreshCareerClockUi();
 		if (rivalGroupEl) rivalGroupEl.hidden = !game.on || RULES[game.rule].solo;
 		syncModeRadios();
@@ -4855,15 +4863,19 @@
 			' · fee ' + costText(GravityGame.researchCost(career, family, params));
 	}
 
+	function scienceAcceptWhy(open, poor) {
+		if (!open) return 'the career has ended';
+		if (poor) return 'the purse cannot cover the research fee';
+		return 'accept this point into the knowledge hull';
+	}
+
 	function scienceAcceptButton(career, family) {
 		const cost = GravityGame.researchCost(career, family, scienceParams(family));
-		const atHq = career.at === career.hq && career.ended === GravityGame.CAREER_OPEN;
+		const open = career.ended === GravityGame.CAREER_OPEN;
 		const poor = !Number.isFinite(cost) || purseTooSmall(career, cost);
-		const disabled = !atHq || poor;
-		const why = !atHq ? 'research is done back at HQ ' + planetName(career.hq)
-			: poor ? 'the purse cannot cover the research fee'
-			: 'accept this point into the knowledge hull';
-		return '<button class="miniBtn' + (poor && atHq ? ' costly' : '') +
+		const disabled = !open || poor;
+		const why = scienceAcceptWhy(open, poor);
+		return '<button class="miniBtn' + (poor && open ? ' costly' : '') +
 			'" id="sciAccept" data-act="sciAccept" data-kind="' + family + '"' +
 			(disabled ? ' disabled' : '') + ' title="' + why + '">research · ' + costText(cost) + '</button>';
 	}
@@ -4889,8 +4901,8 @@
 	function scienceBlockHtml(career) {
 		const family = scienceFamily;
 		const axes = SCIENCE_AXES[family];
-		let html = '<div class="careerHead">research lab · HQ ' + planetName(career.hq) +
-			' · purse ' + career.ledger.purse.toFixed(2) + '</div>';
+		let html = '<div id="sciHead" class="careerHead">research lab · purse ' +
+			career.ledger.purse.toFixed(2) + '</div>';
 		html += '<div class="careerRow sciFamilyRow"><span class="careerBtns">';
 		for (let i = 0; i < GravityGame.SCIENCE_KINDS.length; i++) {
 			const kind = GravityGame.SCIENCE_KINDS[i];
@@ -4920,6 +4932,23 @@
 		return html + scienceHullText(career);
 	}
 
+	/* keep the research button + purse header live when money moves mid-flight */
+	function syncSciencePurse(career) {
+		if (!careerScienceEl || !career) return;
+		const headEl = $('sciHead');
+		if (headEl) headEl.textContent = 'research lab · purse ' + career.ledger.purse.toFixed(2);
+		const acceptEl = $('sciAccept');
+		if (!acceptEl) return;
+		const family = scienceFamily;
+		const cost = GravityGame.researchCost(career, family, scienceParams(family));
+		const open = career.ended === GravityGame.CAREER_OPEN;
+		const poor = !Number.isFinite(cost) || purseTooSmall(career, cost);
+		acceptEl.disabled = !open || poor;
+		acceptEl.classList.toggle('costly', open && poor);
+		acceptEl.title = scienceAcceptWhy(open, poor);
+		acceptEl.textContent = 'research · ' + costText(cost);
+	}
+
 	/* sliders stay mounted while dragged: patch the readout, draft marker and
 	 * accept button without resampling the cost surface */
 	function refreshScienceReadout(career) {
@@ -4938,15 +4967,7 @@
 			draftEl.setAttribute('cx', sciencePlotX(axes[0], draft[axes[0].key]));
 			draftEl.setAttribute('cy', sciencePlotY(axes[1], draft[axes[1].key]));
 		}
-		const acceptEl = $('sciAccept');
-		if (acceptEl) {
-			const cost = GravityGame.researchCost(career, family, scienceParams(family));
-			const atHq = career.at === career.hq && career.ended === GravityGame.CAREER_OPEN;
-			const poor = !Number.isFinite(cost) || purseTooSmall(career, cost);
-			acceptEl.disabled = !atHq || poor;
-			acceptEl.classList.toggle('costly', atHq && poor);
-			acceptEl.textContent = 'research · ' + costText(cost);
-		}
+		syncSciencePurse(career);
 	}
 
 	function scienceSliderInput(node) {
@@ -4980,9 +5001,13 @@
 		const params = scienceParams(family);
 		const before = career.ledger.purse;
 		if (!GravityGame.researchPoint(career, family, params, label)) {
-			careerNotice('research needs the ship at HQ ' + planetName(career.hq) +
-				', an open career, and the preview fee');
+			careerNotice(career.ended !== GravityGame.CAREER_OPEN
+				? 'career over · restart for a new HQ'
+				: 'research needs the preview fee in the purse');
 			return;
+		}
+		if (turret.pending && !GravityGame.careerCanFire(career, gravity, turret.body, turret.speed)) {
+			cancelTurret();
 		}
 		const n = OrbitScience.statsHull(career.science, family).n;
 		careerNotice('researched ' + family + ' ' + label + ' ' + scienceVectorText(family, params) +
@@ -5733,23 +5758,29 @@
 		const act = data.act;
 		if (act === 'careerTab') return careerSelectTab(data.tab);
 		if (act === 'bookDrop') return dropStaleBook();
+		const career = game.career;
+		/* balance tooling + science R&D stay available during flight, wait or turret spin */
+		if (act === 'copy') return careerCopySpec(data);
+		if (act === 'sciCopy') return careerCopyFrontier(data.family);
+		if (act === 'sciFamily') return careerScienceFamily(data.family);
+		if (act === 'sciAccept') {
+			if (career.ended !== GravityGame.CAREER_OPEN) {
+				careerNotice('career over · restart for a new HQ');
+				return;
+			}
+			return careerResearch();
+		}
 		/* the eased world clock owns the career for its 2 s */
 		if (careerWaitBusy() || turret.pending || gravity.status === STATUS_FLYING) return;
-		const career = game.career;
 		if (act === 'wait') return careerWait();
 		if (act === 'evac') return careerEvacuate();
 		if (act === 'book') return useBookEntry(Number(data.entry));
-		/* balance tooling stays available on a closed career */
-		if (act === 'copy') return careerCopySpec(data);
-		if (act === 'sciCopy') return careerCopyFrontier(data.family);
 		if (career.ended !== GravityGame.CAREER_OPEN) {
 			careerNotice('career over · restart for a new HQ');
 			return;
 		}
 		if (act === 'drop') return careerDrop(career);
 		if (act === 'accept') return careerAccept(career, Number(data.slot));
-		if (act === 'sciFamily') return careerScienceFamily(data.family);
-		if (act === 'sciAccept') return careerResearch();
 		if (!data.item && Math.round(Number(data.tier)) === NO_TIER) {
 			if (act === 'part') careerPart(career, data.kind, null);
 			return;
@@ -5851,6 +5882,7 @@
 				gamePurseEl.classList.toggle('gain', !loss && shots.length > 0 &&
 					ledger.last > 0);
 			}
+			if (careerRule()) syncSciencePurse(game.career);
 		}
 		const replayText = replay.on
 			? replay.route
@@ -6088,19 +6120,64 @@
 		trimLabel.textContent = '0%';
 	}
 
-	/* Past visits stay dim; current predictions take priority in bright green. */
+	function updateHarvestMasks() {
+		const sim = activeSim();
+		const activePred = aiming || armed || sim.status === STATUS_FLYING;
+		predHarvestMask.fill(0);
+		if (activePred) {
+			for (let k = 0; k < sim.predLogCount; k++) {
+				predHarvestMask[sim.predLogPlanet[k]] = 1;
+			}
+		}
+		liveHarvestMask.fill(0);
+		if (game.on && sim.status === STATUS_FLYING) {
+			const inside = slotLedger(activeSlotIndex()).inside;
+			for (let i = 0; i < PLANETS; i++) {
+				if (planetMask[i] && inside[i]) liveHarvestMask[i] = 1;
+			}
+		}
+	}
+
+	/* highlights the planet's own outline plus a tight outer ring, leaving thin orbits untouched */
+	function drawPlanetVisitOutline(x, y, r, px, pulse, inside) {
+		ctx.setLineDash(NO_DASH);
+		ctx.beginPath();
+		ctx.arc(x, y, r + 0.5 * px, 0, TAU);
+		ctx.strokeStyle = inside ? 'rgba(205, 255, 224, 0.98)' : 'rgba(92, 255, 139, 0.96)';
+		ctx.lineWidth = (inside ? 2.2 : 1.9) * px;
+		ctx.stroke();
+
+		ctx.beginPath();
+		ctx.arc(x, y, r + (inside ? 3.8 : 3.4 + pulse * 1.6) * px, 0, TAU);
+		ctx.strokeStyle = inside ? 'rgba(158, 255, 190, 0.92)' : 'rgba(92, 255, 139, 0.78)';
+		ctx.lineWidth = (inside ? 1.5 : 1.3) * px;
+		ctx.stroke();
+	}
+
+	/* Past visits stay dim outside clean career view; active/upcoming planet visits
+	 * highlight the planet outline + outer ring (and omit thick orbit rings when clean). */
 	function drawSystemVisits(now) {
 		if (routeRule()) return;
 		const sim = activeSim();
 		const px = 1 / view.scale;
 		const activePred = aiming || armed || sim.status === STATUS_FLYING;
+		const clean = careerRule() && cleanCareerView;
 		const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
 		SYS_DASH[0] = 5 * px;
 		SYS_DASH[1] = 5 * px;
 		for (let i = 0; i < PLANETS; i++) {
 			if (!planetMask[i]) continue;
+			const inside = liveHarvestMask[i] === 1;
+			const willVisit = inside || (activePred &&
+				(game.on ? predHarvestMask[i] === 1 : sim.predVisit[i] === 1));
+			if (clean) {
+				if (willVisit) {
+					drawPlanetVisitOutline(tradeSim.planetX[i], tradeSim.planetY[i],
+						tradeSim.planetR[i], px, pulse, inside);
+				}
+				continue;
+			}
 			const wasVisited = sim.visited[i] === 1;
-			const willVisit = activePred && sim.predVisit[i] === 1;
 			if (!wasVisited && !willVisit) continue;
 			const x = tradeSim.planetX[i];
 			const y = tradeSim.planetY[i];
@@ -6125,13 +6202,7 @@
 			ctx.strokeStyle = 'rgba(92, 255, 139, 0.85)';
 			ctx.lineWidth = 1.35 * px;
 			ctx.stroke();
-			ctx.setLineDash(NO_DASH);
-
-			ctx.beginPath();
-			ctx.arc(x, y, r + (3.5 + pulse * 2.5) * px, 0, TAU);
-			ctx.strokeStyle = 'rgba(92, 255, 139, 0.95)';
-			ctx.lineWidth = 1.1 * px;
-			ctx.stroke();
+			drawPlanetVisitOutline(x, y, r, px, pulse, inside);
 		}
 		ctx.setLineDash(NO_DASH);
 	}
@@ -6531,6 +6602,7 @@
 	}
 
 	function drawTrail() {
+		if (careerRule() && cleanCareerView) return;
 		const count = gravity.trailCount;
 		if (count < 2) return;
 		const px = 1 / view.scale;
@@ -6755,7 +6827,7 @@
 			}
 			/* rival trail */
 			const count = sim.trailCount;
-			if (count >= 2) {
+			if (count >= 2 && !(careerRule() && cleanCareerView)) {
 				const stride = count > 2400 ? 2 : 1;
 				ctx.beginPath();
 				ctx.moveTo(sim.trailX[0], sim.trailY[0]);
@@ -6828,22 +6900,6 @@
 	 */
 	function drawPlanetProfits() {
 		const step = game.clockSteps;
-		const sim = activeSim();
-		const activePred = aiming || armed || sim.status === STATUS_FLYING;
-		const flying = sim.status === STATUS_FLYING;
-		predHarvestMask.fill(0);
-		if (activePred) {
-			for (let k = 0; k < sim.predLogCount; k++) {
-				predHarvestMask[sim.predLogPlanet[k]] = 1;
-			}
-		}
-		liveHarvestMask.fill(0);
-		if (flying) {
-			const inside = slotLedger(activeSlotIndex()).inside;
-			for (let i = 0; i < PLANETS; i++) {
-				if (planetMask[i] && inside[i]) liveHarvestMask[i] = 1;
-			}
-		}
 		ctx.font = '600 10.5px ui-monospace, SFMono-Regular, Menlo, monospace';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
@@ -7032,6 +7088,7 @@
 		/* a paused career clock freezes every animation: ticks are drawn at the
 	 * pause instant instead of wall clock (other modes keep animating) */
 		const tickNow = careerRule() && careerPaused ? careerPauseNow : now;
+		updateHarvestMasks();
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 		ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
@@ -7592,6 +7649,11 @@
 			if (viewFieldEl.checked) setViewMode(VIEW_FIELD);
 		});
 	}
+	if (careerCleanEl) {
+		careerCleanEl.addEventListener('change', () => {
+			cleanCareerView = careerCleanEl.checked;
+		});
+	}
 	srcPlanetsEl.addEventListener('change', () => setSource(MODE_PLANETS));
 	srcPortsEl.addEventListener('change', () => setSource(MODE_PORTS));
 	$('tradeSpeed').addEventListener('input', () => syncSeedUrl(replay.on));
@@ -7969,6 +8031,7 @@
 		waitSettlement: () => (game.career ? waitSettlement(game.career) : null),
 		viewMode: () => viewMode,
 		setViewMode,
+		cleanCareerView: () => cleanCareerView,
 		fieldRenderer: () => fieldRenderer,
 		playMode: () => (game.on ? game.rule : PLAY_LAB),
 		setPlayMode,
@@ -8011,6 +8074,7 @@
 	game.player = slotTypes[0];
 
 	refreshPlaybackUi();
+	if (careerCleanEl) cleanCareerView = careerCleanEl.checked;
 	if (careerPauseLandEl) pauseOnLanding = careerPauseLandEl.checked;
 	refreshCareerClockUi();
 	gravity.horizon = Number(horizonSlider.value);

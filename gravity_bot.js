@@ -1526,10 +1526,10 @@
 		return true;
 	};
 
-	/* HQ R&D: unlock a mid-rung bridge rail when pads will need upgrades, then a
-	 * lightweight composite tank + thruster kit and fit it for mid-flight burns. */
+	/* R&D: unlock a mid-rung bridge rail when pads will need upgrades anywhere,
+	 * and at HQ unlock + fit a lightweight composite tank + thruster kit. */
 	GravityBot.prototype.careerResearch = function (career, sim, reserve) {
-		if (career.ended !== GravityGame.CAREER_OPEN || career.at !== career.hq) return null;
+		if (career.ended !== GravityGame.CAREER_OPEN) return null;
 		const keep = reserve === undefined ? CAREER_PURSE_RESERVE : reserve;
 		if (GravityGame.prototypesOf(career, OrbitTech.KIND_CATAPULT).length === 0 &&
 			(sim.forceScale < 0.85 || career.ship.hold.capacity >= 8)) {
@@ -1543,6 +1543,7 @@
 				}
 			}
 		}
+		if (career.at !== career.hq) return null;
 		if (career.ship.tank.tier === 0 &&
 			GravityGame.prototypesOf(career, OrbitTech.KIND_TANK).length === 0) {
 			const fee = GravityGame.researchCost(career, OrbitTech.KIND_TANK, RESEARCH_LIGHT_TANK);
@@ -2390,8 +2391,8 @@
 			this.traceAdd(who, 'plan', 'P' + plan.origin + '→P' + plan.body +
 				' v' + plan.speed.toFixed(0) + ' score ' + signed(plan.score) +
 				' pay ' + signed(plan.taskPay) + ' pad ' + signed(plan.padValue) +
-				' fee ' + plan.fee.toFixed(2) + ' exit ' + plan.exitCost.toFixed(2) +
-				' (' + plan.exitSource + ') · ' +
+				' fee ' + plan.fee.toFixed(2) + ' exit ' + (plan.exitCost || 0).toFixed(2) +
+				' (' + (plan.exitSource || 'own') + ') · ' +
 				(plan.fromBook ? 'book reuse' : 'fan ' + this.careerScan.tried + ' traces') +
 				' · EMC build ' + (plan.builds ? 'affordable' : 'no'), runStep);
 			r.idleTries = 0;

@@ -2185,8 +2185,8 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	const defaultPreview = sciGame.researchPreview(sciCareer, 'engine', [26, 1.8]);
 	const defaultFee = sciGame.researchCost(sciCareer, 'engine', [26, 1.8]);
 	check(sciBlock().includes('outside · dist ' + defaultPreview.dist.toFixed(3) +
-		' RU · fee ' + defaultFee.toFixed(2)) && defaultFee > 2 && defaultFee < 2.5,
-		'default near-hull preview fee: ' + /id="sciPreview"[^>]*>([^<]+)/.exec(sciBlock())[1]);
+		' RU · fee ' + defaultFee.toFixed(2)) && defaultFee > 1.3 && defaultFee < 1.7,
+		'default near-hull preview fee (1.5x cheaper): ' + /id="sciPreview"[^>]*>([^<]+)/.exec(sciBlock())[1]);
 	check(!/data-act="sciAccept"[^>]*disabled/.test(sciBlock()), 'starter purse funds the first invention');
 
 	const purse0 = sciCareer.ledger.purse;
@@ -2225,14 +2225,19 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	sciCareer.ledger.purse = purseRich;
 	sciScene.refreshCareerPanel();
 
-	/* research is HQ-only: away from HQ the accept is disabled and clicks refuse */
+	/* research stays available away from HQ whenever the purse covers the fee */
 	sciCareer.at = (sciCareer.hq + 1) % pageWorld.PLANETS;
 	sciScene.refreshCareerPanel();
-	check(/data-act="sciAccept"[^>]*disabled/.test(sciBlock()), 'accept disabled away from HQ');
+	check(!sciBlock().includes('back at HQ'), 'no HQ gate tooltip on research button');
+	check(!/data-act="sciAccept"[^>]*disabled/.test(sciBlock()), 'accept stays enabled away from HQ');
+	const catFee = sciGame.researchCost(sciCareer, 'catapult', [100, 0.76]);
+	sciCareer.ledger.purse = catFee + 1;
+	sciScene.refreshCareerPanel();
 	const purseAway = sciCareer.ledger.purse;
 	sciClick({ act: 'sciAccept', kind: 'catapult' });
-	check(sciCareer.ledger.purse === purseAway && /research needs the ship at HQ/.test(sciUi.get('careerMsg').textContent),
-		'away research refused: ' + sciUi.get('careerMsg').textContent);
+	check(Math.abs(sciCareer.ledger.purse - (purseAway - catFee)) < 1e-9 &&
+		/^researched catapult R3/.test(sciUi.get('careerMsg').textContent),
+		'away-from-HQ research succeeds: ' + sciUi.get('careerMsg').textContent);
 
 	/* max-tier rows (endgame) still offer a copy of the fitted record */
 	const endEnv = loadPage({ search: '?rule=career&cheat=endgame&seed=42&rate=1' });
@@ -2368,7 +2373,8 @@ function protoOf(career, family, id) {
 	/* dragging mass past the lower researched bound shows its surcharge live */
 	fSlide('mass', '0.5');
 	fScene.refreshCareerPanel();
-	check(/frontier \+1\.50 RU/.test(fBlock()) && /fee 17\.44/.test(fBlock()),
+	check(/frontier \+1\.50 RU/.test(fBlock()) &&
+		fBlock().includes('fee ' + light.cost.toFixed(2)) && Math.abs(light.cost - 11.63) < 0.01,
 		'frontier surcharge in the live preview: ' + /id="sciPreview"[^>]*>([^<]+)/.exec(fBlock())[1]);
 
 	fClick({ act: 'sciFamily', family: 'catapult' });
@@ -3194,6 +3200,139 @@ function protoOf(career, family, id) {
 	check(cg.game.money.purse <= purseBefore, 'removing a planet does not refund');
 	check(String(cui.get('padTotal').textContent) === '12',
 		'pads total follows the universe: ' + cui.get('padTotal').textContent);
+}
+
+/* 0.4.31: career clean render checkbox (on by default), planet-outline visit
+ * highlights without thick orbit ellipses or blue past trail, mid-flight science
+ * research availability, and 0.4.30 slider/harvest-tick preservation */
+{
+	const cleanEnv = loadPage({ search: '?rule=career&bot=off&seed=42&rate=1', clipboard: false });
+	cleanEnv.runFrames(2, 16.0);
+	const cui = cleanEnv.elements;
+	const cg = cleanEnv.context.GravityScene;
+	const cSim = cg.sim;
+
+	check(cui.get('careerClean').checked === true && cg.cleanCareerView() === true,
+		'career clean render checkbox is enabled by default');
+	check(cui.get('careerCleanLabel').hidden === false,
+		'career clean render checkbox is visible in career mode');
+
+	/* hidden outside career mode */
+	cg.setPlayMode('tour');
+	cleanEnv.runFrames(1, 16.0);
+	check(cui.get('careerCleanLabel').hidden === true, 'career clean checkbox hides in tour mode');
+	cg.setPlayMode('career');
+	cleanEnv.runFrames(1, 16.0);
+	check(cui.get('careerCleanLabel').hidden === false, 'career clean checkbox returns in career mode');
+
+	/* 0.4.30 fix: dragging experiment sliders keeps stay-pay · per tick checked */
+	cui.get('expHarvest').checked = true;
+	cui.get('expHarvest').listeners.change[0]();
+	check(cSim.harvestMode === cleanEnv.context.GravitySim.HARVEST_TICK, 'harvest tick enabled');
+	cui.get('expGravity').value = '1.05';
+	cui.get('expGravity').listeners.input[0]();
+	check(cui.get('expHarvest').checked === true &&
+		cSim.harvestMode === cleanEnv.context.GravitySim.HARVEST_TICK,
+		'slider input preserves stay-pay · per tick');
+	cui.get('expGravity').value = '1';
+	cui.get('expGravity').listeners.input[0]();
+
+	/* measure idle overlay arcs, then aim a shot that visits at least one system */
+	cleanEnv.calls.gEllipse = 0;
+	cleanEnv.calls.gArc = 0;
+	cleanEnv.runFrames(1, 16.0);
+	const idleArcs = cleanEnv.calls.gArc;
+	check(cleanEnv.calls.gEllipse === 0, 'clean career idle draws zero orbit ellipses on #g');
+
+	const hq = cg.career.hq;
+	const ceil = cg.speedCeiling(hq);
+	let hitAngle = 0;
+	for (let k = 0; k < 24; k++) {
+		const a = (k / 24) * Math.PI * 2;
+		cleanEnv.dragAim(hq, a, ceil * 0.85);
+		cleanEnv.runFrames(1, 16.0);
+		if (cSim.predLogCount > 0) {
+			hitAngle = a;
+			break;
+		}
+	}
+	check(cSim.predLogCount > 0, 'found aimed shot entering at least one planet system');
+
+	cleanEnv.calls.gEllipse = 0;
+	cleanEnv.calls.gArc = 0;
+	cleanEnv.runFrames(1, 16.0);
+	const cleanAimArcs = cleanEnv.calls.gArc;
+	check(cleanEnv.calls.gEllipse === 0,
+		'clean career render draws no thick orbit visit ellipses: ' + cleanEnv.calls.gEllipse);
+	check(cleanAimArcs >= idleArcs + 2,
+		'clean career render draws planet outline + outer ring arcs: ' + cleanAimArcs + ' vs idle ' + idleArcs);
+
+	/* unchecking clean render restores classic orbit highlight ellipses */
+	cui.get('careerClean').checked = false;
+	cui.get('careerClean').listeners.change[0]();
+	cleanEnv.calls.gEllipse = 0;
+	cleanEnv.runFrames(1, 16.0);
+	check(cleanEnv.calls.gEllipse > 0, 'unchecking clean render restores orbit ellipses: ' + cleanEnv.calls.gEllipse);
+
+	/* re-check clean render, launch into flight, and verify blue trail suppression + mid-flight research */
+	cui.get('careerClean').checked = true;
+	cui.get('careerClean').listeners.change[0]();
+	cleanEnv.dragAim(hq, hitAngle, ceil * 0.85);
+	cleanEnv.runFrames(1, 16.0);
+	cleanEnv.click('launch');
+	for (let f = 0; f < 240 && cSim.status !== cleanEnv.context.GravitySim.STATUS_FLYING; f++) {
+		cleanEnv.runFrames(1, 50.0);
+	}
+	cleanEnv.runFrames(6, 50.0);
+	check(cSim.status === cleanEnv.context.GravitySim.STATUS_FLYING && cSim.trailCount >= 2,
+		'ship is flying with recorded trail points: ' + cSim.trailCount);
+
+	cleanEnv.calls.gStrokeStyles.length = 0;
+	cleanEnv.calls.gEllipse = 0;
+	cleanEnv.runFrames(1, 16.0);
+	check(!cleanEnv.calls.gStrokeStyles.includes('rgba(103, 224, 255, 0.9)'),
+		'clean career render suppresses the blue past-trajectory path');
+	check(cleanEnv.calls.gEllipse === 0, 'clean career flight draws zero orbit highlight ellipses');
+
+	cui.get('careerClean').checked = false;
+	cui.get('careerClean').listeners.change[0]();
+	cleanEnv.calls.gStrokeStyles.length = 0;
+	cleanEnv.runFrames(1, 16.0);
+	check(cleanEnv.calls.gStrokeStyles.includes('rgba(103, 224, 255, 0.9)'),
+		'unchecking clean render draws the blue past-trajectory path');
+	cui.get('careerClean').checked = true;
+	cui.get('careerClean').listeners.change[0]();
+
+	/* mid-flight research: starts unaffordable, enables live when purse grows, and researches in flight */
+	cg.careerAct({ act: 'careerTab', tab: 'science' });
+	const flyFee = cleanEnv.context.GravityGame.researchCost(cg.career, 'engine', [26, 1.8]);
+	cg.career.ledger.purse = 0.2;
+	cg.refreshCareerPanel();
+	check(/id="sciAccept"[^>]*disabled/.test(cui.get('careerScience').innerHTML),
+		'in-flight research disabled while purse < fee');
+
+	/* simulate mounted #sciHead + #sciAccept nodes so updateGameHud -> syncSciencePurse is verified live */
+	const mountedHead = { textContent: '' };
+	const mountedAccept = {
+		disabled: true, title: '', textContent: '',
+		classList: {
+			costly: true,
+			toggle(name, force) { if (name === 'costly') this.costly = Boolean(force); }
+		}
+	};
+	cui.set('sciHead', mountedHead);
+	cui.set('sciAccept', mountedAccept);
+	cg.career.ledger.purse = flyFee + 2;
+	cleanEnv.runFrames(2, 50.0);
+	check(mountedAccept.disabled === false && mountedAccept.classList.costly === false &&
+		mountedHead.textContent.includes('research lab · purse '),
+		'syncSciencePurse enables #sciAccept live when money arrives mid-flight');
+
+	const resBefore = cg.career.research;
+	cg.careerAct({ act: 'sciAccept', kind: 'engine' });
+	check(cg.career.research === resBefore + 1 &&
+		cSim.status === cleanEnv.context.GravitySim.STATUS_FLYING,
+		'mid-flight science research succeeded without landing');
 }
 
 console.log('paint calls', {

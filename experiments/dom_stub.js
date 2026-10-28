@@ -52,12 +52,21 @@ function makeClassList() {
 	};
 }
 
-function makePaint(calls) {
+function makePaint(calls, overlay) {
 	return {
 		fillStyle: '', strokeStyle: '', globalAlpha: 1, lineWidth: 1, lineCap: 'butt',
 		font: '', textAlign: '', textBaseline: '',
-		beginPath() {}, moveTo() {}, lineTo() {}, arc() {}, arcTo() {},
-		ellipse() {}, closePath() {}, strokeRect() {}, fillRect() {},
+		beginPath() {}, moveTo() {}, lineTo() {},
+		arc() {
+			calls.arc += 1;
+			if (overlay) calls.gArc += 1;
+		},
+		arcTo() {},
+		ellipse() {
+			calls.ellipse += 1;
+			if (overlay) calls.gEllipse += 1;
+		},
+		closePath() {}, strokeRect() {}, fillRect() {},
 		clearRect() {}, drawImage() {}, setTransform() {}, save() {},
 		restore() {}, translate() {}, scale() {}, setLineDash() {},
 		fillText(text) {
@@ -67,7 +76,13 @@ function makePaint(calls) {
 				calls.textColors.push(this.fillStyle);
 			}
 		},
-		stroke() { calls.stroke += 1; },
+		stroke() {
+			calls.stroke += 1;
+			if (overlay) {
+				calls.gStroke += 1;
+				if (calls.gStrokeStyles.length < 128) calls.gStrokeStyles.push(this.strokeStyle);
+			}
+		},
 		fill() { calls.fill += 1; },
 		measureText(text) { return { width: String(text).length * 6.5 }; },
 		createLinearGradient() { return { addColorStop() {} }; },
@@ -124,12 +139,17 @@ function makeElement(spec, paint, webglFactory) {
  */
 function loadPage(options = {}) {
 	const calls = {
-		fillText: 0, stroke: 0, fill: 0, putImageData: 0, lastImageData: null,
+		fillText: 0, stroke: 0, fill: 0, arc: 0, ellipse: 0,
+		gStroke: 0, gArc: 0, gEllipse: 0, gStrokeStyles: [],
+		putImageData: 0, lastImageData: null,
 		texts: [], textColors: []
 	};
-	const paint = makePaint(calls);
+	const paint = makePaint(calls, false);
+	const gPaint = makePaint(calls, true);
 	const elements = new Map();
-	for (const spec of ELEMENTS) elements.set(spec.id, makeElement(spec, paint, options.webglFactory));
+	for (const spec of ELEMENTS) {
+		elements.set(spec.id, makeElement(spec, spec.id === 'g' ? gPaint : paint, options.webglFactory));
+	}
 
 	const windowListeners = {};
 	const location = { hash: options.hash || '', search: options.search || '', href: PAGE_URL + (options.search || '') + (options.hash || '') };

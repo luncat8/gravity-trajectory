@@ -939,25 +939,37 @@ check('career science: the purse pays the frontier surcharge and research expand
 	assert.strictEqual(OrbitScience.previewHull(career.science, 'engine', target).frontier, 0);
 });
 
-check('career science: research is HQ-only, open-career-only, affordable and a known family', () => {
+check('career science: 1.5x cheaper fees and research works away from HQ and in flight', () => {
+	assert.strictEqual(OrbitScience.K_DIST, 4);
+	assert.strictEqual(OrbitScience.BASE_PRICE.catapult, 2);
+	assert.strictEqual(OrbitScience.BASE_PRICE.panel, 1);
+	assert.ok(Math.abs(OrbitScience.BASE_PRICE.engine - 2 / 1.5) < 1e-12);
+	assert.ok(Math.abs(OrbitScience.BASE_PRICE.battery - 1 / 1.5) < 1e-12);
+	assert.ok(Math.abs(OrbitScience.BASE_PRICE.hold - 1 / 1.5) < 1e-12);
+	assert.ok(Math.abs(OrbitScience.BASE_PRICE.tank - 1 / 1.5) < 1e-12);
 	const w = makeWorld(42);
 	startCareer(w, 42);
 	const { career } = w;
 	const target = [55, 0.6];
 	const fee = GravityGame.researchCost(career, 'engine', target);
 	career.at = (career.hq + 1) % PLANETS;
-	assert.strictEqual(GravityGame.researchPoint(career, 'engine', target, 'R4'), false);
-	assert.strictEqual(OrbitScience.statsHull(career.science, 'engine').n, 3, 'refusal leaves the hull untouched');
-	career.at = career.hq;
 	career.ledger.purse = fee - 1;
 	assert.strictEqual(GravityGame.researchPoint(career, 'engine', target, 'R4'), false);
+	assert.strictEqual(OrbitScience.statsHull(career.science, 'engine').n, 3, 'unaffordable leaves the hull untouched');
 	career.ledger.purse = fee;
 	career.ended = GravityGame.CAREER_BROKE;
 	assert.strictEqual(GravityGame.researchPoint(career, 'engine', target, 'R4'), false);
 	career.ended = GravityGame.CAREER_OPEN;
 	assert.strictEqual(GravityGame.researchPoint(career, 'panel', [2, 0.5], 'X'), false, 'no panel research space');
-	assert.ok(GravityGame.researchPoint(career, 'engine', target, 'R4'));
+	assert.ok(GravityGame.researchPoint(career, 'engine', target, 'R4'), 'research succeeds away from HQ');
 	assert.strictEqual(OrbitScience.statsHull(career.science, 'engine').n, 4);
+	/* in-flight research (at = -1) also succeeds whenever purse covers the fee */
+	const inFlightTarget = [40, 1.1];
+	const flightFee = GravityGame.researchCost(career, 'engine', inFlightTarget);
+	career.at = -1;
+	career.ledger.purse = flightFee;
+	assert.ok(GravityGame.researchPoint(career, 'engine', inFlightTarget, 'R5'), 'research succeeds in flight');
+	assert.strictEqual(OrbitScience.statsHull(career.science, 'engine').n, 5);
 	/* communism: the same invention is free but still expands the hull */
 	const c = makeWorld(7);
 	startCareer(c, 7, GravityGame.CHEAT_COMMUNISM);
@@ -1178,7 +1190,7 @@ check('frontier: inside the hull or an unconfigured family keeps the plain fee',
 	OrbitScience.acceptHull(raw, 'f', [10, 0], 'b');
 	const out = OrbitScience.previewHull(raw, 'f', [5, 4]);
 	assert.strictEqual(out.frontier, 0);
-	assert.ok(Math.abs(out.cost - ((OrbitScience.BASE_PRICE.f || 1) + OrbitScience.K_DIST * out.dist)) < 1e-9,
+	assert.ok(Math.abs(out.cost - ((OrbitScience.BASE_PRICE.f || OrbitScience.DEFAULT_BASE) + OrbitScience.K_DIST * out.dist)) < 1e-9,
 		'unconfigured family fee ' + out.cost);
 });
 
