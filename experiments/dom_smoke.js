@@ -238,6 +238,19 @@ if (expScene.sim.forceScale !== 1.5 || expScene.bot.probe.forceScale !== 1.5 ||
 	throw new Error('catapult force slider did not reach every sim');
 }
 console.log('experimental panel:', ui.get('expTag').textContent);
+/* the stay-pay is career-only world state: off by default, dark outside career */
+const expGame = env.context.GravityGame;
+if (ui.get('expHarvest').checked !== false ||
+	expGame.harvestMode() !== expGame.HARVEST_ENTRY) {
+	throw new Error('stay-pay must start off, in the entry rule');
+}
+if (ui.get('expHarvest').disabled !== true) {
+	throw new Error('stay-pay must be dark outside career');
+}
+env.toggle('expHarvest');
+if (expGame.harvestMode() !== expGame.HARVEST_ENTRY || ui.get('expHarvest').checked !== false) {
+	throw new Error('a dark stay-pay box must not change the collection rule');
+}
 env.setValue('expGravity', 1);
 env.setValue('expForce', 1);
 if (expScene.sim.gravityScale !== 1 || expScene.sim.forceScale !== 1) {
@@ -1440,9 +1453,38 @@ check(career.lastFee === 3 &&
 	Math.abs(kScene.game.money.purse - (purseStranded - 3)) < 1e-9,
 	'commercial launch must fire for exactly 3.00: fee ' + career.lastFee +
 		' purse ' + kScene.game.money.purse);
-for (let i = 0; i < 400 && kCargo.status === kSim.STATUS_FLYING; i++) careerEnv.runFrames(1, 40.0);
+/* Profit pills: the flying ship lights every system it is inside and drops one
+ * the step it leaves. The mask is the live ledger flag, so it must agree with
+ * the ship's position step by step — and clear completely once it is down. */
+function kInsideSystem(planet) {
+	const dx = kCargo.cargo.x - kCargo.planetX[planet];
+	const dy = kCargo.cargo.y - kCargo.planetY[planet];
+	const u = (dx * kCargo.sysCos[planet] + dy * kCargo.sysSin[planet]) * kCargo.sysInvRX[planet];
+	const v = (-dx * kCargo.sysSin[planet] + dy * kCargo.sysCos[planet]) * kCargo.sysInvRY[planet];
+	return u * u + v * v <= 1;
+}
+let litSteps = 0;
+let litWrong = 0;
+for (let i = 0; i < 400 && kCargo.status === kSim.STATUS_FLYING; i++) {
+	careerEnv.runFrames(1, 40.0);
+	const marks = kScene.harvestMarks();
+	let lit = 0;
+	for (let p = 0; p < marks.inside.length; p++) {
+		if (!marks.inside[p]) continue;
+		lit += 1;
+		if (!kInsideSystem(p)) litWrong += 1;
+	}
+	if (lit > 0) litSteps += 1;
+}
+const landedMarks = kScene.harvestMarks();
+let litAfter = 0;
+for (let p = 0; p < landedMarks.inside.length; p++) if (landedMarks.inside[p]) litAfter += 1;
+check(litSteps > 0, 'no pill lit while the ship flew through a system');
+check(litWrong === 0, litWrong + ' lit pills were outside the ship');
+check(litAfter === 0, litAfter + ' pills stayed lit after the flight ended');
 check(kCargo.status === kSim.STATUS_ENDED && career.commercialPlanet === -1 && career.stranded,
 	'commercial flight must land and drop the one-launch rail choice');
+console.log('visit pills:', litSteps + ' frames lit · ' + litAfter + ' left lit after landing');
 /* the commercial launch above already spent half the starter purse */
 kScene.game.money.purse = 20;
 const purseBeforeEvac = kScene.game.money.purse;
@@ -1472,6 +1514,21 @@ check(kCargo.gravityScale === 0.8 && kCargo.forceScale === 1.5 &&
 	kui.get('expGravityLabel').textContent === '×0.80',
 	'reloaded link did not restore the experimental scales: ' + kui.get('expTag').textContent);
 console.log('experimental link:', expLink.slice(expLink.indexOf('#')), '->', kui.get('expTag').textContent);
+/* the stay-pay is career world state as well: the link carries it, a reload restores it */
+careerEnv.toggle('expHarvest');
+check(kui.get('expHarvest').checked && kGame.harvestMode() === kGame.HARVEST_TICK,
+	'stay-pay box did not switch the collection rule: ' + kui.get('expTag').textContent);
+careerEnv.click('gameCopy');
+const tickLink = kui.get('gameLink').value;
+check(tickLink.endsWith('&gs=0.8&fs=1.5&ht=1'), 'career link must carry the stay-pay: ' + tickLink);
+careerEnv.setHash(tickLink.slice(tickLink.indexOf('#')));
+careerEnv.runFrames(2, 16.0);
+check(kui.get('expHarvest').checked && kGame.harvestMode() === kGame.HARVEST_TICK,
+	'reloaded link did not restore the stay-pay: ' + kui.get('expTag').textContent);
+careerEnv.toggle('expHarvest');
+check(!kui.get('expHarvest').checked && kGame.harvestMode() === kGame.HARVEST_ENTRY,
+	'stay-pay did not switch back to the entry rule');
+console.log('stay-pay link:', tickLink.slice(tickLink.indexOf('#')));
 careerEnv.setValue('expGravity', 1);
 careerEnv.setValue('expForce', 1);
 careerEnv.choose('modeLab');

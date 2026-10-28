@@ -86,6 +86,19 @@
 		purse0: 3
 	};
 	const PURSE_PRESETS = { tight: 2, standard: 3, relaxed: 6 };
+	/*
+	 * Visit-profit collection modes. `HARVEST_ENTRY` is the rule: the first
+	 * encounter with a system pays everything it has accrued since the last one
+	 * and stamps its clock, so a long flight that crosses the same system again
+	 * later collects what regrew in between. The experimental `HARVEST_TICK`
+	 * also pays, on every step the ship stays inside, what re-accrued during
+	 * that step — a slow or looping pass earns more than a fly-by. Career only;
+	 * the traces that price a shot still assume the entry rule (see
+	 * 0.4.30-plan-harvest-ticks.md).
+	 */
+	const HARVEST_ENTRY = 0;
+	const HARVEST_TICK = 1;
+	let harvestMode = HARVEST_ENTRY;
 	/* experimental settings panel bounds; links carry the two multipliers */
 	const EXPERIMENT = {
 		gravityMin: 0, gravityMax: 9,
@@ -173,7 +186,8 @@
 		const cheatPart = game.rule === RULE_CAREER && game.cheat ? '&cheat=' + game.cheat : '';
 		const head = 'game=' + FORMAT + '&seed=' + game.seed + '&rate=' + game.rate +
 			rulePart + botPart + playerPart + cheatPart +
-			scalePart('gs', game.gravityScale) + scalePart('fs', game.forceScale);
+			scalePart('gs', game.gravityScale) + scalePart('fs', game.forceScale) +
+			(game.harvestTick ? '&ht=1' : '');
 		if (game.shots.length === 0 || game.rule === RULE_CAREER) return head;
 		const lengthPart = game.rule === RULE_ROUTE && Number.isFinite(game.length)
 			? '&len=' + Math.round(game.length) : '';
@@ -220,7 +234,7 @@
 	}
 
 	/* Returns { seed, rate, rule, bot, player, cheat, gravityScale, forceScale,
-	 * shots, end, length } or null. */
+	 * harvestTick, shots, end, length } or null. */
 	function decodeLink(text) {
 		const params = new URLSearchParams(String(text).replace(/^#/, ''));
 		if (params.get('game') !== String(FORMAT)) return null;
@@ -243,6 +257,9 @@
 		const gravityScale = decodeScale(params.get('gs'), EXPERIMENT.gravityMin, EXPERIMENT.gravityMax);
 		const forceScale = decodeScale(params.get('fs'), EXPERIMENT.forceMin, EXPERIMENT.forceMax);
 		if (gravityScale === null || forceScale === null) return null;
+		const harvestText = params.get('ht');
+		if (harvestText !== null && harvestText !== '1' && harvestText !== '0') return null;
+		const harvestTick = harvestText === '1';
 		const list = params.get('shots');
 		const parts = list ? list.split('_') : [];
 		if (rule.planner && parts.length > 1) return null;
@@ -262,7 +279,8 @@
 		const endMatch = END_FORM.exec(params.get('end') || '');
 		const end = endMatch ? { visited: Number(endMatch[1]), steps: Number(endMatch[2]) } : null;
 		return { seed: seed, rate: rate, rule: rule.name, bot: bot, player: player, cheat: cheat,
-			gravityScale: gravityScale, forceScale: forceScale, shots: shots, end: end, length: length };
+			gravityScale: gravityScale, forceScale: forceScale, harvestTick: harvestTick,
+			shots: shots, end: end, length: length };
 	}
 
 	function isGameLink(text) {
@@ -351,6 +369,36 @@
 		return pay;
 	}
 
+	/*
+	 * One step of the experimental stay-pay: every system the ship is inside
+	 * pays what re-accrued since its last stamp, so a system the ship never
+	 * leaves keeps paying instead of sitting at the value it had on entry. The
+	 * systems it launched from are inside already, so their stored value — pad
+	 * time included — is collected by the first flight step; stamping them at
+	 * launch instead would delete that value from the shared market, which is
+	 * the one thing this mode must not do.
+	 *
+	 * Deliberately no `market.stamp` bump: that one invalidates a rival's
+	 * sliced plan, and a drip on every step would leave no plan ever
+	 * finishing. No `shotVisits` either: lingering in a system is not another
+	 * encounter.
+	 */
+	function harvestStay(ledger, market, sim, runStep) {
+		const count = sim.planetCount;
+		const inside = ledger.inside;
+		let gained = 0;
+		for (let p = 0; p < count; p++) {
+			if (!inside[p]) continue;
+			const pay = planetProfit(market, p, runStep);
+			if (pay <= 0) continue;
+			market.lastVisitStep[p] = runStep;
+			ledger.purse += pay;
+			ledger.shotGain += pay;
+			gained += pay;
+		}
+		return gained;
+	}
+
 	/* advances one step of system-entry harvesting for either the player or a rival */
 	function stepHarvest(ledger, market, sim, runStep) {
 		const count = sim.stepInsideAt(sim.cargo.x, sim.cargo.y, ledger.inside, ledger.entered);
@@ -358,6 +406,7 @@
 		for (let i = 0; i < count; i++) {
 			gained += harvestPlanet(ledger, market, ledger.entered[i], runStep);
 		}
+		if (harvestMode === HARVEST_TICK) gained += harvestStay(ledger, market, sim, runStep);
 		if (sim.status === GravitySim.STATUS_ENDED &&
 			sim.endReason === GravitySim.END_IMPACT &&
 			sim.endBody >= 0 && !ledger.inside[sim.endBody]) {
@@ -370,6 +419,16 @@
 	function endFlight(ledger) {
 		ledger.last = ledger.shotGain - ledger.fee;
 		return ledger.shotGain;
+	}
+
+	/* the page's experimental panel drives the collection mode for every ledger */
+	function setHarvestMode(mode) {
+		harvestMode = mode === HARVEST_TICK ? HARVEST_TICK : HARVEST_ENTRY;
+		return harvestMode;
+	}
+
+	function harvestModeOf() {
+		return harvestMode;
 	}
 
 	/* exact predicted harvest of one visit log without mutating the live market */
@@ -1562,6 +1621,7 @@
 		PLAYER_USER, PLAYER_BOT, PLAYER_TYPES,
 		CHEAT_COMMUNISM, CHEAT_ENDGAME, CHEATS,
 		SRC_PLANETS, SRC_PORTS, NO_ABORT, MONEY, PURSE_PRESETS, EXPERIMENT,
+		HARVEST_ENTRY, HARVEST_TICK, setHarvestMode, harvestMode: harvestModeOf,
 		PLANET_GRAVITY_MIN, PLANET_GRAVITY_MAX, PLANET_GRAVITY_STEPS,
 		planetGravity, angleUnits, angleOf, speedUnits, speedOf,
 		createBurn, encodeBurn, createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,

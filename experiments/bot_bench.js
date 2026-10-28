@@ -129,6 +129,7 @@ function benchEconomy() {
 	console.log('1a. market curve & parity:', checked, 'flights, max |estimateProfit - stepHarvest| =',
 		worstDiff.toExponential(1));
 
+
 	/* 4 player archetypes vs normal rival in money (10 shots) and tour */
 	function runArchetype(seed, ruleName, style, withRival) {
 		const { trade, sim } = buildStaticWorld(seed);
@@ -250,6 +251,109 @@ function benchEconomy() {
 	console.log('1b. balance (4 seeds): lazy broke ' + lazyBroke + '/4 · casual broke ' + casualBroke +
 		'/4 · blind lost money ' + blindLostMoney + '/4 · smart won money ' + smartWonMoney +
 		'/4 · smart 26/26 tour ' + smartFinishedTour + '/4');
+}
+
+
+/*
+ * The experimental stay-pay: the entry lump stays, and every step the ship
+ * stays inside a system also pays what regrew since the last stamp. So a
+ * system the ship never leaves keeps paying instead of sitting at the value it
+ * had on entry, and one system can pay a flight several times.
+ *
+ * Both modes share one exact invariant, checked step by step: a step pays the
+ * value each system had accrued at the start of that step — in the entry rule
+ * for the systems entered on it, in the stay-pay for every system the ship is
+ * in when it ends (a system just entered pays the same amount once, its entry
+ * lump, because the drip that follows finds a fresh stamp).
+ */
+function benchStayPay() {
+	const { sim } = buildStaticWorld(31);
+	const baseMarket = GravityGame.createMarket();
+	for (let i = 0; i < PLANETS; i++) baseMarket.lastVisitStep[i] = -i * 400;
+	const scratch = GravityGame.createMarket();
+	const prevStamps = new Int32Array(PLANETS);
+	const prevInside = new Uint8Array(PLANETS);
+
+	function fly(origin, angle, speed, mode) {
+		const market = GravityGame.createMarket();
+		market.lastVisitStep.set(baseMarket.lastVisitStep);
+		const ledger = GravityGame.createLedger();
+		sim.clear();
+		sim.stepLimit = Math.round(45 / DT);
+		sim.limitReason = GravitySim.END_TIME;
+		sim.launch(origin, angle, speed);
+		GravityGame.beginFlight(ledger, sim);
+		GravityGame.setHarvestMode(mode);
+		const ticks = mode === GravityGame.HARVEST_TICK;
+		let step = 360;
+		let inside = 0;
+		let worst = 0;
+		while (sim.status === STATUS_FLYING) {
+			step += 1;
+			sim.stepOne();
+			prevStamps.set(market.lastVisitStep);
+			prevInside.set(ledger.inside.subarray(0, PLANETS));
+			const before = ledger.shotGain;
+			GravityGame.stepHarvest(ledger, market, sim, step);
+			const gained = ledger.shotGain - before;
+			scratch.lastVisitStep.set(prevStamps);
+			let want = 0;
+			for (let p = 0; p < PLANETS; p++) {
+				if (!ledger.inside[p]) continue;
+				inside += 1;
+				if (!ticks && prevInside[p]) continue;
+				want += GravityGame.planetProfit(scratch, p, step);
+			}
+			const diff = Math.abs(gained - want);
+			if (diff > worst) worst = diff;
+		}
+		GravityGame.setHarvestMode(GravityGame.HARVEST_ENTRY);
+		GravityGame.endFlight(ledger);
+		return { gain: ledger.shotGain, visits: ledger.shotVisits, inside: inside, worst: worst };
+	}
+
+	check(GravityGame.setHarvestMode(GravityGame.HARVEST_ENTRY) === GravityGame.HARVEST_ENTRY,
+		'the entry rule must be the default collection mode');
+	check(GravityGame.setHarvestMode(99) === GravityGame.HARVEST_ENTRY,
+		'an unknown collection mode must fall back to the entry rule');
+
+	let flights = 0;
+	let paid = 0;
+	let repeats = 0;
+	let worstStep = 0;
+	let dripTotal = 0;
+	let insideSteps = 0;
+	for (let origin = 0; origin < PLANETS; origin += 3) {
+		for (let a = 0; a < 8; a++) {
+			const angle = (a + 0.35) / 8 * Math.PI * 2;
+			const speed = 110 + (a % 4) * 45;
+			const entry = fly(origin, angle, speed, GravityGame.HARVEST_ENTRY);
+			const tick = fly(origin, angle, speed, GravityGame.HARVEST_TICK);
+			const drip = tick.gain - entry.gain;
+			check(entry.worst < 1e-12, 'entry rule paid ' + entry.worst + ' off the market value');
+			check(tick.worst < 1e-12, 'stay-pay paid ' + tick.worst + ' off the market value');
+			check(tick.visits === entry.visits,
+				'stay-pay must not change what counts as an encounter');
+			/* v(a+b) <= v(a) + v(b), and a drip sums the un-saturated rate, so a
+			 * flight can only earn more with the stay-pay on */
+			check(drip >= -1e-12, 'stay-pay must never pay less than the entry rule: ' + drip);
+			if (drip > 0) paid += 1;
+			if (tick.visits > 1) repeats += 1;
+			if (entry.worst > worstStep) worstStep = entry.worst;
+			if (tick.worst > worstStep) worstStep = tick.worst;
+			dripTotal += drip;
+			insideSteps += tick.inside;
+			flights += 1;
+		}
+	}
+	check(paid > 0, 'no sampled flight earned anything from the stay-pay');
+	check(repeats > 0, 'no sampled flight collected from more than one system');
+	check(dripTotal > 0, 'stay-pay paid nothing across ' + flights + ' flights');
+	check(GravityGame.harvestMode() === GravityGame.HARVEST_ENTRY,
+		'the collection mode must be restored for the rest of the bench');
+	console.log('1c. stay-pay: ' + flights + ' flights · ' + insideSteps + ' steps inside · paid on ' +
+		paid + ' · ' + repeats + ' met >1 system · +' + dripTotal.toFixed(4) +
+		' over the entry rule · max |step pay − market value| = ' + worstStep.toExponential(1));
 }
 
 /* bot summaries power the score rows; in route they expose the current plan */
@@ -535,6 +639,7 @@ function benchContestedReplay() {
 }
 
 benchEconomy();
+benchStayPay();
 benchScoreSummary();
 benchLadder();
 benchSlicesAndPerf();

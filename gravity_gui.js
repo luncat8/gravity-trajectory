@@ -249,6 +249,8 @@
 	const gravity = new GravitySim(OrbitSim.WORLD_W, OrbitSim.WORLD_H);
 	const bot = new GravityBot(OrbitSim.WORLD_W, OrbitSim.WORLD_H);
 	const predHarvestMask = new Uint8Array(PLANETS);
+	/* systems the flying ship is inside right now: lit on entry, dark on exit */
+	const liveHarvestMask = new Uint8Array(PLANETS);
 
 	/* per-mode strength kept across switches; port strength keyed by parent planet */
 	const planetBaseStrength = new Float64Array(PLANETS).fill(1);
@@ -358,6 +360,7 @@
 	const expGravityLabelEl = $('expGravityLabel');
 	const expForceEl = $('expForce');
 	const expForceLabelEl = $('expForceLabel');
+	const expHarvestEl = $('expHarvest');
 	const expTagEl = $('expTag');
 	const launchButton = $('launch');
 	const planetActionsEl = $('planetActions');
@@ -530,9 +533,11 @@
 	let fine = false;
 	let dirty = false;
 	let trimLast = 0;
-	/* experimental settings: system-wide gravity and catapult rail force */
+	/* experimental settings: system-wide gravity, catapult rail force and the
+	 * career-only stay-pay (every step inside a system collects what regrew) */
 	let gravityScale = 1;
 	let forceScale = 1;
+	let harvestTick = false;
 	let experimentTouched = false;
 	let hudAt = -Infinity;
 	let lastFrame = performance.now();
@@ -1206,6 +1211,12 @@
 		return '+' + rate.toFixed(2) + '/s';
 	}
 
+	/* The traced estimate prices the entry rule only; with the stay-pay on, a
+	 * shot pays at least that (0.4.30-plan-harvest-ticks.md). */
+	function predTickNote() {
+		return harvestTick && careerRule() ? ' · ≥ticks' : '';
+	}
+
 	/* While aiming in career at the pickup planet of an accepted delivery that
 	 * is not yet loaded, note the cargo that will be picked up and whether a
 	 * starter EMC-1 there can lift the newly loaded ship. Returns '' when there
@@ -1240,7 +1251,7 @@
 			const visitNote = sim.predCount >= 2
 				? ' · ' + predProfitText(sim, economics) + ' · ' + predRateText(sim) +
 					' · ' + sim.predTime.toFixed(1) + ' s · +' + sim.predNewVisits +
-					' (' + sim.predVisits + ' sys)'
+					' (' + sim.predVisits + ' sys)' + predTickNote()
 				: '';
 			aimLabel = 'Δv ' + burnDv.toFixed(1) + ' px/s · ' + deg.toFixed(1) + '° · −' +
 				usedKg.toFixed(1) + ' kg' + (fine ? ' · fine' : '') + visitNote;
@@ -1262,7 +1273,7 @@
 					(sim.routeActive ? ' · tracing' : '')
 				: (game.on ? ' · ' + predProfitText(sim, economics) + ' · ' + predRateText(sim) : '') +
 					' · ' + sim.predTime.toFixed(1) + ' s · +' +
-					sim.predNewVisits + ' (' + sim.predVisits + ' sys)'
+					sim.predNewVisits + ' (' + sim.predVisits + ' sys)' + predTickNote()
 			: '';
 		aimLabel = Math.round(aimSpeed) + ' px/s · ' + deg.toFixed(1) + '°' +
 			(fine ? ' · fine' : '') +
@@ -1280,12 +1291,15 @@
 	}
 
 	/* experimental panel: one world, so the player sim, the auto helpers and
-	 * every rival bot must predict and fly with the same two multipliers */
+	 * every rival bot must predict and fly with the same two multipliers; the
+	 * stay-pay is a career rule, so it is off for the other three */
 	function applyExperiment() {
 		gravity.setScales(gravityScale, forceScale);
 		helperProbe.setScales(gravityScale, forceScale);
 		bot.setScales(gravityScale, forceScale);
 		if (game.career) game.career.forceScale = forceScale;
+		GravityGame.setHarvestMode(harvestTick && careerRule()
+			? GravityGame.HARVEST_TICK : GravityGame.HARVEST_ENTRY);
 	}
 
 	function refreshExperimentUi() {
@@ -1293,17 +1307,33 @@
 		const forceText = '×' + forceScale.toFixed(2);
 		if (expGravityLabelEl) expGravityLabelEl.textContent = gravityText;
 		if (expForceLabelEl) expForceLabelEl.textContent = forceText;
-		if (expTagEl) expTagEl.textContent = 'g ' + gravityText + ' · force ' + forceText;
+		if (expHarvestEl) expHarvestEl.checked = harvestTick;
+		if (expTagEl) {
+			expTagEl.textContent = 'g ' + gravityText + ' · force ' + forceText +
+				(harvestTick ? ' · ticks' : '');
+		}
 	}
 
 	/* one entry point for the sliders and for a link that carries the scales */
-	function setExperimentScales(nextGravity, nextForce) {
+	function setExperimentScales(nextGravity, nextForce, nextHarvest) {
 		gravityScale = Math.round(nextGravity * 100) / 100;
 		forceScale = Math.round(nextForce * 100) / 100;
+		harvestTick = nextHarvest === true;
 		if (expGravityEl) expGravityEl.value = String(gravityScale);
 		if (expForceEl) expForceEl.value = String(forceScale);
 		applyExperiment();
 		refreshExperimentUi();
+	}
+
+	/* The stay-pay changes what a flight earns, so it is world state like the
+	 * scales: flipping it mid-career only changes the steps still to fly. The
+	 * box is dark outside career, where it springs back if anything ticks it. */
+	function onHarvestChange() {
+		harvestTick = Boolean(expHarvestEl && expHarvestEl.checked) && careerRule();
+		applyExperiment();
+		refreshExperimentUi();
+		dirty = true;
+		hudAt = -Infinity;
 	}
 
 	/* a pad can lose its ceiling while a shot is armed (drained battery, lowered
@@ -3709,6 +3739,7 @@
 			cheat: game.cheat,
 			gravityScale: gravityScale,
 			forceScale: forceScale,
+			harvestTick: harvestTick,
 			shots: game.shots,
 			visited: routeRule() ? routePlan.visits : gravity.visitedCount,
 			steps: scoreSteps(),
@@ -3785,7 +3816,7 @@
 		}
 		loadingUrl = true;
 		scene.setSpeed(link.rate);
-		setExperimentScales(link.gravityScale, link.forceScale);
+		setExperimentScales(link.gravityScale, link.forceScale, link.harvestTick);
 		startGame(link.seed, true, link.rule, link.bot, link.player, link.cheat);
 		if (link.shots.length > 0) startReplay(link.shots, link.end, link.length);
 		loadingUrl = false;
@@ -3918,6 +3949,8 @@
 		const experimentLock = game.on && (career ? replay.on : replay.on || anyShots);
 		if (expGravityEl) expGravityEl.disabled = experimentLock;
 		if (expForceEl) expForceEl.disabled = experimentLock;
+		/* the stay-pay only exists in career: outside it the box is off and dim */
+		if (expHarvestEl) expHarvestEl.disabled = experimentLock || !career;
 		scene.lockSpeed(game.on && (route || game.fixedRate || anyShots || replay.on));
 		clearButton.hidden = game.on && !route;
 		clearButton.textContent = route ? 'clear plan' : 'clear';
@@ -6785,15 +6818,30 @@
 	/*
 	 * Per-planet fly-visit profit pills drawn beneath each planet in game mode.
 	 * Uses preallocated cent strings and predHarvestMask so draw() stays 0-alloc.
+	 *
+	 * Two greens: the systems the traced path will still enter, and — while a
+	 * ship flies — the ones it is inside right now. The second set comes from
+	 * the ledger's live inside-flags, not from the trace: the trace starts at
+	 * the ship, so a system being harvested has already left its log, and the
+	 * pill would go dark exactly when the money arrives. The flags are cleared
+	 * by the same step that flies the ship out, so the pill drops on exit.
 	 */
 	function drawPlanetProfits() {
 		const step = game.clockSteps;
 		const sim = activeSim();
 		const activePred = aiming || armed || sim.status === STATUS_FLYING;
+		const flying = sim.status === STATUS_FLYING;
 		predHarvestMask.fill(0);
 		if (activePred) {
 			for (let k = 0; k < sim.predLogCount; k++) {
 				predHarvestMask[sim.predLogPlanet[k]] = 1;
+			}
+		}
+		liveHarvestMask.fill(0);
+		if (flying) {
+			const inside = slotLedger(activeSlotIndex()).inside;
+			for (let i = 0; i < PLANETS; i++) {
+				if (planetMask[i] && inside[i]) liveHarvestMask[i] = 1;
 			}
 		}
 		ctx.font = '600 10.5px ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -6815,13 +6863,15 @@
 			else if (x > maxX) x = maxX;
 			if (y < 4) y = 4;
 			else if (y > maxY) y = maxY;
-			const onRoute = predHarvestMask[i] === 1;
-			const border = onRoute ? 'rgba(92, 255, 139, 0.85)'
+			const inside = liveHarvestMask[i] === 1;
+			const onRoute = inside || predHarvestMask[i] === 1;
+			const border = inside ? 'rgba(158, 255, 190, 0.95)'
+				: onRoute ? 'rgba(92, 255, 139, 0.6)'
 				: cents >= 100 ? 'rgba(255, 207, 110, 0.42)'
 				: cents >= 50 ? 'rgba(142, 240, 192, 0.28)'
 				: null;
 			plate(x, y, 38, 14, border);
-			ctx.fillStyle = onRoute ? '#9effbe'
+			ctx.fillStyle = inside ? '#ffffff' : onRoute ? '#9effbe'
 				: cents >= 100 ? GOLD
 				: cents >= 50 ? MINT
 				: cents >= 14 ? 'rgba(210, 230, 246, 0.86)'
@@ -7114,7 +7164,7 @@
 		}
 		const profitText = game.on && !routeRule() && sim.predCount >= 2
 			? predProfitText(sim, economics) + ' · ' + predRateText(sim) +
-				' · ' + sim.predTime.toFixed(1) + ' s'
+				' · ' + sim.predTime.toFixed(1) + ' s' + predTickNote()
 			: '—';
 		if (profitText !== hudPredProfitText) {
 			hudPredProfitText = profitText;
@@ -7555,6 +7605,7 @@
 		expForceEl.addEventListener('input', onExperimentInput);
 		expForceEl.addEventListener('change', onExperimentChange);
 	}
+	if (expHarvestEl) expHarvestEl.addEventListener('change', onHarvestChange);
 	horizonSlider.addEventListener('input', () => {
 		gravity.horizon = Number(horizonSlider.value);
 		const text = gravity.horizon + ' s';
@@ -7930,6 +7981,9 @@
 		predTime: () => activeSim().predTime,
 		speedCeiling,
 		experimentScales: () => ({ gravity: gravityScale, force: forceScale }),
+		/* the profit-pill highlight: systems a flying ship is inside vs the ones
+		 * the traced path ahead will enter */
+		harvestMarks: () => ({ inside: liveHarvestMask, route: predHarvestMask }),
 		careerPadInfo: () => (game.career ? careerPadPlate(game.career) : null),
 		aimState: () => ({ angle: aimAngle, speed: aimSpeed, grip: gripLen, ceiling: aimCeiling }),
 		burnPaused: () => burnPaused,
