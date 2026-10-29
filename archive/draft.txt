@@ -177,3 +177,19 @@ https://github.com/luncat8/experiment-sound-voronoi
 get sound generator - it work good with default preset to sonification distance, make it default here. probably need to be adopted to current project
 
 note voronoi seems need only to restrict notes to music scale (nearest planets form scale by design). TODO deferred: review and/or improve this here and/or in experiment project.
+
+## balance and GUI
+
+need balance build catapult cost.
+
+EMC-3, 4, etc - should not be available by default. we have only 2 levels researched by default - next need to be researched in sci 
+
+game time and background trade time - are different so they need separate panels near and  game time should also have slider of speed
+
+fix The planet-ownership rule is not enforced  bug in build EMC of already occupied planet. need to fix this. planet should possible has only commercial EMC, 1 player EMC, evacuate.
+
+Bots can use other's EMC and pay to other players for it as this a lot cheaper then commercial. They prefer their own EMC first. Commercial EMC is the fallback when the current rail can’t produce a shot—e.g. it is too weak or depleted or some urgent profitable task.
+
+### price
+cost ladder is misconcept. we should have float continues sci research and no 'levels'. so cost = f(cost of research from initial point * some coefficient )
+i mean research is somewhat additive - next research may be low cost to push top level a bit but total VECTOR from initial point may be calculated as total research cost of current item and lets like 10...20% if it will be build cost this need to be balanced

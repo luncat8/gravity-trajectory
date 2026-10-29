@@ -893,7 +893,8 @@ check('career science: tech tables seed the hull; research grows it for the prev
 	startCareer(w, 42);
 	const { career } = w;
 	assert.deepStrictEqual(OrbitScience.statsHull(career.science, 'engine'), { n: 3, dim: 2 });
-	assert.deepStrictEqual(OrbitScience.statsHull(career.science, 'catapult'), { n: 5, dim: 2 });
+	/* only EMC-1 and EMC-2 ship with starter tech; EMC-3/4/5 require research */
+	assert.deepStrictEqual(OrbitScience.statsHull(career.science, 'catapult'), { n: 2, dim: 2 });
 	/* known tech vectors are discovered points */
 	const imp2 = OrbitTech.ENGINES[1];
 	const known = OrbitScience.previewHull(career.science, 'engine', [imp2.thrust, imp2.mass]);
@@ -977,7 +978,8 @@ check('career science: 1.5x cheaper fees and research works away from HQ and in 
 	assert.strictEqual(GravityGame.researchCost(c.career, 'catapult', [220, 0.95]), 0);
 	assert.ok(GravityGame.researchPoint(c.career, 'catapult', [220, 0.95], 'R6'));
 	assert.strictEqual(c.career.ledger.purse, purse);
-	assert.strictEqual(OrbitScience.statsHull(c.career.science, 'catapult').n, 6);
+	/* 2 starter tiers + the communist-invented point */
+	assert.strictEqual(OrbitScience.statsHull(c.career.science, 'catapult').n, 3);
 });
 
 /* --- 0.4.11: exact hull distance and research prototypes --------------- */
@@ -1426,7 +1428,8 @@ check('prototypes: research unlocks a rung-placed engine record with career-wide
 	assert.ok(GravityGame.researchPoint(career, 'catapult', [100, 0.76], 'R2'));
 	const cat = GravityGame.prototypeById(career, 'catapult', 'R2');
 	assert.strictEqual(cat.tier, 2.22);
-	assert.strictEqual(cat.buildCost, 10.32);
+	/* rung cost interpolates the catapult ladder: 8 + 0.22·(12 − 8) */
+	assert.strictEqual(cat.buildCost, 8.88);
 	/* a restart clears the unlocked records along with the hull */
 	startCareer(w, 42);
 	assert.deepStrictEqual(GravityGame.prototypesOf(career, 'engine'), []);

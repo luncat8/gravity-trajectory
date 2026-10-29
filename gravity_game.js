@@ -1004,16 +1004,37 @@
 		return out;
 	}
 
+	/* tiers known out of the box per gear kind; anything above must be
+	 * researched. Only the first two EMC rails ship with starter tech — the
+	 * high-power tiers (EMC-3, 4, 5) sit beyond the initial hull. Panels and
+	 * holds are not researchable families, so their whole ladder ships known. */
+	const STARTING_RESEARCH_TIER = {
+		catapult: 2,
+		panel: 99,
+		battery: 99,
+		engine: 99,
+		tank: 99
+	};
+
 	/* the tech tree itself is discovered science: its items seed the hull so the
 	 * first custom inventions pay only the distance beyond known tradeoffs */
 	function seedScience(career) {
 		career.science = OrbitScience.createHull();
+		career.knownGear = {};
+		for (const kind in OrbitTech.TABLES) {
+			const table = OrbitTech.TABLES[kind];
+			const maxTier = STARTING_RESEARCH_TIER[kind] || 99;
+			for (let j = 0; j < table.length; j++) {
+				const item = table[j];
+				if (item.tier > 0 && item.tier <= maxTier) career.knownGear[item.id] = true;
+			}
+		}
 		for (let i = 0; i < SCIENCE_FAMILIES.length; i++) {
 			const spec = SCIENCE_FAMILIES[i];
 			for (let j = 0; j < spec.table.length; j++) {
 				const item = spec.table[j];
-				if (item.tier <= 0) continue;
-				OrbitScience.acceptHull(career.science, spec.kind, spec.params(item), item.id);
+				if (item.tier > 0 && career.knownGear[item.id])
+					OrbitScience.acceptHull(career.science, spec.kind, spec.params(item), item.id);
 			}
 		}
 	}
@@ -1034,12 +1055,19 @@
 		return 'R' + (career.research + 1);
 	}
 
-	/* research unlocks its point as a record on the family's ladder (owned, like a part) */
+	/* research unlocks its point as a record on the family's ladder (owned, like
+	 * a part); a prototype at or above a stock rung proves that rung, so the
+	 * stock tier joins the shop beside the invention */
 	function unlockPrototype(career, family, params, id) {
 		const spec = scienceFamilyOf(family);
 		if (!spec) return;
-		career.prototypes[family].push(spec.record(id, params[0], params[1]));
+		const record = spec.record(id, params[0], params[1]);
+		career.prototypes[family].push(record);
 		career.owned[id] = true;
+		for (let i = 0; i < spec.table.length; i++) {
+			const item = spec.table[i];
+			if (item.tier > 0 && item.tier <= record.tier) career.knownGear[item.id] = true;
+		}
 	}
 
 	function prototypesOf(career, family) {
@@ -1189,12 +1217,38 @@
 
 	/* --- building ------------------------------------------------------ */
 
+	/* stock (table) gear is only buildable when it is known: EMC tiers 1-2
+	 * start known, panels/batteries/engines/tanks all do, but higher EMCs
+	 * (3/4/5) must be unlocked via science — a researched prototype at or
+	 * above their rung proves the rung and the stock tier joins the shop;
+	 * the invention itself carries its own build cost either way. The
+	 * communism cheat unlocks every tier. */
+	function gearKnown(career, item) {
+		if (!item) return false;
+		if (career.cheat === CHEAT_COMMUNISM) return true;
+		if (career.owned[item.id]) return true;
+		if (career.knownGear && career.knownGear[item.id]) return true;
+		return false;
+	}
+
+	/* planet ownership: a planet can hold at most one player-owned EMC (plus
+	 * the neutral commercial EMC-1 and the evacuate option). Building your
+	 * own EMC on a planet that already carries another player's rail is
+	 * forbidden — claim the planet by landing on an unclaimed one first. */
+	function planetBuildable(career, planet) {
+		if (!career.galaxy) return true;
+		const owner = claimOwner(career.galaxy, planet);
+		return owner === OWNER_COMMERCIAL || owner === career.index;
+	}
+
 	/* a first catapult brings a starter panel and battery (charged) with it;
 	 * a panel or battery needs a pad to sit on */
 	function buildGear(career, planet, kind, item) {
 		const pad = career.pads[planet];
 		const fresh = kind === OrbitTech.KIND_CATAPULT && pad.catapult === null;
+		if (fresh && !planetBuildable(career, planet)) return false;
 		if (!fresh && !OrbitTech.upgrades(pad, kind, item)) return false;
+		if (!gearKnown(career, item)) return false;
 		if (!canPay(career, item.buildCost)) return false;
 		career.ledger.purse -= price(career, item.buildCost);
 		if (fresh) {
@@ -1204,8 +1258,12 @@
 			if (kind === OrbitTech.KIND_BATTERY) pad.chargeKwh = item.capacity;
 		}
 		if (planet === career.at) {
-			career.stranded = false;
-			refuelShip(career);
+			/* a fresh rail rescues stranding only when it can actually lift
+			 * the ship; a pad too weak for the current load leaves the
+			 * vessel stranded until an upgrade or evacuation */
+			career.stranded = !(OrbitTech.speedLimit(pad.battery.capacity, career.ship.mass,
+				pad.catapult, career.forceScale) + 1e-9 >= GravitySim.SPEED_MIN);
+			if (!career.stranded) refuelShip(career);
 		}
 		/* a fresh own rail replaces a commercial choice made for the same planet */
 		if (fresh && career.commercialPlanet === planet) career.commercialPlanet = -1;
@@ -1220,6 +1278,7 @@
 
 	/* applies `item` to every already-built facility of `kind` at once */
 	function bulkUpgrade(career, kind, item) {
+		if (!gearKnown(career, item)) return false;
 		const cost = bulkUpgradeCost(career, kind, item);
 		if (career.ledger.purse + 1e-9 < cost) return false;
 		for (let i = 0; i < career.pads.length; i++) {
@@ -1640,7 +1699,7 @@
 		launchFee, exitCost, exitCostAt, careerCanFire, padLift, reserveEnergy, releaseEnergy,
 		railOwnerText, railText, railBlock,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
-		prototypesOf, prototypeById,
+		prototypesOf, prototypeById, gearKnown, planetBuildable,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart,
 		refreshBoard, canAccept, acceptTask, dropContract,
 		careerBeginFlight, careerBurn, careerAdvance, careerEndFlight, evacuate

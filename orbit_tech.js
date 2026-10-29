@@ -30,13 +30,17 @@
 	/* --- planet gear --------------------------------------------------- */
 
 	/* an EMC claims the planet it stands on: the rail is the money maker, so the
-	 * ladder is priced as a long-term infrastructure investment */
+	 * ladder is priced as a long-term infrastructure investment. Tiers 1-2 ship
+	 * with starter tech; tiers 3+ require science to unlock. EMC-2 stays above
+	 * the starter purse plus a first arrival's profit (6.00 + ~1.75): a planet
+	 * the starter rail cannot leave must not be rescued by pocket change, or
+	 * the seeded starter-blocked calibration loses its teeth. */
 	const CATAPULTS = [
-		{ id: 'EMC-1', tier: 1, maxForce: 15, efficiency: 0.62, buildCost: 4.5 },
-		{ id: 'EMC-2', tier: 2, maxForce: 90, efficiency: 0.71, buildCost: 9 },
-		{ id: 'EMC-3', tier: 3, maxForce: 135, efficiency: 0.80, buildCost: 15 },
-		{ id: 'EMC-4', tier: 4, maxForce: 165, efficiency: 0.85, buildCost: 22.5 },
-		{ id: 'EMC-5', tier: 5, maxForce: 180, efficiency: 0.88, buildCost: 30 }
+		{ id: 'EMC-1', tier: 1, maxForce: 15, efficiency: 0.62, buildCost: 3.0 },
+		{ id: 'EMC-2', tier: 2, maxForce: 90, efficiency: 0.71, buildCost: 8.0 },
+		{ id: 'EMC-3', tier: 3, maxForce: 135, efficiency: 0.80, buildCost: 12.0 },
+		{ id: 'EMC-4', tier: 4, maxForce: 165, efficiency: 0.85, buildCost: 16.0 },
+		{ id: 'EMC-5', tier: 5, maxForce: 180, efficiency: 0.88, buildCost: 20.0 }
 	];
 
 	/* kW: SP-1 refills BAT-1 in ~90 flight-seconds of full sunlight at world rate ×1 */

@@ -81,6 +81,8 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 			player.ship.mass, bot.probe);
 		if (departure.starterCanExit) continue;
 		blocked += 1;
+		assert.ok(!departure.ok,
+			'seed ' + seed + ' P' + planet + ': starter-blocked planet became affordable at the starter purse');
 		blockedTotal += 1;
 		if (!fixture) fixture = { seed, planet };
 		const upgraded = bot.careerDeparture(player, planet, 100, player.ship.mass, bot.probe);

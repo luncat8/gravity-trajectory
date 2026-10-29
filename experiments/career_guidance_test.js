@@ -33,7 +33,7 @@ function assertCanvasColour(expected) {
 }
 
 /* A real incoming trajectory reaches a gravity-locked free planet, but the
- * starter purse cannot fund the EMC-2/BAT-2 departure needed there. */
+ * starter purse cannot fund the EMC-2 rescue rail needed there. */
 env.dragAim(origin, blockedAngle, 35);
 env.runFrames(3, 16);
 assert.strictEqual(scene.sim.predReason, sim.END_IMPACT);

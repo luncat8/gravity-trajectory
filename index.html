@@ -100,7 +100,29 @@
 		<div id="careerMsg" class="careerMsg" hidden></div>
 	</div>
 </aside>
-<header id="tradeHud" class="panel">
+<header id="gameHud" class="panel" hidden aria-label="game clock">
+		<div class="panelHead">
+			<div>
+				<div class="kicker">game time · career</div>
+				<div class="clock" id="gameClock">t+ 00:00</div>
+			</div>
+			<div class="headBtns">
+				<button id="gameFoldBtn" class="miniBtn" data-fold="gameHud" title="minimize panel" aria-expanded="true">−</button>
+			</div>
+		</div>
+		<div id="gameBody">
+			<div class="stats">
+				<div class="stat"><span>shots</span><b id="gameShots">0</b></div>
+				<div class="stat"><span>flights</span><b id="gameFlights">0</b></div>
+				<div class="stat"><span>pads</span><b id="gamePads">0 / 0</b></div>
+			</div>
+			<label class="ctl" title="game time speed multiplier (pads, rivals, turret)">game
+				<input id="gameSpeed" type="range" min="0.25" max="8" step="0.25" value="1">
+				<output id="gameSpeedLabel">×1</output>
+			</label>
+		</div>
+	</header>
+	<header id="tradeHud" class="panel">
 		<div class="panelHead">
 			<div>
 				<div class="kicker">orbital trade · background</div>

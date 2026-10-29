@@ -580,3 +580,22 @@ the package's `al2023.tar.br` libraries (NSS/NSPR) extracted and placed on
 not just `AudioContext.state === 'running'`; a running context with a zero master
 gain still looks healthy. Filter expected missing photo-candidate 404s separately
 from audio/page errors when a test launches far enough to trigger postcards.
+
+## one early failure masks every later check in a linear smoke file
+
+`dom_smoke.js` throws on the first failed `check`, so an early regression hides
+every later expectation — some of those may predate the change that broke the
+run and need their own recalibration. After greening the first failure, re-run
+to the end of the file before calling the suite green; budget for a chain of
+unmasked stale expectations.
+
+## a rescue kit price floor guards the starter-blocked calibration
+
+`career_departure_test` seeds planets the starter rail cannot leave. The cheapest
+kit that can leave one (for seed 1 P3: a fresh EMC-2 arriving with its starter
+battery) must cost more than the starter purse **plus the arrival profit of the
+shot that lands there** — bots and `predictedCareerEconomics` both fund the exit
+with `purse + predGain`, so a rescue priced under that turns every blocked
+planet into a free detour and erases the trap. Keep the floor as a comment on
+the catapult cost table and assert per blocked planet that the starter purse
+alone cannot leave (`!departure.ok`), not just the one fixture.

@@ -1435,11 +1435,14 @@
 		const pad = GravityGame.padAt(career, planet);
 		const owner = GravityGame.padOwner(career, planet);
 
+		const buildable = GravityGame.planetBuildable(career, planet);
 		if (own.catapult === null) {
 			const starterCap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
 				arrivalMass, OrbitTech.CATAPULTS[0], forceScale);
 			out.starterCanExit = this.careerExitSpeed(planet, starterCap) > 0;
-			out.canBuildStarter = out.starterCanExit &&
+			/* only claim an unclaimed (commercial) or own planet: you cannot
+			 * replace another player's EMC with your own */
+			out.canBuildStarter = buildable && out.starterCanExit &&
 				available + 1e-9 >= careerPrice(career, OrbitTech.CATAPULTS[0]);
 			if (out.starterCanExit) out.physical = true;
 		}
@@ -1483,8 +1486,10 @@
 			} else if (ci < OrbitTech.CATAPULTS.length) catapult = OrbitTech.CATAPULTS[ci];
 			else catapult = catPrototypes[ci - OrbitTech.CATAPULTS.length];
 			const buildCatapult = catapult !== own.catapult;
+			if (buildCatapult && own.catapult === null && !buildable) continue;
 			if (own.catapult !== null && buildCatapult &&
 				catapult.tier <= own.catapult.tier) continue;
+			if (buildCatapult && !GravityGame.gearKnown(career, catapult)) continue;
 			const catCost = buildCatapult ? careerPrice(career, catapult) : 0;
 			if (available + 1e-9 < catCost) continue;
 			for (let bi = -1; bi < batteryCount; bi++) {
@@ -1494,6 +1499,7 @@
 				else battery = batteryPrototypes[bi - OrbitTech.BATTERIES.length];
 				const buildBattery = battery !== currentBattery;
 				if (buildBattery && battery.tier <= currentBattery.tier) continue;
+				if (buildBattery && !GravityGame.gearKnown(career, battery)) continue;
 				if (!buildCatapult && !buildBattery) continue;
 				const totalCost = catCost + (buildBattery ? careerPrice(career, battery) : 0);
 				if (available + 1e-9 < totalCost || totalCost + 1e-9 >= bestCost) continue;
@@ -1577,11 +1583,13 @@
 		if (career.contract >= 0) {
 			const task = career.tasks[career.contract];
 			const target = task.state === GravityGame.TASK_LOADED ? task.to : task.from;
-			if (target >= 0 && career.pads[target].catapult === null) return target;
+			if (target >= 0 && career.pads[target].catapult === null &&
+				GravityGame.planetBuildable(career, target)) return target;
 		}
 		let best = -1;
 		for (let p = 0; p < PLANETS; p++) {
 			if (career.pads[p].catapult !== null) continue;
+			if (!GravityGame.planetBuildable(career, p)) continue;
 			if (best < 0 || career.light[p] > career.light[best]) best = p;
 		}
 		return best;
@@ -1643,15 +1651,28 @@
 			return actions;
 		}
 		/* the commercial EMC lifts a parked ship for its fee, so a padless planet
-		 * is no dead end; only a load nothing here can lift needs a rescue */
+		 * is no dead end; only a load nothing here can lift needs a rescue.
+		 * If buying a starter EMC-1 would leave the purse below evacuation
+		 * cost and the rail still couldn't lift the ship, evacuate instead. */
 		if (GravityGame.padLift(career, career.at) + 1e-9 < GravitySim.SPEED_MIN) {
 			if (career.contract >= 0) {
 				GravityGame.dropContract(career);
 				actions += 1;
-			} else if (this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
-				OrbitTech.CATAPULTS[0], 0)) actions += 1;
-			else if (career.ledger.purse + 1e-9 >= evacPrice &&
-				GravityGame.evacuate(career, sim)) actions += 1;
+			} else {
+				/* will EMC-1 + BAT-1 lift this load? */
+				const starterCap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
+					career.ship.mass, OrbitTech.CATAPULTS[0], career.forceScale);
+				const starterCost = careerPrice(career, OrbitTech.CATAPULTS[0]);
+				const starterLifts = starterCap + 1e-9 >= GravitySim.SPEED_MIN &&
+					career.ledger.purse + 1e-9 >= starterCost;
+				if (starterLifts && this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
+					OrbitTech.CATAPULTS[0], 0)) {
+					actions += 1;
+				} else if (career.ledger.purse + 1e-9 >= evacPrice &&
+					GravityGame.evacuate(career, sim)) {
+					actions += 1;
+				}
+			}
 		}
 		if (career.ended !== GravityGame.CAREER_OPEN) return actions;
 
@@ -1701,13 +1722,25 @@
 			}
 		}
 
+		/* expansion claims at most one fresh pad per call: the bot must fly a
+		 * revenue-earning flight (and land, collect profit, possibly upgrade)
+		 * before it buys the next network planet. This stops a rich start
+		 * purse from auto-completing the map with zero flights. */
 		const expansionReserve = CAREER_PURSE_RESERVE +
+			GravityGame.CAREER.evacFee +
 			(career.ship.hold === OrbitTech.HOLDS[0] ? OrbitTech.HOLDS[1].buildCost : 0);
-		while (career.ended === GravityGame.CAREER_OPEN && career.padCount < PLANETS) {
-			const planet = this.careerNextPad(career);
-			if (planet < 0 || !this.careerBuyGear(career, planet, OrbitTech.KIND_CATAPULT,
-				OrbitTech.CATAPULTS[0], expansionReserve)) break;
-			actions += 1;
+		if (career.ended === GravityGame.CAREER_OPEN && career.padCount < PLANETS) {
+			/* never claim another planet until the current rail can actually
+			 * fire an affordable shot (own/battery, rival or commercial) */
+			const here = this.careerDeparture(career, career.at, career.ledger.purse,
+				career.ship.mass, sim);
+			if (here.ok) {
+				const planet = this.careerNextPad(career);
+				if (planet >= 0 && this.careerBuyGear(career, planet, OrbitTech.KIND_CATAPULT,
+					OrbitTech.CATAPULTS[0], expansionReserve)) {
+					actions += 1;
+				}
+			}
 		}
 		return actions;
 	};
@@ -2376,9 +2409,14 @@
 					GravityGame.refreshBoard(career, trade, runStep);
 					recovery = 'dropped the unreachable contract';
 				}
-				const wasAt = career.at;
-				this.careerBetweenFlights(career, sim);
-				if (!recovery && wasAt < 0 && career.at >= 0) recovery = 'evacuated to P' + career.at;
+			const wasAt = career.at;
+			const wasStranded = career.stranded;
+			this.careerBetweenFlights(career, sim);
+			if (!recovery) {
+				if (wasAt < 0 && career.at >= 0) recovery = 'evacuated to P' + career.at;
+				else if (wasStranded && !career.stranded && career.at === career.hq && wasAt !== career.hq)
+					recovery = 'evacuated to P' + career.at;
+			}
 				if (recovery) r.idleTries = 0;
 				const gap = recovery ? 1 : CAREER_RIVAL_GAP + r.gapPhase;
 				r.readyStep = runStep + gap;

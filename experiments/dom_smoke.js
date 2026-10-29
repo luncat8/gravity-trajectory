@@ -1410,7 +1410,7 @@ check(kScene.game.money.purse >= purse0, 'no launch fee in career: ' + kScene.ga
 check(kui.get('cargoStatus').textContent === 'impact P' + career.at + ' · clock paused',
 	'stranded-but-launchable status: ' + kui.get('cargoStatus').textContent);
 check(!kui.get('launch').hidden && !kui.get('planetActions').hidden &&
-	kui.get('launchBuild').textContent === 'buy EMC-1 · 4.50' &&
+	kui.get('launchBuild').textContent === 'buy EMC-1 · 3.00' &&
 	kui.get('launchCommercial').textContent === 'commercial EMC-1 · 3.00' &&
 	kui.get('launchEvac').textContent === 'evacuate · 6.00',
 	'planet action buttons: ' + kui.get('launchBuild').textContent + ' / ' +
@@ -1767,7 +1767,7 @@ check(bCargo.status === pageSim.STATUS_ENDED && bCargo.endReason === pageSim.END
 check(bCareer.stranded && bCareer.at === bCargo.endBody, 'build env: did not strand on landing');
 const padBuild = /data-act="build"[^>]*data-kind="catapult"[^>]*data-tier="(\d+)"/.exec(bui.get('careerPad').innerHTML);
 check(padBuild !== null, 'pad block has no first-catapult button: ' + bui.get('careerPad').innerHTML);
-/* the first EMC now costs 4.50: fund the bench for it */
+/* the first EMC costs 3.00: fund the bench for it */
 bCareer.ledger.purse = 20;
 bScene.refreshCareerPanel();
 buildEnv.fireElement(bui.get('careerBox'), 'click',
@@ -2179,7 +2179,7 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	/* research panel: seeded hulls, family switch, sliders, live fee, accept */
 	check(sciMarkup('sciFamily') !== null && sciMarkup('sciAccept') !== null, 'science controls rendered');
 	check((sciBlock().match(/data-sci-axis="/g) || []).length === 2, 'two engine research sliders');
-	check(sciBlock().includes('engine hull · 3 points') && sciBlock().includes('catapult hull · 5 points'),
+	check(sciBlock().includes('engine hull · 3 points') && sciBlock().includes('catapult hull · 2 points'),
 		'seeded hull summaries: ' + sciBlock());
 	check(sciScience.statsHull(sciCareer.science, 'engine').n === 3, 'career owns an isolated hull');
 	const defaultPreview = sciGame.researchPreview(sciCareer, 'engine', [26, 1.8]);
@@ -2233,6 +2233,7 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 
 	/* research stays available away from HQ whenever the purse covers the fee */
 	sciCareer.at = (sciCareer.hq + 1) % pageWorld.PLANETS;
+	sciCareer.ledger.purse = sciGame.researchCost(sciCareer, 'catapult', [100, 0.76]) + 1;
 	sciScene.refreshCareerPanel();
 	check(!sciBlock().includes('back at HQ'), 'no HQ gate tooltip on research button');
 	check(!/data-act="sciAccept"[^>]*disabled/.test(sciBlock()), 'accept stays enabled away from HQ');
@@ -2781,8 +2782,8 @@ function protoOf(career, family, id) {
 		'non-career max playback speed remains ×8');
 	console.log('0.4.17 verified: separate #cargoFoot panel · inline stranded buy/evacuate · ' +
 		'career ×4..×32 playback · net outcome / rate / TOF route prediction');
-	console.log('0.4.19 verified: commercial rail + EMC claims · ' +
-		'flying rival careers · 4.50 pads / 6.00 evacuation');
+		console.log('0.4.19 verified: commercial rail + EMC claims · ' +
+			'flying rival careers · 3.00 pads / 6.00 evacuation');
 	console.log('0.4.20 verified: commercial EMC-1 button on every planet · ' +
 		'asymptotic visit profit →3.00 · continuous career clock with pause on landing');
 }

@@ -190,11 +190,13 @@ body {
 #cargoHud.folded #cargoBody,
 #scoreHud.folded .scoreRows,
 #careerHud.folded #careerBox,
-#tradeHud.folded #tradeBody {
+#tradeHud.folded #tradeBody,
+#gameHud.folded #gameBody {
 	display: none;
 }
 
-#tradeHud.folded .clock {
+#tradeHud.folded .clock,
+#gameHud.folded .clock {
 	margin-bottom: 0;
 }
 

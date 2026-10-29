@@ -1,9 +1,10 @@
 /*
  * Headless career-bot bench: weak starter rail, pad-only planning, live speed
  * caps, task/pad/energy-wait scoring, idle shopping, then complete careers on
- * the real GravitySim. An EMC costs 9.00 and every planet's commercial rail
- * charges 3.00 a launch, so the 6.00 starter purse is a grind: the grind guard
- * checks survival, the completion runs start from a funded mid-game purse.
+ * the real GravitySim. A starter EMC-1 costs 3.00 and every planet's commercial
+ * rail charges 3.00 a launch, so the 6.00 starter purse buys one pad and little
+ * else: the grind guard checks survival, the completion runs start from a funded
+ * mid-game purse.
  * Run: node experiments/career_bot_bench.js (SEEDS=42 TRACE=1 for diagnostics)
  */
 'use strict';
@@ -443,8 +444,9 @@ check('careerBurnPlan: rescues a missed contract or map exit and never breaks a 
 	}
 });
 
-/* the 6.00 starter purse cannot fund a 9.00 pad, so a career only has to
- * survive the commercial-rail grind long enough to claim a second planet */
+/* the 6.00 starter purse funds one 3.00 pad but never a rescue rail (EMC-2
+ * costs 8.00), so a career only has to survive the grind long enough to
+ * claim a second planet */
 for (const seed of SEEDS) {
 	check('starter grind seed ' + seed + ': survives the 6.00 start and claims a pad', () => {
 		const r = runCareer(seed, process.env.TRACE === '1');
@@ -671,13 +673,16 @@ check('flat fees are priced as fees: a lost or stranded ship evacuates', () => {
 		'the idle controller ignored a ship in space');
 	assert.strictEqual(career.at, career.hq, 'the lost ship did not come home');
 	assert.strictEqual(career.evacuations, 1);
-	/* a stranded landing: the launch path evacuates after two planless tries */
-	/* below the 9.00 pad price the idle shop cannot claim the planet, so the
-	 * only way out is the 6.00 evacuation the old fee bug made unaffordable */
+	/* a stranded landing: the launch path evacuates after two planless tries.
+	 * Cargo is loaded so heavy (94 t total) that neither the commercial EMC-1
+	 * nor a freshly built starter EMC-1/BAT-1 can lift it above SPEED_MIN,
+	 * so the only way out is the evacuation fee. */
 	const other = (career.hq + 1) % PLANETS;
 	career.at = other;
 	career.stranded = true;
 	w.sim.relocate(other);
+	career.ship.cargoTons = 84;
+	career.ship.mass = OrbitTech.shipMass(career.ship, 84);
 	w.ledger.purse = 8;
 	const r = w.bot.rivals[0];
 	r.career = career;
