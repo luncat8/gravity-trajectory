@@ -383,6 +383,11 @@
 	const soundEngineEl = $('soundEngine');
 	const soundAimEl = $('soundAim');
 	const soundFlightEl = $('soundFlight');
+	const soundVoronoiPresetEl = $('soundVoronoiPreset');
+	const soundVoronoiPresetControlEl = $('soundVoronoiPresetControl');
+	const soundDistanceEl = $('soundDistance');
+	const soundDistanceLabelEl = $('soundDistanceLabel');
+	const soundDistanceControlEl = $('soundDistanceControl');
 	const soundVolumeEl = $('soundVolume');
 	const soundVolumeLabelEl = $('soundVolumeLabel');
 	const soundSettingsTagEl = $('soundSettingsTag');
@@ -403,9 +408,17 @@
 		const value = Number(stored);
 		if (stored !== null && Number.isFinite(value) && value >= 0 && value <= 100) soundVolume = value;
 	} catch (err) { /* default volume */ }
+	let soundDistanceScale = root.GravityVoronoiSound.DEFAULT_DISTANCE_SCALE;
+	try {
+		const stored = root.localStorage.getItem('gravity-sound-distance-scale');
+		const value = Number(stored);
+		if (stored !== null && Number.isFinite(value) && value >= 0.25 && value <= 2) soundDistanceScale = value;
+	} catch (err) { /* default distance scale */ }
 	const sound = root.GravitySound.createController({
 		enabled: soundEnabled,
 		volume: soundVolume / 100,
+		distanceScale: soundDistanceScale,
+		voronoiPreset: readSoundChoice('gravity-sound-voronoi-preset', 'point', ['point', 'distance']),
 		engine: readSoundChoice('gravity-sound-engine', 'voronoi', ['voronoi', 'trajectory', 'samples', 'fallback']),
 		aimMode: readSoundChoice('gravity-sound-aim', 'outcome', ['outcome', 'flythrough']),
 		flightMode: readSoundChoice('gravity-sound-flight', 'pentatonic', ['pentatonic', 'instrument'])
@@ -8021,7 +8034,7 @@
 		try { root.localStorage.setItem('gravity-sound-enabled', String(soundEnabled)); }
 		catch (err) { /* Sound still works without persistent preferences. */ }
 	});
-	const SOUND_ENGINE_LABELS = { voronoi: 'voronoi distance', trajectory: 'trajectory synth', samples: 'selected samples', fallback: 'classic synths' };
+	const SOUND_ENGINE_LABELS = { voronoi: 'voronoi', trajectory: 'trajectory synth', samples: 'selected samples', fallback: 'classic synths' };
 	const SOUND_AIM_HINTS = {
 		outcome: 'Profit chord · length ticks · destination EMC beacon. While aiming: a quiet left/right direction cue; pitch and volume follow pull strength.',
 		flythrough: 'Hear predicted visits in order, with each planet panned by its bearing from the local path heading; the phrase opens on launch and closes on arrival.'
@@ -8039,6 +8052,11 @@
 		if (soundEngineEl) soundEngineEl.value = engine;
 		if (soundAimEl) soundAimEl.value = sound.aimMode();
 		if (soundFlightEl) soundFlightEl.value = sound.flightMode();
+		if (soundVoronoiPresetEl) soundVoronoiPresetEl.value = sound.voronoiPreset();
+		if (soundVoronoiPresetControlEl) soundVoronoiPresetControlEl.hidden = engine !== 'voronoi';
+		if (soundDistanceEl) soundDistanceEl.value = String(sound.distanceScale());
+		if (soundDistanceLabelEl) soundDistanceLabelEl.textContent = '×' + sound.distanceScale().toFixed(2);
+		if (soundDistanceControlEl) soundDistanceControlEl.hidden = engine !== 'voronoi';
 		if (soundVolumeEl) soundVolumeEl.value = String(Math.round(sound.volume() * 100));
 		if (soundVolumeLabelEl) soundVolumeLabelEl.textContent = Math.round(sound.volume() * 100) + '%';
 		if (soundSettingsTagEl) soundSettingsTagEl.textContent = SOUND_ENGINE_LABELS[engine];
@@ -8047,7 +8065,9 @@
 		if (flightControl) flightControl.hidden = engine !== 'trajectory';
 		if (!soundHintEl) return;
 		soundHintEl.textContent = engine === 'voronoi'
-			? SOUND_AIM_HINTS[sound.aimMode()] + ' Flight: Voronoi distance voices · nearer is higher and louder · stereo follows ship-relative bearing.'
+			? SOUND_AIM_HINTS[sound.aimMode()] + (sound.voronoiPreset() === 'point'
+				? ' Flight: each planet has its own note; nearer is louder · stereo follows ship-relative bearing.'
+				: ' Flight: nearer planets are higher and louder · stereo follows ship-relative bearing.')
 			: engine === 'trajectory'
 			? SOUND_AIM_HINTS[sound.aimMode()] + ' ' + SOUND_FLIGHT_HINTS[sound.flightMode()]
 			: engine === 'samples' ? 'Selected local WAVs; missing or unplayable cues use the classic synths.'
@@ -8069,6 +8089,16 @@
 		sound.setFlightMode(soundFlightEl.value);
 		saveSoundPreference('gravity-sound-flight', sound.flightMode());
 		refreshSoundSettings();
+	});
+	if (soundVoronoiPresetEl) soundVoronoiPresetEl.addEventListener('change', () => {
+		sound.setVoronoiPreset(soundVoronoiPresetEl.value);
+		saveSoundPreference('gravity-sound-voronoi-preset', sound.voronoiPreset());
+		refreshSoundSettings();
+	});
+	if (soundDistanceEl) soundDistanceEl.addEventListener('input', () => {
+		sound.setDistanceScale(soundDistanceEl.value);
+		if (soundDistanceLabelEl) soundDistanceLabelEl.textContent = '×' + sound.distanceScale().toFixed(2);
+		saveSoundPreference('gravity-sound-distance-scale', String(sound.distanceScale()));
 	});
 	if (soundVolumeEl) soundVolumeEl.addEventListener('input', () => {
 		soundVolume = Number(soundVolumeEl.value);

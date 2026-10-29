@@ -223,10 +223,10 @@
 	</div>
 
 	<details id="soundSettings" class="group soundSettings">
-		<summary title="sound generator and trajectory sonification settings"><span>sound</span><span id="soundSettingsTag">voronoi distance</span></summary>
+		<summary title="sound generator and trajectory sonification settings"><span>sound</span><span id="soundSettingsTag">voronoi</span></summary>
 		<label class="ctl soundCtl">generator
 			<select id="soundEngine" aria-label="sound generator">
-				<option value="voronoi" selected>voronoi distance</option>
+				<option value="voronoi" selected>voronoi</option>
 				<option value="trajectory">trajectory synth</option>
 				<option value="samples">selected samples</option>
 				<option value="fallback">classic synths</option>
@@ -246,6 +246,16 @@
 				</select>
 			</label>
 		</div>
+		<label id="soundVoronoiPresetControl" class="ctl soundCtl">voronoi preset
+			<select id="soundVoronoiPreset" aria-label="Voronoi sound preset">
+				<option value="point" selected>point tones (default)</option>
+				<option value="distance">distance pitch</option>
+			</select>
+		</label>
+		<label id="soundDistanceControl" class="ctl soundCtl" title="Scale world distances for the Voronoi sound; smaller values sound closer">distance scale
+			<input id="soundDistance" type="range" min="0.25" max="2" step="0.05" value="0.75" aria-label="Voronoi distance scale">
+			<output id="soundDistanceLabel">×0.75</output>
+		</label>
 		<label class="ctl soundCtl">volume
 			<input id="soundVolume" type="range" min="0" max="100" step="1" value="45">
 			<output id="soundVolumeLabel">45%</output>
@@ -393,6 +403,7 @@
 <script src="photo_deck.js"></script>
 <script src="gravity_field.js"></script>
 <script src="sounds/selected/pack.js"></script>
+<script src="gravity_voronoi_tones.js"></script>
 <script src="gravity_voronoi_sound.js"></script>
 <script src="gravity_trajectory_sound.js"></script>
 <script src="gravity_sound.js"></script>

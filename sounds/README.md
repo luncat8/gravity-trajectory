@@ -1,30 +1,52 @@
 # Sound
 
 The cargo panel's **sound** selector chooses one of four generators. The choice,
-aim/flight mappings, volume and mute state are stored locally when storage is
-available. Audio remains decorative: it reads predictions and flight state but
-never writes physics, economics, aim inputs or replay data.
+aim/flight mappings, Voronoi preset and distance scale, volume and mute state are
+stored locally when storage is available. Audio remains decorative: it reads
+predictions and flight state but never writes physics, economics, aim inputs or
+replay data.
 
-## Voronoi distance (default)
+## Voronoi (default)
 
 The sample-free flight synth is adapted from the MIT-licensed
-[experiment-sound-voronoi](https://github.com/luncat8/experiment-sound-voronoi),
-using its distance preset (frequency steepness 54, volume 53, envelope 6).
-The nearest active planet center and its Voronoi-adjacent centers each get a
-triangle voice with a low-pass filter and distance-dependent sine envelope.
-Closer centers are higher and louder; inside 20 world pixels the envelope is
-continuous. The nearest plus up to 19 closest neighbors sound at once, with
-stable voice identities and smooth releases. Geometry is recomputed from the
-moving planet positions and active mask, using unbounded Voronoi cells.
-Unlike the original experiment's screen-horizontal pan, this adaptation uses
-ship-relative left/right bearing, faded near the center. Distances are to
-planet centers, not surfaces. This makes the center-distance preset meaningful
-without changing it for planets of different sizes.
+[experiment-sound-voronoi](https://github.com/luncat8/experiment-sound-voronoi).
+It offers both experiment presets:
 
-The default shares the trajectory synth's aim mappings and synthesized ignition;
-it ducks flight during an impulse-burn preview. Existing saved generator and
-mute preferences are respected. Both synths unlock on a user gesture and suspend
-in the background.
+- **Point tones (default)**: point-id frequency, distance volume steepness 39,
+  distance envelope steepness 77. The experiment's frequency steepness 15 is
+  inactive in point mode. Each planet receives a pentatonic note using the
+  experiment's point placement and neighbor-tuning algorithm. Notes are stable
+  while the field is unchanged.
+- **Distance pitch**: distance frequency steepness 54, distance volume steepness
+  53, distance envelope steepness 6. Closer centers are higher and louder.
+
+The presets' `n=36` sets the number of sites in the experiment; it does not
+change this game's planets or roster. The nearest active planet center and its
+Voronoi-adjacent centers each get a triangle voice with a low-pass filter and a
+distance-dependent sine envelope. Up to 20 centers sound at once; identities are
+pinned to voices. As in the experiment, the envelope is continuous inside 20
+scaled distance units. Geometry and tuning update when the active field changes,
+using unbounded Voronoi cells rather than the experiment's viewport boundary.
+The point-tuning algorithm uses world positions multiplied by a fixed ×0.75;
+the distance slider does not retune the notes.
+
+The **distance scale** slider multiplies center-to-center world distance before
+the volume, envelope and near-center pan fade in both presets, and the pitch
+curve in distance-pitch mode. Lower values make planets sound closer; ×1.00 uses
+the original curves directly on world units. The default ×0.75 roughly converts
+this game's 1600×1000 / 26-planet field to the spacing of a 36-site experiment
+field around 1200×1000 pixels: √((1200×1000/36)/(1600×1000/26)) ≈ 0.74.
+This is an estimate, not a viewport-dependent conversion; the slider allows
+adjustment to taste. For instance, 50, 150 and 300 world units map to 37.5,
+112.5 and 225 experiment pixels, which in distance-pitch mode produce roughly
+524, 37 and 13 Hz respectively.
+
+Unlike the experiment's screen-horizontal pan, this adaptation uses ship-relative
+left/right bearing. It also shares the trajectory synth's aim mappings and
+synthesized ignition, ducks flight during an impulse-burn preview and uses a
+different output mix/limiter, so it is not acoustically identical to the standalone
+experiment. Existing saved generator and mute preferences are respected. Both
+synths unlock on a user gesture and suspend in the background.
 
 ## Trajectory synth
 

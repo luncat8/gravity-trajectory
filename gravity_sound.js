@@ -5,6 +5,8 @@
 	const TrajectorySound = typeof module !== 'undefined' && module.exports
 		? require('./gravity_trajectory_sound.js')
 		: root.GravityTrajectorySound;
+	const VoronoiSound = typeof module !== 'undefined' && module.exports
+		? require('./gravity_voronoi_sound.js') : root.GravityVoronoiSound;
 	const ENGINES = { voronoi: true, trajectory: true, samples: true, fallback: true };
 	const AIM_MODES = { outcome: true, flythrough: true };
 	const FLIGHT_MODES = { pentatonic: true, instrument: true };
@@ -436,12 +438,14 @@
 		let flying = false;
 		let aimMode = Object.hasOwn(AIM_MODES, options.aimMode) ? options.aimMode : 'outcome';
 		let flightMode = Object.hasOwn(FLIGHT_MODES, options.flightMode) ? options.flightMode : 'pentatonic';
+		let voronoiPreset = options.voronoiPreset === 'distance' ? 'distance' : 'point';
+		let distanceScale = options.distanceScale === undefined ? VoronoiSound.DEFAULT_DISTANCE_SCALE : VoronoiSound.clampDistanceScale(options.distanceScale);
 		let aimData = null;
 		let flightSim = null;
 		let backend = makeBackend();
 
 		function makeBackend() {
-			const config = { host, enabled, volume, aimMode, flightMode };
+			const config = { host, enabled, volume, aimMode, flightMode, distanceScale, voronoiPreset };
 			if (engine === 'trajectory' || engine === 'voronoi') {
 				config.voronoi = engine === 'voronoi';
 				return TrajectorySound.create(config);
@@ -533,10 +537,20 @@
 			if (backend.setFlightMode) backend.setFlightMode(flightMode);
 		}
 
+		function setDistanceScale(value) {
+			distanceScale = VoronoiSound.clampDistanceScale(value);
+			if (backend.setDistanceScale) backend.setDistanceScale(distanceScale);
+		}
+
+		function setVoronoiPreset(value) {
+			voronoiPreset = value === 'distance' ? 'distance' : 'point';
+			if (backend.setVoronoiPreset) backend.setVoronoiPreset(voronoiPreset);
+		}
+
 		return { unlock: () => backend.unlock(), setLoop, launch, startFlight, stopFlight, reset,
-			setEnabled, setActive, setVolume, setEngine, updateAim, updateFlight, setAimMode, setFlightMode,
+			setEnabled, setActive, setVolume, setEngine, updateAim, updateFlight, setAimMode, setFlightMode, setDistanceScale, setVoronoiPreset,
 			phase: () => desired, enabled: () => enabled, engine: () => engine, volume: () => volume,
-			aimMode: () => aimMode, flightMode: () => flightMode };
+			aimMode: () => aimMode, flightMode: () => flightMode, distanceScale: () => distanceScale, voronoiPreset: () => voronoiPreset };
 	}
 
 	const api = { create, createController };

@@ -94,6 +94,8 @@
 		let aimMode = options.aimMode === AIM_FLYTHROUGH ? AIM_FLYTHROUGH : AIM_OUTCOME;
 		let flightMode = options.flightMode === FLIGHT_INSTRUMENT ? FLIGHT_INSTRUMENT : FLIGHT_PENTATONIC;
 		const useVoronoi = options.voronoi === true;
+		let distanceScale = options.distanceScale === undefined ? VoronoiSound.DEFAULT_DISTANCE_SCALE : VoronoiSound.clampDistanceScale(options.distanceScale);
+		let voronoiPreset = options.voronoiPreset === 'distance' ? 'distance' : 'point';
 		let voronoi = null;
 		let context = null;
 		let master = null;
@@ -236,7 +238,7 @@
 				poolOsc[i] = oscillator('triangle', 440, poolGain[i]);
 			}
 			flightBus = gain(0, master);
-			if (useVoronoi) voronoi = VoronoiSound.create(context, flightBus);
+			if (useVoronoi) voronoi = VoronoiSound.create(context, flightBus, distanceScale, voronoiPreset);
 			flightTremolo = context.createGain();
 			flightTremolo.gain.value = 0.82;
 			flightFilter = filter(1800, flightTremolo);
@@ -695,8 +697,22 @@
 			if (flightSim && context) updateFlight(flightSim);
 		}
 
+		function setDistanceScale(value) {
+			distanceScale = VoronoiSound.clampDistanceScale(value);
+			if (voronoi) voronoi.setDistanceScale(distanceScale);
+			lastFlightUpdate = -Infinity;
+			if (flightSim && context) updateFlight(flightSim);
+		}
+
+		function setVoronoiPreset(value) {
+			voronoiPreset = value === 'distance' ? 'distance' : 'point';
+			if (voronoi) voronoi.setPreset(voronoiPreset);
+			lastFlightUpdate = -Infinity;
+			if (flightSim && context) updateFlight(flightSim);
+		}
+
 		return { unlock, setLoop, launch, startFlight, stopFlight, setEnabled, setVolume, setActive, reset,
-			updateAim, updateFlight, setAimMode, setFlightMode,
+			updateAim, updateFlight, setAimMode, setFlightMode, setDistanceScale, setVoronoiPreset,
 			phase: () => desired, enabled: () => enabled,
 			aimMode: () => aimMode, flightMode: () => flightMode };
 	}

@@ -1,26 +1,31 @@
-/* Distance preset adapted from luncat8/experiment-sound-voronoi (MIT). */
+/* Presets adapted from luncat8/experiment-sound-voronoi (MIT). */
 (function (root) {
 	'use strict';
 
+	const Tones = typeof module !== 'undefined' && module.exports
+		? require('./gravity_voronoi_tones.js') : root.GS.Tones;
+	const DEFAULT_DISTANCE_SCALE = 0.75;
+	const MIN_DISTANCE_SCALE = 0.25;
+	const MAX_DISTANCE_SCALE = 2;
 	const MAX_ACTIVE = 20;
 	const SLOTS = 24;
 	const FREQ_SCALE = 280 * Math.pow(20 / 280, 0.54);
-	const VOLUME_SCALE = 320 * Math.pow(22 / 320, 0.53);
-	const ENV_SCALE = 300 * Math.pow(28 / 300, 0.06);
+
 
 	function distanceFrequency(d) {
 		return 10 * Math.pow(1000, Math.exp(-Math.max(0, d) / FREQ_SCALE));
 	}
-	function distanceVolume(d) {
-		const u = Math.max(0, d) / VOLUME_SCALE;
+	function distanceVolume(d, steep = 0.53) {
+		const u = Math.max(0, d) / (320 * Math.pow(22 / 320, steep));
 		return 1 / (1 + u * u);
 	}
 	function envelopeDepth(d) {
 		const t = Math.max(0, Math.min(1, (d - 20) / 8));
 		return t * t * (3 - 2 * t);
 	}
-	function envelopeRate(d) {
-		return 0.1 * Math.pow(300, Math.exp(-Math.max(0, d - 20) / ENV_SCALE));
+	function envelopeRate(d, steep = 0.06) {
+		const scale = 300 * Math.pow(28 / 300, steep);
+		return 0.1 * Math.pow(300, Math.exp(-Math.max(0, d - 20) / scale));
 	}
 
 	/* Intersect the sites' perpendicular bisector with all Voronoi half-planes.
@@ -50,13 +55,62 @@
 		return true;
 	}
 
-	function create(ctx, output) {
+	function clampDistanceScale(value) {
+		value = Number(value);
+		return Number.isFinite(value) ? Math.max(MIN_DISTANCE_SCALE, Math.min(MAX_DISTANCE_SCALE, value)) : DEFAULT_DISTANCE_SCALE;
+	}
+
+	function create(ctx, output, initialScale, initialPreset) {
+		let preset = initialPreset === 'distance' ? 'distance' : 'point';
+		let distanceScale = initialScale === undefined ? DEFAULT_DISTANCE_SCALE : clampDistanceScale(initialScale);
 		const voices = [];
 		const cells = new Int32Array(SLOTS).fill(-1);
 		const levels = new Float64Array(SLOTS);
 		const used = new Uint8Array(SLOTS);
 		const selected = new Int32Array(MAX_ACTIVE);
 		const distances = new Float64Array(MAX_ACTIVE);
+		let fieldSize = -1;
+		let lastX, lastY, lastMask, xs, ys, ids, semitones, notes, neighbors, neighborCount;
+
+		function tuneField(sim) {
+			const size = sim.planetCount;
+			if (size !== fieldSize) {
+				fieldSize = size;
+				lastX = new Float64Array(size).fill(NaN);
+				lastY = new Float64Array(size);
+				lastMask = new Uint8Array(size);
+				xs = new Float64Array(size); ys = new Float64Array(size);
+				ids = new Int32Array(size); semitones = new Int16Array(size);
+				notes = new Float64Array(size);
+				neighbors = new Int32Array(size * size); neighborCount = new Int32Array(size);
+			}
+			let changed = false;
+			for (let i = 0; i < size; i++) {
+				const active = !sim.planetMask || sim.planetMask[i] ? 1 : 0;
+				if (lastX[i] !== sim.planetX[i] || lastY[i] !== sim.planetY[i] || lastMask[i] !== active) changed = true;
+				lastX[i] = sim.planetX[i]; lastY[i] = sim.planetY[i]; lastMask[i] = active;
+			}
+			if (!changed) return;
+			let count = 0;
+			neighborCount.fill(0);
+			for (let i = 0; i < size; i++) {
+				if (!lastMask[i]) continue;
+				ids[count] = i;
+				xs[count] = sim.planetX[i] * DEFAULT_DISTANCE_SCALE;
+				ys[count] = sim.planetY[i] * DEFAULT_DISTANCE_SCALE;
+				semitones[count] = Tones.pick(xs[count], ys[count], xs, ys, semitones, count, -1);
+				count++;
+			}
+			for (let i = 0; i < count; i++) {
+				for (let j = i + 1; j < count; j++) {
+					if (!adjacent(sim, ids[i], ids[j])) continue;
+					neighbors[i * size + neighborCount[i]++] = j;
+					neighbors[j * size + neighborCount[j]++] = i;
+				}
+			}
+			Tones.tuneField(xs, ys, semitones, count, neighbors, neighborCount, size);
+			for (let i = 0; i < count; i++) notes[ids[i]] = Tones.hz(semitones[i]);
+		}
 		for (let i = 0; i < SLOTS; i++) {
 			const osc = ctx.createOscillator();
 			osc.type = 'triangle';
@@ -94,6 +148,7 @@
 				if (d < nearestDistance) { nearest = i; nearestDistance = d; }
 			}
 			if (nearest < 0) { silence(); return; }
+			if (preset === 'point') tuneField(sim);
 			let count = 1;
 			selected[0] = nearest; distances[0] = nearestDistance;
 			for (let i = 0; i < sim.planetCount; i++) {
@@ -127,7 +182,9 @@
 				}
 				const voice = voices[slot];
 				const d = Math.sqrt(distances[k]);
-				const freq = distanceFrequency(d), depth = envelopeDepth(d);
+				const scaledDistance = d * distanceScale;
+				const freq = preset === 'point' ? notes[cell] : distanceFrequency(scaledDistance);
+				const depth = envelopeDepth(scaledDistance);
 				const dx = sim.planetX[cell] - x, dy = sim.planetY[cell] - y;
 				let hx = sim.cargo.vx, hy = sim.cargo.vy;
 				if (!Number.isFinite(hx) || !Number.isFinite(hy) || hx * hx + hy * hy < 1e-18) {
@@ -135,12 +192,12 @@
 					hy = Math.sin(Number.isFinite(sim.angle) ? sim.angle : 0);
 				}
 				const h = Math.sqrt(hx * hx + hy * hy);
-				const pan = d > 1e-3 ? 0.95 * (hx * dy - hy * dx) / (h * d) * Math.min(1, d / 20) : 0;
-				const amp = 0.46 * distanceVolume(d);
+				const pan = d > 1e-3 ? 0.95 * (hx * dy - hy * dx) / (h * d) * Math.min(1, scaledDistance / 20) : 0;
+				const amp = 0.46 * distanceVolume(scaledDistance, preset === 'point' ? 0.39 : 0.53);
 				drive(voice.osc.frequency, freq, now, fresh, 0.035);
 				drive(voice.filter.frequency, Math.max(90, Math.min(18000, freq * 4.5)), now, fresh, 0.06);
 				drive(voice.pan.pan, pan, now, fresh, 0.045);
-				drive(voice.lfo.frequency, envelopeRate(d), now, fresh, 0.055);
+				drive(voice.lfo.frequency, envelopeRate(scaledDistance, preset === 'point' ? 0.77 : 0.06), now, fresh, 0.055);
 				drive(voice.env.gain, 1 - depth * 0.5, now, fresh, 0.045);
 				drive(voice.mod.gain, depth * 0.5, now, fresh, 0.045);
 				voice.level.gain.setTargetAtTime(amp, now, 0.04);
@@ -153,10 +210,12 @@
 				if (levels[i] < 1e-4) { cells[i] = -1; levels[i] = 0; }
 			}
 		}
-		return { update, silence };
+		return { update, silence, setDistanceScale: value => { distanceScale = clampDistanceScale(value); },
+			setPreset: value => { preset = value === 'distance' ? 'distance' : 'point'; } };
 	}
 
-	const api = { create, adjacent, distanceFrequency, distanceVolume, envelopeDepth, envelopeRate };
+	const api = { create, adjacent, distanceFrequency, distanceVolume, envelopeDepth, envelopeRate,
+		clampDistanceScale, DEFAULT_DISTANCE_SCALE, MIN_DISTANCE_SCALE, MAX_DISTANCE_SCALE };
 	root.GravityVoronoiSound = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
