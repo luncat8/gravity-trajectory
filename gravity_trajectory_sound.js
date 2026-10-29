@@ -64,16 +64,24 @@
 		let aimBus = null;
 		let profitFilter = null;
 		let flightBus = null;
-		let flightLevel = null;
-		let flightFilter = null;
-		let flightPan = null;
 		let flightTremolo = null;
+		let flightFilter = null;
+		let flightMerger = null;
+		let flightLGain = null;
+		let flightRGain = null;
 		let flightLfo = null;
 		let flightLfoDepth = null;
 		let blastGain = null;
 		let blastFilter = null;
 		let boomGain = null;
 		let boom = null;
+		/* aim orientation voice: a quiet drone that points where the grip is
+		 * pulled. Pan tells the direction, pitch and volume tell the pull
+		 * strength and the note tells the launch planet, so a player who
+		 * cannot see the screen can still aim by ear. */
+		let aimOsc = null;
+		let aimGain = null;
+		let aimPan = null;
 		const chordOsc = [];
 		const chordGain = [];
 		const flightOsc = [];
@@ -102,6 +110,7 @@
 		let signTime = -1;
 		let signFieldT = NaN;
 		let signStartStep = -1;
+		let departureDone = false;
 		const eventPlanet = new Int32Array(EVENTS);
 		const eventAt = new Float64Array(EVENTS);
 		const eventPan = new Float32Array(EVENTS);
@@ -142,7 +151,7 @@
 			node.type = 'lowpass';
 			node.frequency.value = frequency;
 			node.Q.value = 0.7;
-			node.connect(target);
+			if (target) node.connect(target);
 			return node;
 		}
 
@@ -178,20 +187,37 @@
 				chordGain[i] = gain(0.15, profitFilter);
 				chordOsc[i] = oscillator(i === 1 ? 'triangle' : 'sine', 130.81, chordGain[i]);
 			}
+			/* aim orientation drone: launch-planet note, panned by aim
+			 * direction, pitch and volume by pull strength. */
+			aimPan = panner(aimBus);
+			aimGain = gain(0, aimPan);
+			aimOsc = oscillator('sine', 110, aimGain);
 			for (let i = 0; i < POOL; i++) {
 				poolPan[i] = panner(aimBus);
 				poolGain[i] = gain(0, poolPan[i]);
 				poolOsc[i] = oscillator('triangle', 440, poolGain[i]);
 			}
 			flightBus = gain(0, master);
-			flightPan = panner(flightBus);
-			flightTremolo = gain(0.82, flightPan);
-			flightLevel = gain(0, flightTremolo);
-			flightFilter = filter(1800, flightLevel);
+			flightTremolo = context.createGain();
+			flightTremolo.gain.value = 0.82;
+			flightFilter = filter(1800, flightTremolo);
 			flightOsc[0] = oscillator('sine', 130.81, flightFilter);
 			flightOsc[1] = oscillator('triangle', 261.62, flightFilter);
 			flightLfoDepth = gain(0.16, flightTremolo.gain);
 			flightLfo = oscillator('sine', 2.2, flightLfoDepth);
+			/* distance sets the volume of each side, direction sets the
+			 * left/right balance: low distance is louder on the side the
+			 * planet is on. A channel merger keeps true stereo output. */
+			flightMerger = context.createChannelMerger(2);
+			flightMerger.connect(flightBus);
+			flightLGain = context.createGain();
+			flightLGain.gain.value = 0;
+			flightRGain = context.createGain();
+			flightRGain.gain.value = 0;
+			flightTremolo.connect(flightLGain);
+			flightTremolo.connect(flightRGain);
+			flightLGain.connect(flightMerger, 0, 0);
+			flightRGain.connect(flightMerger, 0, 1);
 			blastGain = gain(0, master);
 			blastFilter = filter(1600, blastGain);
 			const noise = context.createBufferSource();
@@ -280,13 +306,30 @@
 			}
 		}
 
+		/* Aim orientation: where the grip points and how hard it is pulled. */
+		function aimOrientation(data) {
+			const orienting = desired === 'aim'
+				&& Number.isFinite(data.aimAngle) && Number.isFinite(data.aimCeiling) && data.aimCeiling > 0;
+			if (!orienting) {
+				smooth(aimGain.gain, 0, 0.1);
+				return;
+			}
+			const strength = clamp(data.aimSpeed / data.aimCeiling, 0, 1);
+			const base = data.aimBody >= 0 ? get_tone_pentatonic(data.aimBody) : 110;
+			smooth(aimOsc.frequency, base * Math.pow(2, strength), 0.12);
+			smooth(aimPan.pan, Math.cos(data.aimAngle), 0.1);
+			smooth(aimGain.gain, 0.04 + strength * 0.10, 0.1);
+		}
+
 		function emcBeacon(data, now) {
 			if (data.destination < 0 || now < nextEmcAt) return;
 			const base = get_tone_pentatonic(data.destination);
 			const blocked = data.emcKnown && !data.emcReady;
 			const tier = clamp(data.emcTier, 0, 5);
 			const interval = blocked ? Math.pow(2, 6 / 12) : tier >= 3 ? 1.5 : tier >= 1 ? 1.25 : 1.5;
-			const level = blocked ? 0.1 : 0.12 + clamp(data.emcSpeed / 320, 0, 1) * 0.08;
+			const level = blocked ? 0.09 : 0.13 + clamp(data.emcSpeed / 320, 0, 1) * 0.08;
+			/* blocked destinations arrive low and dissonant; ready ones arrive
+			 * at the destination note, panned to where the destination sits. */
 			pluck(blocked ? base * 0.5 : base, now, level, data.pan, 0.22);
 			pluck(blocked ? base * 0.53 : base * interval, now + 0.16, level * 0.8, data.pan, 0.28);
 			nextEmcAt = now + 1.8;
@@ -316,6 +359,7 @@
 			const sim = data.sim;
 			eventCount = 0;
 			eventCursor = 0;
+			departureDone = false;
 			previewStart = now + 0.05;
 			previewDuration = clamp(sim.predTime * 0.25, 2, 8);
 			if (data.tracing || sim.predCount < 2) return;
@@ -336,7 +380,7 @@
 				eventPlanet[eventCount] = data.destination;
 				eventAt[eventCount] = previewDuration;
 				eventPan[eventCount] = data.pan;
-				eventLevel[eventCount] = 0.22;
+				eventLevel[eventCount] = 0.26;
 				eventCount++;
 			}
 		}
@@ -350,11 +394,23 @@
 			if (now > previewStart + previewDuration + 0.5) {
 				previewStart = now + 0.1;
 				eventCursor = 0;
+				departureDone = false;
+			}
+			/* the launch planet opens the phrase, so the player hears where the
+			 * trajectory starts before the visits follow in encounter order. */
+			if (!departureDone && aim.aimBody >= 0) {
+				pluck(get_tone_pentatonic(aim.aimBody), previewStart, 0.16, 0, 0.3);
+				departureDone = true;
 			}
 			while (eventCursor < eventCount && previewStart + eventAt[eventCursor] <= now + 0.04) {
 				const i = eventCursor++;
-				pluck(get_tone_pentatonic(eventPlanet[i]), previewStart + eventAt[i],
-					eventLevel[i], eventPan[i], 0.3);
+				const at = previewStart + eventAt[i];
+				pluck(get_tone_pentatonic(eventPlanet[i]), at, eventLevel[i], eventPan[i], 0.4);
+				if (i === eventCount - 1 && aim.destination >= 0 && eventPlanet[i] === aim.destination) {
+					/* close the phrase on a bright fifth: arrival you can hear. */
+					pluck(get_tone_pentatonic(aim.destination) * 1.5, at + 0.09,
+						eventLevel[i] * 0.7, eventPan[i], 0.6);
+				}
 			}
 		}
 
@@ -371,6 +427,7 @@
 				if (data.tracing) eventCount = 0;
 			}
 			updateChord(data, now);
+			aimOrientation(data);
 			if (aimMode === AIM_FLYTHROUGH && !data.tracing) runFlythrough(now);
 			else emcBeacon(data, now);
 		}
@@ -411,25 +468,34 @@
 			const proximity = 1 / (1 + Math.pow(distance / 300, 2));
 			const pan = clamp(dx / (sim.worldW * 0.25), -1, 1);
 			let frequency;
+			let ratio = 2;
+			let cutoff = 1800;
+			let tremolo = 2.2;
 			if (flightMode === FLIGHT_INSTRUMENT) {
 				const instrument = get_instrument(planet);
 				frequency = clamp(instrument.pitch * Math.pow(2, range * 2), 80, 2400);
 				flightOsc[0].type = instrument.wave;
 				flightOsc[1].type = instrument.harmonic;
-				smooth(flightOsc[1].frequency, frequency * instrument.ratio, 0.12);
-				smooth(flightFilter.frequency, instrument.cutoff * (1 + range), 0.15);
-				smooth(flightLfo.frequency, instrument.tremolo, 0.2);
+				ratio = instrument.ratio;
+				cutoff = instrument.cutoff * (1 + range);
+				tremolo = instrument.tremolo;
 			} else {
 				frequency = get_tone_pentatonic(planet);
 				flightOsc[0].type = 'sine';
 				flightOsc[1].type = 'triangle';
-				smooth(flightOsc[1].frequency, frequency * 2, 0.12);
-				smooth(flightFilter.frequency, 1800, 0.15);
-				smooth(flightLfo.frequency, 2.2, 0.2);
 			}
 			smooth(flightOsc[0].frequency, frequency, 0.12);
-			smooth(flightLevel.gain, 0.04 + proximity * 0.34, 0.1);
-			if (flightPan.pan) smooth(flightPan.pan, pan, 0.1);
+			smooth(flightOsc[1].frequency, frequency * ratio, 0.12);
+			smooth(flightFilter.frequency, cutoff, 0.15);
+			smooth(flightLfo.frequency, tremolo, 0.2);
+			/* distance and direction become left/right volume: the nearer the
+			 * planet, the louder both sides; the farther left or right it is,
+			 * the more the balance leans to that side. */
+			const level = 0.02 + proximity * 0.46;
+			const leftBalance = Math.cos((pan + 1) * Math.PI / 4);
+			const rightBalance = Math.sin((pan + 1) * Math.PI / 4);
+			smooth(flightLGain.gain, level * leftBalance, 0.1);
+			smooth(flightRGain.gain, level * rightBalance, 0.1);
 		}
 
 		function startFlight() {
@@ -462,7 +528,11 @@
 
 		function stopFlight() {
 			flying = false;
-			if (context) fade(flightBus.gain, 0, 0.25);
+			if (context) {
+				fade(flightBus.gain, 0, 0.25);
+				fade(flightLGain.gain, 0, 0.25);
+				fade(flightRGain.gain, 0, 0.25);
+			}
 		}
 
 		function clearNotes() {
@@ -477,6 +547,7 @@
 			eventsDirty = false;
 			nextLengthAt = now;
 			nextEmcAt = now;
+			departureDone = false;
 		}
 
 		function stopAll() {
@@ -500,6 +571,7 @@
 				eventCursor = 0;
 				eventsDirty = Boolean(aim);
 				lastAimChange = context ? context.currentTime : 0;
+				departureDone = false;
 			}
 			applyLoop();
 		}
@@ -551,6 +623,7 @@
 			nextLengthAt = 0;
 			eventsDirty = Boolean(aim);
 			lastAimChange = context ? context.currentTime : 0;
+			departureDone = false;
 			if (aim && context) updateAim(aim);
 		}
 

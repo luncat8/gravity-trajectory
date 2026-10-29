@@ -43,6 +43,7 @@ class FakeContext {
 	createWaveShaper() { return new Node('shaper', this.nodes); }
 	createDelay() { return new Node('delay', this.nodes); }
 	createStereoPanner() { return new Node('panner', this.nodes); }
+	createChannelMerger() { return new Node('merger', this.nodes); }
 	createDynamicsCompressor() { return new Node('compressor', this.nodes); }
 	createBuffer(channels, count) { return { getChannelData: () => new Float32Array(count) }; }
 }
@@ -79,6 +80,9 @@ function flightFixture() {
 }
 function oscillators(ctx) { return ctx.nodes.filter(n => n.kind === 'oscillator'); }
 function panners(ctx) { return ctx.nodes.filter(n => n.kind === 'panner'); }
+function sideGains(ctx) {
+	return ctx.nodes.filter(n => n.kind === 'gain' && n.to && n.to.kind === 'merger');
+}
 
 /* Deterministic planet identities, independent of audio state. */
 const toneA = Trajectory.get_tone_pentatonic(3);
@@ -107,7 +111,8 @@ sound.updateAim(aim);
 assert(chord[0].frequency.value < positiveRoot, 'negative profit lowers the chord root');
 const minorThird = chord[1].frequency.value / chord[0].frequency.value;
 assert(Math.abs(minorThird - Math.pow(2, 3 / 12)) < 1e-6, 'loss uses a minor third');
-const pool = oscillators(ctx).slice(3, 11);
+/* chord, aim orientation drone, then the pluck pool, then flight and boom */
+const pool = oscillators(ctx).slice(4, 12);
 const ticksBefore = pool.reduce((sum, n) => sum + n.frequency.events.length, 0);
 ctx.currentTime += 1;
 sound.updateAim(aim);
@@ -120,36 +125,83 @@ sound.updateAim(aim);
 assert(pool.reduce((sum, n) => sum + n.frequency.events.length, 0) >= beaconBefore + 2,
 	'a blocked EMC destination gets a two-note beacon');
 
+/* Aim orientation: pan points where the grip is pulled, pitch and volume
+ * tell how hard, the note names the launch planet. */
+const oriented = aimFixture();
+oriented.aimBody = 0;
+oriented.aimAngle = 0;
+oriented.aimSpeed = 40;
+oriented.aimCeiling = 80;
+ctx.currentTime += 0.2;
+sound.updateAim(oriented);
+/* the orientation voice: launch-planet note oscillator -> gain -> panner */
+const aimGainNode = ctx.nodes.find(n => n.kind === 'gain' && n.to && n.to.kind === 'panner');
+const aimPan = aimGainNode.to;
+const aimVoice = ctx.nodes.find(n => n.kind === 'oscillator' && n.to === aimGainNode);
+assert(aimVoice, 'the orientation voice exists');
+assert.strictEqual(aimPan.kind, 'panner', 'the orientation voice goes through a panner');
+assert.strictEqual(aimPan.pan.value, 1, 'aiming straight right pans straight right');
+assert(aimGainNode.gain.value > 0, 'the orientation drone is audible while aiming');
+const firstPitch = aimVoice.frequency.value;
+assert(firstPitch > Trajectory.get_tone_pentatonic(0), 'a stronger pull raises the aim pitch');
+oriented.aimAngle = Math.PI;
+oriented.aimSpeed = 70;
+ctx.currentTime += 0.1;
+sound.updateAim(oriented);
+assert(aimPan.pan.value < -0.9, 'aiming left pans left');
+assert(aimVoice.frequency.value > firstPitch, 'pulling harder raises the orientation pitch');
+assert(aimVoice.frequency.value < Trajectory.get_tone_pentatonic(0) * 2,
+	'the orientation pitch stays within one octave of the launch note');
+/* no aim data: the orientation drone fades out and nothing else breaks */
+sound.updateAim(null);
+const dead = aimFixture();
+dead.aimBody = -1; dead.aimAngle = 0; dead.aimSpeed = 0; dead.aimCeiling = 0;
+ctx.currentTime += 0.2;
+sound.updateAim(dead);
+assert.strictEqual(aimGainNode.gain.value, 0, 'without aim data the orientation drone is silent');
+
 sound.setAimMode('flythrough');
 ctx.currentTime += 0.2;
-sound.updateAim(aim);
+const fly = aimFixture();
+fly.aimBody = 7;
+sound.updateAim(fly);
 ctx.currentTime += 1.2;
-sound.updateAim(aim);
+sound.updateAim(fly);
 ctx.currentTime += 1.2;
-sound.updateAim(aim);
+sound.updateAim(fly);
 const played = pool.flatMap(n => n.frequency.events.filter(e => e[0] === 'set').map(e => e[1]));
-assert(played.some(f => Math.abs(f - Trajectory.get_tone_pentatonic(1)) < 1e-6), 'fly-through plays the first predicted planet');
-assert(played.some(f => Math.abs(f - Trajectory.get_tone_pentatonic(2)) < 1e-6), 'fly-through reaches the destination planet');
+assert(played.some(f => Math.abs(f - Trajectory.get_tone_pentatonic(7)) < 1e-6),
+	'fly-through opens with the launch planet note');
+assert(played.some(f => Math.abs(f - Trajectory.get_tone_pentatonic(1)) < 1e-6),
+	'fly-through plays the first predicted planet');
+assert(played.some(f => Math.abs(f - Trajectory.get_tone_pentatonic(2)) < 1e-6),
+	'fly-through reaches the destination planet');
+assert(played.some(f => Math.abs(f - Trajectory.get_tone_pentatonic(2) * 1.5) < 1e-6),
+	'fly-through closes the destination phrase on a fifth');
 
-/* Flight: nearest planet, equal-power side pan, and distance-controlled level. */
+/* Flight: nearest planet, distance and direction as left/right volume. */
 const flight = flightFixture();
 sound.launch();
 sound.updateFlight(flight);
-const flightVoices = oscillators(ctx).slice(11, 13);
-const flightPan = panners(ctx).at(-1);
-const flightLevel = ctx.nodes.find(n => n.kind === 'gain' && n.to && n.to.kind === 'gain' && n.gain.events.some(e => e[0] === 'target' && e[1] > 0.3));
+const flightVoices = oscillators(ctx).slice(12, 14);
+const sides = sideGains(ctx);
+assert.strictEqual(sides.length, 2, 'flight splits into explicit left and right gains');
+const flightLGain = sides[0].gain.value > sides[1].gain.value ? sides[0] : sides[1];
+const flightRGain = sides[0] === flightLGain ? sides[1] : sides[0];
 assert(Math.abs(flightVoices[0].frequency.value - Trajectory.get_tone_pentatonic(0)) < 1e-6);
-assert(flightPan.pan.value < 0, 'a planet on the left pans left');
-const nearLevel = flightLevel.gain.value;
+assert(flightLGain.gain.value > flightRGain.gain.value, 'a planet on the left is louder in the left ear');
+const nearLevel = flightLGain.gain.value + flightRGain.gain.value;
 flight.cargo.x = 1000;
 ctx.currentTime += 0.1;
 sound.updateFlight(flight);
-assert(flightLevel.gain.value < nearLevel, 'distance lowers flight volume');
-assert.strictEqual(flightVoices[0].frequency.value, Trajectory.get_tone_pentatonic(0), 'pentatonic identity stays stable with distance');
+assert(flightLGain.gain.value + flightRGain.gain.value < nearLevel, 'distance lowers flight volume');
+assert.strictEqual(flightVoices[0].frequency.value, Trajectory.get_tone_pentatonic(0),
+	'pentatonic identity stays stable with distance');
 flight.planetX[0] = 1100;
+flight.cargo.x = 0;
 ctx.currentTime += 0.1;
 sound.updateFlight(flight);
-assert(flightPan.pan.value > 0, 'moving the planet to the right pans right');
+assert(flightRGain.gain.value > flightLGain.gain.value, 'moving the planet to the right is louder in the right ear');
 
 sound.setFlightMode('instrument');
 flight.cargo.x = 0;
@@ -159,11 +211,17 @@ sound.updateFlight(flight);
 const nearPitch = flightVoices[0].frequency.value;
 const instrument = Trajectory.get_instrument(0);
 assert.strictEqual(flightVoices[0].type, instrument.wave);
+const nearSideLevel = flightLGain.gain.value + flightRGain.gain.value;
 flight.cargo.x = 1000;
 ctx.currentTime += 0.1;
 sound.updateFlight(flight);
 assert(flightVoices[0].frequency.value > nearPitch, 'alternate mapping raises pitch with distance');
-assert(flightLevel.gain.value < nearLevel, 'alternate mapping also lowers volume with distance');
+assert(flightLGain.gain.value + flightRGain.gain.value < nearSideLevel,
+	'alternate mapping lowers volume with distance');
+const farSides = sideGains(ctx);
+const farLeft = farSides[0].gain.value > farSides[1].gain.value ? farSides[0] : farSides[1];
+const farRight = farSides[0] === farLeft ? farSides[1] : farSides[0];
+assert(farLeft.gain.value > 0, 'a distant planet is still audible on the side it sits on');
 
 /* Backend switches preserve preferences and stage without loading samples for fallback. */
 sound.setVolume(0.25);
@@ -217,4 +275,4 @@ env.setValue('soundVolume', '60');
 assert.strictEqual(scene.sound.volume(), 0.6);
 assert.strictEqual(storage['gravity-sound-volume'], '60');
 assert.strictEqual(ui.get('soundVolumeLabel').textContent, '60%');
-console.log('TRAJECTORY SOUND TEST OK: default, aim data, fly-through, both flight mappings, switching, mute and settings');
+console.log('TRAJECTORY SOUND TEST OK: default, aim data, aim orientation, fly-through, both flight mappings, switching, mute and settings');
