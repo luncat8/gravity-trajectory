@@ -154,4 +154,18 @@ also add this to auto-helpers and aim tooltip color as warning. greenish - profi
 3
 calibrate gravity max and random. so from 10 free planets 2-4 are not possible to launch until upgrade EMC.
 
+## science research
 
+improve sci cost curves related to mass and
+similar for efficiency, leak and other sci characteristics. think good what is they for and how logical and realistic it should be. i.e. researching bat with leak is cheaper but not more costly.
+
+fabrication probably not need related to this directly because is is overall with tech level, etc factors so main characteristics price dependency looks good for now.
+
+## sound
+
+make optional separate sound generator (current we have 2: sample-based and default fallback), enable it by default, add settings selector:
+
+while aim: visualize in sound profit, length, EMC in destination. think good about interesting variants that may possible hear predicted trajectory.
+
+while fly: get_tone_pentatonic(planet_id), distance and direction is L-R volume (low distance lauder)
+while fly alternate variant: get_instrument(planet_id), hi freq is distance, low volume is distance
