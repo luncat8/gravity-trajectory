@@ -91,7 +91,7 @@ function toneWav(file) {
 		await page.goto(pathToFileURL(path.join(__dirname, '..', 'index.html')).href + '?mode=lab&seed=7');
 		await page.waitForFunction(() => window.GravityScene);
 		assert.strictEqual(await page.evaluate(() => window.__contexts), 0, 'no context before a gesture');
-		assert.strictEqual(await page.evaluate(() => GravityScene.sound.engine()), 'trajectory', 'fresh default is the live generator');
+		assert.strictEqual(await page.evaluate(() => GravityScene.sound.engine()), 'voronoi', 'fresh default is the Voronoi distance generator');
 		const point = await page.evaluate(() => {
 			for (let i = 0; i < OrbitScene.sim.planetX.length; i++) {
 				const x = OrbitScene.sim.planetX[i] * OrbitScene.view.scale + OrbitScene.view.offX;
@@ -115,8 +115,8 @@ function toneWav(file) {
 		});
 		assert.strictEqual(live.phase, 'aim');
 		assert.strictEqual(live.state, 'running');
-		assert.strictEqual(live.media, 0, 'trajectory synth uses no media elements');
-		assert(live.rms > 0.001, 'trajectory synth produces audible Web Audio output');
+		assert.strictEqual(live.media, 0, 'Voronoi synth uses no media elements');
+		assert(live.rms > 0.001, 'Voronoi aim produces audible Web Audio output');
 		await page.mouse.up();
 		await page.click('#launch');
 		await new Promise(resolve => setTimeout(resolve, 600));
@@ -129,8 +129,9 @@ function toneWav(file) {
 		});
 		assert.strictEqual(flying.status, 1);
 		assert.strictEqual(flying.mode, 'pentatonic');
-		assert(flying.rms > 0.001, 'pentatonic flight cue is audible');
+		assert(flying.rms > 0.001, 'Voronoi flight cue is audible');
 		await page.evaluate(() => { document.getElementById('soundSettings').open = true; });
+		await page.select('#soundEngine', 'trajectory');
 		await page.select('#soundFlight', 'instrument');
 		await new Promise(resolve => setTimeout(resolve, 400));
 		const alternate = await page.evaluate(() => {
@@ -179,7 +180,7 @@ function toneWav(file) {
 		});
 		assert(muted.peak < 0.0001 && muted.pressed === 'false', 'mute silences synth and updates the UI');
 		assert.deepStrictEqual(errors, [], 'no page or audio errors');
-		console.log('SOUND BROWSER TEST OK: default trajectory synth, both flight mappings, file:// WAV, fades and mute');
+		console.log('SOUND BROWSER TEST OK: default Voronoi synth, trajectory flight mapping, file:// WAV, fades and mute');
 	} finally {
 		if (browser) await browser.close();
 		fs.rmSync(temp, { recursive: true, force: true });

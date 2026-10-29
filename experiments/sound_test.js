@@ -209,7 +209,7 @@ assert.strictEqual(ui.get('soundToggle').attributes['aria-pressed'], 'false');
 env.click('soundToggle');
 assert.strictEqual(sceneSound.enabled(), true);
 
-assert.strictEqual(sceneSound.engine(), 'trajectory', 'the data-driven generator is the fresh default');
+assert.strictEqual(sceneSound.engine(), 'voronoi', 'the Voronoi distance generator is the fresh default');
 scene.setPlayMode('route');
 env.runFrames(2);
 env.dragAim(0, 0.6, 100);

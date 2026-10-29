@@ -223,10 +223,11 @@
 	</div>
 
 	<details id="soundSettings" class="group soundSettings">
-		<summary title="sound generator and trajectory sonification settings"><span>sound</span><span id="soundSettingsTag">trajectory synth</span></summary>
+		<summary title="sound generator and trajectory sonification settings"><span>sound</span><span id="soundSettingsTag">voronoi distance</span></summary>
 		<label class="ctl soundCtl">generator
 			<select id="soundEngine" aria-label="sound generator">
-				<option value="trajectory" selected>trajectory synth</option>
+				<option value="voronoi" selected>voronoi distance</option>
+				<option value="trajectory">trajectory synth</option>
 				<option value="samples">selected samples</option>
 				<option value="fallback">classic synths</option>
 			</select>
@@ -238,7 +239,7 @@
 					<option value="flythrough">trajectory fly-through</option>
 				</select>
 			</label>
-			<label class="ctl soundCtl">flight
+			<label id="soundFlightControl" class="ctl soundCtl">flight
 				<select id="soundFlight" aria-label="flight sonification">
 					<option value="pentatonic" selected>pentatonic proximity</option>
 					<option value="instrument">instrument range</option>
@@ -392,6 +393,7 @@
 <script src="photo_deck.js"></script>
 <script src="gravity_field.js"></script>
 <script src="sounds/selected/pack.js"></script>
+<script src="gravity_voronoi_sound.js"></script>
 <script src="gravity_trajectory_sound.js"></script>
 <script src="gravity_sound.js"></script>
 <script src="gravity_gui.js"></script>

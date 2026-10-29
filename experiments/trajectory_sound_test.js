@@ -92,7 +92,7 @@ assert.notStrictEqual(toneA, Trajectory.get_tone_pentatonic(4));
 assert.strictEqual(Trajectory.get_instrument(3), Trajectory.get_instrument(3));
 assert.notStrictEqual(Trajectory.get_instrument(3).wave, Trajectory.get_instrument(4).wave);
 
-const sound = GravitySound.createController({ host, files: { aim: 'aim.wav' } });
+const sound = GravitySound.createController({ host, engine: 'trajectory', files: { aim: 'aim.wav' } });
 assert.strictEqual(sound.engine(), 'trajectory');
 assert.strictEqual(FakeAudio.instances.length, 0, 'the default generator never loads samples');
 const aim = aimFixture();
@@ -157,6 +157,7 @@ assert(aimVoice.frequency.value < Trajectory.get_tone_pentatonic(0) * 2,
 	'the orientation pitch stays within one octave of the launch note');
 /* no aim data: the orientation drone fades out and nothing else breaks */
 sound.updateAim(null);
+assert.strictEqual(aimGainNode.gain.value, 0, 'lost aim telemetry fades the orientation drone');
 const dead = aimFixture();
 dead.aimBody = -1; dead.aimAngle = 0; dead.aimSpeed = 0; dead.aimCeiling = 0;
 ctx.currentTime += 0.2;
@@ -291,4 +292,4 @@ env.setValue('soundVolume', '60');
 assert.strictEqual(scene.sound.volume(), 0.6);
 assert.strictEqual(storage['gravity-sound-volume'], '60');
 assert.strictEqual(ui.get('soundVolumeLabel').textContent, '60%');
-console.log('TRAJECTORY SOUND TEST OK: default, aim data, aim orientation, fly-through, both flight mappings, switching, mute and settings');
+console.log('TRAJECTORY SOUND TEST OK: aim data, aim orientation, fly-through, both flight mappings, switching, mute and settings');

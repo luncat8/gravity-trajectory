@@ -406,7 +406,7 @@
 	const sound = root.GravitySound.createController({
 		enabled: soundEnabled,
 		volume: soundVolume / 100,
-		engine: readSoundChoice('gravity-sound-engine', 'trajectory', ['trajectory', 'samples', 'fallback']),
+		engine: readSoundChoice('gravity-sound-engine', 'voronoi', ['voronoi', 'trajectory', 'samples', 'fallback']),
 		aimMode: readSoundChoice('gravity-sound-aim', 'outcome', ['outcome', 'flythrough']),
 		flightMode: readSoundChoice('gravity-sound-flight', 'pentatonic', ['pentatonic', 'instrument'])
 	});
@@ -1483,7 +1483,7 @@
 	}
 
 	function syncSoundLoop() {
-		const live = sound.engine() === 'trajectory';
+		const live = sound.engine() === 'trajectory' || sound.engine() === 'voronoi';
 		if (replay.on) sound.setLoop('idle');
 		else if (aiming || (live && burnAiming)) sound.setLoop('aim');
 		else if ((armed && (!routeRule() || live)) || (live && burnArmed)) sound.setLoop('armed');
@@ -8021,7 +8021,7 @@
 		try { root.localStorage.setItem('gravity-sound-enabled', String(soundEnabled)); }
 		catch (err) { /* Sound still works without persistent preferences. */ }
 	});
-	const SOUND_ENGINE_LABELS = { trajectory: 'trajectory synth', samples: 'selected samples', fallback: 'classic synths' };
+	const SOUND_ENGINE_LABELS = { voronoi: 'voronoi distance', trajectory: 'trajectory synth', samples: 'selected samples', fallback: 'classic synths' };
 	const SOUND_AIM_HINTS = {
 		outcome: 'Profit chord · length ticks · destination EMC beacon. While aiming: a quiet left/right direction cue; pitch and volume follow pull strength.',
 		flythrough: 'Hear predicted visits in order, with each planet panned by its bearing from the local path heading; the phrase opens on launch and closes on arrival.'
@@ -8042,9 +8042,13 @@
 		if (soundVolumeEl) soundVolumeEl.value = String(Math.round(sound.volume() * 100));
 		if (soundVolumeLabelEl) soundVolumeLabelEl.textContent = Math.round(sound.volume() * 100) + '%';
 		if (soundSettingsTagEl) soundSettingsTagEl.textContent = SOUND_ENGINE_LABELS[engine];
-		if (trajectorySoundOptionsEl) trajectorySoundOptionsEl.hidden = engine !== 'trajectory';
+		if (trajectorySoundOptionsEl) trajectorySoundOptionsEl.hidden = engine !== 'trajectory' && engine !== 'voronoi';
+		const flightControl = $('soundFlightControl');
+		if (flightControl) flightControl.hidden = engine !== 'trajectory';
 		if (!soundHintEl) return;
-		soundHintEl.textContent = engine === 'trajectory'
+		soundHintEl.textContent = engine === 'voronoi'
+			? SOUND_AIM_HINTS[sound.aimMode()] + ' Flight: Voronoi distance voices · nearer is higher and louder · stereo follows ship-relative bearing.'
+			: engine === 'trajectory'
 			? SOUND_AIM_HINTS[sound.aimMode()] + ' ' + SOUND_FLIGHT_HINTS[sound.flightMode()]
 			: engine === 'samples' ? 'Selected local WAVs; missing or unplayable cues use the classic synths.'
 				: 'Fixed procedural launch cues, without samples or trajectory telemetry.';

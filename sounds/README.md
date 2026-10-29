@@ -1,16 +1,35 @@
 # Sound
 
-The cargo panel's **sound** selector chooses one of three generators. The choice,
+The cargo panel's **sound** selector chooses one of four generators. The choice,
 aim/flight mappings, volume and mute state are stored locally when storage is
 available. Audio remains decorative: it reads predictions and flight state but
 never writes physics, economics, aim inputs or replay data.
 
-## Trajectory synth (default)
+## Voronoi distance (default)
 
-`gravity_trajectory_sound.js` is a separate, sample-free Web Audio generator. It
-is enabled by default for a fresh preference store, while an explicit mute is
-still respected. It unlocks on a user gesture, reuses its oscillators and note
-pool, and suspends when the page is backgrounded.
+The sample-free flight synth is adapted from the MIT-licensed
+[experiment-sound-voronoi](https://github.com/luncat8/experiment-sound-voronoi),
+using its distance preset (frequency steepness 54, volume 53, envelope 6).
+The nearest active planet center and its Voronoi-adjacent centers each get a
+triangle voice with a low-pass filter and distance-dependent sine envelope.
+Closer centers are higher and louder; inside 20 world pixels the envelope is
+continuous. The nearest plus up to 19 closest neighbors sound at once, with
+stable voice identities and smooth releases. Geometry is recomputed from the
+moving planet positions and active mask, using unbounded Voronoi cells.
+Unlike the original experiment's screen-horizontal pan, this adaptation uses
+ship-relative left/right bearing, faded near the center. Distances are to
+planet centers, not surfaces. This makes the center-distance preset meaningful
+without changing it for planets of different sizes.
+
+The default shares the trajectory synth's aim mappings and synthesized ignition;
+it ducks flight during an impulse-burn preview. Existing saved generator and
+mute preferences are respected. Both synths unlock on a user gesture and suspend
+in the background.
+
+## Trajectory synth
+
+`gravity_trajectory_sound.js` provides the aim and alternate flight mappings,
+reusing its oscillators and note pool without media files.
 
 **Aim mappings**
 
@@ -187,6 +206,7 @@ output format to lossless FLAC.
 ```sh
 node experiments/sound_test.js
 node experiments/trajectory_sound_test.js
+node experiments/voronoi_sound_test.js
 python3 experiments/sound_generator_test.py  # ffmpeg also exercises selection
 CHROME_PATH=/path/to/chromium node experiments/sound_browser_test.js  # requires puppeteer-core
 ```

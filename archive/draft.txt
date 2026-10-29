@@ -169,3 +169,11 @@ while aim: visualize in sound profit, length, EMC in destination. think good abo
 
 while fly: get_tone_pentatonic(planet_id), distance and direction is L-R volume (low distance lauder)
 while fly alternate variant: get_instrument(planet_id), hi freq is distance, low volume is distance
+
+sound should related to space ship head direction on a current trajectory position. and where planets related to this position.
+
+look at 
+https://github.com/luncat8/experiment-sound-voronoi
+get sound generator - it work good with default preset to sonification distance, make it default here. probably need to be adopted to current project
+
+note voronoi seems need only to restrict notes to music scale (nearest planets form scale by design). TODO deferred: review and/or improve this here and/or in experiment project.

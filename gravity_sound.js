@@ -5,7 +5,7 @@
 	const TrajectorySound = typeof module !== 'undefined' && module.exports
 		? require('./gravity_trajectory_sound.js')
 		: root.GravityTrajectorySound;
-	const ENGINES = { trajectory: true, samples: true, fallback: true };
+	const ENGINES = { voronoi: true, trajectory: true, samples: true, fallback: true };
 	const AIM_MODES = { outcome: true, flythrough: true };
 	const FLIGHT_MODES = { pentatonic: true, instrument: true };
 
@@ -428,7 +428,7 @@
 	function createController(options) {
 		options = options || {};
 		const host = options.host || root;
-		let engine = Object.hasOwn(ENGINES, options.engine) ? options.engine : 'trajectory';
+		let engine = Object.hasOwn(ENGINES, options.engine) ? options.engine : 'voronoi';
 		let enabled = options.enabled !== false;
 		let active = true;
 		let volume = options.volume === undefined ? 0.45 : Math.max(0, Math.min(1, Number(options.volume) || 0));
@@ -442,7 +442,10 @@
 
 		function makeBackend() {
 			const config = { host, enabled, volume, aimMode, flightMode };
-			if (engine === 'trajectory') return TrajectorySound.create(config);
+			if (engine === 'trajectory' || engine === 'voronoi') {
+				config.voronoi = engine === 'voronoi';
+				return TrajectorySound.create(config);
+			}
 			config.files = engine === 'samples' ? options.files : {};
 			return create(config);
 		}
@@ -458,6 +461,7 @@
 		function setEngine(value) {
 			if (!Object.hasOwn(ENGINES, value) || value === engine) return false;
 			backend.reset();
+			backend.setActive(false);
 			engine = value;
 			backend = makeBackend();
 			restoreBackend();

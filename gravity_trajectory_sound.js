@@ -2,6 +2,8 @@
 (function (root) {
 	'use strict';
 
+	const VoronoiSound = typeof module !== 'undefined' && module.exports
+		? require('./gravity_voronoi_sound.js') : root.GravityVoronoiSound;
 	const PLANETS = 32;
 	const EVENTS = 64;
 	const POOL = 8;
@@ -91,6 +93,8 @@
 		let flying = false;
 		let aimMode = options.aimMode === AIM_FLYTHROUGH ? AIM_FLYTHROUGH : AIM_OUTCOME;
 		let flightMode = options.flightMode === FLIGHT_INSTRUMENT ? FLIGHT_INSTRUMENT : FLIGHT_PENTATONIC;
+		const useVoronoi = options.voronoi === true;
+		let voronoi = null;
 		let context = null;
 		let master = null;
 		let aimBus = null;
@@ -232,6 +236,7 @@
 				poolOsc[i] = oscillator('triangle', 440, poolGain[i]);
 			}
 			flightBus = gain(0, master);
+			if (useVoronoi) voronoi = VoronoiSound.create(context, flightBus);
 			flightTremolo = context.createGain();
 			flightTremolo.gain.value = 0.82;
 			flightFilter = filter(1800, flightTremolo);
@@ -281,7 +286,8 @@
 			if (!context) return;
 			const level = desired === 'idle' ? 0 : desired === 'armed' ? 0.13 : 0.18;
 			fade(aimBus.gain, enabled && active ? level : 0, 0.12);
-			if (flying) smooth(flightBus.gain, enabled && active && desired !== 'idle' ? 0.08 : 0.22, 0.12);
+			const flightLevel = desired === 'idle' ? (useVoronoi ? 0.65 : 0.22) : (useVoronoi ? 0.24 : 0.08);
+			if (flying) smooth(flightBus.gain, enabled && active ? flightLevel : 0, 0.12);
 		}
 
 		function unlock() {
@@ -452,6 +458,7 @@
 		}
 
 		function updateAim(data) {
+			if (!data && aim && context) smooth(aimGain.gain, 0, 0.1);
 			aim = data;
 			if (!context || !enabled || !active || !data || desired === 'idle') return;
 			const now = context.currentTime;
@@ -494,11 +501,19 @@
 		}
 
 		function updateFlight(sim) {
+			const previous = flightSim;
 			flightSim = sim;
-			if (!context || !enabled || !active || !flying || !sim || sim.status !== 1) return;
+			if (!context || !enabled || !active || !flying) return;
+			if (!sim || sim.status !== 1) {
+				if (!previous) return;
+				if (voronoi) voronoi.silence();
+				else { smooth(flightLGain.gain, 0, 0.15); smooth(flightRGain.gain, 0, 0.15); }
+				return;
+			}
 			const now = context.currentTime;
 			if (now - lastFlightUpdate < 0.05) return;
 			lastFlightUpdate = now;
+			if (voronoi) { voronoi.update(sim); return; }
 			const planet = nearestPlanet(sim);
 			if (planet < 0) {
 				smooth(flightLGain.gain, 0, 0.15);
@@ -547,7 +562,7 @@
 			flightPlanet = -1;
 			lastFlightUpdate = -Infinity;
 			if (!context || !enabled || !active) return;
-			fade(flightBus.gain, desired === 'idle' ? 0.22 : 0.08, 0.2);
+			fade(flightBus.gain, desired === 'idle' ? (useVoronoi ? 0.65 : 0.22) : (useVoronoi ? 0.24 : 0.08), 0.2);
 			if (flightSim) updateFlight(flightSim);
 		}
 
@@ -573,6 +588,7 @@
 		function stopFlight() {
 			flying = false;
 			if (context) {
+				if (voronoi) voronoi.silence();
 				fade(flightBus.gain, 0, 0.25);
 				fade(flightLGain.gain, 0, 0.25);
 				fade(flightRGain.gain, 0, 0.25);
@@ -596,6 +612,7 @@
 
 		function stopAll() {
 			if (!context) return;
+			if (voronoi) voronoi.silence();
 			fade(aimBus.gain, 0, 0.08);
 			fade(flightBus.gain, 0, 0.08);
 			fade(blastGain.gain, 0, 0.08);
