@@ -566,3 +566,17 @@ shots, which correctly locks the run. After touching world generation, rerun
 every bench, not only the focused tests for the changed feature; a scripted
 player should stop at the game's own goal (`game.doneSteps >= 0`), not at a
 hardcoded script length.
+
+## numeric localStorage defaults and headless audio checks
+
+`Number(localStorage.getItem(key))` turns an absent key (`null`) into `0`. For a
+volume or gain preference that silently mutes a fresh install. Read the raw value
+first and only coerce when it is not `null`; keep an explicit `0` valid.
+
+A real `file://` Web Audio check can run from npm's `@sparticuz/chromium` plus
+`puppeteer-core` when no system browser is installed. The bundled binary may need
+the package's `al2023.tar.br` libraries (NSS/NSPR) extracted and placed on
+`LD_LIBRARY_PATH`. Insert an analyser before `context.destination` and assert RMS,
+not just `AudioContext.state === 'running'`; a running context with a zero master
+gain still looks healthy. Filter expected missing photo-candidate 404s separately
+from audio/page errors when a test launches far enough to trigger postcards.

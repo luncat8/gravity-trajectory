@@ -380,11 +380,40 @@
 	const playbackGroupEl = $('playbackGroup');
 	const helpBtn = $('helpBtn');
 	const soundToggle = $('soundToggle');
+	const soundEngineEl = $('soundEngine');
+	const soundAimEl = $('soundAim');
+	const soundFlightEl = $('soundFlight');
+	const soundVolumeEl = $('soundVolume');
+	const soundVolumeLabelEl = $('soundVolumeLabel');
+	const soundSettingsTagEl = $('soundSettingsTag');
+	const soundHintEl = $('soundHint');
+	const trajectorySoundOptionsEl = $('trajectorySoundOptions');
+	function readSoundChoice(key, fallback, choices) {
+		try {
+			const value = root.localStorage.getItem(key);
+			return choices.indexOf(value) >= 0 ? value : fallback;
+		} catch (err) { return fallback; }
+	}
 	let soundEnabled = true;
 	try { soundEnabled = root.localStorage.getItem('gravity-sound-enabled') !== 'false'; }
 	catch (err) { /* localStorage can be unavailable on file://. */ }
-	const sound = root.GravitySound.create({ enabled: soundEnabled });
+	let soundVolume = 45;
+	try {
+		const stored = root.localStorage.getItem('gravity-sound-volume');
+		const value = Number(stored);
+		if (stored !== null && Number.isFinite(value) && value >= 0 && value <= 100) soundVolume = value;
+	} catch (err) { /* default volume */ }
+	const sound = root.GravitySound.createController({
+		enabled: soundEnabled,
+		volume: soundVolume / 100,
+		engine: readSoundChoice('gravity-sound-engine', 'trajectory', ['trajectory', 'samples', 'fallback']),
+		aimMode: readSoundChoice('gravity-sound-aim', 'outcome', ['outcome', 'flythrough']),
+		flightMode: readSoundChoice('gravity-sound-flight', 'pentatonic', ['pentatonic', 'instrument'])
+	});
 	let soundFlightSim = null;
+	const soundAim = { sim: null, ready: false, tracing: false, hasProfit: false,
+		profit: 0, length: 0, destination: -1, pan: 0, centerX: 0,
+		emcKnown: false, emcReady: true, emcTier: 0, emcSpeed: 0 };
 	const foldBtn = $('foldBtn');
 	const scoreFoldBtn = $('scoreFoldBtn');
 	const careerFoldBtn = $('careerFoldBtn');
@@ -573,7 +602,8 @@
 	let hudRivalText = '';
 	let hudReplayText = '';
 	let predGain = 0;
-	const aimEconomics = { state: 0, launchable: true, fee: 0, exit: 0, net: 0, source: '' };
+	const aimEconomics = { state: 0, launchable: true, fee: 0, exit: 0, net: 0, gain: 0,
+		source: '', speed: 0, tier: 0, own: false };
 	let launchState = -1;
 	let launchNote = '';
 	let linkNote = '';
@@ -1182,7 +1212,11 @@
 		out.fee = 0;
 		out.exit = 0;
 		out.net = predGain;
+		out.gain = predGain;
 		out.source = '';
+		out.speed = 0;
+		out.tier = 0;
+		out.own = false;
 		if (!careerRule() || sim.predCount < 2 || sim.predReason !== END_IMPACT ||
 			sim.predBody < 0) return out;
 		const career = game.career;
@@ -1196,6 +1230,10 @@
 		out.fee = fee;
 		out.exit = departure.cost;
 		out.source = departure.source;
+		out.speed = departure.speed;
+		const destinationPad = GravityGame.padAt(career, sim.predBody);
+		out.tier = destinationPad.catapult.tier + 1;
+		out.own = career.pads[sim.predBody].catapult !== null;
 		out.launchable = career.ledger.purse + 1e-9 >= fee && departure.ok;
 		out.net = predGain - fee - (departure.ok ? departure.cost : 0);
 		out.state = !out.launchable ? 2 : out.net > 1e-9 ? 1 : 0;
@@ -1444,10 +1482,36 @@
 	}
 
 	function syncSoundLoop() {
+		const live = sound.engine() === 'trajectory';
 		if (replay.on) sound.setLoop('idle');
-		else if (aiming) sound.setLoop('aim');
-		else if (armed && !routeRule()) sound.setLoop('armed');
+		else if (aiming || (live && burnAiming)) sound.setLoop('aim');
+		else if ((armed && (!routeRule() || live)) || (live && burnArmed)) sound.setLoop('armed');
 		else sound.setLoop('idle');
+	}
+
+	function updateSoundTelemetry() {
+		const sim = activeSim();
+		const preview = !replay.on && (aiming || armed || burnAiming || burnArmed);
+		if (preview && sim.predCount >= 2) {
+			const burn = burnAiming || burnArmed;
+			const destination = !sim.routeActive && sim.predReason === END_IMPACT ? sim.predBody : -1;
+			soundAim.sim = sim;
+			soundAim.ready = true;
+			soundAim.tracing = sim.routeActive;
+			soundAim.hasProfit = game.on && !routeRule();
+			soundAim.profit = careerRule() ? aimEconomics.net + predGain - aimEconomics.gain : predGain;
+			soundAim.length = sim.predLength;
+			soundAim.destination = destination;
+			soundAim.centerX = burn || aimBody < 0 ? sim.cargo.x : sim.bodyX[aimBody];
+			soundAim.pan = destination >= 0
+				? Math.max(-1, Math.min(1, (sim.bodyX[destination] - soundAim.centerX) / (sim.worldW * 0.25))) : 0;
+			soundAim.emcKnown = careerRule() && destination >= 0;
+			soundAim.emcReady = !soundAim.emcKnown || aimEconomics.launchable;
+			soundAim.emcTier = soundAim.emcKnown ? aimEconomics.tier : 0;
+			soundAim.emcSpeed = soundAim.emcKnown ? aimEconomics.speed : 0;
+			sound.updateAim(soundAim);
+		} else sound.updateAim(null);
+		sound.updateFlight(soundFlightSim && soundFlightSim.status === STATUS_FLYING && !replay.on ? soundFlightSim : null);
 	}
 
 	function takeOverAim(now) {
@@ -5950,7 +6014,7 @@
 		const inLeft = Boolean(leftHudEl && typeof leftHudEl.contains === 'function' && leftHudEl.contains(node));
 		const inFoot = Boolean(cargoFootEl && typeof cargoFootEl.contains === 'function' && cargoFootEl.contains(node));
 		if (!inCargo && !inLeft && !inFoot) return false;
-		if (node.closest && node.closest('button, input, select, label, textarea, .scoreEntry')) return false;
+		if (node.closest && node.closest('button, input, select, label, textarea, summary, .scoreEntry')) return false;
 		const wx = worldX(event.clientX);
 		const wy = worldY(event.clientY);
 		if (canImpulse() && shipAt(wx, wy)) return true;
@@ -7662,6 +7726,7 @@
 			sim.predCount = 0;
 			predGain = 0;
 		}
+		updateSoundTelemetry();
 		refreshLaunchList(false);
 
 		const renderStart = performance.now();
@@ -7952,6 +8017,57 @@
 		refreshSoundToggle();
 		try { root.localStorage.setItem('gravity-sound-enabled', String(soundEnabled)); }
 		catch (err) { /* Sound still works without persistent preferences. */ }
+	});
+	const SOUND_ENGINE_LABELS = { trajectory: 'trajectory synth', samples: 'selected samples', fallback: 'classic synths' };
+	const SOUND_AIM_HINTS = {
+		outcome: 'Profit chord · length ticks · destination EMC beacon.',
+		flythrough: 'Hear predicted visits in order, with relative timing and screen-side pan.'
+	};
+	const SOUND_FLIGHT_HINTS = {
+		pentatonic: 'Flight: planet pentatonics · nearer is louder · left/right follows direction.',
+		instrument: 'Flight: planet timbres · farther is higher and quieter · left/right follows direction.'
+	};
+	function saveSoundPreference(key, value) {
+		try { root.localStorage.setItem(key, value); }
+		catch (err) { /* Sound still works without persistent preferences. */ }
+	}
+	function refreshSoundSettings() {
+		const engine = sound.engine();
+		if (soundEngineEl) soundEngineEl.value = engine;
+		if (soundAimEl) soundAimEl.value = sound.aimMode();
+		if (soundFlightEl) soundFlightEl.value = sound.flightMode();
+		if (soundVolumeEl) soundVolumeEl.value = String(Math.round(sound.volume() * 100));
+		if (soundVolumeLabelEl) soundVolumeLabelEl.textContent = Math.round(sound.volume() * 100) + '%';
+		if (soundSettingsTagEl) soundSettingsTagEl.textContent = SOUND_ENGINE_LABELS[engine];
+		if (trajectorySoundOptionsEl) trajectorySoundOptionsEl.hidden = engine !== 'trajectory';
+		if (!soundHintEl) return;
+		soundHintEl.textContent = engine === 'trajectory'
+			? SOUND_AIM_HINTS[sound.aimMode()] + ' ' + SOUND_FLIGHT_HINTS[sound.flightMode()]
+			: engine === 'samples' ? 'Selected local WAVs; missing or unplayable cues use the classic synths.'
+				: 'Fixed procedural launch cues, without samples or trajectory telemetry.';
+	}
+	refreshSoundSettings();
+	if (soundEngineEl) soundEngineEl.addEventListener('change', () => {
+		sound.setEngine(soundEngineEl.value);
+		saveSoundPreference('gravity-sound-engine', sound.engine());
+		refreshSoundSettings();
+		sound.unlock();
+	});
+	if (soundAimEl) soundAimEl.addEventListener('change', () => {
+		sound.setAimMode(soundAimEl.value);
+		saveSoundPreference('gravity-sound-aim', sound.aimMode());
+		refreshSoundSettings();
+	});
+	if (soundFlightEl) soundFlightEl.addEventListener('change', () => {
+		sound.setFlightMode(soundFlightEl.value);
+		saveSoundPreference('gravity-sound-flight', sound.flightMode());
+		refreshSoundSettings();
+	});
+	if (soundVolumeEl) soundVolumeEl.addEventListener('input', () => {
+		soundVolume = Number(soundVolumeEl.value);
+		sound.setVolume(soundVolume / 100);
+		if (soundVolumeLabelEl) soundVolumeLabelEl.textContent = Math.round(soundVolume) + '%';
+		saveSoundPreference('gravity-sound-volume', String(soundVolume));
 	});
 	window.addEventListener('blur', () => sound.setActive(false));
 	window.addEventListener('focus', () => sound.setActive(true));

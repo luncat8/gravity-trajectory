@@ -50,7 +50,10 @@ function toneWav(file) {
 		const errors = [];
 		page.on('pageerror', error => errors.push(String(error)));
 		page.on('console', message => {
-			if (message.type() === 'error') errors.push(message.text());
+			if (message.type() !== 'error') return;
+			const url = message.location() && message.location().url || '';
+			if (message.text().includes('ERR_FILE_NOT_FOUND') && url.includes('/photos/')) return;
+			errors.push(message.text());
 		});
 		await page.evaluateOnNewDocument(url => {
 			Object.defineProperty(window, 'GravitySoundFiles', {
@@ -86,8 +89,9 @@ function toneWav(file) {
 		}, pathToFileURL(wav).href);
 		await page.setViewport({ width: 1280, height: 800 });
 		await page.goto(pathToFileURL(path.join(__dirname, '..', 'index.html')).href + '?mode=lab&seed=7');
-		await page.waitForFunction(() => window.GravityScene && window.__audioElements[0]?.readyState >= 2);
+		await page.waitForFunction(() => window.GravityScene);
 		assert.strictEqual(await page.evaluate(() => window.__contexts), 0, 'no context before a gesture');
+		assert.strictEqual(await page.evaluate(() => GravityScene.sound.engine()), 'trajectory', 'fresh default is the live generator');
 		const point = await page.evaluate(() => {
 			for (let i = 0; i < OrbitScene.sim.planetX.length; i++) {
 				const x = OrbitScene.sim.planetX[i] * OrbitScene.view.scale + OrbitScene.view.offX;
@@ -97,6 +101,51 @@ function toneWav(file) {
 			return null;
 		});
 		assert(point, 'a visible planet is required');
+		await page.mouse.move(point.x, point.y);
+		await page.mouse.down();
+		await page.mouse.move(point.x + 130, point.y - 30, { steps: 5 });
+		await new Promise(resolve => setTimeout(resolve, 450));
+		const live = await page.evaluate(() => {
+			const data = new Float32Array(window.__probe.fftSize);
+			window.__probe.getFloatTimeDomainData(data);
+			let sum = 0;
+			for (const v of data) sum += v * v;
+			return { phase: GravityScene.sound.phase(), state: window.__context.state,
+				media: window.__audioElements.length, rms: Math.sqrt(sum / data.length) };
+		});
+		assert.strictEqual(live.phase, 'aim');
+		assert.strictEqual(live.state, 'running');
+		assert.strictEqual(live.media, 0, 'trajectory synth uses no media elements');
+		assert(live.rms > 0.001, 'trajectory synth produces audible Web Audio output');
+		await page.mouse.up();
+		await page.click('#launch');
+		await new Promise(resolve => setTimeout(resolve, 600));
+		const flying = await page.evaluate(() => {
+			const data = new Float32Array(window.__probe.fftSize);
+			window.__probe.getFloatTimeDomainData(data);
+			let sum = 0;
+			for (const v of data) sum += v * v;
+			return { status: GravityScene.sim.status, mode: GravityScene.sound.flightMode(), rms: Math.sqrt(sum / data.length) };
+		});
+		assert.strictEqual(flying.status, 1);
+		assert.strictEqual(flying.mode, 'pentatonic');
+		assert(flying.rms > 0.001, 'pentatonic flight cue is audible');
+		await page.evaluate(() => { document.getElementById('soundSettings').open = true; });
+		await page.select('#soundFlight', 'instrument');
+		await new Promise(resolve => setTimeout(resolve, 400));
+		const alternate = await page.evaluate(() => {
+			const data = new Float32Array(window.__probe.fftSize);
+			window.__probe.getFloatTimeDomainData(data);
+			let sum = 0;
+			for (const v of data) sum += v * v;
+			return { mode: GravityScene.sound.flightMode(), rms: Math.sqrt(sum / data.length) };
+		});
+		assert.strictEqual(alternate.mode, 'instrument');
+		assert(alternate.rms > 0.001, 'switching to instrument range stays audible mid-flight');
+		await page.click('#clear');
+		await page.evaluate(() => { document.getElementById('soundSettings').open = true; });
+		await page.select('#soundEngine', 'samples');
+		await page.waitForFunction(() => window.__audioElements[0]?.readyState >= 2);
 		await page.mouse.move(point.x, point.y);
 		await page.mouse.down();
 		await page.mouse.move(point.x + 130, point.y - 30, { steps: 5 });
@@ -130,7 +179,7 @@ function toneWav(file) {
 		});
 		assert(muted.peak < 0.0001 && muted.pressed === 'false', 'mute silences synth and updates the UI');
 		assert.deepStrictEqual(errors, [], 'no page or audio errors');
-		console.log('SOUND BROWSER TEST OK: file:// direct WAV, fade, procedural audio and mute');
+		console.log('SOUND BROWSER TEST OK: default trajectory synth, both flight mappings, file:// WAV, fades and mute');
 	} finally {
 		if (browser) await browser.close();
 		fs.rmSync(temp, { recursive: true, force: true });

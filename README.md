@@ -23,18 +23,24 @@ takes priority over the query; starting a new run removes the old replay hash.
 Per-body lab edits, experimental multipliers and roster-size changes are not saved
 in the seed URL; copied replays include their experimental multipliers.
 
-Manual launches have four sound stages: a distorted aim note, a cymbal roll
-while armed, thunder at firing and a short space-rock flight cue. The built-in
-sounds are procedural placeholders; you can generate and choose individual
-local ComfyUI takes using [sounds/README.md](sounds/README.md). The cargo header
-has a persistent sound on/off button.
+Sound has three selectable generators in the cargo panel's collapsible **sound**
+settings. The default **trajectory synth** is data-driven: while aiming it can
+play a profit/length/destination-EMC outcome layer or a compressed fly-through of
+the predicted visits; while flying it offers planet pentatonics with stereo
+proximity, or planet timbres whose pitch rises and volume falls with distance.
+**Selected samples** and **classic synths** preserve the older four-stage manual
+launch cues (aim note, armed shimmer, thunder, space-rock flight). Local ComfyUI
+takes can still be generated and selected with [sounds/README.md](sounds/README.md).
+The header sound button, generator/mapping choices and volume are persistent;
+audio starts only after a user gesture and never changes physics or replays.
 
 ## controls
 
 | input | action |
 | --- | --- |
 | drag from a planet | aim; direction is planet → grip, push grows with drag length · in career the whole range ends at the pad's live cap, so a full drag is always a shot the rail can fire |
-| `sound on` / `sound off` | mute or enable the manual launch cues; playback starts after a user gesture and falls back to a synth when selected files are absent |
+| `sound on` / `sound off` | mute or enable all sound; playback starts after a user gesture and the choice is remembered |
+| `sound` settings | choose **trajectory synth** (default), **selected samples** or **classic synths**; the trajectory synth also selects the aim mapping (outcome + EMC / fly-through), flight mapping (pentatonic proximity / instrument range) and master volume |
 | hold shift while dragging | aim at 1/20 sensitivity |
 | click a body | select a planet or moving port to tune its gravity in the lab (`-2…5`); keeps the armed shot · ports start with their parent planet’s seeded value and can be edited independently |
 | `g` slider | gravity of the selected body; negative values repel · red `+` / blue `−` updates at once |
@@ -162,7 +168,8 @@ has a persistent sound on/off button.
 - `gravity_game.js` — game rules (`tour`, `route`, `money`, `career`), seeded planet gravity, aim grid, the EMC network (`createGalaxy`, seeded turret periods & phases, `turretPeriod`/`turretAngle`, `padAt`/`padOwner`/`claimOwner`, `setCommercial`, `launchFee`, `exitCostAt`, `padLift`, `railText`/`railBlock`/`railOwnerText` — the live rail line and the one reason a shot cannot leave, shared by the page list and the bot decision log —, commercial pad, rival seeds), replay link codec (`rule`, `bot`, `cheat`, `gs`, `fs`, and `-b<step>.<angle>.<dv>` mid-flight burn suffixes), shared planet-profit market (`MONEY`, `createMarket`, `planetProfit`, `stepHarvest`, the experimental stay-pay `harvestStay`/`setHarvestMode`, `estimateProfit`, `compareScores`), career state (pads, ship fuel & refuel, `careerBurn`, task board from the colony economy, hull + directional frontier science research, evacuation, end condition), and the launch book (`createLaunchBook`, `recordLaunch`, `launchBookTag`/`bookReady`, `estimateProfitLog` — saved career trajectories with their visit logs, deduped by start planet + landing + visited systems on the faster arrival)
 - `gravity_bot.js` — deterministic shared-market rivals for all game rules (`off`, `easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead, sliced search, `rivalLink`), the flying career rivals (`startCareers`/`stepCareer`: each runs a whole career with its own purse, pads, EMC claims and tax income, and is refinanced at its HQ after going broke), plus the synchronous headless career controller (`careerPlan`, contract-preserving mid-flight `careerBurnPlan`, cached physical departure checks, dead-end pad repair, task/pad/energy-wait scoring and between-flight shopping), with `setScales` fanning the experimental multipliers into every rival and probe sim
 - `photo_deck.js` — postcard popup: planet type and career scene → file candidates, captions, CSS fallback art, compact layout, purse toast
-- `gravity_sound.js` — gesture-unlocked launch sound stages, procedural fallbacks and optional local selected audio
+- `gravity_sound.js` — sound controller plus the classic gesture-unlocked launch stages, procedural fallbacks and optional local selected audio
+- `gravity_trajectory_sound.js` — default data-driven sonification: deterministic `get_tone_pentatonic` / `get_instrument` planet identities, aim profit/length/EMC and visit fly-through mappings, stereo proximity flight, reusable Web Audio voices and no media files
 - `gravity_field.js` — gravity-field backdrop renderer (direction → hue, potential gradient → lightness; WebGL 1 shader with slow-frame 1/4 fallback, automatic context-restore notification, and zero-alloc LUT 1/4-resolution 2D fallback)
 - `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game scoreboard, the flat mode row, career drawer in three tabs (`upgrades`: pad plate, task board, shop; `shots`: the launch list; `science`: the research hull), the profit helpers seeded by the launch book, the EMC claim rings & turning barrels with the queued launch, the continuous career clock & landing auto-pause, the experimental gravity/force/stay-pay panel and replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,

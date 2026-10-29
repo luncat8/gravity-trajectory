@@ -209,10 +209,16 @@ assert.strictEqual(ui.get('soundToggle').attributes['aria-pressed'], 'false');
 env.click('soundToggle');
 assert.strictEqual(sceneSound.enabled(), true);
 
+assert.strictEqual(sceneSound.engine(), 'trajectory', 'the data-driven generator is the fresh default');
 scene.setPlayMode('route');
 env.runFrames(2);
 env.dragAim(0, 0.6, 100);
-assert.strictEqual(sceneSound.phase(), 'idle', 'route mode has no pre-launch shimmer');
+assert.strictEqual(sceneSound.phase(), 'armed', 'trajectory synth keeps a released route plan audible');
+sceneSound.setEngine('fallback');
+env.runFrames(1);
+assert.strictEqual(sceneSound.phase(), 'idle', 'classic synths keep route mode silent after release');
+sceneSound.setEngine('trajectory');
+env.runFrames(1);
 
 scene.startGame(7, false, 'career');
 env.runFrames(2);

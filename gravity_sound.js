@@ -2,6 +2,13 @@
 (function (root) {
 	'use strict';
 
+	const TrajectorySound = typeof module !== 'undefined' && module.exports
+		? require('./gravity_trajectory_sound.js')
+		: root.GravityTrajectorySound;
+	const ENGINES = { trajectory: true, samples: true, fallback: true };
+	const AIM_MODES = { outcome: true, flythrough: true };
+	const FLIGHT_MODES = { pentatonic: true, instrument: true };
+
 	const CUES = ['aim', 'armed', 'launch', 'fly'];
 	const ATTACK = { aim: 0.18, armed: 0.1, launch: 0.01, fly: 0.5 };
 	const RELEASE = { aim: 0.18, armed: 0.09, launch: 0.12, fly: 0.3 };
@@ -348,13 +355,18 @@
 			if (enabled && active && context && name !== 'idle') loop = play(name, true);
 		}
 
+		function startFlight() {
+			if (!enabled || !active || !context) return;
+			stopVoice(flight, RELEASE.fly);
+			flight = play('fly', false);
+		}
+
 		function launch() {
 			setLoop('idle');
 			if (!enabled || !active || !context) return;
 			stopVoice(blast, RELEASE.launch);
-			stopVoice(flight, RELEASE.fly);
 			blast = play('launch', false);
-			flight = play('fly', false);
+			startFlight();
 		}
 
 		function stopFlight() {
@@ -408,11 +420,122 @@
 		}
 
 		loadAssets();
-		return { unlock, setLoop, launch, stopFlight, setEnabled, setVolume, setActive, reset,
+		return { unlock, setLoop, launch, startFlight, stopFlight, setEnabled, setVolume, setActive, reset,
 			phase: () => desired, enabled: () => enabled };
 	}
 
-	const api = { create };
+	/* Keeps user preferences and the current stage across a backend switch. */
+	function createController(options) {
+		options = options || {};
+		const host = options.host || root;
+		let engine = Object.hasOwn(ENGINES, options.engine) ? options.engine : 'trajectory';
+		let enabled = options.enabled !== false;
+		let active = true;
+		let volume = options.volume === undefined ? 0.45 : Math.max(0, Math.min(1, Number(options.volume) || 0));
+		let desired = 'idle';
+		let flying = false;
+		let aimMode = Object.hasOwn(AIM_MODES, options.aimMode) ? options.aimMode : 'outcome';
+		let flightMode = Object.hasOwn(FLIGHT_MODES, options.flightMode) ? options.flightMode : 'pentatonic';
+		let aimData = null;
+		let flightSim = null;
+		let backend = makeBackend();
+
+		function makeBackend() {
+			const config = { host, enabled, volume, aimMode, flightMode };
+			if (engine === 'trajectory') return TrajectorySound.create(config);
+			config.files = engine === 'samples' ? options.files : {};
+			return create(config);
+		}
+
+		function restoreBackend() {
+			backend.setActive(active);
+			if (flying) backend.startFlight();
+			backend.setLoop(desired);
+			if (aimData && backend.updateAim) backend.updateAim(aimData);
+			if (flightSim && backend.updateFlight) backend.updateFlight(flightSim);
+		}
+
+		function setEngine(value) {
+			if (!Object.hasOwn(ENGINES, value) || value === engine) return false;
+			backend.reset();
+			engine = value;
+			backend = makeBackend();
+			restoreBackend();
+			return true;
+		}
+
+		function setLoop(name) {
+			if (name !== 'aim' && name !== 'armed') name = 'idle';
+			desired = name;
+			backend.setLoop(name);
+		}
+
+		function launch() {
+			desired = 'idle';
+			flying = true;
+			backend.launch();
+		}
+
+		function startFlight() {
+			flying = true;
+			backend.startFlight();
+		}
+
+		function stopFlight() {
+			flying = false;
+			backend.stopFlight();
+		}
+
+		function reset() {
+			desired = 'idle';
+			flying = false;
+			aimData = null;
+			flightSim = null;
+			backend.reset();
+		}
+
+		function setEnabled(value) {
+			enabled = Boolean(value);
+			backend.setEnabled(enabled);
+		}
+
+		function setActive(value) {
+			active = Boolean(value);
+			backend.setActive(active);
+		}
+
+		function setVolume(value) {
+			volume = Math.max(0, Math.min(1, Number(value) || 0));
+			backend.setVolume(volume);
+		}
+
+		function updateAim(data) {
+			aimData = data;
+			if (backend.updateAim) backend.updateAim(data);
+		}
+
+		function updateFlight(sim) {
+			flightSim = sim;
+			if (backend.updateFlight) backend.updateFlight(sim);
+		}
+
+		function setAimMode(value) {
+			aimMode = Object.hasOwn(AIM_MODES, value) ? value : 'outcome';
+			if (backend.setAimMode) backend.setAimMode(aimMode);
+		}
+
+		function setFlightMode(value) {
+			flightMode = Object.hasOwn(FLIGHT_MODES, value) ? value : 'pentatonic';
+			if (backend.setFlightMode) backend.setFlightMode(flightMode);
+		}
+
+		return { unlock: () => backend.unlock(), setLoop, launch, startFlight, stopFlight, reset,
+			setEnabled, setActive, setVolume, setEngine, updateAim, updateFlight, setAimMode, setFlightMode,
+			phase: () => desired, enabled: () => enabled, engine: () => engine, volume: () => volume,
+			aimMode: () => aimMode, flightMode: () => flightMode };
+	}
+
+	const api = { create, createController };
 	root.GravitySound = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

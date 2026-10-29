@@ -197,6 +197,13 @@ function loadPage(options = {}) {
 		innerHeight: 800,
 		devicePixelRatio: 1
 	};
+	if (options.storage) {
+		const data = options.storage;
+		context.localStorage = {
+			getItem(key) { return Object.hasOwn(data, key) ? data[key] : null; },
+			setItem(key, value) { data[key] = String(value); }
+		};
+	}
 	context.window = context;
 	vm.createContext(context);
 	/* the page draws helper aims, roster spawns and new seeds from Math.random;

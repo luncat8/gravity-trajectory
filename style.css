@@ -733,6 +733,77 @@ body {
 	accent-color: var(--accent);
 }
 
+.soundSettings summary {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: var(--dim);
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	cursor: pointer;
+	list-style: none;
+}
+
+.soundSettings summary::-webkit-details-marker {
+	display: none;
+}
+
+.soundSettings summary::after {
+	content: '+';
+	color: var(--accent);
+	font-size: 12px;
+}
+
+.soundSettings[open] summary::after {
+	content: '−';
+}
+
+.soundSettings summary span:nth-child(2) {
+	flex: 1;
+	overflow: hidden;
+	color: var(--text);
+	text-align: right;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	text-transform: none;
+	letter-spacing: 0;
+}
+
+.soundSettings[open] summary {
+	margin-bottom: 6px;
+}
+
+.soundCtl {
+	margin-top: 6px;
+}
+
+.soundCtl select {
+	flex: 1;
+	min-width: 0;
+	padding: 3px 5px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: rgba(2, 8, 16, 0.7);
+	color: var(--text);
+	font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+	letter-spacing: 0;
+	text-transform: none;
+	cursor: pointer;
+}
+
+#cargoHud .soundCtl input[type="range"] {
+	flex: 1;
+	width: auto;
+}
+
+.soundHint {
+	margin: 7px 0 0;
+	color: var(--dim);
+	font-size: 10px;
+	line-height: 1.45;
+}
+
 .radioRow {
 	display: flex;
 	gap: 14px;

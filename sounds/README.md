@@ -1,6 +1,52 @@
-# Launch sounds
+# Sound
 
-The game plays a four-stage cue for a **manual** launch:
+The cargo panel's **sound** selector chooses one of three generators. The choice,
+aim/flight mappings, volume and mute state are stored locally when storage is
+available. Audio remains decorative: it reads predictions and flight state but
+never writes physics, economics, aim inputs or replay data.
+
+## Trajectory synth (default)
+
+`gravity_trajectory_sound.js` is a separate, sample-free Web Audio generator. It
+is enabled by default for a fresh preference store, while an explicit mute is
+still respected. It unlocks on a user gesture, reuses its oscillators and note
+pool, and suspends when the page is backgrounded.
+
+**Aim mappings**
+
+- **Outcome + EMC**: a continuous chord encodes the displayed profit (brighter
+  and higher for positive net outcome, darker/minor for loss; magnitude controls
+  intensity). Short ticks speed up logarithmically with trajectory length. A
+  two-note destination beacon uses the destination planet's note; in career a
+  blocked or unaffordable departure gets a low dissonant pair, while a usable EMC
+  gets a consonant interval whose tier/speed affect brightness. Career profit is
+  the net estimate after launch fee and viable exit cost, not gross receipts.
+- **Trajectory fly-through**: the predicted visit log is compressed into a short
+  repeating phrase, preserving encounter order and relative timing. Each system
+  uses its planet note and screen-side pan; a predicted landing closes the phrase.
+  While a long route is still tracing, only continuous layers and length ticks
+  run, so a partial endpoint is never presented as final.
+
+Released route plans stay audible in this generator. Impulse-burn previews use
+the same aim sonification and duck the live flight cue underneath.
+
+**Flight mappings**
+
+- **Pentatonic proximity**: `get_tone_pentatonic(planet_id)` gives the nearest
+  active planet a stable note from a shared pentatonic collection. Closer planets
+  are louder; equal-power left/right pan follows the planet's screen-side offset.
+- **Instrument range**: `get_instrument(planet_id)` gives the planet a stable
+  synthetic timbre. Farther planets are higher in pitch and lower in volume;
+  nearer planets are lower and louder. The same stereo proximity pan applies.
+
+Distance is measured from the cargo to the planet surface (zero inside the disc).
+A short synthesized ignition marks launch; landing/reset/mute fade the flight bus.
+Switching generator or flight mapping mid-flight changes the cue without
+restarting the simulation or replaying the ignition.
+
+## Classic four-stage cues (selected samples / classic synths)
+
+The older engines play a four-stage cue for a **manual** launch:
 
 | Stage | Sound | When it ends |
 | --- | --- | --- |
@@ -19,13 +65,12 @@ the gravity cargo header. Browsers require a user gesture before audio starts;
 if storage is available, the mute choice is remembered. Backgrounding the
 page silences the cues. On returning, only a still-active loop resumes.
 
-Without selected files the game uses approximate, procedural Web Audio synths
-—not AI-generated guitar, cymbal, thunder, or rock recordings. This keeps the
-feature usable offline immediately. Selected generated takes replace individual
-synths; missing or unplayable files fall back to the synth. Audio is decorative
-and never affects simulation or replay results. Selected local media plays
-directly with native volume fades, without `fetch` or a Web Audio media source,
-so it also works from `file://` without special browser flags.
+**Selected samples** uses local generated takes where present and falls back to
+the approximate procedural Web Audio synths for missing or unplayable cues.
+**Classic synths** forces those fixed procedural cues and loads no media. Neither
+is an AI-generated guitar, cymbal, thunder, or rock recording. Selected local
+media plays directly with native volume fades, without `fetch` or a Web Audio
+media source, so it also works from `file://` without special browser flags.
 
 ## Generate and audition
 
@@ -135,6 +180,7 @@ output format to lossless FLAC.
 
 ```sh
 node experiments/sound_test.js
+node experiments/trajectory_sound_test.js
 python3 experiments/sound_generator_test.py  # ffmpeg also exercises selection
 CHROME_PATH=/path/to/chromium node experiments/sound_browser_test.js  # requires puppeteer-core
 ```
