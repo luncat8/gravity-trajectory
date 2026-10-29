@@ -62,20 +62,21 @@ const host = { AudioContext: FakeContext, Audio: FakeAudio, performance: { now: 
 function aimFixture() {
 	return {
 		ready: true, tracing: false, hasProfit: true, profit: 2, length: 1000,
-		destination: 2, pan: 0.4, centerX: 0, emcKnown: true, emcReady: true, emcTier: 3, emcSpeed: 220,
+		destination: 2, emcKnown: true, emcReady: true, emcTier: 3, emcSpeed: 220,
 		sim: {
 			predCount: 3, predSteps: 120, predTime: 1, predLength: 1000, predReason: 1, predBody: 2,
 			predLogCount: 2, predLogPlanet: Int32Array.from([1, 2]), predLogStep: Int32Array.from([40, 80]),
-			predX: Float32Array.from([0, 100, 200]), predY: Float32Array.from([0, 0, 0]),
-			predFieldT: 0, routeStartStep: 0, routeStride: 1, worldW: 2000,
-			bodyX: Float64Array.from([0, 100, 200]), cargo: { x: 0, y: 0 }
+			predX: Float32Array.from([0, 100, 180]), predY: Float32Array.from([0, 0, 0]),
+			planetX: Float64Array.from([0, 100, 200]), planetY: Float64Array.from([0, -50, -50]),
+			predFieldT: 0, routeStartStep: 0, routeStride: 60, angle: 0
 		}
 	};
 }
 function flightFixture() {
 	return {
-		status: 1, cargo: { x: 0, y: 0 }, worldW: 2000, planetCount: 1, planetMask: null,
-		planetX: Float64Array.from([-100]), planetY: Float64Array.from([0]), planetR: Float64Array.from([10])
+		status: 1, angle: 0, cargo: { x: 0, y: 0, vx: 1, vy: 0 },
+		planetCount: 1, planetMask: null,
+		planetX: Float64Array.from([0]), planetY: Float64Array.from([-100]), planetR: Float64Array.from([10])
 	};
 }
 function oscillators(ctx) { return ctx.nodes.filter(n => n.kind === 'oscillator'); }
@@ -103,6 +104,8 @@ const ctx = FakeContext.instances[0];
 assert.strictEqual(ctx.state, 'running');
 const chord = oscillators(ctx).slice(0, 3);
 sound.updateAim(aim);
+assert(panners(ctx)[2].pan.value < 0,
+	'the destination EMC beacon is panned by its bearing from the predicted arrival heading');
 const positiveRoot = chord[0].frequency.value;
 assert(chord.every(n => n.started), 'persistent chord voices start once');
 aim.profit = -4;
@@ -178,18 +181,24 @@ assert(played.some(f => Math.abs(f - Trajectory.get_tone_pentatonic(2)) < 1e-6),
 	'fly-through reaches the destination planet');
 assert(played.some(f => Math.abs(f - Trajectory.get_tone_pentatonic(2) * 1.5) < 1e-6),
 	'fly-through closes the destination phrase on a fifth');
+const firstVisitIndex = pool.findIndex(n => n.frequency.events.some(e =>
+	e[0] === 'set' && Math.abs(e[1] - Trajectory.get_tone_pentatonic(1)) < 1e-6));
+assert(firstVisitIndex >= 0);
+assert(panners(ctx)[firstVisitIndex + 1].pan.value < 0,
+	'fly-through pans a planet on the ship-left side of its local trajectory heading');
 
-/* Flight: nearest planet, distance and direction as left/right volume. */
+/* Flight: nearest planet, distance, and bearing relative to the live ship heading. */
 const flight = flightFixture();
 sound.launch();
 sound.updateFlight(flight);
 const flightVoices = oscillators(ctx).slice(12, 14);
 const sides = sideGains(ctx);
 assert.strictEqual(sides.length, 2, 'flight splits into explicit left and right gains');
-const flightLGain = sides[0].gain.value > sides[1].gain.value ? sides[0] : sides[1];
-const flightRGain = sides[0] === flightLGain ? sides[1] : sides[0];
+const flightLGain = sides[0];
+const flightRGain = sides[1];
 assert(Math.abs(flightVoices[0].frequency.value - Trajectory.get_tone_pentatonic(0)) < 1e-6);
-assert(flightLGain.gain.value > flightRGain.gain.value, 'a planet on the left is louder in the left ear');
+assert(flightLGain.gain.value > flightRGain.gain.value,
+	'a planet above a right-facing ship pans to ship-left');
 const nearLevel = flightLGain.gain.value + flightRGain.gain.value;
 flight.cargo.x = 1000;
 ctx.currentTime += 0.1;
@@ -197,15 +206,24 @@ sound.updateFlight(flight);
 assert(flightLGain.gain.value + flightRGain.gain.value < nearLevel, 'distance lowers flight volume');
 assert.strictEqual(flightVoices[0].frequency.value, Trajectory.get_tone_pentatonic(0),
 	'pentatonic identity stays stable with distance');
-flight.planetX[0] = 1100;
 flight.cargo.x = 0;
+flight.cargo.vx = -1;
 ctx.currentTime += 0.1;
 sound.updateFlight(flight);
-assert(flightRGain.gain.value > flightLGain.gain.value, 'moving the planet to the right is louder in the right ear');
+assert(flightRGain.gain.value > flightLGain.gain.value,
+	'the same planet moves to ship-right when the ship turns around');
+flight.cargo.vx = 1;
+flight.planetX[0] = 100;
+flight.planetY[0] = 0;
+ctx.currentTime += 0.1;
+sound.updateFlight(flight);
+assert(Math.abs(flightLGain.gain.value - flightRGain.gain.value) < 1e-6,
+	'a planet directly ahead is centered rather than pinned to a screen side');
 
-sound.setFlightMode('instrument');
 flight.cargo.x = 0;
 flight.planetX[0] = 0;
+flight.planetY[0] = -100;
+sound.setFlightMode('instrument');
 ctx.currentTime += 0.1;
 sound.updateFlight(flight);
 const nearPitch = flightVoices[0].frequency.value;
@@ -218,10 +236,8 @@ sound.updateFlight(flight);
 assert(flightVoices[0].frequency.value > nearPitch, 'alternate mapping raises pitch with distance');
 assert(flightLGain.gain.value + flightRGain.gain.value < nearSideLevel,
 	'alternate mapping lowers volume with distance');
-const farSides = sideGains(ctx);
-const farLeft = farSides[0].gain.value > farSides[1].gain.value ? farSides[0] : farSides[1];
-const farRight = farSides[0] === farLeft ? farSides[1] : farSides[0];
-assert(farLeft.gain.value > 0, 'a distant planet is still audible on the side it sits on');
+assert(flightLGain.gain.value > flightRGain.gain.value,
+	'a distant planet remains on the correct side relative to the current heading');
 
 /* Backend switches preserve preferences and stage without loading samples for fallback. */
 sound.setVolume(0.25);

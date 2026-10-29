@@ -412,7 +412,8 @@
 	});
 	let soundFlightSim = null;
 	const soundAim = { sim: null, ready: false, tracing: false, hasProfit: false,
-		profit: 0, length: 0, destination: -1, pan: 0, centerX: 0,
+		profit: 0, length: 0, destination: -1,
+		aimBody: -1, aimAngle: 0, aimSpeed: 0, aimCeiling: 0,
 		emcKnown: false, emcReady: true, emcTier: 0, emcSpeed: 0 };
 	const foldBtn = $('foldBtn');
 	const scoreFoldBtn = $('scoreFoldBtn');
@@ -1493,7 +1494,6 @@
 		const sim = activeSim();
 		const preview = !replay.on && (aiming || armed || burnAiming || burnArmed);
 		if (preview && sim.predCount >= 2) {
-			const burn = burnAiming || burnArmed;
 			const destination = !sim.routeActive && sim.predReason === END_IMPACT ? sim.predBody : -1;
 			soundAim.sim = sim;
 			soundAim.ready = true;
@@ -1502,20 +1502,16 @@
 			soundAim.profit = careerRule() ? aimEconomics.net + predGain - aimEconomics.gain : predGain;
 			soundAim.length = sim.predLength;
 			soundAim.destination = destination;
-		soundAim.centerX = burn || aimBody < 0 ? sim.cargo.x : sim.bodyX[aimBody];
-		soundAim.pan = destination >= 0
-			? Math.max(-1, Math.min(1, (sim.bodyX[destination] - soundAim.centerX) / (sim.worldW * 0.25))) : 0;
-		/* aim direction and pull strength: stereo orientation for players who
-		 * cannot see the grip. Pan follows the aim angle, pitch and volume follow
-		 * how hard the pad is pulled, the note is the launch planet. */
-		soundAim.aimBody = aimBody;
-		soundAim.aimAngle = aimAngle;
-		soundAim.aimSpeed = aimSpeed;
-		soundAim.aimCeiling = aimCeiling;
-		soundAim.emcKnown = careerRule() && destination >= 0;
-		soundAim.emcReady = !soundAim.emcKnown || aimEconomics.launchable;
-		soundAim.emcTier = soundAim.emcKnown ? aimEconomics.tier : 0;
-		soundAim.emcSpeed = soundAim.emcKnown ? aimEconomics.speed : 0;
+			/* The aim drone follows the selected launch direction; the flight
+			 * sonification derives each planet's bearing from the live trajectory. */
+			soundAim.aimBody = aimBody;
+			soundAim.aimAngle = aimAngle;
+			soundAim.aimSpeed = aimSpeed;
+			soundAim.aimCeiling = aimCeiling;
+			soundAim.emcKnown = careerRule() && destination >= 0;
+			soundAim.emcReady = !soundAim.emcKnown || aimEconomics.launchable;
+			soundAim.emcTier = soundAim.emcKnown ? aimEconomics.tier : 0;
+			soundAim.emcSpeed = soundAim.emcKnown ? aimEconomics.speed : 0;
 			sound.updateAim(soundAim);
 		} else sound.updateAim(null);
 		sound.updateFlight(soundFlightSim && soundFlightSim.status === STATUS_FLYING && !replay.on ? soundFlightSim : null);
@@ -8027,12 +8023,12 @@
 	});
 	const SOUND_ENGINE_LABELS = { trajectory: 'trajectory synth', samples: 'selected samples', fallback: 'classic synths' };
 	const SOUND_AIM_HINTS = {
-		outcome: 'Profit chord · length ticks · destination EMC beacon. While aiming: a quiet drone beside you — pan is aim direction, pitch and volume are pull strength.',
-		flythrough: 'Hear predicted visits in order, with relative timing and screen-side pan; the phrase opens on the launch planet and closes on the destination.'
+		outcome: 'Profit chord · length ticks · destination EMC beacon. While aiming: a quiet left/right direction cue; pitch and volume follow pull strength.',
+		flythrough: 'Hear predicted visits in order, with each planet panned by its bearing from the local path heading; the phrase opens on launch and closes on arrival.'
 	};
 	const SOUND_FLIGHT_HINTS = {
-		pentatonic: 'Flight: planet pentatonics · nearer is louder · left/right follows direction.',
-		instrument: 'Flight: planet timbres · farther is higher and quieter · left/right follows direction.'
+		pentatonic: 'Flight: nearest planet pentatonic · nearer is louder · left/right is relative to the ship’s current heading.',
+		instrument: 'Flight: nearest-planet timbre · farther is higher and quieter · left/right is relative to the ship’s current heading.'
 	};
 	function saveSoundPreference(key, value) {
 		try { root.localStorage.setItem(key, value); }

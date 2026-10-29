@@ -23,9 +23,10 @@ pool, and suspends when the page is backgrounded.
   the net estimate after launch fee and viable exit cost, not gross receipts.
 - **Trajectory fly-through**: the predicted visit log is compressed into a short
   repeating phrase, preserving encounter order and relative timing. Each system
-  uses its planet note and screen-side pan; a predicted landing closes the phrase.
-  While a long route is still tracing, only continuous layers and length ticks
-  run, so a partial endpoint is never presented as final.
+  uses its planet note, panned by its bearing from that point relative to the
+  local path tangent (the ship's heading), not by screen x-position. A predicted
+  landing closes the phrase. While a long route is still tracing, only continuous
+  layers and length ticks run, so a partial endpoint is never presented as final.
 
 Released route plans stay audible in this generator. Impulse-burn previews use
 the same aim sonification and duck the live flight cue underneath.
@@ -34,12 +35,17 @@ the same aim sonification and duck the live flight cue underneath.
 
 - **Pentatonic proximity**: `get_tone_pentatonic(planet_id)` gives the nearest
   active planet a stable note from a shared pentatonic collection. Closer planets
-  are louder; equal-power left/right pan follows the planet's screen-side offset.
+  are louder. Equal-power left/right pan is relative to the ship's instantaneous
+  heading, derived from the current velocity; the launch angle is a fallback if
+  the velocity is momentarily zero.
 - **Instrument range**: `get_instrument(planet_id)` gives the planet a stable
   synthetic timbre. Farther planets are higher in pitch and lower in volume;
-  nearer planets are lower and louder. The same stereo proximity pan applies.
+  nearer planets are lower and louder. The same heading-relative pan applies.
 
 Distance is measured from the cargo to the planet surface (zero inside the disc).
+The stereo pan uses the planet's lateral bearing (left/right of the ship's nose),
+not its world-screen x coordinate. A planet directly ahead or behind is centered;
+ordinary stereo does not distinguish fore from aft.
 A short synthesized ignition marks launch; landing/reset/mute fade the flight bus.
 Switching generator or flight mapping mid-flight changes the cue without
 restarting the simulation or replaying the ignition.

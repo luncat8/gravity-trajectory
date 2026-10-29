@@ -49,6 +49,38 @@
 		return value < min ? min : value > max ? max : value;
 	}
 
+	function relativePan(headingX, headingY, targetX, targetY) {
+		const headingLength = Math.sqrt(headingX * headingX + headingY * headingY);
+		const targetLength = Math.sqrt(targetX * targetX + targetY * targetY);
+		if (!(headingLength > 1e-9) || !(targetLength > 1e-9)) return 0;
+		/* World y points down, so a positive cross product is to the ship's right. */
+		return clamp((headingX * targetY - headingY * targetX) / (headingLength * targetLength), -1, 1);
+	}
+
+	function trajectoryPan(sim, point, planet) {
+		const before = point > 0 ? point - 1 : point;
+		const after = point < sim.predCount - 1 ? point + 1 : point;
+		let headingX = sim.predX[after] - sim.predX[before];
+		let headingY = sim.predY[after] - sim.predY[before];
+		if (!(headingX * headingX + headingY * headingY > 1e-18)) {
+			headingX = Math.cos(sim.angle);
+			headingY = Math.sin(sim.angle);
+		}
+		return relativePan(headingX, headingY,
+			sim.planetX[planet] - sim.predX[point], sim.planetY[planet] - sim.predY[point]);
+	}
+
+	function flightPan(sim, targetX, targetY) {
+		let headingX = sim.cargo.vx;
+		let headingY = sim.cargo.vy;
+		if (!Number.isFinite(headingX) || !Number.isFinite(headingY) ||
+			headingX * headingX + headingY * headingY <= 1e-18) {
+			headingX = Math.cos(Number.isFinite(sim.angle) ? sim.angle : 0);
+			headingY = Math.sin(Number.isFinite(sim.angle) ? sim.angle : 0);
+		}
+		return relativePan(headingX, headingY, targetX, targetY);
+	}
+
 	function create(options) {
 		options = options || {};
 		const host = options.host || root;
@@ -110,6 +142,8 @@
 		let signTime = -1;
 		let signFieldT = NaN;
 		let signStartStep = -1;
+		let signAimAngle = NaN;
+		let signAimSpeed = NaN;
 		let departureDone = false;
 		const eventPlanet = new Int32Array(EVENTS);
 		const eventAt = new Float64Array(EVENTS);
@@ -205,9 +239,8 @@
 			flightOsc[1] = oscillator('triangle', 261.62, flightFilter);
 			flightLfoDepth = gain(0.16, flightTremolo.gain);
 			flightLfo = oscillator('sine', 2.2, flightLfoDepth);
-			/* distance sets the volume of each side, direction sets the
-			 * left/right balance: low distance is louder on the side the
-			 * planet is on. A channel merger keeps true stereo output. */
+			/* Split the mono flight voice into true stereo channels. The per-frame
+			 * gains later use the planet's bearing relative to the ship's nose. */
 			flightMerger = context.createChannelMerger(2);
 			flightMerger.connect(flightBus);
 			flightLGain = context.createGain();
@@ -328,10 +361,11 @@
 			const tier = clamp(data.emcTier, 0, 5);
 			const interval = blocked ? Math.pow(2, 6 / 12) : tier >= 3 ? 1.5 : tier >= 1 ? 1.25 : 1.5;
 			const level = blocked ? 0.09 : 0.13 + clamp(data.emcSpeed / 320, 0, 1) * 0.08;
-			/* blocked destinations arrive low and dissonant; ready ones arrive
-			 * at the destination note, panned to where the destination sits. */
-			pluck(blocked ? base * 0.5 : base, now, level, data.pan, 0.22);
-			pluck(blocked ? base * 0.53 : base * interval, now + 0.16, level * 0.8, data.pan, 0.28);
+			const pan = trajectoryPan(data.sim, data.sim.predCount - 1, data.destination);
+			/* The beacon sits on the destination's bearing at the predicted
+			 * arrival point, relative to the local trajectory heading. */
+			pluck(blocked ? base * 0.5 : base, now, level, pan, 0.22);
+			pluck(blocked ? base * 0.53 : base * interval, now + 0.16, level * 0.8, pan, 0.28);
 			nextEmcAt = now + 1.8;
 		}
 
@@ -340,7 +374,8 @@
 			return sim.predCount !== signCount || sim.predSteps !== signSteps ||
 				sim.predLogCount !== signLogCount || sim.predBody !== signBody ||
 				sim.predLength !== signLength || sim.predTime !== signTime ||
-				sim.predFieldT !== signFieldT || sim.routeStartStep !== signStartStep;
+				sim.predFieldT !== signFieldT || sim.routeStartStep !== signStartStep ||
+				data.aimAngle !== signAimAngle || data.aimSpeed !== signAimSpeed;
 		}
 
 		function rememberAim(data) {
@@ -353,6 +388,8 @@
 			signTime = sim.predTime;
 			signFieldT = sim.predFieldT;
 			signStartStep = sim.routeStartStep;
+			signAimAngle = data.aimAngle;
+			signAimSpeed = data.aimSpeed;
 		}
 
 		function buildEvents(data, now) {
@@ -372,14 +409,14 @@
 				point = Math.round(clamp(point, 0, sim.predCount - 1));
 				eventPlanet[eventCount] = sim.predLogPlanet[i];
 				eventAt[eventCount] = fraction * previewDuration;
-				eventPan[eventCount] = clamp((sim.predX[point] - data.centerX) / (sim.worldW * 0.25), -1, 1);
+				eventPan[eventCount] = trajectoryPan(sim, point, eventPlanet[eventCount]);
 				eventLevel[eventCount] = 0.16;
 				eventCount++;
 			}
 			if (data.destination >= 0) {
 				eventPlanet[eventCount] = data.destination;
 				eventAt[eventCount] = previewDuration;
-				eventPan[eventCount] = data.pan;
+				eventPan[eventCount] = trajectoryPan(sim, sim.predCount - 1, data.destination);
 				eventLevel[eventCount] = 0.26;
 				eventCount++;
 			}
@@ -441,14 +478,18 @@
 				if (sim.planetMask && !sim.planetMask[i]) continue;
 				const dx = sim.planetX[i] - cargo.x;
 				const dy = sim.planetY[i] - cargo.y;
-				const distance = Math.sqrt(dx * dx + dy * dy);
+				const distance = Math.max(0, Math.sqrt(dx * dx + dy * dy) - sim.planetR[i]);
 				if (i === flightPlanet) currentDistance = distance;
 				if (distance < bestDistance) {
 					bestDistance = distance;
 					best = i;
 				}
 			}
-			if (best >= 0 && (flightPlanet < 0 || bestDistance < currentDistance * 0.9)) flightPlanet = best;
+			if (best < 0) {
+				flightPlanet = -1;
+				return -1;
+			}
+			if (flightPlanet < 0 || bestDistance < currentDistance * 0.9) flightPlanet = best;
 			return flightPlanet;
 		}
 
@@ -459,14 +500,18 @@
 			if (now - lastFlightUpdate < 0.05) return;
 			lastFlightUpdate = now;
 			const planet = nearestPlanet(sim);
-			if (planet < 0) return;
+			if (planet < 0) {
+				smooth(flightLGain.gain, 0, 0.15);
+				smooth(flightRGain.gain, 0, 0.15);
+				return;
+			}
 			const cargo = sim.cargo;
 			const dx = sim.planetX[planet] - cargo.x;
 			const dy = sim.planetY[planet] - cargo.y;
 			const distance = Math.max(0, Math.sqrt(dx * dx + dy * dy) - sim.planetR[planet]);
 			const range = clamp(distance / 1200, 0, 1);
 			const proximity = 1 / (1 + Math.pow(distance / 300, 2));
-			const pan = clamp(dx / (sim.worldW * 0.25), -1, 1);
+			const pan = flightPan(sim, dx, dy);
 			let frequency;
 			let ratio = 2;
 			let cutoff = 1800;
@@ -488,9 +533,8 @@
 			smooth(flightOsc[1].frequency, frequency * ratio, 0.12);
 			smooth(flightFilter.frequency, cutoff, 0.15);
 			smooth(flightLfo.frequency, tremolo, 0.2);
-			/* distance and direction become left/right volume: the nearer the
-			 * planet, the louder both sides; the farther left or right it is,
-			 * the more the balance leans to that side. */
+			/* Proximity sets overall loudness; the normalized cross product of
+			 * ship heading and planet bearing sets port/starboard balance. */
 			const level = 0.02 + proximity * 0.46;
 			const leftBalance = Math.cos((pan + 1) * Math.PI / 4);
 			const rightBalance = Math.sin((pan + 1) * Math.PI / 4);
