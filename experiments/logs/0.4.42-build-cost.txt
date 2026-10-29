@@ -1,8 +1,24 @@
-share 0.1 of the research work from the origin
+share 0.08 of the research work from the origin
 record   spec                                    research   build   0.4.41  ratio
-EMC-1    maxForce 15, efficiency 0.62            38.03      3.80    3.00    0.100
-EMC-2    maxForce 90, efficiency 0.71            97.88      9.79    8.00    0.100
-EMC-3    maxForce 135, efficiency 0.8            163.66     16.37   12.00   0.100
-EMC-4    maxForce 165, efficiency 0.85           225.94     22.59   16.00   0.100
-EMC-5    maxForce 180, efficiency 0.88           277.36     27.74   20.00   0.100
-SP-1     power 1                                 5.05       0.51    0.75    0.101
+EMC-1    maxForce 15, efficiency 0.62            38.03      3.04    3.00    0.080
+EMC-2    maxForce 90, efficiency 0.71            97.88      7.83    8.00    0.080
+EMC-3    maxForce 135, efficiency 0.8            163.66     13.09   12.00   0.080
+EMC-4    maxForce 165, efficiency 0.85           225.94     18.07   16.00   0.080
+EMC-5    maxForce 180, efficiency 0.88           277.36     22.19   20.00   0.080
+SP-1     power 1                                 5.05       0.40    0.75    0.079
+SP-2     power 2.4                               14.93      1.19    1.75    0.080
+SP-3     power 4.5                               33.40      2.67    3.50    0.080
+SP-4     power 7.5                               64.83      5.19    6.00    0.080
+BAT-1    capacity 1.5, leak 0.001                2.82       0.23    0.50    0.081
+BAT-2    capacity 3, leak 0.0008                 7.59       0.61    1.25    0.080
+BAT-3    capacity 6, leak 0.0006                 21.79      1.74    2.50    0.080
+BAT-4    capacity 10, leak 0.0004                53.59      4.29    4.50    0.080
+BAT-5    capacity 16, leak 0.0003                117.22     9.38    7.50    0.080
+HOLD-8   capacity 8                              9.47       0.76    1.00    0.080
+HOLD-24  capacity 24                             38.55      3.08    2.50    0.080
+IMP-1    thrust 12, mass 1                       51.96      4.16    2.00    0.080
+IMP-2    thrust 24, mass 1.6                     97.33      7.79    4.00    0.080
+IMP-3    thrust 40, mass 2.5                     146.48     11.72   7.00    0.080
+FT-1     fuelCap 40, emptyMass 0.5               7.68       0.61    0.75    0.079
+FT-2     fuelCap 90, emptyMass 0.9               15.07      1.21    1.75    0.080
+FT-3     fuelCap 160, emptyMass 1.4              24.41      1.95    3.50    0.080

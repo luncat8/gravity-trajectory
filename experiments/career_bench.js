@@ -904,7 +904,7 @@ check('career science: tech tables seed the hull; research grows it for the prev
 	const prev = OrbitScience.previewHull(career.science, 'engine', target);
 	assert.ok(!prev.inside && prev.dist > 0);
 	assert.strictEqual(GravityGame.researchCost(career, 'engine', target), prev.cost);
-	career.ledger.purse = 200;
+	career.ledger.purse = 2000;
 	const purse = career.ledger.purse;
 	const label = GravityGame.researchLabel(career, 'engine');
 	assert.ok(GravityGame.researchPoint(career, 'engine', target, label));
@@ -1106,8 +1106,8 @@ check('frontier: a lighter engine is dearer than a heavier one at equal overshoo
 	const h = techHull();
 	const light = OrbitScience.previewHull(h, 'engine', [26, 0.5]);
 	const heavy = OrbitScience.previewHull(h, 'engine', [26, 3.0]);
-	/* min mass 1.0 / max 2.5: both step 0.5 t = 0.5 RU out of the range */
-	assert.ok(Math.abs(light.frontier - 1.5) < 1e-9, 'light frontier ' + light.frontier);
+	/* min mass 1.0 / max 2.5: both step 0.5 t = 2.5 RU (1 RU = 0.2 t) out of the range */
+	assert.ok(Math.abs(light.frontier - 7.5) < 1e-9, 'light frontier ' + light.frontier);
 	assert.ok(Math.abs(heavy.frontier) < 1e-9, 'heavy frontier ' + heavy.frontier);
 	assert.ok(light.cost > heavy.cost * 5, 'light ' + light.cost + ' vs heavy ' + heavy.cost);
 	const rate = OrbitScience.K_DIST * OrbitScience.TIER_SCALE.engine;
@@ -1441,7 +1441,7 @@ check('prototypes: an engine record refits free at HQ, is ship-mass correct, and
 	const w = makeWorld(42);
 	startCareer(w, 42);
 	const { career } = w;
-	career.ledger.purse = 200;
+	career.ledger.purse = 2000;
 	assert.ok(GravityGame.researchPoint(career, 'engine', [60, 0.5], 'R1'));
 	const proto = GravityGame.prototypeById(career, 'engine', 'R1');
 	const purse = career.ledger.purse;
@@ -1562,19 +1562,19 @@ check('battery science: seeded BAT-1..BAT-5 range, leak direction, and a pad-wid
 	const range = OrbitScience.rangeHull(career.science, 'battery');
 	assert.deepStrictEqual(range.min, [BAT[0].capacity, BAT[BAT.length - 1].leak]);
 	assert.deepStrictEqual(range.max, [BAT[BAT.length - 1].capacity, BAT[0].leak]);
-	/* 1 RU = 5 kWh capacity = 0.0004 leak: a tighter tank pays ↓×2.50, a bigger one ↑×1.20 */
+	/* 1 RU = 2.5 kWh capacity = 0.0002 leak: a tighter tank pays ↓×2.50, a bigger one ↑×1.20 */
 	const tight = GravityGame.researchPreview(career, 'battery', [10, 0.0002]);
 	const leaky = GravityGame.researchPreview(career, 'battery', [10, 0.0011]);
-	assert.ok(Math.abs(tight.frontier - 0.625) < 1e-12, 'tight leak frontier ' + tight.frontier);
+	assert.ok(Math.abs(tight.frontier - 1.25) < 1e-12, 'tight leak frontier ' + tight.frontier);
 	assert.ok(Math.abs(leaky.frontier) < 1e-12, 'leaky frontier ' + leaky.frontier);
 	assert.ok(tight.frontier > 20 * leaky.frontier, 'a tighter seal is the dear direction');
-	/* equal 0.1 RU of capacity overshoot: above the range is dear, below is cheap */
+	/* equal 0.5 kWh of capacity overshoot (0.2 RU): above the range is dear, below is cheap */
 	const above = GravityGame.researchPreview(career, 'battery', [16.5, 0.0006]);
 	const below = GravityGame.researchPreview(career, 'battery', [1.0, 0.0006]);
-	assert.ok(Math.abs(above.frontier - 0.12) < 1e-12 && Math.abs(below.frontier) < 1e-12);
+	assert.ok(Math.abs(above.frontier - 0.24) < 1e-12 && Math.abs(below.frontier) < 1e-12);
 	assert.ok(above.cost > below.cost, 'more capacity costs more than less at equal overshoot');
 	const big = GravityGame.researchPreview(career, 'battery', [20, 0.0006]);
-	assert.ok(Math.abs(big.frontier - 0.96) < 1e-12, 'capacity overshoot ' + big.frontier);
+	assert.ok(Math.abs(big.frontier - 1.92) < 1e-12, 'capacity overshoot ' + big.frontier);
 	const small = GravityGame.researchPreview(career, 'battery', [1, 0.0006]);
 	assert.ok(big.cost > small.cost, 'a bigger battery costs more than a smaller one');
 	/* sub-rung prototypes clamp the ordinal to RUNG_MIN (0.5); the price stays the spec's own, in cents */

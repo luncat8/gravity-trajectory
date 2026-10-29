@@ -1410,7 +1410,7 @@ check(kScene.game.money.purse >= purse0, 'no launch fee in career: ' + kScene.ga
 check(kui.get('cargoStatus').textContent === 'impact P' + career.at + ' · clock paused',
 	'stranded-but-launchable status: ' + kui.get('cargoStatus').textContent);
 check(!kui.get('launch').hidden && !kui.get('planetActions').hidden &&
-	kui.get('launchBuild').textContent === 'buy EMC-1 · 3.80' &&
+	kui.get('launchBuild').textContent === 'buy EMC-1 · 3.04' &&
 	kui.get('launchCommercial').textContent === 'commercial EMC-1 · 3.00' &&
 	kui.get('launchEvac').textContent === 'evacuate · 6.00',
 	'planet action buttons: ' + kui.get('launchBuild').textContent + ' / ' +
@@ -2380,7 +2380,7 @@ function protoOf(career, family, id) {
 	/* dragging mass past the lower researched bound shows its surcharge live */
 	fSlide('mass', '0.5');
 	fScene.refreshCareerPanel();
-	check(/frontier \+1\.50 RU/.test(fBlock()) &&
+	check(/frontier \+7\.50 RU/.test(fBlock()) &&
 		fBlock().includes('fee ' + light.cost.toFixed(2)),
 		'frontier surcharge in the live preview: ' + /id="sciPreview"[^>]*>([^<]+)/.exec(fBlock())[1]);
 
@@ -2393,7 +2393,7 @@ function protoOf(career, family, id) {
 	/* researching the light point expands the range for the next invention */
 	fClick({ act: 'sciFamily', family: 'engine' });
 	fSlide('mass', '0.5');
-	fCareer.ledger.purse = 100;
+	fCareer.ledger.purse = 1000;
 	fClick({ act: 'sciAccept', kind: 'engine' });
 	check(fSci.rangeHull(fCareer.science, 'engine').min[1] === 0.5, 'research expands the low-mass frontier');
 	check(fGame.researchPreview(fCareer, 'engine', [26, 0.5]).frontier === 0,
@@ -2486,7 +2486,7 @@ function protoOf(career, family, id) {
 	check(/battery hull · 5 points/.test(yBlock()), 'battery hull seeded from BAT-1..BAT-5');
 	yClick({ act: 'careerTab', tab: 'science' });
 	yClick({ act: 'sciFamily', family: 'battery' });
-	check(/metric · 1 RU = 5 capacity kWh = 0\.0004 leak \/y/.test(yBlock()) &&
+	check(/metric · 1 RU = 2\.5 capacity kWh = 0\.0002 leak \/y/.test(yBlock()) &&
 		/frontier · capacity ↓×0\.00 ↑×1\.20 · leak ↓×2\.50 ↑×0\.00/.test(yBlock()),
 		'battery metric and frontier rates shown');
 	yClick({ act: 'sciCopy', family: 'battery' });

@@ -124,14 +124,15 @@
 	};
 
 	/* One normalized research unit is a deliberate invention step, not one
-	 * arbitrary engineering unit: 10 kN thrust ≈ 1 t engine mass,
-	 * 30 kN rail force ≈ 0.10 efficiency, 50 kg fuel ≈ 0.5 t tank mass,
-	 * 5 kWh battery capacity ≈ 0.0004 leak per year, 1 kW panel power, 8 t hold. */
+	 * arbitrary engineering unit: 2 kN thrust ≈ 0.2 t engine mass (engines priced
+	 * 5× the older scale), 30 kN rail force ≈ 0.10 efficiency, 50 kg fuel ≈ 0.5 t
+	 * tank mass, 2.5 kWh battery capacity ≈ 0.0002 leak per year (batteries priced
+	 * 2× the older scale), 1 kW panel power, 8 t hold. */
 	var METRIC_SCALE = {
-		engine: [0.1, 1.0],
+		engine: [0.5, 5.0],
 		catapult: [1 / 30, 10.0],
 		tank: [0.02, 2.0],
-		battery: [0.2, 2500.0],
+		battery: [0.4, 5000.0],
 		panel: [1.0],
 		hold: [0.125]
 	};
@@ -498,7 +499,7 @@
 	 * from there, every axis is a climb, so the whole frontier is charged and
 	 * the total is many times one recombination hop. Waste axes (mass, leak)
 	 * add nothing at the origin, so they reach the cost through merit alone. */
-	var BUILD_SHARE = 0.10;
+	var BUILD_SHARE = 0.08;
 	var originHulls = {};
 
 	for (var originFamily in MERIT) {
