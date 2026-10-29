@@ -30,57 +30,57 @@
 	/* --- planet gear --------------------------------------------------- */
 
 	/* an EMC claims the planet it stands on: the rail is the money maker, so the
-	 * whole ladder costs three times what a launch and a task pay */
+	 * ladder is priced as a long-term infrastructure investment */
 	const CATAPULTS = [
-		{ id: 'EMC-1', tier: 1, maxForce: 15, efficiency: 0.62, buildCost: 9.00 },
-		{ id: 'EMC-2', tier: 2, maxForce: 90, efficiency: 0.71, buildCost: 18.00 },
-		{ id: 'EMC-3', tier: 3, maxForce: 135, efficiency: 0.80, buildCost: 30.00 },
-		{ id: 'EMC-4', tier: 4, maxForce: 165, efficiency: 0.85, buildCost: 45.00 },
-		{ id: 'EMC-5', tier: 5, maxForce: 180, efficiency: 0.88, buildCost: 60.00 }
+		{ id: 'EMC-1', tier: 1, maxForce: 15, efficiency: 0.62, buildCost: 4.5 },
+		{ id: 'EMC-2', tier: 2, maxForce: 90, efficiency: 0.71, buildCost: 9 },
+		{ id: 'EMC-3', tier: 3, maxForce: 135, efficiency: 0.80, buildCost: 15 },
+		{ id: 'EMC-4', tier: 4, maxForce: 165, efficiency: 0.85, buildCost: 22.5 },
+		{ id: 'EMC-5', tier: 5, maxForce: 180, efficiency: 0.88, buildCost: 30 }
 	];
 
 	/* kW: SP-1 refills BAT-1 in ~90 flight-seconds of full sunlight at world rate ×1 */
 	const PANELS = [
-		{ id: 'SP-1', tier: 1, power: 1.0, buildCost: 1.50 },
-		{ id: 'SP-2', tier: 2, power: 2.4, buildCost: 3.50 },
-		{ id: 'SP-3', tier: 3, power: 4.5, buildCost: 7.00 },
-		{ id: 'SP-4', tier: 4, power: 7.5, buildCost: 12.00 }
+		{ id: 'SP-1', tier: 1, power: 1.0, buildCost: 0.75 },
+		{ id: 'SP-2', tier: 2, power: 2.4, buildCost: 1.75 },
+		{ id: 'SP-3', tier: 3, power: 4.5, buildCost: 3.5 },
+		{ id: 'SP-4', tier: 4, power: 7.5, buildCost: 6 }
 	];
 
 	/* capacity kWh, leak fraction per colony year */
 	const BATTERIES = [
-		{ id: 'BAT-1', tier: 1, capacity: 1.5, leak: 0.001, buildCost: 1.00 },
-		{ id: 'BAT-2', tier: 2, capacity: 3.0, leak: 0.0008, buildCost: 2.50 },
-		{ id: 'BAT-3', tier: 3, capacity: 6.0, leak: 0.0006, buildCost: 5.00 },
-		{ id: 'BAT-4', tier: 4, capacity: 10.0, leak: 0.0004, buildCost: 9.00 },
-		{ id: 'BAT-5', tier: 5, capacity: 16.0, leak: 0.0003, buildCost: 15.00 }
+		{ id: 'BAT-1', tier: 1, capacity: 1.5, leak: 0.001, buildCost: 0.5 },
+		{ id: 'BAT-2', tier: 2, capacity: 3.0, leak: 0.0008, buildCost: 1.25 },
+		{ id: 'BAT-3', tier: 3, capacity: 6.0, leak: 0.0006, buildCost: 2.5 },
+		{ id: 'BAT-4', tier: 4, capacity: 10.0, leak: 0.0004, buildCost: 4.5 },
+		{ id: 'BAT-5', tier: 5, capacity: 16.0, leak: 0.0003, buildCost: 7.5 }
 	];
 
 	/* --- ship parts (add mass, refitted at HQ) ------------------------- */
 
 	const HOLDS = [
-		{ id: 'HOLD-0', tier: 0, capacity: 0, emptyMass: 0.0, buildCost: 0.00 },
-		{ id: 'HOLD-8', tier: 1, capacity: 8, emptyMass: 1.5, buildCost: 2.00 },
-		{ id: 'HOLD-24', tier: 2, capacity: 24, emptyMass: 4.0, buildCost: 5.00 }
+		{ id: 'HOLD-0', tier: 0, capacity: 0, emptyMass: 0.0, buildCost: 0 },
+		{ id: 'HOLD-8', tier: 1, capacity: 8, emptyMass: 1.5, buildCost: 1 },
+		{ id: 'HOLD-24', tier: 2, capacity: 24, emptyMass: 4.0, buildCost: 2.5 }
 	];
 
 	const ENGINES = [
-		{ id: 'IMP-1', tier: 1, thrust: 12, isp: 260, mass: 1.0, buildCost: 4.00 },
-		{ id: 'IMP-2', tier: 2, thrust: 24, isp: 290, mass: 1.6, buildCost: 8.00 },
-		{ id: 'IMP-3', tier: 3, thrust: 40, isp: 330, mass: 2.5, buildCost: 14.00 }
+		{ id: 'IMP-1', tier: 1, thrust: 12, isp: 260, mass: 1.0, buildCost: 2 },
+		{ id: 'IMP-2', tier: 2, thrust: 24, isp: 290, mass: 1.6, buildCost: 4 },
+		{ id: 'IMP-3', tier: 3, thrust: 40, isp: 330, mass: 2.5, buildCost: 7 }
 	];
 
 	const TANKS = [
-		{ id: 'FT-0', tier: 0, fuelCap: 0, emptyMass: 0.0, buildCost: 0.00 },
-		{ id: 'FT-1', tier: 1, fuelCap: 40, emptyMass: 0.5, buildCost: 1.50 },
-		{ id: 'FT-2', tier: 2, fuelCap: 90, emptyMass: 0.9, buildCost: 3.50 },
-		{ id: 'FT-3', tier: 3, fuelCap: 160, emptyMass: 1.4, buildCost: 7.00 }
+		{ id: 'FT-0', tier: 0, fuelCap: 0, emptyMass: 0.0, buildCost: 0 },
+		{ id: 'FT-1', tier: 1, fuelCap: 40, emptyMass: 0.5, buildCost: 0.75 },
+		{ id: 'FT-2', tier: 2, fuelCap: 90, emptyMass: 0.9, buildCost: 1.75 },
+		{ id: 'FT-3', tier: 3, fuelCap: 160, emptyMass: 1.4, buildCost: 3.5 }
 	];
 
 	const HELPERS = [
-		{ id: 'HELP-0', tier: 0, candidates: 0, horizon: 0, buildCost: 0.00 },
-		{ id: 'HELP-1', tier: 1, candidates: 28, horizon: 60, buildCost: 1.00 },
-		{ id: 'HELP-2', tier: 2, candidates: 144, horizon: 240, buildCost: 4.00 }
+		{ id: 'HELP-0', tier: 0, candidates: 0, horizon: 0, buildCost: 0 },
+		{ id: 'HELP-1', tier: 1, candidates: 28, horizon: 60, buildCost: 0.5 },
+		{ id: 'HELP-2', tier: 2, candidates: 144, horizon: 240, buildCost: 2 }
 	];
 
 	const KIND_CATAPULT = 'catapult';
@@ -248,7 +248,7 @@
 	 * the primary stat, and isp / build cost come from that same rung. Neither the
 	 * rung nor the build cost drops below a floor, so weak prototypes stay valid. */
 	const RUNG_MIN = 0.5;
-	const COST_MIN = 0.25;
+	const COST_MIN = 0.125;
 
 	function round2(x) {
 		return Math.round(x * 100) / 100;

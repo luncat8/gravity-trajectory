@@ -116,11 +116,11 @@ check('per-career hulls are isolated and an accepted vertex is exactly inside', 
 	assert.strictEqual(OrbitScience.previewHull(b, 'engine', [12, 1]).dist, Infinity);
 	/* midpoint of the segment is a cheap interior recombining */
 	const mid = OrbitScience.previewHull(a, 'engine', [26, 1.75]);
-	assert.ok(mid.inside && Math.abs(mid.cost - OrbitScience.BASE_PRICE.engine) < 1e-9);
+	assert.ok(mid.inside && Math.abs(mid.cost - OrbitScience.BASE_PRICE.engine * OrbitScience.massFactor('engine', [26, 1.75])) < 1e-9);
 	/* re-previewing an accepted vertex is exact even on a thin near-collinear hull */
 	OrbitScience.acceptHull(a, 'engine', [26, 1.8], 'R1');
 	const again = OrbitScience.previewHull(a, 'engine', [26, 1.8]);
-	assert.ok(again.inside && again.dist === 0 && again.cost === OrbitScience.BASE_PRICE.engine);
+	assert.ok(again.inside && again.dist === 0 && again.cost === OrbitScience.BASE_PRICE.engine * OrbitScience.massFactor('engine', [26, 1.8]));
 	const labels = OrbitScience.pointsHull(a, 'engine').map(p => p.label);
 	assert.deepStrictEqual(labels, ['IMP-1', 'IMP-3', 'R1']);
 	assert.deepStrictEqual(OrbitScience.pointsHull(a, 'ghost'), []);
@@ -894,11 +894,11 @@ check('career science: tech tables seed the hull; research grows it for the prev
 	const { career } = w;
 	assert.deepStrictEqual(OrbitScience.statsHull(career.science, 'engine'), { n: 3, dim: 2 });
 	assert.deepStrictEqual(OrbitScience.statsHull(career.science, 'catapult'), { n: 5, dim: 2 });
-	/* known tech vectors are discovered points: exact, fee = base */
+	/* known tech vectors are discovered points */
 	const imp2 = OrbitTech.ENGINES[1];
 	const known = OrbitScience.previewHull(career.science, 'engine', [imp2.thrust, imp2.mass]);
 	assert.ok(known.inside && known.dist === 0);
-	/* an outside vector prices base + k·dist·scale through the career purse model */
+	/* an outside vector is priced through the career purse model */
 	const target = [60, 0.5];
 	const prev = OrbitScience.previewHull(career.science, 'engine', target);
 	assert.ok(!prev.inside && prev.dist > 0);
@@ -911,9 +911,9 @@ check('career science: tech tables seed the hull; research grows it for the prev
 	assert.strictEqual(career.research, 1);
 	assert.strictEqual(career.lastResearch, prev.cost);
 	assert.strictEqual(OrbitScience.statsHull(career.science, 'engine').n, 4);
-	/* the same vector is now a hull vertex: inside, and only the base fee remains */
+	/* the same vector is now a hull vertex: only the mass-adjusted base remains */
 	const again = OrbitScience.previewHull(career.science, 'engine', target);
-	assert.ok(again.inside && again.cost === OrbitScience.BASE_PRICE.engine);
+	assert.ok(again.inside && again.cost === OrbitScience.BASE_PRICE.engine * OrbitScience.massFactor('engine', target));
 	const purse2 = career.ledger.purse;
 	assert.ok(GravityGame.researchPoint(career, 'engine', target, 'R5'));
 	assert.ok(Math.abs(career.ledger.purse - (purse2 - again.cost)) < 1e-9);
@@ -1037,6 +1037,8 @@ function techHull() {
 	const h = OrbitScience.createHull();
 	OrbitTech.ENGINES.forEach(e => OrbitScience.acceptHull(h, 'engine', [e.thrust, e.mass], e.id));
 	OrbitTech.CATAPULTS.forEach(c => OrbitScience.acceptHull(h, 'catapult', [c.maxForce, c.efficiency], c.id));
+	OrbitTech.TANKS.filter(t => t.tier > 0).forEach(t => OrbitScience.acceptHull(h, 'tank', [t.fuelCap, t.emptyMass], t.id));
+	OrbitTech.BATTERIES.forEach(b => OrbitScience.acceptHull(h, 'battery', [b.capacity, b.leak], b.id));
 	return h;
 }
 
@@ -1053,7 +1055,7 @@ check('hull distance: every recombination of the near-collinear tech points is i
 		}
 		for (const q of probes) {
 			const r = OrbitScience.previewHull(h, family, q);
-			assert.ok(r.inside && r.dist === 0 && r.cost === OrbitScience.BASE_PRICE[family],
+			assert.ok(r.inside && r.dist === 0 && r.cost === OrbitScience.BASE_PRICE[family] * OrbitScience.massFactor(family, q),
 				family + ' ' + JSON.stringify(q) + ' priced outside: ' + JSON.stringify(r));
 		}
 	}
@@ -1073,7 +1075,7 @@ check('hull distance: default slider fees match the exact normalized distances',
 	const ed = exactDist('engine', [26, 1.8]);
 	assert.ok(!engine.inside && Math.abs(engine.dist - ed) < 1e-9, 'engine dist ' + engine.dist + ' vs ' + ed);
 	assert.strictEqual(engine.frontier, 0, 'the engine default is inside the researched range');
-	assert.ok(Math.abs(engine.cost - (OrbitScience.BASE_PRICE.engine + rate('engine') * ed)) < 1e-9,
+	assert.ok(Math.abs(engine.cost - (OrbitScience.BASE_PRICE.engine + rate('engine') * ed) * OrbitScience.massFactor('engine', [26, 1.8])) < 1e-9,
 		'engine fee ' + engine.cost);
 	assert.ok(OrbitScience.previewHull(h, 'engine', [26, 1.75]).inside, '(26, 1.75) lies on the IMP-1/IMP-3 chord');
 	assert.ok(OrbitScience.previewHull(h, 'catapult', [100, 0.74]).inside, '(100, 0.74) is inside the EMC hull');
@@ -1103,11 +1105,11 @@ check('frontier: a lighter engine is dearer than a heavier one at equal overshoo
 	const heavy = OrbitScience.previewHull(h, 'engine', [26, 3.0]);
 	/* min mass 1.0 / max 2.5: both step 0.5 t = 0.5 RU out of the range */
 	assert.ok(Math.abs(light.frontier - 1.5) < 1e-9, 'light frontier ' + light.frontier);
-	assert.ok(Math.abs(heavy.frontier - 0.05) < 1e-9, 'heavy frontier ' + heavy.frontier);
+	assert.ok(Math.abs(heavy.frontier) < 1e-9, 'heavy frontier ' + heavy.frontier);
 	assert.ok(light.cost > heavy.cost * 5, 'light ' + light.cost + ' vs heavy ' + heavy.cost);
 	const rate = OrbitScience.K_DIST * OrbitScience.TIER_SCALE.engine;
 	for (const p of [light, heavy]) {
-		assert.ok(Math.abs(p.cost - (OrbitScience.BASE_PRICE.engine + rate * (p.dist + p.frontier))) < 1e-9);
+		assert.ok(Math.abs(p.cost - (OrbitScience.BASE_PRICE.engine + rate * (p.dist + p.frontier)) * p.massFactor) < 1e-9);
 	}
 });
 
@@ -1115,8 +1117,8 @@ check('frontier: higher efficiency is dearer than lower at equal overshoot', () 
 	const h = techHull();
 	const low = OrbitScience.previewHull(h, 'catapult', [100, 0.57]);
 	const high = OrbitScience.previewHull(h, 'catapult', [100, 0.93]);
-	/* 0.05 efficiency = 0.5 RU; below ×0.10, above ×2.50 */
-	assert.ok(Math.abs(low.frontier - 0.05) < 1e-9, 'low frontier ' + low.frontier);
+	/* 0.05 efficiency = 0.5 RU; below ×0, above ×2.50 */
+	assert.ok(Math.abs(low.frontier) < 1e-9, 'low frontier ' + low.frontier);
 	assert.ok(Math.abs(high.frontier - 1.25) < 1e-9, 'high frontier ' + high.frontier);
 	assert.ok(high.cost > low.cost * 3, 'high ' + high.cost + ' vs low ' + low.cost);
 });
@@ -1156,6 +1158,61 @@ check('directional plot invariant: easy side stays cheaper than hard side across
 	}
 });
 
+check('science: worsening any single attribute never increases the fee', () => {
+	const h = techHull();
+	const cases = [
+		['engine', [4, 12, 26, 40, 60], [0.3, 1, 1.8, 2.5, 3.6]],
+		['catapult', [10, 90, 150, 180, 220], [0.5, 0.62, 0.75, 0.88, 0.98]],
+		['tank', [15, 40, 90, 160, 220], [0.2, 0.5, 0.9, 1.4, 2]],
+		['battery', [1, 3, 10, 16, 22], [0.0001, 0.0003, 0.0006, 0.001, 0.0012]]
+	];
+	for (const [family, xs, ys] of cases) {
+		for (const y of ys) {
+			for (let i = 1; i < xs.length; i++) {
+				const low = OrbitScience.previewHull(h, family, [xs[i - 1], y]).cost;
+				const high = OrbitScience.previewHull(h, family, [xs[i], y]).cost;
+				assert.ok(low <= high + 1e-7, family + ' primary monotonic ' + low + ' > ' + high);
+			}
+		}
+		for (const x of xs) {
+			for (let i = 1; i < ys.length; i++) {
+				const low = OrbitScience.previewHull(h, family, [x, ys[i - 1]]).cost;
+				const high = OrbitScience.previewHull(h, family, [x, ys[i]]).cost;
+				assert.ok(family === 'catapult' ? low <= high + 1e-7 : high <= low + 1e-7,
+					family + ' secondary monotonic ' + low + ' vs ' + high);
+			}
+		}
+	}
+});
+
+check('science: dominated designs cost the mass-adjusted base even outside the hull', () => {
+	const h = OrbitScience.createHull();
+	for (const [family, known, worse] of [
+		['catapult', [100, 0.8], [100, 0.5]],
+		['engine', [30, 1], [20, 3]],
+		['tank', [100, 1], [50, 2]],
+		['battery', [10, 0.0005], [5, 0.0012]]
+	]) {
+		OrbitScience.acceptHull(h, family, known);
+		const result = OrbitScience.previewHull(h, family, worse);
+		assert.ok(!result.inside && Math.abs(result.cost - OrbitScience.BASE_PRICE[family] * OrbitScience.massFactor(family, worse)) < 1e-8, family);
+	}
+});
+
+check('science: doubling mass reduces the fee by 1.5 when difficulty is unchanged', () => {
+	for (const [family, primary, mass] of [['engine', 12, 1], ['tank', 40, 0.5]]) {
+		const h = techHull();
+		const first = OrbitScience.previewHull(h, family, [primary, mass]);
+		const double = OrbitScience.previewHull(h, family, [primary, mass * 2]);
+		const quadruple = OrbitScience.previewHull(h, family, [primary, mass * 4]);
+		assert.ok(Math.abs(first.cost / double.cost - 1.5) < 1e-9, family);
+		assert.ok(Math.abs(double.cost / quadruple.cost - 1.5) < 1e-9, family);
+		OrbitScience.acceptHull(h, family, [primary, mass * 2], 'heavy');
+		assert.ok(Math.abs(OrbitScience.previewHull(h, family, [primary, mass * 4]).cost - quadruple.cost) < 1e-9);
+		assert.strictEqual(OrbitScience.previewHull(h, family, [primary, 0]).cost, Infinity);
+	}
+});
+
 check('directional hull distance: seeded random 2-D sets agree with asymmetric brute force', () => {
 	let seed = 54321;
 	const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
@@ -1184,7 +1241,7 @@ check('directional hull distance: seeded random 2-D sets agree with asymmetric b
 check('frontier: inside the hull or an unconfigured family keeps the plain fee', () => {
 	const h = techHull();
 	const recomb = OrbitScience.previewHull(h, 'engine', [26, 1.75]);
-	assert.ok(recomb.inside && recomb.frontier === 0 && recomb.cost === OrbitScience.BASE_PRICE.engine);
+	assert.ok(recomb.inside && recomb.frontier === 0 && recomb.cost === OrbitScience.BASE_PRICE.engine * OrbitScience.massFactor('engine', [26, 1.75]));
 	const raw = OrbitScience.createHull();
 	OrbitScience.acceptHull(raw, 'f', [0, 0], 'a');
 	OrbitScience.acceptHull(raw, 'f', [10, 0], 'b');
@@ -1203,7 +1260,7 @@ check('frontier: research expands the range so the next point pays less', () => 
 	OrbitScience.acceptHull(h, 'engine', target, 'R-light');
 	assert.deepStrictEqual(OrbitScience.rangeHull(h, 'engine').min, [12, 0.5]);
 	const accepted = OrbitScience.previewHull(h, 'engine', target);
-	assert.ok(accepted.inside && accepted.frontier === 0 && accepted.cost === OrbitScience.BASE_PRICE.engine);
+	assert.ok(accepted.inside && accepted.frontier === 0 && accepted.cost === OrbitScience.BASE_PRICE.engine * OrbitScience.massFactor('engine', target));
 	const after = OrbitScience.previewHull(h, 'engine', afterPoint);
 	assert.strictEqual(after.frontier, 0, '0.7 t is inside the new range');
 	assert.ok(after.cost < beforeNeighbour.cost,
@@ -1258,7 +1315,7 @@ check('prototypes: research unlocks a rung-placed engine record with career-wide
 	/* 26 kN sits 2/16 of the way from IMP-2 to IMP-3: rung 2.13, isp and cost read off it */
 	assert.strictEqual(proto.tier, 2.13);
 	assert.strictEqual(proto.isp, 295.2);
-	assert.strictEqual(proto.buildCost, 8.78);
+	assert.strictEqual(proto.buildCost, 4.39);
 	assert.ok(career.owned.R1, 'the unlocked prototype is owned');
 	assert.strictEqual(GravityGame.prototypesOf(career, 'engine').length, 1);
 	assert.strictEqual(GravityGame.prototypeById(career, 'catapult', 'R1'), null);
@@ -1267,7 +1324,7 @@ check('prototypes: research unlocks a rung-placed engine record with career-wide
 	assert.ok(GravityGame.researchPoint(career, 'catapult', [100, 0.76], 'R2'));
 	const cat = GravityGame.prototypeById(career, 'catapult', 'R2');
 	assert.strictEqual(cat.tier, 2.22);
-	assert.strictEqual(cat.buildCost, 20.64);
+	assert.strictEqual(cat.buildCost, 10.32);
 	/* a restart clears the unlocked records along with the hull */
 	startCareer(w, 42);
 	assert.deepStrictEqual(GravityGame.prototypesOf(career, 'engine'), []);
@@ -1351,7 +1408,7 @@ check('tank science & prototypes: seeded FT-1..FT-3 range, directional surcharge
 	/* 0.5 RU below min emptyMass (0.25 t) is much dearer than 0.5 RU above max (1.65 t) */
 	const light = GravityGame.researchPreview(career, 'tank', [90, 0.25]);
 	const heavy = GravityGame.researchPreview(career, 'tank', [90, 1.65]);
-	assert.ok(Math.abs(light.frontier - 1.5) < 1e-12 && Math.abs(heavy.frontier - 0.05) < 1e-12);
+	assert.ok(Math.abs(light.frontier - 1.5) < 1e-12 && Math.abs(heavy.frontier) < 1e-12);
 	assert.ok(light.cost > heavy.cost * 5, 'composite ultralight tank costs more than heavy tank');
 	/* 1.0 RU above max fuelCap (210 kg) is dearer than 0.5 RU below min (15 kg) */
 	const big = GravityGame.researchPreview(career, 'tank', [210, 0.9]);
@@ -1366,7 +1423,7 @@ check('tank science & prototypes: seeded FT-1..FT-3 range, directional surcharge
 	assert.ok(Math.abs(career.ledger.purse - (purseBefore - fee)) < 1e-9);
 	const proto = GravityGame.prototypeById(career, 'tank', 'R1');
 	assert.ok(proto && proto.id === 'R1' && proto.fuelCap === 115 && proto.emptyMass === 0.65);
-	assert.ok(proto.tier > 2 && proto.tier < 3 && proto.buildCost > 3.5 && proto.buildCost < 7);
+	assert.ok(proto.tier > 2 && proto.tier < 3 && proto.buildCost > OrbitTech.TANKS[2].buildCost && proto.buildCost < OrbitTech.TANKS[3].buildCost);
 	const purseAfterResearch = career.ledger.purse;
 	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_TANK, proto));
 	assert.strictEqual(career.ship.tank, proto);
@@ -1401,25 +1458,25 @@ check('battery science: seeded BAT-1..BAT-5 range, leak direction, and a pad-wid
 	const tight = GravityGame.researchPreview(career, 'battery', [10, 0.0002]);
 	const leaky = GravityGame.researchPreview(career, 'battery', [10, 0.0011]);
 	assert.ok(Math.abs(tight.frontier - 0.625) < 1e-12, 'tight leak frontier ' + tight.frontier);
-	assert.ok(Math.abs(leaky.frontier - 0.025) < 1e-12, 'leaky frontier ' + leaky.frontier);
+	assert.ok(Math.abs(leaky.frontier) < 1e-12, 'leaky frontier ' + leaky.frontier);
 	assert.ok(tight.frontier > 20 * leaky.frontier, 'a tighter seal is the dear direction');
 	/* equal 0.1 RU of capacity overshoot: above the range is dear, below is cheap */
 	const above = GravityGame.researchPreview(career, 'battery', [16.5, 0.0006]);
 	const below = GravityGame.researchPreview(career, 'battery', [1.0, 0.0006]);
-	assert.ok(Math.abs(above.frontier - 0.12) < 1e-12 && Math.abs(below.frontier - 0.01) < 1e-12);
+	assert.ok(Math.abs(above.frontier - 0.12) < 1e-12 && Math.abs(below.frontier) < 1e-12);
 	assert.ok(above.cost > below.cost, 'more capacity costs more than less at equal overshoot');
 	const big = GravityGame.researchPreview(career, 'battery', [20, 0.0006]);
 	assert.ok(Math.abs(big.frontier - 0.96) < 1e-12, 'capacity overshoot ' + big.frontier);
 	const small = GravityGame.researchPreview(career, 'battery', [1, 0.0006]);
 	assert.ok(big.cost > small.cost, 'a bigger battery costs more than a smaller one');
-	/* sub-rung prototypes clamp to RUNG_MIN (0.5) and never drop below COST_MIN (0.25) */
+	/* sub-rung prototypes clamp to RUNG_MIN (0.5) and never drop below COST_MIN (0.125, rounded to cents) */
 	const tinyEngine = OrbitTech.engineRecord('R-tiny', 4, 3.5);
 	assert.strictEqual(tinyEngine.tier, 0.5);
-	assert.strictEqual(tinyEngine.buildCost, 2);
+	assert.strictEqual(tinyEngine.buildCost, 1);
 	assert.ok(tinyEngine.isp >= 100);
 	const tinyBat = OrbitTech.batteryRecord('R-tiny', 0.1, 0.0012);
 	assert.strictEqual(tinyBat.tier, 0.5);
-	assert.strictEqual(tinyBat.buildCost, 0.25);
+	assert.strictEqual(tinyBat.buildCost, 0.13);
 	/* the invented record lands on the BAT ladder rung of its capacity */
 	career.ledger.purse = 100;
 	assert.ok(GravityGame.researchPoint(career, 'battery', [12, 0.0005], 'R1'));

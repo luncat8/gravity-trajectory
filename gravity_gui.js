@@ -99,7 +99,6 @@
 	const SCI_PLOT_COLS = 36;
 	const SCI_PLOT_ROWS = 24;
 	const SCI_PLOT = { width: 224, height: 158, left: 36, top: 6, right: 6, bottom: 30 };
-	const SCI_PLOT_KNOWN = '#164c42';
 	const SCI_PLOT_STOPS = [
 		[17, 39, 62], [27, 82, 108], [158, 104, 52], [204, 78, 46], [230, 54, 48]
 	];
@@ -4714,8 +4713,7 @@
 		return html;
 	}
 
-	function scienceCostColor(inside, cost, base, max) {
-		if (inside) return SCI_PLOT_KNOWN;
+	function scienceCostColor(cost, base, max) {
 		if (max <= base + 1e-9) return 'rgb(' + SCI_PLOT_STOPS[0].join(',') + ')';
 		const t = Math.pow(Math.min(1, Math.max(0, (cost - base) / (max - base))), 0.78);
 		const pos = t * (SCI_PLOT_STOPS.length - 1);
@@ -4738,8 +4736,7 @@
 		const cellHeight = plotHeight / SCI_PLOT_ROWS;
 		const total = SCI_PLOT_COLS * SCI_PLOT_ROWS;
 		const costs = new Array(total);
-		const insides = new Array(total);
-		let max = 0;
+		let min = Infinity, max = 0;
 		for (let row = 0; row < SCI_PLOT_ROWS; row++) {
 			const y = axes[1].max - (row + 0.5) / SCI_PLOT_ROWS * (axes[1].max - axes[1].min);
 			for (let col = 0; col < SCI_PLOT_COLS; col++) {
@@ -4748,11 +4745,10 @@
 				const cost = Number.isFinite(p.cost) ? careerCost(career, p.cost) : Infinity;
 				const k = row * SCI_PLOT_COLS + col;
 				costs[k] = cost;
-				insides[k] = p.inside;
+				if (cost < min) min = cost;
 				if (cost > max) max = cost;
 			}
 		}
-		const base = careerCost(career, OrbitScience.BASE_PRICE[family]);
 		let html = '<div class="sciPlotWrap"><svg id="sciCostPlot" class="sciPlot" viewBox="0 0 ' +
 			SCI_PLOT.width + ' ' + SCI_PLOT.height + '" role="img" aria-label="' + family +
 			' research fee over ' + axes[0].label + ' and ' + axes[1].label + '">' +
@@ -4763,7 +4759,7 @@
 				html += '<rect x="' + (SCI_PLOT.left + col * cellWidth).toFixed(2) + '" y="' +
 					(SCI_PLOT.top + row * cellHeight).toFixed(2) + '" width="' + (cellWidth + 0.25).toFixed(2) +
 					'" height="' + (cellHeight + 0.25).toFixed(2) + '" fill="' +
-					scienceCostColor(insides[k], costs[k], base, max) + '"/>';
+					scienceCostColor(costs[k], min, max) + '"/>';
 			}
 		}
 		html += '</g><rect class="sciPlotFrame" x="' + SCI_PLOT.left + '" y="' + SCI_PLOT.top +
@@ -4793,8 +4789,8 @@
 			'" y="154" text-anchor="middle">' + axes[0].label + '</text>';
 		html += '<text class="sciPlotLabel" transform="translate(6 67) rotate(-90)" text-anchor="middle">' +
 			axes[1].label + '</text>';
-		html += '</svg><div class="sciPlotLegend"><span><i></i>known ' + costText(base) +
-			'</span><span><i class="sciRamp"></i>max ' + costText(max) + '</span><span>◎ draft</span>' +
+		html += '</svg><div class="sciPlotLegend"><span><i class="sciRamp"></i>fee ' + costText(min) +
+			'–' + costText(max) + '</span><span>◎ draft</span>' +
 			'<span>┄ researched range</span></div></div>';
 		return html;
 	}
@@ -4859,7 +4855,8 @@
 		const p = GravityGame.researchPreview(career, family, params);
 		const where = p.inside ? 'inside hull · recombine' : 'outside · dist ' + p.dist.toFixed(3) + ' RU';
 		const frontier = p.frontier > 1e-9 ? ' · frontier +' + p.frontier.toFixed(2) + ' RU' : '';
-		return scienceVectorText(family, params) + ' · ' + where + frontier +
+		const mass = OrbitScience.MASS_REFERENCE[family] ? ' · mass ×' + p.massFactor.toFixed(2) : '';
+		return scienceVectorText(family, params) + ' · ' + where + frontier + mass +
 			' · fee ' + costText(GravityGame.researchCost(career, family, params));
 	}
 
@@ -4921,9 +4918,13 @@
 				'" aria-label="' + a.label + '"><span class="sciVal" id="sciVal' + i + '">' +
 				scienceAxisText(a, v) + '</span></div>';
 		}
-		html += '<div class="careerLine dim sciPreview" id="sciPreview" title="base fee inside the known hull; outside, base + k·(hull distance + directional frontier work) in RU">' +
+		html += '<div class="careerLine dim sciPreview" id="sciPreview" title="base + k·(directional distance + frontier work), multiplied by mass factor for engines and tanks; 2× mass divides fee by 1.5">' +
 			sciencePreviewText(career, family) + '</div>';
 		html += '<div class="careerLine dim sciMetric">' + scienceMetricText(family) + '</div>';
+		if (OrbitScience.MASS_REFERENCE[family]) {
+			html += '<div class="careerLine dim sciMetric">mass · 2× heavier = fee ÷1.5 · reference ' +
+				OrbitScience.MASS_REFERENCE[family] + ' t</div>';
+		}
 		html += '<div class="careerRow sciKnobsRow"><span class="careerLine dim sciMetric">' +
 			scienceFrontierText(family) + '</span><button class="miniBtn" data-act="sciCopy" data-family="' +
 			family + '" title="copy the frontier difficulty knobs for a balance chat">copy knobs</button></div>';

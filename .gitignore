@@ -4,7 +4,4 @@ photos/generator/queue-manifest.json
 __pycache__/
 *.pyc
 
-# Generated audio and models stay local until a chosen asset is deliberately added.
-sounds/generated/
-sounds/generator/queue-manifest.json
-sounds/selected/*.wav
+.vscode/

@@ -1,13 +1,15 @@
 /*
  * Knowledge volume (career science). Each tech family lives in an N-D
  * parameter space. Discovered items are points; anything inside their convex
- * hull is cheap (a recombination of known tradeoffs), outside costs
- * `k * dist` of new scientific work. Beyond the per-axis researched range
+ * hull is cheap (a recombination of known tradeoffs). Outside, directional
+ * distance charges only for improvements over known capabilities. Beyond the per-axis researched range
  * (min/max of the discovered points) a second, directional surcharge applies:
  * every family has a `below`/`above` difficulty per axis, so a lighter engine
  * is much harder to invent than a heavier one while high efficiency is harder
  * than low. Both terms are measured in normalized research units (RU), so
- * unlike engineering units do not set the balance by accident.
+ * unlike engineering units do not set the balance by accident. Engine and tank
+ * fees also scale with mass: doubling mass divides the fee by 1.5 when the
+ * underlying research work is unchanged.
  * Pure functions, no DOM, node-safe.
  *
  * A hull is a plain object from createHull(), so every career owns an
@@ -25,6 +27,17 @@
  */
 (function (root) {
 	'use strict';
+
+	/* Reference masses keep the scale stable as the knowledge hull grows. */
+	var MASS_REFERENCE = { engine: 1.0, tank: 0.5 };
+	var MASS_EXPONENT = Math.log(1.5) / Math.log(2);
+
+	function massFactor(family, params) {
+		var reference = MASS_REFERENCE[family];
+		if (!reference) return 1;
+		if (!(params[1] > 0) || !Number.isFinite(params[1])) return Infinity;
+		return Math.pow(reference / params[1], MASS_EXPONENT);
+	}
 
 	var INSIDE_EPS = 1e-9; // relative to the target magnitude
 	var WOLFE_EPS = 1e-12;
@@ -55,26 +68,26 @@
 	};
 
 	/* Directional difficulty per axis: `below` weights stepping toward smaller
-	 * values, `above` toward larger ones. A value < 1 relaxes hull distance in
+	 * values, `above` toward larger ones. A zero weight removes hull distance in
 	 * the easy direction (adding mass, lowering efficiency or thrust, allowing
-	 * more leak requires little new science); beyond the researched range
+	 * more leak requires no additional science); beyond the researched range
 	 * [min, max], `below`/`above` also adds uncharted-frontier work per RU. */
 	var FRONTIER = {
 		engine: [
-			{ below: 0.10, above: 1.00 },  // thrust kN: weaker easy, stronger hard
-			{ below: 3.00, above: 0.10 }   // mass t: lighter hard, heavier easy
+			{ below: 0.00, above: 1.00 },  // thrust kN: weaker easy, stronger hard
+			{ below: 3.00, above: 0.00 }   // mass t: lighter hard, heavier easy
 		],
 		catapult: [
-			{ below: 0.10, above: 1.00 },  // maxForce kN: weaker easy, stronger hard
-			{ below: 0.10, above: 2.50 }   // efficiency: lower easy, higher hard
+			{ below: 0.00, above: 1.00 },  // maxForce kN: weaker easy, stronger hard
+			{ below: 0.00, above: 2.50 }   // efficiency: lower easy, higher hard
 		],
 		tank: [
-			{ below: 0.10, above: 1.00 },  // fuelCap kg: smaller easy, larger hard
-			{ below: 3.00, above: 0.10 }   // emptyMass t: lighter hard, heavier easy
+			{ below: 0.00, above: 1.00 },  // fuelCap kg: smaller easy, larger hard
+			{ below: 3.00, above: 0.00 }   // emptyMass t: lighter hard, heavier easy
 		],
 		battery: [
-			{ below: 0.10, above: 1.20 },  // capacity kWh: smaller easy, larger hard
-			{ below: 2.50, above: 0.10 }   // leak /y: tighter hard, leakier easy
+			{ below: 0.00, above: 1.20 },  // capacity kWh: smaller easy, larger hard
+			{ below: 2.50, above: 0.00 }   // leak /y: tighter hard, leakier easy
 		]
 	};
 
@@ -365,7 +378,7 @@
 
 	/* research fee for one preview: base fee, plus k·(hull distance + frontier
 	 * work) in normalized RU. The `inside` short circuit keeps recombinations
-	 * at exactly the base fee, even at a range edge. */
+	 * at the base fee before the mass factor, even at a range edge. */
 	function priceOf(family, t) {
 		var base = BASE_PRICE[family] || DEFAULT_BASE;
 		var rate = K_DIST * (TIER_SCALE[family] || 1.00);
@@ -381,7 +394,8 @@
 		}
 		var t = distToHull(f, params, METRIC_SCALE[family], FRONTIER[family]);
 		t.frontier = t.inside ? 0 : frontierWork(hull, family, params);
-		t.cost = priceOf(family, t);
+		t.massFactor = massFactor(family, params);
+		t.cost = priceOf(family, t) * t.massFactor;
 		return t;
 	}
 
@@ -390,7 +404,7 @@
 		var f = ensureHull(hull, family, params.length);
 		f.points.push({ params: params.slice(), label: label || '' });
 		f.n = f.points.length;
-		return { inside: true, dist: 0, frontier: 0, cost: BASE_PRICE[family] || DEFAULT_BASE };
+		return previewHull(hull, family, params);
 	}
 
 	function statsHull(hull, family) {
@@ -436,7 +450,8 @@
 		normalizedParams: normalizedParams,
 		ensure: ensure, preview: preview, accept: accept, stats: stats,
 		BASE_PRICE: BASE_PRICE, DEFAULT_BASE: DEFAULT_BASE, FRONTIER: FRONTIER,
-		TIER_SCALE: TIER_SCALE, METRIC_SCALE: METRIC_SCALE, K_DIST: K_DIST
+		TIER_SCALE: TIER_SCALE, METRIC_SCALE: METRIC_SCALE, K_DIST: K_DIST,
+		MASS_REFERENCE: MASS_REFERENCE, massFactor: massFactor
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = OrbitScience;

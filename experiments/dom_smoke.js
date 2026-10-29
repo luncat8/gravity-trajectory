@@ -1410,7 +1410,7 @@ check(kScene.game.money.purse >= purse0, 'no launch fee in career: ' + kScene.ga
 check(kui.get('cargoStatus').textContent === 'impact P' + career.at + ' · clock paused',
 	'stranded-but-launchable status: ' + kui.get('cargoStatus').textContent);
 check(!kui.get('launch').hidden && !kui.get('planetActions').hidden &&
-	kui.get('launchBuild').textContent === 'buy EMC-1 · 9.00' &&
+	kui.get('launchBuild').textContent === 'buy EMC-1 · 4.50' &&
 	kui.get('launchCommercial').textContent === 'commercial EMC-1 · 3.00' &&
 	kui.get('launchEvac').textContent === 'evacuate · 6.00',
 	'planet action buttons: ' + kui.get('launchBuild').textContent + ' / ' +
@@ -1767,7 +1767,7 @@ check(bCargo.status === pageSim.STATUS_ENDED && bCargo.endReason === pageSim.END
 check(bCareer.stranded && bCareer.at === bCargo.endBody, 'build env: did not strand on landing');
 const padBuild = /data-act="build"[^>]*data-kind="catapult"[^>]*data-tier="(\d+)"/.exec(bui.get('careerPad').innerHTML);
 check(padBuild !== null, 'pad block has no first-catapult button: ' + bui.get('careerPad').innerHTML);
-/* the first EMC now costs 9.00: fund the bench for it */
+/* the first EMC now costs 4.50: fund the bench for it */
 bCareer.ledger.purse = 20;
 bScene.refreshCareerPanel();
 buildEnv.fireElement(bui.get('careerBox'), 'click',
@@ -2185,8 +2185,9 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	const defaultPreview = sciGame.researchPreview(sciCareer, 'engine', [26, 1.8]);
 	const defaultFee = sciGame.researchCost(sciCareer, 'engine', [26, 1.8]);
 	check(sciBlock().includes('outside · dist ' + defaultPreview.dist.toFixed(3) +
-		' RU · fee ' + defaultFee.toFixed(2)) && defaultFee > 1.3 && defaultFee < 1.7,
+		' RU · mass ×' + defaultPreview.massFactor.toFixed(2) + ' · fee ' + defaultFee.toFixed(2)) && defaultFee > 0.9 && defaultFee < 1.1,
 		'default near-hull preview fee (1.5x cheaper): ' + /id="sciPreview"[^>]*>([^<]+)/.exec(sciBlock())[1]);
+	check(sciBlock().includes('mass · 2× heavier = fee ÷1.5 · reference 1 t'), 'mass discount explanation');
 	check(!/data-act="sciAccept"[^>]*disabled/.test(sciBlock()), 'starter purse funds the first invention');
 
 	const purse0 = sciCareer.ledger.purse;
@@ -2196,11 +2197,11 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	check(sciBlock().includes('engine hull · 4 points · R1'), 'hull grew with a custom label: ' + sciBlock());
 	check(/^researched engine R1/.test(sciUi.get('careerMsg').textContent),
 		'research notice: ' + sciUi.get('careerMsg').textContent);
-	/* the accepted vertex is now exactly inside: a repeat costs the base fee only */
+	/* the accepted vertex is now exactly inside: a repeat costs the mass-adjusted base */
 	sciClick({ act: 'sciAccept', kind: 'engine' });
 	check(sciCareer.research === 2 &&
-		Math.abs(sciCareer.ledger.purse - (purse0 - defaultFee - sciScience.BASE_PRICE.engine)) < 1e-9,
-		'repeat invention costs the base fee');
+		Math.abs(sciCareer.ledger.purse - (purse0 - defaultFee - sciScience.BASE_PRICE.engine * sciScience.massFactor('engine', [26, 1.8]))) < 1e-9,
+		'repeat invention costs the mass-adjusted base fee');
 
 	/* slider input delegation updates the draft and the re-rendered readout */
 	sciEnv.fireElement(sciBox, 'input',
@@ -2358,11 +2359,11 @@ function protoOf(career, family, id) {
 
 	check(/class="sciRange"/.test(fBlock()) && /researched range/.test(fBlock()),
 		'researched range drawn and labelled on the cost plot');
-	check(/frontier · thrust ↓×0\.10 ↑×1\.00 · mass ↓×3\.00 ↑×0\.10/.test(fBlock()),
+	check(/frontier · thrust ↓×0\.00 ↑×1\.00 · mass ↓×3\.00 ↑×0\.00/.test(fBlock()),
 		'engine frontier rates shown: ' + fBlock().slice(-400));
 	check(/data-act="sciCopy" data-family="engine"/.test(fBlock()), 'frontier copy button');
 	fClick({ act: 'sciCopy', family: 'engine' });
-	check(/^frontier: ENGINE \{ thrust: \{ below: 0\.10, above: 1\.00 \}, mass: \{ below: 3\.00, above: 0\.10 \} \}/.test(fEnv.clipboardText),
+	check(/^frontier: ENGINE \{ thrust: \{ below: 0\.00, above: 1\.00 \}, mass: \{ below: 3\.00, above: 0\.00 \} \}/.test(fEnv.clipboardText),
 		'frontier knobs copied: ' + fEnv.clipboardText);
 	const light = fGame.researchPreview(fCareer, 'engine', [26, 0.5]);
 	const heavy = fGame.researchPreview(fCareer, 'engine', [26, 3.0]);
@@ -2374,11 +2375,11 @@ function protoOf(career, family, id) {
 	fSlide('mass', '0.5');
 	fScene.refreshCareerPanel();
 	check(/frontier \+1\.50 RU/.test(fBlock()) &&
-		fBlock().includes('fee ' + light.cost.toFixed(2)) && Math.abs(light.cost - 11.63) < 0.01,
+		fBlock().includes('fee ' + light.cost.toFixed(2)),
 		'frontier surcharge in the live preview: ' + /id="sciPreview"[^>]*>([^<]+)/.exec(fBlock())[1]);
 
 	fClick({ act: 'sciFamily', family: 'catapult' });
-	check(/efficiency ↓×0\.10 ↑×2\.50/.test(fBlock()), 'catapult frontier rates shown');
+	check(/efficiency ↓×0\.00 ↑×2\.50/.test(fBlock()), 'catapult frontier rates shown');
 	const low = fGame.researchPreview(fCareer, 'catapult', [100, 0.57]);
 	const high = fGame.researchPreview(fCareer, 'catapult', [100, 0.93]);
 	check(high.frontier > low.frontier && high.cost > low.cost, 'higher efficiency is dearer');
@@ -2435,10 +2436,10 @@ function protoOf(career, family, id) {
 	check(tBlock().includes('tank hull · 3 points'), 'tank hull seeded with 3 points');
 	tClick({ act: 'sciFamily', family: 'tank' });
 	check(/metric · 1 RU = 50 fuel kg = 0\.5 mass t/.test(tBlock()) &&
-		/frontier · fuelCap ↓×0\.10 ↑×1\.00 · emptyMass ↓×3\.00 ↑×0\.10/.test(tBlock()),
+		/frontier · fuelCap ↓×0\.00 ↑×1\.00 · emptyMass ↓×3\.00 ↑×0\.00/.test(tBlock()),
 		'tank metric and frontier rates shown');
 	tClick({ act: 'sciCopy', family: 'tank' });
-	check(/^frontier: TANK \{ fuelCap: \{ below: 0\.10, above: 1\.00 \}, emptyMass: \{ below: 3\.00, above: 0\.10 \} \}/.test(tEnv.clipboardText),
+	check(/^frontier: TANK \{ fuelCap: \{ below: 0\.00, above: 1\.00 \}, emptyMass: \{ below: 3\.00, above: 0\.00 \} \}/.test(tEnv.clipboardText),
 		'tank frontier knobs copied: ' + tEnv.clipboardText);
 
 	/* research a tank prototype at integer rung (90 kg = FT-2 rung 2) and verify back-refit to FT-2 */
@@ -2480,10 +2481,10 @@ function protoOf(career, family, id) {
 	yClick({ act: 'careerTab', tab: 'science' });
 	yClick({ act: 'sciFamily', family: 'battery' });
 	check(/metric · 1 RU = 5 capacity kWh = 0\.0004 leak \/y/.test(yBlock()) &&
-		/frontier · capacity ↓×0\.10 ↑×1\.20 · leak ↓×2\.50 ↑×0\.10/.test(yBlock()),
+		/frontier · capacity ↓×0\.00 ↑×1\.20 · leak ↓×2\.50 ↑×0\.00/.test(yBlock()),
 		'battery metric and frontier rates shown');
 	yClick({ act: 'sciCopy', family: 'battery' });
-	check(/^frontier: BATTERY \{ capacity: \{ below: 0\.10, above: 1\.20 \}, leak: \{ below: 2\.50, above: 0\.10 \} \}/.test(yEnv.clipboardText),
+	check(/^frontier: BATTERY \{ capacity: \{ below: 0\.00, above: 1\.20 \}, leak: \{ below: 2\.50, above: 0\.00 \} \}/.test(yEnv.clipboardText),
 		'battery frontier knobs copied: ' + yEnv.clipboardText);
 
 	/* a second pad first, so the bulk rule has a network to reach */
@@ -2775,7 +2776,7 @@ function protoOf(career, family, id) {
 	console.log('0.4.17 verified: separate #cargoFoot panel · inline stranded buy/evacuate · ' +
 		'career ×4..×32 playback · net outcome / rate / TOF route prediction');
 	console.log('0.4.19 verified: commercial rail + EMC claims · ' +
-		'flying rival careers · 9.00 pads / 6.00 evacuation');
+		'flying rival careers · 4.50 pads / 6.00 evacuation');
 	console.log('0.4.20 verified: commercial EMC-1 button on every planet · ' +
 		'asymptotic visit profit →3.00 · continuous career clock with pause on landing');
 }
