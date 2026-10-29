@@ -4,6 +4,12 @@
  * the catapult launch model and the per-item "copy spec" balance line. Pure
  * functions of static tables — no DOM, no simulation state, node-safe.
  *
+ * Build cost is not a price list: every gear and part with a research family
+ * costs a fixed share of the research it took to invent its spec from the
+ * initial point (OrbitScience.buildCostOf), so a stock record and a prototype
+ * are priced by the same rule. `tier` survives only as the ordinal that sorts
+ * the shop and gates upgrades.
+ *
  * Planet gear is built once per planet and shared by every visitor; it never
  * adds to ship mass. Only ship parts and cargo do. Every API takes table
  * records (not ids), so the hot path never searches a table; `find` turns an
@@ -21,6 +27,9 @@
 (function (root) {
 	'use strict';
 
+	const Science = typeof module !== 'undefined' && module.exports
+		? require('./orbit_science.js') : root.OrbitScience;
+
 	const SHIP_DRY_MASS = 10;
 	const KWH_PER_T_V2 = 7.5e-6;
 	const RAIL_M = 2800;
@@ -29,56 +38,56 @@
 
 	/* --- planet gear --------------------------------------------------- */
 
-	/* an EMC claims the planet it stands on: the rail is the money maker, so the
-	 * ladder is priced as a long-term infrastructure investment. Tiers 1-2 ship
-	 * with starter tech; tiers 3+ require science to unlock. EMC-2 stays above
-	 * the starter purse plus a first arrival's profit (6.00 + ~1.75): a planet
-	 * the starter rail cannot leave must not be rescued by pocket change, or
-	 * the seeded starter-blocked calibration loses its teeth. */
+	/* an EMC claims the planet it stands on: the rail is the money maker, so it is
+	 * priced as a long-term infrastructure investment. Tiers 1-2 ship with starter
+	 * tech; tiers 3+ require science to unlock. EMC-2 must stay above the starter
+	 * purse plus a first arrival's profit (6.00 + ~1.75): a planet the starter rail
+	 * cannot leave must not be rescued by pocket change, or the seeded
+	 * starter-blocked calibration loses its teeth. buildCost comes from the spec. */
 	const CATAPULTS = [
-		{ id: 'EMC-1', tier: 1, maxForce: 15, efficiency: 0.62, buildCost: 3.0 },
-		{ id: 'EMC-2', tier: 2, maxForce: 90, efficiency: 0.71, buildCost: 8.0 },
-		{ id: 'EMC-3', tier: 3, maxForce: 135, efficiency: 0.80, buildCost: 12.0 },
-		{ id: 'EMC-4', tier: 4, maxForce: 165, efficiency: 0.85, buildCost: 16.0 },
-		{ id: 'EMC-5', tier: 5, maxForce: 180, efficiency: 0.88, buildCost: 20.0 }
+		{ id: 'EMC-1', tier: 1, maxForce: 15, efficiency: 0.62 },
+		{ id: 'EMC-2', tier: 2, maxForce: 90, efficiency: 0.71 },
+		{ id: 'EMC-3', tier: 3, maxForce: 135, efficiency: 0.80 },
+		{ id: 'EMC-4', tier: 4, maxForce: 165, efficiency: 0.85 },
+		{ id: 'EMC-5', tier: 5, maxForce: 180, efficiency: 0.88 }
 	];
 
 	/* kW: SP-1 refills BAT-1 in ~90 flight-seconds of full sunlight at world rate ×1 */
 	const PANELS = [
-		{ id: 'SP-1', tier: 1, power: 1.0, buildCost: 0.75 },
-		{ id: 'SP-2', tier: 2, power: 2.4, buildCost: 1.75 },
-		{ id: 'SP-3', tier: 3, power: 4.5, buildCost: 3.5 },
-		{ id: 'SP-4', tier: 4, power: 7.5, buildCost: 6 }
+		{ id: 'SP-1', tier: 1, power: 1.0 },
+		{ id: 'SP-2', tier: 2, power: 2.4 },
+		{ id: 'SP-3', tier: 3, power: 4.5 },
+		{ id: 'SP-4', tier: 4, power: 7.5 }
 	];
 
 	/* capacity kWh, leak fraction per colony year */
 	const BATTERIES = [
-		{ id: 'BAT-1', tier: 1, capacity: 1.5, leak: 0.001, buildCost: 0.5 },
-		{ id: 'BAT-2', tier: 2, capacity: 3.0, leak: 0.0008, buildCost: 1.25 },
-		{ id: 'BAT-3', tier: 3, capacity: 6.0, leak: 0.0006, buildCost: 2.5 },
-		{ id: 'BAT-4', tier: 4, capacity: 10.0, leak: 0.0004, buildCost: 4.5 },
-		{ id: 'BAT-5', tier: 5, capacity: 16.0, leak: 0.0003, buildCost: 7.5 }
+		{ id: 'BAT-1', tier: 1, capacity: 1.5, leak: 0.001 },
+		{ id: 'BAT-2', tier: 2, capacity: 3.0, leak: 0.0008 },
+		{ id: 'BAT-3', tier: 3, capacity: 6.0, leak: 0.0006 },
+		{ id: 'BAT-4', tier: 4, capacity: 10.0, leak: 0.0004 },
+		{ id: 'BAT-5', tier: 5, capacity: 16.0, leak: 0.0003 }
 	];
 
 	/* --- ship parts (add mass, refitted at HQ) ------------------------- */
 
 	const HOLDS = [
-		{ id: 'HOLD-0', tier: 0, capacity: 0, emptyMass: 0.0, buildCost: 0 },
-		{ id: 'HOLD-8', tier: 1, capacity: 8, emptyMass: 1.5, buildCost: 1 },
-		{ id: 'HOLD-24', tier: 2, capacity: 24, emptyMass: 4.0, buildCost: 2.5 }
+		{ id: 'HOLD-0', tier: 0, capacity: 0, emptyMass: 0.0 },
+		{ id: 'HOLD-8', tier: 1, capacity: 8, emptyMass: 1.5 },
+		{ id: 'HOLD-24', tier: 2, capacity: 24, emptyMass: 4.0 }
 	];
 
 	const ENGINES = [
-		{ id: 'IMP-1', tier: 1, thrust: 12, isp: 260, mass: 1.0, buildCost: 2 },
-		{ id: 'IMP-2', tier: 2, thrust: 24, isp: 290, mass: 1.6, buildCost: 4 },
-		{ id: 'IMP-3', tier: 3, thrust: 40, isp: 330, mass: 2.5, buildCost: 7 }
+		{ id: 'IMP-1', tier: 1, thrust: 12, isp: 260, mass: 1.0 },
+		{ id: 'IMP-2', tier: 2, thrust: 24, isp: 290, mass: 1.6 },
+		{ id: 'IMP-3', tier: 3, thrust: 40, isp: 330, mass: 2.5 }
 	];
 
 	const TANKS = [
-		{ id: 'FT-0', tier: 0, fuelCap: 0, emptyMass: 0.0, buildCost: 0 },
-		{ id: 'FT-1', tier: 1, fuelCap: 40, emptyMass: 0.5, buildCost: 0.75 },
-		{ id: 'FT-2', tier: 2, fuelCap: 90, emptyMass: 0.9, buildCost: 1.75 },
-		{ id: 'FT-3', tier: 3, fuelCap: 160, emptyMass: 1.4, buildCost: 3.5 }
+		{ id: 'FT-0', tier: 0, fuelCap: 0, emptyMass: 0.0 },
+		{ id: 'FT-1', tier: 1, fuelCap: 40, emptyMass: 0.5 },
+		{ id: 'FT-2', tier: 2, fuelCap: 90, emptyMass: 0.9 },
+		{ id: 'FT-3', tier: 3, fuelCap: 160, emptyMass: 1.4 }
 	];
 
 	const HELPERS = [
@@ -86,6 +95,22 @@
 		{ id: 'HELP-1', tier: 1, candidates: 28, horizon: 60, buildCost: 0.5 },
 		{ id: 'HELP-2', tier: 2, candidates: 144, horizon: 240, buildCost: 2 }
 	];
+
+	/* stock records with a research family: cost = share of the research from the
+	 * initial point, keyed by the family's spec fields in MERIT order; tier 0 is
+	 * the bare "none" record and stays free */
+	function priceStock(table, family, keys) {
+		for (let i = 0; i < table.length; i++) {
+			const item = table[i];
+			item.buildCost = item.tier === 0 ? 0 : Science.buildCostOf(family, keys.map(k => item[k]));
+		}
+	}
+	priceStock(CATAPULTS, 'catapult', ['maxForce', 'efficiency']);
+	priceStock(PANELS, 'panel', ['power']);
+	priceStock(BATTERIES, 'battery', ['capacity', 'leak']);
+	priceStock(HOLDS, 'hold', ['capacity']);
+	priceStock(ENGINES, 'engine', ['thrust', 'mass']);
+	priceStock(TANKS, 'tank', ['fuelCap', 'emptyMass']);
 
 	const KIND_CATAPULT = 'catapult';
 	const KIND_PANEL = 'panel';
@@ -251,8 +276,9 @@
 	/* a custom record sits on the ladder it was invented next to: its rung follows
 	 * the primary stat, and isp / build cost come from that same rung. Neither the
 	 * rung nor the build cost drops below a floor, so weak prototypes stay valid. */
+	/* the tier is the shop ordinal: it sorts rows and gates upgrades, but no
+	 * longer sets a price */
 	const RUNG_MIN = 0.5;
-	const COST_MIN = 0.125;
 
 	function round2(x) {
 		return Math.round(x * 100) / 100;
@@ -262,17 +288,13 @@
 		return round2(Math.max(RUNG_MIN, interpolate(table, key, value, 'tier')));
 	}
 
-	function rungCost(table, tier) {
-		return round2(Math.max(COST_MIN, interpolate(table, 'tier', tier, 'buildCost')));
-	}
-
 	function engineRecord(id, thrust, mass) {
 		const tier = rungOf(ENGINES, 'thrust', thrust);
 		return {
 			id: id, tier: tier, thrust: thrust,
 			isp: round2(Math.max(100, interpolate(ENGINES, 'tier', tier, 'isp'))),
 			mass: mass,
-			buildCost: rungCost(ENGINES, tier)
+			buildCost: Science.buildCostOf('engine', [thrust, mass])
 		};
 	}
 
@@ -280,7 +302,7 @@
 		const tier = rungOf(CATAPULTS, 'maxForce', maxForce);
 		return {
 			id: id, tier: tier, maxForce: maxForce, efficiency: efficiency,
-			buildCost: rungCost(CATAPULTS, tier)
+			buildCost: Science.buildCostOf('catapult', [maxForce, efficiency])
 		};
 	}
 
@@ -288,7 +310,7 @@
 		const tier = rungOf(TANKS, 'fuelCap', fuelCap);
 		return {
 			id: id, tier: tier, fuelCap: fuelCap, emptyMass: emptyMass,
-			buildCost: rungCost(TANKS, tier)
+			buildCost: Science.buildCostOf('tank', [fuelCap, emptyMass])
 		};
 	}
 
@@ -296,7 +318,7 @@
 		const tier = rungOf(BATTERIES, 'capacity', capacity);
 		return {
 			id: id, tier: tier, capacity: capacity, leak: leak,
-			buildCost: rungCost(BATTERIES, tier)
+			buildCost: Science.buildCostOf('battery', [capacity, leak])
 		};
 	}
 

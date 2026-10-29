@@ -1314,7 +1314,7 @@ check('merit: an impossible spec cannot be researched', () => {
 	assert.strictEqual(OrbitScience.meritFactor('catapult', [100, 1]), Infinity, 'lossless rail');
 	assert.strictEqual(OrbitScience.meritFactor('catapult', [100, 1.2]), Infinity, 'past the mirror');
 	assert.strictEqual(OrbitScience.previewHull(techHull(), 'engine', [26, 0]).cost, Infinity);
-	assert.strictEqual(OrbitScience.meritFactor('panel', [1, 1]), 1, 'a family with no merit rows');
+	assert.strictEqual(OrbitScience.meritFactor('helper', [1, 1]), 1, 'a family with no merit rows');
 });
 
 check('directional hull distance: seeded random 2-D sets agree with asymmetric brute force', () => {
@@ -1416,10 +1416,12 @@ check('prototypes: research unlocks a rung-placed engine record with career-wide
 	assert.ok(proto, 'engine prototype unlocked');
 	assert.strictEqual(proto.thrust, 26);
 	assert.strictEqual(proto.mass, 1.8);
-	/* 26 kN sits 2/16 of the way from IMP-2 to IMP-3: rung 2.13, isp and cost read off it */
+	/* 26 kN sits 2/16 of the way from IMP-2 to IMP-3: rung 2.13 orders the shop and reads isp;
+	 * the build cost is the spec's own share of its research from the origin */
 	assert.strictEqual(proto.tier, 2.13);
 	assert.strictEqual(proto.isp, 295.2);
-	assert.strictEqual(proto.buildCost, 4.39);
+	assert.strictEqual(proto.buildCost, OrbitScience.buildCostOf('engine', [26, 1.8]));
+	assert.ok(proto.buildCost > OrbitTech.ENGINES[1].buildCost, 'between IMP-2 and IMP-3 in spend too');
 	assert.ok(career.owned.R1, 'the unlocked prototype is owned');
 	assert.strictEqual(GravityGame.prototypesOf(career, 'engine').length, 1);
 	assert.strictEqual(GravityGame.prototypeById(career, 'catapult', 'R1'), null);
@@ -1428,8 +1430,7 @@ check('prototypes: research unlocks a rung-placed engine record with career-wide
 	assert.ok(GravityGame.researchPoint(career, 'catapult', [100, 0.76], 'R2'));
 	const cat = GravityGame.prototypeById(career, 'catapult', 'R2');
 	assert.strictEqual(cat.tier, 2.22);
-	/* rung cost interpolates the catapult ladder: 8 + 0.22·(12 − 8) */
-	assert.strictEqual(cat.buildCost, 8.88);
+	assert.strictEqual(cat.buildCost, OrbitScience.buildCostOf('catapult', [100, 0.76]));
 	/* a restart clears the unlocked records along with the hull */
 	startCareer(w, 42);
 	assert.deepStrictEqual(GravityGame.prototypesOf(career, 'engine'), []);
@@ -1528,7 +1529,9 @@ check('tank science & prototypes: seeded FT-1..FT-3 range, directional surcharge
 	assert.ok(Math.abs(career.ledger.purse - (purseBefore - fee)) < 1e-9);
 	const proto = GravityGame.prototypeById(career, 'tank', 'R1');
 	assert.ok(proto && proto.id === 'R1' && proto.fuelCap === 115 && proto.emptyMass === 0.65);
-	assert.ok(proto.tier > 2 && proto.tier < 3 && proto.buildCost > OrbitTech.TANKS[2].buildCost && proto.buildCost < OrbitTech.TANKS[3].buildCost);
+	assert.strictEqual(proto.buildCost, OrbitScience.buildCostOf('tank', [115, 0.65]));
+	/* waste is dear to ship: the same fuel with a heavier tank is cheaper to build */
+	assert.ok(OrbitScience.buildCostOf('tank', [115, 1.4]) < proto.buildCost, 'heavier tank cheaper');
 	const purseAfterResearch = career.ledger.purse;
 	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_TANK, proto));
 	assert.strictEqual(career.ship.tank, proto);
@@ -1574,21 +1577,22 @@ check('battery science: seeded BAT-1..BAT-5 range, leak direction, and a pad-wid
 	assert.ok(Math.abs(big.frontier - 0.96) < 1e-12, 'capacity overshoot ' + big.frontier);
 	const small = GravityGame.researchPreview(career, 'battery', [1, 0.0006]);
 	assert.ok(big.cost > small.cost, 'a bigger battery costs more than a smaller one');
-	/* sub-rung prototypes clamp to RUNG_MIN (0.5) and never drop below COST_MIN (0.125, rounded to cents) */
+	/* sub-rung prototypes clamp the ordinal to RUNG_MIN (0.5); the price stays the spec's own, in cents */
 	const tinyEngine = OrbitTech.engineRecord('R-tiny', 4, 3.5);
 	assert.strictEqual(tinyEngine.tier, 0.5);
-	assert.strictEqual(tinyEngine.buildCost, 1);
+	assert.strictEqual(tinyEngine.buildCost, OrbitScience.buildCostOf('engine', [4, 3.5]));
 	assert.ok(tinyEngine.isp >= 100);
 	const tinyBat = OrbitTech.batteryRecord('R-tiny', 0.1, 0.0012);
 	assert.strictEqual(tinyBat.tier, 0.5);
-	assert.strictEqual(tinyBat.buildCost, 0.13);
+	assert.strictEqual(tinyBat.buildCost, OrbitScience.buildCostOf('battery', [0.1, 0.0012]));
 	/* the invented record lands on the BAT ladder rung of its capacity */
 	career.ledger.purse = 100;
 	assert.ok(GravityGame.researchPoint(career, 'battery', [12, 0.0005], 'R1'));
 	const proto = GravityGame.prototypeById(career, 'battery', 'R1');
 	assert.ok(proto && proto.capacity === 12 && proto.leak === 0.0005);
 	assert.ok(proto.tier > BAT[3].tier && proto.tier < BAT[4].tier, 'rung ' + proto.tier);
-	assert.ok(proto.buildCost > BAT[3].buildCost && proto.buildCost < BAT[4].buildCost);
+	assert.strictEqual(proto.buildCost, OrbitScience.buildCostOf('battery', [12, 0.0005]));
+	assert.ok(OrbitScience.buildCostOf('battery', [12, 0.0005]) > OrbitScience.buildCostOf('battery', [6, 0.0005]), 'bigger costs more');
 	/* the prototype is pad gear: built on every built pad at once, never on the ship */
 	const mass = career.ship.mass;
 	const hq = career.hq;

@@ -1,0 +1,8 @@
+share 0.1 of the research work from the origin
+record   spec                                    research   build   0.4.41  ratio
+EMC-1    maxForce 15, efficiency 0.62            38.03      3.80    3.00    0.100
+EMC-2    maxForce 90, efficiency 0.71            97.88      9.79    8.00    0.100
+EMC-3    maxForce 135, efficiency 0.8            163.66     16.37   12.00   0.100
+EMC-4    maxForce 165, efficiency 0.85           225.94     22.59   16.00   0.100
+EMC-5    maxForce 180, efficiency 0.88           277.36     27.74   20.00   0.100
+SP-1     power 1                                 5.05       0.51    0.75    0.101

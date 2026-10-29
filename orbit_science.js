@@ -10,6 +10,9 @@
  * unlike engineering units do not set the balance by accident. The whole fee
  * is then multiplied by the spec merit: how demanding the target is in
  * absolute terms, one curve per axis (see MERIT).
+ * Build cost of a gear or part is a fixed share of that same research work
+ * measured from the initial point, the bare origin where nothing is known
+ * (see buildCostOf): a continuous function of the spec, not a rung table.
  * Pure functions, no DOM, node-safe.
  *
  * A hull is a plain object from createHull(), so every career owns an
@@ -58,6 +61,12 @@
 		battery: [
 			{ par: 6, per2: 1.25 },                           // capacity kWh
 			{ par: 0.0006, lower: true, per2: 1.50 }          // leak /y
+		],
+		panel: [
+			{ par: 4.5, per2: 1.25 }                         // power kW
+		],
+		hold: [
+			{ par: 8, per2: 1.25 }                           // capacity t
 		]
 	};
 	/* floor keeps the lab from being free for a deliberately poor spec; ceiling
@@ -117,12 +126,14 @@
 	/* One normalized research unit is a deliberate invention step, not one
 	 * arbitrary engineering unit: 10 kN thrust ≈ 1 t engine mass,
 	 * 30 kN rail force ≈ 0.10 efficiency, 50 kg fuel ≈ 0.5 t tank mass,
-	 * 5 kWh battery capacity ≈ 0.0004 leak per year. */
+	 * 5 kWh battery capacity ≈ 0.0004 leak per year, 1 kW panel power, 8 t hold. */
 	var METRIC_SCALE = {
 		engine: [0.1, 1.0],
 		catapult: [1 / 30, 10.0],
 		tank: [0.02, 2.0],
-		battery: [0.2, 2500.0]
+		battery: [0.2, 2500.0],
+		panel: [1.0],
+		hold: [0.125]
 	};
 
 	/* Directional difficulty per axis: `below` weights stepping toward smaller
@@ -146,6 +157,12 @@
 		battery: [
 			{ below: 0.00, above: 1.20 },  // capacity kWh: smaller easy, larger hard
 			{ below: 2.50, above: 0.00 }   // leak /y: tighter hard, leakier easy
+		],
+		panel: [
+			{ below: 0.00, above: 1.00 }   // power kW: weaker easy, stronger hard
+		],
+		hold: [
+			{ below: 0.00, above: 1.00 }   // capacity t: smaller easy, larger hard
 		]
 	};
 
@@ -476,6 +493,31 @@
 		return f ? f.points : [];
 	}
 
+	/* Build cost: a share of the research work to invent the spec from the
+	 * initial point, the origin of its family where nothing is known. Measured
+	 * from there, every axis is a climb, so the whole frontier is charged and
+	 * the total is many times one recombination hop. Waste axes (mass, leak)
+	 * add nothing at the origin, so they reach the cost through merit alone. */
+	var BUILD_SHARE = 0.10;
+	var originHulls = {};
+
+	for (var originFamily in MERIT) {
+		var originDim = MERIT[originFamily].length;
+		var originPoint = new Array(originDim).fill(0);
+		originHulls[originFamily] = createHull();
+		ensureHull(originHulls[originFamily], originFamily, originDim).points.push({ params: originPoint, label: 'origin' });
+		originHulls[originFamily].families[originFamily].n = 1;
+	}
+
+	/* money cost of building a gear or part with this spec, in purse units, to
+	 * cents; the spec is the family's parameter tuple in MERIT order */
+	function buildCostOf(family, params) {
+		var hull = originHulls[family];
+		if (!hull) return Infinity;
+		var work = previewHull(hull, family, params).cost;
+		return Math.round(BUILD_SHARE * work * 100) / 100;
+	}
+
 	/* legacy default hull: the family-only API the early benches were written on */
 	var defaultHull = createHull();
 
@@ -510,7 +552,8 @@
 		BASE_PRICE: BASE_PRICE, DEFAULT_BASE: DEFAULT_BASE, FRONTIER: FRONTIER,
 		TIER_SCALE: TIER_SCALE, METRIC_SCALE: METRIC_SCALE, K_DIST: K_DIST,
 		MERIT: MERIT, MERIT_MIN: MERIT_MIN, MERIT_MAX: MERIT_MAX,
-		meritFactor: meritFactor, axisMerit: axisMerit
+		meritFactor: meritFactor, axisMerit: axisMerit,
+		BUILD_SHARE: BUILD_SHARE, buildCostOf: buildCostOf
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = OrbitScience;
