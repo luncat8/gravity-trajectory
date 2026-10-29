@@ -2185,9 +2185,14 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	const defaultPreview = sciGame.researchPreview(sciCareer, 'engine', [26, 1.8]);
 	const defaultFee = sciGame.researchCost(sciCareer, 'engine', [26, 1.8]);
 	check(sciBlock().includes('outside · dist ' + defaultPreview.dist.toFixed(3) +
-		' RU · mass ×' + defaultPreview.massFactor.toFixed(2) + ' · fee ' + defaultFee.toFixed(2)) && defaultFee > 0.9 && defaultFee < 1.1,
-		'default near-hull preview fee (1.5x cheaper): ' + /id="sciPreview"[^>]*>([^<]+)/.exec(sciBlock())[1]);
-	check(sciBlock().includes('mass · 2× heavier = fee ÷1.5 · reference 1 t'), 'mass discount explanation');
+		' RU · spec ×' + defaultPreview.merit.toFixed(2) + ' · fee ' + defaultFee.toFixed(2)) && defaultFee > 0.9 && defaultFee < 1.6,
+		'default near-hull preview fee at par: ' + /id="sciPreview"[^>]*>([^<]+)/.exec(sciBlock())[1]);
+	check(sciBlock().includes('spec · thrust ×' + sciScience.axisMerit('engine', 0, 26).toFixed(2) +
+		' · mass ×' + sciScience.axisMerit('engine', 1, 1.8).toFixed(2) +
+		' → ×' + defaultPreview.merit.toFixed(2)), 'per-axis spec merit shown');
+	check(sciBlock().includes('spec rule · thrust 2× more = ×1.25 (par 24.0) · ' +
+		'mass 2× better = ×1.50 (par 1.6) · band ×0.35–×2.50'),
+		'spec merit rule and par shown: ' + sciBlock().slice(-300));
 	check(!/data-act="sciAccept"[^>]*disabled/.test(sciBlock()), 'starter purse funds the first invention');
 
 	const purse0 = sciCareer.ledger.purse;
@@ -2197,11 +2202,11 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	check(sciBlock().includes('engine hull · 4 points · R1'), 'hull grew with a custom label: ' + sciBlock());
 	check(/^researched engine R1/.test(sciUi.get('careerMsg').textContent),
 		'research notice: ' + sciUi.get('careerMsg').textContent);
-	/* the accepted vertex is now exactly inside: a repeat costs the mass-adjusted base */
+	/* the accepted vertex is now exactly inside: a repeat costs the spec-adjusted base */
 	sciClick({ act: 'sciAccept', kind: 'engine' });
 	check(sciCareer.research === 2 &&
-		Math.abs(sciCareer.ledger.purse - (purse0 - defaultFee - sciScience.BASE_PRICE.engine * sciScience.massFactor('engine', [26, 1.8]))) < 1e-9,
-		'repeat invention costs the mass-adjusted base fee');
+		Math.abs(sciCareer.ledger.purse - (purse0 - defaultFee - sciScience.BASE_PRICE.engine * sciScience.meritFactor('engine', [26, 1.8]))) < 1e-9,
+		'repeat invention costs the spec-adjusted base fee');
 
 	/* slider input delegation updates the draft and the re-rendered readout */
 	sciEnv.fireElement(sciBox, 'input',
@@ -2546,12 +2551,13 @@ function protoOf(career, family, id) {
 	const cells = dBlock().match(/<rect x="[^"]+" y="[^"]+" width="[^"]+" height="[^"]+" fill="rgb\(\d+,\d+,\d+\)"\/>/g) || [];
 	check(cells.length >= 840 && /class="sciRangeHard"/.test(dBlock()),
 		'36x24 directional cost plot cells & hard-edge highlight lines rendered (' + cells.length + ' unknown cells)');
-	/* first row is top of plot (max mass = 3.6 t = easy navy); last row is bottom (min mass = 0.2 t = hard warm) */
+	/* the easy corner (weak + heavy, top left) is the cool end of the ramp and
+	 * the hard corner (strong + light, bottom right) the warm end */
 	const parseRgb = rect => rect.match(/rgb\((\d+),(\d+),(\d+)\)/).slice(1).map(Number);
 	const topLeft = parseRgb(cells[0]);
-	const bottomLeft = parseRgb(cells[cells.length - 36]);
-	check(bottomLeft[0] > topLeft[0] + 100 && topLeft[2] > topLeft[0],
-		'plot renders easy heavy top cool ' + topLeft.join(',') + ' vs hard light bottom warm ' + bottomLeft.join(','));
+	const bottomRight = parseRgb(cells[cells.length - 1]);
+	check(bottomRight[0] > topLeft[0] + 100 && topLeft[2] > topLeft[0],
+		'plot renders easy heavy top cool ' + topLeft.join(',') + ' vs hard light bottom warm ' + bottomRight.join(','));
 
 	/* career bot R&D unlocks bridge rail + ultralight tank + ultralight engine and groups them in shop */
 	dCareer.ledger.purse = 40;

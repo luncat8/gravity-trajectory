@@ -1,0 +1,42 @@
+fee surface over the slider grid (41x41)
+  engine   min   0.47 p25   1.03 med   4.27 p75  14.78 max  77.81 | <=2  42% <=6  55% <=20  83%
+  catapult min   0.70 p25   1.26 med   1.83 p75   9.90 max  78.32 | <=2  54% <=6  68% <=20  88%
+  tank     min   0.27 p25   0.53 med   2.46 p75   9.63 max  61.87 | <=2  48% <=6  64% <=20  88%
+  battery  min   0.25 p25   0.61 med   0.92 p75   7.68 max  41.57 | <=2  61% <=6  71% <=20  96%
+
+par, slider default and bot R&D fees
+  engine   [26,1.8]        dist 0.000 frontier 0.000 merit 0.958 fee 1.277
+  catapult [100,0.76]      dist 0.000 frontier 0.000 merit 0.816 fee 1.632
+  tank     [100,1]         dist 0.000 frontier 0.000 merit 0.973 fee 0.648
+  battery  [6,0.0005]      dist 0.000 frontier 0.000 merit 1.113 fee 0.742
+  catapult [52,0.67]       dist 0.000 frontier 0.000 merit 0.549 fee 1.098
+  tank     [50,0.45]       dist 0.200 frontier 0.300 merit 1.241 fee 3.310
+  engine   [16,0.85]       dist 0.313 frontier 0.450 merit 1.271 fee 5.572
+
+worse is cheaper: one axis swept, the other on par
+  battery  [6,0.0006] fee 0.667 -> [6,0.0012] fee 0.444 (x0.667)
+  catapult [135,0.8] fee 2.000 -> [135,0.6] fee 1.333 (x0.667)
+  engine   [24,1.6] fee 1.333 -> [24,3.2] fee 0.889 (x0.667)
+  tank     [90,0.9] fee 0.667 -> [90,1.8] fee 0.444 (x0.667)
+
+# before 0.4.34 (base 5288721, mass-only merit)
+  fee surface over the slider grid (41x41)
+    engine   min   0.63 p25   0.83 med   2.98 p75   9.42 max  79.80 | <=2  45% <=6  63% <=20  89%
+    catapult min   2.00 p25   2.00 med   2.00 p75   9.20 max  31.33 | <=2   8% <=6  69% <=20  98%
+    tank     min   0.31 p25   0.38 med   1.58 p75   5.81 max  50.05 | <=2  53% <=6  76% <=20  93%
+    battery  min   0.67 p25   0.67 med   0.67 p75   4.78 max  16.63 | <=2  64% <=6  80% <=20 100%
+  
+  par, slider default and bot R&D fees
+    engine   [26,1.8]        dist 0.000 frontier 0.000 merit 0.709 fee 0.945
+    catapult [100,0.76]      dist 0.000 frontier 0.000 merit 1.000 fee 2.000
+    tank     [100,1]         dist 0.000 frontier 0.000 merit 0.667 fee 0.444
+    battery  [6,0.0005]      dist 0.000 frontier 0.000 merit 1.000 fee 0.667
+    catapult [52,0.67]       dist 0.000 frontier 0.000 merit 1.000 fee 2.000
+    tank     [50,0.45]       dist 0.200 frontier 0.300 merit 1.064 fee 2.836
+    engine   [16,0.85]       dist 0.313 frontier 0.450 merit 1.100 fee 4.823
+  
+  worse is cheaper: one axis swept, the other on par
+    battery  [6,0.0006] fee 0.667 -> [6,0.0012] fee 0.667 (x1.000)
+    catapult [135,0.8] fee 2.000 -> [135,0.6] fee 2.000 (x1.000)
+    engine   [24,1.6] fee 1.013 -> [24,3.2] fee 0.675 (x0.667)
+    tank     [90,0.9] fee 0.473 -> [90,1.8] fee 0.315 (x0.667)

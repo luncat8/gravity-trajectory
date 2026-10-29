@@ -7,9 +7,9 @@
  * every family has a `below`/`above` difficulty per axis, so a lighter engine
  * is much harder to invent than a heavier one while high efficiency is harder
  * than low. Both terms are measured in normalized research units (RU), so
- * unlike engineering units do not set the balance by accident. Engine and tank
- * fees also scale with mass: doubling mass divides the fee by 1.5 when the
- * underlying research work is unchanged.
+ * unlike engineering units do not set the balance by accident. The whole fee
+ * is then multiplied by the spec merit: how demanding the target is in
+ * absolute terms, one curve per axis (see MERIT).
  * Pure functions, no DOM, node-safe.
  *
  * A hull is a plain object from createHull(), so every career owns an
@@ -28,15 +28,73 @@
 (function (root) {
 	'use strict';
 
-	/* Reference masses keep the scale stable as the knowledge hull grows. */
-	var MASS_REFERENCE = { engine: 1.0, tank: 0.5 };
-	var MASS_EXPONENT = Math.log(1.5) / Math.log(2);
+	/* Spec merit: the absolute half of the fee — how demanding the target is,
+	 * whatever the career already knows. Every research axis gets a curve:
+	 *   par   the middle rung of the tech table: the ordinary design, merit 1.
+	 *   per2  the fee multiplier per doubling of merit — x1.25 for a capability
+	 *         axis (already priced by the frontier once it leaves the known
+	 *         range), x1.50 for a waste axis (mass, leak, efficiency losses),
+	 *         so 2x heavier or 2x leakier divides the fee by 1.5.
+	 *   lower less is better (mass, leak).
+	 *   mirror
+	 *         an axis bounded from above (efficiency, <= 1): merit is measured
+	 *         on the loss `mirror - value`, so halving the losses is the same
+	 *         step as doubling a capability and par 0.20 means 80 %.
+	 * More capability and less waste are both dearer, so worsening an axis is
+	 * cheaper — not merely not dearer, as the flat easy direction was. */
+	var MERIT = {
+		engine: [
+			{ par: 24, per2: 1.25 },                          // thrust kN
+			{ par: 1.6, lower: true, per2: 1.50 }             // mass t
+		],
+		catapult: [
+			{ par: 135, per2: 1.25 },                         // maxForce kN
+			{ par: 0.20, lower: true, mirror: 1, per2: 1.50 } // efficiency → loss
+		],
+		tank: [
+			{ par: 90, per2: 1.25 },                          // fuelCap kg
+			{ par: 0.9, lower: true, per2: 1.50 }             // emptyMass t
+		],
+		battery: [
+			{ par: 6, per2: 1.25 },                           // capacity kWh
+			{ par: 0.0006, lower: true, per2: 1.50 }          // leak /y
+		]
+	};
+	/* floor keeps the lab from being free for a deliberately poor spec; ceiling
+	 * keeps two compounding curves from pricing a corner out of the game */
+	var MERIT_MIN = 0.35;
+	var MERIT_MAX = 2.50;
 
-	function massFactor(family, params) {
-		var reference = MASS_REFERENCE[family];
-		if (!reference) return 1;
-		if (!(params[1] > 0) || !Number.isFinite(params[1])) return Infinity;
-		return Math.pow(reference / params[1], MASS_EXPONENT);
+	/* per-doubling exponent, once */
+	for (var meritFamily in MERIT) {
+		var meritRow = MERIT[meritFamily];
+		for (var meritAxis = 0; meritAxis < meritRow.length; meritAxis++) {
+			meritRow[meritAxis].exp = Math.log(meritRow[meritAxis].per2) / Math.LN2;
+		}
+	}
+
+	/* fee multiplier of one axis; an impossible value (nonpositive, or past a
+	 * mirror) cannot be researched at all */
+	function axisMerit(family, axis, value) {
+		var row = MERIT[family];
+		var a = row ? row[axis] : null;
+		if (!a) return 1;
+		var x = a.mirror === undefined ? value : a.mirror - value;
+		if (!Number.isFinite(x) || x <= 0) return Infinity;
+		return Math.pow(a.lower ? a.par / x : x / a.par, a.exp);
+	}
+
+	/* fee multiplier of the whole spec, inside the lab's band */
+	function meritFactor(family, params) {
+		var row = MERIT[family];
+		if (!row) return 1;
+		var f = 1, m;
+		for (var d = 0; d < row.length; d++) {
+			m = axisMerit(family, d, params[d]);
+			if (!Number.isFinite(m)) return Infinity;
+			f *= m;
+		}
+		return f < MERIT_MIN ? MERIT_MIN : (f > MERIT_MAX ? MERIT_MAX : f);
 	}
 
 	var INSIDE_EPS = 1e-9; // relative to the target magnitude
@@ -378,7 +436,7 @@
 
 	/* research fee for one preview: base fee, plus k·(hull distance + frontier
 	 * work) in normalized RU. The `inside` short circuit keeps recombinations
-	 * at the base fee before the mass factor, even at a range edge. */
+	 * at the base fee before the spec merit, even at a range edge. */
 	function priceOf(family, t) {
 		var base = BASE_PRICE[family] || DEFAULT_BASE;
 		var rate = K_DIST * (TIER_SCALE[family] || 1.00);
@@ -394,8 +452,8 @@
 		}
 		var t = distToHull(f, params, METRIC_SCALE[family], FRONTIER[family]);
 		t.frontier = t.inside ? 0 : frontierWork(hull, family, params);
-		t.massFactor = massFactor(family, params);
-		t.cost = priceOf(family, t) * t.massFactor;
+		t.merit = meritFactor(family, params);
+		t.cost = priceOf(family, t) * t.merit;
 		return t;
 	}
 
@@ -451,7 +509,8 @@
 		ensure: ensure, preview: preview, accept: accept, stats: stats,
 		BASE_PRICE: BASE_PRICE, DEFAULT_BASE: DEFAULT_BASE, FRONTIER: FRONTIER,
 		TIER_SCALE: TIER_SCALE, METRIC_SCALE: METRIC_SCALE, K_DIST: K_DIST,
-		MASS_REFERENCE: MASS_REFERENCE, massFactor: massFactor
+		MERIT: MERIT, MERIT_MIN: MERIT_MIN, MERIT_MAX: MERIT_MAX,
+		meritFactor: meritFactor, axisMerit: axisMerit
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = OrbitScience;

@@ -4808,6 +4808,42 @@
 		return text + ' · +' + rate + ' / RU of distance or frontier work';
 	}
 
+	/* par of one merit axis in the axis' own units: a mirrored axis stores its
+	 * loss, so par 0.20 of the catapult efficiency row reads back as 80 % */
+	function scienceParText(family, axis) {
+		const a = OrbitScience.MERIT[family][axis];
+		const meta = SCIENCE_AXES[family][axis];
+		const value = a.mirror === undefined ? a.par : a.mirror - a.par;
+		return value.toFixed(meta.digits);
+	}
+
+	/* the draft's own merit: which characteristic carries the fee right now */
+	function scienceMeritText(family, params) {
+		const row = OrbitScience.MERIT[family];
+		if (!row) return '';
+		const axes = SCIENCE_AXES[family];
+		const parts = new Array(axes.length);
+		for (let i = 0; i < axes.length; i++) {
+			parts[i] = axes[i].key + ' ×' + OrbitScience.axisMerit(family, i, params[i]).toFixed(2);
+		}
+		return 'spec · ' + parts.join(' · ') + ' → ×' + OrbitScience.meritFactor(family, params).toFixed(2);
+	}
+
+	/* the rule behind it: per axis the step per doubling of merit, its par, and
+	 * the clamp band of the product */
+	function scienceMeritRuleText(family) {
+		const row = OrbitScience.MERIT[family];
+		if (!row) return '';
+		const axes = SCIENCE_AXES[family];
+		const parts = new Array(axes.length);
+		for (let i = 0; i < axes.length; i++) {
+			parts[i] = axes[i].key + ' 2× ' + (row[i].lower ? 'better' : 'more') + ' = ×' +
+				row[i].per2.toFixed(2) + ' (par ' + scienceParText(family, i) + ')';
+		}
+		return 'spec rule · ' + parts.join(' · ') + ' · band ×' + OrbitScience.MERIT_MIN.toFixed(2) +
+			'–×' + OrbitScience.MERIT_MAX.toFixed(2);
+	}
+
 	/* the balance knobs themselves, so a player sees why one direction is dear */
 	function scienceFrontierText(family) {
 		const dirs = OrbitScience.FRONTIER[family];
@@ -4832,9 +4868,16 @@
 				', above: ' + dirs[i].above.toFixed(2) + ' }';
 		}
 		const scale = (OrbitScience.METRIC_SCALE[family] || []).map(v => Number(v.toFixed(4)));
+		const rows = OrbitScience.MERIT[family] || [];
+		const merit = rows.map((a, i) => axes[i].key + ': { par: ' + a.par +
+			(a.lower ? ', lower: true' : '') +
+			(a.mirror === undefined ? '' : ', mirror: ' + a.mirror) +
+			', per2: ' + a.per2.toFixed(2) + ' }');
 		return 'frontier: ' + family.toUpperCase() + ' { ' + parts.join(', ') + ' }\n' +
 			'metric: scale [' + scale.join(', ') + '] RU/unit · k ' + OrbitScience.K_DIST.toFixed(2) +
-			' · tier ' + (OrbitScience.TIER_SCALE[family] || 1).toFixed(2);
+			' · tier ' + (OrbitScience.TIER_SCALE[family] || 1).toFixed(2) + '\n' +
+			'merit: ' + family.toUpperCase() + ' { ' + merit.join(', ') + ' } · band ' +
+			OrbitScience.MERIT_MIN + '–' + OrbitScience.MERIT_MAX;
 	}
 
 	function careerCopyFrontier(family) {
@@ -4846,7 +4889,7 @@
 			return;
 		}
 		clipboard.writeText(text).then(
-			() => careerNotice('copied ' + family + ' frontier knobs'),
+			() => careerNotice('copied the ' + family + ' frontier and merit knobs'),
 			() => careerNotice(text));
 	}
 
@@ -4855,8 +4898,8 @@
 		const p = GravityGame.researchPreview(career, family, params);
 		const where = p.inside ? 'inside hull · recombine' : 'outside · dist ' + p.dist.toFixed(3) + ' RU';
 		const frontier = p.frontier > 1e-9 ? ' · frontier +' + p.frontier.toFixed(2) + ' RU' : '';
-		const mass = OrbitScience.MASS_REFERENCE[family] ? ' · mass ×' + p.massFactor.toFixed(2) : '';
-		return scienceVectorText(family, params) + ' · ' + where + frontier + mass +
+		const spec = Number.isFinite(p.merit) ? ' · spec ×' + p.merit.toFixed(2) : '';
+		return scienceVectorText(family, params) + ' · ' + where + frontier + spec +
 			' · fee ' + costText(GravityGame.researchCost(career, family, params));
 	}
 
@@ -4918,16 +4961,15 @@
 				'" aria-label="' + a.label + '"><span class="sciVal" id="sciVal' + i + '">' +
 				scienceAxisText(a, v) + '</span></div>';
 		}
-		html += '<div class="careerLine dim sciPreview" id="sciPreview" title="base + k·(directional distance + frontier work), multiplied by mass factor for engines and tanks; 2× mass divides fee by 1.5">' +
+		html += '<div class="careerLine dim sciPreview" id="sciPreview" title="base + k·(directional distance + frontier work), multiplied by the spec merit: how demanding the target is on every axis at once">' +
 			sciencePreviewText(career, family) + '</div>';
 		html += '<div class="careerLine dim sciMetric">' + scienceMetricText(family) + '</div>';
-		if (OrbitScience.MASS_REFERENCE[family]) {
-			html += '<div class="careerLine dim sciMetric">mass · 2× heavier = fee ÷1.5 · reference ' +
-				OrbitScience.MASS_REFERENCE[family] + ' t</div>';
-		}
+		html += '<div class="careerLine dim sciMetric" id="sciMerit" title="every axis carries its own curve: a stronger, lighter or tighter target is dearer, a weaker, heavier or leakier one cheaper">' +
+			scienceMeritText(family, scienceParams(family)) + '</div>';
+		html += '<div class="careerLine dim sciMetric">' + scienceMeritRuleText(family) + '</div>';
 		html += '<div class="careerRow sciKnobsRow"><span class="careerLine dim sciMetric">' +
 			scienceFrontierText(family) + '</span><button class="miniBtn" data-act="sciCopy" data-family="' +
-			family + '" title="copy the frontier difficulty knobs for a balance chat">copy knobs</button></div>';
+			family + '" title="copy the frontier and spec merit knobs for a balance chat">copy knobs</button></div>';
 		html += '<div class="careerRow sciAcceptRow"><span class="careerBtns">' +
 			scienceAcceptButton(career, family) + '</span></div>';
 		return html + scienceHullText(career);
@@ -4962,6 +5004,8 @@
 		}
 		const previewEl = $('sciPreview');
 		if (previewEl) previewEl.textContent = sciencePreviewText(career, family);
+		const meritEl = $('sciMerit');
+		if (meritEl) meritEl.textContent = scienceMeritText(family, scienceParams(family));
 		const draftEl = $('sciDraft');
 		if (draftEl) {
 			const draft = scienceValues[family];
