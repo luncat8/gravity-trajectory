@@ -190,6 +190,21 @@ fix The planet-ownership rule is not enforced  bug in build EMC of already occup
 
 Bots can use other's EMC and pay to other players for it as this a lot cheaper then commercial. They prefer their own EMC first. Commercial EMC is the fallback when the current rail can’t produce a shot—e.g. it is too weak or depleted or some urgent profitable task.
 
+### balance_lab.html
+draw sci research and calculated build cost, etc to i can manually move balance sliders
+
+and button to copy/paste final settings
+
+so i could adjust and copy to chat what i want
+
+i want see result of adjust.
+
+i expect: sci plot, on plot points with suggested tiers
+highlight main characteristics: like cost and force
+
+sliders to adjust balance, start price, etc and i will see how plot changes and how build cost changes on single screen
+
+
 ### price
 cost ladder is misconcept. we should have float continues sci research and no 'levels'. so cost = f(cost of research from initial point * some coefficient )
 i mean research is somewhat additive - next research may be low cost to push top level a bit but total VECTOR from initial point may be calculated as total research cost of current item and lets like 10...20% if it will be build cost this need to be balanced

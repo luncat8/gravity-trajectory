@@ -49,6 +49,46 @@ archive/ - for implemented plans
 experiments/ - measurement scripts (node), not loaded by the page.
 experiments/logs/ - without long formatting, keep only useful data that helpful in future to compare and detect improvement vs regression;
 
+### gravity gui
+
+gravity_gui.js is one IIFE (~8.4k lines) until the 0.5 split lands, so never read it whole.
+the sections are indexed in place by a banner comment; one grep gives the table of contents
+with the line of each area, what it holds and the file it is slated to move into:
+
+	grep -n "── " gravity_gui.js
+
+then read only that line range and edit there. a typical edit needs one area, at most two.
+plan: 0.5-plan-gui-split.md
+
+area → the file that will own it:
+
+| file | edit here |
+|---|---|
+| gui_tables.js | constants, gear/tech/science/help tables, speed presets, rule copy |
+| gui_help.js | rule help drawer: open, pin, hold to preview |
+| gui_view.js | view mode, canvas resize, HUD rects and hit tests, world<->screen, slot accessors, playback |
+| gui_predict.js | predicted gain/profit/rate readouts, experiment panel, aim trace, rule gating, blocked pad notes |
+| gui_aim.js | grip drag and snap, fine trim, turret queue, burns, launch/fire, pointer + trim input |
+| gui_route.js | route plan rows, best-route record/restore, route leader |
+| gui_helper.js | profit helpers: broad/focus scans, candidates, budgeted tick |
+| gui_world.js | planet universe and strengths, attach to the trade world, mode/bot/score radios, seed url |
+| gui_game.js | start/stop game, career run, step loop, bot settle, flight end |
+| gui_replay.js | replay lifecycle, per-shot aim replay, verdicts, skip |
+| gui_share.js | url copy, replay/bot links, load from link, bot log |
+| gui_hud_game.js | scoreboard, score meta, player/rival summaries |
+| gui_shop.js | cost/cap/pad/gear text, purse checks, shop buttons, EMC claims, part and proto rows |
+| gui_science.js | hull plot geometry, merit and spec text, accept, sliders |
+| gui_book.js | task board, launch book, money trace, ranked launch list, rail lines |
+| gui_career.js | career tabs, wait easing and settlement, build/bulk/part/accept/drop, evacuate, act |
+| gui_draw_world.js | wells, signs, prediction, trail, cargo, aim, markers, labels |
+| gui_draw_econ.js | route pills, rival ships, planet profit pills, EMC rings, career pads |
+| gui_hud_text.js | paint entry, clock and end text, live HUD, launch state, status |
+| gui_frame.js | HUD throttle, syncField, the frame loop, fps pacing, fold and sound settings |
+| gravity_gui.js | composer: shared sims, element refs, game/replay/helperState/sound objects, boot, root.GravityScene |
+
+state and element refs belong with the area that owns them, never in a shared state/utils file.
+root.GravityScene keys are a test contract (experiments/ read them) - keep the names.
+
 ## sandbox
 
 git push returns "Invalid username or token" is ok, no need to investigate or report - i will apply manually

@@ -10,10 +10,13 @@
  * Game mode (archive/game.1-plan.md): seeded world, the trade clock advances
  * only with the cargo's fixed physics steps, the aim snaps to an integer grid,
  * and a replay link re-flies every recorded shot.
+	 * Sections are indexed in place: grep -n '── ' gravity_gui.js lists every area,
+	 * each naming what it holds and the file it is slated to move into (0.5 plan).
  */
 (function (root) {
 	'use strict';
 
+	/* ── aliases & tables · gui_tables.js ── sim/game constants, gear, tech, science and help tables, speed and replay presets */
 	const $ = id => document.getElementById(id);
 	const SPEED_MIN = GravitySim.SPEED_MIN;
 	const SPEED_MAX = GravitySim.SPEED_MAX;
@@ -242,6 +245,7 @@
 		}
 	};
 
+	/* ── composer state · gravity_gui.js ── shared sims, every element ref, the game/replay/helperState/sound objects, slot factories */
 	const scene = root.OrbitScene;
 	const tradeSim = scene.sim;
 	const view = scene.view;
@@ -755,6 +759,7 @@
 		}
 	}
 
+	/* ── rule help drawer · gui_help.js ── selected rule text, open and pin, hold to preview */
 	/* the flat mode row drives both the help drawer and the running rule */
 	function selectedHelpRule() {
 		return game.on ? game.rule : PLAY_LAB;
@@ -809,6 +814,7 @@
 		if (!helpPinned) setHelpOpen(false, true);
 	}
 
+	/* ── view & projection · gui_view.js ── view mode, canvas resize, HUD rects and hit tests, world<->screen, slot accessors, playback */
 	function refreshViewUi() {
 		if (viewSpaceEl) viewSpaceEl.checked = viewMode === VIEW_SPACE;
 		if (viewFieldEl) viewFieldEl.checked = viewMode === VIEW_FIELD;
@@ -1203,6 +1209,7 @@
 		}
 	}
 
+	/* ── predict readouts · gui_predict.js ── predicted gain, profit, rate and tick notes, experiment scale inputs, hover label */
 	function refreshPredGain() {
 		const sim = activeSim();
 		if (!game.on || routeRule() || sim.predCount < 2) {
@@ -1449,6 +1456,7 @@
 			(gravity.strength[hoverBody] < 0 ? ' repel' : '');
 	}
 
+	/* ── aim input · gui_aim.js ── grip drag and snap, fine trim, aim label, sound telemetry, take-over from a saved aim */
 	/* launch base is always a static planet core */
 	function updateAim() {
 		const cx = tradeSim.planetX[aimBody];
@@ -1582,6 +1590,7 @@
 		dirty = true;
 	}
 
+	/* ── turret, burns & launch · gui_aim.js ── turret queue, burn aim and grip, executeBurn, launch, fire, record shot, clear cargo */
 	/* the barrel must line up with the aimed direction before the rail fires */
 	function cancelTurret() {
 		if (!turret.pending) return;
@@ -1888,6 +1897,7 @@
 		syncSeedUrl(replay.on);
 	}
 
+	/* ── rules & gating · gui_predict.js ── rule spec, player/money/career rules, blocked pad and destination notes, career clock */
 	function fieldChanged() {
 		const sim = activeSim();
 		if (armed || aiming || sim.status === STATUS_FLYING) dirty = true;
@@ -2002,6 +2012,7 @@
 		blockedKind = blockedBy >= 0 ? 1 : 0;
 	}
 
+	/* ── route plan · gui_route.js ── per-slot plan rows, best-route record and restore, route leader, plan sync */
 	function resetSlotRoutePlan(slot) {
 		const plan = slotPlans[slot];
 		plan.ready = false;
@@ -2073,6 +2084,7 @@
 		helperUpdateUi();
 	}
 
+	/* ── profit helpers · gui_helper.js ── origin, score and snap, broad and focus scans, profit/tweak candidates, budgeted tick */
 	function helperHelperOrigin() {
 		if (selected >= 0 && selected < PLANETS) return selected;
 		if (aiming || armed) return aimBody;
@@ -2721,6 +2733,7 @@
 		hudAt = -Infinity;
 	}
 
+	/* ── aim trace · gui_predict.js ── trace staleness, startAimTrace, predictShot, goal, flown and run locks */
 	/*
 	 * Route mode traces a shot to its end over several frames. The job survives
 	 * field ticks (it is a snapshot), so it is restarted only by an aim edit or
@@ -2845,6 +2858,7 @@
 
 	const MAX_PLAYERS = scoreRowEls.length;
 
+	/* ── planet universe · gui_world.js ── universe size, strengths, protected planets and pads, planet count ui */
 	function planetUniverseDefault(rule) {
 		return rule === RULE_CAREER ? PLANET_CAREER_DEFAULT : PLANET_DEFAULT;
 	}
@@ -2982,6 +2996,7 @@
 		return free;
 	}
 
+	/* ── world attach & settings · gui_world.js ── attach to the trade world, mode, bot and score radios, seed url, play mode, player count */
 	/* Rebuild strengths from the world seed without consuming the trade random stream. */
 	function attachWorld() {
 		gravity.setPlanets(
@@ -3086,6 +3101,7 @@
 		catch (e) { /* Some file:// viewers do not permit history updates. */ }
 	}
 
+	/* ── game session · gui_game.js ── start and stop, career run, step loop, bot settle, flight end and rival settle */
 	function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 		const wasCareer = careerRule();
 		cancelCareerWait();
@@ -3617,6 +3633,7 @@
 		return (value < 0 ? '−' : '+') + Math.abs(value).toFixed(2);
 	}
 
+	/* ── replay · gui_replay.js ── replay lifecycle, per-shot aim replay, verdicts, skip */
 	/*
 	 * The shot's money as a 2.5 s text card in the postcard slot. A landing
 	 * card arriving this frame keeps its moment; a still-open entry card holds
@@ -3803,6 +3820,7 @@
 		}
 	}
 
+	/* ── share & link · gui_share.js ── url copy, replay and bot links, load from link and search params, bot log */
 	function copyUrlText(url, btn, label) {
 		gameLinkEl.value = url;
 		const clipboard = navigator.clipboard;
@@ -3992,6 +4010,7 @@
 		return true;
 	}
 
+	/* ── game HUD · gui_hud_game.js ── scoreboard, score meta, player and rival summaries, rival tags */
 	/* control locks and button states; runs on game state changes, not per frame */
 	function refreshGameUi() {
 		const route = routeRule();
@@ -4205,6 +4224,7 @@
 		return { text: 'EVEN', outcome: 0 };
 	}
 
+	/* ── career numbers · gui_shop.js ── cost, cap, pad, gear and part text, purse checks, shop buttons, tier ladder */
 	function careerRuleText() {
 		const career = game.career;
 		const pads = career.padCount + ' / ' + planetCount + ' pads';
@@ -4401,6 +4421,7 @@
 			(burnCap < remDv - 0.05 ? ' (burn ' + burnCap.toFixed(1) + ')' : '');
 	}
 
+	/* ── pads, claims & parts · gui_shop.js ── EMC claim rings, pad blocks, gear and part rows, prototype rows, shop block html */
 	/* who owns which planet's EMC claim, counted per player */
 	function claimCounts() {
 		const counts = [0, 0, 0];
@@ -4761,6 +4782,7 @@
 
 	/* --- §10 science: hull-distance research on custom parameter vectors --- */
 
+	/* ── science panel · gui_science.js ── hull plot geometry, cross, hull and range html, merit and spec text, accept, sliders */
 	function scienceParams(family) {
 		const axes = SCIENCE_AXES[family];
 		const out = new Array(axes.length);
@@ -5207,6 +5229,7 @@
 		careerChanged();
 	}
 
+	/* ── task board · gui_book.js ── task rows and blocks, spec copy, career events */
 	/* §11 share a tech record's balance line; without a clipboard the line is
 	 * shown in the drawer notice so it stays selectable on file:// pages */
 	function careerCopySpec(data) {
@@ -5270,6 +5293,7 @@
 
 	/* --- launch list: saved trajectories -------------------------------- */
 
+	/* ── launch book & money trace · gui_book.js ── book tags, net and trace of money, flyable checks, ranked launch list, rail lines */
 	/* the field the page traces in: stored paths only hold inside this world */
 	function pageBookTag() {
 		return GravityGame.launchBookTag(gravity.fieldStatic, gravity.gravityScale,
@@ -5558,6 +5582,7 @@
 		careerPlanetEl.value = String(picked);
 	}
 
+	/* ── career wait & tabs · gui_career.js ── settlement, tab select, panel refresh, pick planet, notice */
 	/* exact net kWh, board ageing and visit-profit growth one wait will settle */
 	function waitSettlement(career) {
 		const rate = scene.trade.speed;
@@ -5747,6 +5772,7 @@
 		refreshGameUi();
 	}
 
+	/* ── career actions · gui_career.js ── build, bulk, part, accept and drop, wait easing, evacuate, act */
 	function careerBuild(career, planet, kind, item) {
 		const before = career.ledger.purse;
 		if (kind === OrbitTech.KIND_CATAPULT && career.pads[planet].catapult === null &&
@@ -6001,6 +6027,7 @@
 		return null;
 	}
 
+	/* ── clock & field input · gui_aim.js ── game clock format, HUD pad press, pointer move and up, trim input, harvest masks */
 	function updateGameHud() {
 		const ruleText = moneyRule()
 			? 'money · ' + GravityGame.MONEY_SHOTS + ' shots'
@@ -6360,6 +6387,7 @@
 		}
 	}
 
+	/* ── draw: world & aim · gui_draw_world.js ── visit outline, wells, signs, port velocities, prediction, trail, cargo, aim, markers, labels */
 	/* highlights the planet's own outline plus a tight outer ring, leaving thin orbits untouched */
 	function drawPlanetVisitOutline(x, y, r, px, pulse, inside) {
 		ctx.setLineDash(NO_DASH);
@@ -6998,6 +7026,7 @@
 		ctx.fillText(aimLabel, x + 10, y + 10.5);
 	}
 
+	/* ── draw: economy & career · gui_draw_econ.js ── route pills, rival ships and tags, planet profit pills, EMC rings, career pads */
 	function drawRoutePlanEntry(sim, leader, colour, dimColour, px) {
 		const planCount = sim.predCount;
 		const planStride = planCount > 6000 ? 4 : planCount > 1400 ? 2 : 1;
@@ -7296,6 +7325,7 @@
 		}
 	}
 
+	/* ── paint frame · gui_hud_text.js ── the paint entry, clock and end text, live HUD */
 	function draw(now) {
 		if (viewMode === VIEW_FIELD && fieldRenderer) {
 			if (fieldRenderer.backend() === 'lost') fieldLost();
@@ -7473,6 +7503,7 @@
 		setLaunchState(locked || !armed || !canAimFrom(aimBody), exitWarning);
 	}
 
+	/* ── launch state & status · gui_hud_text.js ── launch state and note, ride text and title, status text */
 	function setLaunchState(blocked, exitWarning) {
 		if (canImpulse()) {
 			const ship = game.career.ship;
@@ -7719,6 +7750,7 @@
 		return whoPrefix + rest + clockNote;
 	}
 
+	/* ── hud throttle & frame loop · gui_frame.js ── HUD throttle, syncField, the frame loop, fps pacing and budget */
 	function updateHud(now) {
 		if (now - hudAt < HUD_INTERVAL) return;
 		hudAt = now;
@@ -8028,6 +8060,8 @@
 			else if (!ruleHelpHold) setHelpOpen(false, true);
 		});
 	}
+
+	/* ── bot target, fold & sound settings · gui_frame.js ── bot control target, panel fold, sound engine and preference toggles */
 	function isBotControlTarget(slot, target) {
 		if (!target) return false;
 		const box = scoreBotEls[slot];
@@ -8227,6 +8261,8 @@
 	if (root.visualViewport && root.visualViewport.addEventListener) {
 		root.visualViewport.addEventListener('resize', resizeOverlay);
 	}
+
+	/* ── boot · gravity_gui.js ── observers, keyboard, initial view and mode, the first frame */
 	const tradeControlsEl = $('tradeControls');
 	if (typeof root.ResizeObserver === 'function' && tradeControlsEl) {
 		const footObserver = new root.ResizeObserver(() => {

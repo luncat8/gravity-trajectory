@@ -159,6 +159,7 @@ audio starts only after a user gesture and never changes physics or replays.
 ## files
 
 - `index.html`, `style.css` — page, HUD panels and slide-out help drawer
+- `balance_lab.html` — standalone single-screen balance lab: the sci fee surface of engine/catapult/tank/battery with the stock ladder tiers plotted and labelled (id · primary stat · build cost), the draft's fee/build/force callout, a vertical force line and the suggested rung, plus the live build cost of the ladder and the current draft, and balance sliders (frontier weights, metric scales, merit curves, k, base price, tier scale, merit band, build share) that re-draw the plot and the costs on every move; copy-paste final settings for a balance chat; loads `orbit_science.js`/`orbit_tech.js`, file:// friendly, checked by `experiments/balance_lab_test.js` and `experiments/balance_lab_smoke.js`
 - `exec_queue.js` — binary min-heap event queue (vendored)
 - `orbit_world.js` — planet geometry, stations on their ellipses, natural traits
 - `orbit_econ.js` — colony economy laws: goods, resource map, growth
@@ -183,7 +184,11 @@ audio starts only after a user gesture and never changes physics or replays.
   `career_guidance_test.js`) on the shared vm page stub (`dom_stub.js`), and a
   real-browser HUD layout check
   (`layout_check.js`, needs `CHROME_PATH` and `puppeteer-core`) covering the
-  action row, help drawer and seeded URL reload across viewport sizes
+  action row, help drawer and seeded URL reload across viewport sizes; plus
+  the balance lab checks (`balance_lab_test.js` — the page's pricing mirror
+  against `orbit_science.js`, `balance_lab_smoke.js` — the page's UI in a
+  minimal DOM stub), the science fee probes (`sci_merit_probe.js`,
+  `build_cost_probe.js`) and career rival probes (`career_rival_probe.js`)
 - `photos/` — user art (`space/`, `landed/`, `career/`), `README.md` (file
   spec), `prompts.md` (17 captions for Krea 2 / MOSS-Image: 14 planet views and
   3 career scenes) and `generator/` (`comfy_queue.py` queues the captions into

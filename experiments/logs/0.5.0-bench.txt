@@ -1,0 +1,25 @@
+0.5.0 baseline, before the gui split (stage 0: banner comments only, no code moved)
+gravity_gui.js 8455 lines / 319,929 chars (was 8419 / 315,670: 32 banners + 2 index
+lines cost 4,259 chars ≈ 1.2k tokens, one grep instead of an 88k-token read),
+one IIFE. node --check ok, dom_smoke byte-identical before/after, game_bench OK.
+
+game_bench (comparable part):
+  scripted game seed 31 rate 3 60 Hz: 26/26 ends · 5404 steps · 18460 ms
+  replay 144 Hz x4: 1940 frames · 7323 ms
+  replay jitter 4-45 ms + 120 ms stalls x1: 1991 frames · 4874 ms
+  replay 60 Hz x16: 223 frames · 869 ms
+  replay skip: 102 ms
+  route planner seed 31: 1944 px · 1385 steps in 1 sliced frames · 2708 ms
+  money tour 12 s + 60 s: purse 5.20 +2.20 / 11.01 +8.01 · 19561 ms
+  broke run: 3 shots · purse 0.00 · launch refused · replay verified
+  cross-engine 1 ulp: 0 outcome flips over 3 x 1872 flights
+    planets·angle  med 2.8e-13 p99 1.1e-9 max 2.8e-8 px
+    ports·angle    med 2.5e-13 p99 6.6e-10 max 1.2e-4 px
+    ports·position med 1.7e-13 p99 1.1e-9 max 4.5e-5 px
+
+compare these after each stage. the numbers that matter for this plan are the step
+and frame counts (must not move at all) and the ms of the scripted game and route
+planner (the per-frame loops). stage 4 moves frame/syncField/draw* out of the
+IIFE, where a closure slot becomes a global binding: a few % there is expected and
+acceptable, a regression of the counts is not. the ulp drift is the guard that the
+prediction paths stayed bit-for-bit identical across the move.
