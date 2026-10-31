@@ -599,3 +599,59 @@ with `purse + predGain`, so a rescue priced under that turns every blocked
 planet into a free detour and erases the trap. Keep the floor as a comment on
 the catapult cost table and assert per blocked planet that the starter purse
 alone cannot leave (`!departure.ok`), not just the one fixture.
+
+## splitting a flat-scope classic-script monolith without changing behaviour
+
+`gravity_gui.js` (8,419 lines, one IIFE) is now 20 `gui_*.js` files + a 1,025-line
+composer, byte-for-byte behaviour-neutral. What made it safe:
+
+- **index before you split.** Insert one `/* ── area · target.js ── contents */` banner per
+  area first, in a commit that touches no code. `grep -n "── " gravity_gui.js` then replaces
+  reading the file, and every later cut is "banner to next banner" — no hand-picked line
+  numbers, so no off-by-one. `experiments/dom_stub.js` reads the `<script>` list out of
+  `index.html`, so the harness needed zero edits as files were added.
+- **classic scripts share one global scope.** `const` at top level is visible to every later
+  script and a duplicate name is a load-time `SyntaxError` — which is why the split needs no
+  build and no renames, and why a gate script that checks duplicate top-level declarations
+  across the script list, against `window` builtins and against element ids has to run per
+  commit (`GATE: PASS`).
+- **the only ordering constraint is definition-time reads.** Calls between files resolve at
+  call time, so they are free; a *top-level* statement that reads a `const` from a later file
+  is a `ReferenceError`. Two such bugs survived `node --check` and were caught only by the
+  smoke test. Automate it: after each move, walk the moved file's top-level statements and
+  carry any composer `const` they read into that file (transitively).
+- **top-level wiring is not movable.** `X.addEventListener(...)` blocks read element refs at
+  load, so they stay with the composer that declares those refs, even when the functions they
+  call move. An extractor that moves a whole banner region must keep those lines in place.
+- **the cap on file size is a smoke alarm, not an order.** A file over ~600 lines means the
+  area was cut wrong: `gui_aim.js` at 810 had swallowed the game-clock text (a second reason
+  to change) — move that out. But splitting a cluster that writes the *same* mutable state
+  just doubles the files every edit touches, so `gui_aim.js` stayed 692 and
+  `gui_draw_world.js` 647, on purpose.
+
+## measure state ownership before moving any of it
+
+The plan said "only the owning area writes its own state", which sounds obviously right and
+was false here. Inventory first — for every top-level declaration, count the files that read
+it and the files that assign it (with comments and strings stripped, or the counts are junk):
+of 323 composer declarations **6** had a single consumer, and **100 of 330** had more than one
+writing unit (`hudAt` 11, `dirty` 10, `aimSpeed` 8, `armed`/`launchState` 7). There is no owner
+to move shared state *to*; relocating it would make cross-file mutation less visible, not more.
+So the split moved code only and left all mutable state in the composer. The check that these
+writes were original (not artefacts of my cuts): `git show <base>:gravity_gui.js | grep -cF "dirty = true;"`
+→ 31. If the answer had been "one owner each", the moves would have been worth it — the
+measurement, not the principle, decided the scope.
+
+## byte-identical smoke is the whole test suite for a UI with no tests
+
+For a 315k-char page with no unit tests, the only trustworthy gate is a headless DOM run
+whose full stdout must be **byte-identical** to a baseline captured before the split:
+
+	node experiments/dom_smoke.js > /tmp/s.txt; diff -q /tmp/base.txt /tmp/s.txt
+
+It caught every real regression in five stages (a deleted closing brace, a duplicated
+declaration, both definition-time errors) and never once let a neutral move through as
+ambiguous. Line counts are the wrong invariant — seam normalisation legitimately drops blank
+lines — compare non-blank content plus "no name declared in both files". `/tmp` is not durable
+across turns in a sandbox, so re-derive the baseline from git per session
+(`git show <base>:gravity_gui.js`) rather than assuming the file is still there.
