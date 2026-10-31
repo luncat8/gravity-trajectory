@@ -15,10 +15,12 @@ shareable.
 
 ## run
 
-Open `index.html` (`file://` works, no build, no modules). The address carries
-the current world seed and mode, for example `?mode=career&seed=42`; copy it to
-regenerate the same world, or use `new seed` to update it. Other query options
-such as `?view=field` are preserved. A copied replay adds a `#game=…` hash that
+Open `index.html` (`file://` works, no build, no modules). A seedless startup
+draws a fresh random world; the address then carries the current world seed and
+mode, for example `?mode=career&seed=42`. Copy it to regenerate the same world,
+or use `new seed` to update it. An explicit `?seed=…` (or a replay hash seed)
+pins the world on load. Other query options such as `?view=field` or
+`?view=potential` are preserved. A copied replay adds a `#game=…` hash that
 takes priority over the query; starting a new run removes the old replay hash.
 Per-body lab edits, experimental multipliers and roster-size changes are not saved
 in the seed URL; copied replays include their experimental multipliers.
@@ -56,7 +58,7 @@ audio starts only after a user gesture and never changes physics or replays.
 | esc | closes help, cancels an armed burn / resumes a paused flight, or cancels the aim/plan |
 | clear / clear plan | in the lab, resets the vessel; in `route`, removes the current plan while keeping the saved best · flights in game modes run to their natural end |
 | `use best` (route) | restores the longest finished plan for the current start planet, with its exact snapped angle and speed |
-| `view` · `space` / `gravity field` (`f`, `?view=field`) | switches between the starfield backdrop and a live gravity-field map where hue encodes pull direction and lightness encodes potential gradient (`|\mathbf{g}|`); uses a WebGL shader when available (dropping 4× in resolution if slow) or a 1/4-resolution 2D raster fallback; a lost WebGL context falls back to the starfield (`space · field lost`) and restores automatically on `webglcontextrestored` |
+| `view` · `space` / `gravity field` / `potential` (`f`, `?view=field`, `?view=potential`) | `f` cycles the three backdrops. **field** maps pull direction to hue and potential gradient (`|\mathbf{g}|`) to lightness. **potential** maps the signed softened potential `φ = -Σ μg/r` to colour: negative wells blue, positive repulsive hills green, zero dark space; red rings/tints mark heavy bodies (`g ≥ +2`). Both use a WebGL shader when available (dropping 4× in resolution if slow) or a 1/4-resolution 2D raster fallback; a lost WebGL context falls back to the starfield (`space · field lost`) and restores automatically on `webglcontextrestored` |
 | gravity positions | radio group `planets` (static) / `ports` (`ports · moving`); launch base is always a static planet |
 | `? help` / `h` | toggles the help drawer: shared controls first, followed by the selected mode’s goal, score and specific details |
 | `−` / `+` panel header button | collapses or expands any HUD panel (`game scoreboard`, `career`, `orbital trade · background`, `gravity cargo`); panels in the left HUD column push each other from top to down, and the whole column scrolls vertically when panels extend past the viewport |
@@ -87,7 +89,8 @@ audio starts only after a user gesture and never changes physics or replays.
 ## mechanics & visuals
 
 - **Seeded gravity**: each planet draws a deterministic value from `−1…+3.5`
-  in `0.05` steps, independent of its position and other planets. The player’s
+  in `0.05` steps, independent of its position and other planets. A new page
+  without a URL seed picks a random seed; `restart` keeps it, `new seed` redraws it. The player’s
   starting career HQ is always `1`; the other HQs use their planet’s draw.
   Restarting or reloading the same seed recreates the values. Inactive planets
   exert no pull and keep their values if added back. The G-field multiplier
@@ -119,8 +122,9 @@ audio starts only after a user gesture and never changes physics or replays.
   shots)`. Three rules share a `3.00` starting purse, `1.00` launch fee, and a
   shared 26-planet market where each planet's fly-visit payout grows while
   unvisited (`+0.24` at start, `+0.00625/s` at first and saturating towards
-  `+3.00`, drawn beneath every planet and highlighted in green along your
-  predicted trajectory): `tour` (26 systems, 120 s cap), `route` (1 800 s wall,
+  `+3.00`, drawn beneath every planet on a two-line card with its gravity `g`
+  and highlighted in green along your predicted trajectory; a claimed planet's
+  card border uses the EMC owner's colour, neutral cards keep the profit palette): `tour` (26 systems, 120 s cap), `route` (1 800 s wall,
   ranked by trajectory length), and `money` (10 shots, ranked by final purse).
   `career` swaps the launch fee and market ranking for a shared EMC network:
   every planet needs its own catapult, panel and battery, the battery pays each
@@ -174,12 +178,13 @@ audio starts only after a user gesture and never changes physics or replays.
 - `gravity_sound.js` — sound controller plus the classic gesture-unlocked launch stages, procedural fallbacks and optional local selected audio
 - `gravity_voronoi_sound.js` — polyphonic Voronoi presets and neighborhood selection; `gravity_voronoi_tones.js` — experiment point-tuning algorithm
 - `gravity_trajectory_sound.js` — data-driven sonification: deterministic `get_tone_pentatonic` / `get_instrument` planet identities, aim profit/length/EMC and visit fly-through mappings, heading-relative flight bearings, reusable Web Audio voices and no media files
-- `gravity_field.js` — gravity-field backdrop renderer (direction → hue, potential gradient → lightness; WebGL 1 shader with slow-frame 1/4 fallback, automatic context-restore notification, and zero-alloc LUT 1/4-resolution 2D fallback)
+- `gravity_field.js` — gravity backdrop renderer: field (direction → hue, potential gradient → lightness) and signed potential (negative blue, positive green, heavy bodies red; `potentialAt`/`samplePotential` reference helpers); WebGL 1 shader with slow-frame 1/4 fallback, automatic context-restore notification, and zero-alloc LUT 1/4-resolution 2D fallback
 - `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game scoreboard, the flat mode row, career drawer in three tabs (`upgrades`: pad plate, task board, shop; `shots`: the launch list; `science`: the research hull), the profit helpers seeded by the launch book, the EMC claim rings & turning barrels with the queued launch, the continuous career clock & landing auto-pause, the experimental gravity/force/stay-pay panel and replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
   `game_bench.js`, `route_bench.js`, `bot_bench.js`, `career_bench.js`,
   `career_bot_bench.js`), headless DOM smoke suite
-  (`dom_smoke.js`), focused seed/URL/help tests (`gravity_seed_test.js`), and
+  (`dom_smoke.js`), focused seed/URL/help tests (`gravity_seed_test.js`),
+  potential-view/card tests (`gravity_view_test.js`), and
   career departure/guidance regressions (`career_departure_test.js`,
   `career_guidance_test.js`) on the shared vm page stub (`dom_stub.js`), and a
   real-browser HUD layout check

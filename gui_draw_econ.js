@@ -119,8 +119,9 @@ function drawRivalsWorld(now) {
 }
 
 /*
- * Per-planet fly-visit profit pills drawn beneath each planet in game mode.
- * Uses preallocated cent strings and predHarvestMask so draw() stays 0-alloc.
+ * Per-planet visit-profit + gravity cards beneath each planet in game mode.
+ * Cached strings and predHarvestMask keep draw() allocation-free. A claimed
+ * planet keeps its owner's border; neutral planets keep the profit palette.
  *
  * Two greens: the systems the traced path will still enter, and — while a
  * ship flies — the ones it is inside right now. The second set comes from
@@ -142,28 +143,39 @@ function drawPlanetProfits() {
 		let cents = Math.round(val * 100);
 		if (cents < 0) cents = 0;
 		else if (cents > PROFIT_MAX_CENTS) cents = PROFIT_MAX_CENTS;
+		const g = mode === MODE_PORTS ? portPlanetStrength[i] : planetStrength[i];
+		let gi = Math.round(g * 100) + 200;
+		if (gi < 0) gi = 0;
+		else if (gi >= GRAVITY_STRINGS.length) gi = GRAVITY_STRINGS.length - 1;
 		const sx = tradeSim.planetX[i] * view.scale + view.offX;
 		const sy = (tradeSim.planetY[i] + tradeSim.planetR[i]) * view.scale + view.offY + 11;
-		let x = sx - 19;
+		const width = 52;
+		const height = 28;
+		let x = sx - width * 0.5;
 		let y = sy - 7;
 		if (x < 4) x = 4;
-		else if (x > maxX) x = maxX;
+		else if (x > maxX - width + 38) x = maxX - width + 38;
 		if (y < 4) y = 4;
-		else if (y > maxY) y = maxY;
+		else if (y > maxY - height + 14) y = maxY - height + 14;
 		const inside = liveHarvestMask[i] === 1;
 		const onRoute = inside || predHarvestMask[i] === 1;
-		const border = inside ? 'rgba(158, 255, 190, 0.95)'
+		const owner = careerRule() ? GravityGame.claimOwner(game.galaxy, i) : -1;
+		const border = owner === 0 ? MINT
+			: owner > 0 ? RIVAL_COLOURS[owner - 1]
+			: inside ? 'rgba(158, 255, 190, 0.95)'
 			: onRoute ? 'rgba(92, 255, 139, 0.6)'
 			: cents >= 100 ? 'rgba(255, 207, 110, 0.42)'
 			: cents >= 50 ? 'rgba(142, 240, 192, 0.28)'
 			: null;
-		plate(x, y, 38, 14, border);
+		plate(x, y, width, height, border);
 		ctx.fillStyle = inside ? '#ffffff' : onRoute ? '#9effbe'
 			: cents >= 100 ? GOLD
 			: cents >= 50 ? MINT
 			: cents >= 14 ? 'rgba(210, 230, 246, 0.86)'
 			: 'rgba(128, 156, 184, 0.52)';
-		ctx.fillText(PROFIT_STRINGS[cents], x + 19, y + 7.5);
+		ctx.fillText(PROFIT_STRINGS[cents], x + width * 0.5, y + 7.5);
+		ctx.fillStyle = g < 0 ? SIGN_NEG : g >= HEAVY_G ? SIGN_POS : 'rgba(210, 230, 246, 0.82)';
+		ctx.fillText(GRAVITY_STRINGS[gi], x + width * 0.5, y + 20.5);
 	}
 }
 

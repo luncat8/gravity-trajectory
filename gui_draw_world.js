@@ -309,7 +309,7 @@ function drawWells() {
 		const mag = g < 0 ? -g : g;
 		if (mag < 0.02) continue;
 		const level = i === selected ? 2 : i === hoverBody ? 1 : 0;
-		if (viewMode === VIEW_FIELD && level === 0) continue;
+		if (viewMode !== VIEW_SPACE && level === 0) continue;
 		const colours = WELL_COLOURS[g < 0 ? 1 : 0];
 		ctx.beginPath();
 		ctx.arc(cargoSim.bodyX[i], cargoSim.bodyY[i],
@@ -369,6 +369,28 @@ function drawSigns() {
 		}
 	}
 	ctx.lineCap = 'butt';
+}
+
+/* Potential view marks intrinsically heavy bodies in red without changing the
+ * signed-potential palette underneath. The threshold is the body's own g, not
+ * the experimental world multiplier. */
+function drawPotentialHeavy() {
+	const px = 1 / view.scale;
+	for (let i = 0; i < cargoSim.bodyCount; i++) {
+		if (cargoSim.strength[i] < HEAVY_G) continue;
+		const x = cargoSim.bodyX[i];
+		const y = cargoSim.bodyY[i];
+		const r = cargoSim.bodyR[i];
+		ctx.beginPath();
+		ctx.arc(x, y, r + 2 * px, 0, TAU);
+		ctx.fillStyle = 'rgba(255, 95, 87, 0.28)';
+		ctx.fill();
+		ctx.beginPath();
+		ctx.arc(x, y, r + 5 * px, 0, TAU);
+		ctx.strokeStyle = SIGN_POS;
+		ctx.lineWidth = 1.6 * px;
+		ctx.stroke();
+	}
 }
 
 function drawPortVelocities() {

@@ -224,6 +224,12 @@
 		<div class="radioRow" role="radiogroup" aria-label="view mode">
 			<label title="starfield and gravity well rings (f)"><input id="viewSpace" type="radio" name="viewMode" value="space" checked> space</label>
 			<label title="hue = pull direction · lightness = potential gradient (f)"><input id="viewField" type="radio" name="viewMode" value="field"> gravity field</label>
+			<label title="signed gravity potential · blue negative, green positive · red rings mark g ≥ +2 (f)"><input id="viewPotential" type="radio" name="viewMode" value="potential"> potential</label>
+		</div>
+		<div id="potentialLegend" class="potentialLegend" hidden aria-label="gravity potential legend">
+			<span class="potentialNegative">− potential</span>
+			<span class="potentialPositive">+ potential</span>
+			<span class="potentialHeavy">heavy · g ≥ +2</span>
 		</div>
 		<label id="careerCleanLabel" class="viewCheck" title="clean career canvas: hide thick orbit visit highlights and the blue past-flight trail, highlighting planet outlines instead"><input id="careerClean" type="checkbox" checked> clean render</label>
 	</div>

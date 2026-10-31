@@ -1,5 +1,5 @@
 /*
- * Canvas view state and projection: field/space view mode, overlay resize, HUD rects and hit tests, world<->screen coords, slot accessors, playback and the photo deck tick.
+ * Canvas view state and projection: space/field/potential view mode, overlay resize, HUD rects and hit tests, world<->screen coords, slot accessors, playback and the photo deck tick.
  *
  * Part of the gui family (0.5 plan): a flat global script, no IIFE, no build,
  * file:// friendly. Loaded by index.html; nothing here is exported per file.
@@ -10,10 +10,12 @@
 function refreshViewUi() {
 	if (viewSpaceEl) viewSpaceEl.checked = viewMode === VIEW_SPACE;
 	if (viewFieldEl) viewFieldEl.checked = viewMode === VIEW_FIELD;
+	if (viewPotentialEl) viewPotentialEl.checked = viewMode === VIEW_POTENTIAL;
+	if (potentialLegendEl) potentialLegendEl.hidden = viewMode !== VIEW_POTENTIAL;
 	if (careerCleanLabelEl) careerCleanLabelEl.hidden = !careerRule();
 	if (careerCleanEl) careerCleanEl.checked = cleanCareerView;
 	if (!viewTagEl) return;
-	if (viewMode !== VIEW_FIELD || !fieldRenderer) {
+	if (viewMode === VIEW_SPACE || !fieldRenderer) {
 		const lost = fieldRenderer !== null && fieldRenderer.backend() === 'lost';
 		viewTagEl.textContent = lost ? 'space · field lost' : 'space';
 		viewTagEl.title = lost
@@ -23,6 +25,12 @@ function refreshViewUi() {
 	}
 	const gl = fieldRenderer.backend() === 'webgl';
 	const div = fieldRenderer.scaleDiv();
+	if (viewMode === VIEW_POTENTIAL) {
+		viewTagEl.textContent = 'potential · ' + (gl ? 'WebGL' : '1/' + div);
+		viewTagEl.title = 'signed Plummer potential · blue negative, green positive · red planets have g ≥ +2 · ' +
+			(gl ? 'WebGL shader' : '1/' + div + ' 2D raster');
+		return;
+	}
 	viewTagEl.textContent = gl
 		? 'hue · grad · WebGL' + (div > 1 ? ' 1/' + div : '')
 		: 'hue · grad · 1/' + div;
@@ -33,15 +41,16 @@ function refreshViewUi() {
 /* a lost WebGL context falls back to the starfield until `webglcontextrestored`
  * rebuilds the shader and automatically restores the requested view */
 function activeFieldView() {
-	return viewDesired === VIEW_FIELD &&
+	return viewDesired !== VIEW_SPACE &&
 		(!fieldRenderer || fieldRenderer.backend() !== 'lost');
 }
 
 function syncViewState() {
-	viewMode = activeFieldView() ? VIEW_FIELD : VIEW_SPACE;
-	if (fieldCanvas) fieldCanvas.hidden = viewMode !== VIEW_FIELD;
-	if (scene.setBackdrop) scene.setBackdrop(viewMode !== VIEW_FIELD);
-	if (viewMode === VIEW_FIELD && fieldRenderer) fieldRenderer.invalidate();
+	viewMode = activeFieldView() ? viewDesired : VIEW_SPACE;
+	if (fieldRenderer) fieldRenderer.setMode(viewMode);
+	if (fieldCanvas) fieldCanvas.hidden = viewMode === VIEW_SPACE;
+	if (scene.setBackdrop) scene.setBackdrop(viewMode === VIEW_SPACE);
+	if (viewMode !== VIEW_SPACE && fieldRenderer) fieldRenderer.invalidate();
 	refreshViewUi();
 	hudAt = -Infinity;
 }
@@ -51,8 +60,12 @@ function fieldLost() {
 }
 
 function setViewMode(next) {
-	viewDesired = next === VIEW_FIELD ? VIEW_FIELD : VIEW_SPACE;
+	viewDesired = VIEW_MODES.includes(next) ? next : VIEW_SPACE;
 	syncViewState();
+}
+
+function nextViewMode() {
+	return VIEW_MODES[(VIEW_MODES.indexOf(viewMode) + 1) % VIEW_MODES.length];
 }
 
 function resizeOverlay() {

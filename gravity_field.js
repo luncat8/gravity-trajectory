@@ -1,4 +1,6 @@
-/* Gravity field backdrop: hue = pull direction, lightness = potential gradient */
+/* Gravity backdrops: pull direction / gradient magnitude, or signed potential.
+ * Potential uses the simulation's Plummer softening: phi = -sum(mu*g/r).
+ * Attractive wells are negative (blue), repulsive hills positive (green). */
 (function (root) {
 	'use strict';
 
@@ -13,6 +15,9 @@
 	const L_MAX = 0.56;
 	const G_REF = 40;
 	const G_KNEE = Math.pow(G_REF, 1.5);
+	const P_REF = 8000;
+	const HEAVY_G = 2;
+	const MODE_POTENTIAL = 'potential';
 	const BASE_R = 2;
 	const BASE_G = 6;
 	const BASE_B = 12;
@@ -41,11 +46,15 @@
 		'uniform vec2 uOrigin;',
 		'uniform vec2 uStep;',
 		'uniform int uCount;',
+		'uniform int uPotential;',
 		'uniform vec3 uBodies[' + MAX_BODIES + '];',
 		'const float SOFT2 = 3600.0;',
 		'const float INV_TAU = 0.15915494309189535;',
 		'const float L_MAX = 0.56;',
 		'const float G_KNEE = 252.98221281347034;',
+		'const float P_REF = 8000.0;',
+		'const vec3 NEGATIVE = vec3(42.0 / 255.0, 116.0 / 255.0, 1.0);',
+		'const vec3 POSITIVE = vec3(72.0 / 255.0, 235.0 / 255.0, 139.0 / 255.0);',
 		'const float SAT = 0.88;',
 		'const vec3 BASE = vec3(2.0 / 255.0, 6.0 / 255.0, 12.0 / 255.0);',
 		'vec3 hsl2rgb(float h, float s, float l) {',
@@ -56,6 +65,7 @@
 		'void main() {',
 		'	vec2 w = uOrigin + gl_FragCoord.xy * uStep;',
 		'	vec2 acc = vec2(0.0);',
+		'	float phi = 0.0;',
 		'	for (int i = 0; i < ' + MAX_BODIES + '; i++) {',
 		'		if (i >= uCount) break;',
 		'		vec3 b = uBodies[i];',
@@ -63,6 +73,14 @@
 		'		float r2 = dot(d, d) + SOFT2;',
 		'		float inv = inversesqrt(r2);',
 		'		acc += d * (b.z * inv * inv * inv);',
+		'		phi -= b.z * inv;',
+		'	}',
+		'	if (uPotential == 1) {',
+		'		float mag = abs(phi);',
+		'		float shade = mag / (mag + P_REF);',
+		'		vec3 tint = phi < 0.0 ? NEGATIVE : POSITIVE;',
+		'		gl_FragColor = vec4(mix(BASE, tint, shade), 1.0);',
+		'		return;',
 		'	}',
 		'	float g2 = dot(acc, acc);',
 		'	if (g2 <= 1e-12) {',
@@ -118,12 +136,41 @@
 		return out;
 	}
 
+	/* Reference potential palette; zero is the same dark base as the field view. */
+	function samplePotential(phi, out) {
+		const mag = phi < 0 ? -phi : phi;
+		const shade = mag / (mag + P_REF);
+		out.potential = phi;
+		out.shade = shade;
+		out.r = clampByte(BASE_R + ((phi < 0 ? 42 : 72) - BASE_R) * shade);
+		out.g = clampByte(BASE_G + ((phi < 0 ? 116 : 235) - BASE_G) * shade);
+		out.b = clampByte(BASE_B + ((phi < 0 ? 255 : 139) - BASE_B) * shade);
+		return out;
+	}
+
+	function potentialAt(sim, x, y) {
+		const mu = MU * sim.gravityScale;
+		let phi = 0;
+		const count = sim.bodyCount < MAX_BODIES ? sim.bodyCount : MAX_BODIES;
+		for (let i = 0; i < count; i++) {
+			const s = sim.strength[i];
+			if (s === 0) continue;
+			const dx = sim.bodyX[i] - x;
+			const dy = sim.bodyY[i] - y;
+			phi -= mu * s / Math.sqrt(dx * dx + dy * dy + SOFT2);
+		}
+		return phi;
+	}
+
 	function ensureTables() {
 		if (tables !== null) return tables;
 		const kern = new Float32Array(KERN_N);
+		const potKern = new Float32Array(KERN_N);
 		for (let i = 0; i < KERN_N; i++) {
 			const r2 = (i + 0.5) * KERN_STEP + SOFT2;
-			kern[i] = 1 / (r2 * Math.sqrt(r2));
+			const inv = 1 / Math.sqrt(r2);
+			kern[i] = inv / r2;
+			potKern[i] = inv;
 		}
 		const hueR = new Float32Array(HUE_N);
 		const hueG = new Float32Array(HUE_N);
@@ -150,7 +197,7 @@
 			lMG[i] = m + BASE_G * fade;
 			lMB[i] = m + BASE_B * fade;
 		}
-		tables = { kern, hueR, hueG, hueB, lC, lMR, lMG, lMB };
+		tables = { kern, potKern, hueR, hueG, hueB, lC, lMR, lMG, lMB };
 		return tables;
 	}
 
@@ -172,9 +219,10 @@
 	}
 
 	/* fills an RGBA Uint8ClampedArray (w x h) for tests and the 1/4-res 2D fallback */
-	function rasterize2D(pixels, w, h, sim, view, cssW, cssH, scratch) {
+	function rasterize2D(pixels, w, h, sim, view, cssW, cssH, scratch, mode) {
 		const lut = ensureTables();
-		const kern = lut.kern;
+		const potential = mode === MODE_POTENTIAL;
+		const kern = potential ? lut.potKern : lut.kern;
 		const hueR = lut.hueR;
 		const hueG = lut.hueG;
 		const hueB = lut.hueB;
@@ -204,6 +252,38 @@
 				dxTab[base + x] = dx;
 				dx2Tab[base + x] = dx * dx;
 			}
+		}
+
+		if (potential) {
+			const row = scratch.potRow;
+			const colour = scratch.potColour;
+			let p = 0;
+			for (let y = 0; y < h; y++) {
+				const wy = oy + y * sy;
+				row.fill(0, 0, w);
+				for (let i = 0; i < count; i++) {
+					const ms = mu * str[i];
+					if (ms === 0) continue;
+					const dy = by[i] - wy;
+					const dy2 = dy * dy;
+					const base = i * w;
+					for (let x = 0; x < w; x++) {
+						const r2 = dx2Tab[base + x] + dy2;
+						const k = r2 >> KERN_SHIFT;
+						const inv = k < KERN_N ? kern[k] : 1 / Math.sqrt(r2 + SOFT2);
+						row[x] -= ms * inv;
+					}
+				}
+				for (let x = 0; x < w; x++) {
+					samplePotential(row[x], colour);
+					pixels[p] = colour.r;
+					pixels[p + 1] = colour.g;
+					pixels[p + 2] = colour.b;
+					pixels[p + 3] = 255;
+					p += 4;
+				}
+			}
+			return;
 		}
 
 		let p = 0;
@@ -311,6 +391,7 @@
 			uOrigin: gl.getUniformLocation(prog, 'uOrigin'),
 			uStep: gl.getUniformLocation(prog, 'uStep'),
 			uCount: gl.getUniformLocation(prog, 'uCount'),
+			uPotential: gl.getUniformLocation(prog, 'uPotential'),
 			uBodies: gl.getUniformLocation(prog, 'uBodies[0]'),
 			uniforms: new Float32Array(MAX_BODIES * 3)
 		};
@@ -321,6 +402,8 @@
 			cap: w,
 			axRow: new Float32Array(w),
 			ayRow: new Float32Array(w),
+			potRow: new Float64Array(w),
+			potColour: { potential: 0, shade: 0, r: 0, g: 0, b: 0 },
 			dxTab: new Float32Array(MAX_BODIES * w),
 			dx2Tab: new Float32Array(MAX_BODIES * w)
 		};
@@ -329,6 +412,7 @@
 	function create(canvas, onStateChange) {
 		let glState = initWebGL(canvas);
 		let ctx2d = glState === null ? canvas.getContext('2d') : null;
+		let mode = 'field';
 		let glDiv = 1;
 		let slowStreak = 0;
 		let fbW = 0;
@@ -371,6 +455,13 @@
 		}
 
 		function invalidate() {
+			dirty = true;
+		}
+
+		function setMode(next) {
+			const normalized = next === MODE_POTENTIAL ? MODE_POTENTIAL : 'field';
+			if (normalized === mode) return;
+			mode = normalized;
 			dirty = true;
 		}
 
@@ -440,6 +531,7 @@
 			gl.uniform2f(glState.uOrigin, -view.offX / view.scale, (cssH - view.offY) / view.scale);
 			gl.uniform2f(glState.uStep, (cssW / w) / view.scale, -(cssH / h) / view.scale);
 			gl.uniform1i(glState.uCount, count);
+			gl.uniform1i(glState.uPotential, mode === MODE_POTENTIAL ? 1 : 0);
 			if (count > 0) gl.uniform3fv(glState.uBodies, u);
 			gl.drawArrays(gl.TRIANGLES, 0, 3);
 		}
@@ -452,7 +544,7 @@
 				imgData = ctx2d.createImageData(w, h);
 			}
 			if (w > scratch.cap) scratch = makeScratch(w);
-			rasterize2D(imgData.data, w, h, sim, view, cssW, cssH, scratch);
+			rasterize2D(imgData.data, w, h, sim, view, cssW, cssH, scratch, mode);
 			ctx2d.putImageData(imgData, 0, 0);
 		}
 
@@ -479,6 +571,8 @@
 
 		return {
 			backend: () => (glState !== null ? 'webgl' : ctx2d !== null ? '2d' : 'lost'),
+			mode: () => mode,
+			setMode,
 			scaleDiv,
 			draws: () => draws,
 			pixels: () => (imgData ? imgData.data : null),
@@ -487,8 +581,8 @@
 		};
 	}
 
-	function renderBuffer(pixels, w, h, sim, view, cssW, cssH) {
-		rasterize2D(pixels, w, h, sim, view, cssW, cssH, makeScratch(w));
+	function renderBuffer(pixels, w, h, sim, view, cssW, cssH, mode) {
+		rasterize2D(pixels, w, h, sim, view, cssW, cssH, makeScratch(w), mode);
 		return pixels;
 	}
 
@@ -496,7 +590,11 @@
 		LOW_DIV,
 		L_MAX,
 		G_REF,
+		P_REF,
+		HEAVY_G,
 		SAT,
+		potentialAt,
+		samplePotential,
 		sampleColor,
 		renderBuffer,
 		create

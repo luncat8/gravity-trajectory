@@ -8,7 +8,7 @@
 
 const { loadPage } = require('./dom_stub.js');
 
-const env = loadPage();
+const env = loadPage({ search: '?mode=lab&seed=7' });
 
 const scene = env.context.OrbitScene;
 if (!scene || !scene.sim || !scene.view) throw new Error('OrbitScene missing');
@@ -1844,8 +1844,11 @@ console.log('career:', 'HQ P' + career.hq, 'Â· limit', limit.toFixed(0), 'px/s Â
 	check(darkOk, 'zero gravity field collapses lightness to dark space base');
 	fEnv.setValue('expGravity', '1');
 	fEnv.fireWindow('keydown', { code: 'KeyF', key: 'f', target: { tagName: 'BODY' } });
+	check(fScene.viewMode() === 'potential' && !fui.get('f').hidden && !oScene.backdropVisible(),
+		'KeyF cycles field to potential');
+	fEnv.fireWindow('keydown', { code: 'KeyF', key: 'f', target: { tagName: 'BODY' } });
 	check(fScene.viewMode() === 'space' && fui.get('f').hidden && oScene.backdropVisible(),
-		'KeyF toggles back to space view');
+		'KeyF cycles potential back to space view');
 	fEnv.choose('viewField');
 	check(fScene.viewMode() === 'field' && !fui.get('f').hidden && !oScene.backdropVisible(),
 		'viewField radio switches to gravity field');

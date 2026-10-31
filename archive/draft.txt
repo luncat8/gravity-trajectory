@@ -178,6 +178,8 @@ get sound generator - it work good with default preset to sonification distance,
 
 note voronoi seems need only to restrict notes to music scale (nearest planets form scale by design). TODO deferred: review and/or improve this here and/or in experiment project.
 
+think how blind people could play and think about trajectory (if we implement such in future)
+
 ## balance and GUI
 
 need balance build catapult cost.
@@ -191,9 +193,10 @@ fix The planet-ownership rule is not enforced  bug in build EMC of already occup
 Bots can use other's EMC and pay to other players for it as this a lot cheaper then commercial. They prefer their own EMC first. Commercial EMC is the fallback when the current rail can’t produce a shot—e.g. it is too weak or depleted or some urgent profitable task.
 
 ### balance_lab.html
-draw sci research and calculated build cost, etc to i can manually move balance sliders
 
-and button to copy/paste final settings
+separate html to draw sci research and calculated build cost, etc to i can manually move balance sliders
+
+button to copy/paste final settings
 
 so i could adjust and copy to chat what i want
 
@@ -208,3 +211,11 @@ sliders to adjust balance, start price, etc and i will see how plot changes and 
 ### price
 cost ladder is misconcept. we should have float continues sci research and no 'levels'. so cost = f(cost of research from initial point * some coefficient )
 i mean research is somewhat additive - next research may be low cost to push top level a bit but total VECTOR from initial point may be calculated as total research cost of current item and lets like 10...20% if it will be build cost this need to be balanced
+
+## ui
+
+add after visit profit line with gravity. make this planet info border same color as player's color if has EMC or neutral (current white-orange looks ok)
+
+add new view mode: gravity potential. negative - blue, positive - green, heavy planets - red. or negative black, positive blue.
+
+make by default random seed new startup unless url has seed

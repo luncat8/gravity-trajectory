@@ -131,7 +131,7 @@ function loadSearchParams() {
 	if (!search || search === '?') return false;
 	const params = new URLSearchParams(search);
 	const viewParam = params.get('view');
-	if (viewParam === VIEW_FIELD || viewParam === VIEW_SPACE) setViewMode(viewParam);
+	if (VIEW_MODES.includes(viewParam)) setViewMode(viewParam);
 	const hasGameHint = params.has('mode') || params.has('game') || params.has('rule') ||
 		params.has('seed') || params.has('rate') || params.has('bot') || params.has('src') ||
 		params.has('source') || params.has('player') || params.has('you') || params.has('shots');

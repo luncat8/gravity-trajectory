@@ -558,7 +558,7 @@ function sweepUlp(cargo, label, t0, rate, nudgeField) {
 }
 
 function benchUlp() {
-	const page = loadPage();
+	const page = loadPage({ search: '?mode=lab&seed=7' });
 	const cargo = page.context.GravityScene.sim;
 	const t0 = page.context.OrbitScene.sim.t;
 	console.log('cross-engine proxy (1 ulp):');

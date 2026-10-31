@@ -113,6 +113,8 @@ const CAREER_WAIT_MS = 2000;
 const WAIT_FRAME_MS = 20;
 const VIEW_SPACE = 'space';
 const VIEW_FIELD = 'field';
+const VIEW_POTENTIAL = 'potential';
+const VIEW_MODES = [VIEW_SPACE, VIEW_FIELD, VIEW_POTENTIAL];
 /* refit button `data-tier` that empties the engine slot (the tech tables have no `null` record) */
 const NO_TIER = -1;
 /* the flat mode row: lab has no rule, every other mode is a game rule */
@@ -128,6 +130,12 @@ const PROFIT_STRINGS = new Array(PROFIT_MAX_CENTS + 1);
 for (let c = 0; c <= PROFIT_MAX_CENTS; c++) {
 	PROFIT_STRINGS[c] = '+' + (c / 100).toFixed(2);
 }
+/* Planet-card gravity lines are cached like profit lines: no strings in draw(). */
+const GRAVITY_STRINGS = new Array(701);
+for (let c = -200; c <= 500; c++) {
+	GRAVITY_STRINGS[c + 200] = 'g ' + (c > 0 ? '+' : '') + (c / 100).toFixed(2);
+}
+const HEAVY_G = root.GravityField ? root.GravityField.HEAVY_G : 2;
 const RIVAL_COLOURS = ['#b99aff', '#ff85a8'];
 const RIVAL_TRAILS = ['rgba(185, 154, 255, 0.48)', 'rgba(255, 133, 168, 0.44)'];
 const RIVAL_TAGS = ['R1', 'R2'];
@@ -189,7 +197,8 @@ const LOCK_DASH = [0, 0];
 const COMMON_HELP = 'Drag from a planet or pad to aim; hold Shift for 1/20 fine control. ' +
 	'Release to preview; in flight modes, Enter or launch fires and landing stages the next shot. ' +
 	'Esc cancels an aim or queued launch. Planet gravity is seeded from −1 to +3.5; ' +
-	'negative gravity repels. The seed is in the URL.';
+	'negative gravity repels. The seed is in the URL; a seedless startup draws a new one. ' +
+	'f cycles space → gravity field → gravity potential; potential is blue when negative, green when positive, and red rings mark heavy planets (g ≥ +2).';
 const RULE_HELP = {
 	lab: {
 		name: 'lab',

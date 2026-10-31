@@ -210,6 +210,25 @@ function syncScoreControls(flightLock) {
 	}
 }
 
+function randomSeed() {
+	return 1 + Math.floor(Math.random() * SEED_RANGE);
+}
+
+/* A fresh page gets a new world unless the address pins one. Replay hashes
+ * keep their recorded seed; an ordinary query seed wins over a stale mode. */
+function startupSeed() {
+	if (GravityGame.isGameLink(location.hash)) {
+		const link = GravityGame.decodeLink(location.hash);
+		if (link) return link.seed;
+	}
+	const value = new URLSearchParams(location.search).get('seed');
+	if (value !== null) {
+		const seed = Number(value);
+		if (Number.isInteger(seed) && seed >= 1 && seed <= 0xffffffff) return seed;
+	}
+	return randomSeed();
+}
+
 /* Keep the address shareable without navigating or overwriting a replay hash. */
 function syncSeedUrl(keepReplay = false) {
 	if (loadingUrl) return;

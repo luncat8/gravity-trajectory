@@ -830,6 +830,31 @@ body {
 	margin-top: 6px;
 }
 
+#viewGroup .radioRow {
+	flex-wrap: wrap;
+	gap: 6px 14px;
+}
+
+.potentialLegend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 12px;
+	margin-top: 7px;
+	font: 10.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.potentialNegative {
+	color: #57a8ff;
+}
+
+.potentialPositive {
+	color: #5cff8b;
+}
+
+.potentialHeavy {
+	color: #ff5f57;
+}
+
 .radioRow label:has(input:checked),
 .viewCheck:has(input:checked) {
 	color: var(--text);

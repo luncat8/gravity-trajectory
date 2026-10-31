@@ -136,6 +136,7 @@ function makeElement(spec, paint, webglFactory) {
 /*
  * options.hash: initial location hash ('' for none)
  * options.clipboard: false removes navigator.clipboard (insecure-context fallback)
+ * options.random: replaces Math.random before boot (seed/startup tests)
  */
 function loadPage(options = {}) {
 	const calls = {
@@ -206,13 +207,19 @@ function loadPage(options = {}) {
 	}
 	context.window = context;
 	vm.createContext(context);
+	if (typeof options.random === 'function') {
+		context.__testRandom = options.random;
+		vm.runInContext('Math.random = __testRandom; delete __testRandom;', context);
+	}
 	/* the page draws helper aims, roster spawns and new seeds from Math.random;
 	 * pin it so every run of the same page plays the same random presses */
-	vm.runInContext('let rngState = 2026;' +
-		'Math.random = function () {' +
-		'rngState = (Math.imul(rngState, 1664525) + 1013904223) >>> 0;' +
-		'return rngState / 4294967296;' +
-		'};', context, { filename: 'dom-stub-rng.js' });
+	if (typeof options.random !== 'function') {
+		vm.runInContext('let rngState = 2026;' +
+			'Math.random = function () {' +
+			'rngState = (Math.imul(rngState, 1664525) + 1013904223) >>> 0;' +
+			'return rngState / 4294967296;' +
+			'};', context, { filename: 'dom-stub-rng.js' });
+	}
 	SCRIPTS.forEach((file, i) => vm.runInContext(SOURCES[i], context, { filename: file }));
 
 	function fire(listeners, type, event) {

@@ -127,7 +127,7 @@ function updateGameClockHud() {
 
 /* ── paint frame ── the paint entry, clock and end text, live HUD */
 function draw(now) {
-	if (viewMode === VIEW_FIELD && fieldRenderer) {
+	if (viewMode !== VIEW_SPACE && fieldRenderer) {
 		if (fieldRenderer.backend() === 'lost') fieldLost();
 		else {
 			const prevDiv = fieldRenderer.scaleDiv();
@@ -162,7 +162,8 @@ function draw(now) {
 	drawAim();
 	drawCargo(tickNow);
 	drawMarkers();
-	drawSigns();
+	if (viewMode === VIEW_POTENTIAL) drawPotentialHeavy();
+	else drawSigns();
 	ctx.restore();
 	if (game.on && !routeRule()) drawPlanetProfits();
 	if (careerRule()) drawCareerPad();

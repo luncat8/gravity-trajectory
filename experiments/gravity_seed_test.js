@@ -38,6 +38,19 @@ assert.ok(/id="expGravity"[^>]*max="9"/.test(html));
 assert.strictEqual(Sim.STRENGTH_MAX, 5);
 assert.ok(!html.includes('id="gameSeed"') && !html.includes('id="cargoHint"'));
 
+/* Seedless startup draws a fresh world; an explicit query or replay seed pins it. */
+const randomA = loadPage({ random: () => 0.25 });
+const randomB = loadPage({ random: () => 0.75 });
+assert.strictEqual(randomA.context.GravityScene.game.seed || randomA.context.OrbitScene.sim.seed, 250000);
+assert.strictEqual(randomB.context.GravityScene.game.seed || randomB.context.OrbitScene.sim.seed, 750000);
+assert.strictEqual(paramsOf(randomA).get('seed'), '250000');
+const pinned = loadPage({ search: '?mode=career&seed=42', random: () => 0.9 });
+assert.strictEqual(pinned.context.GravityScene.game.seed, 42);
+const invalidSeed = loadPage({ search: '?seed=bad', random: () => 0.5 });
+assert.strictEqual(invalidSeed.context.OrbitScene.sim.seed, 500000);
+const replayPinned = loadPage({ search: '?seed=99', hash: '#game=1&seed=19&rate=1', random: () => 0.1 });
+assert.strictEqual(replayPinned.context.GravityScene.game.seed, 19);
+
 /* A lab seed in the address regenerates the requested world without entering a game. */
 const lab = loadPage({ search: '?mode=lab&seed=27&view=field&other=kept' });
 const labScene = lab.context.GravityScene;

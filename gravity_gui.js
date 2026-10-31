@@ -118,6 +118,8 @@ const bodyTagEl = $('bodyTag');
 const viewTagEl = $('viewTag');
 const viewSpaceEl = $('viewSpace');
 const viewFieldEl = $('viewField');
+const viewPotentialEl = $('viewPotential');
+const potentialLegendEl = $('potentialLegend');
 const careerCleanEl = $('careerClean');
 const careerCleanLabelEl = $('careerCleanLabel');
 const sourceTagEl = $('sourceTag');
@@ -543,6 +545,11 @@ if (viewFieldEl) {
 		if (viewFieldEl.checked) setViewMode(VIEW_FIELD);
 	});
 }
+if (viewPotentialEl) {
+	viewPotentialEl.addEventListener('change', () => {
+		if (viewPotentialEl.checked) setViewMode(VIEW_POTENTIAL);
+	});
+}
 if (careerCleanEl) {
 	careerCleanEl.addEventListener('change', () => {
 		cleanCareerView = careerCleanEl.checked;
@@ -744,7 +751,7 @@ if (playerCountUpEl) playerCountUpEl.addEventListener('click', () => setPlayerCo
 gameRestartBtn.addEventListener('click', () =>
 	startGame(game.seed, game.fixedRate, undefined, undefined, undefined, game.cheat));
 gameNewSeedBtn.addEventListener('click', () => {
-	startGame(1 + Math.floor(Math.random() * SEED_RANGE), false);
+	startGame(randomSeed(), false);
 });
 gameCopyBtn.addEventListener('click', copyLink);
 if (botCopyBtn) botCopyBtn.addEventListener('click', copyBotLink);
@@ -859,7 +866,7 @@ window.addEventListener('keydown', event => {
 	if (event.code === 'KeyF' && !event.ctrlKey && !event.metaKey && !event.altKey) {
 		const tag = event.target && event.target.tagName;
 		if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
-			setViewMode(viewMode === VIEW_FIELD ? VIEW_SPACE : VIEW_FIELD);
+			setViewMode(nextViewMode());
 			return;
 		}
 	}
@@ -1003,12 +1010,14 @@ mode = srcPortsEl.checked ? MODE_PORTS : MODE_PLANETS;
 cargoSim.fieldT = tradeSim.t;
 cargoSim.fieldRate = tradeRate();
 updateRuleHelp(selectedHelpRule());
+const bootSeed = startupSeed();
+if (tradeSim.seed !== bootSeed) scene.reset(bootSeed);
 initPlanetUniverse(PLANET_DEFAULT);
 applyPlanetUniverse();
 attachWorld();
 refreshExperimentUi();
 const initialView = new URLSearchParams(location.search).get('view');
-if (initialView === VIEW_FIELD || initialView === VIEW_SPACE) setViewMode(initialView);
+if (VIEW_MODES.includes(initialView)) setViewMode(initialView);
 if (!loadLink() && !loadSearchParams()) {
 	const last = loadLastMode();
 	if (last) setPlayMode(last);
