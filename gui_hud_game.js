@@ -178,7 +178,7 @@ function playerSummary() {
 	}
 	const flyingLength = cargoSim.status === STATUS_FLYING ? cargoSim.flightLength : 0;
 	return {
-		visited: careerRule() ? game.career.padCount : cargoSim.visitedCount,
+		visited: careerRule() ? activeCareer().padCount : cargoSim.visitedCount,
 		done: game.doneSteps >= 0,
 		steps: scoreSteps(),
 		shots: game.shots.length,

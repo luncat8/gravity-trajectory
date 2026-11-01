@@ -25,7 +25,7 @@ function moneyToastFor(slot, sim, m, shotCount) {
 		parts.push('no harvest');
 	}
 	if (careerRule()) {
-		const career = game.career;
+		const career = activeCareer();
 		if (career.lastFee > 0) parts.push('EMC fee −' + career.lastFee.toFixed(2));
 		else parts.push('pad −' + career.lastEnergy.toFixed(2) + ' kWh');
 		if (career.lastFuel > 0) parts.push('fuel −' + career.lastFuel.toFixed(1) + ' kg');

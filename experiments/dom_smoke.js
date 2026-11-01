@@ -1018,9 +1018,11 @@ env.runFrames(2, 16.0);
 const youMultiLen = gScene.routePlan().length;
 check(youMultiLen > 0 && gScene.routeBest().origin === youMultiShot.p, 'YOU route plan in multi-user failed');
 
-/* Pressing R1 row switches active user to R1; pressing R2 (bot) row does not switch */
+/* Any row can be selected: R2 (a bot) is viewed first, then R1 is flown by hand */
 env.click('scoreRival2');
-check(gScene.activeSlot() === 0, 'clicking bot row R2 switched active user');
+check(gScene.activeSlot() === 2 && ui.get('scoreRival2').classList.contains('isActive') &&
+	!ui.get('scorePlayer').classList.contains('isActive'),
+	'clicking bot row R2 did not view it');
 env.click('scoreRival1');
 env.runFrames(1, 16.0);
 check(gScene.activeSlot() === 1 && !ui.get('rivalBot1').checked &&
@@ -1332,12 +1334,15 @@ check(Math.abs(aimAfter.speed - aimBefore.speed) < 1e-9 && aimAfter.ceiling > ai
 		aimBefore.grip + ' · ' + aimAfter.ceiling);
 careerEnv.setValue('expForce', 1);
 careerEnv.runFrames(2, 16.0);
+/* land on a planet nobody else claimed, so the build button is on offer:
+ * the HQ well is as shallow as the seed made it, so no angle is guaranteed */
 let landingShot = null;
-for (let a = 0; a < 72 && !landingShot; a++) {
+for (let a = 0; a < 72 && landingShot === null; a++) {
 	const angle = a / 72 * Math.PI * 2;
 	kCargo.predict(career.hq, angle, CAREER_TEST_SPEED);
 	if (kCargo.predReason !== kSim.END_IMPACT || kCargo.predBody === career.hq) continue;
 	const destination = kCargo.predBody;
+	if (!pageGame.planetBuildable(career, destination)) continue;
 	for (let b = 0; b < 72; b++) {
 		kCargo.predict(destination, b / 72 * Math.PI * 2, CAREER_TEST_SPEED);
 		if (kCargo.predReason === kSim.END_IMPACT && kCargo.predBody !== destination &&
@@ -2991,8 +2996,8 @@ function protoOf(career, family, id) {
 	const tList = () => tui.get('careerLaunchList').innerHTML;
 	const tArm = () => /data-act="book" data-entry="\d+"(?! disabled)/.test(tList());
 	const tClick = data => tEnv.fireElement(tBox, 'click', { target: { dataset: data } });
-	const tLanding = speed => {
-		for (let a = 0; a < 72; a++) {
+	const tLanding = (speed, from = 0) => {
+		for (let a = from; a < 72; a++) {
 			const angle = a / 72 * Math.PI * 2;
 			tSim.predict(tCareer.hq, angle, speed);
 			if (tSim.predReason === tSimCtor.END_IMPACT && tSim.predBody !== tCareer.hq) return angle;
@@ -3085,8 +3090,13 @@ function protoOf(career, family, id) {
 	check(tCareer.launchBook.entries.length === 0 && tList().includes('empty'),
 		'the clear button must drop the stale list: ' + tList());
 
-	/* the helper keeps a saved shot that no fresh aim pays more than */
-	const tAngle2 = tLanding(CAREER_TEST_SPEED);
+	/* the helper keeps a saved shot that no fresh aim pays more than: the drag
+	 * clamps to the live cap and the grip quantises, so the search runs at the
+	 * speed the aim truly reaches */
+	const tAimSpeed = speed =>
+		tGame.speedOf(tGame.speedUnits(Math.min(speed, tSim.speedLimit(tCareer.hq))));
+	/* the book dedupes a repeated aim, so the fixture re-arms a different shot */
+	const tAngle2 = tLanding(tAimSpeed(CAREER_TEST_SPEED), 2);
 	check(tAngle2 !== null, 'no landing shot for the seeded helper fixture');
 	tEnv.dragAim(tCareer.hq, tAngle2, CAREER_TEST_SPEED);
 	tEnv.runFrames(4, 16.0);

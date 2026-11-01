@@ -423,7 +423,7 @@ function scienceSliderInput(node) {
 	if (v < meta.min) v = meta.min;
 	if (v > meta.max) v = meta.max;
 	scienceValues[family][axisKey] = v;
-	refreshScienceReadout(game.career);
+	refreshScienceReadout(activeCareer());
 }
 
 function careerScienceFamily(family) {
@@ -433,7 +433,7 @@ function careerScienceFamily(family) {
 }
 
 function careerResearch() {
-	const career = game.career;
+	const career = activeCareer();
 	const family = scienceFamily;
 	const label = GravityGame.researchLabel(career);
 	const params = scienceParams(family);
@@ -444,7 +444,7 @@ function careerResearch() {
 			: 'research needs the preview fee in the purse');
 		return;
 	}
-	if (turret.pending && !GravityGame.careerCanFire(career, cargoSim, turret.body, turret.speed)) {
+	if (turret.pending && !GravityGame.careerCanFire(career, activeSim(), turret.body, turret.speed)) {
 		cancelTurret();
 	}
 	const n = OrbitScience.statsHull(career.science, family).n;

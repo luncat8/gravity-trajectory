@@ -84,7 +84,7 @@ function updateGameHud() {
 			gamePurseEl.classList.toggle('gain', !loss && shots.length > 0 &&
 				ledger.last > 0);
 		}
-		if (careerRule()) syncSciencePurse(game.career);
+		if (careerRule()) syncSciencePurse(activeCareer());
 	}
 	const replayText = replay.on
 		? replay.route
@@ -110,7 +110,7 @@ function formatGameClock(seconds) {
 
 function updateGameClockHud() {
 	if (!gameHudEl || gameHudEl.hidden) return;
-	const career = game.career;
+	const career = activeCareer();
 	if (gameClockEl) {
 		gameClockEl.textContent = formatGameClock(game.clockSteps * DT);
 	}
@@ -254,10 +254,10 @@ function updateLiveHud() {
 	if (planetPadsLabelEl) planetPadsLabelEl.hidden = !careerRule();
 	if (planetRowSepEl) planetRowSepEl.hidden = !careerRule();
 	if (careerRule()) {
-		const padsText = game.career.padCount + ' / ' + planetCount;
+		const padsText = activeCareer().padCount + ' / ' + planetCount;
 		if (padsText !== hudPadsText) {
 			hudPadsText = padsText;
-			if (padCountEl) padCountEl.textContent = game.career.padCount;
+			if (padCountEl) padCountEl.textContent = activeCareer().padCount;
 			if (padTotalEl) padTotalEl.textContent = planetCount;
 		}
 	}
@@ -308,7 +308,7 @@ function updateLiveHud() {
 /* ── launch state & status ── launch state and note, ride text and title, status text */
 function setLaunchState(blocked, exitWarning) {
 	if (canImpulse()) {
-		const ship = game.career.ship;
+		const ship = activeCareer().ship;
 		const usedKg = burnArmed
 			? OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg) : 0;
 		const warnExit = burnArmed && exitWarning;
@@ -355,7 +355,7 @@ function setLaunchState(blocked, exitWarning) {
 	/* planet actions beside launch: build yours, fire the commercial rail
 	 * that stands on every planet, or evacuate — shown whenever the career
 	 * ship sits landed (lost in space keeps only the evacuation) */
-	const c = game.career;
+	const c = activeCareer();
 	const landed = career && c.ended === GravityGame.CAREER_OPEN &&
 		cargoSim.status !== STATUS_FLYING;
 	const showActions = landed && (c.at >= 0 || c.stranded);

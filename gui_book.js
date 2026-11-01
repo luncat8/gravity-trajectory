@@ -87,7 +87,7 @@ const shotMoney = {
  * price, so both feed this table: contract and competition pay, the launch
  * fee and the cost of leaving the landing planet. */
 function moneyFacts(origin, speed, body, steps, length, visitPay) {
-	const career = game.career;
+	const career = activeCareer();
 	let cash = visitPay;
 	if (career.contract >= 0) {
 		const task = career.tasks[career.contract];
@@ -100,7 +100,7 @@ function moneyFacts(origin, speed, body, steps, length, visitPay) {
 	const fee = GravityGame.launchFee(career, origin, speed);
 	const available = career.ledger.purse + cash - fee;
 	const mass = bot.careerArrivalMass(career, body);
-	const departure = bot.careerDeparture(career, body, available, mass, cargoSim);
+	const departure = bot.careerDeparture(career, body, available, mass, activeSim());
 	const padless = career.pads[body].catapult === null;
 	shotMoney.cash = cash;
 	shotMoney.fee = fee;
@@ -128,7 +128,7 @@ function storedMoney(entry) {
 /* the two live gates the launch button applies: the fee is covered and the
  * landing can be left again */
 function moneyFlyable(money) {
-	return money.launchable && game.career.ledger.purse + 1e-9 >= money.fee;
+	return money.launchable && activeCareer().ledger.purse + 1e-9 >= money.fee;
 }
 
 function escapeHtml(text) {
@@ -138,10 +138,10 @@ function escapeHtml(text) {
 
 /* one finished page trace joins the career's book */
 function saveTrace(probe, origin, angleU, speedU) {
-	if (!careerRule() || !cargoSim.fieldStatic) return;
+	if (!careerRule() || !activeSim().fieldStatic) return;
 	if (probe.predReason !== END_IMPACT || probe.predBody < 0) return;
 	const money = traceMoney(probe, origin, GravityGame.speedOf(speedU));
-	GravityGame.recordLaunch(game.career.launchBook, pageBookTag(), {
+	GravityGame.recordLaunch(activeCareer().launchBook, pageBookTag(), {
 		origin: origin, angleU: angleU, speedU: speedU, body: probe.predBody,
 		steps: probe.predSteps, time: probe.predTime, length: probe.predLength,
 		score: money.net, logPlanet: probe.predLogPlanet, logStep: probe.predLogStep,
@@ -175,7 +175,7 @@ const bookFire = new Uint8Array(GravityGame.BOOK_MAX);
 function launchBlock(career, entry, speed) {
 	if (!cargoSim.fieldStatic) return 'moving field';
 	if (playerIsBot()) return 'bot controls the ship';
-	return GravityGame.railBlock(career, cargoSim, entry.origin, speed) ||
+	return GravityGame.railBlock(career, activeSim(), entry.origin, speed) ||
 		(turret.pending ? 'a shot is already queued'
 			: careerWaitBusy() ? 'the clock is settling a wait' : '');
 }
@@ -242,7 +242,7 @@ function railLinesHtml(rail) {
 function launchListHtml(career) {
 	const head = '<div class="careerHead">launch list</div>';
 	const book = career.launchBook;
-	const html = head + railLinesHtml(GravityGame.railText(career, cargoSim, career.at));
+	const html = head + railLinesHtml(GravityGame.railText(career, activeSim(), career.at));
 	if (book.entries.length === 0) {
 		return html + '<div class="careerLine dim">empty · aim or scan to save a shot</div>';
 	}
@@ -281,7 +281,7 @@ function refreshLaunchList(force) {
 		}
 		return;
 	}
-	const career = game.career;
+	const career = activeCareer();
 	const pad = career.at >= 0 ? GravityGame.padAt(career, career.at) : null;
 	const key = career.launchBook.version + '|' + pageBookTag() + '|' + career.at + '|' +
 		(cargoSim.fieldStatic ? 1 : 0) + '|' + cargoSim.status + '|' +
@@ -296,7 +296,7 @@ function refreshLaunchList(force) {
 /* a stale book cannot be flown: drop it by hand instead of losing it
  * silently on the next save */
 function dropStaleBook() {
-	const book = game.career.launchBook;
+	const book = activeCareer().launchBook;
 	if (book.entries.length === 0) return;
 	const count = book.entries.length;
 	GravityGame.resetLaunchBook(book);
@@ -308,7 +308,7 @@ function dropStaleBook() {
  * The tag and the rail gate are refused with the words the row shows. */
 function useBookEntry(index) {
 	if (!careerRule() || careerWaitBusy() || turret.pending) return;
-	const career = game.career;
+	const career = activeCareer();
 	const entry = career.launchBook.entries[index];
 	if (!entry) return;
 	if (!GravityGame.bookReady(career.launchBook, pageBookTag())) {

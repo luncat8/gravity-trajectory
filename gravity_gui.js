@@ -725,13 +725,13 @@ for (let s = 0; s < scoreRowEls.length; s++) {
 	if (!row) continue;
 	row.addEventListener('click', event => {
 		if (isBotControlTarget(s, event && event.target)) return;
-		selectUserSlot(s);
+		selectSlot(s);
 	});
 	row.addEventListener('keydown', event => {
 		if (!event || isBotControlTarget(s, event.target)) return;
 		if (event.key !== 'Enter' && event.key !== ' ') return;
 		if (event.preventDefault) event.preventDefault();
-		selectUserSlot(s);
+		selectSlot(s);
 	});
 }
 if (botOffEl) botOffEl.addEventListener('change', () => setBot(BOT_OFF));
@@ -922,6 +922,9 @@ root.GravityScene = {
 	bot: bot,
 	game: game,
 	career: game.career,
+	activeCareer: activeCareer,
+	slotCareer: slotCareer,
+	careerWorldOpen: careerWorldOpen,
 	replay: replay,
 	playScale: playScale,
 	playIndex: () => playIndex,
@@ -935,7 +938,7 @@ root.GravityScene = {
 	slotType: slot => slotTypes[slot],
 	setSlotType: setSlotType,
 	activeSlot: () => activeSlotIndex(),
-	selectUserSlot: selectUserSlot,
+	selectSlot: selectSlot,
 	careerAct,
 	waitCareer,
 	careerPaused: () => careerPaused,

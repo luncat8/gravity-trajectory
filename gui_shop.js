@@ -8,7 +8,7 @@
 'use strict';
 
 function careerRuleText() {
-	const career = game.career;
+	const career = activeCareer();
 	const pads = career.padCount + ' / ' + planetCount + ' pads';
 	if (career.ended === GravityGame.CAREER_BROKE) return 'career · broke · ' + pads;
 	if (career.ended === GravityGame.CAREER_COMPLETE) return 'career · complete';
@@ -18,7 +18,7 @@ function careerRuleText() {
 /* the scoreboard tag drops the pad count — that lives on the pads/planets
  * row so the rule name stays on one line */
 function careerScoreTag() {
-	const career = game.career;
+	const career = activeCareer();
 	if (career.ended === GravityGame.CAREER_BROKE) return 'career · broke';
 	if (career.ended === GravityGame.CAREER_COMPLETE) return 'career · complete';
 	return 'career' + (career.cheat ? ' · ' + career.cheat : '');
@@ -126,7 +126,7 @@ function tierIndex(table, item) {
 }
 
 function careerPickPlanet() {
-	const career = game.career;
+	const career = activeCareer();
 	if (careerFollow) return career.at >= 0 ? career.at : career.hq;
 	const raw = careerPlanetEl ? careerPlanetEl.value : '';
 	const picked = raw === '' ? -1 : Math.round(Number(raw));
@@ -165,7 +165,7 @@ function recordRef(table, item) {
 
 /* a button's record: its table tier, or its prototype id (null when unknown) */
 function shopRecord(data) {
-	if (data.item) return GravityGame.prototypeById(game.career, data.kind, data.item);
+	if (data.item) return GravityGame.prototypeById(activeCareer(), data.kind, data.item);
 	const table = TECH_TABLES[data.kind];
 	if (!table) return null;
 	return table[Math.round(Number(data.tier))] || null;
@@ -180,7 +180,7 @@ function copyButtonHtml(row, item) {
 }
 
 function careerTagText() {
-	const career = game.career;
+	const career = activeCareer();
 	const at = career.at;
 	const where = at < 0 ? 'lost in space'
 		: at === career.hq ? 'HQ ' + planetName(at)

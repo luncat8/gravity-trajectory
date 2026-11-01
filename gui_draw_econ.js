@@ -259,9 +259,9 @@ function careerPadPlate(career) {
 }
 
 function drawCareerPad() {
-	const at = game.career.at;
+	const at = activeCareer().at;
 	if (at < 0) return;
-	const info = careerPadPlate(game.career);
+	const info = careerPadPlate(activeCareer());
 	const width = 186;
 	const height = 18;
 	const sx = tradeSim.planetX[at] * view.scale + view.offX;

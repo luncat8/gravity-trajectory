@@ -378,6 +378,26 @@ function slotLedger(slot) {
 	return slot === 0 ? game.money : bot.rivals[slot - 1].ledger;
 }
 
+/* the career record of a slot: YOU own game.career, a rival company lives in
+ * the bot's actor, so one page can show and fly any player */
+function slotCareer(slot) {
+	return slot === 0 ? game.career : bot.rivals[slot - 1].career;
+}
+
+/* the career every panel, pad and shop reads: the selected player's */
+function activeCareer() {
+	return slotCareer(activeSlotIndex());
+}
+
+/* any company still in business keeps the shared world clock turning */
+function careerWorldOpen() {
+	for (let s = 0; s < slotCount(); s++) {
+		const career = slotCareer(s);
+		if (career && career.ended === GravityGame.CAREER_OPEN) return true;
+	}
+	return false;
+}
+
 function slotShots(slot) {
 	return slot === 0 ? game.shots : bot.rivals[slot - 1].shots;
 }
@@ -394,22 +414,17 @@ function slotName(slot) {
 	return SLOT_NAMES[slot] || 'YOU';
 }
 
+/* the selection may sit on a bot row: the page then only watches that player,
+ * and unchecking its bot box hands it back to the keyboard */
 function ensureValidActiveSlot(preferred) {
 	if (!game.on) {
 		activeSlot = 0;
 		return;
 	}
 	const count = slotCount();
-	if (activeSlot >= count) activeSlot = 0;
-	if (slotTypes[activeSlot] === PLAYER_USER) return;
 	if (preferred >= 0 && preferred < count && slotTypes[preferred] === PLAYER_USER) {
 		activeSlot = preferred;
 		return;
 	}
-	for (let s = 0; s < count; s++) {
-		if (slotTypes[s] === PLAYER_USER) {
-			activeSlot = s;
-			return;
-		}
-	}
+	if (activeSlot >= count) activeSlot = 0;
 }

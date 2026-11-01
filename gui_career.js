@@ -68,7 +68,7 @@ function waitSettlement(career) {
 function refreshCareerWaitUi(career, ended) {
 	const busy = careerWaitBusy();
 	careerWaitBtn.disabled = busy || ended || turret.pending ||
-		cargoSim.status === STATUS_FLYING;
+		activeSim().status === STATUS_FLYING;
 	careerWaitBtn.classList.toggle('on', busy);
 	if (!busy) careerWaitBtn.textContent = 'wait · ' + CAREER_WAIT_MIN + ' min';
 	/* the running fast-forward keeps its own live progress line */
@@ -175,7 +175,7 @@ function refreshCareerPanel() {
 		careerNotice('');
 		return;
 	}
-	const career = game.career;
+	const career = activeCareer();
 	if (careerTagEl) careerTagEl.textContent = careerTagText();
 	fillCareerPlanets(career);
 	careerPadEl.innerHTML = padBlockHtml(career);
@@ -187,7 +187,8 @@ function refreshCareerPanel() {
 	refreshCareerWaitUi(career, ended);
 	const evacCost = careerCost(career, GravityGame.CAREER.evacFee);
 	const evacPoor = purseTooSmall(career, evacCost);
-	careerEvacBtn.disabled = ended || !career.stranded || cargoSim.status === STATUS_FLYING || careerWaitBusy();
+	careerEvacBtn.disabled = ended || !career.stranded || activeSim().status === STATUS_FLYING ||
+		careerWaitBusy();
 	careerEvacBtn.classList.toggle('costly', evacPoor && !ended && career.stranded);
 	careerEvacBtn.textContent = 'evacuate · ' + costText(evacCost);
 	launchState = -1;
@@ -364,8 +365,8 @@ function careerWaitTick(now) {
 /* one press starts the 2 s fast-forward; only the end settles the board */
 function waitCareer() {
 	if (!careerRule() || careerWaitBusy() || turret.pending ||
-		cargoSim.status === STATUS_FLYING) return;
-	const career = game.career;
+		activeSim().status === STATUS_FLYING) return;
+	const career = activeCareer();
 	if (career.ended !== GravityGame.CAREER_OPEN) return;
 	const planet = career.at >= 0 ? career.at : career.hq;
 	const pad = career.pads[planet];
@@ -398,8 +399,8 @@ function cancelCareerWait() {
 }
 
 function careerEvacuate() {
-	const career = game.career;
-	if (!GravityGame.evacuate(career, cargoSim)) {
+	const career = activeCareer();
+	if (!GravityGame.evacuate(career, activeSim())) {
 		careerNotice('nothing to evacuate');
 		return;
 	}
@@ -414,7 +415,7 @@ function careerAct(data) {
 	const act = data.act;
 	if (act === 'careerTab') return careerSelectTab(data.tab);
 	if (act === 'bookDrop') return dropStaleBook();
-	const career = game.career;
+	const career = activeCareer();
 	/* balance tooling + science R&D stay available during flight, wait or turret spin */
 	if (act === 'copy') return careerCopySpec(data);
 	if (act === 'sciCopy') return careerCopyFrontier(data.family);
@@ -427,7 +428,7 @@ function careerAct(data) {
 		return careerResearch();
 	}
 	/* the eased world clock owns the career for its 2 s */
-	if (careerWaitBusy() || turret.pending || cargoSim.status === STATUS_FLYING) return;
+	if (careerWaitBusy() || turret.pending || activeSim().status === STATUS_FLYING) return;
 	if (act === 'wait') return waitCareer();
 	if (act === 'evac') return careerEvacuate();
 	if (act === 'book') return useBookEntry(Number(data.entry));

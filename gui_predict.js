@@ -284,7 +284,7 @@ function careerRule() {
 
 /* a flown slot stops when the purse cannot cover a launch; a career when it ended */
 function slotBroke(slot) {
-	if (careerRule()) return game.career.ended !== GravityGame.CAREER_OPEN;
+	if (careerRule()) return slotCareer(slot).ended !== GravityGame.CAREER_OPEN;
 	return slotLedger(slot).purse < MONEY.cost;
 }
 

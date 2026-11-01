@@ -900,33 +900,38 @@
 		return planetInPlay(career, colony.planet);
 	}
 
-	/* HQ: a random sunlit planet in play that no other player already calls home;
-	 * when the world has fewer sunlit planets than players, the brightest free
-	 * one is next. `mask`/`count` restrict the choice to the run's planets. */
+	/* deepest well a starter rail leaves: the EMC-1 + BAT-1 reaches another
+	 * system from nearly every planet at or below this strength and from fewer
+	 * and fewer above it (experiments/hq_gravity_probe.js), so a heavier HQ is
+	 * a company that can never fly */
+	const HQ_GRAVITY_MAX = 1;
+
+	/* HQ: a planet in play that no other player already calls home. Sunlight
+	 * matters — the starter panel charges the rail — but a deep well matters
+	 * more, so the order is sunlit-and-shallow, then shallow, then sunlit, then
+	 * any free planet. `mask`/`count` restrict the choice to the run's planets. */
 	function pickHq(seed, world, used, mask, count) {
-		let count2 = 0;
-		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
-			if (mask && mask[i] === 0) continue;
-			if (world.planetLight[i] < CAREER.hqMinLight) continue;
-			if (used && used[i]) continue;
-			count2 += 1;
-		}
-		if (count2 === 0) {
-			let best = -1;
+		for (let tier = 0; tier < 4; tier++) {
+			const needLight = tier !== 1;
+			const needShallow = tier < 2;
+			let total = 0;
 			for (let i = 0; i < OrbitWorld.PLANETS; i++) {
 				if (mask && mask[i] === 0) continue;
 				if (used && used[i]) continue;
-				if (best < 0 || world.planetLight[i] > world.planetLight[best]) best = i;
+				if (needLight && world.planetLight[i] < CAREER.hqMinLight) continue;
+				if (needShallow && planetGravity(world.seed, i) > HQ_GRAVITY_MAX) continue;
+				total += 1;
 			}
-			return best < 0 ? 0 : best;
-		}
-		let pick = OrbitWorld.hashBits(seed, 0, SALT_HQ) % count2;
-		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
-			if (mask && mask[i] === 0) continue;
-			if (world.planetLight[i] < CAREER.hqMinLight) continue;
-			if (used && used[i]) continue;
-			if (pick === 0) return i;
-			pick -= 1;
+			if (total === 0) continue;
+			let pick = OrbitWorld.hashBits(seed, 0, SALT_HQ) % total;
+			for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+				if (mask && mask[i] === 0) continue;
+				if (used && used[i]) continue;
+				if (needLight && world.planetLight[i] < CAREER.hqMinLight) continue;
+				if (needShallow && planetGravity(world.seed, i) > HQ_GRAVITY_MAX) continue;
+				if (pick === 0) return i;
+				pick -= 1;
+			}
 		}
 		return 0;
 	}

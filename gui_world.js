@@ -184,6 +184,8 @@ function syncBotRadios() {
 	if (botHardEl) botHardEl.checked = game.bot === BOT_HARD;
 }
 
+/* every row is a player: the bot box always flips that player between the
+ * keyboard and the bot, and a click always selects it for the page to watch */
 function syncScoreControls(flightLock) {
 	const active = activeSlotIndex();
 	for (let s = 0; s < scoreRowEls.length; s++) {
@@ -191,22 +193,22 @@ function syncScoreControls(flightLock) {
 		const box = scoreBotEls[s];
 		const isBot = slotTypes[s] === PLAYER_BOT;
 		const isUser = !isBot;
-		const isActive = isUser && active === s;
+		const isActive = active === s;
 		if (box) {
 			box.checked = isBot;
-			box.disabled = careerRule();
+			box.disabled = false;
 		}
 		if (!row) continue;
 		if (s > 0) row.hidden = s - 1 >= bot.count;
 		row.classList.toggle('locked', replay.on);
 		row.classList.toggle('isUser', isUser);
 		row.classList.toggle('isActive', isActive);
-		row.tabIndex = isUser && !flightLock ? 0 : -1;
+		row.tabIndex = !flightLock && !replay.on ? 0 : -1;
 		row.title = isBot
-			? slotName(s) + ' · bot controlled (uncheck bot to play manually)'
+			? slotName(s) + ' · bot controlled (uncheck bot to play it by hand)'
 			: isActive
-			? slotName(s) + ' · active user'
-			: 'Click to play as ' + slotName(s);
+			? slotName(s) + ' · you fly this player'
+			: 'Click to view and fly ' + slotName(s);
 	}
 }
 
