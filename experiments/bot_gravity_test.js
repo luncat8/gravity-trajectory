@@ -1,0 +1,26 @@
+/* Run: node experiments/bot_gravity_test.js */
+'use strict';
+const assert = require('assert');
+const GravityBot = require('../gravity_bot.js');
+const GravityGame = require('../gravity_game.js');
+const OrbitWorld = require('../orbit_world.js');
+const bot = new GravityBot(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+bot.probe.strength = new Float64Array(OrbitWorld.PLANETS);
+bot.probe.gravityScale = 1;
+bot.probe.strength[1] = 1;
+bot.probe.strength[2] = 3;
+assert.strictEqual(bot.careerGravityCost(1), 0);
+assert.ok(bot.careerGravityCost(2) > bot.careerGravityCost(1));
+bot.probe.gravityScale = 0.5;
+assert.ok(bot.careerGravityCost(2) < 3);
+bot.probe.gravityScale = 1;
+const career = GravityGame.createCareer(GravityGame.createLedger());
+career.contract = -1;
+career.light.fill(0);
+career.light[1] = 1;
+career.light[2] = 1.1;
+const buildable = GravityGame.planetBuildable;
+GravityGame.planetBuildable = (c, p) => p === 1 || p === 2;
+assert.strictEqual(bot.careerNextPad(career), 1, 'prefer the lower gravity pad');
+GravityGame.planetBuildable = buildable;
+console.log('bot gravity preference OK');

@@ -83,6 +83,7 @@
 	const CAREER_ENERGY_WAIT_COST = 0.04;
 	const CAREER_BUILT_PAD_VALUE = 2.5;
 	const CAREER_NETWORK_PAD_VALUE = 4;
+	const CAREER_GRAVITY_COST = 1.5;
 	const CAREER_SAME_PAD_VALUE = -1;
 	const CAREER_PICKUP_VALUE = 0.35;
 	const CAREER_REFIT_VALUE = 3;
@@ -1579,18 +1580,26 @@
 		return null;
 	};
 
+	GravityBot.prototype.careerGravityCost = function (planet) {
+		return Math.max(0, this.probe.strength[planet] * this.probe.gravityScale - 1) *
+			CAREER_GRAVITY_COST;
+	};
+
 	GravityBot.prototype.careerNextPad = function (career) {
+		let target = -1;
 		if (career.contract >= 0) {
 			const task = career.tasks[career.contract];
-			const target = task.state === GravityGame.TASK_LOADED ? task.to : task.from;
-			if (target >= 0 && career.pads[target].catapult === null &&
-				GravityGame.planetBuildable(career, target)) return target;
+			target = task.state === GravityGame.TASK_LOADED ? task.to : task.from;
 		}
 		let best = -1;
+		let bestValue = -Infinity;
 		for (let p = 0; p < PLANETS; p++) {
 			if (career.pads[p].catapult !== null) continue;
 			if (!GravityGame.planetBuildable(career, p)) continue;
-			if (best < 0 || career.light[p] > career.light[best]) best = p;
+			const value = career.light[p] + (p === target ? 0.5 : 0) - this.careerGravityCost(p);
+			if (value <= bestValue) continue;
+			best = p;
+			bestValue = value;
 		}
 		return best;
 	};
@@ -1946,6 +1955,9 @@
 		if (body === origin) padValue = CAREER_SAME_PAD_VALUE;
 		else if (own.catapult !== null) padValue = CAREER_BUILT_PAD_VALUE + (own.catapult.tier - 1) * 0.1;
 		else padValue = CAREER_NETWORK_PAD_VALUE;
+		if (body !== origin && (own.catapult === null || own.catapult.tier === 1)) {
+			padValue -= this.careerGravityCost(body);
+		}
 		padValue -= departure.cost;
 		if (body === career.hq && career.at !== career.hq &&
 			career.ship.hold === OrbitTech.HOLDS[0] &&

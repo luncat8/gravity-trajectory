@@ -51,10 +51,10 @@ function refreshGameUi() {
 	for (let i = 0; i < modeEls.length; i++) {
 		if (modeEls[i][1]) modeEls[i][1].disabled = flightLock && modeEls[i][0] !== PLAY_LAB;
 	}
-	if (botOffEl) botOffEl.disabled = flightLock;
-	if (botEasyEl) botEasyEl.disabled = flightLock;
-	if (botNormalEl) botNormalEl.disabled = flightLock;
-	if (botHardEl) botHardEl.disabled = flightLock;
+	if (botOffEl) botOffEl.disabled = false;
+	if (botEasyEl) botEasyEl.disabled = false;
+	if (botNormalEl) botNormalEl.disabled = false;
+	if (botHardEl) botHardEl.disabled = false;
 	syncScoreControls(flightLock);
 	let anyShots = game.shots.length > 0;
 	for (let i = 0; i < bot.count && !anyShots; i++) {

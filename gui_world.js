@@ -194,7 +194,7 @@ function syncScoreControls(flightLock) {
 		const isActive = isUser && active === s;
 		if (box) {
 			box.checked = isBot;
-			box.disabled = replay.on || careerRule();
+			box.disabled = careerRule();
 		}
 		if (!row) continue;
 		if (s > 0) row.hidden = s - 1 >= bot.count;
