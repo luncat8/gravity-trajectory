@@ -4,7 +4,9 @@
  * the real GravitySim. A starter EMC-1 costs 3.00 and every planet's commercial
  * rail charges 3.00 a launch, so the 6.00 starter purse buys one pad and little
  * else: the grind guard checks survival, the completion runs start from a funded
- * mid-game purse.
+ * mid-game purse. The checks fly a flat field on purpose (they exercise the
+ * controller, not the map); `makeSeededWorld` gives the reach-dependent ones
+ * the seed's own wells, which `career_gravity_bench.js` covers whole.
  * Run: node experiments/career_bot_bench.js (SEEDS=42 TRACE=1 for diagnostics)
  */
 'use strict';
@@ -53,6 +55,8 @@ function makeWorld(seed, gravityScale = 1, forceScale = 1) {
 	const sim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
 	sim.setPlanets(PLANETS, trade.planetX, trade.planetY, trade.planetR,
 		trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+	/* a flat field: these checks exercise the controller, not the map. Seeded
+	 * wells are covered by `career_gravity_bench.js` and `makeSeededWorld`. */
 	const strength = new Float64Array(GravitySim.MAX_BODIES).fill(1);
 	const fillPlanets = function (t, outX, outY, count) {
 		for (let i = 0; i < count; i++) {
@@ -74,6 +78,39 @@ function makeWorld(seed, gravityScale = 1, forceScale = 1) {
 	/* the experimental multipliers must reach the sim and the controller alike */
 	sim.setScales(gravityScale, forceScale);
 	bot.setScales(gravityScale, forceScale);
+	GravityGame.resetMarket(market);
+	return { seed, trade, sim, career, ledger, market, bot, step: 0 };
+}
+
+/* the same world with the seed's own gravity wells: reach and departure
+ * checks need the field the page flies in, not the flat one above */
+function makeSeededWorld(seed) {
+	const trade = new Sim(seed);
+	trade.advanceTo(420);
+	const sim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	sim.setPlanets(PLANETS, trade.planetX, trade.planetY, trade.planetR,
+		trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+	const strength = new Float64Array(GravitySim.MAX_BODIES);
+	for (let i = 0; i < PLANETS; i++) strength[i] = GravityGame.planetGravity(seed, i);
+	strength.fill(0, PLANETS);
+	const fillPlanets = function (t, outX, outY, count) {
+		for (let i = 0; i < count; i++) {
+			outX[i] = trade.planetX[i];
+			outY[i] = trade.planetY[i];
+		}
+	};
+	sim.setField(PLANETS, trade.planetR, strength, fillPlanets, true);
+	sim.fieldT = trade.t;
+	sim.fieldRate = RATE;
+	sim.stepLimit = GravityGame.CAP_STEPS;
+	const ledger = GravityGame.createLedger();
+	const career = GravityGame.createCareer(ledger);
+	const market = GravityGame.createMarket();
+	const bot = new GravityBot(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	bot.attachWorld(trade);
+	bot.reset(seed, GravityGame.RULE_CAREER, GravityGame.BOT_OFF);
+	GravityGame.startCareer(career, sim, seed, trade, null);
+	for (let i = 0; i < bot.strength.length && i < PLANETS; i++) bot.strength[i] = strength[i];
 	GravityGame.resetMarket(market);
 	return { seed, trade, sim, career, ledger, market, bot, step: 0 };
 }
@@ -144,6 +181,9 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = 
 		return traceFast.apply(this, args);
 	};
 	if (process.env.NOBOOK) bot.careerBookTag = () => NaN;
+	/* A/B the pad-gear policy on the same seed: the rest of the controller is
+	 * untouched, so the deltas are the gear buys alone. */
+	if (process.env.NOGEAR) bot.careerPadGear = () => false;
 	const planTrace = [];
 	let waits = 0;
 	let fallbacks = 0;
@@ -199,9 +239,11 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = 
 		earned: career.earned,
 		flights: career.flights,
 		steps: w.step,
+		worldMinutes: w.step * DT * RATE,
 		pads: career.padCount,
 		builds: bot.careerBuilds,
 		upgrades: bot.careerUpgrades,
+		gear: bot.careerPadGearBought,
 		researches: bot.careerResearches,
 		burns: w.burns || 0,
 		delivered: career.delivered,
@@ -338,6 +380,77 @@ check('idle controller buys a hold and pads, and upgrades a weak loaded pad', ()
 	assert.ok(v.career.pads[v.career.hq].catapult.tier > before && v.bot.careerUpgrades > 0);
 });
 
+/* a launch book entry for `planet`, so the pad-gear policy can price its last
+ * shot: the list is what the pad itself earned, not what the career averages */
+function plantLaunch(w, planet, money, steps, speed) {
+	GravityGame.recordLaunch(w.career.launchBook, w.bot.careerBookTag(), {
+		origin: planet, angleU: 0, speedU: GravityGame.speedUnits(speed),
+		body: (planet + 1) % PLANETS, steps: steps, time: steps * DT, length: 900,
+		score: money * 0.5, money: money, logPlanet: new Int32Array(1),
+		logStep: new Int32Array(1), logCount: 0
+	});
+}
+
+check('pad gear fits the panel a starving pad needs to keep launching', () => {
+	const w = makeWorld(42);
+	const { bot, career, sim } = w;
+	const hq = career.hq;
+	w.ledger.purse = 40;
+	assert.ok(career.pads[hq].catapult, 'fixture: the starter holds no rail');
+	/* the top battery cannot be outgrown, so only the panel rung is on offer */
+	assert.ok(GravityGame.buildGear(career, hq, OrbitTech.KIND_BATTERY, OrbitTech.BATTERIES[4]),
+		'fixture: no top battery');
+	const pad = career.pads[hq];
+	pad.chargeKwh = 0;
+	plantLaunch(w, hq, 3, 600, 90);
+	assert.ok(bot.careerPadRecord(career), 'fixture: the launch book took no shot');
+	const panelTier = pad.panel.tier;
+	const railTier = pad.catapult.tier;
+	/* enough for the panel and its reserve, not for the next rail */
+	w.ledger.purse = pad.panel.buildCost + GravityBot.CAREER_PURSE_RESERVE + 1.81;
+	assert.ok(bot.careerPadGear(career, 1), 'starving pad bought nothing');
+	assert.ok(pad.panel.tier > panelTier, 'the buy was not a panel');
+	assert.strictEqual(pad.catapult.tier, railTier, 'rail changed on a panel buy');
+	assert.strictEqual(bot.careerPadGearBought, 1);
+	assert.ok(w.ledger.purse >= GravityBot.CAREER_PURSE_RESERVE - 1e-9,
+		'panel spent the launch reserve');
+});
+
+check('pad gear prices a rail with the battery that fills it and refuses a thin purse', () => {
+	const w = makeSeededWorld(42);
+	const { bot, career, sim } = w;
+	/* a deep well: the starter rail reaches one system, the next rail six */
+	const planet = 11;
+	w.ledger.purse = 60;
+	assert.ok(GravityGame.buildGear(career, planet, OrbitTech.KIND_CATAPULT, OrbitTech.CATAPULTS[0]),
+		'fixture: no rail on the well');
+	assert.ok(GravityGame.buildGear(career, planet, OrbitTech.KIND_PANEL, OrbitTech.PANELS[3]),
+		'fixture: panel rung still open');
+	const pad = career.pads[planet];
+	career.at = planet;
+	/* a full pad: no instant fill to credit, so only reach can sell the rail */
+	pad.chargeKwh = pad.battery.capacity;
+	plantLaunch(w, planet, 5, 600, 90);
+	const pair = OrbitTech.CATAPULTS[1].buildCost + OrbitTech.BATTERIES[2].buildCost;
+	const reserve = GravityBot.CAREER_PURSE_RESERVE;
+	assert.strictEqual(pad.catapult.tier, OrbitTech.CATAPULTS[0].tier, 'fixture rail tier');
+	assert.ok(bot.careerReach(planet, 224) - bot.careerReach(planet, 92) >= 3,
+		'fixture: the rail buys no reach here');
+	w.ledger.purse = pair + reserve - 0.01;
+	assert.ok(!bot.careerPadGear(career, 1), 'bought a pair the purse cannot pay for');
+	assert.strictEqual(pad.catapult.tier, OrbitTech.CATAPULTS[0].tier, 'rail under a thin purse');
+	assert.strictEqual(pad.battery.tier, OrbitTech.BATTERIES[0].tier, 'battery under a thin purse');
+	w.ledger.purse = pair + reserve + 1;
+	assert.ok(bot.careerPadGear(career, 1), 'a rich pad bought no rail');
+	assert.strictEqual(pad.catapult.tier, OrbitTech.CATAPULTS[1].tier, 'rail tier');
+	assert.ok(pad.battery.tier >= OrbitTech.BATTERIES[1].tier,
+		'rail fitted without a battery that fills it');
+	assert.ok(OrbitTech.speedLimit(pad.battery.capacity, career.ship.mass, pad.catapult) + 1e-9 >=
+		OrbitTech.maxSpeed(career.ship.mass, pad.catapult), 'fitted battery still caps the rail');
+	assert.strictEqual(bot.careerPadGearBought, 1);
+	assert.ok(w.ledger.purse >= reserve - 1e-9, 'the pair spent the launch reserve');
+});
+
 check('careerBurnPlan: rescues a missed contract or map exit and never breaks a contract', () => {
 	const w = makeWorld(42);
 	const { career, sim, bot, market, ledger, trade } = w;
@@ -464,8 +577,10 @@ for (const seed of SEEDS) {
 		console.log('  career s' + seed + ': ' + (r.ended === GravityGame.CAREER_COMPLETE ? 'complete' : 'ENDED ' + r.ended) +
 			' · purse ' + r.purse.toFixed(2) + ' · earned ' + r.earned.toFixed(2) +
 			' · pads ' + r.pads + ' · flights ' + r.flights + ' · deliveries ' + r.delivered +
-			' · upgrades ' + r.upgrades + ' · waits ' + r.waits + ' · fallbacks ' + r.fallbacks +
-			' · evac ' + r.evacuations + ' · plans ' + r.plans + ' · traces ' + r.traces);
+			' · upgrades ' + r.upgrades + ' · gear ' + r.gear + ' · waits ' + r.waits +
+			' · fallbacks ' + r.fallbacks + ' · evac ' + r.evacuations + ' · plans ' + r.plans +
+			' · traces ' + r.traces + ' · $/h ' +
+			(r.earned / (r.worldMinutes / 60)).toFixed(2));
 		assert.strictEqual(r.ended, GravityGame.CAREER_COMPLETE, 'career did not complete');
 		assert.strictEqual(r.pads, PLANETS);
 		assert.ok(r.purse + 1e-9 >= 0, 'purse went negative: ' + r.purse);

@@ -100,16 +100,22 @@ assert.deepStrictEqual(fieldOf(roster), initial);
 assert.strictEqual(rosterScene.sim.strength[zeroPlanet], 0);
 assert.deepStrictEqual(Array.from(rosterScene.bot.probe.strength), initial);
 
-/* Every career player, probe and planet/port view sees the player's original HQ at 1. */
+/* Every career player, probe and planet/port view sees the seed's own field:
+ * each company's HQ is a seeded shallow planet (gravity_game pickHq), so no
+ * body's gravity is overridden anywhere. */
 for (const seed of [1, 7, 31, 42, 913]) {
 	const career = loadPage({ search: '?mode=career&seed=' + seed });
 	const scene = career.context.GravityScene;
 	const hq = scene.career.hq;
 	const active = scene.game.market.planetMask;
 	const saved = fieldOf(career);
-	assert.strictEqual(saved[hq], 1);
+	assert.strictEqual(saved[hq], Game.planetGravity(seed, hq));
+	assert.ok(saved[hq] <= Game.HQ_GRAVITY_MAX, 'career HQ is not a shallow well');
+	for (const rival of scene.bot.rivals) {
+		assert.ok(saved[rival.career.hq] <= Game.HQ_GRAVITY_MAX, 'rival HQ is not a shallow well');
+	}
 	for (let p = 0; p < PLANETS; p++) {
-		const expected = active[p] ? (p === hq ? 1 : Game.planetGravity(seed, p)) : 0;
+		const expected = active[p] ? Game.planetGravity(seed, p) : 0;
 		assert.strictEqual(saved[p], expected);
 		assert.strictEqual(scene.bot.probe.strength[p], expected);
 		assert.strictEqual(scene.bot.player.sim.strength[p], expected);
@@ -133,10 +139,9 @@ portCareer.click('gameNewSeed');
 const pcScene = portCareer.context.GravityScene;
 const pcTrade = portCareer.context.OrbitScene.sim;
 const pcMask = pcScene.game.market.planetMask;
-assert.strictEqual(pcScene.bot.probe.strength[pcScene.career.hq], 1);
 for (let port = 0; port < pcTrade.portCount; port++) {
 	const p = pcTrade.portPlanet[port];
-	const expected = pcMask[p] ? (p === pcScene.career.hq ? 1 : Game.planetGravity(pcScene.game.seed, p)) : 0;
+	const expected = pcMask[p] ? Game.planetGravity(pcScene.game.seed, p) : 0;
 	assert.strictEqual(pcScene.sim.strength[port], expected);
 }
 
@@ -176,7 +181,7 @@ assert.match(ui.get('helpModeControls').textContent, /Use best/);
 help.fireElement(ui.get('modeCareer'), 'pointerenter', { pointerType: 'mouse' });
 assert.strictEqual(ui.get('helpModeTitle').textContent, 'career · catapult network');
 assert.strictEqual(ui.get('helpControls').textContent, sharedHelp);
-assert.match(ui.get('helpDetail').textContent, /HQ \(g = 1\)/);
+assert.match(ui.get('helpDetail').textContent, /HQ, a seeded shallow world \(g ≤ 1\)/);
 assert.match(ui.get('helpModeControls').textContent, /Space \/ P/);
 assert.ok(!ui.get('helpModeControls').textContent.includes('Drag from a planet'));
 help.choose('modeTour');

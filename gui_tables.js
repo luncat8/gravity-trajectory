@@ -237,9 +237,12 @@ const RULE_HELP = {
 		goal: 'Build a catapult on every active planet; rival players build theirs.',
 		score: 'Purse. The run ends on completion or when you go broke.',
 		detailLabel: 'Network',
-		detail: 'Start at your own HQ (g = 1). Your EMC claims its planet; each planet also offers a commercial EMC-1 for ' +
+		detail: 'Start at your own HQ, a seeded shallow world (g ≤ 1) the starter rail can leave; a deep well is never a home. ' +
+			'Your EMC claims its planet; each planet also offers a commercial EMC-1 for ' +
 			GravityGame.CAREER.commercialFee.toFixed(2) + ' per launch. An owned or rival pad spends battery charge; guests also pay the owner. ' +
 			'A queued shot reserves its energy and fires when the barrel aligns (one turn every 2…5 s). ' +
+			'On its own pad a bot buys the next panel, battery or rail only when that pad\'s last launch ' +
+			'pays the price back in money per world second, a rail always with the battery that fills it. ' +
 			'The career runs on the world clock; pause on landing holds it still. Evacuation to HQ costs ' +
 			GravityGame.CAREER.evacFee.toFixed(2) + '.',
 		controls: 'Wait charges pads. With an impulse engine and fuel, use Space / P or drag the ship in flight to aim a burn.'

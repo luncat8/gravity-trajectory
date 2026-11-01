@@ -89,6 +89,10 @@
 	const CAREER_REACH_VALUE = 0.4;
 	const CAREER_DEAD_SITE = 3;
 	const CAREER_SITE_BONUS = 0.5;
+	/* pad gear is bought for what it earns, not only for the next departure: a
+	 * rung has to pay its price back inside this much world time on the pad it
+	 * upgrades, measured against the money that pad's last launch made */
+	const CAREER_PAD_HORIZON = 2400;
 	const CAREER_SAME_PAD_VALUE = -1;
 	const CAREER_PICKUP_VALUE = 0.35;
 	const CAREER_REFIT_VALUE = 3;
@@ -315,6 +319,11 @@
 		this.careerBuilds = 0;
 		this.careerUpgrades = 0;
 		this.careerResearches = 0;
+		this.careerPadGearBought = 0;
+		this.careerGear = {
+			value: 0, rate: 0, cost: 0,
+			kind: '', item: null, mate: null, label: ''
+		};
 		this.careerUseResearch = false;
 		this.careerPlans = 0;
 		this.careerBurnsPlanned = 0;
@@ -582,6 +591,7 @@
 		this.careerBuilds = 0;
 		this.careerUpgrades = 0;
 		this.careerResearches = 0;
+		this.careerPadGearBought = 0;
 		this.careerPlans = 0;
 		this.careerBurnsPlanned = 0;
 
@@ -1739,8 +1749,149 @@
 		return upgraded;
 	};
 
-	/* All shopping happens while idle: rescue, refit/accept, upgrade, expand. */
-	GravityBot.prototype.careerBetweenFlights = function (career, sim) {
+	/* world seconds a pad's panel needs to replace the energy a shot spent */
+	GravityBot.prototype.careerRefillWait = function (career, planet, panel, energy) {
+		const power = panel.power * career.light[planet] / 3600;
+		return energy > 0 && power > 0 ? energy / power : 0;
+	};
+
+	/* the pad's last launch, re-priced by the launch book: money, flight time
+	 * and the speed that bought it */
+	GravityBot.prototype.careerPadRecord = function (career) {
+		const book = career.launchBook;
+		const tag = this.careerBookTag();
+		if (!GravityGame.bookReady(book, tag)) return null;
+		let best = null;
+		for (let i = 0; i < book.entries.length; i++) {
+			const entry = book.entries[i];
+			if (entry.origin !== career.at) continue;
+			if (!best || entry.score > best.score) best = entry;
+		}
+		return best && best.money > 0 ? best : null;
+	};
+
+	/*
+	 * Pad gear sized by money per world second. A panel shortens the recharge
+	 * half of the launch cycle, a battery lifts the pad's speed ceiling (and
+	 * starts full, so the pad can fire the shot it was waiting for), an EMC adds
+	 * reach — and an EMC is only worth its price together with the battery that
+	 * can fill it. Each rung is priced against the last launch from this pad, so
+	 * gear that cannot pay itself back inside CAREER_PAD_HORIZON stays in the shop.
+	 */
+	GravityBot.prototype.careerPadGear = function (career, runStep) {
+		const planet = career.at;
+		if (career.ended !== GravityGame.CAREER_OPEN || planet < 0) return false;
+		const pad = career.pads[planet];
+		if (pad.catapult === null) return false;
+		if (GravityGame.padOwner(career, planet) !== career.index) return false;
+		const record = this.careerPadRecord(career);
+		if (!record) return false;
+		const mass = career.ship.mass;
+		const scale = career.forceScale;
+		const free = pad.chargeKwh - pad.reservedKwh;
+		const flight = record.steps * GravitySim.DT * (this.careerRate || 1) * 60;
+		const speed = GravityGame.speedOf(record.speedU);
+		const energy = OrbitTech.launchEnergy(mass, pad.catapult, speed);
+		const missed = energy > free ? energy - free : 0;
+		const cycle = flight + this.careerRefillWait(career, planet, pad.panel, missed);
+		if (!(cycle > 0)) return false;
+		const money = record.money;
+		const yieldNow = money / cycle;
+		const capNow = OrbitTech.speedLimit(pad.battery.capacity, mass, pad.catapult, scale);
+		const reachNow = this.careerReach(planet, capNow);
+		const best = this.careerGear;
+		best.value = 0;
+		best.rate = 0;
+		best.cost = 0;
+		best.kind = '';
+		best.item = null;
+		best.mate = null;
+		best.label = '';
+
+		const panel = careerNextItem(career, OrbitTech.KIND_PANEL, OrbitTech.PANELS, pad.panel);
+		if (panel && GravityGame.gearKnown(career, panel)) {
+			const refill = this.careerRefillWait(career, planet, panel, missed);
+			this.careerGearOffer(career, money / (flight + refill) - yieldNow,
+				careerPrice(career, panel), OrbitTech.KIND_PANEL, panel, null, panel.id);
+		}
+
+		const battery = careerNextItem(career, OrbitTech.KIND_BATTERY, OrbitTech.BATTERIES,
+			pad.battery);
+		if (battery && GravityGame.gearKnown(career, battery)) {
+			const cap = OrbitTech.speedLimit(battery.capacity, mass, pad.catapult, scale);
+			const reach = this.careerReach(planet, cap);
+			const refill = this.careerRefillWait(career, planet, pad.panel,
+				energy > battery.capacity ? energy - battery.capacity : 0);
+			this.careerGearOffer(career,
+				(money + Math.max(0, reach - reachNow) * CAREER_REACH_VALUE) /
+				(flight + refill) - yieldNow,
+				careerPrice(career, battery), OrbitTech.KIND_BATTERY, battery, null, battery.id);
+		}
+
+		const catapult = careerNextItem(career, OrbitTech.KIND_CATAPULT, OrbitTech.CATAPULTS,
+			pad.catapult);
+		if (catapult && GravityGame.gearKnown(career, catapult)) {
+			/* the rail is only as fast as the battery behind it: price the pair */
+			const forceCap = OrbitTech.maxSpeed(mass, catapult, scale);
+			let mate = pad.battery;
+			let mateCost = 0;
+			for (let i = 0; i < OrbitTech.BATTERIES.length; i++) {
+				const item = OrbitTech.BATTERIES[i];
+				if (item.tier <= pad.battery.tier || !GravityGame.gearKnown(career, item)) continue;
+				mate = item;
+				mateCost = careerPrice(career, item);
+				if (OrbitTech.speedLimit(item.capacity, mass, catapult, scale) + 1e-9 >= forceCap) break;
+			}
+			const cap = OrbitTech.speedLimit(mate.capacity, mass, catapult, scale);
+			const reach = this.careerReach(planet, cap);
+			const shot = OrbitTech.launchEnergy(mass, catapult, speed < cap ? speed : cap);
+			const refill = this.careerRefillWait(career, planet, pad.panel,
+				shot > mate.capacity ? shot - mate.capacity : 0);
+			this.careerGearOffer(career,
+				(money + Math.max(0, reach - reachNow) * CAREER_REACH_VALUE) /
+				(flight + refill) - yieldNow, careerPrice(career, catapult) + mateCost,
+				OrbitTech.KIND_CATAPULT, catapult, mate === pad.battery ? null : mate,
+				catapult.id + (mate === pad.battery ? '' : '+' + mate.id));
+		}
+
+		/* the rung must pay for itself inside the horizon and leave a launch
+		 * fee in the purse: gear never spends the company's way off the pad */
+		if (!best.label || best.value < best.cost) return false;
+		if (!this.careerBuyGear(career, planet, best.kind, best.item, CAREER_PURSE_RESERVE)) {
+			return false;
+		}
+		/* a rail is only as good as the battery that fills it: fit the mate too */
+		if (best.mate) {
+			this.careerBuyGear(career, planet, OrbitTech.KIND_BATTERY, best.mate,
+				CAREER_PURSE_RESERVE);
+		}
+		this.careerPadGearBought += 1;
+		this.traceAdd(career.index, 'gear', 'P' + planet + ' ' + best.label +
+			' · ' + best.cost.toFixed(2) + ' · yield +' + (best.rate * 3600).toFixed(2) + '/h' +
+			(best.rate > 0 ? ' · payback ' + (best.cost / best.rate).toFixed(0) + ' s' : ''),
+			runStep || 0);
+		return true;
+	};
+
+	/* keep the rung worth the most money inside CAREER_PAD_HORIZON that the
+	 * purse can still pay for with the launch reserve intact */
+	GravityBot.prototype.careerGearOffer = function (career, rate, cost, kind, item, mate, label) {
+		const best = this.careerGear;
+		if (cost + CAREER_PURSE_RESERVE > career.ledger.purse + 1e-9) return;
+		const value = (rate > 0 ? rate : 0) * CAREER_PAD_HORIZON;
+		if (value <= best.value) return;
+		best.value = value;
+		best.rate = rate;
+		best.cost = cost;
+		best.kind = kind;
+		best.item = item;
+		best.mate = mate;
+		best.label = label;
+	};
+
+	/* All shopping happens while idle: rescue, refit/accept, upgrade, expand,
+	 * then the pad itself is sized for the money its last launch made. */
+	GravityBot.prototype.careerBetweenFlights = function (career, sim, runStep) {
 		if (career.ended !== GravityGame.CAREER_OPEN) return 0;
 		let actions = 0;
 		const evacPrice = careerFee(career, GravityGame.CAREER.evacFee);
@@ -1839,6 +1990,11 @@
 					actions += 1;
 				}
 			}
+		}
+		/* the standing pad earns by the launch: size its rail, battery and panel
+		 * for the money per world second, never for the next rescue alone */
+		if (career.ended === GravityGame.CAREER_OPEN && this.careerPadGear(career, runStep)) {
+			actions += 1;
 		}
 		return actions;
 	};
@@ -2177,7 +2333,7 @@
 		GravityGame.recordLaunch(career.launchBook, tag, {
 			origin: best.origin, angleU: best.angleU, speedU: best.speedU,
 			body: best.body, steps: best.steps, time: best.steps * GravitySim.DT,
-			length: best.length, score: best.score,
+			length: best.length, score: best.score, money: best.taskPay,
 			logPlanet: this.careerLogPlanet, logStep: this.careerLogStep,
 			logCount: this.careerLogCount
 		});
@@ -2425,6 +2581,8 @@
 	/* one world step for every rival career: charge pads, fly, plan, launch */
 	GravityBot.prototype.stepCareer = function (runStep, market, trade, rate) {
 		this.worldStep = runStep;
+		/* world minutes per physics step: pad cycles are priced in world time */
+		this.careerRate = rate;
 		const boardTick = runStep % BOARD_TICK_STEPS === 0;
 		for (let i = 0; i < this.count; i++) {
 			const r = this.rivals[i];
@@ -2493,7 +2651,7 @@
 			/* just landed (or just started): shop, then turn the barrel */
 			p.idleTries = 0;
 			p.waitTries = 0;
-			this.careerBetweenFlights(career, p.sim);
+			this.careerBetweenFlights(career, p.sim, runStep);
 			p.readyStep = runStep + CAREER_RIVAL_GAP;
 			return false;
 		}
@@ -2585,7 +2743,7 @@
 		}
 		const wasAt = career.at;
 		const wasStranded = career.stranded;
-		this.careerBetweenFlights(career, sim);
+		this.careerBetweenFlights(career, sim, runStep);
 		if (!recovery) {
 			if (wasAt < 0 && career.at >= 0) recovery = 'evacuated to P' + career.at;
 			else if (wasStranded && !career.stranded && career.at === career.hq && wasAt !== career.hq) {
@@ -2615,7 +2773,7 @@
 		/* the commercial choice bought one attempt only: a sit must not leave the
 		 * company paying its fee again after its own pad charged */
 		GravityGame.setCommercial(r.career, -1);
-		this.careerBetweenFlights(r.career, r.sim);
+		this.careerBetweenFlights(r.career, r.sim, runStep);
 		r.readyStep = runStep + CAREER_SIT_GAP + (r.gapPhase || 0);
 		this.traceAdd(r.index, 'sit', 'score ' + signed(plan.score) +
 			' · no EMC build · sit ' + r.waitTries + '/' + CAREER_SIT_TRIES +
@@ -2738,6 +2896,7 @@
 	GravityBot.CAREER_ENERGY_WAIT_COST = CAREER_ENERGY_WAIT_COST;
 	GravityBot.CAREER_BOOK_ENOUGH = CAREER_BOOK_ENOUGH;
 	GravityBot.CAREER_MIN_SCORE = CAREER_MIN_SCORE;
+	GravityBot.CAREER_PAD_HORIZON = CAREER_PAD_HORIZON;
 	GravityBot.CAREER_SIT_GAP = CAREER_SIT_GAP;
 	GravityBot.CAREER_SIT_TRIES = CAREER_SIT_TRIES;
 	GravityBot.TRACE_MAX = TRACE_MAX;

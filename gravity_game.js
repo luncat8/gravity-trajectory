@@ -1647,6 +1647,8 @@
 		out.length = trace.length;
 		out.mask = mask;
 		out.score = trace.score;
+		/* the cash the flight itself collected: launch time is priced against it */
+		out.money = trace.money === undefined ? trace.score : trace.money;
 		out.logCount = count;
 		for (let i = 0; i < count; i++) {
 			out.logPlanet[i] = trace.logPlanet[i];
@@ -1686,7 +1688,7 @@
 		CHEAT_COMMUNISM, CHEAT_ENDGAME, CHEATS,
 		SRC_PLANETS, SRC_PORTS, NO_ABORT, MONEY, PURSE_PRESETS, EXPERIMENT,
 		HARVEST_ENTRY, HARVEST_TICK, setHarvestMode, harvestMode: harvestModeOf,
-		PLANET_GRAVITY_MIN, PLANET_GRAVITY_MAX, PLANET_GRAVITY_STEPS,
+		PLANET_GRAVITY_MIN, PLANET_GRAVITY_MAX, PLANET_GRAVITY_STEPS, HQ_GRAVITY_MAX,
 		planetGravity, angleUnits, angleOf, speedUnits, speedOf,
 		createBurn, encodeBurn, createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
 		initSteps, createMarket, resetMarket, planetProfit,

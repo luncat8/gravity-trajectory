@@ -16,10 +16,32 @@ const sim = env.context.GravitySim;
 const gameApi = env.context.GravityGame;
 const bot = scene.bot;
 const origin = scene.career.hq;
-const blockedPlanet = 3;
-const blockedAngle = 2.1353012567368124;
-const safeAngle = 0.4663301595172349;
 const safeSpeed = 90;
+const TAU = Math.PI * 2;
+
+/* The seed picks the world and a shallow HQ (gravity_game pickHq), so the
+ * fixture searches the live pad for its two landings instead of hard-coding
+ * the planets an older forced-gravity HQ used to reach. */
+function seek(speed, want) {
+	for (let a = 0; a < 64; a++) {
+		const angle = (a + 0.5) / 64 * TAU;
+		env.dragAim(origin, angle, speed);
+		env.runFrames(3, 16);
+		if (scene.sim.predReason !== sim.END_IMPACT) continue;
+		if (scene.sim.predBody < 0 || scene.sim.predBody === origin) continue;
+		if (scene.aimGuidance() !== want) continue;
+		return { angle, body: scene.sim.predBody };
+	}
+	return null;
+}
+const blocked = seek(35, 2);
+assert.ok(blocked, 'seed 1 has no starter-blocked landing for the aim-state fixture');
+const blockedPlanet = blocked.body;
+const blockedAngle = blocked.angle;
+const safe = seek(safeSpeed, 1);
+assert.ok(safe && safe.body !== blockedPlanet,
+	'seed 1 has no profitable exit for the aim-state fixture');
+const safeAngle = safe.angle;
 
 function assertCanvasColour(expected) {
 	const label = ui.get('aimReadout').textContent;

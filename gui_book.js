@@ -144,7 +144,8 @@ function saveTrace(probe, origin, angleU, speedU) {
 	GravityGame.recordLaunch(activeCareer().launchBook, pageBookTag(), {
 		origin: origin, angleU: angleU, speedU: speedU, body: probe.predBody,
 		steps: probe.predSteps, time: probe.predTime, length: probe.predLength,
-		score: money.net, logPlanet: probe.predLogPlanet, logStep: probe.predLogStep,
+		score: money.net, money: money.cash, logPlanet: probe.predLogPlanet,
+		logStep: probe.predLogStep,
 		logCount: probe.predLogCount
 	});
 }

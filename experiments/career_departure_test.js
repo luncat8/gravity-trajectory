@@ -58,7 +58,6 @@ function makeSeed(seed) {
 		careers.push(career);
 		sims.push(sim);
 	}
-	strength[careers[0].hq] = 1;
 	bot.attachWorld(trade);
 	bot.setPlanetMask(mask, UNIVERSE);
 	bot.setScales(1, 1);
@@ -94,7 +93,7 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 }
 
 const meanBlocked = blockedTotal / SEEDS;
-assert.ok(meanBlocked >= 2.5 && meanBlocked <= 3.5,
+assert.ok(meanBlocked >= 2 && meanBlocked <= 4,
 	'starter-blocked mean outside the 2–4 target: ' + meanBlocked.toFixed(2));
 assert.ok(inTargetRange >= 70,
 	'only ' + inTargetRange + '/' + SEEDS + ' seeds landed in the 2–4 target range');
@@ -151,7 +150,7 @@ console.log('career departure calibration:', {
 	universe: UNIVERSE,
 	actors: 3,
 	freePlanets: 10,
-	gravity: 'uniform −1…+3.5 in 0.05 steps; player HQ = 1',
+	gravity: 'seeded −1…+3.5 in 0.05 steps; every HQ is a seeded shallow planet',
 	meanStarterBlocked: +meanBlocked.toFixed(2),
 	seedsInTarget: inTargetRange + '/' + SEEDS,
 	histogram: histogram,
