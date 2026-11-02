@@ -387,13 +387,12 @@ function fieldBench(world) {
 	const runs = 12;
 	for (let r = 0; r < runs; r++) GravityField.renderBuffer(pixels, w, h, g, view, 1280, 800);
 	const avgMs = Number(process.hrtime.bigint() - t0) / 1e6 / runs;
-	/* potential carries the pull beside phi for the red heavy wash, so time it
-	 * on the same fallback raster: it is the more expensive of the two */
-	const pt0 = process.hrtime.bigint();
+	/* the zone map is the other fallback raster and gets the same frame budget */
+	const zt0 = process.hrtime.bigint();
 	for (let r = 0; r < runs; r++) {
 		GravityField.renderBuffer(pixels, w, h, g, view, 1280, 800, 'potential');
 	}
-	const potAvgMs = Number(process.hrtime.bigint() - pt0) / 1e6 / runs;
+	const zoneAvgMs = Number(process.hrtime.bigint() - zt0) / 1e6 / runs;
 
 	/* WebGL backend + adaptive 1/4 resolution drop + context loss / restore */
 	const glState = { draws: 0, origin: null, step: null, lostFn: null, restoredFn: null, lost: false };
@@ -481,7 +480,7 @@ function fieldBench(world) {
 		throw new Error('no-WebGL canvas did not use the 1/4 2D raster');
 	}
 
-	return { w, h, maxDiff, meanDiff: sumDiff / (w * h), avgMs, potAvgMs };
+	return { w, h, maxDiff, meanDiff: sumDiff / (w * h), avgMs, zoneAvgMs };
 }
 
 const started = process.hrtime.bigint();
@@ -538,8 +537,8 @@ console.log('repel field: ' + repel.count + ' paths, finite bounds x ' +
 console.log('field raster 1/4 (' + field.w + 'x' + field.h + '): avg ' +
 	field.avgMs.toFixed(2) + ' ms, LUT diff max ' + field.maxDiff +
 	', mean ' + field.meanDiff.toFixed(3));
-console.log('potential raster 1/4 (' + field.w + 'x' + field.h + '): avg ' +
-	field.potAvgMs.toFixed(2) + ' ms (potential + pull for the red heavy wash)');
+console.log('zone raster 1/4 (' + field.w + 'x' + field.h + '): avg ' +
+	field.zoneAvgMs.toFixed(2) + ' ms (potential view)');
 console.log('budget: ' + GravitySim.BUDGET_MS + ' ms cap, worst ' +
 	sweep.worst.toFixed(3) + ' ms (' +
 	(sweep.worst <= GravitySim.BUDGET_MS ? 'within budget' : 'OVER BUDGET') + ')');
@@ -559,8 +558,8 @@ if (field.maxDiff > 5 || field.meanDiff > 1) {
 if (field.avgMs > 16) {
 	throw new Error('field 1/4-res 2D raster exceeded 16 ms budget: ' + field.avgMs.toFixed(2));
 }
-if (field.potAvgMs > 24) {
-	throw new Error('potential 1/4-res 2D raster exceeded 24 ms budget: ' +
-		field.potAvgMs.toFixed(2));
+if (field.zoneAvgMs > 16) {
+	throw new Error('zone 1/4-res 2D raster exceeded 16 ms budget: ' +
+		field.zoneAvgMs.toFixed(2));
 }
 console.log('BENCH OK');

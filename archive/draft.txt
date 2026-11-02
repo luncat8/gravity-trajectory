@@ -216,6 +216,15 @@ i mean research is somewhat additive - next research may be low cost to push top
 
 add after visit profit line with gravity. make this planet info border same color as player's color if has EMC or neutral (current white-orange looks ok)
 
-add new view mode: gravity potential. negative - blue, positive - green, heavy planets - red. or negative black, positive blue.
 
 make by default random seed new startup unless url has seed
+
+### gravity potential view map
+
+smooth gradient color map show gravity abs module .
+negative gravity - blue.
+near zero - transparent smooth alpha proportional to mod(-1...1)
+positive green,
+heavy planet  - red.
+you can draw in low resolution if this is heavy to calculate all pixels
+

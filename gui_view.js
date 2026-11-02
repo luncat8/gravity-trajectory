@@ -28,17 +28,26 @@ function refreshViewUi() {
 	}
 	const gl = fieldRenderer.backend() === 'webgl';
 	const div = fieldRenderer.scaleDiv();
+	const backend = gl ? 'WebGL' + (div > 1 ? ' 1/' + div : '') : '1/' + div;
+	const how = gl ? 'WebGL shader' : '1/' + div + ' 2D raster';
 	if (viewMode === VIEW_POTENTIAL) {
-		viewTagEl.textContent = 'potential · ' + (gl ? 'WebGL' : '1/' + div);
-		viewTagEl.title = 'signed Plummer potential · blue negative, green positive · red wash = how far a heavy planet pulls (g ≥ +2) · ' +
-			(gl ? 'WebGL shader' : '1/' + div + ' 2D raster');
+		viewTagEl.textContent = 'potential · ' + backend;
+		viewTagEl.title = 'gravity zones, no direction: blue repels (g < 0), clear near 0, green pulls, red heavy (g ≥ +2) · ' + how;
 		return;
 	}
-	viewTagEl.textContent = gl
-		? 'hue · grad · WebGL' + (div > 1 ? ' 1/' + div : '')
-		: 'hue · grad · 1/' + div;
-	viewTagEl.title = 'hue = pull direction · lightness = potential gradient · ' +
-		(gl ? 'WebGL shader' : '1/' + div + ' 2D raster');
+	viewTagEl.textContent = 'hue · grad · ' + backend;
+	viewTagEl.title = 'hue = pull direction · lightness = potential gradient · ' + how;
+}
+
+/* the legend bar is the zone palette itself over the seeded planet gravity range and
+ * its ticks position from the same range, so the key cannot drift from the map */
+function paintZoneLegend() {
+	if (!zoneBarEl || !potentialLegendEl || !root.GravityField) return;
+	const lo = GravityGame.PLANET_GRAVITY_MIN;
+	const hi = GravityGame.PLANET_GRAVITY_MAX;
+	zoneBarEl.style.backgroundImage = GravityField.legendGradient(lo, hi);
+	potentialLegendEl.style.setProperty('--lo', lo);
+	potentialLegendEl.style.setProperty('--hi', hi);
 }
 
 /* a lost WebGL context falls back to the starfield until `webglcontextrestored`

@@ -1,9 +1,16 @@
-/* Gravity backdrops: pull direction / gradient magnitude, or signed potential.
- * Potential uses the simulation's Plummer softening: phi = -sum(mu*g/r).
- * Attractive wells are negative (blue), repulsive hills positive (green), and
- * the red wash marks the spread of a heavy planet — the ground its pull reaches
- * (g >= HEAVY_G 2), so the map shows where a heavy world dominates instead of
- * a thin ring at its edge. */
+/* Gravity backdrops: two smooth per-pixel maps of the same bodies.
+ *
+ * field: pull direction -> hue, pull magnitude -> lightness.
+ *
+ * potential (gravity zones): no direction, only how much gravity sits where.
+ * Every body spreads its signed gravity g (strength x world multiplier, the
+ * number on its card) over a Plummer surface-density bump, so
+ *   Z(x) = sum g_i / (1 + |x - b_i|^2 / ZONE_R^2)^2
+ * and a lone body reads its own g at its centre. The colour follows Z:
+ * negative blue (repels), near zero transparent with alpha = |Z| up to 1,
+ * positive green (pulls), amber, then red from HEAVY_G 2 (a heavy planet),
+ * lightening toward the heaviest. The sign is the sign of gravity, not of the
+ * potential energy, so an attracting planet is green and a repelling one blue. */
 (function (root) {
 	'use strict';
 
@@ -18,22 +25,23 @@
 	const L_MAX = 0.56;
 	const G_REF = 40;
 	const G_KNEE = Math.pow(G_REF, 1.5);
-	const P_REF = 8000;
-	/* the legend's heavy line: the red wash starts there and is solid at 4× it,
-	 * compared on g² so neither path needs a square root */
+	/* the card's heavy line: the zone palette is solid red from here */
 	const HEAVY_G = 2;
-	const HEAVY_G2_LO = HEAVY_G * HEAVY_G;
-	const HEAVY_G2_HI = HEAVY_G2_LO * 16;
-	const HEAVY_MIX = 0.65;
-	const NEG_R = 42;
-	const NEG_G = 116;
-	const NEG_B = 255;
-	const POS_R = 72;
-	const POS_G = 235;
-	const POS_B = 139;
-	const HEAVY_R = 255;
-	const HEAVY_GREEN = 72;
-	const HEAVY_B = 56;
+	/* spread radius, 1.5x the sim's softening: neighbouring planets (>= 165 px
+	 * apart) blend into one zone while a light planet stays its own */
+	const ZONE_R = 90;
+	const ZONE_INV_R2 = 1 / (ZONE_R * ZONE_R);
+	/* pure green up to here, amber halfway to HEAVY_G, red from HEAVY_G, then
+	 * red lightens toward HOT so the heaviest ground still has a gradient */
+	const ZONE_GREEN_END = 1;
+	const ZONE_HOT_END = 5;
+	/* legend stops per unit of Z: the corners at 0, +-1 and HEAVY_G land on a stop */
+	const LEGEND_PER_UNIT = 8;
+	const ZONE_NEGATIVE = [42, 116, 255];
+	const ZONE_POSITIVE = [72, 235, 139];
+	const ZONE_AMBER = [255, 206, 72];
+	const ZONE_HEAVY = [255, 72, 56];
+	const ZONE_HOT = [255, 128, 108];
 	const MODE_POTENTIAL = 'potential';
 	const BASE_R = 2;
 	const BASE_G = 6;
@@ -54,6 +62,16 @@
 		'}'
 	].join('\n');
 
+	/* GLSL literals come from the JS palette, so shader, raster and legend share one table */
+	function glslFloat(v) {
+		return Number.isInteger(v) ? v.toFixed(1) : String(v);
+	}
+
+	function glslVec3(rgb) {
+		return 'vec3(' + glslFloat(rgb[0] / 255) + ', ' + glslFloat(rgb[1] / 255) + ', ' +
+			glslFloat(rgb[2] / 255) + ')';
+	}
+
 	const FRAG_SRC = [
 		'#ifdef GL_FRAGMENT_PRECISION_HIGH',
 		'precision highp float;',
@@ -69,24 +87,49 @@
 		'const float INV_TAU = 0.15915494309189535;',
 		'const float L_MAX = 0.56;',
 		'const float G_KNEE = 252.98221281347034;',
-		'const float P_REF = 8000.0;',
-		'const vec3 NEGATIVE = vec3(42.0 / 255.0, 116.0 / 255.0, 1.0);',
-		'const vec3 POSITIVE = vec3(72.0 / 255.0, 235.0 / 255.0, 139.0 / 255.0);',
-		'const vec3 HEAVY = vec3(1.0, 72.0 / 255.0, 56.0 / 255.0);',
-		'const float HEAVY_G2_LO = 4.0;',
-		'const float HEAVY_G2_HI = 64.0;',
-		'const float HEAVY_MIX = 0.65;',
 		'const float SAT = 0.88;',
 		'const vec3 BASE = vec3(2.0 / 255.0, 6.0 / 255.0, 12.0 / 255.0);',
+		/* the weights are MU * g, the zone map wants g */
+		'const float INV_MU = ' + glslFloat(1 / MU) + ';',
+		'const float ZONE_INV_R2 = ' + glslFloat(ZONE_INV_R2) + ';',
+		'const float ZONE_GREEN_END = ' + glslFloat(ZONE_GREEN_END) + ';',
+		'const float ZONE_HOT_END = ' + glslFloat(ZONE_HOT_END) + ';',
+		'const float HEAVY_G = ' + glslFloat(HEAVY_G) + ';',
+		'const vec3 NEGATIVE = ' + glslVec3(ZONE_NEGATIVE) + ';',
+		'const vec3 POSITIVE = ' + glslVec3(ZONE_POSITIVE) + ';',
+		'const vec3 AMBER = ' + glslVec3(ZONE_AMBER) + ';',
+		'const vec3 HEAVY = ' + glslVec3(ZONE_HEAVY) + ';',
+		'const vec3 HOT = ' + glslVec3(ZONE_HOT) + ';',
 		'vec3 hsl2rgb(float h, float s, float l) {',
 		'	vec3 u = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);',
 		'	float c = (1.0 - abs(2.0 * l - 1.0)) * s;',
 		'	return (u - 0.5) * c + l;',
 		'}',
+		/* sampleZone() written in GLSL */
+		'vec3 zoneColour(float zone) {',
+		'	if (zone < 0.0) return NEGATIVE;',
+		'	float heat = smoothstep(ZONE_GREEN_END, HEAVY_G, zone);',
+		'	vec3 warm = mix(mix(POSITIVE, AMBER, min(2.0 * heat, 1.0)), HEAVY, max(2.0 * heat - 1.0, 0.0));',
+		'	return mix(warm, HOT, smoothstep(HEAVY_G, ZONE_HOT_END, zone));',
+		'}',
 		'void main() {',
 		'	vec2 w = uOrigin + gl_FragCoord.xy * uStep;',
+		'	if (uPotential == 1) {',
+		'		float zone = 0.0;',
+		'		for (int i = 0; i < ' + MAX_BODIES + '; i++) {',
+		'			if (i >= uCount) break;',
+		'			vec3 b = uBodies[i];',
+		'			vec2 d = b.xy - w;',
+		'			float t = 1.0 / (1.0 + dot(d, d) * ZONE_INV_R2);',
+		'			zone += b.z * t * t;',
+		'		}',
+		'		zone *= INV_MU;',
+		/* the canvas is premultiplied: colour scaled by its own alpha */
+		'		float alpha = min(abs(zone), 1.0);',
+		'		gl_FragColor = vec4(zoneColour(zone) * alpha, alpha);',
+		'		return;',
+		'	}',
 		'	vec2 acc = vec2(0.0);',
-		'	float phi = 0.0;',
 		'	for (int i = 0; i < ' + MAX_BODIES + '; i++) {',
 		'		if (i >= uCount) break;',
 		'		vec3 b = uBodies[i];',
@@ -94,16 +137,6 @@
 		'		float r2 = dot(d, d) + SOFT2;',
 		'		float inv = inversesqrt(r2);',
 		'		acc += d * (b.z * inv * inv * inv);',
-		'		phi -= b.z * inv;',
-		'	}',
-		'	if (uPotential == 1) {',
-		'		float mag = abs(phi);',
-		'		float shade = mag / (mag + P_REF);',
-		'		vec3 tint = phi < 0.0 ? NEGATIVE : POSITIVE;',
-		'		vec3 base = mix(BASE, tint, shade);',
-		'		float heavy = smoothstep(HEAVY_G2_LO, HEAVY_G2_HI, dot(acc, acc));',
-		'		gl_FragColor = vec4(mix(base, HEAVY, HEAVY_MIX * heavy), 1.0);',
-		'		return;',
 		'	}',
 		'	float g2 = dot(acc, acc);',
 		'	if (g2 <= 1e-12) {',
@@ -159,55 +192,78 @@
 		return out;
 	}
 
-	/* red weight of a heavy planet's spread from a squared pull: the shader's
-	 * smoothstep(HEAVY_G2_LO, HEAVY_G2_HI, g²) written out */
-	function heavyWeight(g2) {
-		const t = (g2 - HEAVY_G2_LO) / (HEAVY_G2_HI - HEAVY_G2_LO);
+	function smooth01(t) {
 		if (!(t > 0)) return 0;
-		if (t >= 1) return 1;
-		return t * (3 - 2 * t);
+		return t >= 1 ? 1 : t * t * (3 - 2 * t);
 	}
 
-	/* Reference potential palette; zero is the same dark base as the field view.
-	 * `g2` is the squared pull at the same point: the red heavy-planet spread. */
-	function samplePotential(phi, g2, out) {
-		const mag = phi < 0 ? -phi : phi;
-		const shade = mag / (mag + P_REF);
-		const heavy = heavyWeight(g2) * HEAVY_MIX;
-		out.potential = phi;
-		out.shade = shade;
-		const r = BASE_R + ((phi < 0 ? NEG_R : POS_R) - BASE_R) * shade;
-		const g = BASE_G + ((phi < 0 ? NEG_G : POS_G) - BASE_G) * shade;
-		const b = BASE_B + ((phi < 0 ? NEG_B : POS_B) - BASE_B) * shade;
-		out.r = clampByte(r + (HEAVY_R - r) * heavy);
-		out.g = clampByte(g + (HEAVY_GREEN - g) * heavy);
-		out.b = clampByte(b + (HEAVY_B - b) * heavy);
+	function lerp(a, b, t) {
+		return a + (b - a) * t;
+	}
+
+	function zoneChannel(c, toAmber, toHeavy, hot) {
+		const warm = lerp(lerp(ZONE_POSITIVE[c], ZONE_AMBER[c], toAmber), ZONE_HEAVY[c], toHeavy);
+		return clampByte(lerp(warm, ZONE_HOT[c], hot));
+	}
+
+	/* reference zone palette for the 2D fallback, the legend and the tests: the
+	 * shader's zoneColour() and alpha written out. Straight alpha, `a` in bytes. */
+	function sampleZone(zone, out) {
+		const m = zone < 0 ? -zone : zone;
+		out.zone = zone;
+		out.alpha = m < 1 ? m : 1;
+		out.a = clampByte(out.alpha * 255);
+		if (zone < 0) {
+			out.r = ZONE_NEGATIVE[0];
+			out.g = ZONE_NEGATIVE[1];
+			out.b = ZONE_NEGATIVE[2];
+			return out;
+		}
+		const heat = smooth01((zone - ZONE_GREEN_END) / (HEAVY_G - ZONE_GREEN_END));
+		const toAmber = heat < 0.5 ? 2 * heat : 1;
+		const toHeavy = heat > 0.5 ? 2 * heat - 1 : 0;
+		const hot = smooth01((zone - HEAVY_G) / (ZONE_HOT_END - HEAVY_G));
+		out.r = zoneChannel(0, toAmber, toHeavy, hot);
+		out.g = zoneChannel(1, toAmber, toHeavy, hot);
+		out.b = zoneChannel(2, toAmber, toHeavy, hot);
 		return out;
 	}
 
-	function potentialAt(sim, x, y) {
-		const mu = MU * sim.gravityScale;
-		let phi = 0;
+	/* exact Z at a world point: what the raster and the shader are tested against */
+	function zoneAt(sim, x, y) {
 		const count = sim.bodyCount < MAX_BODIES ? sim.bodyCount : MAX_BODIES;
+		let zone = 0;
 		for (let i = 0; i < count; i++) {
-			const s = sim.strength[i];
-			if (s === 0) continue;
 			const dx = sim.bodyX[i] - x;
 			const dy = sim.bodyY[i] - y;
-			phi -= mu * s / Math.sqrt(dx * dx + dy * dy + SOFT2);
+			const t = 1 / (1 + (dx * dx + dy * dy) * ZONE_INV_R2);
+			zone += sim.gravityScale * sim.strength[i] * t * t;
 		}
-		return phi;
+		return zone;
+	}
+
+	/* CSS gradient of the palette over [zMin, zMax] for the legend key; CSS blends
+	 * rgba stops premultiplied, as the canvas does */
+	function legendGradient(zMin, zMax) {
+		const steps = Math.ceil((zMax - zMin) * LEGEND_PER_UNIT);
+		const c = { zone: 0, alpha: 0, a: 0, r: 0, g: 0, b: 0 };
+		let css = 'linear-gradient(90deg';
+		for (let i = 0; i <= steps; i++) {
+			const f = i / steps;
+			sampleZone(zMin + (zMax - zMin) * f, c);
+			css += ', rgba(' + c.r + ', ' + c.g + ', ' + c.b + ', ' + c.alpha.toFixed(3) + ') ' +
+				(f * 100).toFixed(2) + '%';
+		}
+		return css + ')';
 	}
 
 	function ensureTables() {
 		if (tables !== null) return tables;
 		const kern = new Float32Array(KERN_N);
-		const potKern = new Float32Array(KERN_N);
 		for (let i = 0; i < KERN_N; i++) {
 			const r2 = (i + 0.5) * KERN_STEP + SOFT2;
 			const inv = 1 / Math.sqrt(r2);
 			kern[i] = inv / r2;
-			potKern[i] = inv;
 		}
 		const hueR = new Float32Array(HUE_N);
 		const hueG = new Float32Array(HUE_N);
@@ -234,7 +290,7 @@
 			lMG[i] = m + BASE_G * fade;
 			lMB[i] = m + BASE_B * fade;
 		}
-		tables = { kern, potKern, hueR, hueG, hueB, lC, lMR, lMG, lMB };
+		tables = { kern, hueR, hueG, hueB, lC, lMR, lMG, lMB };
 		return tables;
 	}
 
@@ -255,11 +311,44 @@
 		return (a * HUE_N) & HUE_MASK;
 	}
 
-	/* fills an RGBA Uint8ClampedArray (w x h) for tests and the 1/4-res 2D fallback */
+	/* the zone map row by row: Z summed over the bodies on the per-column dx^2 table */
+	function rasterizeZones(pixels, w, h, sim, count, scratch, oy, sy) {
+		const row = scratch.zoneRow;
+		const colour = scratch.zoneColour;
+		const dx2Tab = scratch.dx2Tab;
+		const by = sim.bodyY;
+		const str = sim.strength;
+		let p = 0;
+		for (let y = 0; y < h; y++) {
+			const wy = oy + y * sy;
+			row.fill(0, 0, w);
+			for (let i = 0; i < count; i++) {
+				const weight = sim.gravityScale * str[i];
+				if (weight === 0) continue;
+				const dy = by[i] - wy;
+				const dy2 = dy * dy;
+				const base = i * w;
+				for (let x = 0; x < w; x++) {
+					const t = 1 / (1 + (dx2Tab[base + x] + dy2) * ZONE_INV_R2);
+					row[x] += weight * t * t;
+				}
+			}
+			for (let x = 0; x < w; x++) {
+				sampleZone(row[x], colour);
+				pixels[p] = colour.r;
+				pixels[p + 1] = colour.g;
+				pixels[p + 2] = colour.b;
+				pixels[p + 3] = colour.a;
+				p += 4;
+			}
+		}
+	}
+
+	/* fills a straight-alpha RGBA Uint8ClampedArray (w x h) for tests and the 1/4-res 2D
+	 * fallback; the field is opaque, the zone map transparent where Z is near 0 */
 	function rasterize2D(pixels, w, h, sim, view, cssW, cssH, scratch, mode) {
 		const lut = ensureTables();
-		const potential = mode === MODE_POTENTIAL;
-		const kern = potential ? lut.potKern : lut.kern;
+		const kern = lut.kern;
 		const hueR = lut.hueR;
 		const hueG = lut.hueG;
 		const hueB = lut.hueB;
@@ -291,46 +380,8 @@
 			}
 		}
 
-		if (potential) {
-			const row = scratch.potRow;
-			const colour = scratch.potColour;
-			/* the pull rides along beside the potential: the red wash needs it */
-			const inv3Tab = lut.kern;
-			let p = 0;
-			for (let y = 0; y < h; y++) {
-				const wy = oy + y * sy;
-				row.fill(0, 0, w);
-				axRow.fill(0, 0, w);
-				ayRow.fill(0, 0, w);
-				for (let i = 0; i < count; i++) {
-					const ms = mu * str[i];
-					if (ms === 0) continue;
-					const dy = by[i] - wy;
-					const dy2 = dy * dy;
-					const dym = dy * ms;
-					const base = i * w;
-					for (let x = 0; x < w; x++) {
-						const r2 = dx2Tab[base + x] + dy2;
-						const k = r2 >> KERN_SHIFT;
-						const inv = k < KERN_N ? kern[k] : 1 / Math.sqrt(r2 + SOFT2);
-						const inv3 = k < KERN_N ? inv3Tab[k]
-							: 1 / ((r2 + SOFT2) * Math.sqrt(r2 + SOFT2));
-						row[x] -= ms * inv;
-						axRow[x] += dxTab[base + x] * (ms * inv3);
-						ayRow[x] += dym * inv3;
-					}
-				}
-				for (let x = 0; x < w; x++) {
-					const ax = axRow[x];
-					const ay = ayRow[x];
-					samplePotential(row[x], ax * ax + ay * ay, colour);
-					pixels[p] = colour.r;
-					pixels[p + 1] = colour.g;
-					pixels[p + 2] = colour.b;
-					pixels[p + 3] = 255;
-					p += 4;
-				}
-			}
+		if (mode === MODE_POTENTIAL) {
+			rasterizeZones(pixels, w, h, sim, count, scratch, oy, sy);
 			return;
 		}
 
@@ -398,8 +449,9 @@
 	}
 
 	function initWebGL(canvas) {
+		/* alpha: the zone map is see-through where gravity is near zero */
 		const opts = {
-			alpha: false,
+			alpha: true,
 			antialias: false,
 			depth: false,
 			stencil: false,
@@ -450,8 +502,8 @@
 			cap: w,
 			axRow: new Float32Array(w),
 			ayRow: new Float32Array(w),
-			potRow: new Float64Array(w),
-			potColour: { potential: 0, shade: 0, r: 0, g: 0, b: 0 },
+			zoneRow: new Float64Array(w),
+			zoneColour: { zone: 0, alpha: 0, a: 0, r: 0, g: 0, b: 0 },
 			dxTab: new Float32Array(MAX_BODIES * w),
 			dx2Tab: new Float32Array(MAX_BODIES * w)
 		};
@@ -638,11 +690,12 @@
 		LOW_DIV,
 		L_MAX,
 		G_REF,
-		P_REF,
 		HEAVY_G,
 		SAT,
-		potentialAt,
-		samplePotential,
+		ZONE_R,
+		zoneAt,
+		sampleZone,
+		legendGradient,
 		sampleColor,
 		renderBuffer,
 		create

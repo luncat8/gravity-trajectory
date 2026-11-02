@@ -836,11 +836,45 @@ body {
 }
 
 .potentialLegend {
+	margin-top: 8px;
+	font: 10.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* the page shows through where the map is clear, so the track is the page colour;
+ * the gradient is painted at boot from the field's own palette */
+.zoneBar {
+	height: 10px;
+	border: 1px solid var(--line);
+	border-radius: 5px;
+	background-color: #02060c;
+}
+
+.zoneTicks {
+	position: relative;
+	height: 15px;
+	margin-top: 2px;
+	color: var(--dim);
+}
+
+/* --lo and --hi (the planet gravity range) are set at boot with the gradient */
+.zoneTicks span {
+	position: absolute;
+	left: calc((var(--z) - var(--lo)) / (var(--hi) - var(--lo)) * 100%);
+	transform: translateX(-50%);
+}
+
+.zoneTicks span:first-child {
+	transform: none;
+}
+
+.zoneTicks span:last-child {
+	transform: translateX(-100%);
+}
+
+.zoneWords {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 4px 12px;
-	margin-top: 7px;
-	font: 10.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+	gap: 2px 12px;
 }
 
 .potentialNegative {

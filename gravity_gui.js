@@ -122,6 +122,7 @@ const viewPotentialEl = $('viewPotential');
 const viewZoomMainEl = $('viewZoomMain');
 const viewZoomFullEl = $('viewZoomFull');
 const potentialLegendEl = $('potentialLegend');
+const zoneBarEl = $('zoneBar');
 const careerCleanEl = $('careerClean');
 const careerCleanLabelEl = $('careerCleanLabel');
 const sourceTagEl = $('sourceTag');
@@ -1040,6 +1041,7 @@ initPlanetUniverse(PLANET_DEFAULT);
 applyPlanetUniverse();
 attachWorld();
 refreshExperimentUi();
+paintZoneLegend();
 const initialView = new URLSearchParams(location.search).get('view');
 if (VIEW_MODES.includes(initialView)) setViewMode(initialView);
 if (!loadLink() && !loadSearchParams()) {

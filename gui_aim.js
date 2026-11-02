@@ -369,7 +369,7 @@ function fire(abortStep) {
 	predictShot();
 	dirty = false;
 	sim.launch(aimBody, aimAngle, aimSpeed);
-	if (!replay.on && (!game.on || !slotIsBot(slot))) {
+	if (!replay.on && (!game.on || slot === 0 || !slotIsBot(slot))) {
 		sound.launch();
 		soundFlightSim = sim;
 	}

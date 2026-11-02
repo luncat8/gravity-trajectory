@@ -162,8 +162,8 @@ function draw(now) {
 	drawAim();
 	drawCargo(tickNow);
 	drawMarkers();
-	if (viewMode === VIEW_POTENTIAL) drawPotentialHeavy();
-	else drawSigns();
+	/* the zone map already colours each planet's sign and weight */
+	if (viewMode !== VIEW_POTENTIAL) drawSigns();
 	ctx.restore();
 	if (game.on && !routeRule()) drawPlanetProfits();
 	if (careerRule()) drawCareerPad();

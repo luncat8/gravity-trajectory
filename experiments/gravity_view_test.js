@@ -1,4 +1,4 @@
-/* Gravity potential view, planet profit+gravity cards, and view cycling.
+/* Gravity zone ("potential") view, planet profit+gravity cards, and view cycling.
  * Run: node experiments/gravity_view_test.js
  */
 'use strict';
@@ -9,40 +9,61 @@ const GravitySim = require('../gravity_sim.js');
 const GravityField = require('../gravity_field.js');
 const { loadPage } = require('./dom_stub.js');
 
-/* Signed Plummer potential matches the simulation's softened acceleration. */
+/* Z sums each body's signed g spread over a bump: a lone body reads its own g. */
 const sim = new GravitySim(1000, 1000);
 const radius = new Float64Array([10, 10]);
 const strength = new Float64Array([1, -1]);
 sim.setField(2, radius, strength, (t, x, y) => {
 	x[0] = 300; y[0] = 300; x[1] = 700; y[1] = 300;
 }, true);
-const well = GravityField.potentialAt(sim, 300, 300);
-const hill = GravityField.potentialAt(sim, 700, 300);
-assert.ok(well < 0 && hill > 0, 'attractive well negative, repulsive hill positive');
-const out = { ax: 0, ay: 0 };
-sim.fieldAt(450, 380, out);
-const h = 0.01;
-const gx = (GravityField.potentialAt(sim, 450 + h, 380) - GravityField.potentialAt(sim, 450 - h, 380)) / (2 * h);
-const gy = (GravityField.potentialAt(sim, 450, 380 + h) - GravityField.potentialAt(sim, 450, 380 - h)) / (2 * h);
-assert.ok(Math.abs(gx + out.ax) < 1e-6 && Math.abs(gy + out.ay) < 1e-6, 'field = -grad potential');
-const colour = { potential: 0, shade: 0, r: 0, g: 0, b: 0 };
-/* the palette takes the pull at the same point: its magnitude paints the red
- * heavy-planet spread over the blue/green potential */
-sim.fieldAt(300, 300, out);
-const wellG2 = out.ax * out.ax + out.ay * out.ay;
-sim.fieldAt(700, 300, out);
-const hillG2 = out.ax * out.ax + out.ay * out.ay;
-GravityField.samplePotential(well, wellG2, colour);
-assert.ok(colour.b > colour.g && colour.b > colour.r, 'negative potential is blue');
-GravityField.samplePotential(hill, hillG2, colour);
-assert.ok(colour.g > colour.r && colour.g > colour.b, 'positive potential is green');
-GravityField.samplePotential(0, 0, colour);
-assert.deepStrictEqual([colour.r, colour.g, colour.b], [2, 6, 12], 'zero potential is dark space');
-/* the same well under a heavy pull (g = 10, above the legend's g ≥ 2) turns red:
- * that wash is how far a heavy planet reaches, not just its rim */
-GravityField.samplePotential(well, 100, colour);
-assert.ok(colour.r > colour.g && colour.r > colour.b, 'heavy pull spreads red: ' +
-	colour.r + '/' + colour.g + '/' + colour.b);
+const pull = GravityField.zoneAt(sim, 300, 300);
+const push = GravityField.zoneAt(sim, 700, 300);
+assert.ok(Math.abs(pull - 1) < 0.01 && Math.abs(push + 1) < 0.01,
+	'a body reads its own g at its centre: ' + pull + ' / ' + push);
+assert.ok(Math.abs(GravityField.zoneAt(sim, 300, 300 + GravityField.ZONE_R) - 0.25) < 0.01,
+	'one spread radius out the bump is a quarter of the centre');
+assert.ok(Math.abs(GravityField.zoneAt(sim, 500, 300)) < 0.1, 'between distant bodies it fades out');
+sim.setScales(2, 1);
+assert.ok(Math.abs(GravityField.zoneAt(sim, 300, 300) - 2 * pull) < 1e-9, 'the world multiplier scales every zone');
+sim.setScales(1, 1);
+
+/* Palette: negative blue, near zero clear, positive green, heavy red; alpha = |Z|. */
+const colour = { zone: 0, alpha: 0, a: 0, r: 0, g: 0, b: 0 };
+const zone = z => GravityField.sampleZone(z, colour);
+const label = () => colour.r + '/' + colour.g + '/' + colour.b + '/' + colour.a;
+zone(-1);
+assert.ok(colour.b > colour.g && colour.b > colour.r && colour.a === 255, 'negative gravity is blue: ' + label());
+zone(1.2);
+assert.ok(colour.g > colour.r + 40 && colour.g > colour.b + 40 && colour.a === 255,
+	'positive gravity is green, not red or blue: ' + label());
+zone(3);
+assert.ok(colour.r > colour.g + 60 && colour.r > colour.b + 60, 'a heavy planet is red: ' + label());
+zone(GravityField.HEAVY_G);
+assert.deepStrictEqual([colour.r, colour.g, colour.b], [255, 72, 56], 'red is solid from the heavy line');
+zone(1.5);
+assert.ok(colour.r > 240 && colour.g > 190 && colour.b < 100, 'green reaches red through amber: ' + label());
+zone(0);
+assert.strictEqual(colour.a, 0, 'zero gravity is fully transparent');
+for (const z of [-0.8, -0.5, -0.1, 0.1, 0.3, 0.75, 1, 1.7, -2.5, 6]) {
+	zone(z);
+	assert.strictEqual(colour.a, Math.round(Math.min(1, Math.abs(z)) * 255), 'alpha is |Z| up to 1 at ' + z);
+}
+/* smooth: premultiplied colour never jumps, not at the sign flip nor where alpha saturates */
+let prev = null;
+let maxStep = 0;
+for (let z = -2; z <= 6; z += 0.001) {
+	zone(z);
+	const now = [colour.r * colour.a / 255, colour.g * colour.a / 255, colour.b * colour.a / 255];
+	if (prev) maxStep = Math.max(maxStep, ...now.map((v, i) => Math.abs(v - prev[i])));
+	prev = now;
+}
+assert.ok(maxStep < 1.5, 'palette steps at most ' + maxStep.toFixed(2) + ' levels per 0.001 of Z');
+
+/* The legend key is the same palette: clear in the middle, blue and red at its ends. */
+const key = GravityField.legendGradient(-1, 3.5);
+assert.ok(/^linear-gradient\(90deg, rgba\(42, 116, 255, 1\.000\) 0\.00%/.test(key), 'key starts blue: ' + key.slice(0, 60));
+assert.ok(key.includes('rgba(72, 235, 139, 0.000) 22.22%'), 'key is clear at g = 0');
+assert.ok(/rgba\(255, 72, 56, 1\.000\) 66\.67%/.test(key), 'key is red at the heavy line');
 
 /* The 1/4-res fallback uses the same palette as the reference sampler. */
 const w = 160, hgt = 100;
@@ -54,20 +75,19 @@ for (let y = 0; y < hgt; y++) {
 	for (let x = 0; x < w; x++) {
 		const wx = (2 - view.offX) / view.scale + x * (4 / view.scale);
 		const wy = (2 - view.offY) / view.scale + y * (4 / view.scale);
-		sim.fieldAt(wx, wy, out);
-		GravityField.samplePotential(GravityField.potentialAt(sim, wx, wy),
-			out.ax * out.ax + out.ay * out.ay, colour);
+		zone(GravityField.zoneAt(sim, wx, wy));
 		const p = (y * w + x) * 4;
-		maxDiff = Math.max(maxDiff, Math.abs(pixels[p] - colour.r),
-			Math.abs(pixels[p + 1] - colour.g), Math.abs(pixels[p + 2] - colour.b));
+		maxDiff = Math.max(maxDiff, Math.abs(pixels[p] - colour.r), Math.abs(pixels[p + 1] - colour.g),
+			Math.abs(pixels[p + 2] - colour.b), Math.abs(pixels[p + 3] - colour.a));
 	}
 }
-assert.ok(maxDiff <= 3, 'potential raster differs from reference by ' + maxDiff);
+assert.ok(maxDiff <= 1, 'zone raster differs from reference by ' + maxDiff);
 sim.setScales(0, 1);
 GravityField.renderBuffer(pixels, w, hgt, sim, view, 640, 400, 'potential');
-assert.ok(pixels.every((v, i) => v === (i % 4 === 3 ? 255 : [2, 6, 12][i % 4])),
-	'zero gravity collapses potential to the dark base');
+assert.ok(pixels.every((v, i) => i % 4 !== 3 || v === 0), 'zero gravity collapses the zone map to transparent');
 sim.setScales(1, 1);
+GravityField.renderBuffer(pixels, w, hgt, sim, view, 640, 400, 'field');
+assert.ok(pixels.every((v, i) => i % 4 !== 3 || v === 255), 'the direction field stays opaque');
 
 /* GUI: URL, radio, legend, f cycle, and renderer mode stay in sync. */
 const env = loadPage({ search: '?mode=career&seed=42&view=potential' });
@@ -81,6 +101,8 @@ assert.ok(!ui.get('f').hidden);
 assert.strictEqual(env.context.OrbitScene.backdropVisible(), false);
 assert.strictEqual(scene.fieldRenderer().mode(), 'potential');
 assert.match(ui.get('viewTag').textContent, /^potential · /);
+assert.ok(ui.get('zoneBar').style.backgroundImage.startsWith('linear-gradient(90deg, rgba(42, 116, 255'),
+	'legend bar is painted from the zone palette');
 env.fireWindow('keydown', { code: 'KeyF', key: 'f', target: { tagName: 'BODY' } });
 assert.strictEqual(scene.viewMode(), 'space');
 assert.ok(ui.get('potentialLegend').hidden);
@@ -92,6 +114,26 @@ env.choose('viewSpace');
 assert.strictEqual(scene.viewMode(), 'space');
 env.choose('viewPotential');
 assert.strictEqual(scene.viewMode(), 'potential');
+
+/* the page raster of a seed with repelling, pulling and heavy planets: every zone colour
+ * shows, most of the map stays clear, and red marks heavy planets instead of washing it */
+const zoneEnv = loadPage({ search: '?mode=career&seed=61&view=potential' });
+zoneEnv.runFrames(3, 16);
+const zonePix = zoneEnv.context.GravityScene.fieldRenderer().pixels();
+const seen = { blue: 0, green: 0, red: 0, clear: 0 };
+for (let i = 0; i < zonePix.length; i += 4) {
+	const r = zonePix[i], g = zonePix[i + 1], b = zonePix[i + 2], a = zonePix[i + 3];
+	if (a < 26) seen.clear += 1;
+	if (a < 128) continue;
+	if (b > r + 40 && b > g) seen.blue += 1;
+	else if (g > r + 40 && g > b + 40) seen.green += 1;
+	else if (r > g + 60 && r > b + 60) seen.red += 1;
+}
+const zoneTotal = zonePix.length / 4;
+assert.ok(seen.blue > 200 && seen.green > 2000 && seen.red > 500,
+	'blue, green and red zones all show: ' + JSON.stringify(seen));
+assert.ok(seen.red < zoneTotal / 4, 'red marks heavy planets, it does not wash the screen: ' + seen.red);
+assert.ok(seen.clear > zoneTotal / 3, 'most of the map stays clear: ' + seen.clear);
 
 /* the zoom switch: main frames the planet field, full the whole flight area */
 const OrbitSim = require('../orbit_sim.js');
@@ -137,4 +179,4 @@ env.calls.texts.length = 0;
 vm.runInContext('drawPlanetProfits()', env.context);
 assert.ok(env.calls.texts.some(t => /^g [+-]/.test(t)), 'port-source planet card still prints gravity');
 
-console.log('GRAVITY VIEW OK · potential parity max diff ' + maxDiff + ' · cards + owner borders + f cycle');
+console.log('GRAVITY VIEW OK · zone raster parity max diff ' + maxDiff + ' · palette + legend + cards + owner borders + f cycle');

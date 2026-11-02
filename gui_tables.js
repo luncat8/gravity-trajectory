@@ -201,7 +201,7 @@ const COMMON_HELP = 'Drag from a planet or pad to aim; hold Shift for 1/20 fine 
 	'Release to preview; in flight modes, Enter or launch fires and landing stages the next shot. ' +
 	'Esc cancels an aim or queued launch. Planet gravity is seeded from −1 to +3.5; ' +
 	'negative gravity repels. The seed is in the URL; a seedless startup draws a new one. ' +
-	'f cycles space → gravity field → gravity potential; potential is blue when negative, green when positive, and a red wash spreads around a heavy planet (g ≥ +2) as far as its pull reaches. ' +
+	'f cycles space → gravity field → gravity potential; potential shows gravity zones by size, not direction: blue where gravity repels, see-through near zero, green where it pulls and red around a heavy planet (g ≥ +2). ' +
 	'z switches the camera between the planet field and the whole flight area, where a ship that left the canvas is still visible.';
 const RULE_HELP = {
 	lab: {
