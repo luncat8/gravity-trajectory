@@ -79,7 +79,12 @@ function makeWorld(seed, gravityScale = 1, forceScale = 1) {
 	sim.setScales(gravityScale, forceScale);
 	bot.setScales(gravityScale, forceScale);
 	GravityGame.resetMarket(market);
-	return { seed, trade, sim, career, ledger, market, bot, step: 0 };
+	return { seed, trade, sim, career, ledger, market, bot, step: 0, burn: newBurnState() };
+}
+
+/* the mid-flight impulse state the controller keeps per flying actor */
+function newBurnState() {
+	return { burn: 0, burnTries: 0, burnNext: 0, burnStep: 0 };
 }
 
 /* the same world with the seed's own gravity wells: reach and departure
@@ -112,7 +117,7 @@ function makeSeededWorld(seed) {
 	GravityGame.startCareer(career, sim, seed, trade, null);
 	for (let i = 0; i < bot.strength.length && i < PLANETS; i++) bot.strength[i] = strength[i];
 	GravityGame.resetMarket(market);
-	return { seed, trade, sim, career, ledger, market, bot, step: 0 };
+	return { seed, trade, sim, career, ledger, market, bot, step: 0, burn: newBurnState() };
 }
 
 function wait(w) {
@@ -145,20 +150,15 @@ function fly(w, plan) {
 	sim.limitReason = GravitySim.END_TIME;
 	sim.launch(plan.origin, plan.angle, plan.speed);
 	GravityGame.careerBeginFlight(career, sim);
-	let flightStep = 0;
 	while (sim.status === GravitySim.STATUS_FLYING) {
 		w.step += 1;
-		flightStep += 1;
+		/* the same mid-flight impulse policy the page's bot flies */
+		if (w.bot.careerFlightBurn(career, sim, market, w.step, w.burn)) {
+			w.burns = (w.burns || 0) + 1;
+		}
 		sim.stepOne();
 		GravityGame.stepHarvest(ledger, market, sim, w.step);
 		GravityGame.careerAdvance(career, RATE, 1);
-		if (w.bot.careerUseResearch && flightStep === 24 &&
-			career.ship.engine !== null && career.ship.fuelKg > 0.5) {
-			const burn = w.bot.careerBurnPlan(career, sim, market, w.step);
-			if (burn && GravityGame.careerBurn(career, sim, burn.angle, burn.dv)) {
-				w.burns = (w.burns || 0) + 1;
-			}
-		}
 		assert.ok(w.step < 100000000, 'flight step guard');
 	}
 	trade.advanceTo(sim.flightFieldT);
@@ -181,6 +181,10 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = 
 		return traceFast.apply(this, args);
 	};
 	if (process.env.NOBOOK) bot.careerBookTag = () => NaN;
+	/* A/B the mid-flight impulse policy: NOBURN=1 flies the same seeds coasting,
+	 * BURN_GAIN=n moves the margin a nudge has to beat coasting by */
+	if (process.env.NOBURN) bot.careerFlightBurn = () => null;
+	if (process.env.BURN_GAIN) bot.careerBurnGain = Number(process.env.BURN_GAIN);
 	/* A/B the pad-gear policy on the same seed: the rest of the controller is
 	 * untouched, so the deltas are the gear buys alone. */
 	if (process.env.NOGEAR) bot.careerPadGear = () => false;
@@ -555,6 +559,114 @@ check('careerBurnPlan: rescues a missed contract or map exit and never breaks a 
 			assert.ok(saveBurn && saveBurn.body >= 0, 'burn rescued off-map flight');
 		}
 	}
+});
+
+/* a long-reach bench ship: an engine and a tank for the impulse drive plus a
+ * hold big enough to fly a real contract */
+function burnWorld(seed) {
+	const w = makeWorld(seed);
+	w.ledger.purse = 60;
+	assert.ok(GravityGame.installPart(w.career, OrbitTech.KIND_HOLD, OrbitTech.HOLDS[2]));
+	assert.ok(GravityGame.installPart(w.career, OrbitTech.KIND_ENGINE, OrbitTech.ENGINES[2]));
+	assert.ok(GravityGame.installPart(w.career, OrbitTech.KIND_TANK, OrbitTech.TANKS[3]));
+	return w;
+}
+
+/* launch the controller's own opening plan and fly it out with the same
+ * per-step impulse policy the page runs, collecting the burns it takes */
+function flyOpening(w, state, gain) {
+	const { career, sim, bot, market, trade } = w;
+	const plan = bot.careerPlan(career, sim, market, w.step, false);
+	assert.ok(plan, 'no opening plan');
+	bot.careerBurnGain = gain;
+	const fuel0 = career.ship.fuelKg;
+	sim.fieldT = trade.t;
+	sim.fieldRate = RATE;
+	sim.stepLimit = GravityGame.CAP_STEPS;
+	sim.launch(plan.origin, plan.angle, plan.speed);
+	GravityGame.careerBeginFlight(career, sim);
+	const burns = [];
+	while (sim.status === GravitySim.STATUS_FLYING) {
+		w.step += 1;
+		const burn = bot.careerFlightBurn(career, sim, market, w.step, state);
+		/* the controller hands back its own scratch record, so snapshot it */
+		if (burn) {
+			burns.push({ angle: burn.angle, dv: burn.dv, body: burn.body, fuelKg: burn.fuelKg });
+		}
+		sim.stepOne();
+		GravityGame.stepHarvest(w.ledger, market, sim, w.step);
+		GravityGame.careerAdvance(career, RATE, 1);
+	}
+	trade.advanceTo(sim.flightFieldT);
+	sim.fieldT = trade.t;
+	GravityGame.careerEndFlight(career, sim, trade, w.step);
+	return { plan, burns, fuel0 };
+}
+
+check('a flight nudges once, spends tank fuel and logs the burn for the page', () => {
+	const w = burnWorld(42);
+	/* a bar of -1e9 accepts any landing the drive can reach: this check is the
+	 * plumbing (one burn per flight, fuel, counter, log line, not the margin) */
+	const state = { burn: 0, burnTries: 0, burnNext: 0, burnStep: 0 };
+	const run = flyOpening(w, state, -1e9);
+	assert.strictEqual(run.burns.length, 1, 'one nudge per flight, took ' + run.burns.length);
+	assert.strictEqual(w.career.burns, 1, 'career burn counter');
+	assert.strictEqual(w.bot.careerBurnsPlanned, 1, 'controller burn counter');
+	assert.ok(w.career.ship.fuelKg < run.fuel0, 'the burn spent no tank fuel');
+	const burn = run.burns[0];
+	assert.ok(burn.dv > 0 && burn.body >= 0 && burn.fuelKg > 0,
+		'burn terms are not usable: ' + JSON.stringify(burn));
+	const logged = w.bot.trace.filter(line => line.includes(' burn · Δv '));
+	assert.strictEqual(logged.length, 1, 'burn not trace-logged: ' + logged.join(' | '));
+	assert.ok(logged[0].includes('R1 burn'), 'burn logged under the wrong actor: ' + logged[0]);
+});
+
+check('rescueOnly pays one coast trace and leaves a healthy flight alone', () => {
+	const w = burnWorld(42);
+	const { career, sim, bot, market } = w;
+	bot.careerBurnGain = -1e9;
+	const plan = bot.careerPlan(career, sim, market, w.step, false);
+	assert.ok(plan, 'no opening plan');
+	sim.fieldT = w.trade.t;
+	sim.fieldRate = RATE;
+	sim.stepLimit = GravityGame.CAP_STEPS;
+	sim.launch(plan.origin, plan.angle, plan.speed);
+	GravityGame.careerBeginFlight(career, sim);
+	for (let i = 0; i < 20 && sim.status === GravitySim.STATUS_FLYING; i++) {
+		w.step += 1;
+		sim.stepOne();
+	}
+	bot.probe.predictBurnFast(sim, 0, 0);
+	assert.strictEqual(bot.probe.predReason, GravitySim.END_IMPACT, 'fixture coasts onto a landing');
+	let traces = 0;
+	const fast = bot.probe.predictBurnFast;
+	bot.probe.predictBurnFast = function (...args) {
+		traces += 1;
+		return fast.apply(this, args);
+	};
+	const rescue = bot.careerBurnPlan(career, sim, market, w.step, true);
+	bot.probe.predictBurnFast = fast;
+	assert.strictEqual(rescue, null, 'rescueOnly nudged a healthy coast');
+	assert.strictEqual(traces, 1, 'rescueOnly traced the whole fan (' + traces + ' traces)');
+	const nudge = bot.careerBurnPlan(career, sim, market, w.step, false);
+	assert.ok(nudge && nudge.body >= 0, 'the same flight is burnable when nudging is allowed');
+});
+
+check('a relaunch gives the flight a fresh nudge budget', () => {
+	const w = burnWorld(42);
+	const state = { burn: 0, burnTries: 0, burnNext: 0, burnStep: 0 };
+	const first = flyOpening(w, state, -1e9);
+	assert.strictEqual(first.burns.length, 1, 'first flight never nudged');
+	assert.strictEqual(w.career.burns, 1, 'first flight burn counter');
+	/* spent bookkeeping left over from a long flight must not follow the ship */
+	state.burn = 2;
+	state.burnTries = 9;
+	state.burnStep = 99999;
+	state.burnNext = 99999;
+	const second = flyOpening(w, state, -1e9);
+	assert.strictEqual(second.burns.length, 1, 'the relaunch kept the spent budget');
+	assert.strictEqual(w.career.burns, 2, 'relaunched flight burn counter');
+	assert.ok(state.burnStep < 99999, 'the burn step did not restart with the flight');
 });
 
 /* the 6.00 starter purse funds one 3.00 pad but never a rescue rail (EMC-2

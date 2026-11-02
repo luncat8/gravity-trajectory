@@ -8,6 +8,9 @@
 'use strict';
 
 function refreshViewUi() {
+	const frame = scene.view.frame;
+	if (viewZoomMainEl) viewZoomMainEl.checked = frame === FRAME_MAIN;
+	if (viewZoomFullEl) viewZoomFullEl.checked = frame === FRAME_FULL;
 	if (viewSpaceEl) viewSpaceEl.checked = viewMode === VIEW_SPACE;
 	if (viewFieldEl) viewFieldEl.checked = viewMode === VIEW_FIELD;
 	if (viewPotentialEl) viewPotentialEl.checked = viewMode === VIEW_POTENTIAL;
@@ -27,7 +30,7 @@ function refreshViewUi() {
 	const div = fieldRenderer.scaleDiv();
 	if (viewMode === VIEW_POTENTIAL) {
 		viewTagEl.textContent = 'potential · ' + (gl ? 'WebGL' : '1/' + div);
-		viewTagEl.title = 'signed Plummer potential · blue negative, green positive · red planets have g ≥ +2 · ' +
+		viewTagEl.title = 'signed Plummer potential · blue negative, green positive · red wash = how far a heavy planet pulls (g ≥ +2) · ' +
 			(gl ? 'WebGL shader' : '1/' + div + ' 2D raster');
 		return;
 	}
@@ -66,6 +69,20 @@ function setViewMode(next) {
 
 function nextViewMode() {
 	return VIEW_MODES[(VIEW_MODES.indexOf(viewMode) + 1) % VIEW_MODES.length];
+}
+
+/* the zoom switch: `main` frames the planet field, `full` zooms out to the
+ * whole flight area, where a ship that left the canvas is still visible */
+function setViewFrame(next) {
+	if (!scene.setFrame(next)) return false;
+	if (fieldRenderer) fieldRenderer.invalidate();
+	refreshViewUi();
+	hudAt = -Infinity;
+	return true;
+}
+
+function toggleViewFrame() {
+	return setViewFrame(scene.view.frame === FRAME_FULL ? FRAME_MAIN : FRAME_FULL);
 }
 
 function resizeOverlay() {

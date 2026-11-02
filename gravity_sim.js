@@ -6,6 +6,9 @@
  * impact() and markSystemsAt() on one fixed step, so predicted paths, landings
  * and planet-system visits match live flight. While flying, predictFlight()
  * continues the path ahead of the cargo until it lands (bounded by frame budget).
+ * A flight ends on impact, leaving the play area, the step cap or an abort; the
+ * area is the planet field grown by OrbitWorld.AREA_SCALE, so a ship can fly
+ * beyond the framed canvas.
  *
  * Launch gate: with `pads` attached (career), a planet can only be launched from
  * when its pad has a catapult, and a shot only fires while the pad battery and
@@ -21,6 +24,13 @@
 	const OrbitTech = typeof module !== 'undefined' && module.exports
 		? require('./orbit_tech.js')
 		: root.OrbitTech;
+	/* the play area is the world field grown by OrbitWorld.AREA_SCALE, so every
+	 * sim on every path (live flight, prediction, bot probe) ends a flight at the
+	 * same edge without carrying its own copy of the ratio */
+	const OrbitWorld = typeof module !== 'undefined' && module.exports
+		? require('./orbit_world.js')
+		: root.OrbitWorld;
+	const AREA_PAD = (OrbitWorld.AREA_SCALE - 1) / 2;
 
 	const DT = 1 / 120;
 	const MU = 400000;
@@ -41,7 +51,6 @@
 	const TRAIL_STRIDE = 2;
 	const BUDGET_MS = 10;
 	const BUDGET_EVERY = 64;
-	const BOUND_MARGIN = 12;
 	const MAX_BODIES = 32;
 	const FIELD_STRIDE = 4;
 	const VEL_EPS = 0.05;
@@ -62,9 +71,13 @@
 	const FULL_BUDGET_MS = 1e9;
 	const PRED_LOG_MAX = 64;
 
+	/* `worldW`/`worldH` frame the planet field; a flight may run out to the
+	 * area, AREA_SCALE times the field and centred on it */
 	function GravitySim(worldW, worldH) {
 		this.worldW = worldW;
 		this.worldH = worldH;
+		this.padX = worldW * AREA_PAD;
+		this.padY = worldH * AREA_PAD;
 
 		this.planetCount = 0;
 		/* null = every configured planet is in play; a Uint8Array marks the
@@ -484,8 +497,8 @@
 	};
 
 	GravitySim.prototype.outside = function (x, y) {
-		return x < -BOUND_MARGIN || x > this.worldW + BOUND_MARGIN ||
-			y < -BOUND_MARGIN || y > this.worldH + BOUND_MARGIN;
+		return x < -this.padX || x > this.worldW + this.padX ||
+			y < -this.padY || y > this.worldH + this.padY;
 	};
 
 	/*

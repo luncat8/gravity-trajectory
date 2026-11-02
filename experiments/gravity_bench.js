@@ -13,6 +13,7 @@
 'use strict';
 
 const Sim = require('../orbit_sim.js');
+const OrbitWorld = require('../orbit_world.js');
 const GravitySim = require('../gravity_sim.js');
 const GravityField = require('../gravity_field.js');
 
@@ -20,6 +21,52 @@ const REASONS = ['open', 'impact', 'exit', 'horizon', 'budget'];
 const SPEEDS = [40, 80, 120, 180, 240, 320];
 const ANGLES = 36;
 const MOVING_RATE = 6;
+
+/*
+ * The one play-area setting: every sim allows AREA_SCALE times its planet field,
+ * centred, so a flight runs out past the framed canvas and stops at the area
+ * edge. A bare field (no bodies) proves it on the live flight path.
+ */
+function areaCheck() {
+	const padX = OrbitWorld.WORLD_W * (OrbitWorld.AREA_SCALE - 1) / 2;
+	const padY = OrbitWorld.WORLD_H * (OrbitWorld.AREA_SCALE - 1) / 2;
+	if (OrbitWorld.AREA_W !== OrbitWorld.WORLD_W * OrbitWorld.AREA_SCALE) {
+		throw new Error('area width is not the field times the area scale');
+	}
+	if (Math.abs(OrbitWorld.AREA_PAD_X - padX) > 1e-9 || Math.abs(OrbitWorld.AREA_PAD_Y - padY) > 1e-9) {
+		throw new Error('area padding is not half the growth');
+	}
+	const empty = function () {};
+	const edge = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	edge.setField(0, new Float64Array(0), new Float64Array(0), empty, true);
+	if (edge.outside(-padX - 1, 0) !== true || edge.outside(-padX + 1, 0) !== false) {
+		throw new Error('flight does not reach the area edge');
+	}
+	if (edge.outside(0, -padY - 1) !== true || edge.outside(0, -padY + 1) !== false) {
+		throw new Error('vertical area padding is wrong');
+	}
+	if (edge.outside(OrbitWorld.WORLD_W + padX - 1, OrbitWorld.WORLD_H) !== false) {
+		throw new Error('right area edge is short');
+	}
+	/* a coasting ship crosses the old field edge and dies at the new one */
+	edge.status = GravitySim.STATUS_FLYING;
+	edge.stepLimit = 100000;
+	edge.limitReason = GravitySim.END_TIME;
+	edge.cargo.x = 0;
+	edge.cargo.y = OrbitWorld.WORLD_H / 2;
+	edge.cargo.vx = -400;
+	edge.cargo.vy = 0;
+	let steps = 0;
+	while (edge.status === GravitySim.STATUS_FLYING && steps < 100000) {
+		edge.stepOne();
+		steps += 1;
+	}
+	if (edge.endReason !== GravitySim.END_EXIT) throw new Error('ship never left the area');
+	if (edge.cargo.x > -padX + 1 || edge.cargo.x < -padX - 20) {
+		throw new Error('ship left at x ' + edge.cargo.x.toFixed(1) + ', not the area edge');
+	}
+	return { padX, padY, x: edge.cargo.x };
+}
 
 function makeWorld() {
 	const sim = new Sim(7);
@@ -340,6 +387,13 @@ function fieldBench(world) {
 	const runs = 12;
 	for (let r = 0; r < runs; r++) GravityField.renderBuffer(pixels, w, h, g, view, 1280, 800);
 	const avgMs = Number(process.hrtime.bigint() - t0) / 1e6 / runs;
+	/* potential carries the pull beside phi for the red heavy wash, so time it
+	 * on the same fallback raster: it is the more expensive of the two */
+	const pt0 = process.hrtime.bigint();
+	for (let r = 0; r < runs; r++) {
+		GravityField.renderBuffer(pixels, w, h, g, view, 1280, 800, 'potential');
+	}
+	const potAvgMs = Number(process.hrtime.bigint() - pt0) / 1e6 / runs;
 
 	/* WebGL backend + adaptive 1/4 resolution drop + context loss / restore */
 	const glState = { draws: 0, origin: null, step: null, lostFn: null, restoredFn: null, lost: false };
@@ -427,7 +481,7 @@ function fieldBench(world) {
 		throw new Error('no-WebGL canvas did not use the 1/4 2D raster');
 	}
 
-	return { w, h, maxDiff, meanDiff: sumDiff / (w * h), avgMs };
+	return { w, h, maxDiff, meanDiff: sumDiff / (w * h), avgMs, potAvgMs };
 }
 
 const started = process.hrtime.bigint();
@@ -437,6 +491,7 @@ const fastForwardMs = Number(process.hrtime.bigint() - started) / 1e6;
 /* warm up before timing */
 for (let i = 0; i < 30; i++) world.gravity.predict(0, i * 0.3, 200);
 
+const area = areaCheck();
 const sweep = predictionSweep(world);
 const parity = parityCheck(world);
 const moving = movingTests(world);
@@ -452,6 +507,10 @@ console.log('trade at t+07:00: ports ' + world.sim.portCount +
 	', delivered ' + Math.round(world.sim.delivered) +
 	', colonies ' + world.sim.coloniesBuilt);
 console.log('');
+console.log('play area: field ' + OrbitWorld.WORLD_W + 'x' + OrbitWorld.WORLD_H +
+	' x' + OrbitWorld.AREA_SCALE + ' = ' + OrbitWorld.AREA_W + 'x' + OrbitWorld.AREA_H +
+	' (pad ' + area.padX.toFixed(0) + '/' + area.padY.toFixed(0) +
+	') · a coasting ship exits at x ' + area.x.toFixed(1));
 console.log('prediction sweep: ' + sweep.count + ' runs (' + ANGLES + ' angles x ' +
 	SPEEDS.length + ' speeds x 26 planets)');
 console.log('  avg ' + sweep.avg.toFixed(3) + ' ms, p95 ' + sweep.p95.toFixed(2) +
@@ -479,6 +538,8 @@ console.log('repel field: ' + repel.count + ' paths, finite bounds x ' +
 console.log('field raster 1/4 (' + field.w + 'x' + field.h + '): avg ' +
 	field.avgMs.toFixed(2) + ' ms, LUT diff max ' + field.maxDiff +
 	', mean ' + field.meanDiff.toFixed(3));
+console.log('potential raster 1/4 (' + field.w + 'x' + field.h + '): avg ' +
+	field.potAvgMs.toFixed(2) + ' ms (potential + pull for the red heavy wash)');
 console.log('budget: ' + GravitySim.BUDGET_MS + ' ms cap, worst ' +
 	sweep.worst.toFixed(3) + ' ms (' +
 	(sweep.worst <= GravitySim.BUDGET_MS ? 'within budget' : 'OVER BUDGET') + ')');
@@ -497,5 +558,9 @@ if (field.maxDiff > 5 || field.meanDiff > 1) {
 }
 if (field.avgMs > 16) {
 	throw new Error('field 1/4-res 2D raster exceeded 16 ms budget: ' + field.avgMs.toFixed(2));
+}
+if (field.potAvgMs > 24) {
+	throw new Error('potential 1/4-res 2D raster exceeded 24 ms budget: ' +
+		field.potAvgMs.toFixed(2));
 }
 console.log('BENCH OK');

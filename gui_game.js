@@ -472,6 +472,28 @@ function stepGame(now, dt) {
 	}
 }
 
+/*
+ * The bot flying YOU in career burns the impulse drive on its own schedule; the
+ * page only records the burn into the live shot, so a replay re-flies it at the
+ * same step, and refreshes the continuation preview.
+ */
+function careerBotBurn() {
+	if (!careerRule() || replay.on || !slotIsBot(0)) return false;
+	if (!game.career || cargoSim.status !== STATUS_FLYING) return false;
+	const step = cargoSim.liveSteps;
+	const burn = bot.tickCareerPlayerFlight(game.clockSteps, game.market);
+	if (!burn) return false;
+	if (game.shots.length > 0) {
+		game.shots[game.shots.length - 1].burns.push(GravityGame.createBurn(step,
+			GravityGame.angleUnits(burn.angle), GravityGame.speedUnits(burn.dv)));
+	}
+	dirty = true;
+	careerNotice('bot burn Δv ' + burn.dv.toFixed(1) + ' px/s → P' + burn.body +
+		' · fuel ' + game.career.ship.fuelKg.toFixed(1) + ' kg');
+	refreshGameUi();
+	return true;
+}
+
 function applyReplayBurns() {
 	const rShot = replay.activeShot;
 	if (!rShot || !rShot.burns) return;
@@ -520,7 +542,11 @@ function advanceGameOneStep() {
 			slotTypes[1] === PLAYER_BOT && slotTypes[2] === PLAYER_BOT))) {
 		return;
 	}
-	if (replay.on && cargoSim.status === STATUS_FLYING) applyReplayBurns();
+	if (replay.on) {
+		if (cargoSim.status === STATUS_FLYING) applyReplayBurns();
+	} else {
+		careerBotBurn();
+	}
 	game.clockSteps += 1;
 	if (careerRule()) GravityGame.careerAdvance(game.career, scene.trade.speed, 1);
 	if (cargoSim.status === STATUS_FLYING) {

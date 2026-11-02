@@ -119,6 +119,8 @@ const viewTagEl = $('viewTag');
 const viewSpaceEl = $('viewSpace');
 const viewFieldEl = $('viewField');
 const viewPotentialEl = $('viewPotential');
+const viewZoomMainEl = $('viewZoomMain');
+const viewZoomFullEl = $('viewZoomFull');
 const potentialLegendEl = $('potentialLegend');
 const careerCleanEl = $('careerClean');
 const careerCleanLabelEl = $('careerCleanLabel');
@@ -550,6 +552,16 @@ if (viewPotentialEl) {
 		if (viewPotentialEl.checked) setViewMode(VIEW_POTENTIAL);
 	});
 }
+if (viewZoomMainEl) {
+	viewZoomMainEl.addEventListener('change', () => {
+		if (viewZoomMainEl.checked) setViewFrame(FRAME_MAIN);
+	});
+}
+if (viewZoomFullEl) {
+	viewZoomFullEl.addEventListener('change', () => {
+		if (viewZoomFullEl.checked) setViewFrame(FRAME_FULL);
+	});
+}
 if (careerCleanEl) {
 	careerCleanEl.addEventListener('change', () => {
 		cleanCareerView = careerCleanEl.checked;
@@ -870,6 +882,13 @@ window.addEventListener('keydown', event => {
 			return;
 		}
 	}
+	if (event.code === 'KeyZ' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+		const tag = event.target && event.target.tagName;
+		if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+			toggleViewFrame();
+			return;
+		}
+	}
 	if ((event.code === 'Space' || event.code === 'KeyP') &&
 		!event.ctrlKey && !event.metaKey && !event.altKey) {
 		const tag = event.target && event.target.tagName;
@@ -950,6 +969,8 @@ root.GravityScene = {
 	waitSettlement: () => (game.career ? waitSettlement(game.career) : null),
 	viewMode: () => viewMode,
 	setViewMode,
+	frame: () => scene.view.frame,
+	setFrame: setViewFrame,
 	cleanCareerView: () => cleanCareerView,
 	fieldRenderer: () => fieldRenderer,
 	playMode: () => (game.on ? game.rule : PLAY_LAB),

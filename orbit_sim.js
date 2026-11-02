@@ -39,6 +39,10 @@
 	const INITIAL_PORTS = OrbitWorld.INITIAL_PORTS;
 	const WORLD_W = OrbitWorld.WORLD_W;
 	const WORLD_H = OrbitWorld.WORLD_H;
+	const AREA_W = OrbitWorld.AREA_W;
+	const AREA_H = OrbitWorld.AREA_H;
+	const AREA_PAD_X = OrbitWorld.AREA_PAD_X;
+	const AREA_PAD_Y = OrbitWorld.AREA_PAD_Y;
 	const SHIP_CAPACITY = 24;
 	const SHIP_SPEED_MIN = 16;
 	const SHIP_SPEED_MAX = 25;
@@ -759,6 +763,10 @@
 	Sim.GOOD_NAMES = GOOD_NAMES;
 	Sim.WORLD_W = WORLD_W;
 	Sim.WORLD_H = WORLD_H;
+	Sim.AREA_W = AREA_W;
+	Sim.AREA_H = AREA_H;
+	Sim.AREA_PAD_X = AREA_PAD_X;
+	Sim.AREA_PAD_Y = AREA_PAD_Y;
 	Sim.SHIP_CAPACITY = SHIP_CAPACITY;
 	Sim.EXPAND_RADIUS = EXPAND_RADIUS;
 	Sim.EXPAND_COST = EXPAND_COST;

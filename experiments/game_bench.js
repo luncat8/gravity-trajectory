@@ -391,11 +391,13 @@ function benchRoute() {
  * Two greedy tours on seed 31 rate 3 under the per-planet growing profit
  * market (purse0 = 3.00, cost = 1.00, initial slope k = 0.00625/s easing
  * asymptotically to the 3.00 cap), played at x8. Shot counts and purses are
- * the deterministic baseline of the current seeded gravity range (−1…3.5).
+ * the deterministic baseline of the current seeded gravity range (−1…3.5) and
+ * play area (1.5× the field: the 60 s tour now reaches planets the old
+ * 12 px edge cut off, so it flies seven shorter hops instead of four).
  */
 const MONEY_TOURS = [
 	{ horizon: 12, shots: 9, purse: 5.2025 },
-	{ horizon: 60, shots: 4, purse: 11.0147 }
+	{ horizon: 60, shots: 7, purse: 9.0622 }
 ];
 
 function playMoneyTour(horizon) {

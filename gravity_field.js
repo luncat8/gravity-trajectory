@@ -1,6 +1,9 @@
 /* Gravity backdrops: pull direction / gradient magnitude, or signed potential.
  * Potential uses the simulation's Plummer softening: phi = -sum(mu*g/r).
- * Attractive wells are negative (blue), repulsive hills positive (green). */
+ * Attractive wells are negative (blue), repulsive hills positive (green), and
+ * the red wash marks the spread of a heavy planet — the ground its pull reaches
+ * (g >= HEAVY_G 2), so the map shows where a heavy world dominates instead of
+ * a thin ring at its edge. */
 (function (root) {
 	'use strict';
 
@@ -16,7 +19,21 @@
 	const G_REF = 40;
 	const G_KNEE = Math.pow(G_REF, 1.5);
 	const P_REF = 8000;
+	/* the legend's heavy line: the red wash starts there and is solid at 4× it,
+	 * compared on g² so neither path needs a square root */
 	const HEAVY_G = 2;
+	const HEAVY_G2_LO = HEAVY_G * HEAVY_G;
+	const HEAVY_G2_HI = HEAVY_G2_LO * 16;
+	const HEAVY_MIX = 0.65;
+	const NEG_R = 42;
+	const NEG_G = 116;
+	const NEG_B = 255;
+	const POS_R = 72;
+	const POS_G = 235;
+	const POS_B = 139;
+	const HEAVY_R = 255;
+	const HEAVY_GREEN = 72;
+	const HEAVY_B = 56;
 	const MODE_POTENTIAL = 'potential';
 	const BASE_R = 2;
 	const BASE_G = 6;
@@ -55,6 +72,10 @@
 		'const float P_REF = 8000.0;',
 		'const vec3 NEGATIVE = vec3(42.0 / 255.0, 116.0 / 255.0, 1.0);',
 		'const vec3 POSITIVE = vec3(72.0 / 255.0, 235.0 / 255.0, 139.0 / 255.0);',
+		'const vec3 HEAVY = vec3(1.0, 72.0 / 255.0, 56.0 / 255.0);',
+		'const float HEAVY_G2_LO = 4.0;',
+		'const float HEAVY_G2_HI = 64.0;',
+		'const float HEAVY_MIX = 0.65;',
 		'const float SAT = 0.88;',
 		'const vec3 BASE = vec3(2.0 / 255.0, 6.0 / 255.0, 12.0 / 255.0);',
 		'vec3 hsl2rgb(float h, float s, float l) {',
@@ -79,7 +100,9 @@
 		'		float mag = abs(phi);',
 		'		float shade = mag / (mag + P_REF);',
 		'		vec3 tint = phi < 0.0 ? NEGATIVE : POSITIVE;',
-		'		gl_FragColor = vec4(mix(BASE, tint, shade), 1.0);',
+		'		vec3 base = mix(BASE, tint, shade);',
+		'		float heavy = smoothstep(HEAVY_G2_LO, HEAVY_G2_HI, dot(acc, acc));',
+		'		gl_FragColor = vec4(mix(base, HEAVY, HEAVY_MIX * heavy), 1.0);',
 		'		return;',
 		'	}',
 		'	float g2 = dot(acc, acc);',
@@ -136,15 +159,29 @@
 		return out;
 	}
 
-	/* Reference potential palette; zero is the same dark base as the field view. */
-	function samplePotential(phi, out) {
+	/* red weight of a heavy planet's spread from a squared pull: the shader's
+	 * smoothstep(HEAVY_G2_LO, HEAVY_G2_HI, g²) written out */
+	function heavyWeight(g2) {
+		const t = (g2 - HEAVY_G2_LO) / (HEAVY_G2_HI - HEAVY_G2_LO);
+		if (!(t > 0)) return 0;
+		if (t >= 1) return 1;
+		return t * (3 - 2 * t);
+	}
+
+	/* Reference potential palette; zero is the same dark base as the field view.
+	 * `g2` is the squared pull at the same point: the red heavy-planet spread. */
+	function samplePotential(phi, g2, out) {
 		const mag = phi < 0 ? -phi : phi;
 		const shade = mag / (mag + P_REF);
+		const heavy = heavyWeight(g2) * HEAVY_MIX;
 		out.potential = phi;
 		out.shade = shade;
-		out.r = clampByte(BASE_R + ((phi < 0 ? 42 : 72) - BASE_R) * shade);
-		out.g = clampByte(BASE_G + ((phi < 0 ? 116 : 235) - BASE_G) * shade);
-		out.b = clampByte(BASE_B + ((phi < 0 ? 255 : 139) - BASE_B) * shade);
+		const r = BASE_R + ((phi < 0 ? NEG_R : POS_R) - BASE_R) * shade;
+		const g = BASE_G + ((phi < 0 ? NEG_G : POS_G) - BASE_G) * shade;
+		const b = BASE_B + ((phi < 0 ? NEG_B : POS_B) - BASE_B) * shade;
+		out.r = clampByte(r + (HEAVY_R - r) * heavy);
+		out.g = clampByte(g + (HEAVY_GREEN - g) * heavy);
+		out.b = clampByte(b + (HEAVY_B - b) * heavy);
 		return out;
 	}
 
@@ -257,25 +294,36 @@
 		if (potential) {
 			const row = scratch.potRow;
 			const colour = scratch.potColour;
+			/* the pull rides along beside the potential: the red wash needs it */
+			const inv3Tab = lut.kern;
 			let p = 0;
 			for (let y = 0; y < h; y++) {
 				const wy = oy + y * sy;
 				row.fill(0, 0, w);
+				axRow.fill(0, 0, w);
+				ayRow.fill(0, 0, w);
 				for (let i = 0; i < count; i++) {
 					const ms = mu * str[i];
 					if (ms === 0) continue;
 					const dy = by[i] - wy;
 					const dy2 = dy * dy;
+					const dym = dy * ms;
 					const base = i * w;
 					for (let x = 0; x < w; x++) {
 						const r2 = dx2Tab[base + x] + dy2;
 						const k = r2 >> KERN_SHIFT;
 						const inv = k < KERN_N ? kern[k] : 1 / Math.sqrt(r2 + SOFT2);
+						const inv3 = k < KERN_N ? inv3Tab[k]
+							: 1 / ((r2 + SOFT2) * Math.sqrt(r2 + SOFT2));
 						row[x] -= ms * inv;
+						axRow[x] += dxTab[base + x] * (ms * inv3);
+						ayRow[x] += dym * inv3;
 					}
 				}
 				for (let x = 0; x < w; x++) {
-					samplePotential(row[x], colour);
+					const ax = axRow[x];
+					const ay = ayRow[x];
+					samplePotential(row[x], ax * ax + ay * ay, colour);
 					pixels[p] = colour.r;
 					pixels[p + 1] = colour.g;
 					pixels[p + 2] = colour.b;

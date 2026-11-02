@@ -1,10 +1,11 @@
 /*
  * The trade world's geometry and natural traits.
  *
- * 26 static planet cores in a 1600x1000 field. Each core has a station riding a
- * fixed ellipse (closed form, so no motion is integrated) and the traits the
- * economy reads: type, metal, light, habitat. The station needs only the
- * ellipse; the colony economy needs the traits.
+ * 26 static planet cores in a 1600x1000 field, flown inside a 2400x1500 play
+ * area (the field plus a quarter of it on every side). Each core has a station
+ * riding a fixed ellipse (closed form, so no motion is integrated) and the
+ * traits the economy reads: type, metal, light, habitat. The station needs only
+ * the ellipse; the colony economy needs the traits.
  *
  * Determinism: placement consumes the *caller's* random stream, in exactly the
  * order the simulation always drew it, so adding traits here cannot move a
@@ -19,6 +20,16 @@
 	const INITIAL_PORTS = 8;
 	const WORLD_W = 1600;
 	const WORLD_H = 1000;
+	/* The flight area is the planet field grown by half of itself on every side
+	 * (1.5× in each dimension). Planets are placed and drawn inside the field;
+	 * a ship may leave that framed canvas and keep flying until the area's own
+	 * edge. This one ratio is the only place the area is defined: the sim's
+	 * bounds, the bot's probes and the zoomed-out view all derive from it. */
+	const AREA_SCALE = 1.5;
+	const AREA_PAD_X = WORLD_W * (AREA_SCALE - 1) / 2;
+	const AREA_PAD_Y = WORLD_H * (AREA_SCALE - 1) / 2;
+	const AREA_W = WORLD_W + AREA_PAD_X * 2;
+	const AREA_H = WORLD_H + AREA_PAD_Y * 2;
 	const TAU = Math.PI * 2;
 
 	/* Type indices are the economy's table order (orbit_econ.js reads them). */
@@ -298,6 +309,7 @@
 
 	const OrbitWorld = {
 		PLANETS, INITIAL_PORTS, WORLD_W, WORLD_H, TAU,
+		AREA_SCALE, AREA_W, AREA_H, AREA_PAD_X, AREA_PAD_Y,
 		TYPE_ROCK, TYPE_TERRAN, TYPE_SUPER, TYPE_DWARF, TYPE_MINI, TYPE_GAS, TYPE_ICE,
 		TYPE_NAMES, TYPE_COUNT, TYPE_HABITAT, TYPE_ROCK_WEIGHT,
 		seedRandom, hashBits, hash01, clamp01,

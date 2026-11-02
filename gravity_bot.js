@@ -104,10 +104,25 @@
 	const CAREER_REBOOT_GAP = Math.round(30 / GravitySim.DT);
 	const CAREER_PURSE_RESERVE = GravityGame.CAREER.commercialFee;
 	const CAREER_LOADED_SPEED = 75;
-	const CAREER_BURN_ANGLES = 24;
-	const CAREER_BURN_FRACTIONS = [0.35, 0.68, 1];
+	/* Mid-flight impulse policy. The drive's single burn is small (thrust ×
+	 * BURN_SEC / wet mass ≈ 10-30 px/s), so it is worth one early nudge that
+	 * re-targets the whole flight, then only rescues of a coast that would be
+	 * lost. The search is a coarse ring at two Δv rungs plus a fine fan around
+	 * the winner: sharper than a dense full-circle fan and cheaper. */
+	const CAREER_BURN_ANGLES = 12;
+	const CAREER_BURN_FRACTIONS = [0.5, 1];
+	const CAREER_BURN_REFINE = 4;
 	const CAREER_BURN_FUEL_COST = 0.008;
-	const CAREER_BURN_MIN_GAIN = 0.25;
+	/* A nudge has to buy a pad's worth of value: the landing score is partly an
+	 * estimate of what a pad will earn later, so a small modeled gain is noise
+	 * (measured: a 0.75 bar nudged every flight and lost money on the hostile
+	 * scaled world, a 2.0 bar was never worse than coasting). Rescues need no
+	 * margin — any landing beats a lost ship. */
+	const CAREER_BURN_MIN_GAIN = 2;
+	const CAREER_BURN_AT = 24;
+	const CAREER_BURN_EVERY = 120;
+	const CAREER_BURN_TAIL = 12;
+	const CAREER_BURNS_MAX = 2;
 	/* a stored trajectory at this score is worth flying as it stands, so the
 	 * fan can be skipped (book entries score without a trace). A fan winner
 	 * sits near 6, so this bar skips only shots that are as good as a search
@@ -216,7 +231,11 @@
 			routeSteps: 0,
 			routeVisits: 0,
 			routeReason: END_OPEN,
-			routeBody: -1
+			routeBody: -1,
+			burn: 0,
+			burnTries: 0,
+			burnNext: 0,
+			burnStep: 0
 		};
 	}
 
@@ -254,7 +273,8 @@
 		this.careerPlayer = { career: null, sim: null, plan: {
 			origin: -1, angle: 0, speed: 0, body: -1, score: -Infinity,
 			taskPay: 0, padValue: 0, fee: 0, builds: false, fromBook: false
-		}, idleTries: 0, waitTries: 0, readyStep: 0, gapPhase: 0, index: PLAYER_INDEX };
+		}, idleTries: 0, waitTries: 0, readyStep: 0, gapPhase: 0, index: PLAYER_INDEX,
+			burn: 0, burnTries: 0, burnNext: 0, burnStep: 0 };
 		for (let i = 0; i < MAX_RIVALS; i++) this.rivals[i].index = i;
 		this.player.index = PLAYER_INDEX;
 
@@ -325,6 +345,8 @@
 			kind: '', item: null, mate: null, label: ''
 		};
 		this.careerUseResearch = false;
+		/* a nudge must beat coasting by this much; rescues need no margin */
+		this.careerBurnGain = CAREER_BURN_MIN_GAIN;
 		this.careerPlans = 0;
 		this.careerBurnsPlanned = 0;
 		/* per-attempt diagnostics: counters only, no fan-loop allocations */
@@ -2454,9 +2476,33 @@
 		return best.origin >= 0 ? best : null;
 	};
 
-	/* Mid-flight course-correction search: burns tank fuel only when it beats
-	 * coasting and, whenever a contract is active, still lands the contract. */
-	GravityBot.prototype.careerBurnPlan = function (career, sim, market, runStep) {
+	/*
+	 * Score of one burn candidate, or -Infinity when it is not worth flying:
+	 * it must still land an active contract, land at all, and beat coasting by
+	 * `careerBurnGain` after the fuel it burns. Leaves the winner's landing in
+	 * `probe`.
+	 */
+	GravityBot.prototype.careerBurnScore = function (career, sim, market, runStep,
+		angleU, dvU, requiredBody, coastScore) {
+		const dv = GravityGame.speedOf(dvU);
+		const ship = career.ship;
+		this.probe.predictBurnFast(sim, GravityGame.angleOf(angleU), dv);
+		if (requiredBody >= 0 && this.probe.predBody !== requiredBody) return -Infinity;
+		const raw = this.careerScoreFlight(career, sim.origin, market, runStep, sim.flightLength);
+		if (!Number.isFinite(raw)) return -Infinity;
+		const fuelKg = OrbitTech.impulseFuel(dv, ship.engine, ship.mass, ship.fuelKg);
+		const score = raw - fuelKg * CAREER_BURN_FUEL_COST;
+		if (Number.isFinite(coastScore) && score <= coastScore + this.careerBurnGain) return -Infinity;
+		return score;
+	};
+
+	/*
+	 * Mid-flight course correction: a coarse ring at the two Δv rungs, then a
+	 * fine fan around the coarse winner and the contract bearing. `rescueOnly`
+	 * first traces the coast and gives up unless it would be lost, so a healthy
+	 * flight pays one trace instead of a whole search.
+	 */
+	GravityBot.prototype.careerBurnPlan = function (career, sim, market, runStep, rescueOnly) {
 		const best = this.careerBurnBest;
 		best.body = -1;
 		best.score = -Infinity;
@@ -2473,8 +2519,11 @@
 			requiredBody = task.state === GravityGame.TASK_LOADED ? task.to : task.from;
 		}
 		this.probe.predictBurnFast(sim, 0, 0);
+		const coastLands = this.probe.predReason === END_IMPACT && this.probe.predBody >= 0;
+		const onTarget = requiredBody < 0 || (coastLands && this.probe.predBody === requiredBody);
+		if (rescueOnly && onTarget) return null;
 		let coastScore = -Infinity;
-		if (requiredBody < 0 || this.probe.predBody === requiredBody) {
+		if (onTarget) {
 			coastScore = this.careerScoreFlight(career, sim.origin, market, runStep, sim.flightLength);
 		}
 		best.coastScore = coastScore;
@@ -2482,48 +2531,96 @@
 		const target = requiredBody >= 0 ? requiredBody : this.careerTarget(career);
 		const targetAngle = target >= 0
 			? Math.atan2(sim.planetY[target] - sim.cargo.y, sim.planetX[target] - sim.cargo.x) : 0;
-		const extra = target >= 0 ? CAREER_TARGET_OFFSETS * 2 + 1 : 0;
-		const ship = career.ship;
-		let prevDvU = -1;
-
+		const dvU = [1, 1];
+		let rungs = 0;
 		for (let f = 0; f < CAREER_BURN_FRACTIONS.length; f++) {
-			let dvU = Math.round(limit * CAREER_BURN_FRACTIONS[f] * GravityGame.SPEED_STEPS);
-			if (dvU > capU) dvU = capU;
-			if (dvU < 1) dvU = 1;
-			if (dvU === prevDvU) continue;
-			prevDvU = dvU;
-			const dv = GravityGame.speedOf(dvU);
-			const fuelKg = OrbitTech.impulseFuel(dv, ship.engine, ship.mass, ship.fuelKg);
-			const fuelPenalty = fuelKg * CAREER_BURN_FUEL_COST;
-			for (let a = 0; a < CAREER_BURN_ANGLES + extra; a++) {
-				let rawAngle;
-				if (a < CAREER_BURN_ANGLES) rawAngle = (a + 0.5) / CAREER_BURN_ANGLES * Math.PI * 2;
-				else rawAngle = targetAngle + (a - CAREER_BURN_ANGLES - CAREER_TARGET_OFFSETS) * CAREER_TARGET_STEP;
+			const rung = Math.max(1, Math.min(capU,
+				Math.round(capU * CAREER_BURN_FRACTIONS[f])));
+			if (rungs === 1 && rung === dvU[0]) continue;
+			dvU[rungs] = rung;
+			rungs += 1;
+		}
+		const ringStep = TAU / CAREER_BURN_ANGLES;
+		let bestAngleU = -1;
+		let bestScore = -Infinity;
+		/* the contract bearing and its opposite are worth trying beside the ring */
+		const aimed = target >= 0 ? 2 : 0;
+		for (let r = 0; r < rungs; r++) {
+			for (let a = 0; a < CAREER_BURN_ANGLES + aimed; a++) {
+				const rawAngle = a < CAREER_BURN_ANGLES
+					? (a + 0.5) * ringStep
+					: targetAngle + (a - CAREER_BURN_ANGLES) * Math.PI;
 				const angleU = GravityGame.angleUnits(rawAngle);
-				const angle = GravityGame.angleOf(angleU);
-				this.probe.predictBurnFast(sim, angle, dv);
-				if (requiredBody >= 0 && this.probe.predBody !== requiredBody) continue;
-				const rawScore = this.careerScoreFlight(career, sim.origin, market, runStep, sim.flightLength);
-				if (!Number.isFinite(rawScore)) continue;
-				const score = rawScore - fuelPenalty;
-				if (Number.isFinite(coastScore) && score <= coastScore + CAREER_BURN_MIN_GAIN) continue;
-				const better = score > best.score + 1e-12 ||
-					(Math.abs(score - best.score) <= 1e-12 && best.body >= 0 &&
-						(angleU < best.angleU || (angleU === best.angleU && dvU < best.dvU)));
-				if (!better) continue;
+				const score = this.careerBurnScore(career, sim, market, runStep,
+					angleU, dvU[r], requiredBody, coastScore);
+				if (!(score > bestScore + 1e-12)) continue;
+				bestScore = score;
+				bestAngleU = angleU;
 				best.body = this.probe.predBody;
-				best.angle = angle;
-				best.dv = dv;
-				best.angleU = angleU;
-				best.dvU = dvU;
 				best.score = score;
-				best.fuelKg = fuelKg;
+				best.angleU = angleU;
+				best.dvU = dvU[r];
 				best.steps = this.probe.predSteps;
 			}
 		}
-		if (best.body < 0) return null;
-		this.careerBurnsPlanned += 1;
+		if (bestAngleU < 0) return null;
+
+		/* refine around the winner: a narrower fan, at both Δv rungs */
+		const refineStep = ringStep / (CAREER_BURN_REFINE + 1);
+		for (let r = 0; r < rungs; r++) {
+			for (let k = -CAREER_BURN_REFINE; k <= CAREER_BURN_REFINE; k++) {
+				const angleU = GravityGame.angleUnits(
+					GravityGame.angleOf(bestAngleU) + k * refineStep);
+				const score = this.careerBurnScore(career, sim, market, runStep,
+					angleU, dvU[r], requiredBody, coastScore);
+				if (!(score > best.score + 1e-12)) continue;
+				best.body = this.probe.predBody;
+				best.score = score;
+				best.angleU = angleU;
+				best.dvU = dvU[r];
+				best.steps = this.probe.predSteps;
+			}
+		}
+		best.angle = GravityGame.angleOf(best.angleU);
+		best.dv = GravityGame.speedOf(best.dvU);
+		best.fuelKg = OrbitTech.impulseFuel(best.dv, career.ship.engine,
+			career.ship.mass, career.ship.fuelKg);
 		return best;
+	};
+
+	/*
+	 * One flight's impulse use. The first window is the nudge that re-targets
+	 * the whole flight; later windows only rescue a coast that would be lost.
+	 * `state` is the flying actor (a rival or the page's own bot actor) and
+	 * self-resets when the sim's step counter starts over on a new launch.
+	 */
+	GravityBot.prototype.careerFlightBurn = function (career, sim, market, runStep, state) {
+		if (sim.status !== GravitySim.STATUS_FLYING) return null;
+		if (state.burnStep > sim.liveSteps) {
+			state.burn = 0;
+			state.burnTries = 0;
+			state.burnNext = CAREER_BURN_AT;
+		}
+		state.burnStep = sim.liveSteps;
+		const ship = career.ship;
+		if (career.ended !== GravityGame.CAREER_OPEN || !ship.engine || !(ship.fuelKg > 0)) {
+			return null;
+		}
+		if (state.burn >= CAREER_BURNS_MAX || sim.liveSteps < state.burnNext) return null;
+		if (sim.liveSteps > sim.stepLimit - CAREER_BURN_TAIL) return null;
+		const nudge = state.burn === 0;
+		state.burnTries += 1;
+		state.burnNext = sim.liveSteps + CAREER_BURN_EVERY;
+		const plan = this.careerBurnPlan(career, sim, market, runStep, !nudge);
+		if (!plan) return null;
+		if (!GravityGame.careerBurn(career, sim, plan.angle, plan.dv)) return null;
+		state.burn += 1;
+		this.careerBurnsPlanned += 1;
+		this.traceAdd(state.index === undefined ? career.index : state.index, 'burn',
+			'Δv ' + plan.dv.toFixed(1) + ' → P' + plan.body +
+			' · score ' + signed(plan.score) + ' · fuel ' + ship.fuelKg.toFixed(1) + ' kg',
+			runStep);
+		return plan;
 	};
 
 	/*
@@ -2590,6 +2687,7 @@
 			if (!career) continue;
 			GravityGame.careerAdvance(career, rate, 1);
 			if (r.sim.status === STATUS_FLYING) {
+				this.careerFlightBurn(career, r.sim, market, runStep, r);
 				r.sim.stepOne();
 				GravityGame.stepHarvest(r.ledger, market, r.sim, runStep);
 				r.steps += 1;
@@ -2637,6 +2735,14 @@
 
 	GravityBot.prototype.careerPlayerPlan = function () {
 		return this.careerPlayer.plan;
+	};
+
+	/* the page owns a YOU-as-bot flight, so it applies the burn itself (that
+	 * keeps the shot record and the replay); this hands back what to record */
+	GravityBot.prototype.tickCareerPlayerFlight = function (runStep, market) {
+		const p = this.careerPlayer;
+		if (!p.career || !p.sim) return null;
+		return this.careerFlightBurn(p.career, p.sim, market, runStep, p);
 	};
 
 	GravityBot.prototype.tickCareerPlayer = function (runStep, market, trade, rate, refresh) {

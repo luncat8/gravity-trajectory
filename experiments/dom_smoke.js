@@ -1916,7 +1916,9 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 		waitTitle.includes('planet visits +' + pre.profitGain.toFixed(2)),
 		'careerWait title states exact settlement: ' + waitTitle);
 
-	/* arm a shot on the partially drained pad, then wait: grip re-clamps to the wider range */
+	/* arm a shot on the partially drained pad, then wait: the grip re-clamps to
+	 * whatever the pad affords afterwards (usually wider — unless a rival guest
+	 * queued on the rail has already claimed some of the fresh charge) */
 	pEnv.dragAim(hq, 0, pScene.speedCeiling(hq));
 	pEnv.runFrames(2, 16.0);
 	const beforeAim = pScene.aimState();
@@ -1948,8 +1950,18 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	check(pScene.bot.rivals[0].shots.length + pScene.bot.rivals[1].shots.length > 0,
 		'rival companies must live (launch) during a career wait');
 	const afterAim = pScene.aimState();
-	check(afterAim.ceiling > beforeAim.ceiling && afterAim.grip < beforeAim.grip - 5,
-		'careerWait re-places armed grip onto the recharged range');
+	const liveLimit = pScene.sim.speedLimit(hq);
+	/* the shot grid floors at the pad ceiling, so a full drag still rounds to
+	 * a launch the pad accepts */
+	const aimUnits = Math.min(pGame.speedUnits(beforeAim.speed),
+		Math.floor(liveLimit * pGame.SPEED_STEPS + 1e-9));
+	check(Math.abs(afterAim.ceiling - liveLimit) < 1e-6 &&
+		Math.abs(afterAim.speed - pGame.speedOf(aimUnits)) < 1e-9 &&
+		afterAim.speed <= liveLimit + 1e-9 &&
+		Math.abs(afterAim.grip - pageSim.GRIP_MAX * (afterAim.speed - pageSim.SPEED_MIN) /
+			(afterAim.ceiling - pageSim.SPEED_MIN)) < 1e-6,
+		'careerWait re-places armed grip onto the live range: ceiling ' + beforeAim.ceiling +
+		' -> ' + afterAim.ceiling + ' · speed ' + beforeAim.speed + ' -> ' + afterAim.speed);
 
 	/* contract about to expire triggers warning state before wait runs */
 	pCareer.ship.hold = pTech.HOLDS[2];
@@ -2152,6 +2164,59 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	console.log('0.4.9 verified: stepped engine refit · WebGL auto-restore · helper pad cap · ' +
 		'fly-time impulse burn (step ' + pausedSteps + ', fuel ' + fuelAfterBurn.toFixed(1) +
 		'/90 kg) & burn replay (' + rVerdict + ')');
+}
+
+/* the bot flying your career company burns the impulse drive on its own
+ * schedule: the page records the burn into the live shot at the step it fired,
+ * so the copied link re-flies the same nudge, and says so in the drawer */
+{
+	const nEnv = loadPage({ search: '?mode=career&seed=42&rate=1' });
+	nEnv.runFrames(2, 16.0);
+	const nUi = nEnv.elements;
+	const nScene = nEnv.context.GravityScene;
+	const nGame = nScene.game;
+	const nCareer = nScene.career;
+	nCareer.ledger.purse = 30;
+	nScene.refreshCareerPanel();
+	nEnv.fireElement(nUi.get('careerBox'), 'click',
+		{ target: { dataset: { act: 'part', kind: 'engine', tier: '1' } } });
+	nEnv.fireElement(nUi.get('careerBox'), 'click',
+		{ target: { dataset: { act: 'part', kind: 'tank', tier: '2' } } });
+	check(nCareer.ship.engine !== null && nCareer.ship.fuelKg > 0,
+		'career vessel never took an impulse drive and fuel');
+	/* any landing the drive can reach is worth taking, so the burn fires early
+	 * instead of waiting for a pad's worth of score */
+	nScene.bot.careerBurnGain = -1e9;
+	nEnv.toggle('playerBot');
+	nEnv.runFrames(2, 16.0);
+	let botBurnShot = null;
+	let botBurnStep = -1;
+	for (let i = 0; i < 1500 && botBurnShot === null; i++) {
+		nEnv.runFrames(1, 40.0);
+		for (let s = 0; s < nGame.shots.length; s++) {
+			if (nGame.shots[s].burns.length > 0) {
+				botBurnShot = nGame.shots[s];
+				botBurnStep = botBurnShot.burns[0].step;
+				break;
+			}
+		}
+	}
+	check(botBurnShot !== null, 'the career bot never burned the impulse drive');
+	check(nCareer.burns >= 1 && botBurnShot.burns.length >= 1 && botBurnStep > 0 &&
+		botBurnShot.burns[0].dv > 0 && nCareer.lastFuel > 0,
+		'bot burn was not recorded into the shot at its step: ' +
+		JSON.stringify(botBurnShot.burns) + ' · career burns ' + nCareer.burns);
+	const burnNotice = nUi.get('careerMsg').textContent;
+	check(!nUi.get('careerMsg').hidden && burnNotice.startsWith('bot burn Δv '),
+		'bot burn notice: ' + burnNotice);
+	/* a career link deliberately carries no shots, so the shot record itself is
+	 * the replay source: one entry per burn, at the step it fired */
+	const steps = botBurnShot.burns.map(b => b.step);
+	check(steps.length === new Set(steps).size && steps.length <= 2,
+		'the bot burn was recorded twice or past the flight budget: ' + steps.join(','));
+	console.log('career bot burn: step ' + botBurnStep + ' · Δv ' +
+		(botBurnShot.burns[0].dv / nEnv.context.GravityGame.SPEED_STEPS).toFixed(1) +
+		' px/s · ' + burnNotice);
 }
 
 /* --- 0.4.10: per-row copySpec balance button & hull research panel --- */

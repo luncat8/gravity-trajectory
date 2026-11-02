@@ -26,12 +26,23 @@ const gx = (GravityField.potentialAt(sim, 450 + h, 380) - GravityField.potential
 const gy = (GravityField.potentialAt(sim, 450, 380 + h) - GravityField.potentialAt(sim, 450, 380 - h)) / (2 * h);
 assert.ok(Math.abs(gx + out.ax) < 1e-6 && Math.abs(gy + out.ay) < 1e-6, 'field = -grad potential');
 const colour = { potential: 0, shade: 0, r: 0, g: 0, b: 0 };
-GravityField.samplePotential(well, colour);
+/* the palette takes the pull at the same point: its magnitude paints the red
+ * heavy-planet spread over the blue/green potential */
+sim.fieldAt(300, 300, out);
+const wellG2 = out.ax * out.ax + out.ay * out.ay;
+sim.fieldAt(700, 300, out);
+const hillG2 = out.ax * out.ax + out.ay * out.ay;
+GravityField.samplePotential(well, wellG2, colour);
 assert.ok(colour.b > colour.g && colour.b > colour.r, 'negative potential is blue');
-GravityField.samplePotential(hill, colour);
+GravityField.samplePotential(hill, hillG2, colour);
 assert.ok(colour.g > colour.r && colour.g > colour.b, 'positive potential is green');
-GravityField.samplePotential(0, colour);
+GravityField.samplePotential(0, 0, colour);
 assert.deepStrictEqual([colour.r, colour.g, colour.b], [2, 6, 12], 'zero potential is dark space');
+/* the same well under a heavy pull (g = 10, above the legend's g ≥ 2) turns red:
+ * that wash is how far a heavy planet reaches, not just its rim */
+GravityField.samplePotential(well, 100, colour);
+assert.ok(colour.r > colour.g && colour.r > colour.b, 'heavy pull spreads red: ' +
+	colour.r + '/' + colour.g + '/' + colour.b);
 
 /* The 1/4-res fallback uses the same palette as the reference sampler. */
 const w = 160, hgt = 100;
@@ -43,7 +54,9 @@ for (let y = 0; y < hgt; y++) {
 	for (let x = 0; x < w; x++) {
 		const wx = (2 - view.offX) / view.scale + x * (4 / view.scale);
 		const wy = (2 - view.offY) / view.scale + y * (4 / view.scale);
-		GravityField.samplePotential(GravityField.potentialAt(sim, wx, wy), colour);
+		sim.fieldAt(wx, wy, out);
+		GravityField.samplePotential(GravityField.potentialAt(sim, wx, wy),
+			out.ax * out.ax + out.ay * out.ay, colour);
 		const p = (y * w + x) * 4;
 		maxDiff = Math.max(maxDiff, Math.abs(pixels[p] - colour.r),
 			Math.abs(pixels[p + 1] - colour.g), Math.abs(pixels[p + 2] - colour.b));
@@ -79,6 +92,28 @@ env.choose('viewSpace');
 assert.strictEqual(scene.viewMode(), 'space');
 env.choose('viewPotential');
 assert.strictEqual(scene.viewMode(), 'potential');
+
+/* the zoom switch: main frames the planet field, full the whole flight area */
+const OrbitSim = require('../orbit_sim.js');
+const sceneView = env.context.OrbitScene.view;
+const mainScale = sceneView.scale;
+assert.strictEqual(scene.frame(), 'main');
+assert.ok(Math.abs(sceneView.scale - Math.min((1280 - 28) / OrbitSim.WORLD_W,
+	(800 - 14 - 76) / OrbitSim.WORLD_H)) < 1e-9, 'main frame fits the planet field');
+env.choose('viewZoomFull');
+assert.strictEqual(scene.frame(), 'full');
+assert.ok(ui.get('viewZoomFull').checked && !ui.get('viewZoomMain').checked, 'full radio checked');
+const areaScale = Math.min((1280 - 28) / OrbitSim.AREA_W, (800 - 14 - 76) / OrbitSim.AREA_H);
+assert.ok(Math.abs(sceneView.scale - areaScale) < 1e-9, 'full frame fits the flight area');
+assert.ok(sceneView.scale < mainScale, 'full frame is zoomed out');
+/* the field stays centred inside the area: its screen centre is the area centre */
+const fieldMidX = (OrbitSim.WORLD_W / 2) * sceneView.scale + sceneView.offX;
+const areaMidX = (OrbitSim.AREA_W / 2 - OrbitSim.AREA_PAD_X) * sceneView.scale + sceneView.offX;
+assert.ok(Math.abs(fieldMidX - areaMidX) < 1e-9, 'field centred in the area');
+env.fireWindow('keydown', { code: 'KeyZ', key: 'z', target: { tagName: 'BODY' } });
+assert.strictEqual(scene.frame(), 'main');
+assert.ok(Math.abs(sceneView.scale - mainScale) < 1e-9, 'z toggles back to main');
+env.choose('viewZoomFull');
 
 /* Planet cards print profit then gravity; EMC claims colour the border. */
 env.calls.texts.length = 0;

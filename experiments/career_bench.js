@@ -297,11 +297,14 @@ function findShot(w, from, want) {
 	return null;
 }
 
-function fly(w, from, angle, speed) {
+/* `afterBegin` runs once the launch has drawn its pad energy, before the ship
+ * flies a step: the moment the fee/energy accounting can be read off */
+function fly(w, from, angle, speed, afterBegin) {
 	const { sim, career, ledger, market, trade } = w;
 	assert.ok(sim.canFire(from, speed), 'pad refused the shot at ' + speed);
 	sim.launch(from, angle, speed);
 	GravityGame.careerBeginFlight(career, sim);
+	if (afterBegin) afterBegin();
 	while (sim.status === GravitySim.STATUS_FLYING) {
 		w.step += 1;
 		sim.stepOne();
@@ -381,11 +384,19 @@ check('career flight: launch draws pad energy (no purse fee), landing elsewhere 
 	const purse0 = ledger.purse;
 	const charge0 = pad.chargeKwh;
 	const energy = sim.launchEnergy(hq, shot.speed);
-	fly(w, hq, shot.angle, shot.speed);
+	let drawn = -1;
+	fly(w, hq, shot.angle, shot.speed, () => {
+		drawn = charge0 - pad.chargeKwh;
+	});
 	assert.strictEqual(career.flights, 1);
 	assert.ok(Math.abs(career.lastEnergy - energy) < 1e-12);
-	assert.ok(pad.chargeKwh < charge0, 'battery must drop');
+	/* the draw lands at launch; the flight then recharges the pad from its
+	 * panel, and a long coast can refill the whole battery */
+	assert.ok(Math.abs(drawn - Math.min(energy, charge0)) < 1e-12,
+		'pad must drop by the launch energy at launch: drew ' + drawn);
 	assert.ok(pad.chargeKwh > charge0 - energy, 'pad recharges during the flight');
+	assert.ok(pad.chargeKwh <= pad.battery.capacity + 1e-9,
+		'pad overcharged: ' + pad.chargeKwh);
 	assert.ok(ledger.purse >= purse0, 'no launch fee; visits only add: ' + ledger.purse);
 	assert.ok(ledger.fee === 0 && ledger.last === ledger.shotGain);
 	assert.strictEqual(career.at, sim.endBody);

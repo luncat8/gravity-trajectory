@@ -37,6 +37,16 @@
 	const VIEW_INSET = 14;
 	const VIEW_FOOT_MAX = 120;
 	const VIEW_FOOT_MIN = 76;
+	const FRAME_MAIN = 'main';
+	const FRAME_FULL = 'full';
+	const FRAMES = [FRAME_MAIN, FRAME_FULL];
+	/* the two frames the zoom switch picks between: the planet field as drawn,
+	 * and the whole flight area around it */
+	const FIELD_BOX = { x: 0, y: 0, w: OrbitSim.WORLD_W, h: OrbitSim.WORLD_H };
+	const AREA_BOX = {
+		x: -OrbitSim.AREA_PAD_X, y: -OrbitSim.AREA_PAD_Y,
+		w: OrbitSim.AREA_W, h: OrbitSim.AREA_H
+	};
 	const MOON_CAP = 512;
 	const TRACK_CAP = 128;
 	const MOON_GRAV_K = 75;
@@ -47,7 +57,7 @@
 	const ctx = canvas.getContext('2d');
 	const backdrop = document.createElement('canvas');
 	const backCtx = backdrop.getContext('2d');
-	const view = { dpr: 1, scale: 1, offX: 0, offY: 0 };
+	const view = { dpr: 1, scale: 1, offX: 0, offY: 0, frame: FRAME_MAIN };
 
 	const clockEl = $('tradeClock');
 	const portsEl = $('tradePorts');
@@ -216,21 +226,32 @@
 			dpr * view.scale, 0, 0, dpr * view.scale,
 			dpr * view.offX, dpr * view.offY
 		);
-		backCtx.fillStyle = 'rgba(7, 16, 30, 0.36)';
+		/* the play area is darker than the starfield, the planet field darker
+		 * again, and both edges are drawn so a flight that leaves the framed
+		 * canvas still reads as inside the area */
+		const areaX = AREA_BOX.x;
+		const areaY = AREA_BOX.y;
+		const areaR = areaX + AREA_BOX.w;
+		const areaB = areaY + AREA_BOX.h;
+		backCtx.fillStyle = 'rgba(7, 16, 30, 0.22)';
+		backCtx.fillRect(areaX, areaY, AREA_BOX.w, AREA_BOX.h);
+		backCtx.fillStyle = 'rgba(7, 16, 30, 0.20)';
 		backCtx.fillRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
 		backCtx.strokeStyle = 'rgba(96, 150, 200, 0.045)';
 		backCtx.lineWidth = 1;
 		backCtx.beginPath();
-		for (let x = 200; x < OrbitSim.WORLD_W; x += 200) {
-			backCtx.moveTo(x, 0);
-			backCtx.lineTo(x, OrbitSim.WORLD_H);
+		for (let x = Math.ceil(areaX / 200) * 200; x < areaR; x += 200) {
+			backCtx.moveTo(x, areaY);
+			backCtx.lineTo(x, areaB);
 		}
-		for (let y = 200; y < OrbitSim.WORLD_H; y += 200) {
-			backCtx.moveTo(0, y);
-			backCtx.lineTo(OrbitSim.WORLD_W, y);
+		for (let y = Math.ceil(areaY / 200) * 200; y < areaB; y += 200) {
+			backCtx.moveTo(areaX, y);
+			backCtx.lineTo(areaR, y);
 		}
 		backCtx.stroke();
-		backCtx.strokeStyle = 'rgba(103, 224, 255, 0.10)';
+		backCtx.strokeStyle = 'rgba(103, 224, 255, 0.06)';
+		backCtx.strokeRect(areaX, areaY, AREA_BOX.w, AREA_BOX.h);
+		backCtx.strokeStyle = 'rgba(103, 224, 255, 0.12)';
 		backCtx.strokeRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
 	}
 
@@ -243,15 +264,26 @@
 		canvas.style.width = width + 'px';
 		canvas.style.height = height + 'px';
 		view.dpr = dpr;
-		/* keep the field framed above the control bar without wasting height */
+		/* keep the chosen frame above the control bar without wasting height */
 		const foot = Math.min(VIEW_FOOT_MAX, Math.max(VIEW_FOOT_MIN, height * 0.08));
 		const availW = width - VIEW_INSET * 2;
 		const availH = height - VIEW_INSET - foot;
-		view.scale = Math.min(availW / OrbitSim.WORLD_W, availH / OrbitSim.WORLD_H);
-		view.offX = VIEW_INSET + (availW - OrbitSim.WORLD_W * view.scale) / 2;
-		view.offY = VIEW_INSET + (availH - OrbitSim.WORLD_H * view.scale) / 2;
+		const box = view.frame === FRAME_FULL ? AREA_BOX : FIELD_BOX;
+		view.scale = Math.min(availW / box.w, availH / box.h);
+		view.offX = VIEW_INSET + (availW - box.w * view.scale) / 2 - box.x * view.scale;
+		view.offY = VIEW_INSET + (availH - box.h * view.scale) / 2 - box.y * view.scale;
 		paintBackdrop(width, height);
 		hudAt = -Infinity;
+	}
+
+	/* the zoom switch: `main` frames the planet field, `full` frames the whole
+	 * flight area so a ship outside the canvas is still on screen */
+	function setFrame(next) {
+		if (FRAMES.indexOf(next) < 0) return false;
+		if (view.frame === next) return false;
+		view.frame = next;
+		resize();
+		return true;
 	}
 
 	function updatePortPositions() {
@@ -879,8 +911,10 @@
 		ctx.translate(view.offX, view.offY);
 		ctx.scale(view.scale, view.scale);
 		if (!showBackdrop) {
-			ctx.strokeStyle = 'rgba(103, 224, 255, 0.16)';
+			ctx.strokeStyle = 'rgba(103, 224, 255, 0.08)';
 			ctx.lineWidth = 1;
+			ctx.strokeRect(AREA_BOX.x, AREA_BOX.y, AREA_BOX.w, AREA_BOX.h);
+			ctx.strokeStyle = 'rgba(103, 224, 255, 0.16)';
 			ctx.strokeRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
 		}
 		if (showOrbits) drawOrbits();
@@ -1056,6 +1090,9 @@
 		sim: sim,
 		view: view,
 		trade: tradeState,
+		FRAME_MAIN,
+		FRAME_FULL,
+		setFrame,
 		planetG: planetG,
 		setPlanetMask: setPlanetMask,
 		reset: resetWorld,

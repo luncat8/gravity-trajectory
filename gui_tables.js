@@ -115,6 +115,9 @@ const VIEW_SPACE = 'space';
 const VIEW_FIELD = 'field';
 const VIEW_POTENTIAL = 'potential';
 const VIEW_MODES = [VIEW_SPACE, VIEW_FIELD, VIEW_POTENTIAL];
+/* zoom frames owned by the renderer: the planet field, or the whole flight area */
+const FRAME_MAIN = OrbitScene.FRAME_MAIN;
+const FRAME_FULL = OrbitScene.FRAME_FULL;
 /* refit button `data-tier` that empties the engine slot (the tech tables have no `null` record) */
 const NO_TIER = -1;
 /* the flat mode row: lab has no rule, every other mode is a game rule */
@@ -198,7 +201,8 @@ const COMMON_HELP = 'Drag from a planet or pad to aim; hold Shift for 1/20 fine 
 	'Release to preview; in flight modes, Enter or launch fires and landing stages the next shot. ' +
 	'Esc cancels an aim or queued launch. Planet gravity is seeded from −1 to +3.5; ' +
 	'negative gravity repels. The seed is in the URL; a seedless startup draws a new one. ' +
-	'f cycles space → gravity field → gravity potential; potential is blue when negative, green when positive, and red rings mark heavy planets (g ≥ +2).';
+	'f cycles space → gravity field → gravity potential; potential is blue when negative, green when positive, and a red wash spreads around a heavy planet (g ≥ +2) as far as its pull reaches. ' +
+	'z switches the camera between the planet field and the whole flight area, where a ship that left the canvas is still visible.';
 const RULE_HELP = {
 	lab: {
 		name: 'lab',
@@ -245,6 +249,6 @@ const RULE_HELP = {
 			'pays the price back in money per world second, a rail always with the battery that fills it. ' +
 			'The career runs on the world clock; pause on landing holds it still. Evacuation to HQ costs ' +
 			GravityGame.CAREER.evacFee.toFixed(2) + '.',
-		controls: 'Wait charges pads. With an impulse engine and fuel, use Space / P or drag the ship in flight to aim a burn.'
+		controls: 'Wait charges pads. With an impulse engine and fuel, use Space / P or drag the ship in flight to aim a burn; a bot flying your company burns on its own.'
 	}
 };
