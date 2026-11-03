@@ -228,3 +228,40 @@ positive green,
 heavy planet  - red.
 you can draw in low resolution if this is heavy to calculate all pixels
 
+
+make plans 0.5.x and start to implement
+
+## fuel
+
+fuel made from owner's battery charge or cost (need balance, fuel more price then EMC but still profitable in some cases: typical strategy: change trajectory to stay in space and avoid to land on heavy planet without owner's EMC or change trajectory visit very profitable planet that is difficult to reach using EMC).
+
+Next suggested by LLM step is recorded in the worklog: price a bounded "burn rescue" ring when the ballistic fan finds no viable shot at all.
+
+
+## Special planets
+
+**Planet: A.R.F.** — No profit from flybys; no corruption. Tourist-delivery quests to A.R.F. appear more often.
+
+**Planet: Empire Capital** — Flyby profit is negative: −3. Takeoff is free (EMC-3). Building is not allowed.  
+Quests involve delivering “tourists” to or from a special resort base here.
+
+## Corruption (numbers are subject to balance)
+
+Corruption (disobedience to central laws) reduces population growth.
+
+Corruption rises if emissaries don’t visit for a long time (balance, decide how quickly). It decreases by 0.2 per visit.
+
+Corruption also rises when accepting bribes. Suggested formula: `1 + 0.1 × amount of money`. Bribes can be accepted while on a planet (except the Capital and A.R.F.) for twice the flyby fee. You can’t accept multiple bribes on the same planet, so its rulers don’t complain about unfairness.
+
+**Strategy:** Take a bribe before an opponent flies by. It’s better not to accept a very small bribe. If it’s your own EMC, it’s probably better to refuse. If it’s someone else’s, decide based on the bot’s personality.
+
+When corruption is above 50%, accepting a bribe carries a chance of arrest up to 50% at 100% of corruption. arrested player is sent to the Capital for re-education via slow transport, costing time.
+
+High corruption increases the chance of rebellion. Infrastructure is permanently seized, and EMCs and other assets switch to commercial status (same usage fee; upgrades are retained).
+
+Suggested rebellion chance: `1 / (20 − Corruption) − 0.5`, with zero chance below 10. Need to consider a formula that increases asymptotically without dividing by zero. maybe like this
+P(rebellion)=0.25(1−e −0.0322max(0,C−50) ), C is corruption from 0 to 100
+
+A rebellious planet’s flyby fee increases 4x slowly.
+
+When there are rebellious planets, a mission becomes available: load medics at the Capital, land on a rebellious planet, pick up patients automatically (same numbers as medics, technically half of the cargo hold), and deliver them to the Capital. Once the number of patients reaches zero (typically after 1–2 trips with a standard cargo hold), the planet loses its rebellious status. medics unloaded automatically when quest finished by any reason.
