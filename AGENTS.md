@@ -44,7 +44,7 @@ getObj().data().action()
 
 findings-pitfalls-skills.md - notes and pitfalls for LLM agents. write here if found good way to do something.
 
-archive/ - for implemented plans
+archive/ - for implemented plans and worklogs. root `*-plan*.md` are open plans, `*-draft*.md` are human design notes / reference
 
 experiments/ - measurement scripts (node), not loaded by the page.
 experiments/logs/ - without long formatting, keep only useful data that helpful in future to compare and detect improvement vs regression;
@@ -60,7 +60,7 @@ what each holds and the file it is slated to move into:
 	grep -n "── " gravity_gui.js
 
 then read only that line range and edit there. a typical edit needs one area, at most two;
-the state it reads all lives in the composer, which a typical edit does not touch. plan: 0.5-plan-gui-split.md
+the state it reads all lives in the composer, which a typical edit does not touch. plan: archive/0.5-plan-gui-split.md
 
 every file below is in place. each area file reads the composer's state as ordinary globals — flat top-level scope, no imports, no module wrappers.
 

@@ -123,6 +123,11 @@
 	const CAREER_BURN_EVERY = 120;
 	const CAREER_BURN_TAIL = 12;
 	const CAREER_BURNS_MAX = 2;
+	/* Launch pricing re-flies the fan's best few shots with the same one-burn
+	 * policy the flight uses, so a fitted drive changes which shot is queued,
+	 * not just how the queued shot lands. */
+	const CAREER_BURN_PRICE_TOP = 3;
+	const CAREER_BURN_PRICE_MARGIN = 0.5;
 	/* a stored trajectory at this score is worth flying as it stands, so the
 	 * fan can be skipped (book entries score without a trace). A fan winner
 	 * sits near 6, so this bar skips only shots that are as good as a search
@@ -245,6 +250,8 @@
 		this.tradeSim = null;
 		this.probe = new GravitySim(worldW, worldH);
 		this.exitProbe = new GravitySim(worldW, worldH);
+		/* a shot is re-flown to the nudge step before its price is decided */
+		this.burnShotSim = new GravitySim(worldW, worldH);
 		this.departureSourceSim = null;
 		this.departureFieldVersion = 0;
 		this.careerExit = {
@@ -272,7 +279,8 @@
 		 * the flight, so this actor only plans and shops between flights */
 		this.careerPlayer = { career: null, sim: null, plan: {
 			origin: -1, angle: 0, speed: 0, body: -1, score: -Infinity,
-			taskPay: 0, padValue: 0, fee: 0, builds: false, fromBook: false
+			taskPay: 0, padValue: 0, fee: 0, builds: false, fromBook: false,
+			burnGain: 0, burnBody: -1
 		}, idleTries: 0, waitTries: 0, readyStep: 0, gapPhase: 0, index: PLAYER_INDEX,
 			burn: 0, burnTries: 0, burnNext: 0, burnStep: 0 };
 		for (let i = 0; i < MAX_RIVALS; i++) this.rivals[i].index = i;
@@ -321,12 +329,29 @@
 		this.careerBest = {
 			origin: -1, body: -1, angleU: 0, speedU: 0, angle: 0, speed: 0,
 			score: -Infinity, taskPay: 0, padValue: 0, energy: 0, wait: 0, fee: 0,
-			exitCost: Infinity, exitSource: '',
-			builds: false, length: 0, steps: 0
+			exitCost: Infinity, exitSource: '', fromBook: false,
+			builds: false, length: 0, steps: 0, burnGain: 0, burnBody: -1
 		};
 		this.careerBurnBest = {
 			body: -1, angle: 0, dv: 0, angleU: 0, dvU: 0,
-			score: -Infinity, coastScore: -Infinity, fuelKg: 0, steps: 0
+			score: -Infinity, coastScore: -Infinity, fuelKg: 0, steps: 0,
+			taskPay: 0, padValue: 0, builds: false,
+			exitCost: Infinity, exitSource: ''
+		};
+		/* the fan's best few shots, kept for the one-burn re-price */
+		this.careerBurnTop = {
+			count: 0,
+			score: new Float64Array(CAREER_BURN_PRICE_TOP),
+			angleU: new Int32Array(CAREER_BURN_PRICE_TOP),
+			speedU: new Int32Array(CAREER_BURN_PRICE_TOP),
+			book: new Uint8Array(CAREER_BURN_PRICE_TOP)
+		};
+		/* the winning burn-priced shot, copied out of careerBurnBest */
+		this.careerBurnShot = {
+			body: -1, angleU: 0, speedU: 0, score: -Infinity, burnGain: 0,
+			taskPay: 0, padValue: 0, fee: 0, energy: 0, wait: 0,
+			exitCost: Infinity, exitSource: '', builds: false, fromBook: false,
+			fuelKg: 0, steps: 0
 		};
 		this.careerEval = {
 			taskPay: 0, padValue: 0, builds: false, energy: 0, wait: 0,
@@ -349,10 +374,11 @@
 		this.careerBurnGain = CAREER_BURN_MIN_GAIN;
 		this.careerPlans = 0;
 		this.careerBurnsPlanned = 0;
+		this.careerBurnPrices = 0;
 		/* per-attempt diagnostics: counters only, no fan-loop allocations */
 		this.careerScan = {
 			step: -1, tried: 0, impacts: 0, finite: 0, bounce: 0, exit: 0,
-			noImpact: 0, book: 0
+			noImpact: 0, book: 0, burn: 0
 		};
 		/* bounded decision trace and the last line per actor (0..1 rivals, 2 YOU) */
 		this.trace = [];
@@ -378,6 +404,11 @@
 	function signed(value) {
 		if (!Number.isFinite(value)) return String(value);
 		return (value >= 0 ? '+' : '') + value.toFixed(2);
+	}
+
+	function burnNote(plan) {
+		return plan.burnGain > 0 ? ' · burn ' + signed(plan.burnGain) +
+			' → P' + plan.burnBody : '';
 	}
 
 	function actorLabel(index) {
@@ -458,6 +489,7 @@
 		this.careerExitCacheCap.fill(-1);
 		this.bindSim(this.probe);
 		this.bindSim(this.exitProbe);
+		this.bindSim(this.burnShotSim);
 		for (let i = 0; i < MAX_RIVALS; i++) this.bindSim(this.rivals[i].sim);
 		this.bindSim(this.player.sim);
 	};
@@ -469,6 +501,7 @@
 			this.probe.forceScale !== forceScale;
 		this.probe.setScales(gravityScale, forceScale);
 		this.exitProbe.setScales(gravityScale, forceScale);
+		this.burnShotSim.setScales(gravityScale, forceScale);
 		for (let i = 0; i < MAX_RIVALS; i++) {
 			this.rivals[i].sim.setScales(gravityScale, forceScale);
 			if (this.rivals[i].career) this.rivals[i].career.forceScale = forceScale;
@@ -496,6 +529,7 @@
 	GravityBot.prototype.setPlanetMask = function (mask, count) {
 		this.probe.setPlanetMask(mask);
 		this.exitProbe.setPlanetMask(mask);
+		this.burnShotSim.setPlanetMask(mask);
 		this.planetUniverseCount = count;
 		this.player.sim.setPlanetMask(mask);
 		for (let i = 0; i < MAX_RIVALS; i++) {
@@ -531,6 +565,7 @@
 				sourceSim.fillField, sourceSim.fieldStatic);
 		};
 		bind(this.probe);
+		bind(this.burnShotSim);
 		for (let i = 0; i < MAX_RIVALS; i++) bind(this.rivals[i].sim);
 		bind(this.player.sim);
 	};
@@ -616,6 +651,7 @@
 		this.careerPadGearBought = 0;
 		this.careerPlans = 0;
 		this.careerBurnsPlanned = 0;
+		this.careerBurnPrices = 0;
 
 		const base0 = (Math.imul(this.seed, 7) + 5) >>> 0;
 		for (let i = 0; i < MAX_RIVALS; i++) {
@@ -2374,6 +2410,39 @@
 		scan.exit = 0;
 		scan.noImpact = 0;
 		scan.book = 0;
+		scan.burn = 0;
+		this.careerBurnTopReset();
+	};
+
+	/* the shortlist spans every fan pass of one careerNextShot, so it is reset
+	 * by the caller as well as on a new world step */
+	GravityBot.prototype.careerBurnTopReset = function () {
+		this.careerBurnTop.count = 0;
+	};
+
+	GravityBot.prototype.careerBurnOffer = function (score, angleU, speedU, book) {
+		const top = this.careerBurnTop;
+		if (!Number.isFinite(score)) return;
+		for (let i = 0; i < top.count; i++) {
+			if (top.angleU[i] === angleU && top.speedU[i] === speedU) return;
+		}
+		let slot = top.count < CAREER_BURN_PRICE_TOP ? top.count : -1;
+		if (slot < 0) {
+			if (score <= top.score[CAREER_BURN_PRICE_TOP - 1] + 1e-12) return;
+			slot = CAREER_BURN_PRICE_TOP - 1;
+		}
+		while (slot > 0 && score > top.score[slot - 1] + 1e-12) {
+			top.score[slot] = top.score[slot - 1];
+			top.angleU[slot] = top.angleU[slot - 1];
+			top.speedU[slot] = top.speedU[slot - 1];
+			top.book[slot] = top.book[slot - 1];
+			slot -= 1;
+		}
+		top.score[slot] = score;
+		top.angleU[slot] = angleU;
+		top.speedU[slot] = speedU;
+		top.book[slot] = book ? 1 : 0;
+		if (top.count < CAREER_BURN_PRICE_TOP) top.count += 1;
 	};
 
 	GravityBot.prototype.careerPlan = function (career, sim, market, runStep, fallback, angles) {
@@ -2386,6 +2455,8 @@
 		best.exitSource = '';
 		best.builds = false;
 		best.fromBook = false;
+		best.burnGain = 0;
+		best.burnBody = -1;
 		if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
 			!sim.canLaunchFrom(career.at)) return null;
 		const origin = career.at;
@@ -2421,6 +2492,7 @@
 				if (requiredBody >= 0 && entry.body !== requiredBody) continue;
 				scan.book += 1;
 				const score = this.careerScoreStored(career, sim, market, runStep, entry);
+				this.careerBurnOffer(score, entry.angleU, entry.speedU, true);
 				if (!(score > best.score + 1e-12)) continue;
 				this.careerTakeBest(entry.origin, entry.angleU, entry.speedU, score,
 					entry.body, entry.length, entry.steps);
@@ -2454,6 +2526,7 @@
 				if (this.probe.predReason === END_IMPACT && this.probe.predBody >= 0) scan.impacts += 1;
 				if (requiredBody >= 0 && this.probe.predBody !== requiredBody) continue;
 				const score = this.careerScoreProbe(career, sim, origin, speed, market, runStep);
+				this.careerBurnOffer(score, angleU, speedU, false);
 				if (Number.isFinite(score)) scan.finite += 1;
 				else if (this.careerEval.reject === 'bounce') scan.bounce += 1;
 				else if (this.careerEval.reject === 'exit' ||
@@ -2476,6 +2549,17 @@
 		return best.origin >= 0 ? best : null;
 	};
 
+	/* the winning burn's landing facts, kept so a launch can be priced from it */
+	GravityBot.prototype.careerBurnFacts = function () {
+		const best = this.careerBurnBest;
+		const ev = this.careerEval;
+		best.taskPay = ev.taskPay;
+		best.padValue = ev.padValue;
+		best.builds = ev.builds;
+		best.exitCost = ev.exitCost;
+		best.exitSource = ev.exitSource;
+	};
+
 	/*
 	 * Score of one burn candidate, or -Infinity when it is not worth flying:
 	 * it must still land an active contract, land at all, and beat coasting by
@@ -2483,12 +2567,12 @@
 	 * `probe`.
 	 */
 	GravityBot.prototype.careerBurnScore = function (career, sim, market, runStep,
-		angleU, dvU, requiredBody, coastScore) {
+		angleU, dvU, requiredBody, coastScore, fee) {
 		const dv = GravityGame.speedOf(dvU);
 		const ship = career.ship;
 		this.probe.predictBurnFast(sim, GravityGame.angleOf(angleU), dv);
 		if (requiredBody >= 0 && this.probe.predBody !== requiredBody) return -Infinity;
-		const raw = this.careerScoreFlight(career, sim.origin, market, runStep, sim.flightLength);
+		const raw = this.careerScoreFlight(career, sim.origin, market, runStep, sim.flightLength, fee);
 		if (!Number.isFinite(raw)) return -Infinity;
 		const fuelKg = OrbitTech.impulseFuel(dv, ship.engine, ship.mass, ship.fuelKg);
 		const score = raw - fuelKg * CAREER_BURN_FUEL_COST;
@@ -2502,10 +2586,15 @@
 	 * first traces the coast and gives up unless it would be lost, so a healthy
 	 * flight pays one trace instead of a whole search.
 	 */
-	GravityBot.prototype.careerBurnPlan = function (career, sim, market, runStep, rescueOnly) {
+	GravityBot.prototype.careerBurnPlan = function (career, sim, market, runStep, rescueOnly, fee) {
 		const best = this.careerBurnBest;
 		best.body = -1;
 		best.score = -Infinity;
+		best.taskPay = 0;
+		best.padValue = 0;
+		best.builds = false;
+		best.exitCost = Infinity;
+		best.exitSource = '';
 		if (career.ended !== GravityGame.CAREER_OPEN || sim.status !== GravitySim.STATUS_FLYING) {
 			return null;
 		}
@@ -2524,7 +2613,8 @@
 		if (rescueOnly && onTarget) return null;
 		let coastScore = -Infinity;
 		if (onTarget) {
-			coastScore = this.careerScoreFlight(career, sim.origin, market, runStep, sim.flightLength);
+			coastScore = this.careerScoreFlight(career, sim.origin, market, runStep,
+				sim.flightLength, fee);
 		}
 		best.coastScore = coastScore;
 
@@ -2552,7 +2642,7 @@
 					: targetAngle + (a - CAREER_BURN_ANGLES) * Math.PI;
 				const angleU = GravityGame.angleUnits(rawAngle);
 				const score = this.careerBurnScore(career, sim, market, runStep,
-					angleU, dvU[r], requiredBody, coastScore);
+					angleU, dvU[r], requiredBody, coastScore, fee);
 				if (!(score > bestScore + 1e-12)) continue;
 				bestScore = score;
 				bestAngleU = angleU;
@@ -2561,6 +2651,7 @@
 				best.angleU = angleU;
 				best.dvU = dvU[r];
 				best.steps = this.probe.predSteps;
+				this.careerBurnFacts();
 			}
 		}
 		if (bestAngleU < 0) return null;
@@ -2572,13 +2663,14 @@
 				const angleU = GravityGame.angleUnits(
 					GravityGame.angleOf(bestAngleU) + k * refineStep);
 				const score = this.careerBurnScore(career, sim, market, runStep,
-					angleU, dvU[r], requiredBody, coastScore);
+					angleU, dvU[r], requiredBody, coastScore, fee);
 				if (!(score > best.score + 1e-12)) continue;
 				best.body = this.probe.predBody;
 				best.score = score;
 				best.angleU = angleU;
 				best.dvU = dvU[r];
 				best.steps = this.probe.predSteps;
+				this.careerBurnFacts();
 			}
 		}
 		best.angle = GravityGame.angleOf(best.angleU);
@@ -2777,11 +2869,13 @@
 		out.fee = plan.fee;
 		out.builds = plan.builds;
 		out.fromBook = plan.fromBook;
+		out.burnGain = plan.burnGain;
+		out.burnBody = plan.burnBody;
 		this.traceAdd(PLAYER_INDEX, 'plan', 'P' + plan.origin + '→P' + plan.body +
 			' v' + plan.speed.toFixed(0) + ' score ' + signed(plan.score) +
 			' fee ' + plan.fee.toFixed(2) + ' · ' +
 			(plan.fromBook ? 'book reuse' : 'fan ' + this.careerScan.tried + ' traces') +
-			' · EMC build ' + (plan.builds ? 'affordable' : 'no'), runStep);
+			' · EMC build ' + (plan.builds ? 'affordable' : 'no') + burnNote(plan), runStep);
 		return true;
 	};
 
@@ -2790,6 +2884,116 @@
 		if (!r.turret) return;
 		GravityGame.releaseEnergy(r.turret.pad, r.turret.energy);
 		r.turret = null;
+	};
+
+	/*
+	 * Re-price the fan's best few shots as flights with one burn. The flying
+	 * controller nudges at step CAREER_BURN_AT with the same careerBurnPlan, so
+	 * the queued shot should be chosen and scored by the landing that burn
+	 * reaches. `fee` gates the burn's solvency check (already paid mid-flight,
+	 * still unpaid here) and the launch refills the tank, so the search runs
+	 * with a full tank without touching the career's real fuel.
+	 */
+	GravityBot.prototype.careerPriceBurn = function (r, plan, market, runStep) {
+		const career = r.career;
+		const ship = career.ship;
+		const top = this.careerBurnTop;
+		if (!plan || !ship.engine || !ship.tank || !(ship.tank.fuelCap > 0) ||
+			top.count === 0) return;
+		const src = this.burnShotSim;
+		const live = r.sim;
+		const origin = plan.origin;
+		const ballistic = plan.score;
+		const fuel0 = ship.fuelKg;
+		ship.fuelKg = ship.tank.fuelCap;
+		src.fieldT = live.fieldT;
+		src.fieldRate = live.fieldRate;
+		src.setScales(live.gravityScale, live.forceScale);
+		if (src.bodyCount !== live.bodyCount || src.bodyR !== live.bodyR ||
+			src.strength !== live.strength || src.fillField !== live.fillField ||
+			src.fieldStatic !== live.fieldStatic) {
+			src.setField(live.bodyCount, live.bodyR, live.strength,
+				live.fillField, live.fieldStatic);
+			src.setPlanetMask(live.planetMask);
+		}
+		src.setLaunchNetwork(null, ship);
+		const shot = this.careerBurnShot;
+		let bestScore = ballistic;
+		let found = false;
+		for (let i = 0; i < top.count; i++) {
+			const angleU = top.angleU[i];
+			const speedU = top.speedU[i];
+			const speed = GravityGame.speedOf(speedU);
+			src.clear();
+			src.visited.set(live.visited);
+			src.visitedCount = live.visitedCount;
+			src.landedBody = live.landedBody;
+			src.stepStale = true;
+			src.stepLimit = GravityGame.CAP_STEPS;
+			src.limitReason = GravitySim.END_TIME;
+			src.launch(origin, GravityGame.angleOf(angleU), speed);
+			for (let s = 0; s < CAREER_BURN_AT && src.status === GravitySim.STATUS_FLYING; s++) {
+				src.stepOne();
+			}
+			this.careerScan.burn += 1;
+			if (src.status !== GravitySim.STATUS_FLYING) continue;
+			const fee = GravityGame.launchFee(career, origin, speed);
+			const burn = this.careerBurnPlan(career, src, market, runStep, false, fee);
+			if (!burn) continue;
+			const energy = live.launchEnergy(origin, speed);
+			const wait = GravityGame.padOwner(career, origin) === career.index
+				? this.careerEnergyWait(career, origin, energy) : 0;
+			const score = burn.score - fee - energy * wait * CAREER_ENERGY_WAIT_COST;
+			if (!(score > bestScore + CAREER_BURN_PRICE_MARGIN)) continue;
+			bestScore = score;
+			found = true;
+			shot.body = burn.body;
+			shot.angleU = angleU;
+			shot.speedU = speedU;
+			shot.score = score;
+			shot.burnGain = score - ballistic;
+			shot.taskPay = burn.taskPay;
+			shot.padValue = burn.padValue;
+			shot.fee = fee;
+			shot.energy = energy;
+			shot.wait = wait;
+			shot.exitCost = burn.exitCost;
+			shot.exitSource = burn.exitSource;
+			shot.builds = burn.builds;
+			shot.fromBook = top.book[i] === 1;
+			shot.fuelKg = burn.fuelKg;
+			shot.steps = CAREER_BURN_AT + burn.steps;
+		}
+		/* traceFromCargo borrowed the probe for every burn candidate */
+		this.probe.fieldRate = live.fieldRate;
+		this.probe.setScales(live.gravityScale, live.forceScale);
+		this.probe.visited.set(live.visited);
+		this.probe.visitedCount = live.visitedCount;
+		ship.fuelKg = fuel0;
+		if (!found) return;
+		this.careerBurnPrices += 1;
+		plan.angleU = shot.angleU;
+		plan.speedU = shot.speedU;
+		plan.angle = GravityGame.angleOf(shot.angleU);
+		plan.speed = GravityGame.speedOf(shot.speedU);
+		plan.body = shot.body;
+		plan.score = shot.score;
+		/* the tank fuel is a money term, so the plan's score identity holds */
+		plan.taskPay = shot.taskPay - shot.fuelKg * CAREER_BURN_FUEL_COST;
+		plan.padValue = shot.padValue;
+		plan.fee = shot.fee;
+		plan.energy = shot.energy;
+		plan.wait = shot.wait;
+		plan.exitCost = shot.exitCost;
+		plan.exitSource = shot.exitSource;
+		plan.builds = shot.builds;
+		plan.fromBook = shot.fromBook;
+		plan.steps = shot.steps;
+		plan.burnGain = shot.burnGain;
+		plan.burnBody = shot.body;
+		this.traceAdd(r.index, 'burn price', 'P' + origin + '→P' + shot.body +
+			' · ' + signed(shot.burnGain) + ' over ballistic · fuel ' +
+			shot.fuelKg.toFixed(1) + ' kg · ' + top.count + ' shots priced', runStep);
 	};
 
 	/*
@@ -2805,6 +3009,7 @@
 		const angles = this.spec().careerAngles;
 		if (career.at < 0) return null;
 		this.careerScanReset(runStep);
+		this.careerBurnTopReset();
 		let plan = this.careerPlan(career, sim, market, runStep, false, angles);
 		if (!plan) plan = this.careerPlan(career, sim, market, runStep, true, angles);
 		/* no shot from the standing rail (drained battery, weak pad): the
@@ -2825,6 +3030,7 @@
 		}
 		if (plan) {
 			r.idleTries = 0;
+			this.careerPriceBurn(r, plan, market, runStep);
 			return plan;
 		}
 		this.careerNoShot(r, trade, runStep);
@@ -2908,7 +3114,7 @@
 				' fee ' + plan.fee.toFixed(2) + ' exit ' + (plan.exitCost || 0).toFixed(2) +
 				' (' + (plan.exitSource || 'own') + ') · ' +
 				(plan.fromBook ? 'book reuse' : 'fan ' + this.careerScan.tried + ' traces') +
-				' · EMC build ' + (plan.builds ? 'affordable' : 'no'), runStep);
+				' · EMC build ' + (plan.builds ? 'affordable' : 'no') + burnNote(plan), runStep);
 			r.idleTries = 0;
 			if (this.careerSit(r, plan, runStep)) return false;
 			/* queue the shot: the first to queue claims the pad charge, then the

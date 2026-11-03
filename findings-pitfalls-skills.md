@@ -655,3 +655,14 @@ ambiguous. Line counts are the wrong invariant — seam normalisation legitimate
 lines — compare non-blank content plus "no name declared in both files". `/tmp` is not durable
 across turns in a sandbox, so re-derive the baseline from git per session
 (`git show <base>:gravity_gui.js`) rather than assuming the file is still there.
+
+## a bench that never reaches the feature's precondition measures nothing
+
+The 0.5.7 next step said "re-run `career_gravity_bench` to see whether rival pads
+and reach improve" after pricing burns into launch plans. On 12 seeds / 400 s the
+rivals never buy an impulse engine (instrumented: 0 engine flights, 0 burns),
+and `career_bot_bench`'s research careers do have one but call `careerPlan`
+directly, bypassing `careerNextShot`. So neither bench could observe the change.
+Before measuring an A/B, assert the fixture actually reaches the state the change
+acts on; here `ENGINE=1` fits the drive explicitly and the totals print `burns`
+and `priced plans` so a zero is visible instead of being read as "no improvement".

@@ -669,6 +669,73 @@ check('a relaunch gives the flight a fresh nudge budget', () => {
 	assert.ok(state.burnStep < 99999, 'the burn step did not restart with the flight');
 });
 
+/* 0.5.8 — launch pricing: the rival companies and the page's own bot company
+ * choose their shot through careerNextShot, which re-prices the fan's best few
+ * shots as flights with one burn. These checks call that shared entry point
+ * (careerPlan alone would bypass the pricing) with a fitted drive. */
+function nextShotWorld(seed, fitted) {
+	const w = fitted ? burnWorld(seed) : makeWorld(seed);
+	w.actor = {
+		career: w.career, sim: w.sim, index: 0, idleTries: 0, waitTries: 0,
+		readyStep: 0, gapPhase: 0, turret: null
+	};
+	return w;
+}
+
+check('launch pricing is skipped without a drive', () => {
+	const w = nextShotWorld(42, false);
+	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);
+	assert.ok(plan, 'no opening plan');
+	assert.strictEqual(plan.burnGain, 0, 'a ballistic ship was burn-priced');
+	assert.strictEqual(w.bot.careerBurnPrices, 0, 'pricing ran without an engine');
+	assert.strictEqual(w.bot.careerScan.burn, 0, 'a shot was re-flown without an engine');
+});
+
+check('a fitted drive prices its launch by the one-burn landing', () => {
+	const w = nextShotWorld(42, true);
+	w.bot.careerBurnGain = -1e9;
+	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);
+	assert.ok(plan, 'no opening plan');
+	assert.ok(plan.burnGain > 0.5, 'the burn did not pay: ' + plan.burnGain);
+	assert.ok(plan.burnBody >= 0 && plan.body === plan.burnBody,
+		'the queued body is not the burn landing');
+	const score = plan.taskPay + plan.padValue - plan.fee -
+		plan.energy * plan.wait * GravityBot.CAREER_ENERGY_WAIT_COST;
+	assert.ok(Math.abs(score - plan.score) < 1e-9,
+		'burn-priced money terms do not add up: ' + score + ' vs ' + plan.score);
+	assert.ok(w.bot.careerScan.burn > 0 && w.bot.careerScan.burn <= 3,
+		'unbounded burn fan: ' + w.bot.careerScan.burn);
+	let listed = false;
+	for (let i = 0; i < w.bot.careerBurnTop.count; i++) {
+		if (w.bot.careerBurnTop.angleU[i] === plan.angleU &&
+			w.bot.careerBurnTop.speedU[i] === plan.speedU) listed = true;
+	}
+	assert.ok(listed, 'the priced shot is not from the fan shortlist');
+});
+
+check('the burn-priced shot flies and burns in the real flight', () => {
+	const w = nextShotWorld(42, true);
+	w.bot.careerBurnGain = -1e9;
+	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);
+	assert.ok(plan && plan.burnGain > 0, 'fixture was not burn-priced');
+	fly(w, plan);
+	assert.ok(w.career.burns >= 1, 'the flight never nudged');
+	assert.ok(w.career.at >= 0, 'the priced shot was lost in space');
+});
+
+check('when no burn pays, the launch stays ballistic', () => {
+	const w = nextShotWorld(42, true);
+	w.bot.careerBurnGain = 1e9;
+	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);
+	const control = nextShotWorld(42, true);
+	const ballistic = control.bot.careerPlan(control.career, control.sim,
+		control.market, control.step, false);
+	assert.ok(plan && ballistic, 'no opening plan');
+	assert.strictEqual(plan.burnGain, 0, 'a hopeless burn was taken');
+	assert.ok(Math.abs(plan.score - ballistic.score) < 1e-9,
+		'ballistic score changed: ' + plan.score + ' vs ' + ballistic.score);
+});
+
 /* the 6.00 starter purse funds one 3.00 pad but never a rescue rail (EMC-2
  * costs 8.00), so a career only has to survive the grind long enough to
  * claim a second planet */

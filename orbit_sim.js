@@ -2,7 +2,7 @@
  * Orbital trade and colony expansion.
  *
  * Vendored from luncat8/exec_queue (orbit_sim.js) as the background simulation,
- * now wired to the two-tier colony economy (0.2.0-plan-colony-economy.md).
+ * now wired to the two-tier colony economy (archive/0.2.0-plan-colony-economy.md).
  * A port is a station on a fixed ellipse: pos(t) is closed-form, so a route is
  * solved once at departure and the ship flies straight to the predicted point.
  * Every colonised planet has one port, one ship, and one colony record. On each

@@ -1,5 +1,5 @@
 /*
- * The colony economy's pure laws (0.2.0-plan-colony-economy.md).
+ * The colony economy's pure laws (archive/0.2.0-plan-colony-economy.md).
  *
  * Two tiers on one record. Inside the system three goods move between planet
  * ports (bulk, goods, migrants); between systems seven goods are averaged, never

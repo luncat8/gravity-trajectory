@@ -1,5 +1,5 @@
 /*
- * Colony economy benchmark and law checks (0.2.0-plan-colony-economy.md §12).
+ * Colony economy benchmark and law checks (archive/0.2.0-plan-colony-economy.md §12).
  *
  * Covers:
  * - §3 resource map determinism, jitter bound, site ordering

@@ -4,6 +4,8 @@
  * the rival companies' flights, purse, pads, dead pads (a pad whose starter
  * rail cannot reach another system) and the mean reach of the pads they own,
  * so a site-choice change can be compared on the same worlds.
+ * ENGINE=1 fits every rival with an impulse engine + tank (the 400 s bench
+ * never buys one by itself), NOBURNPRICE=1 disables launch pricing for the A/B.
  * Run: node experiments/career_gravity_bench.js (SEEDS=1-20 SECONDS=400 TRACE=1)
  */
 'use strict';
@@ -23,6 +25,8 @@ const PLANETS = OrbitWorld.PLANETS;
 const UNIVERSE = 13;
 const SECONDS = Number(process.env.SECONDS || 400);
 const TRACE = process.env.TRACE === '1';
+const ENGINE = process.env.ENGINE === '1';
+const NOBURNPRICE = process.env.NOBURNPRICE === '1';
 const parseSeeds = value => {
 	const [from, to] = value.split('-');
 	if (to === undefined) return [Number(from)];
@@ -64,6 +68,20 @@ function makeWorld(seed) {
 	bot.setPlanetMask(mask, UNIVERSE);
 	for (let p = 0; p < PLANETS; p++) bot.strength[p] = strength[p];
 	bot.startCareers(galaxy, seed, trade);
+	/* the drive is a late purchase: a short bench has to fit it explicitly
+	 * before rival launch pricing can be measured at all */
+	if (ENGINE) {
+		for (let i = 0; i < bot.count; i++) {
+			const ship = bot.rivals[i].career.ship;
+			ship.engine = OrbitTech.ENGINES[2];
+			ship.tank = OrbitTech.TANKS[3];
+			bot.rivals[i].career.owned[ship.engine.id] = true;
+			bot.rivals[i].career.owned[ship.tank.id] = true;
+			ship.mass = OrbitTech.shipMass(ship, ship.cargoTons);
+			ship.fuelKg = ship.tank.fuelCap;
+		}
+	}
+	if (NOBURNPRICE) bot.careerPriceBurn = () => null;
 	return { trade, gravity, market, galaxy, player, bot, strength };
 }
 
@@ -88,7 +106,8 @@ function padReport(w, career) {
 }
 
 const steps = Math.round(SECONDS / DT);
-const totals = { flights: 0, earned: 0, pads: 0, dead: 0, reach: 0, stuck: 0, actors: 0 };
+const totals = { flights: 0, earned: 0, pads: 0, dead: 0, reach: 0, stuck: 0,
+	actors: 0, burns: 0, priced: 0 };
 for (const seed of SEEDS) {
 	const w = makeWorld(seed);
 	const hqRows = ['P' + w.player.hq + ' g' + w.strength[w.player.hq].toFixed(1)];
@@ -119,6 +138,8 @@ for (const seed of SEEDS) {
 			' · reach ' + pad.reach.toFixed(1) +
 			(pad.dead.length ? ' · dead ' + pad.dead.join(',') : ''));
 	}
+	totals.burns += w.bot.careerBurnsPlanned;
+	totals.priced += w.bot.careerBurnPrices;
 	console.log('seed ' + seed + ' · HQ ' + hqRows.join(' ') + (TRACE ? '\n  ' + rows.join('\n  ') : ' · ' + rows.join(' | ')));
 	if (TRACE) {
 		const text = w.bot.decisionLog(steps, 'bench · seed ' + seed).split('\n');
@@ -129,4 +150,5 @@ console.log('TOTAL rivals ' + totals.actors + ' · flights ' + totals.flights +
 	' · earned ' + totals.earned.toFixed(2) + ' · pads ' + totals.pads +
 	' · dead pads ' + totals.dead + ' · mean reach ' +
 	(totals.actors > 0 ? (totals.reach / totals.actors).toFixed(2) : '0') +
-	' · stuck ' + totals.stuck);
+	' · stuck ' + totals.stuck +
+	(ENGINE ? ' · burns ' + totals.burns + ' · priced plans ' + totals.priced : ''));
