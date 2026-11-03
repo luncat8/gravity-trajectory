@@ -666,3 +666,19 @@ directly, bypassing `careerNextShot`. So neither bench could observe the change.
 Before measuring an A/B, assert the fixture actually reaches the state the change
 acts on; here `ENGINE=1` fits the drive explicitly and the totals print `burns`
 and `priced plans` so a zero is visible instead of being read as "no improvement".
+
+### Career bot: a priced rescue is only a plan, not a second burn policy
+A dead-end `careerNextShot` must keep the rail chosen by the commercial pass
+with `career.commercialPlanet` until the bounded one-burn rescue either wins or
+also fails; clearing it first leaves a drained own EMC with no firable rail. The
+rescue's prelaunch fan must use the exact same `burnNext = CAREER_BURN_AT`,
+`CAREER_BURN_MAX_TRIES` and `careerBurnGain` as `careerFlightBurn`, and must pass
+the real launch fee into `careerScoreFacts`. A "rescue gain of -Infinity" only
+bypasses the nudge margin on paper while the live flight still refuses to burn.
+Capture a finite landing body, not the bound scratch sim's `sim.at`, which is
+reset to -1. Benchmarks that call `careerFlightBurn` directly must initialize
+`burnNext` to `CAREER_BURN_AT`: the previous 0 made the first live flight burn at
+step 0 while its price assumed step 24, so the queued and flown landings diverged.
+At `g >= 3` a finite one-burn ring is trapped in every direction, so the A/B
+fixture uses `g = 2` (twice `HQ_GRAVITY_MAX`). Avoid `Float64Array.set` across
+`PLANETS`-length and `MAX_BODIES`-length arrays.

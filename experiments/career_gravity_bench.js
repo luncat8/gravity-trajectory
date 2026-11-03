@@ -6,6 +6,8 @@
  * so a site-choice change can be compared on the same worlds.
  * ENGINE=1 fits every rival with an impulse engine + tank (the 400 s bench
  * never buys one by itself), NOBURNPRICE=1 disables launch pricing for the A/B.
+ * DEADEND=1 drains every HQ battery under a deep well; NORESCUE=1 is the
+ * no-rescue A/B for that fixture.
  * Run: node experiments/career_gravity_bench.js (SEEDS=1-20 SECONDS=400 TRACE=1)
  */
 'use strict';
@@ -27,6 +29,11 @@ const SECONDS = Number(process.env.SECONDS || 400);
 const TRACE = process.env.TRACE === '1';
 const ENGINE = process.env.ENGINE === '1';
 const NOBURNPRICE = process.env.NOBURNPRICE === '1';
+const DEADEND = process.env.DEADEND === '1';
+const NORESCUE = process.env.NORESCUE === '1';
+/* g=2 is already twice the shallow-HQ limit; stronger wells trap the one-burn
+ * rescue as well and measure nothing */
+const DEADEND_WELL = Number(process.env.DEADEND_WELL || 2);
 const parseSeeds = value => {
 	const [from, to] = value.split('-');
 	if (to === undefined) return [Number(from)];
@@ -62,6 +69,16 @@ function makeWorld(seed) {
 	GravityGame.setCareerUniverse(player, mask, UNIVERSE);
 	GravityGame.startCareer(player, gravity, seed, trade, null, galaxy);
 	const bot = GravityBot.prototype && new GravityBot(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	const events = { noShots: 0, sits: 0, drops: 0 };
+	const addTrace = bot.traceAdd;
+	bot.traceAdd = function (index, decision, detail, step) {
+		if (decision === 'sit') events.sits += 1;
+		if (decision === 'no shot') {
+			events.noShots += 1;
+			if (detail && detail.includes('dropped the unreachable contract')) events.drops += 1;
+		}
+		return addTrace.call(this, index, decision, detail, step);
+	};
 	bot.attachWorld(trade);
 	bot.reset(seed, GravityGame.RULE_CAREER, 'normal', GravityGame.PLAYER_USER,
 		[GravityGame.PLAYER_BOT, GravityGame.PLAYER_BOT]);
@@ -81,8 +98,24 @@ function makeWorld(seed) {
 			ship.fuelKg = ship.tank.fuelCap;
 		}
 	}
+	if (DEADEND) {
+		/* own HQ rails stay dry and their wells stay deep, so only the
+		 * commercial fallback can lift the ship and its ballistic fan dead-ends */
+		for (let i = 0; i < galaxy.actors.length; i++) {
+			const career = galaxy.actors[i];
+			const hq = career.hq;
+			strength[hq] = DEADEND_WELL;
+			career.light[hq] = 0;
+			career.pads[hq].chargeKwh = 0;
+			career.pads[hq].reservedKwh = 0;
+		}
+		for (let p = 0; p < PLANETS; p++) bot.strength[p] = strength[p];
+		gravity.setField(PLANETS, trade.planetR, strength, gravity.fillField, true);
+		bot.useField(gravity, GravityGame.SRC_PLANETS);
+	}
 	if (NOBURNPRICE) bot.careerPriceBurn = () => null;
-	return { trade, gravity, market, galaxy, player, bot, strength };
+	if (NORESCUE) bot.careerRescueBurn = () => null;
+	return { trade, gravity, market, galaxy, player, bot, strength, events };
 }
 
 /* a pad is dead when its own rail at a full battery cannot reach another
@@ -107,7 +140,8 @@ function padReport(w, career) {
 
 const steps = Math.round(SECONDS / DT);
 const totals = { flights: 0, earned: 0, pads: 0, dead: 0, reach: 0, stuck: 0,
-	actors: 0, burns: 0, priced: 0 };
+	actors: 0, burns: 0, priced: 0, rescues: 0, noShots: 0, sits: 0,
+	drops: 0, evacs: 0 };
 for (const seed of SEEDS) {
 	const w = makeWorld(seed);
 	const hqRows = ['P' + w.player.hq + ' g' + w.strength[w.player.hq].toFixed(1)];
@@ -131,6 +165,7 @@ for (const seed of SEEDS) {
 		totals.reach += pad.reach;
 		totals.stuck += stuck ? 1 : 0;
 		totals.actors += 1;
+		totals.evacs += r.career.evacuations;
 		rows.push('R' + (i + 1) + (stuck ? ' STUCK' : '') + ' · P' + r.career.at +
 			' · purse ' + r.career.ledger.purse.toFixed(2) +
 			' · earned ' + r.career.earned.toFixed(2) +
@@ -140,6 +175,10 @@ for (const seed of SEEDS) {
 	}
 	totals.burns += w.bot.careerBurnsPlanned;
 	totals.priced += w.bot.careerBurnPrices;
+	totals.rescues += w.bot.careerBurnRescues;
+	totals.noShots += w.events.noShots;
+	totals.sits += w.events.sits;
+	totals.drops += w.events.drops;
 	console.log('seed ' + seed + ' · HQ ' + hqRows.join(' ') + (TRACE ? '\n  ' + rows.join('\n  ') : ' · ' + rows.join(' | ')));
 	if (TRACE) {
 		const text = w.bot.decisionLog(steps, 'bench · seed ' + seed).split('\n');
@@ -151,4 +190,8 @@ console.log('TOTAL rivals ' + totals.actors + ' · flights ' + totals.flights +
 	' · dead pads ' + totals.dead + ' · mean reach ' +
 	(totals.actors > 0 ? (totals.reach / totals.actors).toFixed(2) : '0') +
 	' · stuck ' + totals.stuck +
-	(ENGINE ? ' · burns ' + totals.burns + ' · priced plans ' + totals.priced : ''));
+	(ENGINE ? ' · burns ' + totals.burns + ' · priced plans ' + totals.priced +
+		' · rescue plans ' + totals.rescues : '') +
+	(DEADEND ? ' · no-shot ' + totals.noShots + ' · sits ' + totals.sits +
+		' · drops ' + totals.drops + ' · evac ' + totals.evacs : '') +
+	(NORESCUE ? ' · NORESCUE' : ''));

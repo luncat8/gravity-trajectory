@@ -84,7 +84,7 @@ function makeWorld(seed, gravityScale = 1, forceScale = 1) {
 
 /* the mid-flight impulse state the controller keeps per flying actor */
 function newBurnState() {
-	return { burn: 0, burnTries: 0, burnNext: 0, burnStep: 0 };
+	return { burn: 0, burnTries: 0, burnNext: GravityBot.CAREER_BURN_AT, burnStep: 0 };
 }
 
 /* the same world with the seed's own gravity wells: reach and departure
@@ -607,7 +607,7 @@ check('a flight nudges once, spends tank fuel and logs the burn for the page', (
 	const w = burnWorld(42);
 	/* a bar of -1e9 accepts any landing the drive can reach: this check is the
 	 * plumbing (one burn per flight, fuel, counter, log line, not the margin) */
-	const state = { burn: 0, burnTries: 0, burnNext: 0, burnStep: 0 };
+	const state = newBurnState();
 	const run = flyOpening(w, state, -1e9);
 	assert.strictEqual(run.burns.length, 1, 'one nudge per flight, took ' + run.burns.length);
 	assert.strictEqual(w.career.burns, 1, 'career burn counter');
@@ -654,7 +654,7 @@ check('rescueOnly pays one coast trace and leaves a healthy flight alone', () =>
 
 check('a relaunch gives the flight a fresh nudge budget', () => {
 	const w = burnWorld(42);
-	const state = { burn: 0, burnTries: 0, burnNext: 0, burnStep: 0 };
+	const state = newBurnState();
 	const first = flyOpening(w, state, -1e9);
 	assert.strictEqual(first.burns.length, 1, 'first flight never nudged');
 	assert.strictEqual(w.career.burns, 1, 'first flight burn counter');
@@ -734,6 +734,78 @@ check('when no burn pays, the launch stays ballistic', () => {
 	assert.strictEqual(plan.burnGain, 0, 'a hopeless burn was taken');
 	assert.ok(Math.abs(plan.score - ballistic.score) < 1e-9,
 		'ballistic score changed: ' + plan.score + ' vs ' + ballistic.score);
+});
+
+/* 0.5.9 — a dead-end careerNextShot has no finite ballistic plan at all. The
+ * stub isolates the rescue entry point; career_gravity_bench's DEADEND=1
+ * fixture measures the same path with a real drained rail and deep well. */
+function deadEndWorld(seed, fitted) {
+	const w = nextShotWorld(seed, fitted);
+	w.bot.careerPlan = () => null;
+	return w;
+}
+
+check('a dead end without a drive stays a no-shot turn', () => {
+	const w = deadEndWorld(42, false);
+	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);
+	assert.strictEqual(plan, null, 'a ballistic ship was rescued');
+	assert.strictEqual(w.bot.careerBurnRescues, 0, 'rescue ran without an engine');
+	assert.strictEqual(w.bot.careerScan.rescue, 0, 'rescue traced without an engine');
+});
+
+check('a fitted drive rescues a dead end with a bounded one-burn ring', () => {
+	const w = deadEndWorld(42, true);
+	w.bot.careerBurnGain = -1e9;
+	let burnTraces = 0;
+	const fast = w.bot.probe.predictBurnFast;
+	w.bot.probe.predictBurnFast = function (...args) {
+		burnTraces += 1;
+		return fast.apply(this, args);
+	};
+	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);
+	w.bot.probe.predictBurnFast = fast;
+	assert.ok(plan, 'no rescue plan');
+	assert.ok(plan.burnGain > 0.5, 'rescue did not clear the sit margin');
+	assert.ok(plan.burnBody >= 0 && plan.body === plan.burnBody,
+		'the queued body is not the burn landing');
+	assert.strictEqual(plan.fromBook, false, 'a rescue was written as a book shot');
+	const score = plan.taskPay + plan.padValue - plan.fee -
+		plan.energy * plan.wait * GravityBot.CAREER_ENERGY_WAIT_COST;
+	assert.ok(Math.abs(score - plan.score) < 1e-9,
+		'rescue money terms do not add up: ' + score + ' vs ' + plan.score);
+	assert.ok(GravityGame.careerCanFire(w.career, w.sim, plan.origin, plan.speed),
+		'the rescued shot cannot fire from its priced rail');
+	assert.strictEqual(w.career.commercialPlanet, w.career.at,
+		'the commercial rail was cleared before the rescued shot');
+	assert.ok(w.bot.careerScan.rescue > 0 &&
+		w.bot.careerScan.rescue <= GravityBot.CAREER_RESCUE_SHOTS,
+		'unbounded rescue ring: ' + w.bot.careerScan.rescue);
+	assert.ok(burnTraces <= GravityBot.CAREER_RESCUE_SHOTS *
+		GravityBot.CAREER_BURN_PLAN_TRACES,
+		'unbounded burn fan: ' + burnTraces);
+	assert.strictEqual(w.bot.careerBurnRescues, 1, 'rescue counter');
+	assert.strictEqual(w.bot.careerBurnPrices, 0, 'shortlist pricing ran on a rescue');
+	assert.ok(w.bot.trace.some(line => line.includes('burn rescue')),
+		'rescue decision was not logged');
+});
+
+check('the rescued shot flies, burns and lands on the priced body', () => {
+	const w = deadEndWorld(42, true);
+	w.bot.careerBurnGain = -1e9;
+	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);
+	assert.ok(plan && plan.burnGain > 0, 'fixture was not rescued');
+	fly(w, plan);
+	assert.ok(w.career.burns >= 1, 'the rescued flight never nudged');
+	assert.strictEqual(w.career.at, plan.body,
+		'the live burn reached a different body from the priced plan');
+});
+
+check('a viable ballistic plan skips the rescue ring', () => {
+	const w = nextShotWorld(42, true);
+	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);
+	assert.ok(plan, 'no opening plan');
+	assert.strictEqual(w.bot.careerBurnRescues, 0, 'rescue replaced a ballistic plan');
+	assert.strictEqual(w.bot.careerScan.rescue, 0, 'rescue traced a viable shot');
 });
 
 /* the 6.00 starter purse funds one 3.00 pad but never a rescue rail (EMC-2
