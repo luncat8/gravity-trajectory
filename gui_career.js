@@ -247,6 +247,20 @@ function careerPart(career, kind, item) {
 	careerChanged();
 }
 
+function careerFuelAction(career, produce) {
+	const kg = GravityGame.FUEL_BUY_STEP;
+	const got = produce ? GravityGame.produceFuel(career, career.at, kg) : GravityGame.buyFuel(career, kg);
+	if (got <= 0) {
+		careerNotice(produce ? 'conversion needs your own pad, unreserved charge and a usable tank'
+			: 'fuel purchase needs a usable tank and purse');
+		return;
+	}
+	careerNotice((produce ? 'converted ' : 'bought ') + got.toFixed(1) + ' kg fuel · ' +
+		(produce ? (got / GravityGame.FUEL_KG_PER_KWH).toFixed(2) + ' kWh'
+			: costText(got * GravityGame.fuelPrice(career))));
+	careerChanged();
+}
+
 function careerAccept(career, index) {
 	if (!GravityGame.acceptTask(career, index)) {
 		careerNotice('cannot take that delivery');
@@ -436,6 +450,8 @@ function careerAct(data) {
 		careerNotice('career over · restart for a new HQ');
 		return;
 	}
+	if (act === 'produceFuel') return careerFuelAction(career, true);
+	if (act === 'buyFuel') return careerFuelAction(career, false);
 	if (act === 'drop') return careerDrop(career);
 	if (act === 'accept') return careerAccept(career, Number(data.slot));
 	if (!data.item && Math.round(Number(data.tier)) === NO_TIER) {

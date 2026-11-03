@@ -41,6 +41,7 @@ function predictedCareerEconomics(sim) {
 	out.state = 0;
 	out.launchable = true;
 	out.fee = 0;
+	out.fuel = 0;
 	out.exit = 0;
 	out.net = predGain;
 	out.gain = predGain;
@@ -55,6 +56,8 @@ function predictedCareerEconomics(sim) {
 		: aimBody >= 0 ? aimBody : career.at;
 	const fee = sim.status === STATUS_FLYING ? 0
 		: GravityGame.launchFee(career, origin, aimSpeed);
+	const ship = career.ship;
+	out.fuel = burnArmed ? OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg) * GravityGame.fuelPrice(career) : 0;
 	const cash = career.ledger.purse + predGain - fee;
 	const mass = bot.careerArrivalMass(career, sim.predBody);
 	const departure = bot.careerDeparture(career, sim.predBody, cash, mass, cargoSim);
@@ -66,7 +69,7 @@ function predictedCareerEconomics(sim) {
 	out.tier = destinationPad.catapult.tier + 1;
 	out.own = career.pads[sim.predBody].catapult !== null;
 	out.launchable = career.ledger.purse + 1e-9 >= fee && departure.ok;
-	out.net = predGain - fee - (departure.ok ? departure.cost : 0);
+	out.net = predGain - fee - out.fuel - (departure.ok ? departure.cost : 0);
 	out.state = !out.launchable ? 2 : out.net > 1e-9 ? 1 : 0;
 	return out;
 }
@@ -128,7 +131,8 @@ function refreshAimLabel() {
 				' (' + sim.predVisits + ' sys)' + predTickNote()
 			: '';
 		aimLabel = 'Δv ' + burnDv.toFixed(1) + ' px/s · ' + deg.toFixed(1) + '° · −' +
-			usedKg.toFixed(1) + ' kg' + (fine ? ' · fine' : '') + visitNote;
+			usedKg.toFixed(1) + ' kg / ' + costText(usedKg * GravityGame.fuelPrice(game.career)) +
+			(fine ? ' · fine' : '') + visitNote;
 		return;
 	}
 	if (!aiming && !armed) {

@@ -194,13 +194,57 @@ function shipImpulseNote(ship) {
 	if (!ship.engine || ship.tank.fuelCap <= 0) return '';
 	const remDv = OrbitTech.impulseDeltaV(ship.fuelKg, ship.engine, ship.mass, ship.fuelKg);
 	const burnCap = OrbitTech.burnLimit(ship.fuelKg, ship.engine, ship.mass);
-	if (ship.fuelKg < ship.tank.fuelCap - 0.05) {
-		return ' · fuel ' + ship.fuelKg.toFixed(1) + '/' + ship.tank.fuelCap + ' kg' +
-			(remDv > 0.05 ? ' · Δv ' + remDv.toFixed(1) + ' px/s' : ' · empty');
-	}
-	if (remDv <= 0) return '';
+	if (remDv <= 0.05) return ' · tank empty';
 	return ' · Δv ' + remDv.toFixed(1) + ' px/s' +
 		(burnCap < remDv - 0.05 ? ' (burn ' + burnCap.toFixed(1) + ')' : '');
+}
+
+function fuelGaugeText(ship) {
+	const cap = ship.tank ? ship.tank.fuelCap : 0;
+	return ship.fuelKg.toFixed(1) + ' / ' + cap + ' kg';
+}
+
+function refreshFuelHud() {
+	const ship = activeCareer().ship;
+	const gauge = $('careerFuel');
+	if (gauge) gauge.textContent = fuelGaugeText(ship);
+	const bar = $('careerFuelBar');
+	if (bar) bar.style.width = (ship.tank && ship.tank.fuelCap > 0
+		? Math.round(ship.fuelKg / ship.tank.fuelCap * 100) : 0) + '%';
+}
+
+/* Fuel is a transaction on the planet under the ship, not a property of the
+ * selected shop planet. Conversion reads only the owner's unreserved charge. */
+function fuelBlockHtml(career) {
+	const ship = career.ship;
+	const cap = ship.tank ? ship.tank.fuelCap : 0;
+	const ready = career.ended === GravityGame.CAREER_OPEN && ship.engine !== null && cap > 0;
+	const room = Math.max(0, cap - ship.fuelKg);
+	const pad = career.pads[career.at];
+	const free = pad.catapult !== null ? Math.max(0, pad.chargeKwh - pad.reservedKwh) : 0;
+	const step = GravityGame.FUEL_BUY_STEP;
+	const rate = GravityGame.FUEL_KG_PER_KWH;
+	const price = GravityGame.fuelPrice(career);
+	const produceKg = Math.min(Math.floor(room), Math.floor(free * rate + 1e-9));
+	const buyKg = price > 0 ? Math.min(room, Math.max(0, career.ledger.purse) / price) : room;
+	const pct = cap > 0 ? Math.round(ship.fuelKg / cap * 100) : 0;
+	let html = '<div class="careerLine">fuel <span id="careerFuel">' + fuelGaugeText(ship) +
+		'</span>' + (ready ? '' : ' · fit engine + tank') + '</div>' +
+		'<div class="careerBar"><i id="careerFuelBar" style="width:' + pct + '%"></i></div>' +
+		'<div class="careerLine dim">' + step + ' kg = ' + (step / rate).toFixed(2) +
+		' kWh own charge or ' + costText(step * price) + '</div><div class="careerRow"><span class="careerBtns">';
+	const why = !ready ? 'needs an engine and a fuel tank' : room <= 0 ? 'tank is full'
+		: produceKg <= 0 ? 'no unreserved charge on your own pad' : 'convert own battery charge';
+	html += shopButtonRef('charge → fuel +' + Math.min(step, produceKg) + ' · ' +
+		(Math.min(step, produceKg) / rate).toFixed(2) + ' kWh', 'produceFuel', 'fuel', 'data-kg="' + step + '"',
+		!ready || produceKg <= 0, why);
+	const buyWhy = !ready ? 'needs an engine and a fuel tank' : room <= 0 ? 'tank is full'
+		: buyKg <= 0 ? 'purse cannot buy fuel' : 'buy fuel on any planet';
+	const buyPoor = ready && room > 0 && buyKg <= 0;
+	html += shopButtonRef('buy fuel +' + Math.min(step, buyKg).toFixed(buyKg < step ? 1 : 0) + ' · ' +
+		costText(Math.min(step, buyKg) * price), 'buyFuel', 'fuel', 'data-kg="' + step + '"',
+		!ready || buyKg <= 0, buyWhy, buyPoor);
+	return html + '</span></div>';
 }
 
 /* ── pads, claims & parts ── EMC claim rings, pad blocks, gear/part/prototype rows and the shop block */
@@ -275,7 +319,7 @@ function padBlockHtml(career) {
 				capHtml(capArrowText(0, fresh)) + '</span></div>';
 		}
 		html += claimLineHtml();
-		return html;
+		return html + fuelBlockHtml(career);
 	}
 	const limit = cargoSim.speedLimit(at);
 	const full = padCap(career, pad.catapult, pad.battery);
@@ -305,7 +349,7 @@ function padBlockHtml(career) {
 			' t · buy a bigger rail below</div>';
 	}
 	html += claimLineHtml();
-	return html;
+	return html + fuelBlockHtml(career);
 }
 
 /* the record a gear row offers to build: the next known stock tier above the
@@ -541,8 +585,15 @@ function shopBlockHtml(career) {
 	const planet = careerPickPlanet();
 	const pad = career.pads[planet];
 	let html = '<div class="careerHead">pad on ' + planetName(planet) + '</div>';
+	const owned = pad.catapult !== null;
+	if (!owned && !GravityGame.planetBuildable(career, planet)) {
+		html += '<div class="careerLine dim">' + claimTag(GravityGame.claimOwner(game.galaxy, planet)) +
+			' owns this base · pad upgrades unavailable</div>';
+	}
 	for (let i = 0; i < GEAR_ROWS.length; i++) {
 		const row = GEAR_ROWS[i];
+		if (!owned && (row.kind !== OrbitTech.KIND_CATAPULT ||
+			!GravityGame.planetBuildable(career, planet))) continue;
 		const next = gearNext(career, row, pad);
 		html += gearRowHtml(career, row, planet, next);
 		const list = GravityGame.prototypesOf(career, row.kind) || [];
@@ -553,6 +604,7 @@ function shopBlockHtml(career) {
 		}
 	}
 	html += '<div class="careerHead">ship refit · HQ ' + planetName(career.hq) + '</div>';
+	if (career.at !== career.hq) return html + '<div class="careerLine dim">land at HQ to refit the ship</div>';
 	for (let i = 0; i < PART_ROWS.length; i++) {
 		const row = PART_ROWS[i];
 		html += partRowHtml(career, row);

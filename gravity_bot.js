@@ -112,7 +112,6 @@
 	const CAREER_BURN_ANGLES = 12;
 	const CAREER_BURN_FRACTIONS = [0.5, 1];
 	const CAREER_BURN_REFINE = 4;
-	const CAREER_BURN_FUEL_COST = 0.008;
 	/* A nudge has to buy a pad's worth of value: the landing score is partly an
 	 * estimate of what a pad will earn later, so a small modeled gain is noise
 	 * (measured: a 0.75 bar nudged every flight and lost money on the hostile
@@ -339,8 +338,17 @@
 			origin: -1, body: -1, angleU: 0, speedU: 0, angle: 0, speed: 0,
 			score: -Infinity, taskPay: 0, padValue: 0, energy: 0, wait: 0, fee: 0,
 			exitCost: Infinity, exitSource: '', fromBook: false,
-			builds: false, length: 0, steps: 0, burnGain: 0, burnBody: -1
+			builds: false, length: 0, steps: 0, burnGain: 0, burnBody: -1,
+			fuelKg: 0, fuelProducedKg: 0, fuelBoughtKg: 0
 		};
+		this.careerFuelPlan = {
+			origin: -1, body: -1, angleU: 0, speedU: 0, angle: 0, speed: 0,
+			score: -Infinity, taskPay: 0, padValue: 0, energy: 0, wait: 0, fee: 0,
+			exitCost: Infinity, exitSource: '', fromBook: false,
+			builds: false, length: 0, steps: 0, burnGain: 0, burnBody: -1,
+			fuelKg: 0, fuelProducedKg: 0, fuelBoughtKg: 0
+		};
+		this.careerFuelQuote = { kg: 0, produceKg: 0, buyKg: 0 };
 		this.careerBurnBest = {
 			body: -1, angle: 0, dv: 0, angleU: 0, dvU: 0,
 			score: -Infinity, coastScore: -Infinity, fuelKg: 0, steps: 0,
@@ -386,10 +394,12 @@
 		this.careerUseResearch = false;
 		/* a nudge must beat coasting by this much; rescues need no margin */
 		this.careerBurnGain = CAREER_BURN_MIN_GAIN;
+		this.careerBurnPriceMargin = CAREER_BURN_PRICE_MARGIN;
 		this.careerPlans = 0;
 		this.careerBurnsPlanned = 0;
 		this.careerBurnPrices = 0;
 		this.careerBurnRescues = 0;
+		this.careerFuelTopUps = 0;
 		/* per-attempt diagnostics: counters only, no fan-loop allocations */
 		this.careerScan = {
 			step: -1, tried: 0, impacts: 0, finite: 0, bounce: 0, exit: 0,
@@ -672,6 +682,7 @@
 		this.careerBurnsPlanned = 0;
 		this.careerBurnPrices = 0;
 		this.careerBurnRescues = 0;
+		this.careerFuelTopUps = 0;
 
 		const base0 = (Math.imul(this.seed, 7) + 5) >>> 0;
 		for (let i = 0; i < MAX_RIVALS; i++) {
@@ -1967,8 +1978,9 @@
 		best.label = label;
 	};
 
-	/* All shopping happens while idle: rescue, refit/accept, upgrade, expand,
-	 * then the pad itself is sized for the money its last launch made. */
+	/* Gear shopping happens while idle: rescue, refit/accept, upgrade, expand,
+	 * then the pad itself is sized for its earnings. Fuel is priced later, at the
+	 * committed launch, so a sit or a forced rebuild never stocks a tank for free. */
 	GravityBot.prototype.careerBetweenFlights = function (career, sim, runStep) {
 		if (career.ended !== GravityGame.CAREER_OPEN) return 0;
 		let actions = 0;
@@ -2212,8 +2224,9 @@
 		return lines.join('\n');
 	};
 
-	GravityBot.prototype.careerEnergyWait = function (career, planet, energy) {
-		const pad = GravityGame.padAt(career, planet);
+	GravityBot.prototype.careerEnergyWait = function (career, planet, energy, sourcePad) {
+		if (!(energy > 0)) return 0;
+		const pad = sourcePad || GravityGame.padAt(career, planet);
 		const gain = OrbitTech.solarCharge(pad.panel, career.light[planet], CAREER_WAIT_SECONDS);
 		return gain > 0 ? energy / gain : Infinity;
 	};
@@ -2478,6 +2491,9 @@
 		best.fromBook = false;
 		best.burnGain = 0;
 		best.burnBody = -1;
+		best.fuelKg = 0;
+		best.fuelProducedKg = 0;
+		best.fuelBoughtKg = 0;
 		if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
 			!sim.canLaunchFrom(career.at)) return null;
 		const origin = career.at;
@@ -2596,7 +2612,7 @@
 		const raw = this.careerScoreFlight(career, sim.origin, market, runStep, sim.flightLength, fee);
 		if (!Number.isFinite(raw)) return -Infinity;
 		const fuelKg = OrbitTech.impulseFuel(dv, ship.engine, ship.mass, ship.fuelKg);
-		const score = raw - fuelKg * CAREER_BURN_FUEL_COST;
+		const score = raw - fuelKg * GravityGame.fuelPrice(career);
 		if (Number.isFinite(coastScore) && score <= coastScore + this.careerBurnGain) return -Infinity;
 		return score;
 	};
@@ -2887,6 +2903,9 @@
 		const plan = this.careerNextShot(p, market, trade, runStep);
 		if (!plan) return false;
 		if (this.careerSit(p, plan, runStep)) return false;
+		const requested = plan.fuelProducedKg + plan.fuelBoughtKg > 0;
+		if (requested && !this.careerCommitFuel(p, plan, runStep)) return false;
+		if (!requested) this.careerPrepareFuel(p, plan, market, runStep);
 		p.readyStep = runStep + CAREER_RIVAL_GAP;
 		const out = p.plan;
 		out.origin = plan.origin;
@@ -2966,8 +2985,8 @@
 	 * controller nudges at step CAREER_BURN_AT with the same careerBurnPlan, so
 	 * the queued shot should be chosen and scored by the landing that burn
 	 * reaches. `fee` gates the burn's solvency check (already paid mid-flight,
-	 * still unpaid here) and the launch refills the tank, so the search runs
-	 * with a full tank without touching the career's real fuel.
+	 * still unpaid here). The search uses the fuel actually on board; a separate
+	 * committed-launch forecast may temporarily model an affordable top-up.
 	 */
 	GravityBot.prototype.careerPriceBurn = function (r, plan, market, runStep) {
 		const career = r.career;
@@ -2979,8 +2998,6 @@
 		const live = r.sim;
 		const origin = plan.origin;
 		const ballistic = plan.score;
-		const fuel0 = ship.fuelKg;
-		ship.fuelKg = ship.tank.fuelCap;
 		const shot = this.careerBurnShot;
 		let bestScore = ballistic;
 		let found = false;
@@ -2988,6 +3005,7 @@
 			const angleU = top.angleU[i];
 			const speedU = top.speedU[i];
 			const speed = GravityGame.speedOf(speedU);
+			if (speed > live.speedLimit(origin) + 1e-9) continue;
 			this.careerBurnLaunch(r, src, origin, angleU, speedU);
 			this.careerScan.burn += 1;
 			if (src.status !== GravitySim.STATUS_FLYING) continue;
@@ -2998,7 +3016,7 @@
 			const wait = GravityGame.padOwner(career, origin) === career.index
 				? this.careerEnergyWait(career, origin, energy) : 0;
 			const score = burn.score - fee - energy * wait * CAREER_ENERGY_WAIT_COST;
-			if (!(score > bestScore + CAREER_BURN_PRICE_MARGIN)) continue;
+			if (!(score > bestScore + this.careerBurnPriceMargin)) continue;
 			bestScore = score;
 			found = true;
 			shot.body = burn.body;
@@ -3019,7 +3037,6 @@
 			shot.steps = CAREER_BURN_AT + burn.steps;
 		}
 		this.careerRestoreBurnProbe(r);
-		ship.fuelKg = fuel0;
 		if (!found) return;
 		this.careerBurnPrices += 1;
 		plan.angleU = shot.angleU;
@@ -3029,7 +3046,8 @@
 		plan.body = shot.body;
 		plan.score = shot.score;
 		/* the tank fuel is a money term, so the plan's score identity holds */
-		plan.taskPay = shot.taskPay - shot.fuelKg * CAREER_BURN_FUEL_COST;
+		plan.taskPay = shot.taskPay - shot.fuelKg * GravityGame.fuelPrice(career);
+		plan.fuelKg = shot.fuelKg;
 		plan.padValue = shot.padValue;
 		plan.fee = shot.fee;
 		plan.energy = shot.energy;
@@ -3044,6 +3062,123 @@
 		this.traceAdd(r.index, 'burn price', 'P' + origin + '→P' + shot.body +
 			' · ' + signed(shot.burnGain) + ' over ballistic · fuel ' +
 			shot.fuelKg.toFixed(1) + ' kg · ' + top.count + ' shots priced', runStep);
+	};
+
+	/* Copy a complete plan without allocating in the launch path. */
+	function copyCareerPlan(from, to) {
+		to.origin = from.origin;
+		to.body = from.body;
+		to.angleU = from.angleU;
+		to.speedU = from.speedU;
+		to.angle = from.angle;
+		to.speed = from.speed;
+		to.score = from.score;
+		to.taskPay = from.taskPay;
+		to.padValue = from.padValue;
+		to.energy = from.energy;
+		to.wait = from.wait;
+		to.fee = from.fee;
+		to.exitCost = from.exitCost;
+		to.exitSource = from.exitSource;
+		to.fromBook = from.fromBook;
+		to.builds = from.builds;
+		to.length = from.length;
+		to.steps = from.steps;
+		to.burnGain = from.burnGain;
+		to.burnBody = from.burnBody;
+		to.fuelKg = from.fuelKg;
+		to.fuelProducedKg = from.fuelProducedKg;
+		to.fuelBoughtKg = from.fuelBoughtKg;
+	}
+
+	/* Whole kilograms keep the bot's forecast and transaction identical. The
+	 * current launch fee is always reserved; easy/normal also keep the next fee. */
+	GravityBot.prototype.careerFuelOffer = function (career, planet) {
+		const quote = this.careerFuelQuote;
+		quote.kg = 0;
+		quote.produceKg = 0;
+		quote.buyKg = 0;
+		const ship = career.ship;
+		if (career.ended !== GravityGame.CAREER_OPEN || planet < 0 || !ship.engine || !ship.tank) return quote;
+		const room = Math.max(0, Math.floor(ship.tank.fuelCap - ship.fuelKg + 1e-9));
+		if (room <= 0) return quote;
+		const pad = career.pads[planet];
+		if (pad.catapult !== null) {
+			/* Keep a full-cap departure firable after conversion; the shortlist may
+			 * still pick a faster shot than the baseline plan. */
+			const cap = OrbitTech.speedLimit(pad.battery.capacity, ship.mass, pad.catapult, career.forceScale);
+			const launchKwh = OrbitTech.launchEnergy(ship.mass, pad.catapult, cap);
+			const free = Math.max(0, pad.chargeKwh - pad.reservedKwh - launchKwh);
+			quote.produceKg = Math.min(room, Math.floor(free * GravityGame.FUEL_KG_PER_KWH + 1e-9));
+		}
+		const reserve = GravityGame.launchFee(career, planet, GravityGame.padLift(career, planet)) +
+			(this.level === 'hard' ? 0 : CAREER_PURSE_RESERVE);
+		const cash = Math.max(0, career.ledger.purse - reserve);
+		const price = GravityGame.fuelPrice(career);
+		quote.buyKg = Math.min(room - quote.produceKg,
+			price > 0 ? Math.floor(cash / price + 1e-9) : room - quote.produceKg);
+		quote.kg = quote.produceKg + quote.buyKg;
+		return quote;
+	};
+
+	/* Price only the fuel the winning burn needs. Conversion has the replacement
+	 * opportunity cost plus recharge wait; purchase is already in the burn score. */
+	GravityBot.prototype.careerFuelPricePlan = function (career, plan, quote, planet) {
+		const need = Math.max(0, Math.ceil(plan.fuelKg - career.ship.fuelKg - 1e-9));
+		if (need > quote.kg) return false;
+		const produced = Math.min(quote.produceKg, need);
+		const bought = need - produced;
+		const kwh = produced / GravityGame.FUEL_KG_PER_KWH;
+		const wait = this.careerEnergyWait(career, planet, kwh, career.pads[planet]);
+		const cost = produced * GravityGame.fuelPrice(career);
+		plan.fuelProducedKg = produced;
+		plan.fuelBoughtKg = bought;
+		plan.taskPay -= cost;
+		plan.wait += wait;
+		plan.score -= cost + plan.energy * wait * CAREER_ENERGY_WAIT_COST;
+		return true;
+	};
+
+	GravityBot.prototype.careerCommitFuel = function (r, plan, runStep) {
+		const career = r.career;
+		const produced = plan.fuelProducedKg;
+		const bought = plan.fuelBoughtKg;
+		if (produced + bought <= 0) return true;
+		const got = GravityGame.produceFuel(career, plan.origin, produced) +
+			GravityGame.buyFuel(career, bought);
+		plan.fuelProducedKg = 0;
+		plan.fuelBoughtKg = 0;
+		if (got !== produced + bought) return false;
+		this.careerFuelTopUps += 1;
+		this.traceAdd(r.index, 'fuel', '+' + got + ' kg · ' + produced + ' from battery · ' +
+			bought + ' bought · ' + (bought * GravityGame.fuelPrice(career)).toFixed(2) +
+			' · tank ' + career.ship.fuelKg.toFixed(1) + ' kg', runStep);
+		return true;
+	};
+
+	/* One scratch forecast, after the sit decision: never stock fuel just to idle. */
+	GravityBot.prototype.careerPrepareFuel = function (r, plan, market, runStep) {
+		const career = r.career;
+		const ship = career.ship;
+		const quote = this.careerFuelOffer(career, plan.origin);
+		if (quote.kg <= 0 || plan.fuelProducedKg + plan.fuelBoughtKg > 0) return false;
+		const saved = this.careerFuelPlan;
+		copyCareerPlan(plan, saved);
+		const fuel0 = ship.fuelKg;
+		this.careerBurnOffer(plan.score - plan.burnGain, plan.angleU, plan.speedU, plan.fromBook);
+		ship.fuelKg = fuel0 + quote.kg;
+		this.careerPriceBurn(r, plan, market, runStep);
+		ship.fuelKg = fuel0;
+		if (!this.careerFuelPricePlan(career, plan, quote, plan.origin) ||
+			plan.score <= saved.score + this.careerBurnPriceMargin || plan.score <= CAREER_MIN_SCORE) {
+			copyCareerPlan(saved, plan);
+			return false;
+		}
+		if (!this.careerCommitFuel(r, plan, runStep)) {
+			copyCareerPlan(saved, plan);
+			return false;
+		}
+		return true;
 	};
 
 	GravityBot.prototype.careerRescueOfferAngle = function (rawAngle) {
@@ -3099,7 +3234,8 @@
 		const src = this.careerBindBurnSim(r);
 		const shot = this.careerBurnShot;
 		const fuel0 = ship.fuelKg;
-		ship.fuelKg = ship.tank.fuelCap;
+		const quote = this.careerFuelOffer(career, origin);
+		ship.fuelKg = fuel0 + quote.kg;
 		let bestScore = 0;
 		let found = false;
 		for (let s = 0; s < rungCount; s++) {
@@ -3143,7 +3279,6 @@
 		ship.fuelKg = fuel0;
 		if (!found) return null;
 
-		this.careerBurnRescues += 1;
 		const best = this.careerBest;
 		best.origin = origin;
 		best.body = shot.body;
@@ -3153,7 +3288,10 @@
 		best.speed = GravityGame.speedOf(shot.speedU);
 		best.score = shot.score;
 		/* the tank fuel is a money term, so the plan's score identity holds */
-		best.taskPay = shot.taskPay - shot.fuelKg * CAREER_BURN_FUEL_COST;
+		best.taskPay = shot.taskPay - shot.fuelKg * GravityGame.fuelPrice(career);
+		best.fuelKg = shot.fuelKg;
+		best.fuelProducedKg = 0;
+		best.fuelBoughtKg = 0;
 		best.padValue = shot.padValue;
 		best.fee = shot.fee;
 		best.energy = shot.energy;
@@ -3166,6 +3304,9 @@
 		best.fromBook = false;
 		best.burnGain = shot.burnGain;
 		best.burnBody = shot.body;
+		if (!this.careerFuelPricePlan(career, best, quote, origin) ||
+			best.score <= CAREER_BURN_PRICE_MARGIN) return null;
+		this.careerBurnRescues += 1;
 		this.traceAdd(r.index, 'burn rescue', 'P' + origin + '→P' + shot.body +
 			' · ' + signed(shot.burnGain) + ' over sit · fuel ' +
 			shot.fuelKg.toFixed(1) + ' kg · ' + this.careerScan.rescue +
@@ -3308,6 +3449,12 @@
 				' · EMC build ' + (plan.builds ? 'affordable' : 'no') + burnNote(plan), runStep);
 			r.idleTries = 0;
 			if (this.careerSit(r, plan, runStep)) return false;
+			const requested = plan.fuelProducedKg + plan.fuelBoughtKg > 0;
+			if (requested && !this.careerCommitFuel(r, plan, runStep)) {
+				r.readyStep = runStep + CAREER_RIVAL_GAP;
+				return false;
+			}
+			if (!requested) this.careerPrepareFuel(r, plan, market, runStep);
 			/* queue the shot: the first to queue claims the pad charge, then the
 			 * barrel turns on the same in-game clock the player's turret uses */
 			const period = GravityGame.turretPeriod(career.galaxy, plan.origin);

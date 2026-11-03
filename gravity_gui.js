@@ -396,7 +396,7 @@ let hudRouteBestText = '';
 let hudRivalText = '';
 let hudReplayText = '';
 let predGain = 0;
-const aimEconomics = { state: 0, launchable: true, fee: 0, exit: 0, net: 0, gain: 0,
+const aimEconomics = { state: 0, launchable: true, fee: 0, fuel: 0, exit: 0, net: 0, gain: 0,
 	source: '', speed: 0, tier: 0, own: false };
 let launchState = -1;
 let launchNote = '';

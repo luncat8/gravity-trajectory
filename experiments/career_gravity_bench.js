@@ -31,6 +31,7 @@ const ENGINE = process.env.ENGINE === '1';
 const NOBURNPRICE = process.env.NOBURNPRICE === '1';
 const DEADEND = process.env.DEADEND === '1';
 const NORESCUE = process.env.NORESCUE === '1';
+const NOFUEL = process.env.NOFUEL === '1';
 /* g=2 is already twice the shallow-HQ limit; stronger wells trap the one-burn
  * rescue as well and measure nothing */
 const DEADEND_WELL = Number(process.env.DEADEND_WELL || 2);
@@ -95,8 +96,18 @@ function makeWorld(seed) {
 			bot.rivals[i].career.owned[ship.engine.id] = true;
 			bot.rivals[i].career.owned[ship.tank.id] = true;
 			ship.mass = OrbitTech.shipMass(ship, ship.cargoTons);
-			ship.fuelKg = ship.tank.fuelCap;
+			/* Explicit bench grant: the stock 400 s run rarely buys a drive, so
+			 * ENGINE=1 starts with a funded full tank to exercise burn pricing. */
+			ship.fuelKg = NOFUEL ? 0 : ship.tank.fuelCap;
 		}
+	}
+	if (NOFUEL) {
+		bot.careerPrepareFuel = () => false;
+		bot.careerFuelOffer = function () {
+			const q = this.careerFuelQuote;
+			q.kg = 0; q.produceKg = 0; q.buyKg = 0;
+			return q;
+		};
 	}
 	if (DEADEND) {
 		/* own HQ rails stay dry and their wells stay deep, so only the
@@ -141,7 +152,7 @@ function padReport(w, career) {
 const steps = Math.round(SECONDS / DT);
 const totals = { flights: 0, earned: 0, pads: 0, dead: 0, reach: 0, stuck: 0,
 	actors: 0, burns: 0, priced: 0, rescues: 0, noShots: 0, sits: 0,
-	drops: 0, evacs: 0 };
+	drops: 0, evacs: 0, fuelBought: 0, fuelProduced: 0, fuelSpent: 0, fuelTopUps: 0 };
 for (const seed of SEEDS) {
 	const w = makeWorld(seed);
 	const hqRows = ['P' + w.player.hq + ' g' + w.strength[w.player.hq].toFixed(1)];
@@ -166,6 +177,18 @@ for (const seed of SEEDS) {
 		totals.stuck += stuck ? 1 : 0;
 		totals.actors += 1;
 		totals.evacs += r.career.evacuations;
+		totals.fuelBought += r.career.fuelBoughtKg;
+		totals.fuelProduced += r.career.fuelProducedKg;
+		totals.fuelSpent += r.career.fuelSpent;
+		const ship = r.career.ship;
+		if (ship.fuelKg < 0 || ship.fuelKg > ship.tank.fuelCap + 1e-9 || r.career.ledger.purse < -1e-9) {
+			throw new Error('fuel/purse invariant broken: R' + (i + 1) + ' seed ' + seed);
+		}
+		for (const pad of r.career.pads) {
+			if (pad.catapult && pad.chargeKwh + 1e-9 < pad.reservedKwh) {
+				throw new Error('conversion ate reserved charge: R' + (i + 1) + ' seed ' + seed);
+			}
+		}
 		rows.push('R' + (i + 1) + (stuck ? ' STUCK' : '') + ' · P' + r.career.at +
 			' · purse ' + r.career.ledger.purse.toFixed(2) +
 			' · earned ' + r.career.earned.toFixed(2) +
@@ -176,6 +199,7 @@ for (const seed of SEEDS) {
 	totals.burns += w.bot.careerBurnsPlanned;
 	totals.priced += w.bot.careerBurnPrices;
 	totals.rescues += w.bot.careerBurnRescues;
+	totals.fuelTopUps += w.bot.careerFuelTopUps;
 	totals.noShots += w.events.noShots;
 	totals.sits += w.events.sits;
 	totals.drops += w.events.drops;
@@ -191,7 +215,15 @@ console.log('TOTAL rivals ' + totals.actors + ' · flights ' + totals.flights +
 	(totals.actors > 0 ? (totals.reach / totals.actors).toFixed(2) : '0') +
 	' · stuck ' + totals.stuck +
 	(ENGINE ? ' · burns ' + totals.burns + ' · priced plans ' + totals.priced +
-		' · rescue plans ' + totals.rescues : '') +
+		' · rescue plans ' + totals.rescues +
+		' · fuel bought ' + totals.fuelBought.toFixed(1) + ' kg · produced ' + totals.fuelProduced.toFixed(1) +
+		' kg · spend ' + totals.fuelSpent.toFixed(2) + ' · top-ups ' + totals.fuelTopUps : '') +
 	(DEADEND ? ' · no-shot ' + totals.noShots + ' · sits ' + totals.sits +
 		' · drops ' + totals.drops + ' · evac ' + totals.evacs : '') +
-	(NORESCUE ? ' · NORESCUE' : ''));
+	(NORESCUE ? ' · NORESCUE' : '') + (NOFUEL ? ' · NOFUEL' : ''));
+if (GravityGame.FUEL_PRICE * OrbitTech.TANKS[1].fuelCap <= GravityGame.CAREER.commercialFee) {
+	throw new Error('a full FT-1 must cost more than a commercial EMC launch');
+}
+if (ENGINE && DEADEND && !NORESCUE && !NOFUEL && totals.rescues <= 0) {
+	throw new Error('the seeded dead-end fixture found no profitable fuel rescue');
+}

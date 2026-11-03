@@ -225,20 +225,22 @@
 		return byFuel < byThrust ? byFuel : byThrust;
 	}
 
-	/* Δv the tank's full fuel buys with the engine fitted after refitting
-	 * `item` into `kind` (the whole current fit when kind is null) */
-	function refitDeltaV(ship, kind, item, cargoTons) {
+	/* Refits keep the fuel on board, clamped to the new tank. Pass fuelKg to
+	 * preview a different load; the default is the ship's actual stored fuel. */
+	function refitDeltaV(ship, kind, item, cargoTons, fuelKg) {
 		const engine = kind === KIND_ENGINE ? item : ship.engine;
 		const tank = kind === KIND_TANK ? item : ship.tank;
 		if (engine === null || tank === null) return 0;
-		return impulseDeltaV(tank.fuelCap, engine, refitMass(ship, kind, item, cargoTons));
+		const fuel = Math.min(tank.fuelCap, fuelKg === undefined ? (ship.fuelKg || 0) : fuelKg);
+		return impulseDeltaV(fuel, engine, refitMass(ship, kind, item, cargoTons), fuel);
 	}
 
-	function refitBurnLimit(ship, kind, item, cargoTons) {
+	function refitBurnLimit(ship, kind, item, cargoTons, fuelKg) {
 		const engine = kind === KIND_ENGINE ? item : ship.engine;
 		const tank = kind === KIND_TANK ? item : ship.tank;
 		if (engine === null || tank === null) return 0;
-		return burnLimit(tank.fuelCap, engine, refitMass(ship, kind, item, cargoTons));
+		const fuel = Math.min(tank.fuelCap, fuelKg === undefined ? (ship.fuelKg || 0) : fuelKg);
+		return burnLimit(fuel, engine, refitMass(ship, kind, item, cargoTons));
 	}
 
 	function shipDeltaV(ship, cargoTons) {

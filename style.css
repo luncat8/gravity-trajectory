@@ -97,7 +97,7 @@ body {
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
-	width: 238px;
+	width: clamp(280px, 24vw, 350px);
 	max-height: calc(100vh - 88px);
 	max-height: var(--hudMaxH, calc(100dvh - 88px));
 	overflow-y: auto;
@@ -202,6 +202,13 @@ body {
 
 #careerBox {
 	margin-top: 6px;
+}
+
+#careerPad .careerBtns .miniBtn {
+	flex: 1 1 120px;
+	min-width: 0;
+	white-space: normal;
+	text-align: left;
 }
 
 #scoreHud {
@@ -1645,7 +1652,7 @@ polyline.sciKnownHull {
 	#leftHud {
 		top: 8px;
 		left: 8px;
-		width: 220px;
+		width: 248px;
 		gap: 6px;
 	}
 

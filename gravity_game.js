@@ -511,6 +511,9 @@
 		turretMinSec: 2,
 		turretSpanSec: 3
 	};
+	const FUEL_KG_PER_KWH = 20;
+	const FUEL_PRICE = 0.08;
+	const FUEL_BUY_STEP = 10;
 	const CARGO_TONS = [4, 8, 16, 24];
 	const BOARD_SIZE = CAREER.deliverySlots + 1;
 	const COMPETE_SLOT = CAREER.deliverySlots;
@@ -856,6 +859,9 @@
 			lastFee: 0,
 			lastReward: 0,
 			lastFuel: 0,
+			fuelBoughtKg: 0,
+			fuelProducedKg: 0,
+			fuelSpent: 0,
 			lastResearch: 0,
 			forceScale: 1,
 			ended: CAREER_OPEN
@@ -874,8 +880,46 @@
 		career.ship.mass = OrbitTech.shipMass(career.ship, career.ship.cargoTons);
 	}
 
-	function refuelShip(career) {
-		career.ship.fuelKg = career.ship.tank ? career.ship.tank.fuelCap : 0;
+	function fuelPrice(career) {
+		return price(career, FUEL_PRICE);
+	}
+
+	/* Both transactions need a landed, usable drive; a tank alone is not enough. */
+	function fuelRequest(career, kg) {
+		const ship = career.ship;
+		if (career.ended !== CAREER_OPEN || career.at < 0 || !ship.engine || !ship.tank ||
+			!Number.isFinite(kg) || kg <= 0) return 0;
+		return Math.max(0, Math.min(kg, ship.tank.fuelCap - ship.fuelKg));
+	}
+
+	/* Only the career's own pad feeds the converter, never a guest/commercial rail. */
+	function produceFuel(career, planet, kg) {
+		let amount = fuelRequest(career, kg);
+		if (amount <= 0 || planet !== career.at) return 0;
+		const pad = career.pads[planet];
+		if (!pad || pad.catapult === null) return 0;
+		const freeKwh = Math.max(0, pad.chargeKwh - pad.reservedKwh);
+		amount = Math.min(Math.floor(amount), Math.floor(freeKwh * FUEL_KG_PER_KWH + 1e-9));
+		if (amount <= 0) return 0;
+		pad.chargeKwh -= amount / FUEL_KG_PER_KWH;
+		career.ship.fuelKg += amount;
+		career.fuelProducedKg += amount;
+		return amount;
+	}
+
+	function buyFuel(career, kg) {
+		let amount = fuelRequest(career, kg);
+		if (amount <= 0) return 0;
+		const unitPrice = fuelPrice(career);
+		if (unitPrice > 0) amount = Math.min(amount, Math.max(0, career.ledger.purse) / unitPrice);
+		if (amount <= 0) return 0;
+		const cost = amount * unitPrice;
+		career.ledger.purse = Math.max(0, career.ledger.purse - cost);
+		career.ship.fuelKg += amount;
+		career.fuelBoughtKg += amount;
+		career.fuelSpent += cost;
+		checkEnded(career);
+		return amount;
 	}
 
 	function draw01(career, salt) {
@@ -1131,6 +1175,7 @@
 		career.ship.engine = grant.ship.engine;
 		career.ship.tank = grant.ship.tank;
 		career.ship.cargoTons = 0;
+		career.ship.fuelKg = career.cheat === CHEAT_ENDGAME ? career.ship.tank.fuelCap : 0;
 		career.owned = {};
 		career.prototypes = newPrototypes();
 		seedScience(career);
@@ -1142,7 +1187,6 @@
 		fitPad(career, career.hq, grant.pad.catapult, grant.pad.panel, grant.pad.battery);
 		if (career.cheat === CHEAT_ENDGAME) fitEndgame(career);
 		refitShip(career);
-		refuelShip(career);
 		for (let i = 0; i < BOARD_SIZE; i++) clearTask(career.tasks[i]);
 		career.contract = -1;
 		career.serial = 0;
@@ -1158,6 +1202,9 @@
 		career.lastFee = 0;
 		career.lastReward = 0;
 		career.lastFuel = 0;
+		career.fuelBoughtKg = 0;
+		career.fuelProducedKg = 0;
+		career.fuelSpent = 0;
 		career.forceScale = 1;
 		career.ended = CAREER_OPEN;
 		refreshBoard(career, trade, 0);
@@ -1192,7 +1239,6 @@
 		career.at = planet;
 		setCommercial(career, -1);
 		career.stranded = career.pads[planet].catapult === null;
-		if (!career.stranded) refuelShip(career);
 		sim.relocate(planet);
 	}
 
@@ -1268,7 +1314,6 @@
 			 * vessel stranded until an upgrade or evacuation */
 			career.stranded = !(OrbitTech.speedLimit(pad.battery.capacity, career.ship.mass,
 				pad.catapult, career.forceScale) + 1e-9 >= GravitySim.SPEED_MIN);
-			if (!career.stranded) refuelShip(career);
 		}
 		/* a fresh own rail replaces a commercial choice made for the same planet */
 		if (fresh && career.commercialPlanet === planet) career.commercialPlanet = -1;
@@ -1309,8 +1354,8 @@
 			ownPart(career, item);
 		}
 		career.ship[kind] = item;
+		career.ship.fuelKg = Math.min(career.ship.fuelKg, career.ship.tank.fuelCap);
 		refitShip(career);
-		refuelShip(career);
 		return true;
 	}
 
@@ -1491,7 +1536,6 @@
 			host.taxEarned += fee;
 			career.taxPaid += fee;
 		}
-		refuelShip(career);
 		career.lastEnergy = owner === OWNER_COMMERCIAL ? 0 : energy;
 		career.lastFee = fee;
 		career.lastReward = 0;
@@ -1537,7 +1581,6 @@
 		/* the commercial choice bought one launch; the next planet starts fresh */
 		setCommercial(career, -1);
 		career.stranded = !landed || career.pads[sim.endBody].catapult === null;
-		if (!career.stranded) refuelShip(career);
 		refreshBoard(career, trade, step);
 		return checkEnded(career);
 	}
@@ -1697,11 +1740,12 @@
 		setCareerUniverse, applyMarketUniverse, planetInPlay, colonyInPlay, activePlanetDraw,
 		BOOK_MAX, BOOK_LOG_MAX, createLaunchBook, resetLaunchBook, launchBookTag, bookReady,
 		launchMask, recordLaunch, pruneLaunchBook,
-		CAREER, BOARD_SIZE, COMPETE_SLOT, CARGO_TONS,
+		CAREER, FUEL_KG_PER_KWH, FUEL_PRICE, FUEL_BUY_STEP, fuelPrice, produceFuel, buyFuel,
+		BOARD_SIZE, COMPETE_SLOT, CARGO_TONS,
 		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
 		createCareer, resetCareer, startCareer, checkEnded,
-		COMMERCIAL_PAD, OWNER_COMMERCIAL, createGalaxy, resetGalaxy, rivalSeed,
+		COMMERCIAL_PAD, OWNER_COMMERCIAL, createGalaxy, resetGalaxy, joinGalaxy, rivalSeed,
 		turretPeriod, turretAngle, padAt, padOwner, claimOwner, refreshNetwork, setCommercial,
 		launchFee, exitCost, exitCostAt, careerCanFire, padLift, reserveEnergy, releaseEnergy,
 		railOwnerText, railText, railBlock,

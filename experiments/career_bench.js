@@ -704,6 +704,8 @@ check('career ship refit: reversible to any owned tier, mass feeds the HQ cap, �
 	assert.strictEqual(OrbitTech.shipDeltaV(ship, 0), 0);
 	ship.engine = OrbitTech.ENGINES[1];
 	assert.strictEqual(OrbitTech.shipDeltaV(ship, 0), 0, 'no fuel, no Δv');
+	ship.tank = OrbitTech.TANKS[2];
+	ship.fuelKg = ship.tank.fuelCap;
 	const tankDv = OrbitTech.refitDeltaV(ship, 'tank', OrbitTech.TANKS[2], 0);
 	assert.ok(tankDv > 0);
 	assert.ok(Math.abs(tankDv - OrbitTech.impulseDeltaV(OrbitTech.TANKS[2].fuelCap,
@@ -789,14 +791,14 @@ check('impulse fuel & Δv: inverse, multi-burn telescoping, and thrust vs tank b
 	const imp3 = OrbitTech.ENGINES[2];
 	const ft1 = OrbitTech.TANKS[1];
 	const ft3 = OrbitTech.TANKS[3];
-	const ship13 = { hold: HOLD[0], engine: imp1, tank: ft3 };
+	const ship13 = { hold: HOLD[0], engine: imp1, tank: ft3, fuelKg: ft3.fuelCap };
 	const mass13 = OrbitTech.shipMass(ship13, 0);
 	const total13 = OrbitTech.shipDeltaV(ship13, 0);
 	const cap13 = OrbitTech.burnLimit(ft3.fuelCap, imp1, mass13);
 	assert.ok(cap13 < total13 - 10, 'IMP-1 on FT-3 is thrust-capped per single burn');
 	assert.ok(Math.abs(cap13 - OrbitTech.burnMaxDeltaV(imp1, mass13, ft3.fuelCap)) < 1e-12);
 
-	const ship31 = { hold: HOLD[0], engine: imp3, tank: ft1 };
+	const ship31 = { hold: HOLD[0], engine: imp3, tank: ft1, fuelKg: ft1.fuelCap };
 	const mass31 = OrbitTech.shipMass(ship31, 0);
 	assert.ok(Math.abs(OrbitTech.burnLimit(ft1.fuelCap, imp3, mass31) -
 		OrbitTech.shipDeltaV(ship31, 0)) < 1e-12, 'IMP-3 on FT-1 is fuel-capped');
@@ -815,14 +817,15 @@ check('impulse fuel & Δv: inverse, multi-burn telescoping, and thrust vs tank b
 	assert.ok(Math.abs((dv1 + dv2 + dv3) - total13) < 1e-11, 'sequential burns telescope to full-tank Δv');
 });
 
-check('career in-flight burn: predictBurn & predictBurnFast match stepOne, pad refuels', () => {
+check('career in-flight burn: predictBurn & predictBurnFast match stepOne, fuel persists', () => {
 	const w = makeWorld(42);
 	startCareer(w, 42);
 	const { career, sim, trade } = w;
 	career.ledger.purse = 50;
 	assert.ok(GravityGame.installPart(career, 'engine', OrbitTech.ENGINES[1]));
 	assert.ok(GravityGame.installPart(career, 'tank', OrbitTech.TANKS[2]));
-	assert.strictEqual(career.ship.fuelKg, OrbitTech.TANKS[2].fuelCap);
+	assert.strictEqual(career.ship.fuelKg, 0, 'a new tank arrives dry');
+	assert.strictEqual(GravityGame.buyFuel(career, OrbitTech.TANKS[2].fuelCap), OrbitTech.TANKS[2].fuelCap);
 
 	sim.stepLimit = GravityGame.CAP_STEPS;
 	sim.limitReason = GravitySim.END_TIME;
@@ -865,10 +868,81 @@ check('career in-flight burn: predictBurn & predictBurnFast match stepOne, pad r
 
 	GravityGame.careerEndFlight(career, sim, trade, sim.liveSteps);
 	if (career.stranded) {
-		assert.strictEqual(career.ship.fuelKg, fuelMid, 'stranded ship keeps partial tank until pad/evac');
+		assert.strictEqual(career.ship.fuelKg, fuelMid, 'stranded ship keeps its partial tank');
 		GravityGame.evacuate(career, sim);
 	}
-	assert.strictEqual(career.ship.fuelKg, OrbitTech.TANKS[2].fuelCap, 'built pad refuels tank');
+	assert.strictEqual(career.ship.fuelKg, fuelMid, 'landing/evacuation never refuels the tank');
+});
+
+check('fuel baseline: a full FT-1 costs more than one commercial EMC launch', () => {
+	assert.ok(GravityGame.FUEL_PRICE * OrbitTech.TANKS[1].fuelCap > CAREER.commercialFee);
+	assert.strictEqual(GravityGame.FUEL_KG_PER_KWH, 20);
+	assert.strictEqual(GravityGame.FUEL_BUY_STEP, 10);
+});
+
+check('fuel conversion spends only unreserved own charge and never a foreign rail', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, ledger } = w;
+	ledger.purse = 30;
+	assert.ok(GravityGame.installPart(career, 'engine', OrbitTech.ENGINES[1]));
+	assert.ok(GravityGame.installPart(career, 'tank', OrbitTech.TANKS[2]));
+	assert.strictEqual(career.ship.fuelKg, 0, 'fitting a drive is not a refill');
+	const pad = career.pads[career.hq];
+	pad.chargeKwh = 1.5;
+	pad.reservedKwh = 1;
+	assert.strictEqual(GravityGame.produceFuel(career, career.hq, 40), 10);
+	assert.ok(Math.abs(pad.chargeKwh - 1) < 1e-12, 'conversion ate queued charge');
+	assert.strictEqual(pad.reservedKwh, 1);
+	assert.strictEqual(career.ship.fuelKg, 10);
+	assert.strictEqual(career.fuelProducedKg, 10);
+	assert.strictEqual(GravityGame.produceFuel(career, career.hq, 10), 0, 'reserved charge was converted');
+	const other = (career.hq + 1) % PLANETS;
+	career.at = other;
+	assert.strictEqual(GravityGame.produceFuel(career, other, 10), 0, 'commercial rail was drained');
+	assert.strictEqual(GravityGame.buyFuel(career, 10), 10, 'commercial planet refuses a fuel purchase');
+	const galaxy = GravityGame.createGalaxy();
+	GravityGame.resetGalaxy(galaxy, 42);
+	GravityGame.joinGalaxy(career, galaxy);
+	const rival = GravityGame.createCareer(GravityGame.createLedger());
+	GravityGame.startCareer(rival, w.sim, 99, w.trade, null, galaxy);
+	assert.ok(GravityGame.buildGear(rival, other, 'catapult', EMC[0]));
+	const charge = rival.pads[other].chargeKwh;
+	assert.strictEqual(GravityGame.produceFuel(career, other, 10), 0, 'rival battery was drained');
+	assert.strictEqual(rival.pads[other].chargeKwh, charge);
+	assert.ok(GravityGame.buyFuel(career, 10) > 0);
+	assert.ok(ledger.purse >= 0 && career.ship.fuelKg <= career.ship.tank.fuelCap);
+});
+
+check('fuel purchase clamps to purse and cap, tracks spend, and refits preserve/clamp fuel', () => {
+	const w = makeWorld(42);
+	startCareer(w, 42);
+	const { career, ledger } = w;
+	ledger.purse = 30;
+	GravityGame.installPart(career, 'engine', OrbitTech.ENGINES[1]);
+	GravityGame.installPart(career, 'tank', OrbitTech.TANKS[2]);
+	ledger.purse = 20;
+	assert.strictEqual(GravityGame.buyFuel(career, 1000), 90);
+	assert.ok(Math.abs(ledger.purse - (20 - 90 * GravityGame.FUEL_PRICE)) < 1e-12);
+	assert.strictEqual(GravityGame.buyFuel(career, 10), 0, 'full tank bought fuel');
+	assert.ok(GravityGame.installPart(career, 'tank', OrbitTech.TANKS[1]));
+	assert.strictEqual(career.ship.fuelKg, 40, 'down-refit clamps to the new cap');
+	assert.ok(GravityGame.installPart(career, 'tank', OrbitTech.TANKS[2]));
+	assert.strictEqual(career.ship.fuelKg, 40, 'up-refit invents no fuel');
+	ledger.purse = 0.04;
+	assert.strictEqual(GravityGame.buyFuel(career, 10), 0.5);
+	assert.strictEqual(ledger.purse, 0);
+	assert.strictEqual(career.fuelBoughtKg, 90.5);
+	assert.ok(Math.abs(career.fuelSpent - 90.5 * GravityGame.FUEL_PRICE) < 1e-12);
+	const before = career.ship.fuelKg;
+	GravityGame.buildGear(career, career.hq, 'battery', BAT[1]);
+	assert.strictEqual(career.ship.fuelKg, before, 'pad build refuelled the tank');
+	const free = makeWorld(7);
+	startCareer(free, 7, GravityGame.CHEAT_COMMUNISM);
+	free.career.ship.engine = OrbitTech.ENGINES[0];
+	free.career.ship.tank = OrbitTech.TANKS[1];
+	assert.strictEqual(GravityGame.buyFuel(free.career, 40), 40);
+	assert.strictEqual(free.ledger.purse, CAREER.evacFee);
 });
 
 check('shot burn codec: round-trip multi-burn shots and reject invalid burn tags', () => {
@@ -1534,6 +1608,8 @@ check('tank science & prototypes: seeded FT-1..FT-3 range, directional surcharge
 	/* unlock and fit a custom tank prototype at HQ */
 	career.ledger.purse = 100;
 	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, OrbitTech.ENGINES[0]));
+	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_TANK, OrbitTech.TANKS[3]));
+	assert.strictEqual(GravityGame.buyFuel(career, 115), 115);
 	const purseBefore = career.ledger.purse;
 	const fee = GravityGame.researchCost(career, 'tank', [115, 0.65]);
 	assert.ok(GravityGame.researchPoint(career, 'tank', [115, 0.65], 'R1'));
@@ -1546,7 +1622,7 @@ check('tank science & prototypes: seeded FT-1..FT-3 range, directional surcharge
 	const purseAfterResearch = career.ledger.purse;
 	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_TANK, proto));
 	assert.strictEqual(career.ship.tank, proto);
-	assert.strictEqual(career.ship.fuelKg, 115);
+	assert.strictEqual(career.ship.fuelKg, 115, 'the refit preserves the fuel already bought');
 	assert.strictEqual(career.ledger.purse, purseAfterResearch, 'owned tank prototype fits free at HQ');
 	assert.strictEqual(career.ship.mass, OrbitTech.shipMass(career.ship, 0));
 	assert.ok(OrbitTech.shipDeltaV(career.ship, 0) > 15);

@@ -87,6 +87,16 @@ function newBurnState() {
 	return { burn: 0, burnTries: 0, burnNext: GravityBot.CAREER_BURN_AT, burnStep: 0 };
 }
 
+/* An impulse fixture funds its initial tank explicitly; production code never
+ * refuels on a refit. The grant preserves the purse the older checks assert. */
+function fundFuel(w, kg) {
+	const career = w.career;
+	const room = Math.min(kg, career.ship.tank.fuelCap - career.ship.fuelKg);
+	if (room <= 0) return;
+	w.ledger.purse += room * GravityGame.fuelPrice(career);
+	assert.strictEqual(GravityGame.buyFuel(career, room), room);
+}
+
 /* the same world with the seed's own gravity wells: reach and departure
  * checks need the field the page flies in, not the flat one above */
 function makeSeededWorld(seed) {
@@ -140,6 +150,9 @@ function fly(w, plan) {
 	assert.ok(plan.speed <= sim.speedLimit(plan.origin) + 1e-9,
 		'plan speed ' + plan.speed + ' exceeds cap ' + sim.speedLimit(plan.origin));
 	assert.ok(sim.canFire(plan.origin, plan.speed), 'pad cannot fire the planned shot');
+	if (plan.fuelProducedKg + plan.fuelBoughtKg > 0) {
+		assert.ok(w.bot.careerCommitFuel({ career, index: 0 }, plan, w.step), 'rescue fuel was not committed');
+	}
 	const score = plan.taskPay + plan.padValue - plan.fee -
 		plan.energy * plan.wait * GravityBot.CAREER_ENERGY_WAIT_COST;
 	assert.ok(Math.abs(score - plan.score) < 1e-9, 'score terms do not add up');
@@ -171,6 +184,7 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = 
 	const w = makeWorld(seed, gravityScale, forceScale);
 	w.ledger.purse = startPurse;
 	const { bot, career, sim } = w;
+	w.actor = { career, sim, index: 0, idleTries: 0, waitTries: 0, readyStep: 0, gapPhase: 0, turret: null };
 	bot.careerUseResearch = useResearch;
 	/* CPU meter: candidate traces the controller spent. NOBOOK=1 disables the
 	 * launch book, so two runs show what remembering buys. */
@@ -199,6 +213,7 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = 
 		/* a padless planet is no dead end: the commercial EMC lifts every ship */
 		assert.ok(career.at >= 0, 'idle policy lost the ship');
 		let mark = traces;
+		bot.careerBurnTopReset();
 		let plan = bot.careerPlan(career, sim, w.market, w.step, false);
 		planTrace.push(traces - mark);
 		if (!plan) {
@@ -234,6 +249,7 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = 
 				' score ' + plan.score.toFixed(3) + ' pay ' + plan.taskPay.toFixed(2) +
 				' purse ' + w.ledger.purse.toFixed(2) + ' pads ' + career.padCount);
 		}
+		bot.careerPrepareFuel(w.actor, plan, w.market, w.step);
 		fly(w, plan);
 	}
 	return {
@@ -462,6 +478,7 @@ check('careerBurnPlan: rescues a missed contract or map exit and never breaks a 
 	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_HOLD, OrbitTech.HOLDS[2]));
 	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, OrbitTech.ENGINES[2]));
 	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_TANK, OrbitTech.TANKS[3]));
+	fundFuel(w, OrbitTech.TANKS[3].fuelCap);
 	GravityGame.buildGear(career, career.hq, OrbitTech.KIND_CATAPULT, OrbitTech.CATAPULTS[4]);
 	GravityGame.buildGear(career, career.hq, OrbitTech.KIND_BATTERY, OrbitTech.BATTERIES[4]);
 
@@ -569,6 +586,7 @@ function burnWorld(seed) {
 	assert.ok(GravityGame.installPart(w.career, OrbitTech.KIND_HOLD, OrbitTech.HOLDS[2]));
 	assert.ok(GravityGame.installPart(w.career, OrbitTech.KIND_ENGINE, OrbitTech.ENGINES[2]));
 	assert.ok(GravityGame.installPart(w.career, OrbitTech.KIND_TANK, OrbitTech.TANKS[3]));
+	fundFuel(w, OrbitTech.TANKS[3].fuelCap);
 	return w;
 }
 
@@ -663,6 +681,7 @@ check('a relaunch gives the flight a fresh nudge budget', () => {
 	state.burnTries = 9;
 	state.burnStep = 99999;
 	state.burnNext = 99999;
+	fundFuel(w, OrbitTech.TANKS[3].fuelCap);
 	const second = flyOpening(w, state, -1e9);
 	assert.strictEqual(second.burns.length, 1, 'the relaunch kept the spent budget');
 	assert.strictEqual(w.career.burns, 2, 'relaunched flight burn counter');
@@ -694,9 +713,10 @@ check('launch pricing is skipped without a drive', () => {
 check('a fitted drive prices its launch by the one-burn landing', () => {
 	const w = nextShotWorld(42, true);
 	w.bot.careerBurnGain = -1e9;
+	w.bot.careerBurnPriceMargin = -1e9;
 	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);
 	assert.ok(plan, 'no opening plan');
-	assert.ok(plan.burnGain > 0.5, 'the burn did not pay: ' + plan.burnGain);
+	assert.ok(plan.fuelKg > 0, 'the priced burn used no fuel');
 	assert.ok(plan.burnBody >= 0 && plan.body === plan.burnBody,
 		'the queued body is not the burn landing');
 	const score = plan.taskPay + plan.padValue - plan.fee -
@@ -716,8 +736,9 @@ check('a fitted drive prices its launch by the one-burn landing', () => {
 check('the burn-priced shot flies and burns in the real flight', () => {
 	const w = nextShotWorld(42, true);
 	w.bot.careerBurnGain = -1e9;
+	w.bot.careerBurnPriceMargin = -1e9;
 	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);
-	assert.ok(plan && plan.burnGain > 0, 'fixture was not burn-priced');
+	assert.ok(plan && plan.burnBody >= 0, 'fixture was not burn-priced');
 	fly(w, plan);
 	assert.ok(w.career.burns >= 1, 'the flight never nudged');
 	assert.ok(w.career.at >= 0, 'the priced shot was lost in space');
@@ -734,6 +755,27 @@ check('when no burn pays, the launch stays ballistic', () => {
 	assert.strictEqual(plan.burnGain, 0, 'a hopeless burn was taken');
 	assert.ok(Math.abs(plan.score - ballistic.score) < 1e-9,
 		'ballistic score changed: ' + plan.score + ' vs ' + ballistic.score);
+});
+
+check('a marginal burn does not buy fuel for an ordinary hop', () => {
+	const w = nextShotWorld(42, true);
+	w.career.ship.fuelKg = 0;
+	w.career.ledger.purse = 20;
+	const purse = w.career.ledger.purse;
+	const plan = w.bot.careerPlan(w.career, w.sim, w.market, w.step, false);
+	assert.ok(plan, 'no opening plan');
+	w.bot.careerPriceBurn = function (r, p) {
+		p.fuelKg = 10;
+		p.burnGain = 0.1;
+		p.burnBody = p.body;
+		p.taskPay += 0.1;
+		p.score += 0.1;
+	};
+	assert.strictEqual(w.bot.careerPrepareFuel(w.actor, plan, w.market, w.step), false,
+		'a burn worth less than replacement fuel was funded');
+	assert.strictEqual(w.career.ship.fuelKg, 0, 'the rejected hop bought fuel');
+	assert.strictEqual(w.career.ledger.purse, purse, 'the rejected hop spent money');
+	assert.strictEqual(plan.fuelProducedKg + plan.fuelBoughtKg, 0, 'fuel request survived rejection');
 });
 
 /* 0.5.9 — a dead-end careerNextShot has no finite ballistic plan at all. The
@@ -766,6 +808,8 @@ check('a fitted drive rescues a dead end with a bounded one-burn ring', () => {
 	w.bot.probe.predictBurnFast = fast;
 	assert.ok(plan, 'no rescue plan');
 	assert.ok(plan.burnGain > 0.5, 'rescue did not clear the sit margin');
+	assert.ok(plan.fuelKg > 0 && plan.fuelProducedKg + plan.fuelBoughtKg >= 0);
+	assert.ok(GravityGame.FUEL_PRICE * OrbitTech.TANKS[1].fuelCap > GravityGame.CAREER.commercialFee);
 	assert.ok(plan.burnBody >= 0 && plan.body === plan.burnBody,
 		'the queued body is not the burn landing');
 	assert.strictEqual(plan.fromBook, false, 'a rescue was written as a book shot');

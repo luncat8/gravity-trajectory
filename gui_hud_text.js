@@ -212,6 +212,7 @@ function updateLiveHud() {
 	const guidedCareer = careerRule() && sim.predCount >= 2 &&
 		(aiming || armed || burnAiming || burnArmed || sim.status === STATUS_FLYING);
 	const economics = guidedCareer ? predictedCareerEconomics(sim) : null;
+	if (careerRule()) refreshFuelHud();
 	aimGuidance = economics ? economics.state : 0;
 	if (aimEl) {
 		aimEl.classList.toggle('profitable', guidedCareer && aimGuidance === 1);
@@ -316,7 +317,8 @@ function setLaunchState(blocked, exitWarning) {
 			? 'impulse · max ' + cargoSim.burnLimit().toFixed(1) + ' px/s'
 			: burnArmed
 			? (warnExit ? 'burn · leaves map · ' : 'burn · Δv ') +
-				burnDv.toFixed(1) + ' px/s (−' + usedKg.toFixed(1) + ' kg)'
+				burnDv.toFixed(1) + ' px/s (−' + usedKg.toFixed(1) + ' kg · ' +
+				costText(usedKg * GravityGame.fuelPrice(activeCareer())) + ')'
 			: 'resume · drag ship to burn';
 		const state = 1024 + (burnPaused ? 2048 : 0) + (burnArmed ? 4096 : 0) +
 			(warnExit ? 2 : 0);

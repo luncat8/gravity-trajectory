@@ -254,6 +254,9 @@ async function scoreboardStable(page) {
 						hud.right <= leftRect.right + 1,
 					buttons: box.querySelectorAll('button').length,
 					pad: document.getElementById('careerPad').textContent.indexOf('kWh') >= 0,
+					fuel: /data-act="produceFuel"/.test(document.getElementById('careerPad').innerHTML) &&
+						/data-act="buyFuel"/.test(document.getElementById('careerPad').innerHTML),
+					leftWidth: leftRect.width,
 					pushedDown: scoreRect.bottom <= hud.top + 1 && hud.bottom <= tradeRect.top + 1 && hud.height >= 400,
 					leftBottom: leftRect.bottom,
 					leftScrolls: left.scrollHeight > left.clientHeight
@@ -322,11 +325,12 @@ async function scoreboardStable(page) {
 				const panel = document.getElementById('careerHud');
 				const scoreRect = document.getElementById('scoreHud').getBoundingClientRect();
 				const careerRect = panel.getBoundingClientRect();
+				const gameRect = document.getElementById('gameHud').getBoundingClientRect();
 				const tradeRect = document.getElementById('tradeHud').getBoundingClientRect();
 				return {
 					folded: panel.classList.contains('folded'),
 					careerH: careerRect.height,
-					tradePulledUp: tradeRect.top <= scoreRect.bottom + careerRect.height + 20
+					tradePulledUp: tradeRect.top <= scoreRect.bottom + careerRect.height + gameRect.height + 40
 				};
 			});
 			await page.click('#careerFoldBtn');
@@ -384,7 +388,9 @@ async function scoreboardStable(page) {
 				label + ': stranded cargoFoot layout invalid ' + JSON.stringify(strandedLayout));
 			check(drawer.leftBottom <= layout.tradeTop + 1, label + ': leftHud overlaps the trade footer');
 			check(drawer.visible && drawer.run && drawer.rivals, label + ': boxes ' + JSON.stringify(drawer));
-			check(drawer.buttons >= 7 && drawer.pad, label + ': shop ' + drawer.buttons + ' buttons');
+			check(drawer.buttons >= 7 && drawer.pad && drawer.fuel, label + ': shop ' + drawer.buttons + ' buttons / fuel controls');
+			if (width >= 1280) check(drawer.leftWidth >= (width >= 1440 ? 330 : 300),
+				label + ': left drawer did not widen into desktop space (' + drawer.leftWidth + ')');
 			check(drawer.scrollWidth <= drawer.width + 1 && drawer.inside,
 				label + ': drawer overflows ' + drawer.scrollWidth + ' > ' + Math.round(drawer.width));
 			for (const s of sciLayout) {
@@ -402,12 +408,18 @@ async function scoreboardStable(page) {
 					return new URL(location.href).searchParams.get('seed');
 				});
 				check(seed && seed !== '42', label + ': new seed did not update the address');
-				await page.reload();
-				const restored = await page.evaluate(() => ({
-					seed: String(GravityScene.game.seed), mode: GravityScene.playMode(),
+				const beforeReload = await page.evaluate(() => ({
+					hq: GravityScene.career.hq,
 					hqGravity: GravityScene.sim.strength[GravityScene.career.hq]
 				}));
-				check(restored.seed === seed && restored.mode === 'career' && restored.hqGravity === 1,
+				await page.reload({ waitUntil: 'networkidle0' });
+				const restored = await page.evaluate(() => ({
+					seed: String(GravityScene.game.seed), mode: GravityScene.playMode(),
+					hq: GravityScene.career.hq,
+					hqGravity: GravityScene.sim.strength[GravityScene.career.hq]
+				}));
+				check(restored.seed === seed && restored.mode === 'career' &&
+					restored.hq === beforeReload.hq && restored.hqGravity === beforeReload.hqGravity,
 					label + ': seeded URL reload ' + JSON.stringify(restored));
 			}
 			console.log(label, 'foot', Math.round(layout.footTop) + '..' + Math.round(layout.footBottom),

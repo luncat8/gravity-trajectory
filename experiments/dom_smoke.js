@@ -1665,6 +1665,8 @@ shopClick(shopEnv, sui, shopData(sui, 'part', 'engine'));
 check(shopCareer.ship.engine !== null && shopCareer.ship.engine.id === 'IMP-1',
 	'engine refit: ' + (shopCareer.ship.engine && shopCareer.ship.engine.id));
 shopClick(shopEnv, sui, shopData(sui, 'part', 'tank'));
+sGame.buyFuel(shopCareer, shopCareer.ship.tank.fuelCap);
+sScene.refreshCareerPanel();
 check(sui.get('careerPad').innerHTML.includes('· Δv '),
 	'pad line does not state the impulse budget: ' + sui.get('careerPad').innerHTML);
 const engineMass = shopCareer.ship.mass;
@@ -1881,15 +1883,16 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 
 	let dimPlanet = -1;
 	for (let i = 0; i < 26; i++) {
-		if (i !== hq && pCareer.light[i] < pCareer.light[hq] * 0.7) {
+		if (i !== hq && pCareer.light[i] < pCareer.light[hq] * 0.7 && pGame.planetBuildable(pCareer, i)) {
 			dimPlanet = i;
 			break;
 		}
 	}
 	check(dimPlanet >= 0, 'found dimmer planet than HQ');
+	check(pGame.buildGear(pCareer, dimPlanet, 'catapult', pTech.CATAPULTS[0]), 'dim planet needs an owned base for its panel row');
 	pEnv.setValue('careerPlanet', String(dimPlanet));
 	pEnv.fireElement(pui.get('careerPlanet'), 'change');
-	const dimGain = pTech.solarCharge(sp1, pCareer.light[dimPlanet], 1800);
+	const dimGain = pTech.solarCharge(sp2, pCareer.light[dimPlanet], 1800);
 	const dimReady = Math.max(1, Math.round(hqShotKwh / dimGain * 30));
 	const expectDim = '+' + dimGain.toFixed(2) + ' kWh · ready in ' + dimReady + ' s';
 	check(pui.get('careerShop').innerHTML.includes('>' + expectDim + '<'),
@@ -2068,6 +2071,7 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 		{ target: { dataset: { act: 'part', kind: 'engine', tier: '1' } } });
 	bEnv.fireElement(bUi.get('careerBox'), 'click',
 		{ target: { dataset: { act: 'part', kind: 'tank', tier: '2' } } });
+	for (let i = 0; i < 9; i++) bEnv.fireElement(bUi.get('careerBox'), 'click', { target: { dataset: { act: 'buyFuel' } } });
 	check(bCareer2.ship.engine.id === 'IMP-2' && bCareer2.ship.tank.id === 'FT-2' &&
 		bCareer2.ship.fuelKg === 90 && bUi.get('careerPad').innerHTML.includes('px/s'),
 		'fitted IMP-2 + FT-2 with 90 kg fuel and px/s Δv readout');
@@ -2120,7 +2124,7 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	check(!bScene.burnPaused() && bCareer2.burns === 1 && fuelAfterBurn < 90 &&
 		bScene.game.shots[0].burns.length === 1 &&
 		bScene.game.shots[0].burns[0].step === pausedSteps &&
-		bUi.get('careerPad').innerHTML.includes('/90 kg'),
+		bUi.get('careerPad').innerHTML.includes(fuelAfterBurn.toFixed(1) + ' / 90 kg'),
 		'Enter executed burn, logged step ' + pausedSteps + ', and updated live fuel readout');
 
 	for (let i = 0; i < 600 && bSim.status === pageSim.STATUS_FLYING; i++) bEnv.runFrames(1, 40.0);
@@ -2182,6 +2186,7 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 		{ target: { dataset: { act: 'part', kind: 'engine', tier: '1' } } });
 	nEnv.fireElement(nUi.get('careerBox'), 'click',
 		{ target: { dataset: { act: 'part', kind: 'tank', tier: '2' } } });
+	for (let i = 0; i < 9; i++) nEnv.fireElement(nUi.get('careerBox'), 'click', { target: { dataset: { act: 'buyFuel' } } });
 	check(nCareer.ship.engine !== null && nCareer.ship.fuelKg > 0,
 		'career vessel never took an impulse drive and fuel');
 	/* any landing the drive can reach is worth taking, so the burn fires early
@@ -2525,6 +2530,7 @@ function protoOf(career, family, id) {
 	tCareer.ledger.purse = 100;
 	tGame.installPart(tCareer, tTech.KIND_TANK, tTech.TANKS[1]);
 	tGame.installPart(tCareer, tTech.KIND_TANK, tTech.TANKS[2]);
+	tCareer.ship.fuelKg = 90; /* fixture load: the refit below must preserve it */
 	tEnv.fireElement(tBox, 'input',
 		{ target: { dataset: { sciFamily: 'tank', sciAxis: 'fuelCap' }, value: '90' } });
 	tEnv.fireElement(tBox, 'input',
@@ -2601,8 +2607,18 @@ function protoOf(career, family, id) {
 
 	/* a battery is pad gear like a panel: it needs a catapult on that planet */
 	yEnv.setValue('careerPlanet', (hq + 3) % yCareer.pads.length);
-	check(/<button[^>]*data-act="build" data-kind="battery" data-item="R1"[^>]*disabled/.test(yShop()),
-		'a battery prototype is not offered on a catapult-less planet');
+	check(!/data-kind="battery"/.test(yShop()),
+		'a battery prototype is hidden on a catapult-less planet');
+	let foreign = -1;
+	for (let i = 0; i < yCareer.pads.length; i++) {
+		const owner = yGame.claimOwner(yCareer.galaxy, i);
+		if (owner >= 0 && owner !== yCareer.index) { foreign = i; break; }
+	}
+	if (foreign >= 0) {
+		yEnv.setValue('careerPlanet', foreign);
+		check(!/data-act="build"/.test(yShop()) && yShop().includes('owns this base'),
+			'a foreign base hides its unavailable pad upgrades');
+	}
 	console.log('0.4.14 verified: battery science family & frontier · R1 pad battery prototype · network-wide bulk build · no ship mass');
 }
 

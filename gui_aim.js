@@ -329,7 +329,7 @@ function executeBurn() {
 	launchState = -1;
 	const remDv = OrbitTech.impulseDeltaV(ship.fuelKg, ship.engine, ship.mass, ship.fuelKg);
 	careerNotice('burned Δv ' + dv.toFixed(1) + ' px/s (−' + used.toFixed(1) + ' kg) · fuel ' +
-		ship.fuelKg.toFixed(1) + ' kg' +
+		ship.fuelKg.toFixed(1) + ' kg · replacement ' + costText(used * GravityGame.fuelPrice(game.career)) +
 		(remDv > 0.05 ? ' · Δv ' + remDv.toFixed(1) + ' px/s left' : ' · tank empty'));
 	refreshGameUi();
 	return true;
