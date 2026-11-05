@@ -1627,7 +1627,10 @@
 		let bestCost = Infinity;
 		if (currentSpeed > 0) {
 			out.physical = true;
-			const fee = owner === career.index ? 0 : owner === GravityGame.OWNER_COMMERCIAL
+			/* the imperial Capital rail (OWNER_CAPITAL) launches free, like your
+			 * own pad; only commercial and rival rails charge a fee */
+			const fee = owner === career.index || owner === GravityGame.OWNER_CAPITAL ? 0
+				: owner === GravityGame.OWNER_COMMERCIAL
 				? careerFee(career, GravityGame.CAREER.commercialFee)
 				: careerFee(career, GravityGame.CAREER.taxPerKwh *
 					OrbitTech.launchEnergy(arrivalMass, pad.catapult, currentSpeed));
@@ -1637,6 +1640,7 @@
 				out.cost = fee;
 				out.speed = currentSpeed;
 				out.source = owner === career.index ? 'own'
+					: owner === GravityGame.OWNER_CAPITAL ? 'capital'
 					: owner === GravityGame.OWNER_COMMERCIAL ? 'commercial' : 'rival';
 				out.catapult = pad.catapult;
 				out.battery = pad.battery;

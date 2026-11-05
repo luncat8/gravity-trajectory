@@ -185,12 +185,6 @@ function refreshCareerPanel() {
 	if (careerScienceEl) careerScienceEl.innerHTML = scienceBlockHtml(career);
 	const ended = career.ended !== GravityGame.CAREER_OPEN;
 	refreshCareerWaitUi(career, ended);
-	const evacCost = careerCost(career, GravityGame.CAREER.evacFee);
-	const evacPoor = purseTooSmall(career, evacCost);
-	careerEvacBtn.disabled = ended || !career.stranded || activeSim().status === STATUS_FLYING ||
-		careerWaitBusy();
-	careerEvacBtn.classList.toggle('costly', evacPoor && !ended && career.stranded);
-	careerEvacBtn.textContent = 'evacuate · ' + costText(evacCost);
 	launchState = -1;
 	updateLiveHud();
 }

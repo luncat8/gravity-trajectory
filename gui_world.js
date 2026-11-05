@@ -41,6 +41,8 @@ function syncPlanetStrengths() {
 function applyPlanetUniverse() {
 	GravityGame.setCareerUniverse(game.career, planetMask, planetCount);
 	GravityGame.applyMarketUniverse(game.market, planetMask, planetCount);
+	/* specials are a career economy rule; tour/money/route keep the plain market */
+	GravityGame.applyMarketSpecials(game.market, careerRule() ? tradeSim.world : null);
 	cargoSim.setPlanetMask(planetMask);
 	helperProbe.setPlanetMask(planetMask);
 	if (scene.setPlanetMask) scene.setPlanetMask(planetMask);
@@ -54,6 +56,7 @@ function applyPlanetUniverse() {
 function isProtectedPlanet(planet) {
 	if (game.career.hq === planet || game.career.at === planet) return true;
 	if (cargoSim.landedBody === planet) return true;
+	if (planet === game.career.capitalPlanet || planet === game.career.arfPlanet) return true;
 	const galaxy = game.galaxy;
 	if (!galaxy) return false;
 	for (let i = 0; i < galaxy.actors.length; i++) {

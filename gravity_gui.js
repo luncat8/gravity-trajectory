@@ -246,7 +246,7 @@ const careerWaitBtn = $('careerWait');
 const careerClockBtn = $('careerClock');
 const careerPauseLandEl = $('careerPauseLand');
 const careerPauseLandLabelEl = $('careerPauseLandLabel');
-const careerEvacBtn = $('careerEvac');
+
 const careerMsgEl = $('careerMsg');
 const ruleTagEl = $('ruleTag');
 const scoreHudEl = $('scoreHud');
@@ -629,7 +629,6 @@ if (careerBoxEl) {
 	});
 }
 if (careerWaitBtn) careerWaitBtn.addEventListener('click', () => careerAct({ act: 'wait' }));
-if (careerEvacBtn) careerEvacBtn.addEventListener('click', () => careerAct({ act: 'evac' }));
 if (launchBuildBtn) {
 	launchBuildBtn.addEventListener('click', () => {
 		if (!careerRule() || careerWaitBusy() || cargoSim.status === STATUS_FLYING) return;

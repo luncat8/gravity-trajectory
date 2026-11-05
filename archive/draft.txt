@@ -235,7 +235,7 @@ make plans 0.5.x and start to implement
 
 fuel made from owner's battery charge or cost (need balance, fuel more price then EMC but still profitable in some cases: typical strategy: change trajectory to stay in space and avoid to land on heavy planet without owner's EMC or change trajectory visit very profitable planet that is difficult to reach using EMC).
 
-Next suggested by LLM step is recorded in the worklog: price a bounded "burn rescue" ring when the ballistic fan finds no viable shot at all.
+battery charge level gui: should show it not only on own planet but on all where players landed. (except commercial because it is always charged). on other planet show it on pointer over planet or info div.
 
 
 ## Special planets
@@ -244,6 +244,12 @@ Next suggested by LLM step is recorded in the worklog: price a bounded "burn res
 
 **Planet: Empire Capital** — Flyby profit is negative: −3. Takeoff is free (EMC-3). Building is not allowed.  
 Quests involve delivering “tourists” to or from a special resort base here.
+
+
+Capital, ARF, all start HQ player's planets should have Gravity=1
+
+players count change: should be without limit and just add new random position planet with player.
+
 
 ## Corruption (numbers are subject to balance)
 

@@ -32,6 +32,10 @@ const NOBURNPRICE = process.env.NOBURNPRICE === '1';
 const DEADEND = process.env.DEADEND === '1';
 const NORESCUE = process.env.NORESCUE === '1';
 const NOFUEL = process.env.NOFUEL === '1';
+/* SPECIAL=0 switches the 0.5.11 special planets off for the A/B: the run must
+ * then reproduce the historical 12-seed totals bit for bit */
+const SPECIAL = process.env.SPECIAL !== '0';
+GravityGame.setSpecialPlanets(SPECIAL);
 /* g=2 is already twice the shallow-HQ limit; stronger wells trap the one-burn
  * rescue as well and measure nothing */
 const DEADEND_WELL = Number(process.env.DEADEND_WELL || 2);
@@ -64,6 +68,7 @@ function makeWorld(seed) {
 	const market = GravityGame.createMarket();
 	GravityGame.resetMarket(market);
 	GravityGame.applyMarketUniverse(market, mask, UNIVERSE);
+	GravityGame.applyMarketSpecials(market, SPECIAL ? trade.world : null);
 	const galaxy = GravityGame.createGalaxy();
 	GravityGame.resetGalaxy(galaxy, seed);
 	const player = GravityGame.createCareer(GravityGame.createLedger());

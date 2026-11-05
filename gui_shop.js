@@ -205,12 +205,14 @@ function fuelGaugeText(ship) {
 }
 
 function refreshFuelHud() {
-	const ship = activeCareer().ship;
+	const career = activeCareer();
+	const ship = career.ship;
 	const gauge = $('careerFuel');
 	if (gauge) gauge.textContent = fuelGaugeText(ship);
 	const bar = $('careerFuelBar');
 	if (bar) bar.style.width = (ship.tank && ship.tank.fuelCap > 0
 		? Math.round(ship.fuelKg / ship.tank.fuelCap * 100) : 0) + '%';
+	syncPadChargeUi(career);
 }
 
 /* Fuel is a transaction on the planet under the ship, not a property of the
@@ -259,6 +261,7 @@ function claimCounts() {
 }
 
 function claimTag(owner) {
+	if (owner === GravityGame.OWNER_CAPITAL) return 'imperial';
 	if (owner < 0) return 'commercial';
 	return owner === 0 ? 'YOU' : RIVAL_TAGS[owner - 1];
 }
@@ -279,11 +282,21 @@ function padBlockHtml(career) {
 	const ship = career.ship;
 	const cargo = ship.cargoTons > 0 ? ' · cargo ' + ship.cargoTons + ' t' : '';
 	const claim = GravityGame.claimOwner(game.galaxy, at);
+	const special = at === career.capitalPlanet ? ' · CAPITAL'
+		: at === career.arfPlanet ? ' · A.R.F.' : '';
 	let html = '<div class="careerLine"><b>' + planetName(at) + (at === career.hq ? ' · HQ' : '') +
-		'</b> · ' + ship.mass.toFixed(1) + ' t' + cargo + ' · ' + claimTag(claim) + ' EMC</div>';
+		special + '</b> · ' + ship.mass.toFixed(1) + ' t' + cargo + ' · ' + claimTag(claim) + ' EMC</div>';
 	html += '<div class="careerLine dim">ship ' + ship.hold.id + ' · ' +
 		(ship.engine ? ship.engine.id : 'no engine') + ' · ' + ship.tank.id +
 		shipImpulseNote(ship) + '</div>';
+	if (at === career.capitalPlanet) {
+		const lift = GravityGame.padLift(career, at);
+		html += '<div class="careerLine">free imperial EMC-3 · lifts to ' + Math.round(lift) +
+			' px/s · always charged</div>' +
+			'<div class="careerLine dim">the Empire owns this resort · no building, claims or upgrades · ' +
+			'entry ' + CAPITAL_PROFIT_TEXT + '</div>';
+		return html;
+	}
 	if (career.commercialPlanet === at) {
 		const lift = GravityGame.padLift(career, at);
 		html += '<div class="careerLine">commercial EMC-1 selected · fee ' +
@@ -581,10 +594,55 @@ function protoGearRowHtml(career, row, planet, proto) {
 	return html + copyButtonHtml(row, proto) + '</span></div>';
 }
 
+/* battery charge of the rail the career fires from on `planet`, for the shop
+ * info block. The commercial EMC-1 is always charged, so it reads nothing. */
+function padChargeHtml(career, planet) {
+	const owner = GravityGame.padOwner(career, planet);
+	/* commercial and imperial rails never run dry, so they get no charge readout */
+	if (owner === GravityGame.OWNER_COMMERCIAL || owner === GravityGame.OWNER_CAPITAL) return '';
+	const pad = GravityGame.padAt(career, planet);
+	if (pad.catapult === null) return '';
+	const frac = pad.battery.capacity > 0 ? pad.chargeKwh / pad.battery.capacity : 0;
+	const tag = owner === career.index ? 'own' : claimTag(owner);
+	return '<div class="careerLine">' + tag + ' ' + pad.catapult.id +
+		' rail · <span id="careerShopCharge">' + pad.chargeKwh.toFixed(2) + ' / ' +
+		pad.battery.capacity.toFixed(2) + ' kWh</span></div>' +
+		'<div class="careerBar"><i id="careerShopBar" style="width:' + Math.round(frac * 100) + '%"></i></div>';
+}
+
+/* keep the drawer's charge readouts live while the clock runs: the landed
+ * pad block and the selected-planet shop block each name their own pad */
+function setPadChargeUi(el, bar, pad) {
+	const text = pad.chargeKwh.toFixed(2) + ' / ' + pad.battery.capacity.toFixed(2) + ' kWh';
+	if (el.textContent !== text) el.textContent = text;
+	if (bar && bar.style) {
+		const width = (pad.battery.capacity > 0
+			? Math.round(pad.chargeKwh / pad.battery.capacity * 100) : 0) + '%';
+		if (bar.style.width !== width) bar.style.width = width;
+	}
+}
+
+function syncPadChargeUi(career) {
+	const padEl = $('careerPadCharge');
+	if (padEl && career.at >= 0 && career.pads[career.at].catapult !== null) {
+		setPadChargeUi(padEl, $('careerPadBar'), career.pads[career.at]);
+	}
+	const shopEl = $('careerShopCharge');
+	if (shopEl) {
+		const planet = careerPickPlanet();
+		if (GravityGame.padOwner(career, planet) !== GravityGame.OWNER_COMMERCIAL) {
+			setPadChargeUi(shopEl, $('careerShopBar'), GravityGame.padAt(career, planet));
+		}
+	}
+}
+
 function shopBlockHtml(career) {
 	const planet = careerPickPlanet();
 	const pad = career.pads[planet];
 	let html = '<div class="careerHead">pad on ' + planetName(planet) + '</div>';
+	/* the pad block above already shows the landed own pad's charge; every
+	 * other planet (or a guest rail under the ship) reads it here instead */
+	if (planet !== career.at || pad.catapult === null) html += padChargeHtml(career, planet);
 	const owned = pad.catapult !== null;
 	if (!owned && !GravityGame.planetBuildable(career, planet)) {
 		html += '<div class="careerLine dim">' + claimTag(GravityGame.claimOwner(game.galaxy, planet)) +

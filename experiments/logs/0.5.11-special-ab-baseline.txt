@@ -1,0 +1,8 @@
+0.5.11 special planets — pre-change 12-seed / 400 s career gravity baseline
+(captured from 0.5.10 code, before SPECIAL wiring; SPECIAL=0 must reproduce it)
+
+unfitted (default):
+TOTAL rivals 24 · flights 167 · earned 31.20 · pads 82 · dead pads 0 · mean reach 4.04 · stuck 0
+
+ENGINE=1:
+TOTAL rivals 24 · flights 115 · earned 13.00 · pads 76 · dead pads 1 · mean reach 3.91 · stuck 0 · burns 57 · priced plans 13 · rescue plans 7 · fuel bought 95.0 kg · produced 9.0 kg · spend 7.60 · top-ups 2

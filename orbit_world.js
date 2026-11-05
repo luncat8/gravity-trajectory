@@ -32,6 +32,13 @@
 	const AREA_H = WORLD_H + AREA_PAD_Y * 2;
 	const TAU = Math.PI * 2;
 
+	/* Special-planet kinds (0.5.11): one A.R.F. world and one Empire Capital
+	 * per seed, chosen among the first four planets so every legal universe
+	 * (PLANET_UNIVERSE_MIN = 4) keeps both in play. */
+	const KIND_NORMAL = 0, KIND_ARF = 1, KIND_CAPITAL = 2;
+	const SPECIAL_COUNT = 4;
+	const SALT_SPECIAL = 0x517e;
+
 	/* Type indices are the economy's table order (orbit_econ.js reads them). */
 	const TYPE_ROCK = 0, TYPE_TERRAN = 1, TYPE_SUPER = 2, TYPE_DWARF = 3,
 		TYPE_MINI = 4, TYPE_GAS = 5, TYPE_ICE = 6;
@@ -113,6 +120,9 @@
 			planetMetal: new Float64Array(PLANETS),
 			planetLight: new Float64Array(PLANETS),
 			planetHabitat: new Float64Array(PLANETS),
+			planetKind: new Uint8Array(PLANETS),
+			capitalPlanet: -1,
+			arfPlanet: -1,
 			beltCount: 0,
 			metal: 0,
 			lum: 0
@@ -120,7 +130,29 @@
 		placePlanets(world, rand, INITIAL_PORTS);
 		placeOrbits(world, rand);
 		placeTraits(world);
+		placeSpecials(world);
 		return world;
+	}
+
+	/*
+	 * The two specials are keyed off the seed alone (hashBits, never rand), so
+	 * geometry and colony placement consume exactly the historical random
+	 * stream and a replay of the same seed selects the same specials. Two
+	 * distinct indices among the first four planets: the Capital takes the
+	 * first draw, the A.R.F. world one of the remaining three.
+	 */
+	function placeSpecials(world) {
+		const capital = hashBits(world.seed, 0, SALT_SPECIAL) % SPECIAL_COUNT;
+		let arf = hashBits(world.seed, 1, SALT_SPECIAL) % (SPECIAL_COUNT - 1);
+		if (arf >= capital) arf += 1;
+		world.capitalPlanet = capital;
+		world.arfPlanet = arf;
+		world.planetKind[capital] = KIND_CAPITAL;
+		world.planetKind[arf] = KIND_ARF;
+	}
+
+	function planetKind(world, planet) {
+		return world.planetKind[planet];
 	}
 
 	function placePlanets(world, rand, initialPorts) {
@@ -285,6 +317,9 @@
 		target.planetMetal = world.planetMetal;
 		target.planetLight = world.planetLight;
 		target.planetHabitat = world.planetHabitat;
+		target.planetKind = world.planetKind;
+		target.capitalPlanet = world.capitalPlanet;
+		target.arfPlanet = world.arfPlanet;
 		target.beltCount = world.beltCount;
 		target.metal = world.metal;
 		target.lum = world.lum;
@@ -310,10 +345,11 @@
 	const OrbitWorld = {
 		PLANETS, INITIAL_PORTS, WORLD_W, WORLD_H, TAU,
 		AREA_SCALE, AREA_W, AREA_H, AREA_PAD_X, AREA_PAD_Y,
+		KIND_NORMAL, KIND_ARF, KIND_CAPITAL, SPECIAL_COUNT,
 		TYPE_ROCK, TYPE_TERRAN, TYPE_SUPER, TYPE_DWARF, TYPE_MINI, TYPE_GAS, TYPE_ICE,
 		TYPE_NAMES, TYPE_COUNT, TYPE_HABITAT, TYPE_ROCK_WEIGHT,
 		seedRandom, hashBits, hash01, clamp01,
-		create, attach, planetXAt, planetYAt
+		create, attach, planetKind, planetXAt, planetYAt
 	};
 	if (typeof module !== 'undefined' && module.exports) module.exports = OrbitWorld;
 	else root.OrbitWorld = OrbitWorld;

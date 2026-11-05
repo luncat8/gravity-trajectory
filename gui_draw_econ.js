@@ -137,8 +137,12 @@ function drawPlanetProfits() {
 	ctx.textBaseline = 'middle';
 	const maxX = window.innerWidth - 42;
 	const maxY = window.innerHeight - 18;
+	const capital = careerRule() ? game.career.capitalPlanet : -1;
+	const arf = careerRule() ? game.career.arfPlanet : -1;
 	for (let i = 0; i < PLANETS; i++) {
 		if (!planetMask[i]) continue;
+		const isCapital = i === capital;
+		const isArf = i === arf;
 		const val = GravityGame.planetProfit(game.market, i, step);
 		let cents = Math.round(val * 100);
 		if (cents < 0) cents = 0;
@@ -160,7 +164,9 @@ function drawPlanetProfits() {
 		const inside = liveHarvestMask[i] === 1;
 		const onRoute = inside || predHarvestMask[i] === 1;
 		const owner = careerRule() ? GravityGame.claimOwner(game.galaxy, i) : -1;
-		const border = owner === 0 ? MINT
+		const border = isCapital ? 'rgba(255, 207, 110, 0.85)'
+			: isArf ? 'rgba(142, 240, 192, 0.7)'
+			: owner === 0 ? MINT
 			: owner > 0 ? RIVAL_COLOURS[owner - 1]
 			: inside ? 'rgba(158, 255, 190, 0.95)'
 			: onRoute ? 'rgba(92, 255, 139, 0.6)'
@@ -168,14 +174,21 @@ function drawPlanetProfits() {
 			: cents >= 50 ? 'rgba(142, 240, 192, 0.28)'
 			: null;
 		plate(x, y, width, height, border);
-		ctx.fillStyle = inside ? '#ffffff' : onRoute ? '#9effbe'
+		ctx.fillStyle = isCapital ? GOLD
+			: inside ? '#ffffff' : onRoute ? '#9effbe'
 			: cents >= 100 ? GOLD
 			: cents >= 50 ? MINT
 			: cents >= 14 ? 'rgba(210, 230, 246, 0.86)'
 			: 'rgba(128, 156, 184, 0.52)';
-		ctx.fillText(PROFIT_STRINGS[cents], x + width * 0.5, y + 7.5);
+		ctx.fillText(isCapital ? CAPITAL_PROFIT_TEXT : PROFIT_STRINGS[cents], x + width * 0.5, y + 7.5);
 		ctx.fillStyle = g < 0 ? SIGN_NEG : g >= HEAVY_G ? SIGN_POS : 'rgba(210, 230, 246, 0.82)';
 		ctx.fillText(GRAVITY_STRINGS[gi], x + width * 0.5, y + 20.5);
+		if (isCapital || isArf) {
+			const topY = tradeSim.planetY[i] * view.scale + view.offY -
+				tradeSim.planetR[i] * view.scale;
+			ctx.fillStyle = isCapital ? GOLD : MINT;
+			ctx.fillText(isCapital ? CAPITAL_TAG : ARF_TAG, sx, topY - 5);
+		}
 	}
 }
 
@@ -222,51 +235,62 @@ function drawCareerEmc() {
 	}
 }
 
-/* pad plate under the landed planet: catapult tier, battery charge, speed cap.
- * The string is cached so draw() stays 0-alloc; the key covers every input
- * of that text, including ship mass and the force scale. */
+/* pad plate: catapult tier, battery charge, speed cap of the rail the career
+ * fires from on a planet. The landed planet keeps its plate always on; every
+ * other planet with a real battery (own or rival rail) shows the same plate
+ * while the pointer rests on it. The commercial EMC-1 is always charged, so
+ * it gets no charge readout. Strings are cached so draw() stays 0-alloc; the
+ * key covers every input of the text: planet, owner, tier, charge, ship mass
+ * and the force scale. */
 const padPlate = { key: -1, text: '', frac: 0, warn: false };
+const hoverPadPlate = { key: -1, text: '', frac: 0, warn: false };
 
-function careerPadPlate(career) {
-	const at = career.at;
-	const pad = at >= 0 ? career.pads[at] : null;
+/* null = nothing to read here (a commercial rail off the landed planet) */
+function padPlateInfo(career, planet, plate) {
+	const pad = planet >= 0 ? GravityGame.padAt(career, planet) : null;
+	const owner = planet >= 0 ? GravityGame.padOwner(career, planet) : GravityGame.OWNER_COMMERCIAL;
+	const charged = pad !== null && pad.catapult !== null && owner !== GravityGame.OWNER_COMMERCIAL;
+	const landed = planet === career.at;
+	if (!charged && !landed) return null;
 	const tier = pad && pad.catapult ? pad.catapult.tier : 0;
 	const mass = career.ship.mass;
-	const key = ((((at + 1) * 16 + tier) * 200000 +
-		(pad && pad.catapult ? Math.round(pad.chargeKwh * 100) : 0)) * 40000 +
+	const key = (((((planet + 1) * 8 + (owner + 2)) * 16 + tier) * 20000 +
+		(charged ? Math.round(pad.chargeKwh * 100) : 0)) * 40000 +
 		Math.round(mass * 100)) * 400 + Math.round(cargoSim.forceScale * 100);
-	if (key === padPlate.key) return padPlate;
-	padPlate.key = key;
+	if (key === plate.key) return plate;
+	plate.key = key;
 	if (!pad) {
-		padPlate.text = 'lost in space';
-		padPlate.frac = 0;
-		padPlate.warn = true;
-		return padPlate;
+		plate.text = 'lost in space';
+		plate.frac = 0;
+		plate.warn = true;
+		return plate;
 	}
-	if (!pad.catapult) {
-		padPlate.text = planetName(at) + ' · no catapult';
-		padPlate.frac = 0;
-		padPlate.warn = true;
-		return padPlate;
+	if (!charged) {
+		plate.text = planetName(planet) + ' · no catapult';
+		plate.frac = 0;
+		plate.warn = true;
+		return plate;
 	}
-	const limit = cargoSim.speedLimit(at);
-	padPlate.text = pad.catapult.id + ' · ' + pad.chargeKwh.toFixed(2) + ' kWh · ' +
+	const limit = cargoSim.speedLimit(planet);
+	const tag = owner === career.index ? '' : (owner === 0 ? 'YOU ' : 'R' + owner + ' ');
+	plate.text = tag + pad.catapult.id + ' · ' + pad.chargeKwh.toFixed(2) + ' kWh · ' +
 		Math.round(limit) + ' px/s';
-	padPlate.frac = pad.chargeKwh / pad.battery.capacity;
+	plate.frac = pad.chargeKwh / pad.battery.capacity;
 	/* same rule the bot uses to repair a pad: can the ship even leave? */
-	padPlate.warn = limit < GravitySim.SPEED_MIN + 1e-9;
-	return padPlate;
+	plate.warn = limit < GravitySim.SPEED_MIN + 1e-9;
+	return plate;
 }
 
-function drawCareerPad() {
-	const at = activeCareer().at;
-	if (at < 0) return;
-	const info = careerPadPlate(activeCareer());
-	const width = 186;
+function careerPadPlate(career) {
+	return padPlateInfo(career, career.at, padPlate);
+}
+
+function drawPadPlate(planet, info) {
+	const width = 200;
 	const height = 18;
-	const sx = tradeSim.planetX[at] * view.scale + view.offX;
-	const sy = tradeSim.planetY[at] * view.scale + view.offY;
-	const radius = tradeSim.planetR[at] * view.scale + 8;
+	const sx = tradeSim.planetX[planet] * view.scale + view.offX;
+	const sy = tradeSim.planetY[planet] * view.scale + view.offY;
+	const radius = tradeSim.planetR[planet] * view.scale + 8;
 	const maxX = window.innerWidth - width - 6;
 	const maxY = window.innerHeight - height - 6;
 	/* below, above, right, left of the planet: the first slot clear of both HUD panels */
@@ -292,6 +316,17 @@ function drawCareerPad() {
 	ctx.fillRect(x + 5, y + 13, width - 10, 3);
 	ctx.fillStyle = info.warn ? WARN : MINT;
 	ctx.fillRect(x + 5, y + 13, (width - 10) * frac, 3);
+}
+
+function drawCareerPad() {
+	const career = activeCareer();
+	const at = career.at;
+	if (at >= 0) drawPadPlate(at, padPlateInfo(career, at, padPlate));
+	/* the charge of every other rail the player landed on, read on hover */
+	if (!aiming && hoverPlanet >= 0 && hoverPlanet !== at) {
+		const info = padPlateInfo(career, hoverPlanet, hoverPadPlate);
+		if (info) drawPadPlate(hoverPlanet, info);
+	}
 }
 
 function drawRivalTags() {

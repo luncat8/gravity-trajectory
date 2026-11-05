@@ -133,6 +133,11 @@ const PROFIT_STRINGS = new Array(PROFIT_MAX_CENTS + 1);
 for (let c = 0; c <= PROFIT_MAX_CENTS; c++) {
 	PROFIT_STRINGS[c] = '+' + (c / 100).toFixed(2);
 }
+/* special-planet pills (0.5.11): the Capital levies a fixed entry fee, A.R.F.
+ * pays nothing. Cached so draw() stays 0-alloc. */
+const CAPITAL_PROFIT_TEXT = GravityGame.CAPITAL_VISIT_PAY.toFixed(2);
+const CAPITAL_TAG = 'CAPITAL';
+const ARF_TAG = 'A.R.F.';
 /* Planet-card gravity lines are cached like profit lines: no strings in draw(). */
 const GRAVITY_STRINGS = new Array(701);
 for (let c = -200; c <= 500; c++) {

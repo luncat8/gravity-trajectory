@@ -296,7 +296,9 @@
 		const market = {
 			lastVisitStep: new Int32Array(OrbitWorld.PLANETS),
 			stamp: 0,
-			k: MONEY.k
+			k: MONEY.k,
+			arfPlanet: -1,
+			capitalPlanet: -1
 		};
 		resetMarket(market);
 		return market;
@@ -306,6 +308,20 @@
 		market.lastVisitStep.fill(-initSteps());
 		market.stamp += 1;
 		market.k = MONEY.k;
+		market.arfPlanet = -1;
+		market.capitalPlanet = -1;
+	}
+
+	/* wire the seeded world's specials into the shared market (career runs only);
+	 * with the A/B switch off the indices stay -1 and every planet pays normally */
+	function applyMarketSpecials(market, world) {
+		if (specialPlanets && world) {
+			market.arfPlanet = world.arfPlanet;
+			market.capitalPlanet = world.capitalPlanet;
+		} else {
+			market.arfPlanet = -1;
+			market.capitalPlanet = -1;
+		}
 	}
 
 	/* cap·(1 − e^(−k·age/cap)): initial slope k, asymptote cap at infinite age */
@@ -315,8 +331,20 @@
 		return -MONEY.cap * Math.expm1(-age * (k === undefined ? MONEY.k : k) / MONEY.cap);
 	}
 
+	/*
+	 * The one special-aware visit value every harvest and estimate reads:
+	 * A.R.F. pays 0, the Capital charges a flat −3 on each entry, every other
+	 * planet grows toward the cap. Both specials still stamp lastVisitStep, so
+	 * the market clock advances exactly as a normal visit would.
+	 */
+	function planetProfitAt(market, planet, at, lastStep) {
+		if (planet === market.capitalPlanet) return CAPITAL_VISIT_PAY;
+		if (planet === market.arfPlanet) return 0;
+		return planetProfitAtStep(lastStep, at, market.k);
+	}
+
 	function planetProfit(market, planet, runStep) {
-		return planetProfitAtStep(market.lastVisitStep[planet], runStep, market.k);
+		return planetProfitAt(market, planet, runStep, market.lastVisitStep[planet]);
 	}
 
 	/* `fee` is what the current flight's launch cost, so `last` nets it out */
@@ -431,7 +459,8 @@
 		return harvestMode;
 	}
 
-	/* exact predicted harvest of one visit log without mutating the live market */
+	/* exact predicted harvest of one visit log without mutating the live market;
+	 * it prices specials exactly like the live harvest, not the raw growth curve */
 	function estimateProfitLog(market, baseStep, planets, steps, count) {
 		if (count === 0) return 0;
 		estScratch.set(market.lastVisitStep);
@@ -439,7 +468,7 @@
 		for (let i = 0; i < count; i++) {
 			const planet = planets[i];
 			const at = baseStep + steps[i];
-			total += planetProfitAtStep(estScratch[planet], at, market.k);
+			total += planetProfitAt(market, planet, at, estScratch[planet]);
 			estScratch[planet] = at;
 		}
 		return total;
@@ -547,6 +576,39 @@
 	};
 	const OWNER_COMMERCIAL = -1;
 
+	/*
+	 * The Empire Capital's fixed imperial rail (0.5.11): one immutable EMC-3
+	 * pad, always full, never reserved, free to launch from. Nobody owns or
+	 * builds it; every actor's launchPads[capitalPlanet] points here. Like the
+	 * commercial rail it never drains, but it claims the planet for the Empire
+	 * and forbids building.
+	 */
+	const OWNER_CAPITAL = -2;
+	const CAPITAL_PAD = {
+		catapult: OrbitTech.CATAPULTS[2],
+		panel: OrbitTech.PANELS[2],
+		battery: OrbitTech.BATTERIES[2],
+		chargeKwh: OrbitTech.BATTERIES[2].capacity,
+		reservedKwh: 0
+	};
+	/* a fly-visit to the Capital pays this flat fee on each entry; A.R.F. pays 0 */
+	const CAPITAL_VISIT_PAY = -3;
+	/* tourist-delivery bias: A.R.F. destinations and Capital resort origins and
+	 * destinations each weigh 2x an ordinary endpoint (0.5.11) */
+	const TOURIST_CHANCE = 0.35;
+	const TOURIST_WEIGHT = 2;
+
+	/* specials are a property of the seeded world; the A/B switch turns their
+	 * rules off without touching geometry (SPECIAL=0 reproduces the old economy) */
+	let specialPlanets = true;
+	function setSpecialPlanets(on) {
+		specialPlanets = Boolean(on);
+		return specialPlanets;
+	}
+	function specialPlanetsOn() {
+		return specialPlanets;
+	}
+
 	/* `reservedKwh` is the charge queued launches have already claimed */
 	function createPad() {
 		return { catapult: null, panel: null, battery: null, chargeKwh: 0, reservedKwh: 0 };
@@ -561,23 +623,24 @@
 	 * never reserves nor drains.
 	 */
 	function reserveEnergy(pad, energy) {
-		if (!pad || pad === COMMERCIAL_PAD || !(energy > 0)) return;
+		if (!pad || pad === COMMERCIAL_PAD || pad === CAPITAL_PAD || !(energy > 0)) return;
 		pad.reservedKwh += energy;
 	}
 
 	function releaseEnergy(pad, energy) {
-		if (!pad || pad === COMMERCIAL_PAD || !(energy > 0)) return;
+		if (!pad || pad === COMMERCIAL_PAD || pad === CAPITAL_PAD || !(energy > 0)) return;
 		pad.reservedKwh = pad.reservedKwh > energy ? pad.reservedKwh - energy : 0;
 	}
 
 	function createTask() {
 		return { kind: TASK_NONE, state: TASK_OFFERED, good: 0, tons: 0, from: -1, to: -1,
-			planet: -1, minLength: 0, reward: 0, deadline: 0 };
+			planet: -1, minLength: 0, reward: 0, deadline: 0, tourist: false };
 	}
 
 	function clearTask(task) {
 		task.kind = TASK_NONE;
 		task.state = TASK_OFFERED;
+		task.tourist = false;
 	}
 
 	/* --- EMC network ------------------------------------------------------- */
@@ -639,6 +702,7 @@
 	 * every planet and wins whenever it is the chosen rail, else your own EMC,
 	 * else the best rival EMC, else the commercial one again */
 	function padAt(career, planet) {
+		if (planet === career.capitalPlanet) return CAPITAL_PAD;
 		if (career.commercialPlanet === planet) return COMMERCIAL_PAD;
 		if (career.pads[planet].catapult !== null) return career.pads[planet];
 		if (!career.galaxy) return COMMERCIAL_PAD;
@@ -646,8 +710,10 @@
 		return owner === OWNER_COMMERCIAL ? COMMERCIAL_PAD : career.galaxy.actors[owner].pads[planet];
 	}
 
-	/* owner index of that pad, -1 for the neutral commercial EMC */
+	/* owner index of that pad, -1 for the neutral commercial EMC, -2 for the
+	 * fixed imperial rail on the Capital */
 	function padOwner(career, planet) {
+		if (planet === career.capitalPlanet) return OWNER_CAPITAL;
 		if (career.commercialPlanet === planet) return OWNER_COMMERCIAL;
 		if (career.pads[planet].catapult !== null) return career.index;
 		if (!career.galaxy) return OWNER_COMMERCIAL;
@@ -657,12 +723,16 @@
 	/* choose (planet >= 0) or drop (-1) the commercial rail for the next launch;
 	 * it never claims the planet and never blocks building your own EMC there */
 	function setCommercial(career, planet) {
+		/* the Capital rail is imperial, never a commercial one */
+		if (planet >= 0 && planet === career.capitalPlanet) return;
 		career.commercialPlanet = planet;
 		syncCareerNetwork(career);
 	}
 
-	/* planet claim: the highest rail there wins, ties keep the older actor */
+	/* planet claim: the highest rail there wins, ties keep the older actor; the
+	 * Capital is always the Empire's, never a player claim */
 	function claimOwner(galaxy, planet) {
+		if (galaxy.actors.length > 0 && galaxy.actors[0].capitalPlanet === planet) return OWNER_CAPITAL;
 		let owner = OWNER_COMMERCIAL;
 		let tier = 0;
 		for (let i = 0; i < galaxy.actors.length; i++) {
@@ -701,10 +771,11 @@
 		refreshNetwork(galaxy);
 	}
 
-	/* money the EMC owner charges for a launch at `speed`; 0 on your own pad */
+	/* money the EMC owner charges for a launch at `speed`; 0 on your own pad
+	 * and on the Capital's free imperial rail */
 	function launchFee(career, planet, speed) {
 		const owner = padOwner(career, planet);
-		if (owner === career.index) return 0;
+		if (owner === career.index || owner === OWNER_CAPITAL) return 0;
 		if (owner === OWNER_COMMERCIAL) return price(career, CAREER.commercialFee);
 		const pad = padAt(career, planet);
 		return price(career, CAREER.taxPerKwh *
@@ -719,6 +790,7 @@
 	 */
 	function exitCostAt(career, planet, mass) {
 		if (planet < 0) return price(career, CAREER.evacFee);
+		if (planet === career.capitalPlanet) return 0;
 		if (career.pads[planet].catapult !== null) return 0;
 		const lift = OrbitTech.speedLimit(COMMERCIAL_PAD.battery.capacity,
 			mass, COMMERCIAL_PAD.catapult, career.forceScale);
@@ -748,6 +820,7 @@
 	function railOwnerText(career, planet) {
 		const owner = padOwner(career, planet);
 		if (owner === career.index) return 'own EMC-' + (padAt(career, planet).catapult.tier + 1);
+		if (owner === OWNER_CAPITAL) return 'imperial EMC-3';
 		if (owner === OWNER_COMMERCIAL) return 'commercial EMC-1';
 		return (owner === 0 ? 'YOU' : 'R' + owner) + ' rail';
 	}
@@ -831,6 +904,8 @@
 			at: -1,
 			stranded: false,
 			commercialPlanet: -1,
+			capitalPlanet: -1,
+			arfPlanet: -1,
 			launchBook: createLaunchBook(),
 			pads: pads,
 			launchPads: launchPads,
@@ -954,6 +1029,11 @@
 	 * matters — the starter panel charges the rail — but a deep well matters
 	 * more, so the order is sunlit-and-shallow, then shallow, then sunlit, then
 	 * any free planet. `mask`/`count` restrict the choice to the run's planets. */
+	/* the Capital is the Empire's: no company may call it home (0.5.11) */
+	function hqForbidden(world, i) {
+		return specialPlanets && i === world.capitalPlanet;
+	}
+
 	function pickHq(seed, world, used, mask, count) {
 		for (let tier = 0; tier < 4; tier++) {
 			const needLight = tier !== 1;
@@ -962,6 +1042,7 @@
 			for (let i = 0; i < OrbitWorld.PLANETS; i++) {
 				if (mask && mask[i] === 0) continue;
 				if (used && used[i]) continue;
+				if (hqForbidden(world, i)) continue;
 				if (needLight && world.planetLight[i] < CAREER.hqMinLight) continue;
 				if (needShallow && planetGravity(world.seed, i) > HQ_GRAVITY_MAX) continue;
 				total += 1;
@@ -971,6 +1052,7 @@
 			for (let i = 0; i < OrbitWorld.PLANETS; i++) {
 				if (mask && mask[i] === 0) continue;
 				if (used && used[i]) continue;
+				if (hqForbidden(world, i)) continue;
 				if (needLight && world.planetLight[i] < CAREER.hqMinLight) continue;
 				if (needShallow && planetGravity(world.seed, i) > HQ_GRAVITY_MAX) continue;
 				if (pick === 0) return i;
@@ -1170,6 +1252,8 @@
 		career.at = career.hq;
 		career.stranded = false;
 		career.commercialPlanet = -1;
+		career.capitalPlanet = specialPlanets ? trade.world.capitalPlanet : -1;
+		career.arfPlanet = specialPlanets ? trade.world.arfPlanet : -1;
 		resetLaunchBook(career.launchBook);
 		career.ship.hold = grant.ship.hold;
 		career.ship.engine = grant.ship.engine;
@@ -1222,6 +1306,7 @@
 	function fitEndgame(career) {
 		for (let i = 0; i < career.pads.length; i++) {
 			if (career.planetMask && career.planetMask[i] === 0) continue;
+			if (i === career.capitalPlanet) continue;
 			fitPad(career, i, topTier(OrbitTech.CATAPULTS), topTier(OrbitTech.PANELS),
 				topTier(OrbitTech.BATTERIES));
 		}
@@ -1254,13 +1339,20 @@
 		placeShip(career, sim, career.hq);
 	}
 
+	/* the Capital's fixed imperial rail counts as covered, so "a catapult on
+	 * every active planet" stays winnable even though nobody can build there */
+	function capitalCovered(career) {
+		return career.capitalPlanet >= 0 && planetInPlay(career, career.capitalPlanet) ? 1 : 0;
+	}
+
 	/* broke = negative purse, or no affordable way off the planet */
 	function checkEnded(career) {
 		if (career.ended !== CAREER_OPEN) return career.ended;
 		const purse = career.ledger.purse;
 		if (purse < -1e-9 ||
 			(career.stranded && purse + 1e-9 < exitCost(career))) career.ended = CAREER_BROKE;
-		else if (career.cheat === null && career.padCount === career.planetCount) {
+		else if (career.cheat === null &&
+			career.padCount >= career.planetCount - capitalCovered(career)) {
 			career.ended = CAREER_COMPLETE;
 		}
 		return career.ended;
@@ -1287,6 +1379,7 @@
 	 * own EMC on a planet that already carries another player's rail is
 	 * forbidden — claim the planet by landing on an unclaimed one first. */
 	function planetBuildable(career, planet) {
+		if (planet === career.capitalPlanet) return false;
 		if (!career.galaxy) return true;
 		const owner = claimOwner(career.galaxy, planet);
 		return owner === OWNER_COMMERCIAL || owner === career.index;
@@ -1295,6 +1388,7 @@
 	/* a first catapult brings a starter panel and battery (charged) with it;
 	 * a panel or battery needs a pad to sit on */
 	function buildGear(career, planet, kind, item) {
+		if (planet === career.capitalPlanet) return false;
 		const pad = career.pads[planet];
 		const fresh = kind === OrbitTech.KIND_CATAPULT && pad.catapult === null;
 		if (fresh && !planetBuildable(career, planet)) return false;
@@ -1371,10 +1465,73 @@
 		return Math.round(value * 100) / 100;
 	}
 
+	/* a uniform in-play planet other than `exclude` (the tourist's free endpoint) */
+	function otherActivePlanet(career, exclude) {
+		const count = career.planetCount || OrbitWorld.PLANETS;
+		const span = count - (planetInPlay(career, exclude) ? 1 : 0);
+		if (span < 1) return -1;
+		let pick = Math.floor(draw01(career, SALT_TASK) * span);
+		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+			if (!planetInPlay(career, i) || i === exclude) continue;
+			if (pick === 0) return i;
+			pick -= 1;
+		}
+		return -1;
+	}
+
+	/*
+	 * Tourist delivery (0.5.11): a TASK_DELIVERY of MIGRANTS flagged tourist.
+	 * One deterministic draw picks the special endpoint role, each offered at
+	 * TOURIST_WEIGHT (2x an ordinary endpoint): to the A.R.F. world, to the
+	 * Capital resort, or from the Capital resort. The other endpoint is a
+	 * uniform in-play planet. Reward stays positive and capped like freight.
+	 */
+	function makeTouristDelivery(career, trade, step, task) {
+		const capital = career.capitalPlanet;
+		const arf = career.arfPlanet;
+		const role = Math.floor(draw01(career, SALT_TASK) * 3);
+		let from;
+		let to;
+		if (role === 0) {
+			to = arf;
+			from = otherActivePlanet(career, arf);
+		} else if (role === 1) {
+			to = capital;
+			from = otherActivePlanet(career, capital);
+		} else {
+			from = capital;
+			to = otherActivePlanet(career, capital);
+		}
+		if (from < 0 || to < 0 || from === to) return false;
+		const tons = CARGO_TONS[Math.floor(draw01(career, SALT_TASK) * CARGO_TONS.length)];
+		const dist = Math.min(planetDistance(trade, from, to), CAREER.deliveryDistPx);
+		/* tourists are not market goods: a mid scarcity keeps the pay between
+		 * the freight floor and ceiling */
+		const pay = CAREER.deliveryBase + tons * CAREER.deliveryPerTon * 1.5 *
+			(1 + dist / CAREER.deliveryDistPx);
+		task.kind = TASK_DELIVERY;
+		task.state = TASK_OFFERED;
+		task.good = OrbitEcon.MIGRANTS;
+		task.tourist = true;
+		task.tons = tons;
+		task.from = from;
+		task.to = to;
+		task.planet = -1;
+		task.minLength = 0;
+		task.reward = round2(Math.min(pay, CAREER.deliveryMax));
+		task.deadline = step + Math.round(CAREER.deliverySec / GravitySim.DT);
+		return true;
+	}
+
 	/* delivery: a colony with a real export to the colony short of that good
 	 * (else the lowest supply); pays by tons, scarcity and distance, capped
 	 * below the evacuation fee */
 	function makeDelivery(career, trade, step, task) {
+		/* the tourist branch is gated off entirely for the SPECIAL=0 A/B, so the
+		 * ordinary delivery stream is then bit-identical to the historical one */
+		if (specialPlanets && career.capitalPlanet >= 0 &&
+			draw01(career, SALT_TASK) < TOURIST_CHANCE &&
+			makeTouristDelivery(career, trade, step, task)) return true;
 		const colonies = trade.colonies;
 		const count = colonies.length;
 		if (count < 2) return false;
@@ -1412,6 +1569,7 @@
 		task.kind = TASK_DELIVERY;
 		task.state = TASK_OFFERED;
 		task.good = good;
+		task.tourist = false;
 		task.tons = tons;
 		task.from = src.planet;
 		task.to = dst.planet;
@@ -1433,6 +1591,7 @@
 		task.to = -1;
 		task.good = 0;
 		task.tons = 0;
+		task.tourist = false;
 		task.deadline = step + Math.round(CAREER.competeSec / GravitySim.DT);
 	}
 
@@ -1524,19 +1683,21 @@
 		const pad = padAt(career, planet);
 		const owner = padOwner(career, planet);
 		const energy = OrbitTech.launchEnergy(career.ship.mass, pad.catapult, sim.speed);
-		if (owner !== OWNER_COMMERCIAL) {
+		/* the commercial and imperial rails are kept charged: they never drain */
+		const freeRail = owner === OWNER_COMMERCIAL || owner === OWNER_CAPITAL;
+		if (!freeRail) {
 			pad.chargeKwh = pad.chargeKwh > energy ? pad.chargeKwh - energy : 0;
 			releaseEnergy(pad, energy);
 		}
 		const fee = launchFee(career, planet, sim.speed);
 		career.ledger.purse -= fee;
-		if (owner !== OWNER_COMMERCIAL && owner !== career.index) {
+		if (!freeRail && owner !== career.index) {
 			const host = career.galaxy.actors[owner];
 			host.ledger.purse += fee;
 			host.taxEarned += fee;
 			career.taxPaid += fee;
 		}
-		career.lastEnergy = owner === OWNER_COMMERCIAL ? 0 : energy;
+		career.lastEnergy = freeRail ? 0 : energy;
 		career.lastFee = fee;
 		career.lastReward = 0;
 		career.lastFuel = 0;
@@ -1580,7 +1741,9 @@
 		career.at = landed ? sim.endBody : -1;
 		/* the commercial choice bought one launch; the next planet starts fresh */
 		setCommercial(career, -1);
-		career.stranded = !landed || career.pads[sim.endBody].catapult === null;
+		/* the Capital's free imperial rail is a way off, so it never strands */
+		career.stranded = !landed ||
+			(career.pads[sim.endBody].catapult === null && sim.endBody !== career.capitalPlanet);
 		refreshBoard(career, trade, step);
 		return checkEnded(career);
 	}
@@ -1734,18 +1897,21 @@
 		PLANET_GRAVITY_MIN, PLANET_GRAVITY_MAX, PLANET_GRAVITY_STEPS, HQ_GRAVITY_MAX,
 		planetGravity, angleUnits, angleOf, speedUnits, speedOf,
 		createBurn, encodeBurn, createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
-		initSteps, createMarket, resetMarket, planetProfit,
+		initSteps, createMarket, resetMarket, planetProfit, planetProfitAt, applyMarketSpecials,
 		createLedger, resetLedger, beginFlight, stepHarvest, endFlight,
 		estimateProfit, estimateProfitLog, compareScores,
+		setSpecialPlanets, specialPlanets: specialPlanetsOn,
 		setCareerUniverse, applyMarketUniverse, planetInPlay, colonyInPlay, activePlanetDraw,
 		BOOK_MAX, BOOK_LOG_MAX, createLaunchBook, resetLaunchBook, launchBookTag, bookReady,
 		launchMask, recordLaunch, pruneLaunchBook,
 		CAREER, FUEL_KG_PER_KWH, FUEL_PRICE, FUEL_BUY_STEP, fuelPrice, produceFuel, buyFuel,
+		CAPITAL_VISIT_PAY, TOURIST_CHANCE, TOURIST_WEIGHT,
 		BOARD_SIZE, COMPETE_SLOT, CARGO_TONS,
 		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
 		createCareer, resetCareer, startCareer, checkEnded,
-		COMMERCIAL_PAD, OWNER_COMMERCIAL, createGalaxy, resetGalaxy, joinGalaxy, rivalSeed,
+		COMMERCIAL_PAD, OWNER_COMMERCIAL, CAPITAL_PAD, OWNER_CAPITAL, capitalCovered,
+		createGalaxy, resetGalaxy, joinGalaxy, rivalSeed,
 		turretPeriod, turretAngle, padAt, padOwner, claimOwner, refreshNetwork, setCommercial,
 		launchFee, exitCost, exitCostAt, careerCanFire, padLift, reserveEnergy, releaseEnergy,
 		railOwnerText, railText, railBlock,

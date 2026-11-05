@@ -27,7 +27,7 @@ function careerCopySpec(data) {
 function taskRowHtml(career, index) {
 	const task = career.tasks[index];
 	const sport = index === GravityGame.COMPETE_SLOT;
-	const kind = sport ? 'sport' : 'delivery';
+	const kind = sport ? 'sport' : task.tourist ? 'tourists' : 'delivery';
 	if (task.kind === GravityGame.TASK_NONE) {
 		return '<div class="careerRow dim"><span class="careerKind">' + kind +
 			'</span><span class="careerNow">no offer</span></div>';
@@ -350,11 +350,14 @@ function fillCareerPlanets(career) {
 		const cap = GravityGame.padLift(career, i);
 		const note = cap + 1e-9 < GravitySim.SPEED_MIN ? 'cannot lift'
 			: Math.round(cap) + ' px/s';
-		const gear = pad.catapult
+		const gear = i === career.capitalPlanet ? 'imperial EMC-3'
+			: pad.catapult
 			? pad.catapult.id + ' · ' + claimTag(GravityGame.claimOwner(game.galaxy, i))
 			: 'commercial';
+		const tag = i === career.capitalPlanet ? ' CAPITAL'
+			: i === career.arfPlanet ? ' A.R.F.' : '';
 		html += '<option value="' + i + '">' + planetName(i) + (i === career.hq ? ' ★' : '') +
-			' · ' + note + ' · ' + gear + '</option>';
+			tag + ' · ' + note + ' · ' + gear + '</option>';
 	}
 	careerPlanetEl.innerHTML = html;
 	careerPlanetEl.value = String(picked);

@@ -385,7 +385,8 @@ function setLaunchState(blocked, exitWarning) {
 			}
 		}
 		if (launchCommercialBtn) {
-			if (c.at < 0) {
+			/* the Capital already has the free imperial rail: no commercial one */
+			if (c.at < 0 || c.at === c.capitalPlanet) {
 				launchCommercialBtn.hidden = true;
 			} else {
 				const fee = careerCost(c, GravityGame.CAREER.commercialFee);
@@ -482,6 +483,9 @@ function launchRideTitle(career) {
 			' kWh of the ' + pad.catapult.id + ' battery (' + pad.chargeKwh.toFixed(2) + ' kWh charged)';
 	}
 	const owner = GravityGame.padOwner(career, aimBody);
+	if (owner === GravityGame.OWNER_CAPITAL) {
+		return 'the imperial EMC-3 launches free and never runs dry';
+	}
 	if (owner === GravityGame.OWNER_COMMERCIAL) {
 		return 'the commercial EMC-1 charges ' +
 			costText(GravityGame.launchFee(career, aimBody, aimSpeed)) + ' and never runs dry';

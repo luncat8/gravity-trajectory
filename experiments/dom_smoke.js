@@ -1319,6 +1319,59 @@ careerEnv.runFrames(2, 16.0);
 check(kCargo.gravityScale === 1 && kCargo.forceScale === 1 &&
 	Math.abs(kCargo.speedLimit(career.hq) - limit) < 1e-9,
 	'career experimental reset');
+/* battery charge reads on every rail the player can launch from, not only the
+ * landed own pad: the hover plate and the shop info block both show it, and the
+ * always-charged commercial rail shows none. Fresh page so the main career
+ * fixture keeps its pad count and its follow selection. */
+(() => {
+	const cEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
+	cEnv.runFrames(2, 16.0);
+	const cScene = cEnv.context.GravityScene;
+	const cGame = cEnv.context.GravityGame;
+	const cCareer = cScene.career;
+	const cUi = cEnv.elements;
+	const plateTexts = () => cEnv.calls.texts.filter(t => /kWh · \d+ px\/s$/.test(t));
+	/* a rival HQ already stands a battery rail the player does not own */
+	const rivalHq = cScene.bot.rivals[0].career.hq;
+	check(rivalHq !== cCareer.hq && cGame.padOwner(cCareer, rivalHq) > 0,
+		'rival HQ must be a foreign battery rail');
+	const rivalPad = cGame.padAt(cCareer, rivalHq);
+	rivalPad.chargeKwh = rivalPad.battery.capacity * 0.5;
+	/* pointer over the rival planet paints its charge beside the landed plate */
+	cEnv.calls.texts.length = 0;
+	const spot = cEnv.planetScreen(rivalHq);
+	cEnv.fireWindow('pointermove', { clientX: spot.x, clientY: spot.y, target: cUi.get('c'), shiftKey: false });
+	cEnv.runFrames(1, 16.0);
+	check(plateTexts().length === 2 && plateTexts().some(t => t.startsWith('R1 ') &&
+		t.includes(rivalPad.chargeKwh.toFixed(2) + ' kWh')),
+		'hover must paint the foreign rail charge beside the landed plate: ' + plateTexts().join(' | '));
+	/* the shop info block reads the selected planet's rail charge */
+	cEnv.setValue('careerPlanet', rivalHq);
+	cEnv.runFrames(1, 16.0);
+	check(cUi.get('careerShop').innerHTML.includes('careerShopCharge') &&
+		cUi.get('careerShop').innerHTML.includes(rivalPad.chargeKwh.toFixed(2) + ' / ' +
+			rivalPad.battery.capacity.toFixed(2) + ' kWh'),
+		'shop info block must read the selected rail charge: ' + cUi.get('careerShop').innerHTML);
+	/* a commercial planet reads no charge, on hover or in the shop */
+	let commercial = -1;
+	for (let p = 0; p < pageWorld.PLANETS; p++) {
+		if (cGame.planetInPlay(cCareer, p) && cGame.padOwner(cCareer, p) === cGame.OWNER_COMMERCIAL) {
+			commercial = p;
+			break;
+		}
+	}
+	check(commercial >= 0, 'found a commercial planet');
+	cEnv.setValue('careerPlanet', commercial);
+	cEnv.runFrames(1, 16.0);
+	check(!cUi.get('careerShop').innerHTML.includes('careerShopCharge'),
+		'commercial rail must read no charge in the shop: ' + cUi.get('careerShop').innerHTML);
+	cEnv.calls.texts.length = 0;
+	const cSpot = cEnv.planetScreen(commercial);
+	cEnv.fireWindow('pointermove', { clientX: cSpot.x, clientY: cSpot.y, target: cUi.get('c'), shiftKey: false });
+	cEnv.runFrames(1, 16.0);
+	check(plateTexts().length === 1,
+		'commercial hover must add no charge plate beyond the landed one: ' + plateTexts().join(' | '));
+})();
 /* a slider move re-places the armed grip on the new drag range: the dot must
  * keep showing the armed speed instead of a length the range no longer has */
 careerEnv.dragAim(career.hq, 0.7, 55);
@@ -1341,16 +1394,23 @@ for (let a = 0; a < 72 && landingShot === null; a++) {
 	const angle = a / 72 * Math.PI * 2;
 	kCargo.predict(career.hq, angle, CAREER_TEST_SPEED);
 	if (kCargo.predReason !== kSim.END_IMPACT || kCargo.predBody === career.hq) continue;
-	const destination = kCargo.predBody;
-	if (!pageGame.planetBuildable(career, destination)) continue;
-	for (let b = 0; b < 72; b++) {
-		kCargo.predict(destination, b / 72 * Math.PI * 2, CAREER_TEST_SPEED);
-		if (kCargo.predReason === kSim.END_IMPACT && kCargo.predBody !== destination &&
-			kCargo.predBody !== career.hq) {
-			landingShot = angle;
-			break;
+		const destination = kCargo.predBody;
+		if (!pageGame.planetBuildable(career, destination)) continue;
+		/* the Capital levies its entry fee on every fly-visit: keep this test
+		 * flight clear of it so the free own-pad launch stays the only purse
+		 * event (0.5.11). Read the first-leg mask before the chain probe below
+		 * overwrites predVisit. */
+		if (career.capitalPlanet >= 0 && kCargo.predVisit[career.capitalPlanet] === 1) continue;
+		for (let b = 0; b < 72; b++) {
+			kCargo.predict(destination, b / 72 * Math.PI * 2, CAREER_TEST_SPEED);
+			/* the onward leg must also offer a padless, non-Capital target: the
+			 * commercial-launch probe below reuse it from this same planet */
+			if (kCargo.predReason === kSim.END_IMPACT && kCargo.predBody !== destination &&
+				kCargo.predBody !== career.hq && kCargo.predBody !== career.capitalPlanet) {
+				landingShot = angle;
+				break;
+			}
 		}
-	}
 }
 check(landingShot !== null, 'no two-leg landing chain from HQ at ' + CAREER_TEST_SPEED + ' px/s');
 careerEnv.dragAim(career.hq, landingShot, CAREER_TEST_SPEED);
@@ -1423,15 +1483,17 @@ check(!kui.get('launch').hidden && !kui.get('planetActions').hidden &&
 const strandedAt = career.at;
 check(kui.get('careerPad').innerHTML.includes('no EMC here'),
 	'stranded pad block: ' + kui.get('careerPad').innerHTML);
-check(!kui.get('careerEvac').disabled && kui.get('careerEvac').textContent === 'evacuate · 6.00',
-	'stranded evacuate button: ' + kui.get('careerEvac').textContent);
+check(!kui.get('launchEvac').disabled && kui.get('launchEvac').textContent === 'evacuate · 6.00',
+	'stranded evacuate button: ' + kui.get('launchEvac').textContent);
 /* the commercial launch, end to end: pick the rail, aim, fire from its button */
 let commercialShot = null;
 for (let a = 0; a < 72 && commercialShot === null; a++) {
 	const angle = a / 72 * Math.PI * 2;
 	kCargo.predict(strandedAt, angle, CAREER_TEST_SPEED);
+	/* the Capital's imperial rail never strands the ship, so it cannot stand
+	 * in for a padless commercial landing (0.5.11) */
 	if (kCargo.predReason === kSim.END_IMPACT && kCargo.predBody !== strandedAt &&
-		kCargo.predBody !== career.hq) commercialShot = angle;
+		kCargo.predBody !== career.hq && kCargo.predBody !== career.capitalPlanet) commercialShot = angle;
 }
 check(commercialShot !== null, 'no commercial landing shot from P' + strandedAt);
 careerEnv.click('launchCommercial');
@@ -1493,12 +1555,16 @@ console.log('visit pills:', litSteps + ' frames lit · ' + litAfter + ' left lit
 /* the commercial launch above already spent half the starter purse */
 kScene.game.money.purse = 20;
 const purseBeforeEvac = kScene.game.money.purse;
-careerEnv.click('careerEvac');
+careerEnv.click('launchEvac');
 careerEnv.runFrames(8, 40.0);
 check(career.at === career.hq && !career.stranded, 'evacuate button did not bring the ship home');
 check(Math.abs(kScene.game.money.purse - (purseBeforeEvac - 6)) < 1e-9,
 	'evacuation fee: ' + kScene.game.money.purse);
-check(kui.get('careerEvac').disabled, 'evacuate stays enabled at HQ');
+console.log('DEBUG evac', JSON.stringify({ at: career.at, hq: career.hq, stranded: career.stranded,
+	ended: career.ended, status: kCargo.status, capital: career.capitalPlanet,
+	evacHidden: kui.get('launchEvac').hidden, actionsHidden: kui.get('planetActions').hidden,
+	buildHidden: kui.get('launchBuild').hidden, commHidden: kui.get('launchCommercial').hidden }));
+check(kui.get('launchEvac').hidden, 'the inline evacuate hides once home at HQ');
 check(kui.get('careerMsg').textContent.startsWith('evacuated to HQ P' + career.hq),
 	'evacuation note: ' + kui.get('careerMsg').textContent);
 check(kui.get('cargoStatus').textContent === 'landed P' + career.hq + ' · clock paused',
@@ -1604,8 +1670,7 @@ function shopData(ui, act, kind) {
 function shopTier(ui, act, kind, tier) {
 	return shopButtons(ui, act, kind).find(button => button.tier === tier) || null;
 }
-check(shopCareer.cheat === 'communism' && sui.get('careerEvac').textContent === 'evacuate · free',
-	'communism career: ' + sui.get('careerEvac').textContent);
+check(shopCareer.cheat === 'communism', 'communism career: ' + shopCareer.cheat);
 const far = (shopCareer.hq + 4) % pageWorld.PLANETS;
 shopEnv.setValue('careerPlanet', far);
 shopEnv.runFrames(1, 16.0);
