@@ -16,7 +16,7 @@
 
 	const MU = 400000;
 	const SOFT2 = 3600;
-	const MAX_BODIES = 32;
+	const MAX_BODIES = 48;
 	const LOW_DIV = 4;
 	const SLOW_LIMIT = 6;
 	const TAU = Math.PI * 2;

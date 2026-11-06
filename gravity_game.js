@@ -493,7 +493,7 @@
 	function applyMarketUniverse(market, mask, count) {
 		market.planetMask = mask;
 		market.planetCount = count;
-		market.k = MONEY.k * (OrbitWorld.PLANETS / count);
+		market.k = MONEY.k * (OrbitWorld.DEFAULT_PLANETS / count);
 	}
 
 	/* a planet of the run's universe is in play when it is not masked out */
@@ -670,7 +670,7 @@
 			galaxy.period[p] = CAREER.turretMinSec + CAREER.turretSpanSec *
 				(OrbitWorld.hashBits(galaxy.seed, p, SALT_TURRET) / 4294967296);
 			galaxy.phase[p] = TAU * (OrbitWorld.hashBits(galaxy.seed,
-				p + OrbitWorld.PLANETS, SALT_TURRET) / 4294967296);
+				p + OrbitWorld.DEFAULT_PLANETS, SALT_TURRET) / 4294967296);
 		}
 	}
 
@@ -1036,7 +1036,7 @@
 
 	function pickHq(seed, world, used, mask, count) {
 		for (let tier = 0; tier < 4; tier++) {
-			const needLight = tier !== 1;
+			const needLight = tier === 0 || tier === 2;
 			const needShallow = tier < 2;
 			let total = 0;
 			for (let i = 0; i < OrbitWorld.PLANETS; i++) {
@@ -1230,7 +1230,7 @@
 		return true;
 	}
 
-	function resetCareer(career, seed, trade, cheat) {
+	function resetCareer(career, seed, trade, cheat, homePlanet) {
 		const grant = OrbitTech.starterGrant();
 		career.seed = seed >>> 0;
 		career.cheat = cheat || null;
@@ -1247,8 +1247,8 @@
 		career.padCount = 0;
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) career.launchPads[i] = COMMERCIAL_PAD;
 		fillLight(career, trade.world);
-		career.hq = pickHq(career.seed, trade.world, hqMask(career),
-			career.planetMask, career.planetCount);
+		career.hq = homePlanet === undefined ? pickHq(career.seed, trade.world, hqMask(career),
+			career.planetMask, career.planetCount) : homePlanet;
 		career.at = career.hq;
 		career.stranded = false;
 		career.commercialPlanet = -1;
@@ -1329,9 +1329,9 @@
 
 	/* a career begins with the vessel on HQ and the sim gating on the network;
 	 * every career in one run joins the same galaxy, so pads are shared ground */
-	function startCareer(career, sim, seed, trade, cheat, galaxy) {
+	function startCareer(career, sim, seed, trade, cheat, galaxy, homePlanet) {
 		career.galaxy = galaxy || null;
-		resetCareer(career, seed, trade, cheat);
+		resetCareer(career, seed, trade, cheat, homePlanet);
 		career.forceScale = sim.forceScale;
 		if (galaxy) joinGalaxy(career, galaxy);
 		else syncCareerNetwork(career);
@@ -1797,7 +1797,10 @@
 	 * the same systems, so only the faster arrival is worth keeping */
 	function launchMask(planets, count) {
 		let mask = 0;
-		for (let i = 0; i < count; i++) mask |= 1 << planets[i];
+		for (let i = 0; i < count; i++) {
+			const bit = 2 ** planets[i];
+			if (Math.floor(mask / bit) % 2 === 0) mask += bit;
+		}
 		return mask;
 	}
 

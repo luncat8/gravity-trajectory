@@ -34,7 +34,7 @@
 			<span class="playerCountLabel"><b id="playerCountValue">1</b> players</span>
 			<button id="playerCountUp" class="miniBtn" title="one more player">+</button>
 		</div>
-		<div class="scoreRows">
+		<div id="scoreRows" class="scoreRows">
 			<div id="scorePlayer" class="scoreEntry scorePlayer isUser isActive" role="button" tabindex="0">
 				<span class="scoreName scoreActorName">
 					<span id="playerScoreName">YOU</span>
@@ -43,23 +43,17 @@
 				<b id="gameScore" class="scoreValue">0 / 26</b>
 				<span id="playerScoreMeta" class="scoreMeta">0 shots · purse 3.00</span>
 			</div>
-			<div id="scoreRival1" class="scoreEntry scoreRival scoreRivalOne" hidden>
-				<span class="scoreName scoreActorName">
-					<span id="rivalScoreName1">R1</span>
-					<label id="scoreBotLabel1" class="scoreBotToggle" title="switch R1 between user and bot · restarts the run"><input id="rivalBot1" type="checkbox" checked aria-label="bot controls R1"> bot</label>
-				</span>
-				<b id="rivalScore1" class="scoreValue">—</b>
-				<span id="rivalMeta1" class="scoreMeta">—</span>
-			</div>
-			<div id="scoreRival2" class="scoreEntry scoreRival scoreRivalTwo" hidden>
-				<span class="scoreName scoreActorName">
-					<span id="rivalScoreName2">R2</span>
-					<label id="scoreBotLabel2" class="scoreBotToggle" title="switch R2 between user and bot · restarts the run"><input id="rivalBot2" type="checkbox" checked aria-label="bot controls R2"> bot</label>
-				</span>
-				<b id="rivalScore2" class="scoreValue">—</b>
-				<span id="rivalMeta2" class="scoreMeta">—</span>
-			</div>
 		</div>
+		<template id="scoreRivalTemplate">
+			<div class="scoreEntry scoreRival" data-score="row" hidden role="button" tabindex="0">
+				<span class="scoreName scoreActorName">
+					<span data-score="name"></span>
+					<label class="scoreBotToggle" data-score="label"><input type="checkbox" data-score="bot" checked> bot</label>
+				</span>
+				<b class="scoreValue" data-score="value">—</b>
+				<span class="scoreMeta" data-score="meta">—</span>
+			</div>
+		</template>
 </aside>
 <aside id="careerHud" class="panel" hidden aria-label="career drawer">
 	<div class="panelHead">

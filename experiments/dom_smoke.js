@@ -1622,9 +1622,9 @@ check(modeParamEnv.context.GravityScene.rule() === 'career' &&
 const cheatEnv = loadPage({ hash: '#game=1&seed=42&rate=1&rule=career&cheat=endgame', clipboard: false });
 cheatEnv.runFrames(2, 16.0);
 const cheatCareer = cheatEnv.context.GravityScene.career;
-check(cheatCareer.cheat === 'endgame' && cheatCareer.padCount === 13 &&
+check(cheatCareer.cheat === 'endgame' && cheatCareer.padCount === 12 &&
 	cheatEnv.context.GravityScene.game.money.purse === kGame.CAREER.endgamePurse, 'endgame cheat link');
-check(cheatEnv.elements.get('ruleTag').textContent === 'career · 13 / 13 pads · endgame',
+check(cheatEnv.elements.get('ruleTag').textContent === 'career · 12 / 13 pads · endgame',
 	'cheat rule tag: ' + cheatEnv.elements.get('ruleTag').textContent);
 cheatEnv.click('gameCopy');
 check(cheatEnv.elements.get('gameLink').value.endsWith('&rule=career&cheat=endgame'), 'cheat survives the link');
@@ -1815,20 +1815,21 @@ const bScene = buildEnv.context.GravityScene;
 const bCargo = bScene.sim;
 const bCareer = bScene.career;
 /* the quickest landing shot: a short flight keeps the smoke test fast */
-function landingAngle(sim, from, speed) {
+function landingAngle(sim, from, speed, career) {
 	let best = null;
 	let bestTime = Infinity;
 	for (let a = 0; a < 72; a++) {
 		const angle = a / 72 * Math.PI * 2;
 		sim.predict(from, angle, speed);
 		if (sim.predReason !== pageSim.END_IMPACT || sim.predBody === from) continue;
+		if (career && sim.predBody === career.capitalPlanet) continue;
 		if (sim.predTime >= bestTime) continue;
 		best = angle;
 		bestTime = sim.predTime;
 	}
 	return best;
 }
-const firstAngle = landingAngle(bCargo, bCareer.hq, CAREER_TEST_SPEED);
+const firstAngle = landingAngle(bCargo, bCareer.hq, CAREER_TEST_SPEED, bCareer);
 check(firstAngle !== null, 'build env: no landing shot from HQ');
 buildEnv.dragAim(bCareer.hq, firstAngle, CAREER_TEST_SPEED);
 buildEnv.runFrames(2, 16.0);
@@ -2791,7 +2792,7 @@ function protoOf(career, family, id) {
 
 	/* predicted route info includes launch fee and a sampled viable departure;
 	 * profit/s and time of flight remain visible beside the net outcome. */
-	const shotAngle = landingAngle(cSim, cCareer.hq, CAREER_TEST_SPEED);
+	const shotAngle = landingAngle(cSim, cCareer.hq, CAREER_TEST_SPEED, cCareer);
 	check(shotAngle !== null, '0.4.17: no landing shot from HQ');
 	/* age planets so predicted visit + task profit is 3.25 on landing at a padless planet */
 	cScene.game.clockSteps = 20000;

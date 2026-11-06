@@ -152,6 +152,37 @@ function loadPage(options = {}) {
 		elements.set(spec.id, makeElement(spec, spec.id === 'g' ? gPaint : paint, options.webglFactory));
 	}
 
+	/* Clone the actual score template and register its generated IDs on append. */
+	const templateHtml = /<template id="scoreRivalTemplate">([\s\S]*?)<\/template>/.exec(html)[1];
+	elements.get('scoreRivalTemplate').content = {
+		cloneNode() {
+			const nodes = {};
+			for (const match of templateHtml.matchAll(/<(\w+)\b([^>]*)\bdata-score="([^"]+)"([^>]*)>/g)) {
+				const attrs = match[2] + match[4];
+				const node = makeElement({ id: '', tagName: match[1].toUpperCase(),
+					checked: /\bchecked\b/.test(attrs), hidden: /\shidden\b/.test(attrs) }, paint);
+				const properties = {};
+				node.style = { setProperty(name, value) { properties[name] = value; },
+					getPropertyValue(name) { return properties[name] || ''; } };
+				nodes[match[3]] = node;
+			}
+			nodes.bot.parentElement = nodes.label;
+			nodes.label.parentElement = nodes.row;
+			return {
+				nodes,
+				querySelector(selector) {
+					const name = /^\[data-score="([^"]+)"\]$/.exec(selector);
+					return name ? nodes[name[1]] : null;
+				}
+			};
+		}
+	};
+	elements.get('scoreRows').appendChild = fragment => {
+		for (const node of Object.values(fragment.nodes)) {
+			if (node.id) elements.set(node.id, node);
+		}
+	};
+
 	const windowListeners = {};
 	const location = { hash: options.hash || '', search: options.search || '', href: PAGE_URL + (options.search || '') + (options.hash || '') };
 	const env = { clipboardText: null };

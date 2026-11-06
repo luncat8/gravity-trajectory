@@ -29,8 +29,8 @@
 		: root.OrbitTech;
 
 	const PLANETS = OrbitWorld.PLANETS;
-	const MAX_RIVALS = 2;
-	const PLAYER_INDEX = 2;
+	const MAX_RIVALS = 16;
+	const PLAYER_INDEX = MAX_RIVALS;
 	const TOP_K = 4;
 	const MAX_BOT_SHOTS = 16;
 	const SLICE_CANDIDATES = 64;
@@ -279,6 +279,8 @@
 		this.careerReachCacheCap.fill(-1);
 		this.careerReachCacheCount = new Int16Array(exitCacheSize);
 		this.careerReachMark = new Uint8Array(PLANETS);
+		this.worldW = worldW;
+		this.worldH = worldH;
 		this.strength = new Float64Array(PLANETS).fill(1);
 		this.rivals = [createRival(worldW, worldH), createRival(worldW, worldH)];
 		/* the GUI's own actor when YOU is set to bot; its sim mirrors the GUI sim */
@@ -291,7 +293,7 @@
 			burnGain: 0, burnBody: -1
 		}, idleTries: 0, waitTries: 0, readyStep: 0, gapPhase: 0, index: PLAYER_INDEX,
 			burn: 0, burnTries: 0, burnNext: CAREER_BURN_AT, burnStep: 0 };
-		for (let i = 0; i < MAX_RIVALS; i++) this.rivals[i].index = i;
+		for (let i = 0; i < this.rivals.length; i++) this.rivals[i].index = i;
 		this.player.index = PLAYER_INDEX;
 
 		this.level = GravityGame.BOT_OFF;
@@ -405,9 +407,9 @@
 			step: -1, tried: 0, impacts: 0, finite: 0, bounce: 0, exit: 0,
 			noImpact: 0, book: 0, burn: 0, rescue: 0
 		};
-		/* bounded decision trace and the last line per actor (0..1 rivals, 2 YOU) */
+		/* bounded decision trace and the last line per actor */
 		this.trace = [];
-		this.lastDecision = ['', '', ''];
+		this.lastDecision = new Array(MAX_RIVALS + 1).fill('');
 		this.worldStep = 0;
 
 		const self = this;
@@ -507,6 +509,20 @@
 		return lines.join('\n');
 	};
 
+	GravityBot.prototype.ensureRivals = function (count) {
+		while (this.rivals.length < count) {
+			const rival = createRival(this.worldW, this.worldH);
+			rival.index = this.rivals.length;
+			this.rivals.push(rival);
+			this.rivalTypes.push(GravityGame.PLAYER_BOT);
+			if (this.tradeSim) {
+				this.bindSim(rival.sim);
+				rival.sim.setScales(this.probe.gravityScale, this.probe.forceScale);
+				rival.sim.setPlanetMask(this.probe.planetMask);
+			}
+		}
+	};
+
 	GravityBot.prototype.attachWorld = function (tradeSim) {
 		this.tradeSim = tradeSim;
 		this.strength.fill(1);
@@ -515,7 +531,7 @@
 		this.bindSim(this.probe);
 		this.bindSim(this.exitProbe);
 		this.bindSim(this.burnShotSim);
-		for (let i = 0; i < MAX_RIVALS; i++) this.bindSim(this.rivals[i].sim);
+		for (let i = 0; i < this.rivals.length; i++) this.bindSim(this.rivals[i].sim);
 		this.bindSim(this.player.sim);
 	};
 
@@ -527,7 +543,7 @@
 		this.probe.setScales(gravityScale, forceScale);
 		this.exitProbe.setScales(gravityScale, forceScale);
 		this.burnShotSim.setScales(gravityScale, forceScale);
-		for (let i = 0; i < MAX_RIVALS; i++) {
+		for (let i = 0; i < this.rivals.length; i++) {
 			this.rivals[i].sim.setScales(gravityScale, forceScale);
 			if (this.rivals[i].career) this.rivals[i].career.forceScale = forceScale;
 		}
@@ -535,7 +551,7 @@
 		if (!changed) return;
 		/* a cached plan was searched in the old world */
 		this.jobActive = false;
-		for (let i = 0; i < MAX_RIVALS; i++) this.rivals[i].planReady = false;
+		for (let i = 0; i < this.rivals.length; i++) this.rivals[i].planReady = false;
 		this.player.planReady = false;
 	};
 
@@ -547,7 +563,10 @@
 			trade.orbitRX, trade.orbitRY,
 			trade.orbitTiltCos, trade.orbitTiltSin
 		);
-		sim.setField(PLANETS, trade.planetR, this.strength, this.fillPlanets, true);
+		const mask = this.probe.planetMask;
+		let count = PLANETS;
+		if (mask) while (count > 0 && !mask[count - 1]) count--;
+		sim.setField(count, trade.planetR, this.strength, this.fillPlanets, true);
 	};
 
 	/* the run's active planet subset: every bot-owned sim and career mirrors it */
@@ -556,8 +575,15 @@
 		this.exitProbe.setPlanetMask(mask);
 		this.burnShotSim.setPlanetMask(mask);
 		this.planetUniverseCount = count;
+		let extent = PLANETS;
+		if (mask) while (extent > 0 && !mask[extent - 1]) extent--;
+		const sims = [this.probe, this.exitProbe, this.burnShotSim, this.player.sim];
+		for (let i = 0; i < this.rivals.length; i++) sims.push(this.rivals[i].sim);
+		for (let i = 0; i < sims.length; i++) {
+			if (sims[i].strength === this.strength) sims[i].setCount(extent);
+		}
 		this.player.sim.setPlanetMask(mask);
-		for (let i = 0; i < MAX_RIVALS; i++) {
+		for (let i = 0; i < this.rivals.length; i++) {
 			this.rivals[i].sim.setPlanetMask(mask);
 			if (this.rivals[i].career) {
 				GravityGame.setCareerUniverse(this.rivals[i].career, mask, count);
@@ -566,7 +592,8 @@
 	};
 
 	GravityBot.prototype.spec = function () {
-		return LEVELS[this.level] || LEVELS.off;
+		return this.level === GravityGame.BOT_OFF && this.count > 0
+			? LEVELS.normal : (LEVELS[this.level] || LEVELS.off);
 	};
 
 	GravityBot.prototype.actorAt = function (index) {
@@ -591,7 +618,7 @@
 		};
 		bind(this.probe);
 		bind(this.burnShotSim);
-		for (let i = 0; i < MAX_RIVALS; i++) bind(this.rivals[i].sim);
+		for (let i = 0; i < this.rivals.length; i++) bind(this.rivals[i].sim);
 		bind(this.player.sim);
 	};
 
@@ -653,15 +680,17 @@
 		this.playerLevel = this.playerType === GravityGame.PLAYER_BOT
 			? (this.level === GravityGame.BOT_OFF ? GravityGame.BOT_NORMAL : this.level)
 			: GravityGame.BOT_OFF;
-		for (let i = 0; i < MAX_RIVALS; i++) {
-			this.rivalTypes[i] = rivalTypes && rivalTypes[i] === GravityGame.PLAYER_USER
-				? GravityGame.PLAYER_USER : GravityGame.PLAYER_BOT;
-		}
-		this.count = this.ruleSpec().humanOnly ? this.spec().careerCount : this.spec().count;
+		const levelSpec = LEVELS[this.level] || LEVELS.off;
+		this.count = this.ruleSpec().humanOnly ? levelSpec.careerCount : levelSpec.count;
 		/* the scoreboard +/- sets the number of players directly, so it wins
 		 * over the difficulty level's rival count */
 		if (rivalCount !== undefined && rivalCount !== null) {
 			this.count = rivalCount < 0 ? 0 : (rivalCount > MAX_RIVALS ? MAX_RIVALS : rivalCount);
+		}
+		this.ensureRivals(this.count);
+		for (let i = 0; i < this.rivals.length; i++) {
+			this.rivalTypes[i] = rivalTypes && rivalTypes[i] === GravityGame.PLAYER_USER
+				? GravityGame.PLAYER_USER : GravityGame.PLAYER_BOT;
 		}
 		this.jobActive = false;
 		this.jobRival = -1;
@@ -685,10 +714,10 @@
 		this.careerFuelTopUps = 0;
 
 		const base0 = (Math.imul(this.seed, 7) + 5) >>> 0;
-		for (let i = 0; i < MAX_RIVALS; i++) {
+		for (let i = 0; i < this.rivals.length; i++) {
 			const r = this.rivals[i];
 			const home = this.rivalTypes[i] === GravityGame.PLAYER_BOT
-				? (base0 + i * 13) % PLANETS : -1;
+				? (base0 + (i % 2) * 13 + Math.floor(i / 2)) % OrbitWorld.DEFAULT_PLANETS : -1;
 			this.careerDropQueue(r);
 			this.resetActor(r, home);
 			/* a career run leaves pads on the rival sims; a shared-market run must not inherit them */
@@ -696,10 +725,10 @@
 			r.routeOffset = 0.013 + i * 0.191;
 		}
 		let playerBase = this.playerType === GravityGame.PLAYER_BOT
-			? (Math.imul(this.seed, 11) + 3) % PLANETS : -1;
+			? (Math.imul(this.seed, 11) + 3) % OrbitWorld.DEFAULT_PLANETS : -1;
 		if (playerBase >= 0 && this.rule === GravityGame.RULE_ROUTE) {
 			while (this.routeOccupiedBy(playerBase, false) >= 0) {
-				playerBase = (playerBase + 1) % PLANETS;
+				playerBase = (playerBase + 1) % OrbitWorld.DEFAULT_PLANETS;
 			}
 		}
 		this.resetActor(this.player, playerBase);
@@ -856,11 +885,13 @@
 	};
 
 	GravityBot.prototype.nextRouteActor = function () {
-		for (let n = 0; n < 3; n++) {
-			const index = (this.routeTurn + n) % 3;
+		const slots = this.count + 1;
+		for (let n = 0; n < slots; n++) {
+			const slot = (this.routeTurn + n) % slots;
+			const index = slot === this.count ? PLAYER_INDEX : slot;
 			if (!this.routeActorActive(index)) continue;
 			if (this.actorAt(index).routeDone) continue;
-			this.routeTurn = (index + 1) % 3;
+			this.routeTurn = (slot + 1) % slots;
 			return index;
 		}
 		return -1;
@@ -900,7 +931,8 @@
 	};
 
 	GravityBot.prototype.routeDone = function () {
-		for (let i = 0; i < 3; i++) {
+		for (let slot = 0; slot <= this.count; slot++) {
+			const i = slot === this.count ? PLAYER_INDEX : slot;
 			if (this.routeActorActive(i) && !this.actorAt(i).routeDone) return false;
 		}
 		return true;
@@ -913,7 +945,8 @@
 	GravityBot.prototype.routeProgress = function () {
 		let done = 0;
 		let total = 0;
-		for (let i = 0; i < 3; i++) {
+		for (let slot = 0; slot <= this.count; slot++) {
+			const i = slot === this.count ? PLAYER_INDEX : slot;
 			if (!this.routeActorActive(i)) continue;
 			done += this.actorAt(i).routeDoneCount;
 			total += this.specFor(i).routeCandidates;
@@ -962,7 +995,7 @@
 		const newVisits = probe.predNewVisits;
 		const rSpec = this.ruleSpec();
 		const completes = rSpec.stopOnTour &&
-			(rival.sim.visitedCount + newVisits >= PLANETS);
+			(rival.sim.visitedCount + newVisits >= (this.planetUniverseCount || PLANETS));
 		const solvent = rival.ledger.purse - MONEY.cost + profit >= MONEY.cost || completes;
 
 		let score = (solvent ? 0 : -400) + lands * 12 - samePad * 35 -
@@ -1297,7 +1330,7 @@
 			rival.sim.stepOne();
 			rival.steps += 1;
 			GravityGame.stepHarvest(rival.ledger, market, rival.sim, runStep);
-			if (stopOnTour && rival.sim.visitedCount === PLANETS && rival.doneSteps < 0) {
+			if (stopOnTour && rival.sim.visitedCount === (this.planetUniverseCount || PLANETS) && rival.doneSteps < 0) {
 				rival.doneSteps = rival.steps;
 			}
 			if (rival.sim.status !== STATUS_FLYING) {
@@ -2768,7 +2801,7 @@
 	 * CAREER_RIVAL_GAP world seconds (plus its phase) before the next attempt.
 	 */
 	GravityBot.prototype.startCareers = function (galaxy, seed, trade) {
-		for (let i = 0; i < MAX_RIVALS; i++) {
+		for (let i = 0; i < this.rivals.length; i++) {
 			const r = this.rivals[i];
 			r.steps = 0;
 			r.shots.length = 0;
@@ -2801,6 +2834,71 @@
 				r.career.ledger.purse.toFixed(2) + ' · first try in ' +
 				(r.readyStep * GravitySim.DT).toFixed(1) + ' s', 0);
 		}
+	};
+
+	GravityBot.prototype.addRival = function (planet, step) {
+		const i = this.count;
+		this.ensureRivals(i + 1);
+		const r = this.rivals[i];
+		this.rivalTypes[i] = GravityGame.PLAYER_BOT;
+		this.resetActor(r, planet);
+		r.sim.setLaunchNetwork(null, null);
+		r.readyStep = step;
+		r.routeOffset = 0.013 + i * 0.191;
+		if (this.rule === GravityGame.RULE_ROUTE) r.routeDone = false;
+		this.count += 1;
+	};
+
+	GravityBot.prototype.removeRival = function () {
+		if (!this.count) return;
+		this.count -= 1;
+		this.jobActive = false;
+		this.routeCandActor = -1;
+	};
+
+	GravityBot.prototype.addCareerRival = function (galaxy, trade, planet, step) {
+		const i = this.count;
+		this.ensureRivals(i + 1);
+		const r = this.rivals[i];
+		this.rivalTypes[i] = GravityGame.PLAYER_BOT;
+		this.resetActor(r, planet);
+		r.gapPhase = i * CAREER_RIVAL_PHASE;
+		r.readyStep = step + r.gapPhase;
+		r.idleTries = 0;
+		r.waitTries = 0;
+		r.burn = 0;
+		r.burnTries = 0;
+		r.burnNext = CAREER_BURN_AT;
+		r.burnStep = 0;
+		this.careerDropQueue(r);
+		r.career = GravityGame.createCareer(r.ledger);
+		GravityGame.setCareerUniverse(r.career, this.probe.planetMask, this.planetUniverseCount);
+		GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(this.seed, i),
+			trade, null, galaxy, planet);
+		r.sim.fieldT = trade.t;
+		r.sim.fieldRate = this.probe.fieldRate;
+		r.basePlanet = planet;
+		this.count += 1;
+		this.traceAdd(i, 'start', 'HQ P' + planet, step);
+	};
+
+	GravityBot.prototype.removeCareerRival = function () {
+		if (!this.count) return;
+		const r = this.rivals[this.count - 1];
+		this.careerDropQueue(r);
+		const galaxy = r.career.galaxy;
+		for (let i = 0; i < this.count - 1; i++) {
+			const other = this.rivals[i];
+			if (other.turret && r.career.pads.includes(other.turret.pad)) this.careerDropQueue(other);
+		}
+		const index = galaxy.actors.indexOf(r.career);
+		if (index >= 0) galaxy.actors.splice(index, 1);
+		for (let i = 0; i < galaxy.actors.length; i++) galaxy.actors[i].index = i;
+		this.count -= 1;
+		r.career = null;
+		r.sim.setLaunchNetwork(null, null);
+		this.jobActive = false;
+		GravityGame.refreshNetwork(galaxy);
 	};
 
 	/* an idle board ages on the world clock: without this a contract with an
@@ -3334,7 +3432,9 @@
 		const career = r.career;
 		const sim = r.sim;
 		const who = r.index;
-		const angles = this.spec().careerAngles;
+		const baseAngles = this.spec().careerAngles;
+		const angles = this.count > 2
+			? Math.max(8, Math.floor(baseAngles * Math.sqrt(2 / this.count))) : baseAngles;
 		if (career.at < 0) return null;
 		this.careerScanReset(runStep);
 		this.careerBurnTopReset();
@@ -3523,7 +3623,7 @@
 	 * so the shared map never empties out of rival players */
 	GravityBot.prototype.careerRestart = function (r, index, trade, runStep) {
 		GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(this.seed, index), trade,
-			null, r.career.galaxy);
+			null, r.career.galaxy, r.career.hq);
 		r.basePlanet = r.career.hq;
 		r.shots.length = 0;
 		r.readyStep = runStep + CAREER_REBOOT_GAP + r.gapPhase;

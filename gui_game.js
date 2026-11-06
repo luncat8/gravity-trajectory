@@ -33,8 +33,7 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	} else {
 		game.player = slotTypes[0];
 	}
-	rivalTypesArg[0] = slotTypes[1];
-	rivalTypesArg[1] = slotTypes[2];
+	for (let i = 0; i < rivalTypesArg.length; i++) rivalTypesArg[i] = slotTypes[i + 1];
 	syncModeRadios();
 	syncBotRadios();
 	updateHelp(game.rule);
@@ -83,11 +82,19 @@ function startCareerRun(seed) {
 	cancelTurret();
 	GravityGame.resetGalaxy(game.galaxy, seed);
 	GravityGame.startCareer(game.career, cargoSim, seed, tradeSim, game.cheat, game.galaxy);
-	/* the picked HQ is always a shallow well (gravity_game pickHq), so the
-	 * world keeps the strengths the seed gave it */
+	bot.startCareers(game.galaxy, seed, tradeSim);
+	/* Special worlds and every starting HQ have a standard gravity well. */
+	const fixed = [game.career.capitalPlanet, game.career.arfPlanet];
+	for (let i = 0; i < game.galaxy.actors.length; i++) fixed.push(game.galaxy.actors[i].hq);
+	for (let i = 0; i < fixed.length; i++) {
+		const planet = fixed[i];
+		if (planet < 0) continue;
+		planetBaseStrength[planet] = 1;
+		portPlanetStrength[planet] = 1;
+	}
+	syncPlanetStrengths();
 	if (mode === MODE_PORTS) cargoSim.refreshField();
 	syncPlanetGravity();
-	bot.startCareers(game.galaxy, seed, tradeSim);
 	bot.setPlanetMask(planetMask, planetCount);
 	/* YOU as a bot: the page keeps the ship, the bot plans and shops for it */
 	bot.attachCareerPlayer(game.career, cargoSim);
@@ -135,15 +142,50 @@ function playerCountShown() {
 }
 
 function setPlayerCount(delta) {
+	if (replay.on) return;
 	const current = playerCountShown();
-	const count = Math.max(1, Math.min(MAX_PLAYERS, current + delta));
+	const count = Math.max(1, Math.min(MAX_PLAYERS, current + Math.sign(delta)));
 	if (count === current) return;
 	if (delta > 0) {
-		/* a new player needs a planet to call home; if the universe is
-		 * full of HQs, grow it so the increase can proceed */
-		while (freePlanetCount() < 1 && planetCount < PLANET_UNIVERSE_MAX) {
-			if (!setPlanetUniverseSize(planetCount + 1)) break;
+		if (planetCount >= PLANET_UNIVERSE_MAX) return;
+		const before = planetMask.slice();
+		if (!setPlanetUniverseSize(planetCount + 1)) return;
+		let added = -1;
+		for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
+			if (planetMask[i] && !before[i]) { added = i; break; }
 		}
+		if (game.on) {
+			slotTypes[count - 1] = PLAYER_BOT;
+			if (careerRule()) {
+				planetBaseStrength[added] = 1;
+				portPlanetStrength[added] = 1;
+				syncPlanetStrengths();
+				bot.addCareerRival(game.galaxy, tradeSim, added, game.clockSteps);
+				if (mode === MODE_PORTS) cargoSim.refreshField();
+				syncPlanetGravity();
+			} else {
+				bot.addRival(added, game.clockSteps);
+				if (routeRule()) bot.useField(cargoSim, mode);
+				game.doneSteps = -1;
+				for (let i = 0; i < bot.count; i++) bot.rivals[i].doneSteps = -1;
+			}
+			game.playerCount = count;
+			refreshGameUi();
+			refreshPlanetUniverseUi();
+			return;
+		}
+	} else if (game.on) {
+		if (activeSlotIndex() === current - 1) selectSlot(0);
+		if (careerRule()) {
+			const removed = bot.rivals[bot.count - 1].career;
+			if (turret.pending && removed.pads.includes(turret.pad)) cancelTurret();
+			bot.removeCareerRival();
+		}
+		else bot.removeRival();
+		game.playerCount = count;
+		refreshGameUi();
+		refreshPlanetUniverseUi();
+		return;
 	}
 	game.playerCount = count;
 	if (game.on) startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player, game.cheat);
@@ -165,7 +207,7 @@ function refreshPlanetUniverseUi() {
 	const shown = playerCountShown();
 	if (playerCountValueEl) playerCountValueEl.textContent = shown;
 	if (playerCountDownEl) playerCountDownEl.disabled = shown <= 1;
-	if (playerCountUpEl) playerCountUpEl.disabled = shown >= MAX_PLAYERS;
+	if (playerCountUpEl) playerCountUpEl.disabled = shown >= MAX_PLAYERS || planetCount >= PLANET_UNIVERSE_MAX;
 }
 
 function setSlotType(slot, next) {
@@ -538,8 +580,7 @@ function advanceGameOneStep() {
 		}
 	}
 	if (endedLimit && (!clockDriverFlying() ||
-		(cargoSim.status !== STATUS_FLYING &&
-			slotTypes[1] === PLAYER_BOT && slotTypes[2] === PLAYER_BOT))) {
+		(cargoSim.status !== STATUS_FLYING && !rivalFlying(false)))) {
 		return;
 	}
 	if (replay.on) {

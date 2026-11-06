@@ -253,11 +253,18 @@ const scoreHudEl = $('scoreHud');
 const scoreRuleTagEl = $('scoreRuleTag');
 const goalRoleEl = $('goalRole');
 const playerScoreMetaEl = $('playerScoreMeta');
-const scoreBotEls = [$('playerBot'), $('rivalBot1'), $('rivalBot2')];
-const scoreBotLabelEls = [$('scoreBotLabel0'), $('scoreBotLabel1'), $('scoreBotLabel2')];
-const rivalScoreRows = [$('scoreRival1'), $('scoreRival2')];
-const rivalScoreEls = [$('rivalScore1'), $('rivalScore2')];
-const rivalMetaEls = [$('rivalMeta1'), $('rivalMeta2')];
+const scoreBotEls = [$('playerBot')];
+const scoreBotLabelEls = [$('scoreBotLabel0')];
+const rivalScoreRows = [];
+const rivalScoreEls = [];
+const rivalMetaEls = [];
+for (let i = 1; i < MAX_PLAYERS; i++) {
+	scoreBotEls.push($('rivalBot' + i));
+	scoreBotLabelEls.push($('scoreBotLabel' + i));
+	rivalScoreRows.push($('scoreRival' + i));
+	rivalScoreEls.push($('rivalScore' + i));
+	rivalMetaEls.push($('rivalMeta' + i));
+}
 const rivalTagEl = $('rivalTag');
 const playerBotEl = scoreBotEls[0];
 const botOffEl = $('botOff');
@@ -452,7 +459,7 @@ game.career = GravityGame.createCareer(game.money);
 const PLANET_UNIVERSE_MIN = 4;
 const PLANET_UNIVERSE_MAX = PLANETS;
 const PLANET_CAREER_DEFAULT = 13;
-const PLANET_DEFAULT = PLANETS;
+const PLANET_DEFAULT = OrbitWorld.DEFAULT_PLANETS;
 const planetMask = new Uint8Array(PLANET_UNIVERSE_MAX);
 let planetCount = PLANET_DEFAULT;
 /* last used game mode, restored on load */
@@ -479,15 +486,17 @@ let pauseOnLanding = true;
 /* a career launch is queued until the planet's EMC barrel reaches the aim */
 const turret = { pending: false, body: -1, angle: 0, speed: 0, fireAt: 0,
 	pad: null, energy: 0 };
-const slotTypes = [PLAYER_USER, PLAYER_BOT, PLAYER_BOT];
-const rivalTypesArg = [PLAYER_BOT, PLAYER_BOT];
+const slotTypes = new Array(MAX_PLAYERS).fill(PLAYER_BOT);
+slotTypes[0] = PLAYER_USER;
+const rivalTypesArg = new Array(GravityBot.MAX_RIVALS).fill(PLAYER_BOT);
 let activeSlot = 0;
 /* the player's one route entry; `ready` means its trace reached an end */
 const routePlan = makeRoutePlanSlot();
-const slotPlans = [routePlan, makeRoutePlanSlot(), makeRoutePlanSlot()];
+const slotPlans = [routePlan];
+for (let i = 1; i < MAX_PLAYERS; i++) slotPlans.push(makeRoutePlanSlot());
 /* per-slot best manual plan, scoped to one start planet and one game run */
-const slotBest = [makeBestSlot(), makeBestSlot(), makeBestSlot()];
-const slotAim = [makeAimSlot(), makeAimSlot(), makeAimSlot()];
+const slotBest = Array.from({ length: MAX_PLAYERS }, makeBestSlot);
+const slotAim = Array.from({ length: MAX_PLAYERS }, makeAimSlot);
 let routeLeader = -2;
 let routeBotVersion = -1;
 let playerBotSyncNeeded = true;

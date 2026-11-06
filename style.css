@@ -248,6 +248,8 @@ body {
 	display: grid;
 	gap: 4px;
 	margin-top: 8px;
+	max-height: min(55vh, 620px);
+	overflow-y: auto;
 }
 
 .playerCountRow {
@@ -344,16 +346,10 @@ body {
 	border-left-color: var(--mint);
 }
 
-.scoreRivalOne.isActive {
-	background: rgba(185, 154, 255, 0.12);
-	border-color: rgba(185, 154, 255, 0.36);
-	border-left-color: #b99aff;
-}
-
-.scoreRivalTwo.isActive {
-	background: rgba(255, 133, 168, 0.12);
-	border-color: rgba(255, 133, 168, 0.36);
-	border-left-color: #ff85a8;
+.scoreRival.isActive {
+	background: var(--rival-active-bg);
+	border-color: var(--rival-active-border);
+	border-left-color: var(--rival-colour);
 }
 
 .scoreEntry:focus-visible {
@@ -430,30 +426,17 @@ body {
 	cursor: pointer;
 }
 
-.scoreRivalOne {
-	border-left-color: #b99aff;
+.scoreRival {
+	border-left-color: var(--rival-colour);
 }
 
-.scoreRivalOne .scoreName,
-.scoreRivalOne .scoreValue {
-	color: #c5aaff;
+.scoreRival .scoreName,
+.scoreRival .scoreValue {
+	color: var(--rival-colour);
 }
 
-.scoreRivalOne .scoreBotToggle input {
-	accent-color: #b99aff;
-}
-
-.scoreRivalTwo {
-	border-left-color: #ff85a8;
-}
-
-.scoreRivalTwo .scoreName,
-.scoreRivalTwo .scoreValue {
-	color: #ff9ab6;
-}
-
-.scoreRivalTwo .scoreBotToggle input {
-	accent-color: #ff85a8;
+.scoreRival .scoreBotToggle input {
+	accent-color: var(--rival-colour);
 }
 
 .drawer {

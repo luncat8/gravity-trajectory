@@ -22,6 +22,12 @@ function randomActivePlanet() {
 	return -1;
 }
 
+function activePlanetExtent() {
+	let count = PLANET_UNIVERSE_MAX;
+	while (count > 0 && !planetMask[count - 1]) count--;
+	return count;
+}
+
 function initPlanetUniverse(n) {
 	const count = Math.max(PLANET_UNIVERSE_MIN, Math.min(n, PLANET_UNIVERSE_MAX));
 	planetMask.fill(0);
@@ -39,6 +45,7 @@ function syncPlanetStrengths() {
 
 /* push the current subset into the career, market, field, scene and bot */
 function applyPlanetUniverse() {
+	tradeSim.setPlanetLimit(activePlanetExtent());
 	GravityGame.setCareerUniverse(game.career, planetMask, planetCount);
 	GravityGame.applyMarketUniverse(game.market, planetMask, planetCount);
 	/* specials are a career economy rule; tour/money/route keep the plain market */

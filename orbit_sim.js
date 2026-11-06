@@ -82,7 +82,8 @@
 		this.partnerN = 4;
 		this.portCount = 0;
 		this.shipCount = 0;
-		this.planetEmpty = PLANETS;
+		this.tradePlanetLimit = OrbitWorld.DEFAULT_PLANETS;
+		this.planetEmpty = this.tradePlanetLimit;
 		this.reserved = 0;
 		this.delivered = 0;
 		this.coloniesBuilt = 0;
@@ -215,6 +216,7 @@
 
 	Sim.prototype.activatePort = function (planet, time) {
 		if (planet < 0 || planet >= PLANETS) return null;
+		this.setPlanetLimit(planet + 1);
 		if (this.colonyOn[planet] !== NO_PORT) {
 			return this.colonies[this.colonyOn[planet]];
 		}
@@ -656,6 +658,15 @@
 		this.refreshPartners();
 	};
 
+	/* Trade only considers extra worlds once they are enabled in the game. */
+	Sim.prototype.setPlanetLimit = function (count) {
+		const limit = Math.min(PLANETS, Math.max(this.tradePlanetLimit, count));
+		for (let i = this.tradePlanetLimit; i < limit; i++) {
+			if (this.planetState[i] === 0) this.planetEmpty++;
+		}
+		this.tradePlanetLimit = limit;
+	};
+
 	/* Habitat-weighted target selection within EXPAND_RADIUS. */
 	Sim.prototype.scoreTarget = function (port) {
 		const px = this.portX(port, this.t);
@@ -663,7 +674,7 @@
 		let best = NO_PORT;
 		let bestScore = 0;
 		const maxD2 = EXPAND_RADIUS * EXPAND_RADIUS;
-		for (let planet = 0; planet < PLANETS; planet++) {
+		for (let planet = 0; planet < this.tradePlanetLimit; planet++) {
 			if (this.planetState[planet] !== 0) continue;
 			if (this.planetHabitat[planet] < MIN_EXPAND_HABITAT) continue;
 			const dx = this.planetX[planet] - px;

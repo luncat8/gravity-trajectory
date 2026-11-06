@@ -51,7 +51,7 @@
 	const TRAIL_STRIDE = 2;
 	const BUDGET_MS = 10;
 	const BUDGET_EVERY = 64;
-	const MAX_BODIES = 32;
+	const MAX_BODIES = 48;
 	const FIELD_STRIDE = 4;
 	const VEL_EPS = 0.05;
 	const NO_BODY = -1;
@@ -80,6 +80,7 @@
 		this.padY = worldH * AREA_PAD;
 
 		this.planetCount = 0;
+		this.planetCapacity = 0;
 		/* null = every configured planet is in play; a Uint8Array marks the
 		 * subset a run may visit / crash on, so the world size can change live */
 		this.planetMask = null;
@@ -191,7 +192,9 @@
 	GravitySim.prototype.setPlanets = function (
 		count, px, py, pr, orbitRX, orbitRY, tiltCos, tiltSin
 	) {
+		this.planetCapacity = count;
 		this.planetCount = count;
+		if (this.planetMask) while (this.planetCount > 0 && !this.planetMask[this.planetCount - 1]) this.planetCount--;
 		this.planetX = px;
 		this.planetY = py;
 		this.planetR = pr;
@@ -210,6 +213,8 @@
 	/* the run's active planet subset; `null` keeps every planet in play */
 	GravitySim.prototype.setPlanetMask = function (mask) {
 		this.planetMask = mask || null;
+		this.planetCount = this.planetCapacity;
+		if (mask) while (this.planetCount > 0 && !mask[this.planetCount - 1]) this.planetCount--;
 	};
 
 	/* a configured planet the run may actually enter / land on */

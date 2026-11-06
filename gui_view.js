@@ -331,7 +331,7 @@ function applyMode() {
 		sourceTagEl.textContent = 'ports · moving';
 		sourceTagEl.title = tradeSim.portCount + ' ports · launch from planets';
 	} else {
-		cargoSim.setField(PLANETS, tradeSim.planetR, planetStrength, fillPlanets, true);
+		cargoSim.setField(activePlanetExtent(), tradeSim.planetR, planetStrength, fillPlanets, true);
 		sourceTagEl.textContent = 'planets';
 		sourceTagEl.title = planetCount + ' planets';
 	}

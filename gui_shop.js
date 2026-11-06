@@ -252,7 +252,7 @@ function fuelBlockHtml(career) {
 /* ── pads, claims & parts ── EMC claim rings, pad blocks, gear/part/prototype rows and the shop block */
 /* who owns which planet's EMC claim, counted per player */
 function claimCounts() {
-	const counts = [0, 0, 0];
+	const counts = new Array(bot.count + 1).fill(0);
 	for (let i = 0; i < PLANETS; i++) {
 		const owner = GravityGame.claimOwner(game.galaxy, i);
 		if (owner >= 0 && owner < counts.length) counts[owner] += 1;

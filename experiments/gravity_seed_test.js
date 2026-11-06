@@ -12,6 +12,7 @@ const Sim = require('../gravity_sim.js');
 const { loadPage } = require('./dom_stub.js');
 
 const PLANETS = 26;
+const MAX_PLANETS = require('../orbit_world.js').PLANETS;
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const paramsOf = page => new URL(page.context.location.href).searchParams;
 const fieldOf = page => Array.from(page.context.GravityScene.sim.strength);
@@ -68,9 +69,9 @@ lab.setValue('gravity', 0);
 assert.strictEqual(labScene.sim.strength[4], 0);
 const edited = fieldOf(lab);
 assert.ok(labScene.setPlanetUniverseSize(4));
-assert.ok(labScene.setPlanetUniverseSize(PLANETS));
-assert.deepStrictEqual(fieldOf(lab), edited);
-assert.deepStrictEqual(Array.from(labScene.bot.probe.strength), edited);
+assert.ok(labScene.setPlanetUniverseSize(MAX_PLANETS));
+assert.deepStrictEqual(fieldOf(lab).slice(0, PLANETS), edited.slice(0, PLANETS));
+assert.deepStrictEqual(Array.from(labScene.bot.probe.strength), fieldOf(lab));
 lab.choose('srcPorts');
 const labTrade = lab.context.OrbitScene.sim;
 for (let port = 0; port < labTrade.portCount; port++) {
@@ -94,28 +95,27 @@ for (let port = 0; port < trade.portCount; port++) {
 	const p = trade.portPlanet[port];
 	assert.strictEqual(rosterScene.sim.strength[port], mask[p] ? initial[p] : 0);
 }
-assert.ok(rosterScene.setPlanetUniverseSize(PLANETS));
+assert.ok(rosterScene.setPlanetUniverseSize(MAX_PLANETS));
 roster.choose('srcPlanets');
-assert.deepStrictEqual(fieldOf(roster), initial);
+assert.deepStrictEqual(fieldOf(roster).slice(0, PLANETS), initial.slice(0, PLANETS));
 assert.strictEqual(rosterScene.sim.strength[zeroPlanet], 0);
-assert.deepStrictEqual(Array.from(rosterScene.bot.probe.strength), initial);
+assert.deepStrictEqual(Array.from(rosterScene.bot.probe.strength), fieldOf(roster));
 
-/* Every career player, probe and planet/port view sees the seed's own field:
- * each company's HQ is a seeded shallow planet (gravity_game pickHq), so no
- * body's gravity is overridden anywhere. */
+/* Every career field shares the standard gravity of special worlds and HQs. */
 for (const seed of [1, 7, 31, 42, 913]) {
 	const career = loadPage({ search: '?mode=career&seed=' + seed });
 	const scene = career.context.GravityScene;
 	const hq = scene.career.hq;
 	const active = scene.game.market.planetMask;
 	const saved = fieldOf(career);
-	assert.strictEqual(saved[hq], Game.planetGravity(seed, hq));
-	assert.ok(saved[hq] <= Game.HQ_GRAVITY_MAX, 'career HQ is not a shallow well');
+	assert.strictEqual(saved[hq], 1);
 	for (const rival of scene.bot.rivals) {
-		assert.ok(saved[rival.career.hq] <= Game.HQ_GRAVITY_MAX, 'rival HQ is not a shallow well');
+		assert.strictEqual(saved[rival.career.hq], 1);
 	}
+	const fixed = new Set([scene.career.capitalPlanet, scene.career.arfPlanet,
+		...scene.game.galaxy.actors.map(actor => actor.hq)]);
 	for (let p = 0; p < PLANETS; p++) {
-		const expected = active[p] ? Game.planetGravity(seed, p) : 0;
+		const expected = active[p] ? (fixed.has(p) ? 1 : Game.planetGravity(seed, p)) : 0;
 		assert.strictEqual(saved[p], expected);
 		assert.strictEqual(scene.bot.probe.strength[p], expected);
 		assert.strictEqual(scene.bot.player.sim.strength[p], expected);
@@ -141,7 +141,9 @@ const pcTrade = portCareer.context.OrbitScene.sim;
 const pcMask = pcScene.game.market.planetMask;
 for (let port = 0; port < pcTrade.portCount; port++) {
 	const p = pcTrade.portPlanet[port];
-	const expected = pcMask[p] ? Game.planetGravity(pcScene.game.seed, p) : 0;
+	const fixed = p === pcScene.career.capitalPlanet || p === pcScene.career.arfPlanet ||
+		pcScene.game.galaxy.actors.some(actor => actor.hq === p);
+	const expected = pcMask[p] ? (fixed ? 1 : Game.planetGravity(pcScene.game.seed, p)) : 0;
 	assert.strictEqual(pcScene.sim.strength[port], expected);
 }
 

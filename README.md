@@ -40,6 +40,12 @@ audio starts only after a user gesture and never changes physics or replays.
 
 ## controls
 
+The scoreboard supports up to 16 rivals and 48 active planets. Each player `+`
+activates one randomly chosen planet and starts the new rival there without
+resetting the run; `−` removes the newest rival and leaves its planet in play.
+Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
+26 planets (13 in career) with their normal rival counts.
+
 | input | action |
 | --- | --- |
 | drag from a planet | aim; direction is planet → grip, push grows with drag length · in career the whole range ends at the pad's live cap, so a full drag is always a shot the rail can fire |
@@ -100,7 +106,7 @@ audio starts only after a user gesture and never changes physics or replays.
   without a URL seed picks a random seed; `restart` keeps it, `new seed` redraws it. A career HQ
   is picked, never edited: sunlit-and-shallow first, then shallow, then sunlit, then any free
   planet (`HQ_GRAVITY_MAX = 1`, the deepest well an EMC-1 + BAT-1 leaves), so every company —
-  yours and the rivals’ — starts on a seeded shallow world.
+  yours and the rivals’ — starts on a seeded world with gravity 1.
   Restarting or reloading the same seed recreates the values. Inactive planets
   exert no pull and keep their values if added back. The G-field multiplier
   applies to these values; gravity can be edited per body only in the lab.

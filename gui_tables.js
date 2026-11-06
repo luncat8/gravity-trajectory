@@ -144,10 +144,20 @@ for (let c = -200; c <= 500; c++) {
 	GRAVITY_STRINGS[c + 200] = 'g ' + (c > 0 ? '+' : '') + (c / 100).toFixed(2);
 }
 const HEAVY_G = root.GravityField ? root.GravityField.HEAVY_G : 2;
-const RIVAL_COLOURS = ['#b99aff', '#ff85a8'];
-const RIVAL_TRAILS = ['rgba(185, 154, 255, 0.48)', 'rgba(255, 133, 168, 0.44)'];
-const RIVAL_TAGS = ['R1', 'R2'];
-const SLOT_NAMES = ['YOU', 'R1', 'R2'];
+/* Ordered by perceptual separation, including YOU's mint and the two original rivals. */
+const RIVAL_COLOURS = [
+	'#b99aff', '#ff85a8', '#ffc21a', '#1aff1a', '#42afd7', '#ffd4a3',
+	'#a5d742', '#ff7c4d', '#1aff94', '#ffff1a', '#ff80ff', '#e7ffa3',
+	'#1af0ff', '#d79b42', '#efb3e7', '#a3ff1a'
+];
+function rivalRgba(hex, alpha) {
+	const rgb = parseInt(hex.slice(1), 16);
+	return 'rgba(' + (rgb >> 16) + ', ' + ((rgb >> 8) & 255) + ', ' +
+		(rgb & 255) + ', ' + alpha + ')';
+}
+const RIVAL_TRAILS = RIVAL_COLOURS.map((colour, i) => rivalRgba(colour, i === 1 ? 0.44 : 0.48));
+const RIVAL_TAGS = RIVAL_COLOURS.map((colour, i) => 'R' + (i + 1));
+const SLOT_NAMES = ['YOU', ...RIVAL_TAGS];
 const REPLAY_AIM_MS = 700;
 const REPLAY_GAP_MS = 450;
 /* replay multipliers; index 2 is real time */

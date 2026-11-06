@@ -497,5 +497,31 @@ function scoreSteps() {
 
 /* --- planet universe ------------------------------------------------- */
 
-const scoreRowEls = [$('scorePlayer'), $('scoreRival1'), $('scoreRival2')];
-const MAX_PLAYERS = scoreRowEls.length;
+const MAX_PLAYERS = GravityBot.MAX_RIVALS + 1;
+const scoreRowEls = [$('scorePlayer')];
+const scoreRowsEl = $('scoreRows');
+const scoreRivalTemplate = $('scoreRivalTemplate');
+for (let i = 1; i < MAX_PLAYERS; i++) {
+	const fragment = scoreRivalTemplate.content.cloneNode(true);
+	const row = fragment.querySelector('[data-score="row"]');
+	const name = fragment.querySelector('[data-score="name"]');
+	const label = fragment.querySelector('[data-score="label"]');
+	const box = fragment.querySelector('[data-score="bot"]');
+	const value = fragment.querySelector('[data-score="value"]');
+	const meta = fragment.querySelector('[data-score="meta"]');
+	const tag = RIVAL_TAGS[i - 1];
+	row.id = 'scoreRival' + i;
+	name.id = 'rivalScoreName' + i;
+	name.textContent = tag;
+	label.id = 'scoreBotLabel' + i;
+	label.title = 'switch ' + tag + ' between user and bot';
+	box.id = 'rivalBot' + i;
+	box.setAttribute('aria-label', 'bot controls ' + tag);
+	value.id = 'rivalScore' + i;
+	meta.id = 'rivalMeta' + i;
+	row.style.setProperty('--rival-colour', RIVAL_COLOURS[i - 1]);
+	row.style.setProperty('--rival-active-bg', rivalRgba(RIVAL_COLOURS[i - 1], 0.12));
+	row.style.setProperty('--rival-active-border', rivalRgba(RIVAL_COLOURS[i - 1], 0.36));
+	scoreRowsEl.appendChild(fragment);
+	scoreRowEls.push(row);
+}

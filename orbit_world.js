@@ -1,7 +1,7 @@
 /*
  * The trade world's geometry and natural traits.
  *
- * 26 static planet cores in a 1600x1000 field, flown inside a 2400x1500 play
+ * 48 static planet cores in a 1600x1000 field, flown inside a 2400x1500 play
  * area (the field plus a quarter of it on every side). Each core has a station
  * riding a fixed ellipse (closed form, so no motion is integrated) and the
  * traits the economy reads: type, metal, light, habitat. The station needs only
@@ -16,7 +16,8 @@
 (function (root) {
 	'use strict';
 
-	const PLANETS = 26;
+	const PLANETS = 48;
+	const DEFAULT_PLANETS = 26;
 	const INITIAL_PORTS = 8;
 	const WORLD_W = 1600;
 	const WORLD_H = 1000;
@@ -130,6 +131,7 @@
 		placePlanets(world, rand, INITIAL_PORTS);
 		placeOrbits(world, rand);
 		placeTraits(world);
+		placeExtraPlanets(world);
 		placeSpecials(world);
 		return world;
 	}
@@ -158,7 +160,7 @@
 	function placePlanets(world, rand, initialPorts) {
 		const x = world.planetX;
 		const y = world.planetY;
-		for (let i = 0; i < PLANETS; i++) {
+		for (let i = 0; i < DEFAULT_PLANETS; i++) {
 			let placed = false;
 			for (let attempt = 0; attempt < 300 && !placed; attempt++) {
 				const px = 110 + rand() * (WORLD_W - 220);
@@ -204,12 +206,12 @@
 
 		/* initial stations spread over the field, never two on one planet */
 		const initial = world.initialPlanets;
-		let pick = Math.floor(rand() * PLANETS);
+		let pick = Math.floor(rand() * DEFAULT_PLANETS);
 		for (let k = 0; k < initialPorts; k++) {
 			initial[k] = pick;
 			let best = -1;
 			let bestGap = -1;
-			for (let i = 0; i < PLANETS; i++) {
+			for (let i = 0; i < DEFAULT_PLANETS; i++) {
 				if (containsBefore(initial, k, i)) continue;
 				let gap = Infinity;
 				for (let j = 0; j < k + 1; j++) {
@@ -236,7 +238,7 @@
 	}
 
 	function placeOrbits(world, rand) {
-		for (let i = 0; i < PLANETS; i++) {
+		for (let i = 0; i < DEFAULT_PLANETS; i++) {
 			const room = Math.min(world.planetX[i], world.planetY[i],
 				WORLD_W - world.planetX[i], WORLD_H - world.planetY[i]) - 24;
 			const maxR = Math.max(58, Math.min(180, room));
@@ -262,7 +264,7 @@
 		const rand = seedRandom(world.seed ^ 0x5eed1);
 		let minMean = Infinity;
 		let maxMean = -Infinity;
-		for (let i = 0; i < PLANETS; i++) {
+		for (let i = 0; i < DEFAULT_PLANETS; i++) {
 			const mean = (world.orbitRX[i] + world.orbitRY[i]) * 0.5;
 			world.planetLight[i] = mean;   // scratch: the orbit mean
 			if (mean < minMean) minMean = mean;
@@ -270,7 +272,7 @@
 		}
 		const span = maxMean - minMean;
 		let metalSum = 0;
-		for (let i = 0; i < PLANETS; i++) {
+		for (let i = 0; i < DEFAULT_PLANETS; i++) {
 			const mean = world.planetLight[i];
 			const band = span > 0 ? (mean - minMean) / span : 0.5;
 			const row = band < 0.34 ? 0 : band < 0.68 ? 1 : 2;
@@ -292,7 +294,45 @@
 		/* A K/M dwarf through an A star, log-uniform, sun = 1 L. */
 		world.lum = 0.06 * Math.pow(10, 1.6 * rand());
 		/* The system's metallicity Z: solar 0.020 scaled by the mean world. */
-		world.metal = 0.020 * (metalSum / PLANETS) * (0.35 + 1.3 * rand());
+		world.metal = 0.020 * (metalSum / DEFAULT_PLANETS) * (0.35 + 1.3 * rand());
+	}
+
+	/* Extra worlds use a separate stream so the original 26-world preset and
+	 * its economy retain their historical geometry and random draws. */
+	function placeExtraPlanets(world) {
+		const rand = seedRandom(world.seed ^ 0x48ab91);
+		for (let i = DEFAULT_PLANETS; i < PLANETS; i++) {
+			let bestGap = -1, x = 0, y = 0;
+			for (let attempt = 0; attempt < 80; attempt++) {
+				const px = 110 + rand() * (WORLD_W - 220);
+				const py = 90 + rand() * (WORLD_H - 180);
+				let gap = Infinity;
+				for (let j = 0; j < i; j++) {
+					const dx = px - world.planetX[j], dy = py - world.planetY[j];
+					gap = Math.min(gap, dx * dx + dy * dy);
+				}
+				if (gap > bestGap) { bestGap = gap; x = px; y = py; }
+				if (gap >= 165 * 165) break;
+			}
+			world.planetX[i] = x;
+			world.planetY[i] = y;
+			const room = Math.min(x, y, WORLD_W - x, WORLD_H - y) - 24;
+			const maxR = Math.max(58, Math.min(180, room));
+			const tilt = rand() * Math.PI, period = 160 + rand() * 240;
+			world.planetR[i] = 6 + rand() * 5;
+			world.orbitRX[i] = 46 + rand() * (maxR - 46);
+			world.orbitRY[i] = 46 + rand() * (maxR - 46);
+			world.orbitPhase[i] = rand() * TAU;
+			world.orbitOmega[i] = (rand() < 0.5 ? -1 : 1) * TAU / period;
+			world.orbitTilt[i] = tilt;
+			world.orbitTiltCos[i] = Math.cos(tilt);
+			world.orbitTiltSin[i] = Math.sin(tilt);
+			const type = Math.floor(rand() * TYPE_COUNT);
+			world.planetType[i] = type;
+			world.planetMetal[i] = TYPE_METAL[type] * (0.70 + 0.60 * rand());
+			world.planetLight[i] = 0.2 + 0.8 * rand();
+			world.planetHabitat[i] = clamp01(TYPE_HABITAT[type] * (0.55 + 0.45 * rand()));
+		}
 	}
 
 	/*
@@ -343,7 +383,7 @@
 	}
 
 	const OrbitWorld = {
-		PLANETS, INITIAL_PORTS, WORLD_W, WORLD_H, TAU,
+		PLANETS, DEFAULT_PLANETS, INITIAL_PORTS, WORLD_W, WORLD_H, TAU,
 		AREA_SCALE, AREA_W, AREA_H, AREA_PAD_X, AREA_PAD_Y,
 		KIND_NORMAL, KIND_ARF, KIND_CAPITAL, SPECIAL_COUNT,
 		TYPE_ROCK, TYPE_TERRAN, TYPE_SUPER, TYPE_DWARF, TYPE_MINI, TYPE_GAS, TYPE_ICE,
