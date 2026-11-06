@@ -166,4 +166,65 @@ assert.ok(frames < 1800, 'helper scan exceeded its frame guard');
 
 env.runFrames(2, 16);
 assert.strictEqual(scene.aimGuidance(), 1, 'restored departure rule should recover the green aim state');
+
+/* The taken medical quest counts as profit: with patients aboard, a shot
+ * landing on the Capital prices the per-patient payout into cash. */
+const capital = scene.career.capitalPlanet;
+assert.ok(capital >= 0, 'fixture career has no capital planet');
+const medicTask = scene.career.tasks[0];
+medicTask.kind = gameApi.TASK_MEDIC;
+medicTask.state = gameApi.TASK_LOADED;
+medicTask.from = capital;
+medicTask.to = 12;
+medicTask.aboard = 4;
+medicTask.patients = 8;
+medicTask.reward = 8;
+scene.career.contract = 0;
+const visitPay = 1.5;
+const medicShot = env.context.moneyFacts(origin, safeSpeed, capital, 100, 500, visitPay);
+assert.strictEqual(medicShot.cash, visitPay + 4 * env.context.OrbitEcon.MEDIC_REWARD_PER_PATIENT,
+	'taken medical quest is not counted as profit on the Capital landing');
+const noMedicShot = env.context.moneyFacts(origin, safeSpeed, 5, 100, 500, visitPay);
+assert.strictEqual(noMedicShot.cash, visitPay,
+	'a landing off the quest route must not pay the medical reward');
+
+/* Quest scoring: pickup leg, delivery completion and the competition. */
+const questScore = env.context.helperQuestScore;
+medicTask.aboard = 0;
+assert.strictEqual(questScore(scene.career, origin, 12, 1000, 100), 8 * 0.25,
+	'medical pickup leg scores a quarter of the reward');
+medicTask.aboard = 4;
+assert.strictEqual(questScore(scene.career, origin, capital, 1000, 100), 4,
+	'medical Capital delivery scores per patient');
+medicTask.kind = gameApi.TASK_DELIVERY;
+medicTask.state = gameApi.TASK_ACCEPTED;
+medicTask.from = origin;
+medicTask.to = 12;
+medicTask.reward = 2;
+assert.strictEqual(questScore(scene.career, origin, origin, 1000, 100), 1,
+	'accepted delivery load leg scores half the reward');
+medicTask.state = gameApi.TASK_LOADED;
+assert.strictEqual(questScore(scene.career, origin, 12, 1000, 100), 2,
+	'loaded delivery completion scores the full reward');
+assert.strictEqual(questScore(scene.career, origin, 7, 1000, 100), 0,
+	'an unrelated landing scores no quest value');
+
+/* The quest helper runs from the landed pad and finishes inside the frame
+ * guard, arming only a flyable shot like the profit helpers. */
+scene.career.contract = -1;
+const questBefore = scene.aimState();
+env.click('helperQuest');
+let questFrames = 0;
+while (!ui.get('helperStop').hidden && questFrames < 1800) {
+	env.runFrames(1, 16);
+	questFrames += 1;
+}
+assert.ok(ui.get('helperStop').hidden, 'quest helper did not finish');
+assert.ok(questFrames < 1800, 'quest helper scan exceeded its frame guard');
+const questAfter = scene.aimState();
+if (questAfter.angle !== questBefore.angle || questAfter.speed !== questBefore.speed) {
+	assert.ok(scene.sim.predReason === sim.END_IMPACT && scene.sim.predBody >= 0,
+		'quest helper armed a non-landing shot');
+}
+
 console.log('CAREER GUIDANCE OK');

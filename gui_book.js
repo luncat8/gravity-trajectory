@@ -117,6 +117,11 @@ function moneyFacts(origin, speed, body, steps, length, visitPay) {
 	if (career.contract >= 0) {
 		const task = career.tasks[career.contract];
 		if (task.state === GravityGame.TASK_LOADED && body === task.to) cash += task.reward;
+		/* the taken medical quest pays per patient on the Capital landing */
+		else if (task.kind === GravityGame.TASK_MEDIC && task.aboard > 0 &&
+			body === career.capitalPlanet) {
+			cash += task.aboard * OrbitEcon.MEDIC_REWARD_PER_PATIENT;
+		}
 	}
 	const compete = career.tasks[GravityGame.COMPETE_SLOT];
 	if (compete.kind === GravityGame.TASK_COMPETE && origin === compete.planet &&

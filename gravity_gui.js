@@ -308,6 +308,7 @@ const helperFocusBtn = $('helperFocus');
 const helperTweakBtn = $('helperTweak');
 const helperProfitBtn = $('helperProfit');
 const helperEmcBtn = $('helperEmc');
+const helperQuestBtn = $('helperQuest');
 const helperProgressEl = $('helperProgress');
 const helperProgressFillEl = $('helperProgressFill');
 const helperProgressTextEl = $('helperProgressText');
