@@ -104,38 +104,27 @@ function pageBookTag() {
 
 /* one scratch result: callers read it before the next pricing call */
 const shotMoney = {
-	cash: 0, fee: 0, exit: Infinity, net: -Infinity,
+	cash: 0, credit: 0, leg: GravityGame.LEG_NONE,
+	fee: 0, exit: Infinity, net: -Infinity,
 	builds: false, launchable: false, source: ''
 };
 
 /* A fresh trace and a stored visit log differ only in the harvest they
- * price, so both feed this table: contract and competition pay, the launch
- * fee and the cost of leaving the landing planet. */
+ * price, so both feed this table: the rule's landing factors (cash for the
+ * purse, credit for the contract leg it advances), the launch fee and the
+ * cost of leaving the landing planet. */
 function moneyFacts(origin, speed, body, steps, length, visitPay) {
 	const career = activeCareer();
-	let cash = visitPay;
-	if (career.contract >= 0) {
-		const task = career.tasks[career.contract];
-		if (task.state === GravityGame.TASK_LOADED && body === task.to) cash += task.reward;
-		/* the taken medical quest pays per patient on the Capital landing */
-		else if (task.kind === GravityGame.TASK_MEDIC && task.aboard > 0 &&
-			body === career.capitalPlanet) {
-			cash += task.aboard * OrbitEcon.MEDIC_REWARD_PER_PATIENT;
-		}
-	}
-	const compete = career.tasks[GravityGame.COMPETE_SLOT];
-	if (compete.kind === GravityGame.TASK_COMPETE && origin === compete.planet &&
-		length >= compete.minLength &&
-		game.clockSteps + steps <= compete.deadline) cash += compete.reward;
+	GravityGame.careerLandingFacts(shotMoney, career, origin, body, 0, length, steps,
+		game.clockSteps, visitPay);
 	const fee = GravityGame.launchFee(career, origin, speed);
-	const available = career.ledger.purse + cash - fee;
+	const available = career.ledger.purse + shotMoney.cash - fee;
 	const mass = bot.careerArrivalMass(career, body);
 	const departure = bot.careerDeparture(career, body, available, mass, activeSim());
 	const padless = career.pads[body].catapult === null;
-	shotMoney.cash = cash;
 	shotMoney.fee = fee;
 	shotMoney.exit = departure.ok ? departure.cost : Infinity;
-	shotMoney.net = departure.ok ? cash - fee - departure.cost : -Infinity;
+	shotMoney.net = departure.ok ? shotMoney.cash - fee - departure.cost : -Infinity;
 	shotMoney.builds = padless && (departure.builds || departure.canBuildStarter);
 	shotMoney.launchable = career.ledger.purse + 1e-9 >= fee && departure.ok;
 	shotMoney.source = departure.source;

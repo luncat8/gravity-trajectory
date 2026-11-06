@@ -97,7 +97,6 @@
 	 * upgrades, measured against the money that pad's last launch made */
 	const CAREER_PAD_HORIZON = 2400;
 	const CAREER_SAME_PAD_VALUE = -1;
-	const CAREER_PICKUP_VALUE = 0.35;
 	const CAREER_REFIT_VALUE = 3;
 	/* a medical mission is worth chasing (0.5.13: it outranks a plain
 	 * delivery): the reward is per patient, the medic leg lands on a planet
@@ -398,7 +397,8 @@
 		this.careerBurnRungs = new Int32Array(CAREER_BURN_FRACTIONS.length);
 		this.careerEval = {
 			taskPay: 0, padValue: 0, builds: false, energy: 0, wait: 0,
-			fee: 0, exitCost: Infinity, exitSource: '', reject: ''
+			fee: 0, exitCost: Infinity, exitSource: '', reject: '',
+			cash: 0, credit: 0, leg: GravityGame.LEG_NONE
 		};
 		/* the winning trace's visit log, copied before the fan moves on */
 		this.careerLogPlanet = new Int32Array(PRED_LOG_MAX);
@@ -2346,33 +2346,11 @@
 		this.careerEval.builds = false;
 		this.careerEval.exitCost = Infinity;
 		this.careerEval.exitSource = '';
-		let taskPay = visitPay;
-		let cashPay = visitPay;
-		if (career.contract >= 0) {
-			const task = career.tasks[career.contract];
-			if (task.kind === GravityGame.TASK_MEDIC) {
-				/* patients pay at the Capital, medics are worth reaching the
-				 * rebellion at all */
-				if (task.aboard > 0 && body === career.capitalPlanet) {
-					taskPay += task.aboard * OrbitEcon.MEDIC_REWARD_PER_PATIENT;
-					cashPay += task.aboard * OrbitEcon.MEDIC_REWARD_PER_PATIENT;
-				} else if (task.aboard === 0 && body === task.to) {
-					taskPay += task.reward * CAREER_PICKUP_VALUE;
-				}
-			} else if (task.state === GravityGame.TASK_LOADED && body === task.to) {
-				taskPay += task.reward;
-				cashPay += task.reward;
-			} else if (task.state === GravityGame.TASK_ACCEPTED && body === task.from) {
-				taskPay += task.reward * CAREER_PICKUP_VALUE;
-			}
-		}
-		const compete = career.tasks[GravityGame.COMPETE_SLOT];
-		const totalLen = (flownLen || 0) + length;
-		if (compete.kind === GravityGame.TASK_COMPETE && origin === compete.planet &&
-			totalLen >= compete.minLength && runStep + steps <= compete.deadline) {
-			taskPay += compete.reward;
-			cashPay += compete.reward;
-		}
+		/* the rule's one landing table: cash for the purse, credit for the leg */
+		GravityGame.careerLandingFacts(this.careerEval, career, origin, body,
+			flownLen, length, steps, runStep, visitPay);
+		const taskPay = this.careerEval.cash + this.careerEval.credit;
+		const cashPay = this.careerEval.cash;
 
 		/* landing back on the pad it left pays nothing and only drains the
 		 * battery: better to wait or shop than to fly a pointless bounce */
@@ -2476,21 +2454,17 @@
 	};
 
 	GravityBot.prototype.careerTarget = function (career) {
-		if (career.contract >= 0) {
-			const task = career.tasks[career.contract];
-			/* a medical mission is a there-and-back: patients go to the
-			 * Capital, medics go to the rebellion */
-			if (task.kind === GravityGame.TASK_MEDIC) {
-				return task.aboard > 0 ? career.capitalPlanet : task.to;
-			}
-			return task.state === GravityGame.TASK_LOADED ? task.to : task.from;
-		}
+		/* the rule names the next leg of whatever contract is open, so the
+		 * bot never has to know which kind it is flying */
+		const goals = GravityGame.careerGoalBodies(career);
+		if (career.contract >= 0) return goals[0];
 		if (career.at !== career.hq && career.ship.hold === OrbitTech.HOLDS[0] &&
 			career.ledger.purse + 1e-9 >=
 				careerPrice(career, OrbitTech.HOLDS[1]) + CAREER_PURSE_RESERVE) return career.hq;
-		const compete = career.tasks[GravityGame.COMPETE_SLOT];
-		if (compete.kind === GravityGame.TASK_COMPETE && compete.planet !== career.at &&
-			career.pads[compete.planet].catapult !== null) return compete.planet;
+		for (let i = 0; i < goals.length; i++) {
+			const planet = goals[i];
+			if (planet !== career.at && career.pads[planet].catapult !== null) return planet;
+		}
 		return -1;
 	};
 

@@ -1,5 +1,5 @@
 /*
- * Profit helper scans: origin, score and speed snap, the broad, focus, profit, quest and tweak candidates, the launch-book seed and the budgeted tick.
+ * Career helper scans: origin, the one landing-goal table, score and speed snap, the broad, focus, profit, quest and tweak candidates, the launch-book seed and the budgeted tick.
  *
  * Part of the gui family (0.5 plan): a flat global script, no IIFE, no build,
  * file:// friendly. Loaded by index.html; nothing here is exported per file.
@@ -54,7 +54,7 @@ function helperUpdateUi() {
 		helperProfitBtn.title = landed < 0
 			? 'career · land somewhere to scan for money shots'
 			: 'scan 34 aims from ' + planetName(landed) +
-				' · rank by money (visits + tasks − EMC fee − exit cost)' +
+				' · rank by money (visits + every taken contract leg − EMC fee − exit cost)' +
 				' · a saved shot that pays more wins';
 	}
 	if (helperEmcBtn) {
@@ -72,8 +72,9 @@ function helperUpdateUi() {
 		helperQuestBtn.textContent = 'quest scan';
 		helperQuestBtn.title = landed < 0
 			? 'career · land somewhere to scan'
-			: 'scan from ' + planetName(landed) + ' for the shot that solves the taken quest ' +
-				'(delivery, medical leg, competition) · quest value first, money breaks ties';
+			: 'scan from ' + planetName(landed) + ' for the shot that advances the open work ' +
+				'(any contract leg or the competition) · money plus ' + HELPER_QUEST_CREDIT +
+				'× the leg credit, aimed straight at the planets it wants next';
 	}
 	if (helperStopBtn) helperStopBtn.hidden = !helperState.active;
 	if (helperProgressEl) helperProgressEl.hidden = !helperState.active;
@@ -108,34 +109,33 @@ function helperAttachWorld() {
 	helperProbe.fieldRate = cargoSim.fieldRate;
 }
 
-/* what a landing is worth to the quest board: the payout of the taken
- * contract it completes, the leg that starts one (load cargo, pick up the
- * patients), and the competition. The quest scan ranks by this first. */
-function helperQuestScore(career, origin, body, steps, length) {
-	let quest = 0;
-	if (career.contract >= 0) {
-		const task = career.tasks[career.contract];
-		if (task.kind === GravityGame.TASK_MEDIC) {
-			if (task.aboard > 0 && body === career.capitalPlanet) {
-				quest += task.aboard * OrbitEcon.MEDIC_REWARD_PER_PATIENT;
-			} else if (task.aboard === 0 && body === task.to) quest += task.reward * 0.25;
-		} else if (task.state === GravityGame.TASK_LOADED && body === task.to) {
-			quest += task.reward;
-		} else if (task.state === GravityGame.TASK_ACCEPTED && body === task.from) {
-			quest += task.reward * 0.5;
-		}
-	}
-	const compete = career.tasks[GravityGame.COMPETE_SLOT];
-	if (compete.kind === GravityGame.TASK_COMPETE && origin === compete.planet &&
-		length >= compete.minLength && game.clockSteps + steps <= compete.deadline) {
-		quest += compete.reward;
-	}
-	return quest;
+/*
+ * How a scan ranks a landing. Every career scan prices a shot through the
+ * rule's one landing table (`GravityGame.careerLandingFacts`): `cash` is money
+ * that reaches the purse, `credit` is the leg of the taken contract it
+ * advances. A goal only decides what that credit is worth against money, and
+ * whether the landing must be able to build a pad. No goal knows or cares
+ * which kind of contract is open.
+ */
+const HELPER_QUEST_CREDIT = 10;
+const HELPER_GOALS = {
+	score: { credit: 0, builds: false, label: '', empty: '' },
+	profit: { credit: 0, builds: false, label: 'best money shot', empty: 'no paying shot found' },
+	profitEmc: { credit: 0, builds: true, label: 'best money shot', empty: 'no EMC-buildable landing' },
+	quest: { credit: HELPER_QUEST_CREDIT, builds: false, label: 'quest shot', empty: 'no quest shot found' }
+};
+/* what the winning shot completes, printed after its cash */
+const HELPER_LEG_TEXT = ['', ' · load', ' · deliver', ' · medics', ' · patients', ' · sport'];
+
+function helperLegText(leg) {
+	return HELPER_LEG_TEXT[leg] || '';
 }
 
-/* the money of the last scored candidate, so a quest-goal notice can print
- * the cash instead of the quest-weighted ranking score */
-const helperLastMoney = { net: -Infinity };
+/* the money of the last scored candidate, so the notice prints cash and the
+ * leg it completes instead of the ranking score */
+const helperLastMoney = { net: -Infinity, leg: 0 };
+/* the landing facts of the candidate being scored, reused every probe */
+const helperLanding = { cash: 0, credit: 0, leg: GravityGame.LEG_NONE };
 
 function helperScore(probe, cand) {
 	const origin = cand.origin;
@@ -149,13 +149,11 @@ function helperScore(probe, cand) {
 		careerMoney = traceMoney(probe, origin, GravityGame.speedOf(cand.speedU));
 		if (!moneyFlyable(careerMoney)) return -Infinity;
 		helperLastMoney.net = careerMoney.net;
+		helperLastMoney.leg = careerMoney.leg;
 		if (helperState.goal !== 'score') {
-			if (helperState.goal === 'profitEmc' && !careerMoney.builds) return -Infinity;
-			if (helperState.goal === 'quest') {
-				return helperQuestScore(game.career, origin, probe.predBody,
-					probe.predSteps, probe.predLength) * 100 + careerMoney.net;
-			}
-			return careerMoney.net;
+			const goal = HELPER_GOALS[helperState.goal];
+			if (goal.builds && !careerMoney.builds) return -Infinity;
+			return careerMoney.net + careerMoney.credit * goal.credit;
 		}
 	}
 	const profit = game.on ? GravityGame.estimateProfit(game.market, game.clockSteps, probe) : 0;
@@ -164,20 +162,12 @@ function helperScore(probe, cand) {
 	const newVisits = probe.predNewVisits;
 	let score = lands * 12 - samePad * 35 - (probe.predReason === END_EXIT ? 220 : 0);
 	if (careerRule()) {
-		const career = game.career;
-		const body = probe.predBody;
-		if (career.contract >= 0) {
-			const task = career.tasks[career.contract];
-			if (task.state === GravityGame.TASK_LOADED && body === task.to) score += task.reward * 40;
-			else if (task.state === GravityGame.TASK_ACCEPTED && body === task.from) score += task.reward * 20;
-		}
-		const compete = career.tasks[GravityGame.COMPETE_SLOT];
-		if (compete.kind === GravityGame.TASK_COMPETE && origin === compete.planet &&
-			probe.predLength >= compete.minLength &&
-			game.clockSteps + probe.predSteps <= compete.deadline) {
-			score += compete.reward * 35;
-		}
-		score += profit * 28 + newVisits * 4 - probe.predTime * 0.12;
+		/* the untargeted scan weighs the same factors as the targeted ones,
+		 * so a taken leg is never invisible just because no goal is set */
+		GravityGame.careerLandingFacts(helperLanding, game.career, origin, probe.predBody, 0,
+			probe.predLength, probe.predSteps, game.clockSteps, profit);
+		score += helperLanding.cash * 30 + helperLanding.credit * 60 + newVisits * 4 -
+			probe.predTime * 0.12;
 	} else if (game.on && ruleSpec().stopOnTour) {
 		const wouldComplete = activeSim().visitedCount + newVisits >= planetCount;
 		score += (wouldComplete ? 80 : 0) + newVisits * 12 + profit * 18 - probe.predTime * 0.16;
@@ -365,14 +355,14 @@ function helperMakeProfit(origin, count, requireEmc) {
 
 /* the seed slot: a saved shot priced for the scan, reused between presses */
 const helperSeed = { origin: -1, angleU: 0, speedU: 0, length: 0, steps: 0,
-	reason: END_IMPACT, body: -1, score: -Infinity };
+	reason: END_IMPACT, body: -1, score: -Infinity, money: 0, credit: 0, leg: 0 };
 
 /*
- * The best saved shot from this rail for the money buttons, priced at the
- * live market and the live cap without spending a trace. It seeds the scan,
- * so a search only replaces it with something that actually pays more.
+ * The best saved shot from this rail for a career button, priced at the live
+ * market and the live cap without spending a trace. It seeds the scan on the
+ * button's own goal, so a search only replaces it with a better shot.
  */
-function helperBookSeed(career, origin, requireEmc) {
+function helperBookSeed(career, origin, requireEmc, creditWeight) {
 	if (!GravityGame.bookReady(career.launchBook, pageBookTag())) return null;
 	const entries = career.launchBook.entries;
 	const cap = speedCeiling(origin);
@@ -382,7 +372,7 @@ function helperBookSeed(career, origin, requireEmc) {
 		if (entry.origin !== origin) continue;
 		if (GravityGame.speedOf(entry.speedU) > cap + 1e-9) continue;
 		const money = storedMoney(entry);
-		const score = money.net;
+		const score = money.net + money.credit * (creditWeight || 0);
 		if (!moneyFlyable(money)) continue;
 		if (requireEmc && !money.builds) continue;
 		if (best !== null && score <= best.score) continue;
@@ -393,40 +383,40 @@ function helperBookSeed(career, origin, requireEmc) {
 		helperSeed.steps = entry.steps;
 		helperSeed.body = entry.body;
 		helperSeed.score = score;
+		helperSeed.money = money.net;
+		helperSeed.credit = money.credit;
+		helperSeed.leg = money.leg;
 		best = helperSeed;
 	}
 	return best;
 }
 
-function helperStartProfit(requireEmc) {
+/* one career scan: guard the landed ship, build its candidates and seed the
+ * ranking with the best saved shot priced on the same goal */
+function helperStartCareer(goal, mode, build) {
 	if (helperState.active || replay.on || playerIsBot()) return;
 	if (!careerRule() || gameLocked() || !cargoSim.fieldStatic) return;
 	const origin = game.career.at;
 	if (origin < 0 || cargoSim.status === STATUS_FLYING) return;
 	if (game.career.ended !== GravityGame.CAREER_OPEN) return;
-	const cands = helperMakeProfit(origin, requireEmc ? 26 : 34, requireEmc);
+	const rule = HELPER_GOALS[goal];
+	const cands = build(origin);
 	if (cands.length === 0) return;
-	helperRun(cands, requireEmc ? 'profit + EMC' : 'best profit',
-		requireEmc ? 'profitEmc' : 'profit',
-		helperBookSeed(game.career, origin, requireEmc));
+	const seed = helperBookSeed(game.career, origin, rule.builds, rule.credit);
+	helperRun(cands, mode, goal, seed);
+}
+
+function helperStartProfit(requireEmc) {
+	helperStartCareer(requireEmc ? 'profitEmc' : 'profit',
+		requireEmc ? 'profit + EMC' : 'best profit',
+		(origin) => helperMakeProfit(origin, requireEmc ? 26 : 34, requireEmc));
 }
 
 /* quest scan candidates: half random aims from the landed pad, plus direct
- * shots at the planets the quest board cares about right now */
+ * shots at the planets the open work wants next, whatever kind it is */
 function helperMakeQuest(origin, count) {
-	const career = game.career;
 	const out = helperMakeFocus(origin, Math.max(8, Math.floor(count / 2)));
-	const targets = [];
-	if (career.contract >= 0) {
-		const task = career.tasks[career.contract];
-		if (task.kind === GravityGame.TASK_MEDIC) {
-			targets.push(career.capitalPlanet);
-			if (task.aboard === 0) targets.push(task.to);
-		} else {
-			if (task.state === GravityGame.TASK_ACCEPTED) targets.push(task.from);
-			if (task.state === GravityGame.TASK_LOADED) targets.push(task.to);
-		}
-	}
+	const targets = GravityGame.careerGoalBodies(game.career);
 	const cap = speedCeiling(origin);
 	const span = Math.max(0, cap - SPEED_MIN);
 	for (let t = 0; t < targets.length && out.length < count; t++) {
@@ -448,21 +438,7 @@ function helperMakeQuest(origin, count) {
 }
 
 function helperStartQuest() {
-	if (helperState.active || replay.on || playerIsBot()) return;
-	if (!careerRule() || gameLocked() || !cargoSim.fieldStatic) return;
-	const origin = game.career.at;
-	if (origin < 0 || cargoSim.status === STATUS_FLYING) return;
-	if (game.career.ended !== GravityGame.CAREER_OPEN) return;
-	const cands = helperMakeQuest(origin, 34);
-	if (cands.length === 0) return;
-	const seed = helperBookSeed(game.career, origin, false);
-	if (seed) {
-		/* price the seed on the quest scale too, so the scan has to beat it
-		 * as a quest shot, not only as a money shot */
-		seed.score = helperQuestScore(game.career, seed.origin, seed.body, seed.steps, seed.length) * 100 +
-			seed.score;
-	}
-	helperRun(cands, 'quest scan', 'quest', seed);
+	helperStartCareer('quest', 'quest scan', (origin) => helperMakeQuest(origin, 34));
 }
 
 function helperStartTweak() {
@@ -511,7 +487,7 @@ function helperTick(budgetMs) {
 						origin: cand.origin, angleU: cand.angleU, speedU: cand.speedU,
 						length: helperProbe.predLength, steps: helperProbe.predSteps,
 						reason: helperProbe.predReason, body: helperProbe.predBody,
-						score: score
+						score: score, money: helperLastMoney.net, leg: helperLastMoney.leg
 					};
 				}
 				helperState.index += 1;
@@ -526,14 +502,12 @@ function helperTick(budgetMs) {
 				helperState.candidates = null;
 				if (best && best.score > -1e11) {
 					if (careerRule()) {
-						const label = helperState.goal === 'score' ? ''
-							: helperState.goal === 'quest'
-								? (helperState.fromBook ? 'launch list' : 'quest shot')
-								: (helperState.fromBook ? 'launch list' : 'best money shot');
-						const money = helperState.goal === 'quest' && best.money > -Infinity
-							? best.money : best.score;
+						const goal = HELPER_GOALS[helperState.goal];
+						const label = goal.label ? (helperState.fromBook ? 'launch list' : goal.label) : '';
+						/* the notice prints the purse money, not the ranking score */
+						const money = helperState.goal === 'score' ? best.score : best.money;
 						careerNotice((label ? label + ' · ' : '') + planetName(best.body) +
-							' · ' + signedMoney(money));
+							' · ' + signedMoney(money) + helperLegText(best.leg));
 					}
 					aimBody = best.origin;
 					aimAngle = GravityGame.angleOf(best.angleU);
@@ -559,9 +533,7 @@ function helperTick(budgetMs) {
 				} else if (careerRule() && helperState.goal !== 'score') {
 					/* nothing flyable was found: say so instead of leaving the
 					 * previously armed shot standing in as a false find */
-					careerNotice(helperState.goal === 'profitEmc'
-						? 'no EMC-buildable landing'
-						: 'no paying shot found');
+					careerNotice(HELPER_GOALS[helperState.goal].empty);
 				}
 				helperUpdateUi();
 				break;

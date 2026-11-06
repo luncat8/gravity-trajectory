@@ -188,32 +188,123 @@ const noMedicShot = env.context.moneyFacts(origin, safeSpeed, 5, 100, 500, visit
 assert.strictEqual(noMedicShot.cash, visitPay,
 	'a landing off the quest route must not pay the medical reward');
 
-/* Quest scoring: pickup leg, delivery completion and the competition. */
-const questScore = env.context.helperQuestScore;
+/* One landing table for every consumer: the aim readout, the launch list, the
+ * helper scans and the rival bots all read the same cash/credit/leg factors,
+ * so a taken quest can never pay in one place and not in another. */
+const facts = { cash: 0, credit: 0, leg: 0 };
+const careerAt = () => scene.game.clockSteps;
+
+function landing(origin, body, length, steps, pay, runStep) {
+	return gameApi.careerLandingFacts(facts, scene.career, origin, body, 0, length, steps,
+		runStep === undefined ? careerAt() : runStep, pay);
+}
+
 medicTask.aboard = 0;
-assert.strictEqual(questScore(scene.career, origin, 12, 1000, 100), 8 * 0.25,
-	'medical pickup leg scores a quarter of the reward');
+medicTask.state = gameApi.TASK_LOADED;
+let factsOut = landing(origin, 12, 500, 100, 1.5);
+assert.strictEqual(factsOut.leg, gameApi.LEG_MEDICS, 'medic pickup leg is not named');
+assert.strictEqual(factsOut.cash, 1.5, 'medics boarding pay no cash');
+assert.strictEqual(factsOut.credit, 8 * gameApi.LEG_CREDIT, 'medic pickup carries no credit');
+
 medicTask.aboard = 4;
-assert.strictEqual(questScore(scene.career, origin, capital, 1000, 100), 4,
-	'medical Capital delivery scores per patient');
+factsOut = landing(origin, capital, 500, 100, 1.5);
+assert.strictEqual(factsOut.leg, gameApi.LEG_PATIENTS, 'patients-home leg is not named');
+assert.strictEqual(factsOut.cash, 1.5 + 4 * env.context.OrbitEcon.MEDIC_REWARD_PER_PATIENT,
+	'patients landing home do not pay per patient');
+
+/* the rival bot prices the very same landing from the same table */
+bot.careerScoreFacts(scene.career, origin, scene.game.market, careerAt(), 0, 0,
+	capital, 1.5, 500, 100);
+assert.strictEqual(bot.careerEval.cash, factsOut.cash, 'the bot prices a landing differently');
+assert.strictEqual(bot.careerEval.leg, gameApi.LEG_PATIENTS, 'the bot names a different leg');
+
 medicTask.kind = gameApi.TASK_DELIVERY;
 medicTask.state = gameApi.TASK_ACCEPTED;
 medicTask.from = origin;
 medicTask.to = 12;
 medicTask.reward = 2;
-assert.strictEqual(questScore(scene.career, origin, origin, 1000, 100), 1,
-	'accepted delivery load leg scores half the reward');
-medicTask.state = gameApi.TASK_LOADED;
-assert.strictEqual(questScore(scene.career, origin, 12, 1000, 100), 2,
-	'loaded delivery completion scores the full reward');
-assert.strictEqual(questScore(scene.career, origin, 7, 1000, 100), 0,
-	'an unrelated landing scores no quest value');
+factsOut = landing(origin, origin, 500, 100, 1.5);
+assert.strictEqual(factsOut.leg, gameApi.LEG_LOAD, 'delivery load leg is not named');
+assert.strictEqual(factsOut.cash, 1.5, 'loading cargo pays nothing yet');
+assert.strictEqual(factsOut.credit, 2 * gameApi.LEG_CREDIT, 'delivery load carries no credit');
 
-/* The quest helper runs from the landed pad and finishes inside the frame
- * guard, arming only a flyable shot like the profit helpers. */
+medicTask.state = gameApi.TASK_LOADED;
+factsOut = landing(origin, 12, 500, 100, 1.5);
+assert.strictEqual(factsOut.leg, gameApi.LEG_DELIVER, 'delivery landing is not named');
+assert.strictEqual(factsOut.cash, 3.5, 'a delivered contract does not pay the reward');
+/* a contract that expires before the landing is already gone from the board */
+medicTask.deadline = careerAt() + 50;
+factsOut = landing(origin, 12, 500, 100, 1.5);
+assert.strictEqual(factsOut.leg, gameApi.LEG_NONE, 'an expired contract still claims a leg');
+assert.strictEqual(factsOut.cash, 1.5, 'an expired contract still pays its reward');
+medicTask.deadline = careerAt() + 100000;
+factsOut = landing(origin, 7, 500, 100, 1.5);
+assert.strictEqual(factsOut.leg, gameApi.LEG_NONE, 'an unrelated landing claims a leg');
+assert.strictEqual(factsOut.cash, 1.5, 'an unrelated landing pays more than the harvest');
+assert.strictEqual(factsOut.credit, 0, 'an unrelated landing carries credit');
+
 scene.career.contract = -1;
+const compete = scene.career.tasks[gameApi.COMPETE_SLOT];
+compete.kind = gameApi.TASK_COMPETE;
+compete.planet = origin;
+compete.minLength = 1000;
+compete.reward = 2.5;
+compete.deadline = careerAt() + 100000;
+factsOut = landing(origin, 12, 1200, 100, 1.5);
+assert.strictEqual(factsOut.leg, gameApi.LEG_COMPETE, 'competition leg is not named');
+assert.strictEqual(factsOut.cash, 4, 'a competition win pays nothing');
+factsOut = landing(origin, 12, 200, 100, 1.5);
+assert.strictEqual(factsOut.cash, 1.5, 'a too-short flight wins the competition');
+compete.kind = gameApi.TASK_NONE;
+
+/* the rule also names the next stop of every contract kind */
+scene.career.contract = 0;
+medicTask.state = gameApi.TASK_ACCEPTED;
+assert.deepStrictEqual(Array.from(gameApi.careerGoalBodies(scene.career)), [origin],
+	'an accepted delivery does not send the ship to load');
+medicTask.state = gameApi.TASK_LOADED;
+assert.deepStrictEqual(Array.from(gameApi.careerGoalBodies(scene.career)), [12],
+	'a loaded delivery does not send the ship to deliver');
+medicTask.kind = gameApi.TASK_MEDIC;
+medicTask.aboard = 0;
+medicTask.to = 12;
+assert.deepStrictEqual(Array.from(gameApi.careerGoalBodies(scene.career)), [12],
+	'a medical mission does not send the ship out with medics');
+medicTask.aboard = 4;
+assert.deepStrictEqual(Array.from(gameApi.careerGoalBodies(scene.career)), [capital],
+	'a medical mission does not send the patients home');
+scene.career.contract = -1;
+assert.deepStrictEqual(Array.from(gameApi.careerGoalBodies(scene.career)), [],
+	'an empty board still names a goal');
+
+/* The aim readout counts the taken medical quest too: a landing on the
+ * (temporarily relocated) Capital pays the per-patient reward in predGain. */
+const realCapital = scene.career.capitalPlanet;
+scene.career.tasks[0].kind = gameApi.TASK_MEDIC;
+scene.career.tasks[0].aboard = 4;
+scene.career.tasks[0].reward = 8;
+scene.career.contract = 0;
+scene.career.capitalPlanet = safe.body;
+env.dragAim(origin, safeAngle, safeSpeed);
+env.runFrames(3, 16);
+assert.strictEqual(scene.sim.predBody, safe.body, 'the fixture aim no longer lands where it did');
+const gainWithPatients = scene.predGain();
+assert.ok(gainWithPatients >= 4 - 1e-9,
+	'the aim readout does not price the patients landing home: ' + gainWithPatients);
+scene.career.capitalPlanet = realCapital;
+scene.career.contract = -1;
+
+/* The quest helper is wired, runs a scan from the landed pad and finishes
+ * inside the frame guard, arming only a flyable shot. */
+scene.career.tasks[0].kind = gameApi.TASK_DELIVERY;
+scene.career.tasks[0].state = gameApi.TASK_ACCEPTED;
+scene.career.tasks[0].from = 5;
+scene.career.tasks[0].to = 12;
+scene.career.tasks[0].reward = 2;
+scene.career.contract = 0;
 const questBefore = scene.aimState();
 env.click('helperQuest');
+assert.ok(!ui.get('helperStop').hidden, 'the quest helper button is not wired to a scan');
 let questFrames = 0;
 while (!ui.get('helperStop').hidden && questFrames < 1800) {
 	env.runFrames(1, 16);
@@ -226,5 +317,30 @@ if (questAfter.angle !== questBefore.angle || questAfter.speed !== questBefore.s
 	assert.ok(scene.sim.predReason === sim.END_IMPACT && scene.sim.predBody >= 0,
 		'quest helper armed a non-landing shot');
 }
+/* the notice prints purse cash and the leg it completes, never the ranking score */
+const questNotice = ui.get('careerMsg').textContent;
+assert.match(questNotice, /^(quest shot|launch list) · /, 'quest notice lost its label: ' + questNotice);
+const printed = Number(questNotice.slice(questNotice.lastIndexOf('·') + 1).replace(/[^\d.+-]/g, ''));
+assert.ok(Number.isFinite(printed) && Math.abs(printed) < 100,
+	'quest notice printed the ranking score instead of cash: ' + questNotice);
+
+/* nothing flyable means the goal table's own empty line, not a stale find */
+const originalQuestDeparture = bot.careerDeparture;
+bot.careerDeparture = function (career, planet, cash, mass, sourceSim) {
+	const result = originalQuestDeparture.call(this, career, planet, cash, mass, sourceSim);
+	result.ok = false;
+	result.cost = Infinity;
+	return result;
+};
+scene.career.contract = -1;
+env.click('helperQuest');
+questFrames = 0;
+while (!ui.get('helperStop').hidden && questFrames < 1800) {
+	env.runFrames(1, 16);
+	questFrames += 1;
+}
+bot.careerDeparture = originalQuestDeparture;
+assert.strictEqual(ui.get('careerMsg').textContent, 'no quest shot found',
+	'quest helper did not report the empty scan');
 
 console.log('CAREER GUIDANCE OK');

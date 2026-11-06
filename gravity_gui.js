@@ -613,6 +613,7 @@ if (helperFocusBtn) helperFocusBtn.addEventListener('click', helperStartFocus);
 if (helperTweakBtn) helperTweakBtn.addEventListener('click', helperStartTweak);
 if (helperProfitBtn) helperProfitBtn.addEventListener('click', () => helperStartProfit(false));
 if (helperEmcBtn) helperEmcBtn.addEventListener('click', () => helperStartProfit(true));
+if (helperQuestBtn) helperQuestBtn.addEventListener('click', helperStartQuest);
 if (helperStopBtn) helperStopBtn.addEventListener('click', stopHelper);
 clearButton.addEventListener('click', () => {
 	if (helperState.active) { stopHelper(); return; }

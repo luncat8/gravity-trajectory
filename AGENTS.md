@@ -74,7 +74,7 @@ every file below is in place. each area file reads the composer's state as ordin
 | `gui_book.js` | 361 | task board, launch book, money trace, ranked launch list, rail lines |
 | `gui_view.js` | 403 | view mode, canvas resize, HUD rects and hit tests, world<->screen, slot accessors, playback |
 | `gui_route.js` | 267 | route plan rows, best-route record/restore, route leader |
-| `gui_helper.js` | 472 | profit helpers: broad/focus scans, candidates, budgeted tick |
+| `gui_helper.js` | 544 | career helpers: goal table over the rule's landing factors, broad/focus/profit/quest scans, candidates, budgeted tick |
 | `gui_replay.js` | 195 | replay lifecycle, per-shot aim replay, verdicts, skip |
 | `gui_hud_game.js` | 222 | scoreboard, score meta, player/rival summaries |
 | `gui_world.js` | 249 | planet universe and strengths, attach to the trade world, mode/bot/score radios, seed url |

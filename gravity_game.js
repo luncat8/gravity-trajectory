@@ -639,6 +639,18 @@
 	const TASK_OFFERED = 0;
 	const TASK_ACCEPTED = 1;
 	const TASK_LOADED = 2;
+	/* what a landing can complete: a contract leg or the competition. Both the
+	 * money the purse takes (`cash`) and the progress that unlocks the rest of
+	 * the payout (`credit`) are read off one table. */
+	const LEG_NONE = 0;
+	const LEG_LOAD = 1;
+	const LEG_DELIVER = 2;
+	const LEG_MEDICS = 3;
+	const LEG_PATIENTS = 4;
+	const LEG_COMPETE = 5;
+	/* a leg that only advances a contract is worth its reward times this while
+	 * the payout is still unrealized: loaded cargo is not yet money in the purse */
+	const LEG_CREDIT = 0.35;
 	const CAREER_OPEN = 0;
 	const CAREER_BROKE = 1;
 	const CAREER_COMPLETE = 2;
@@ -2092,6 +2104,25 @@
 		return task.kind === TASK_DELIVERY && career.ship.hold.capacity >= task.tons;
 	}
 
+	/*
+	 * Where the open work wants the ship next, nearest leg first: the taken
+	 * contract's next stop, then the competition planet. Bots route to the
+	 * first entry, scans aim at all of them, and neither knows or cares which
+	 * contract kind it is. One scratch list — read it before calling again.
+	 */
+	const goalBodies = [];
+	function careerGoalBodies(career) {
+		goalBodies.length = 0;
+		if (career.contract >= 0) {
+			const task = career.tasks[career.contract];
+			if (task.kind === TASK_MEDIC) goalBodies.push(task.aboard > 0 ? career.capitalPlanet : task.to);
+			else goalBodies.push(task.state === TASK_LOADED ? task.to : task.from);
+		}
+		const compete = career.tasks[COMPETE_SLOT];
+		if (compete.kind === TASK_COMPETE) goalBodies.push(compete.planet);
+		return goalBodies;
+	}
+
 	function loadCargo(career, task) {
 		task.state = TASK_LOADED;
 		career.ship.cargoTons = task.tons;
@@ -2118,6 +2149,48 @@
 		career.ledger.purse += amount;
 		career.earned += amount;
 		career.lastReward += amount;
+	}
+
+	/*
+	 * One factor table for a landing: `cash` is what the purse takes at once,
+	 * `credit` what a leg that only advances a contract is worth, `leg` which
+	 * leg it is. The aim readout, the launch list, the helper scans and the
+	 * rival bots all price a shot through this, so the same landing can never
+	 * be worth one thing to the aim line and another to the bot.
+	 * `out` is caller scratch, so nothing is allocated per candidate.
+	 */
+	function careerLandingFacts(out, career, origin, body, flownLen, length, steps, runStep, visitPay) {
+		out.cash = visitPay;
+		out.credit = 0;
+		out.leg = LEG_NONE;
+		/* a contract that runs out before the landing pays nothing: the board
+		 * drops it before the ship arrives */
+		if (career.contract >= 0 && runStep + steps <= career.tasks[career.contract].deadline) {
+			const task = career.tasks[career.contract];
+			if (task.kind === TASK_MEDIC) {
+				/* patients pay at the Capital, medics only have to reach the rebellion */
+				if (task.aboard > 0 && body === career.capitalPlanet) {
+					out.cash += task.aboard * OrbitEcon.MEDIC_REWARD_PER_PATIENT;
+					out.leg = LEG_PATIENTS;
+				} else if (task.aboard === 0 && body === task.to) {
+					out.credit += task.reward * LEG_CREDIT;
+					out.leg = LEG_MEDICS;
+				}
+			} else if (task.state === TASK_LOADED && body === task.to) {
+				out.cash += task.reward;
+				out.leg = LEG_DELIVER;
+			} else if (task.state === TASK_ACCEPTED && body === task.from) {
+				out.credit += task.reward * LEG_CREDIT;
+				out.leg = LEG_LOAD;
+			}
+		}
+		const compete = career.tasks[COMPETE_SLOT];
+		if (compete.kind === TASK_COMPETE && origin === compete.planet &&
+			(flownLen || 0) + length >= compete.minLength && runStep + steps <= compete.deadline) {
+			out.cash += compete.reward;
+			if (out.leg === LEG_NONE) out.leg = LEG_COMPETE;
+		}
+		return out;
 	}
 
 	/* landing on `planet`: cargo pickup, delivery payout, competition payout */
@@ -2422,6 +2495,8 @@
 		BOARD_SIZE, COMPETE_SLOT, MEDIC_SLOT, CARGO_TONS,
 		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_MEDIC,
 		TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
+		LEG_NONE, LEG_LOAD, LEG_DELIVER, LEG_MEDICS, LEG_PATIENTS, LEG_COMPETE, LEG_CREDIT,
+		careerLandingFacts, careerGoalBodies,
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
 		createCareer, resetCareer, startCareer, checkEnded, placeShip,
 		COMMERCIAL_PAD, OWNER_COMMERCIAL, CAPITAL_PAD, OWNER_CAPITAL, OWNER_REBEL, capitalCovered,

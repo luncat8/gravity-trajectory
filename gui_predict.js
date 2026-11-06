@@ -7,6 +7,9 @@
 
 'use strict';
 
+/* the rule's landing facts for the aim preview, read by the readouts */
+const predLanding = { cash: 0, credit: 0, leg: GravityGame.LEG_NONE };
+
 function refreshPredGain() {
 	const sim = activeSim();
 	if (!game.on || routeRule() || sim.predCount < 2) {
@@ -15,23 +18,13 @@ function refreshPredGain() {
 	}
 	let gain = GravityGame.estimateProfit(game.market, game.clockSteps, sim);
 	if (careerRule() && sim.predReason === END_IMPACT && sim.predBody >= 0) {
-		const career = game.career;
-		const endStep = game.clockSteps + sim.predSteps;
-		if (career.contract >= 0) {
-			const task = career.tasks[career.contract];
-			if (task.state === GravityGame.TASK_LOADED &&
-				sim.predBody === task.to && endStep <= task.deadline) {
-				gain += task.reward;
-			}
-		}
-		const compete = career.tasks[GravityGame.COMPETE_SLOT];
+		/* the same landing table the helper scans and the bots price with:
+		 * a taken delivery or medical quest pays here, not only on the pad */
 		const origin = sim.status === STATUS_FLYING ? sim.origin : aimBody;
-		const len = (sim.status === STATUS_FLYING ? sim.flightLength : 0) + sim.predLength;
-		if (compete && compete.kind === GravityGame.TASK_COMPETE &&
-			origin === compete.planet && len >= compete.minLength &&
-			endStep <= compete.deadline) {
-			gain += compete.reward;
-		}
+		const flown = sim.status === STATUS_FLYING ? sim.flightLength : 0;
+		GravityGame.careerLandingFacts(predLanding, game.career, origin, sim.predBody,
+			flown, sim.predLength, sim.predSteps, game.clockSteps, gain);
+		gain = predLanding.cash;
 	}
 	predGain = gain;
 }

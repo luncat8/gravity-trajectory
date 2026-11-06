@@ -1,0 +1,50 @@
+0.5.15 shared landing factors — measurements
+
+A. Behaviour benches after the refactor (same commands as 0.5.14)
+
+  node experiments/career_bench.js        -> CAREER BENCH FAILED 3
+  node experiments/career_bot_bench.js    -> CAREER BOT BENCH FAILED 11
+
+  The failing names are the same on the base commit 43c4118 and after this
+  stage (board pairing, contracts, cheats; fixture shot, careerBurnPlan and the
+  nine "26 pads" drift cases). The factor table reproduces the bot's old
+  arithmetic exactly: it already paid 0.35 for both pickup legs and the same
+  cash for every completed leg, so no rival plan changed.
+
+B. Medical offer probe — node experiments/medic_offer_probe.js (SEEDS=1-6, 1200 s)
+
+  1200 s · 6 seeds · 12 rival-games
+  rebellions 24 · offer-seconds 1334 · demand without a hold 3060s · free-at-capital 70s
+  accepts 2 · boardings 1 · patients home 8 · missions still open at the end 2
+
+  per seed (rivals R1/R2: hold capacity, offer seconds, accepts, boardings)
+    seed 1 · rebels 0 · hold 8 offer 0s accept 0 board 0 | hold 8 offer 0s accept 0 board 0
+    seed 2 · rebels 3 · hold 8 offer 278s accept 1 board 1 | hold 0 offer 0s accept 0 board 0
+    seed 3 · rebels 7 · hold 0 offer 0s accept 0 board 0 | hold 0 offer 0s accept 0 board 0
+    seed 4 · rebels 8 · hold 0 offer 0s accept 0 board 0 | hold 0 offer 0s accept 0 board 0
+    seed 5 · rebels 5 · hold 0 offer 0s accept 0 board 0 | hold 0 offer 0s accept 0 board 0
+    seed 6 · rebels 1 · hold 8 offer 538s accept 0 board 0 | hold 8 offer 518s accept 1 board 0
+
+  Reading: the 0.5.13 "the single MEDIC_SLOT offer is the bottleneck" is not
+  what the clock says. Over 96 % of the offer-seconds the rival already holds
+  another contract (the offer survives a contract today), and the rival stands
+  on the Capital with a free contract for 70 s in the whole sample. The offer
+  itself does not exist at all for a rival without a cargo hold: `makeMedic`
+  refuses while `medicLoad` is 0, and 4 of 6 seeds end with both rivals still on
+  HOLD-0, so the whole contract board (deliveries need 4 t, medics need 2) is
+  closed to them.
+
+C. Hold probe (throwaway script, same world) — why HOLD-0 is never upgraded
+
+  12 rival-games, 1200 s: 5 bought the hold, 7 did not.
+  Steps spent standing on the own HQ with no hold and enough purse for
+  HOLD-8 (0.76) + the 3.00 reserve: 422 s — and in every one of those steps the
+  company could afford it.
+  `bot.careerBetweenFlights` was called 91 times in a seed-3 run: 0 of them with
+  the ship on its own HQ. The rivals only ever stand on the HQ before their
+  first launch (queued, not landed), and the between-flight shop runs on
+  landing, on a sit and on a no-shot. Nothing kits the company out at start.
+
+  => the medical (and delivery) starvation is a *first shop* gap, not a slot
+  count. Fixing it changes every rival's opening and needs its own A/B; see
+  0.5.16-plan-rival-first-shop.md.
