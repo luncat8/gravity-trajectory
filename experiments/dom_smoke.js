@@ -139,7 +139,7 @@ if (ui.get('pathReadout').textContent !== armedPath ||
 env.fireElement(ui.get('launch'), 'click', {});
 env.runFrames(5);
 console.log('after launch: status', ui.get('cargoStatus').textContent,
-	'flight', ui.get('cargoFlight').textContent);
+	'flight', ui.get('flightTime').textContent);
 if (!pagePhoto.visible()) throw new Error('space photo card did not appear on a new system');
 let photoPlanet = -1;
 for (let i = 0; i < pageWorld.PLANETS; i++) {
@@ -269,8 +269,7 @@ if (ui.get('expClock').textContent === beforeExp) throw new Error('experiment cl
 
 env.fireElement(ui.get('clear'), 'click', {});
 env.runFrames(2);
-console.log('after clear:', ui.get('cargoStatus').textContent,
-	'flight', ui.get('cargoFlight').textContent);
+console.log('after clear:', ui.get('cargoStatus').textContent);
 
 /* gravity positions = ports: centres move, so an armed trajectory updates */
 env.fireElement(ui.get('tradePause'), 'click', {});
@@ -2142,13 +2141,23 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 		bCareer2.ship.fuelKg === 90 && bUi.get('careerPad').innerHTML.includes('px/s'),
 		'fitted IMP-2 + FT-2 with 90 kg fuel and px/s Δv readout');
 
+	const wantDvProbe = Math.max(4, bSim.burnLimit() * 0.5);
 	bEnv.dragAim(bHq, 0.65, Math.min(72, bScene.speedCeiling(bHq)));
 	bEnv.runFrames(2, 16.0);
 	check(careerLaunch(bEnv, bSim), 'career ship never left the turning EMC');
 	bEnv.runFrames(6, 16.7);
 	check(bSim.status === pageSim.STATUS_FLYING && bSim.liveSteps > 0, 'career ship in flight');
-	check(!bUi.get('launch').disabled && bUi.get('launch').textContent.startsWith('impulse · max '),
-		'in-flight launch button offers impulse pause: ' + bUi.get('launch').textContent);
+	/* a flying ship is not a handle: pressing it aims nothing and does not pause */
+	check(!bUi.get('flightPauseBtn').hidden && bUi.get('flightPauseBtn').textContent === 'pause' &&
+		bUi.get('flightSpeed').textContent.endsWith(' px/s') &&
+		bUi.get('flightTime').textContent.includes(' s · '),
+		'flight hud reads live speed and flight time: ' + bUi.get('flightSpeed').textContent +
+		' / ' + bUi.get('flightTime').textContent);
+	bEnv.dragBurn(-1.15, wantDvProbe);
+	bEnv.runFrames(2, 16.7);
+	check(!bScene.burnPaused() && !bScene.burnState().armed &&
+		bSim.liveSteps > 0 && bSim.status === pageSim.STATUS_FLYING,
+		'pressing the flying ship must aim nothing: drag from a paused ship only');
 
 	/* Space pauses flight at exact step boundary */
 	bEnv.fireWindow('keydown', { code: 'Space', key: ' ', target: { tagName: 'BODY' }, preventDefault() {} });
@@ -2180,8 +2189,25 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	bEnv.runFrames(1, 16.7);
 	check(bScene.burnPaused() && !bScene.burnState().armed, 'Escape disarms burn without unpausing');
 
+	/* the pause button resumes, and a resume drops the arm: no burn survives a coast */
 	bEnv.dragBurn(-1.15, wantDv);
 	bEnv.runFrames(2, 16.7);
+	check(bScene.burnState().armed, 're-drag after Escape armed the burn again');
+	bEnv.click('flightPauseBtn');
+	bEnv.runFrames(2, 16.7);
+	check(!bScene.burnPaused() && !bScene.burnState().armed &&
+		bUi.get('flightPauseBtn').textContent === 'pause',
+		'resuming from the flight hud drops the armed burn');
+
+	bEnv.fireWindow('keydown', { code: 'Space', key: ' ', target: { tagName: 'BODY' }, preventDefault() {} });
+	bEnv.runFrames(1, 16.7);
+	const repausedSteps = bSim.liveSteps;
+	bEnv.runFrames(3, 16.7);
+	check(bScene.burnPaused() && bSim.liveSteps === repausedSteps,
+		'the pause button and Space reach the same pause');
+	bEnv.dragBurn(-1.15, wantDv);
+	bEnv.runFrames(2, 16.7);
+	const burnStep = bSim.liveSteps;
 	const expectedEndReason = bSim.predReason;
 	const expectedEndBody = bSim.predBody;
 	const expectedRemSteps = bSim.predSteps;
@@ -2189,16 +2215,98 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	const fuelAfterBurn = bCareer2.ship.fuelKg;
 	check(!bScene.burnPaused() && bCareer2.burns === 1 && fuelAfterBurn < 90 &&
 		bScene.game.shots[0].burns.length === 1 &&
-		bScene.game.shots[0].burns[0].step === pausedSteps &&
-		bUi.get('careerPad').innerHTML.includes(fuelAfterBurn.toFixed(1) + ' / 90 kg'),
-		'Enter executed burn, logged step ' + pausedSteps + ', and updated live fuel readout');
+		bScene.game.shots[0].burns[0].step === burnStep &&
+		bUi.get('careerPad').innerHTML.includes(fuelAfterBurn.toFixed(1) + ' / 90 kg') &&
+		bUi.get('flightFuel').textContent === fuelAfterBurn.toFixed(1) + ' / 90 kg',
+		'Enter executed burn, logged step ' + burnStep + ', and updated live fuel readout');
 
 	for (let i = 0; i < 600 && bSim.status === pageSim.STATUS_FLYING; i++) bEnv.runFrames(1, 40.0);
 	check(bSim.status === pageSim.STATUS_ENDED &&
 		bSim.endReason === expectedEndReason &&
 		bSim.endBody === expectedEndBody &&
-		bSim.liveSteps - pausedSteps === expectedRemSteps,
+		bSim.liveSteps - burnStep === expectedRemSteps,
 		'live post-burn flight matched predictBurn step-for-step');
+
+	/* the flight hud carries the loop's facts, the refuel transaction and the
+	 * open work; its work rows draw the guide arrow while pointed at */
+	const hudEnv = loadPage({ search: '?mode=career&seed=42&rate=1' });
+	hudEnv.runFrames(2, 16.0);
+	const hudUi = hudEnv.elements;
+	const hudScene = hudEnv.context.GravityScene;
+	const hudCareer = hudScene.career;
+	const hudGame = hudEnv.context.GravityGame;
+	check(hudUi.get('flightState').textContent === 'landed P' + hudCareer.hq &&
+		hudUi.get('flightEngine').textContent.startsWith('none') &&
+		hudUi.get('flightSpeed').textContent === '—' &&
+		hudUi.get('flightSpeed').textContent === '—',
+		'a landed ship with no drive reads as such: ' + hudUi.get('flightState').textContent +
+		' / ' + hudUi.get('flightEngine').textContent);
+	check(hudUi.get('flightRefuelRow').hidden && hudUi.get('flightFuelRow').hidden &&
+		hudUi.get('flightPauseBtn').hidden && !hudUi.get('flightQuestGroup').hidden &&
+		hudUi.get('flightQuests').innerHTML.includes('no contract open'),
+		'the fuel row and the pause button need a drive; the work rows always list');
+	check(hudUi.get('flightState').textContent !== 'coasting' &&
+		hudUi.get('flightActionTag').textContent === 'enter',
+		'the action caption names the shortcut: ' + hudUi.get('flightActionTag').textContent);
+
+	/* work rows are the contract and the competition, named with their leg */
+	hudCareer.ledger.purse = 40;
+	hudCareer.tasks[0].kind = hudGame.TASK_DELIVERY;
+	hudCareer.tasks[0].state = hudGame.TASK_ACCEPTED;
+	hudCareer.tasks[0].from = 5;
+	hudCareer.tasks[0].to = 12;
+	hudCareer.tasks[0].reward = 2;
+	hudCareer.tasks[0].deadline = hudScene.game.clockSteps + 600;
+	hudCareer.contract = 0;
+	hudScene.refreshCareerPanel();
+	hudEnv.runFrames(2, 16.0);
+	const questHtml = hudUi.get('flightQuests').innerHTML;
+	check(questHtml.includes('data-quest="5"') && questHtml.includes('>load<') &&
+		hudUi.get('flightQuestTag').textContent === 'load',
+		'the open contract lists its next stop: ' + questHtml);
+	/* the guide is only drawn for the row under the pointer */
+	hudEnv.calls.texts.length = 0;
+	hudEnv.calls.gStrokeStyles.length = 0;
+	hudEnv.fireElement(hudUi.get('flightHud'), 'pointerover',
+		{ target: { dataset: { quest: '5' }, parentElement: null } });
+	check(hudScene.questHover() === 5, 'pointing at a work row does not set the guide target');
+	hudEnv.runFrames(1, 16.0);
+	const guideDrawn = hudEnv.calls.gStrokeStyles.some(c => String(c).includes('142, 240, 192'));
+	check(guideDrawn, 'the work row under the pointer did not draw its guide arrow');
+	hudEnv.fireElement(hudUi.get('flightHud'), 'pointerleave', {});
+	hudEnv.runFrames(1, 16.0);
+	check(hudScene.questHover() === -1 && !hudUi.get('flightQuests').innerHTML.includes('questRow on'),
+		'leaving the work list did not clear the guide');
+	hudCareer.contract = -1;
+	hudScene.refreshCareerPanel();
+
+	/* refuel is a landing transaction priced from own charge and purse */
+	hudCareer.ledger.purse = 40;
+	const hudApi = hudEnv.context.GravityGame;
+	const hudTech = hudEnv.context.OrbitTech;
+	hudApi.installPart(hudCareer, hudTech.KIND_ENGINE, hudTech.ENGINES[0]);
+	hudApi.installPart(hudCareer, hudTech.KIND_TANK, hudTech.TANKS[1]);
+	hudScene.refreshCareerPanel();
+	hudEnv.runFrames(2, 16.0);
+	check(hudCareer.ship.engine !== null && hudCareer.ship.tank.fuelCap > 0 &&
+		!hudUi.get('flightRefuelRow').hidden && !hudUi.get('flightFuelRow').hidden &&
+		hudUi.get('flightPauseBtn').hidden,
+		'fitting an engine and a tank must reveal the fuel row; a landed ship has nothing to pause');
+	check(hudUi.get('flightRefuel').textContent.includes('refuel +10') &&
+		hudUi.get('flightRefuel').title.includes('kg fuel'),
+		'the refuel label prices one step: ' + hudUi.get('flightRefuel').textContent);
+	const fuelBefore = hudCareer.ship.fuelKg;
+	const hudChargeBefore = hudCareer.pads[hudCareer.hq].chargeKwh;
+	const hudPurseBefore = hudCareer.ledger.purse;
+	hudEnv.click('flightRefuel');
+	hudEnv.runFrames(2, 16.0);
+	check(hudCareer.ship.fuelKg > fuelBefore &&
+		hudUi.get('flightFuel').textContent.startsWith(hudCareer.ship.fuelKg.toFixed(1) + ' / ') &&
+		(hudCareer.pads[hudCareer.hq].chargeKwh < hudChargeBefore ||
+			hudCareer.ledger.purse < hudPurseBefore),
+		'the refuel button did not buy or convert fuel: ' + hudUi.get('flightFuel').textContent);
+	check(hudUi.get('flightEngine').textContent.startsWith('IMP-1'),
+		'the engine fact names the fitted drive: ' + hudUi.get('flightEngine').textContent);
 
 	/* replay a Tour link carrying a mid-flight burn suffix (-b...) and verify exact end state */
 	const rEnv1 = loadPage({ hash: '#game=1&seed=19&rate=1' });
@@ -2753,21 +2861,27 @@ function protoOf(career, family, id) {
 		'2 s eased fast-forward · cost-blocked prices red');
 }
 
-/* 0.4.17: separate cargoFoot panel, inline stranded buy/evacuate buttons,
- * 4x career playback default/max (×4..×32), and predicted profit-3 / rate / TOF */
+/* 0.4.17: separate #flightHud panel (the flight HUD), inline stranded
+ * buy/evacuate buttons, 4x career playback default/max (×4..×32), and
+ * predicted profit-3 / rate / TOF */
 {
 	const fs = require('fs');
 	const path = require('path');
 	const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-	const footMatch = /<aside id="cargoFoot" class="panel"[^>]*>([\s\S]*?)<\/aside>/.exec(html);
+	const footMatch = /<aside id="flightHud" class="panel"[^>]*>([\s\S]*?)<\/aside>/.exec(html);
 	check(footMatch !== null &&
 		footMatch[1].includes('id="helperGroup"') &&
 		footMatch[1].includes('id="launch"') &&
 		footMatch[1].includes('id="planetActions"') &&
 		footMatch[1].includes('id="launchBuild"') &&
 		footMatch[1].includes('id="launchCommercial"') &&
-		footMatch[1].includes('id="launchEvac"'),
-		'cargoFoot must be a separate bottom panel owning helperGroup, launch, and planetActions');
+		footMatch[1].includes('id="launchEvac"') &&
+		footMatch[1].includes('id="flightSpeed"') &&
+		footMatch[1].includes('id="flightFuel"') &&
+		footMatch[1].includes('id="flightRefuel"') &&
+		footMatch[1].includes('id="flightQuests"') &&
+		footMatch[1].includes('id="flightPauseBtn"'),
+		'the flight hud must own the ship facts, the fuel row, the work rows and the action row');
 
 	const cEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
 	cEnv.runFrames(2, 16.0);
@@ -2935,7 +3049,7 @@ function protoOf(career, family, id) {
 	cEnv.click('playFaster');
 	check(cScene.playScale() === 8 && cui.get('playFaster').disabled,
 		'non-career max playback speed remains ×8');
-	console.log('0.4.17 verified: separate #cargoFoot panel · inline stranded buy/evacuate · ' +
+	console.log('0.4.17 verified: separate #flightHud panel · inline stranded buy/evacuate · ' +
 		'career ×4..×32 playback · net outcome / rate / TOF route prediction');
 		console.log('0.4.19 verified: commercial rail + EMC claims · ' +
 			'flying rival careers · 3.00 pads / 6.00 evacuation');

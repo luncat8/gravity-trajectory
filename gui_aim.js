@@ -224,7 +224,6 @@ function clearBurnAim() {
 	burnPaused = false;
 	burnAiming = false;
 	burnArmed = false;
-	burnPressing = false;
 	savedBurnArmed = false;
 }
 
@@ -289,12 +288,22 @@ function placeBurnGrip() {
 	refreshAimLabel();
 }
 
+/* the burn press is taken only on a paused flight: a flying ship is still a
+ * moving target, so a press there belongs to the planets underneath */
+function beginBurnPress(event, wx, wy) {
+	if (!canImpulse() || !burnPaused) return false;
+	lastWX = wx;
+	lastWY = wy;
+	pressClientX = event.clientX;
+	pressClientY = event.clientY;
+	pendGripX = wx;
+	pendGripY = wy;
+	takeOverBurnAim();
+	return true;
+}
+
 function takeOverBurnAim() {
-	if (!canImpulse()) {
-		burnPressing = false;
-		return;
-	}
-	if (!burnPaused) setBurnPaused(true);
+	if (!canImpulse() || !burnPaused) return;
 	savedBurnArmed = burnArmed;
 	savedBurnAngle = burnAngle;
 	savedBurnDv = burnDv;
@@ -308,6 +317,7 @@ function takeOverBurnAim() {
 	hudAt = -Infinity;
 }
 
+/* Enter is the whole loop: burn the armed vector, then continue the flight */
 function executeBurn() {
 	if (!canImpulse() || !burnArmed || !(burnDv > 0)) return false;
 	const angleU = GravityGame.angleUnits(burnAngle);
@@ -335,11 +345,20 @@ function executeBurn() {
 	return true;
 }
 
+/* Space / P and the flight hud's pause button: pausing keeps an arm, resuming
+ * drops it, so an armed burn never survives a coast */
+function toggleFlightPause() {
+	if (canImpulse()) return setBurnPaused(!burnPaused);
+	if (careerRule() && cargoSim.status === STATUS_FLYING) {
+		careerNotice(game.career.ship.engine ? 'fuel tank empty' : 'no impulse engine fitted · refit at HQ');
+	}
+	return false;
+}
+
 function launchShot() {
 	if (canImpulse()) {
-		if (!burnPaused) setBurnPaused(true);
-		else if (burnArmed) executeBurn();
-		else setBurnPaused(false);
+		if (burnArmed) executeBurn();
+		else if (!burnPaused) toggleFlightPause();
 		return;
 	}
 	if (routeRule() && game.on) return;
@@ -456,12 +475,12 @@ function hudPadPress(event) {
 	if (!node || node === tradeCanvas) return false;
 	const inCargo = Boolean(cargoHudEl && typeof cargoHudEl.contains === 'function' && cargoHudEl.contains(node));
 	const inLeft = Boolean(leftHudEl && typeof leftHudEl.contains === 'function' && leftHudEl.contains(node));
-	const inFoot = Boolean(cargoFootEl && typeof cargoFootEl.contains === 'function' && cargoFootEl.contains(node));
+	const inFoot = Boolean(flightHudEl && typeof flightHudEl.contains === 'function' && flightHudEl.contains(node));
 	if (!inCargo && !inLeft && !inFoot) return false;
 	if (node.closest && node.closest('button, input, select, label, textarea, summary, .scoreEntry')) return false;
 	const wx = worldX(event.clientX);
 	const wy = worldY(event.clientY);
-	if (canImpulse() && shipAt(wx, wy)) return true;
+	if (canImpulse() && burnPaused && shipAt(wx, wy)) return true;
 	const planet = planetAt(wx, wy);
 	return planet >= 0 && canAimFrom(planet);
 }
@@ -471,21 +490,13 @@ function onPointerDown(event) {
 	if (event.button !== 0 || (event.target !== tradeCanvas && !hudPadPress(event))) return;
 	const wx = worldX(event.clientX);
 	const wy = worldY(event.clientY);
-	if (canImpulse() && shipAt(wx, wy)) {
-		lastWX = wx;
-		lastWY = wy;
-		burnPressing = true;
-		pressClientX = event.clientX;
-		pressClientY = event.clientY;
-		pendGripX = wx;
-		pendGripY = wy;
-		if (!burnPaused) setBurnPaused(true);
-		return;
+	if (canImpulse() && burnPaused && shipAt(wx, wy)) {
+		if (beginBurnPress(event, wx, wy)) return;
 	}
 	const planet = planetAt(wx, wy);
 	const body = bodyAt(wx, wy);
 	if (planet < 0 && body < 0) {
-		if (!aiming && !pressing && !burnAiming && !burnPressing && selected >= 0) {
+		if (!aiming && !pressing && !burnAiming && selected >= 0) {
 			setSelected(-1);
 			helperUpdateUi();
 		}
@@ -525,17 +536,6 @@ function onPointerMove(event) {
 		updateBurnAim();
 		if (burnAngle !== prevAngle || burnDv !== prevDv || activeSim().predCount < 2) {
 			dirty = true;
-		}
-	} else if (burnPressing) {
-		const dx = wx - lastWX;
-		const dy = wy - lastWY;
-		const sens = fine ? SENS_FINE : 1;
-		pendGripX += dx * sens;
-		pendGripY += dy * sens;
-		const movedX = event.clientX - pressClientX;
-		const movedY = event.clientY - pressClientY;
-		if (movedX * movedX + movedY * movedY > DRAG_TAKEOVER_PX * DRAG_TAKEOVER_PX) {
-			takeOverBurnAim();
 		}
 	} else if (aiming) {
 		const prevAngle = aimAngle;
@@ -578,13 +578,8 @@ function onPointerMove(event) {
 
 function onPointerUp(event) {
 	fine = event.shiftKey;
-	if (burnPressing && !burnAiming) {
-		burnPressing = false;
-		return;
-	}
 	if (burnAiming) {
 		burnAiming = false;
-		burnPressing = false;
 		if (gripLen > 6 / view.scale && burnDv >= GravityGame.speedOf(1)) {
 			burnArmed = true;
 		} else if (savedBurnArmed) {

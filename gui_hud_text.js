@@ -161,6 +161,7 @@ function draw(now) {
 		if (blockedKind === 1) drawOccupiedPlanetWorld(blocked);
 		else drawBlockedArrowWorld(blocked, tickNow);
 	}
+	if (questHoverBody >= 0) drawQuestGuide(tickNow);
 	drawAim();
 	drawCargo(tickNow);
 	drawMarkers();
@@ -299,6 +300,7 @@ function updateLiveHud() {
 	}
 	const impulseOk = canImpulse();
 	const locked = gameLocked();
+	updateFlightHud();
 	const trimOff = (locked && !(impulseOk && burnArmed)) ||
 		(!armed && !(impulseOk && burnArmed) && (game.on || selected < 0));
 	if (trimSlider.disabled !== trimOff) trimSlider.disabled = trimOff;
@@ -311,32 +313,38 @@ function updateLiveHud() {
 /* ── launch state & status ── launch state and note, ride text and title, status text */
 function setLaunchState(blocked, exitWarning) {
 	if (canImpulse()) {
+		/* the impulse loop is pause-first: the context button only offers the
+		 * burn while it is armed; pause / resume has its own button and Space */
 		const ship = activeCareer().ship;
 		const usedKg = burnArmed
 			? OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg) : 0;
 		const warnExit = burnArmed && exitWarning;
-		const text = !burnPaused
-			? 'impulse · max ' + cargoSim.burnLimit().toFixed(1) + ' px/s'
+		const text = burnAiming
+			? 'aiming · Δv ' + burnDv.toFixed(1) + ' px/s'
 			: burnArmed
 			? (warnExit ? 'burn · leaves map · ' : 'burn · Δv ') +
 				burnDv.toFixed(1) + ' px/s (−' + usedKg.toFixed(1) + ' kg · ' +
 				costText(usedKg * GravityGame.fuelPrice(activeCareer())) + ')'
-			: 'resume · drag ship to burn';
+			: burnPaused ? 'burn … drag from the ship' : 'coasting · ' +
+				Math.sqrt(cargoSim.cargo.vx * cargoSim.cargo.vx +
+					cargoSim.cargo.vy * cargoSim.cargo.vy).toFixed(1) + ' px/s';
 		const state = 1024 + (burnPaused ? 2048 : 0) + (burnArmed ? 4096 : 0) +
-			(warnExit ? 2 : 0);
+			(burnAiming ? 8192 : 0) + (warnExit ? 2 : 0);
 		if (state === launchState && text === launchNote) return;
 		launchState = state;
 		launchNote = text;
 		launchButton.hidden = false;
 		if (planetActionsEl) planetActionsEl.hidden = true;
-		launchButton.disabled = false;
+		launchButton.disabled = !burnArmed;
 		launchButton.classList.toggle('exitWarning', warnExit);
 		launchButton.textContent = text;
-		launchButton.title = !burnPaused
-			? 'Pause flight to aim an impulse burn (Space / P, or drag from the ship)'
-			: burnArmed
-			? 'Execute impulse burn and resume flight (Enter) · Escape cancels burn'
-			: 'Drag from the ship to aim a burn, or click / press Space to resume coasting';
+		launchButton.title = burnArmed
+			? 'Execute impulse burn and resume flight (Enter) · Space / resume drops the arm'
+			: burnAiming
+			? 'Release the drag to arm this burn'
+			: burnPaused
+			? 'Drag from the paused ship to aim a burn, or press Space / resume to coast on'
+			: 'Press Space / P to pause the flight and aim an impulse burn';
 		return;
 	}
 	if (turret.pending) {
@@ -537,7 +545,7 @@ function statusText() {
 	}
 	if (burnAiming) return 'aiming impulse · Δv ' + burnDv.toFixed(1) + ' px/s';
 	if (burnArmed) return 'burn armed · Δv ' + burnDv.toFixed(1) + ' px/s';
-	if (burnPaused) return 'flight paused · drag ship for impulse';
+	if (burnPaused) return 'flight paused · drag the ship for impulse';
 	if (aiming) return whoPrefix + 'aiming ' + planetName(aimBody);
 	if (armed) return whoPrefix + 'armed · ' + planetName(aimBody);
 	if (sim.status === STATUS_FLYING) {

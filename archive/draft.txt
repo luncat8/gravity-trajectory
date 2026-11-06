@@ -323,4 +323,40 @@ visit specific planet and return back -  from exactly planet that is far from ta
 #### think about new competitions or variations if found really interesting
 
 
+## impulse engine fly and flight HUD panel
 
+
+have IMP, fuel
+
+- pause
+- drag from the flying ship → aim → release to arm
+in fly input event on ship - do not need. we interact only on pause.
+- Enter to burn (this also unpause and continue fly)
+or
+- unpause cause cancel arm
+
+while landed show refuel button (cost) near launch button.
+
+
+### flight HUD panel.
+
+refactor auto-helpers panel to flight HUD panel with auto-helpers content
+
+- speed
+- time of fly / launch button (Enter shortcut) (while landed) / burn button (Enter shortcut) when ipm armed
+
+- fuel, refuel button (while landed)
+- engine
+- quest list with arrows when pointer hover.
+
+think where to place  auto-helpers content to be logically functionally grouping
+
+## observation device
+
+choose good name for device that get money for visits (decrease corruption, by story: send info to capital).
+possibility to uninstall this device on a planet with high corruption level (maybe >75%). after this more easy to take bribe because bribe proportional to visit profit that will not automatically cleared without observation device.
+
+add short help drawer on hover bribe button to explain how work bribe, corruption, observation device
+
+## bribe button
+it should be visible while ship landed until take bribe, then show again after visit ANOTHER planet

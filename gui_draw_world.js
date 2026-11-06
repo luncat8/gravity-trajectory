@@ -143,33 +143,18 @@ function activeBlockedPlanet(now) {
 	return -1;
 }
 
-/* guide vector + arrowheads from a non-landed planet to the landed base */
-function drawBlockedArrowWorld(src, now) {
-	const dst = activeSim().landedBody;
-	if (dst < 0) return;
+/* the guide vector the blocked-launch hint and the work rows share: a dashed
+ * line from a source point to a target point, chevrons streaming along it and
+ * one arrowhead at the target */
+function drawGuideArrow(x0, y0, startGap, x1, y1, endGap, now, line, head) {
 	const px = 1 / view.scale;
-	const x0 = tradeSim.planetX[src];
-	const y0 = tradeSim.planetY[src];
-	const x1 = tradeSim.planetX[dst];
-	const y1 = tradeSim.planetY[dst];
 	const dx = x1 - x0;
 	const dy = y1 - y0;
 	const dist = Math.sqrt(dx * dx + dy * dy);
-	if (dist < 1e-3) return;
+	if (dist <= startGap + endGap) return;
 	const angle = Math.atan2(dy, dx);
 	const ux = dx / dist;
 	const uy = dy / dist;
-	const startGap = tradeSim.planetR[src] + 7 * px;
-	const endGap = tradeSim.planetR[dst] + 10 * px;
-	if (dist <= startGap + endGap) return;
-
-	ctx.beginPath();
-	ctx.arc(x0, y0, tradeSim.planetR[src] + 5 * px, 0, TAU);
-	ctx.strokeStyle = WARN;
-	ctx.lineWidth = 1.4 * px;
-	ctx.setLineDash(NO_DASH);
-	ctx.stroke();
-
 	LOCK_DASH[0] = 6 * px;
 	LOCK_DASH[1] = 6 * px;
 	const sx = x0 + ux * startGap;
@@ -179,16 +164,16 @@ function drawBlockedArrowWorld(src, now) {
 	ctx.beginPath();
 	ctx.moveTo(sx, sy);
 	ctx.lineTo(ex, ey);
-	ctx.strokeStyle = 'rgba(255, 148, 120, 0.72)';
+	ctx.strokeStyle = line;
 	ctx.lineWidth = 1.35 * px;
 	ctx.setLineDash(LOCK_DASH);
 	ctx.stroke();
 	ctx.setLineDash(NO_DASH);
 
-	/* animated chevrons streaming toward the landed planet */
+	/* chevrons streaming toward the target */
 	const span = dist - startGap - endGap;
 	const phase = (now * 0.09 * px) % (90 * px);
-	ctx.fillStyle = GOLD;
+	ctx.fillStyle = head;
 	for (let d = phase; d < span - 14 * px; d += 90 * px) {
 		const cx = sx + ux * d;
 		const cy = sy + uy * d;
@@ -209,8 +194,24 @@ function drawBlockedArrowWorld(src, now) {
 	ctx.lineTo(ex + Math.cos(angle - 2.55) * 7 * px,
 		ey + Math.sin(angle - 2.55) * 7 * px);
 	ctx.closePath();
-	ctx.fillStyle = WARN;
+	ctx.fillStyle = head;
 	ctx.fill();
+}
+
+/* guide vector + arrowheads from a non-landed planet to the landed base */
+function drawBlockedArrowWorld(src, now) {
+	const dst = activeSim().landedBody;
+	if (dst < 0) return;
+	const px = 1 / view.scale;
+	ctx.beginPath();
+	ctx.arc(tradeSim.planetX[src], tradeSim.planetY[src], tradeSim.planetR[src] + 5 * px, 0, TAU);
+	ctx.strokeStyle = WARN;
+	ctx.lineWidth = 1.4 * px;
+	ctx.setLineDash(NO_DASH);
+	ctx.stroke();
+	drawGuideArrow(tradeSim.planetX[src], tradeSim.planetY[src], tradeSim.planetR[src] + 7 * px,
+		tradeSim.planetX[dst], tradeSim.planetY[dst], tradeSim.planetR[dst] + 10 * px,
+		now, 'rgba(255, 148, 120, 0.72)', WARN);
 }
 
 function drawOccupiedPlanetWorld(src) {

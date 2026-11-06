@@ -114,7 +114,7 @@ function resizeOverlay() {
 /* panel rects for the world plates (3 panels × 4 numbers): refreshed on resize and
  * whenever the HUD content changes, never per frame */
 const hudRects = new Float64Array(12);
-const hudRectEls = [$('cargoHud'), $('leftHud'), $('cargoFoot')];
+const hudRectEls = [$('cargoHud'), $('leftHud'), $('flightHud')];
 
 function measureHudRects() {
 	for (let i = 0; i < hudRectEls.length; i++) {
@@ -160,18 +160,18 @@ function reserveTradeFooter() {
 	const leftMaxH = Math.max(180, Math.floor(bottomY - hudTop)) + 'px';
 	const reserve = Math.ceil(vh - bottomY) + 'px';
 	cargoHudEl.style.setProperty('--footReserve', reserve);
-	if (cargoFootEl && cargoFootEl.style) {
-		cargoFootEl.style.setProperty('--footReserve', reserve);
+	if (flightHudEl && flightHudEl.style) {
+		flightHudEl.style.setProperty('--footReserve', reserve);
 	}
 	if (leftHudEl && leftHudEl.style) {
 		leftHudEl.style.setProperty('--footReserve', reserve);
 		leftHudEl.style.setProperty('--hudMaxH', leftMaxH);
 	}
-	/* the postcard and #cargoFoot sit just above the bar, taller in career (wait line) */
+	/* the postcard and #flightHud sit just above the bar, taller in career (wait line) */
 	const rootEl = root.document && root.document.documentElement;
 	if (rootEl && rootEl.style) rootEl.style.setProperty('--footReserve', reserve);
 	let cargoBottomY = bottomY;
-	const footRect = cargoFootEl ? cargoFootEl.getBoundingClientRect() : null;
+	const footRect = flightHudEl ? flightHudEl.getBoundingClientRect() : null;
 	if (footRect && footRect.height > 0 && footRect.height < vh * 0.6) {
 		cargoBottomY = Math.min(cargoBottomY, footRect.top - 8);
 	}

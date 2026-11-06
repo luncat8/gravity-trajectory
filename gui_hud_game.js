@@ -44,7 +44,6 @@ function refreshGameUi() {
 	if (bodyGroupEl) bodyGroupEl.hidden = game.on;
 	if (horizonGroupEl) horizonGroupEl.hidden = route;
 	if (playbackGroupEl) playbackGroupEl.hidden = route;
-	if (flightRowEl) flightRowEl.hidden = route;
 	srcPlanetsEl.disabled = flightLock;
 	srcPortsEl.disabled = flightLock;
 	/* a flight locks the rule; lab stays reachable as the way out */

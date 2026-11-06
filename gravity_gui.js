@@ -109,7 +109,6 @@ const predVisitEl = $('predVisitReadout');
 const predVisitLabelEl = $('predVisitLabel');
 const predProfitRowEl = $('predProfitRow');
 const predProfitEl = $('predProfitReadout');
-const flightEl = $('cargoFlight');
 const aimEl = $('aimReadout');
 const pathEl = $('pathReadout');
 const lengthEl = $('lengthReadout');
@@ -152,8 +151,6 @@ const routeBestBtn = $('routeBest');
 const leftHudEl = $('leftHud');
 const cargoHudEl = $('cargoHud');
 const careerHudEl = $('careerHud');
-const cargoFootEl = $('cargoFoot');
-const flightRowEl = $('flightRow');
 const bodyGroupEl = $('bodyGroup');
 const horizonGroupEl = $('horizonGroup');
 const playbackGroupEl = $('playbackGroup');
@@ -347,7 +344,6 @@ let savedSpeed = SPEED_MIN;
 let burnPaused = false;
 let burnAiming = false;
 let burnArmed = false;
-let burnPressing = false;
 let burnAngle = 0;
 let burnDv = 0;
 let burnCeiling = 0;
@@ -607,6 +603,12 @@ horizonSlider.addEventListener('input', () => {
 	hudAt = -Infinity;
 });
 launchButton.addEventListener('click', launchShot);
+if (flightPauseBtn) flightPauseBtn.addEventListener('click', toggleFlightPause);
+if (flightRefuelBtn) flightRefuelBtn.addEventListener('click', flightRefuel);
+if (flightHudEl) {
+	flightHudEl.addEventListener('pointerover', flightQuestsOver);
+	flightHudEl.addEventListener('pointerleave', flightHoverClear);
+}
 routeBestBtn.addEventListener('click', restoreRouteBest);
 if (helperScanBtn) helperScanBtn.addEventListener('click', helperStartBroad);
 if (helperFocusBtn) helperFocusBtn.addEventListener('click', helperStartFocus);
@@ -870,7 +872,7 @@ if (typeof root.ResizeObserver === 'function' && tradeControlsEl) {
 		measureHudRects();
 	});
 	footObserver.observe(tradeControlsEl);
-	if (cargoFootEl) footObserver.observe(cargoFootEl);
+	if (flightHudEl) footObserver.observe(flightHudEl);
 }
 window.addEventListener('keydown', event => {
 	sound.unlock();
@@ -906,16 +908,13 @@ window.addEventListener('keydown', event => {
 		if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT' &&
 			careerRule() && !replay.on && cargoSim.status === STATUS_FLYING) {
 			if (event.preventDefault) event.preventDefault();
-			if (canImpulse()) setBurnPaused(!burnPaused);
-			else {
-				careerNotice(game.career.ship.engine
-					? 'fuel tank empty' : 'no impulse engine fitted · refit at HQ');
-			}
+			toggleFlightPause();
 			return;
 		}
 	}
 	if (event.code === 'Enter') {
-		if (burnPaused && burnArmed && canImpulse()) {
+		if (canImpulse()) {
+			if (!burnArmed) return;
 			if (event.preventDefault) event.preventDefault();
 			executeBurn();
 			return;
@@ -1002,6 +1001,10 @@ root.GravityScene = {
 	aimState: () => ({ angle: aimAngle, speed: aimSpeed, grip: gripLen, ceiling: aimCeiling }),
 	burnPaused: () => burnPaused,
 	setBurnPaused,
+	toggleFlightPause,
+	flightRefuel,
+	questHover: () => questHoverBody,
+	flightHudState: () => (flightHud.action = flightStateText()),
 	burnState: () => ({
 		paused: burnPaused, armed: burnArmed,
 		angle: burnAngle, dv: burnDv, grip: gripLen, ceiling: burnCeiling

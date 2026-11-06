@@ -56,7 +56,7 @@ function resetRoutePlan() {
 
 function refreshRouteBestUi() {
 	const shown = routeRule();
-	if (cargoFootEl) cargoFootEl.classList.toggle('routeMode', shown);
+	if (flightHudEl) flightHudEl.classList.toggle('routeMode', shown);
 	routeBestBtn.hidden = !shown;
 	const best = activeRouteBest();
 	const plan = activeRoutePlan();

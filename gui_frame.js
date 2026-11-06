@@ -17,13 +17,6 @@ function updateHud(now) {
 	statusEl.textContent = statusText();
 	if (game.on) updateGameHud();
 
-	if (sim.status === STATUS_IDLE) {
-		flightEl.textContent = '—';
-	} else {
-		flightEl.textContent = sim.flightTime.toFixed(2) + ' s · ' +
-			Math.round(sim.flightLength) + ' px';
-	}
-
 	calcEl.textContent = sim.predCount >= 2
 		? sim.predSteps + ' steps · ' + sim.predMs.toFixed(2) + ' ms'
 		: '—';
