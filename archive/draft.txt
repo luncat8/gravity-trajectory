@@ -271,3 +271,56 @@ P(rebellion)=0.25(1−e −0.0322max(0,C−50) ), C is corruption from 0 to 100
 A rebellious planet’s flyby fee increases 4x slowly.
 
 When there are rebellious planets, a mission becomes available: load medics at the Capital, land on a rebellious planet, pick up patients automatically (same numbers as medics, technically half of the cargo hold), and deliver them to the Capital. Once the number of patients reaches zero (typically after 1–2 trips with a standard cargo hold), the planet loses its rebellious status. medics unloaded automatically when quest finished by any reason.
+
+
+
+## bribe
+what is current bribe profit?
+i think it should be limited by visit profit * corruption * some coefficient
+visit profit is main. i mean if planet already visited and visit profit currently low this mean all info reported to Capital - then there is no interest of the planet lord to pay bribe to Emissary as Emperor already know all what he want.
+but because we have automatic earn money at visit then this mean bribe is useful  in case of player sit on the planet long time for example no other profitable tasks and so he can got money without fly to space 
+
+
+## helpers
+- auto-aim-helpers should count taken quests as profit
+- add helper that is specialized on quest solving.
+
+
+
+## map statistics plots
+- average profit per time by players and all. useful to balance new quests
+- total property cost by player
+- total sci spend by player
+- average distance fly per time by players and all
+- total corruption sum of all planets
+think what is also interesting or useful
+
+
+## implement bot character that prefer
+- capture planet and build facilities
+- quest take and solve
+- use rocket engine
+- participate competitions and have good ship for it.
+
+## implement competitions:
+1. accept
+2. time to land to Capital (for competitions that start from capital by rule) or any planet (if competitions rules allow). show timer countdown to competition start and task.
+3. at some some before countdown: signal to aim and arm EMC (once armed in this time period then EMC does not run launch until countdown).
+4. one launched ships perform task and get prices. prices balanced to be good profit compared to overall profit on this map per time (see map statistics).
+
+### competitions
+also implement have them as separate game modes.
+
+max trajectory - any variations
+max visits - any variations
+land on antigravity planet - from capital only | from exactly planet that is far from target, only EMC
+visit specific planet and return back -  from exactly planet that is far from target, only EMC
+
+#### competition variations:
+- start from capital only / any
+- allow rocket IMP engines / only EMC
+
+#### think about new competitions or variations if found really interesting
+
+
+
