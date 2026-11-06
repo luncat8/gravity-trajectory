@@ -27,12 +27,14 @@ function careerCopySpec(data) {
 function taskRowHtml(career, index) {
 	const task = career.tasks[index];
 	const sport = index === GravityGame.COMPETE_SLOT;
-	const kind = sport ? 'sport' : task.tourist ? 'tourists' : 'delivery';
+	const medic = index === GravityGame.MEDIC_SLOT;
+	const kind = sport ? 'sport' : medic ? 'medical' : task.tourist ? 'tourists' : 'delivery';
 	if (task.kind === GravityGame.TASK_NONE) {
 		return '<div class="careerRow dim"><span class="careerKind">' + kind +
 			'</span><span class="careerNow">no offer</span></div>';
 	}
 	const left = Math.max(0, Math.round((task.deadline - game.clockSteps) * DT));
+	if (task.kind === GravityGame.TASK_MEDIC) return medicRowHtml(career, task, index, left);
 	if (task.kind === GravityGame.TASK_COMPETE) {
 		return '<div class="careerRow"><span class="careerKind">sport</span>' +
 			'<span class="careerNow">' + planetName(task.planet) + ' · land ≥ ' +
@@ -58,6 +60,29 @@ function taskRowHtml(career, index) {
 				: 'one contract at a time') + '">accept</button>';
 	} else {
 		html += '<button class="miniBtn" data-act="drop" title="drop the contract and its cargo">drop</button>';
+	}
+	return html + '</span></div>';
+}
+
+/* the medical mission row: patients at the rebellion, medics from the Capital */
+function medicRowHtml(career, task, index, left) {
+	const state = task.state === GravityGame.TASK_LOADED || task.state === GravityGame.TASK_ACCEPTED
+		? (task.aboard > 0
+			? task.aboard + ' patients → ' + planetName(career.capitalPlanet)
+			: task.medics + ' medics → ' + planetName(task.to))
+		: planetName(task.from) + ' → ' + planetName(task.to);
+	let html = '<div class="careerRow"><span class="careerKind">medical</span>' +
+		'<span class="careerNow">' + state + ' · patients ' + task.patients + '</span>' +
+		'<span class="careerBtns">+' + task.reward.toFixed(2) + ' · ' + left + ' s';
+	if (task.state === GravityGame.TASK_OFFERED) {
+		const ok = GravityGame.canAccept(career, index);
+		html += '<button class="miniBtn" data-act="accept" data-slot="' + index + '"' +
+			(ok ? '' : ' disabled') +
+			' title="' + (ok ? 'ferry medics out and patients home'
+				: 'accept at the Capital ' + planetName(career.capitalPlanet) + ' with a free contract') +
+			'">accept</button>';
+	} else {
+		html += '<button class="miniBtn" data-act="drop" title="drop the mission and its cargo">drop</button>';
 	}
 	return html + '</span></div>';
 }

@@ -138,6 +138,13 @@ for (let c = 0; c <= PROFIT_MAX_CENTS; c++) {
 const CAPITAL_PROFIT_TEXT = GravityGame.CAPITAL_VISIT_PAY.toFixed(2);
 const CAPITAL_TAG = 'CAPITAL';
 const ARF_TAG = 'A.R.F.';
+/* political pills (0.5.12): a rebellion and the rot that feeds it. Both are
+ * cached per integer so draw() stays 0-alloc. */
+const REBEL_TAG = 'REBELLION';
+/* rot is only worth a pill once it is on its way to a rebellion */
+const CORRUPTION_TAG_MIN = 20;
+const CORRUPTION_STRINGS = new Array(101);
+for (let c = 0; c <= 100; c++) CORRUPTION_STRINGS[c] = 'rot ' + c + '%';
 /* Planet-card gravity lines are cached like profit lines: no strings in draw(). */
 const GRAVITY_STRINGS = new Array(701);
 for (let c = -200; c <= 500; c++) {
@@ -203,6 +210,8 @@ const WELL_COLOURS = [
 const GOLD = '#ffcf6e';
 const MINT = '#8ef0c0';
 const WARN = '#ff9478';
+/* a rebellion has its own colour: seized ground, not a warning state */
+const REBEL = '#ff7ea0';
 const ICE = '#67e0ff';
 const SIGN_POS = '#ff5f57';
 const SIGN_NEG = '#57a8ff';

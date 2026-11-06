@@ -50,6 +50,8 @@ function applyPlanetUniverse() {
 	GravityGame.applyMarketUniverse(game.market, planetMask, planetCount);
 	/* specials are a career economy rule; tour/money/route keep the plain market */
 	GravityGame.applyMarketSpecials(game.market, careerRule() ? tradeSim.world : null);
+	/* the political arrays only act on a bound run: careers in one galaxy */
+	GravityGame.bindRun(game.market, careerRule() ? game.galaxy : null, tradeSim.world);
 	cargoSim.setPlanetMask(planetMask);
 	helperProbe.setPlanetMask(planetMask);
 	if (scene.setPlanetMask) scene.setPlanetMask(planetMask);

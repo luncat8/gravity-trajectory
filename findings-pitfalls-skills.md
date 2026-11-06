@@ -682,3 +682,23 @@ step 0 while its price assumed step 24, so the queued and flown landings diverge
 At `g >= 3` a finite one-burn ring is trapped in every direction, so the A/B
 fixture uses `g = 2` (twice `HQ_GRAVITY_MAX`). Avoid `Float64Array.set` across
 `PLANETS`-length and `MAX_BODIES`-length arrays.
+
+## a policy that silently sees `undefined` prices everything as NaN
+`careerBetweenFlights(career, sim, runStep)` priced pad gear and bribes with the
+world step, but the rival landing path (`careerLand`) called it with two
+arguments. Nothing threw: `planetProfitAt` returns 0 for a negative age and
+`bribeAmount` went `NaN`, so every bribe was refused and every money-per-second
+pad comparison was NaN-driven. When a new consumer of the step is added to a
+policy function, grep its callers — a missing argument is invisible in a bench
+that only looks at totals. It also means an old A/B is no longer bit-identical
+(`SPECIAL=0 POLITICS=0` moved 167 → 161 flights at 400 s), which is the fix
+showing up, not a regression.
+
+## the vm page stub hides `const`/`let` globals
+`dom_stub.loadPage` runs the classic scripts in one context, so top-level
+`function` declarations are reachable as `context.refreshCareerPanel`, but
+top-level `const`/`let` (`REBEL_TAG`, `planetMask`) are **not** properties of the
+context object — they live in the global lexical environment and only the page's
+own code can see them. A test must reach them through what the page exports
+(`GravityScene`, `GravityGame`) or through ordinary state (`career.planetMask`),
+not `context.<name>`.

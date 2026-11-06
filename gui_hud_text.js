@@ -112,7 +112,9 @@ function updateGameClockHud() {
 	if (!gameHudEl || gameHudEl.hidden) return;
 	const career = activeCareer();
 	if (gameClockEl) {
-		gameClockEl.textContent = formatGameClock(game.clockSteps * DT);
+		gameClockEl.textContent = formatGameClock(game.clockSteps * DT) +
+			(career && career.arrested ? ' · ARREST ' +
+				Math.max(0, Math.round((career.arrestUntilStep - game.clockSteps) * DT)) + ' s' : '');
 	}
 	if (gameShotsEl) gameShotsEl.textContent = String(career ? career.flights : 0);
 	if (gameFlightsEl) gameFlightsEl.textContent = String(game.shots ? game.shots.length : 0);

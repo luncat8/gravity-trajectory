@@ -36,6 +36,10 @@ const NOFUEL = process.env.NOFUEL === '1';
  * then reproduce the historical 12-seed totals bit for bit */
 const SPECIAL = process.env.SPECIAL !== '0';
 GravityGame.setSpecialPlanets(SPECIAL);
+/* POLITICS=0 switches the 0.5.12 political clock off; the run with it off has
+ * to reproduce the 0.5.11 totals, with it on it reports rot and rebellions */
+const POLITICS = process.env.POLITICS !== '0';
+GravityGame.setPolitics(POLITICS);
 /* g=2 is already twice the shallow-HQ limit; stronger wells trap the one-burn
  * rescue as well and measure nothing */
 const DEADEND_WELL = Number(process.env.DEADEND_WELL || 2);
@@ -71,6 +75,8 @@ function makeWorld(seed) {
 	GravityGame.applyMarketSpecials(market, SPECIAL ? trade.world : null);
 	const galaxy = GravityGame.createGalaxy();
 	GravityGame.resetGalaxy(galaxy, seed);
+	/* the political clock is run-wide: bind before any career joins */
+	GravityGame.bindRun(market, galaxy, POLITICS ? trade.world : null);
 	const player = GravityGame.createCareer(GravityGame.createLedger());
 	GravityGame.setCareerUniverse(player, mask, UNIVERSE);
 	GravityGame.startCareer(player, gravity, seed, trade, null, galaxy);
@@ -157,7 +163,9 @@ function padReport(w, career) {
 const steps = Math.round(SECONDS / DT);
 const totals = { flights: 0, earned: 0, pads: 0, dead: 0, reach: 0, stuck: 0,
 	actors: 0, burns: 0, priced: 0, rescues: 0, noShots: 0, sits: 0,
-	drops: 0, evacs: 0, fuelBought: 0, fuelProduced: 0, fuelSpent: 0, fuelTopUps: 0 };
+	drops: 0, evacs: 0, fuelBought: 0, fuelProduced: 0, fuelSpent: 0, fuelTopUps: 0,
+	rebel: 0, seized: 0, patients: 0, rot: 0, bribes: 0, arrests: 0,
+	medicTrips: 0, delivered: 0 };
 for (const seed of SEEDS) {
 	const w = makeWorld(seed);
 	const hqRows = ['P' + w.player.hq + ' g' + w.strength[w.player.hq].toFixed(1)];
@@ -205,6 +213,28 @@ for (const seed of SEEDS) {
 	totals.priced += w.bot.careerBurnPrices;
 	totals.rescues += w.bot.careerBurnRescues;
 	totals.fuelTopUps += w.bot.careerFuelTopUps;
+	/* politics readout: how much of the map the rebellion took, and what the
+	 * companies paid for or were arrested for */
+	let reb = 0;
+	let seized = 0;
+	let patients = 0;
+	let rot = 0;
+	for (let p = 0; p < UNIVERSE; p++) {
+		if (w.market.rebel[p]) reb += 1;
+		if (w.market.seized[p]) seized += 1;
+		patients += w.market.patients[p];
+		rot += w.market.corruption[p];
+	}
+	totals.rebel += reb;
+	totals.seized += seized;
+	totals.patients += patients;
+	totals.rot += rot / UNIVERSE;
+	for (let i = 0; i < w.bot.count; i++) {
+		totals.bribes += w.bot.rivals[i].career.bribes;
+		totals.arrests += w.bot.rivals[i].career.arrests;
+		totals.delivered += w.bot.rivals[i].career.patientsDelivered;
+		totals.medicTrips += w.bot.rivals[i].career.medicTrips;
+	}
 	totals.noShots += w.events.noShots;
 	totals.sits += w.events.sits;
 	totals.drops += w.events.drops;
@@ -225,7 +255,12 @@ console.log('TOTAL rivals ' + totals.actors + ' · flights ' + totals.flights +
 		' kg · spend ' + totals.fuelSpent.toFixed(2) + ' · top-ups ' + totals.fuelTopUps : '') +
 	(DEADEND ? ' · no-shot ' + totals.noShots + ' · sits ' + totals.sits +
 		' · drops ' + totals.drops + ' · evac ' + totals.evacs : '') +
-	(NORESCUE ? ' · NORESCUE' : '') + (NOFUEL ? ' · NOFUEL' : ''));
+	(NORESCUE ? ' · NORESCUE' : '') + (NOFUEL ? ' · NOFUEL' : '') +
+	(POLITICS ? ' · rebel ' + totals.rebel + ' · seized ' + totals.seized +
+		' · patients ' + totals.patients + ' · mean rot ' +
+		(totals.rot / SEEDS.length).toFixed(1) + ' · bribes ' + totals.bribes +
+		' · arrests ' + totals.arrests + ' · medic trips ' + totals.medicTrips +
+		' · patients home ' + totals.delivered : ' · POLITICS=0'));
 if (GravityGame.FUEL_PRICE * OrbitTech.TANKS[1].fuelCap <= GravityGame.CAREER.commercialFee) {
 	throw new Error('a full FT-1 must cost more than a commercial EMC launch');
 }

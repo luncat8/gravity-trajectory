@@ -1,0 +1,30 @@
+0.5.12 politics — career_gravity_bench A/B (13-planet career universe, rate 1)
+
+400 s, seeds 1-12 (24 rival-games)
+on   TOTAL rivals 24 · flights 157 · earned 15.96 · pads 67 · dead pads 0 · mean reach 4.69 ·
+     rebel 0 · seized 0 · patients 0 · mean rot 13.2 · bribes 3 · arrests 0 ·
+     medic trips 0 · patients home 0
+off  TOTAL rivals 24 · flights 157 · earned 15.96 · pads 67 · dead pads 0 · mean reach 4.69
+=> short runs are unchanged; rot never reaches the 50 rebellion line.
+
+1200 s, seeds 1-6 (12 rival-games)
+on   flights 200 · earned 33.92 · pads 30 · dead pads 2 · reach 3.72 · rebel 23 · seized 24 ·
+     patients 184 · mean rot 43.2 · bribes 6 · arrests 0 · medic trips 2 · patients home 8
+off  flights 205 · earned 35.61 · pads 40 · dead pads 2 · reach 3.98
+
+2400 s, seeds 1-3 (6 rival-games)
+on   flights 147 · earned 43.84 · pads 15 · dead pads 0 · reach 5.34 · rebel 19 · seized 21 ·
+     patients 152 · mean rot 55.2 · bribes 12 · arrests 1 · medic trips 10 · patients home 32
+off  flights 195 · earned 64.50 · pads 24 · dead pads 0 · reach 5.03
+
+reading: the rebellion costs buildable ground (-10 pads at 1200 s, -9 at 2400 s) and a long
+run loses about a third of its earnings, because a seized planet never becomes buildable
+again. The rivals only quell 4 of 19 rebellions, so the 4x fly-by payout and the medical
+quest do not pay the loss back yet — the open balance question of 0.5.13.
+
+5.11 reproduction with both layers off (SPECIAL=0 POLITICS=0, 400 s, seeds 1-12)
+now  flights 161 · earned 30.96 · pads 82 · dead pads 0 · reach 4.72
+0.5.10 baseline (experiments/logs/0.5.11-special-ab-baseline.txt)
+     flights 167 · earned 31.20 · pads 82 · dead pads 0 · reach 4.04
+=> not bit-identical any more: `careerBetweenFlights` now receives the world step it
+prices pad gear with (it used to be undefined), which is a bug fix, not a politics effect.

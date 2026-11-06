@@ -164,7 +164,11 @@ function drawPlanetProfits() {
 		const inside = liveHarvestMask[i] === 1;
 		const onRoute = inside || predHarvestMask[i] === 1;
 		const owner = careerRule() ? GravityGame.claimOwner(game.galaxy, i) : -1;
-		const border = isCapital ? 'rgba(255, 207, 110, 0.85)'
+		const rebel = careerRule() && game.market.rebel[i] === 1;
+		const seized = careerRule() && game.market.seized[i] === 1;
+		const border = rebel ? REBEL
+			: isCapital ? 'rgba(255, 207, 110, 0.85)'
+			: seized ? 'rgba(255, 148, 120, 0.45)'
 			: isArf ? 'rgba(142, 240, 192, 0.7)'
 			: owner === 0 ? MINT
 			: owner > 0 ? RIVAL_COLOURS[owner - 1]
@@ -183,11 +187,14 @@ function drawPlanetProfits() {
 		ctx.fillText(isCapital ? CAPITAL_PROFIT_TEXT : PROFIT_STRINGS[cents], x + width * 0.5, y + 7.5);
 		ctx.fillStyle = g < 0 ? SIGN_NEG : g >= HEAVY_G ? SIGN_POS : 'rgba(210, 230, 246, 0.82)';
 		ctx.fillText(GRAVITY_STRINGS[gi], x + width * 0.5, y + 20.5);
-		if (isCapital || isArf) {
+		if (isCapital || isArf || rebel || seized ||
+			(careerRule() && game.market.corruption[i] >= CORRUPTION_TAG_MIN)) {
 			const topY = tradeSim.planetY[i] * view.scale + view.offY -
 				tradeSim.planetR[i] * view.scale;
-			ctx.fillStyle = isCapital ? GOLD : MINT;
-			ctx.fillText(isCapital ? CAPITAL_TAG : ARF_TAG, sx, topY - 5);
+			ctx.fillStyle = rebel ? REBEL : seized ? 'rgba(255, 148, 120, 0.8)'
+				: isCapital ? GOLD : MINT;
+			ctx.fillText(rebel ? REBEL_TAG : isCapital ? CAPITAL_TAG : isArf ? ARF_TAG
+				: CORRUPTION_STRINGS[Math.round(game.market.corruption[i])], sx, topY - 5);
 		}
 	}
 }

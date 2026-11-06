@@ -136,6 +136,8 @@
 		this.colonies = [];
 		this.colonyOn = new Uint8Array(PLANETS);
 		this.colonyOn.fill(NO_PORT);
+		/* shared per-planet corruption the career market owns; null = a clean world */
+		this.corruption = null;
 		this.mapOut = OrbitEcon.createMap();
 		this.log = [];
 		this.stageEvents = 0;
@@ -155,6 +157,12 @@
 
 	Sim.prototype.econY = function (time) {
 		return (time === undefined ? this.t : time) * ECON_YEARS_PER_MIN;
+	};
+
+	/* the political clock writes straight into the market's array; the tick
+	 * copies it onto every colony before the growth law runs */
+	Sim.prototype.setCorruption = function (values) {
+		this.corruption = values || null;
 	};
 
 	Sim.prototype.colonyAt = function (planet) {
@@ -696,8 +704,11 @@
 		const years = TICK_MINUTES * ECON_YEARS_PER_MIN;
 
 		/* §4: every colony advances on every tick, so readouts are never stale. */
+		const corruption = this.corruption;
 		for (let p = 0; p < this.portCount; p++) {
-			OrbitEcon.advanceColony(this.colonies[p], toY, this.onColonyEvent);
+			const colony = this.colonies[p];
+			colony.corruption = corruption ? corruption[colony.planet] : 0;
+			OrbitEcon.advanceColony(colony, toY, this.onColonyEvent);
 		}
 
 		/* §4 step 8: remove any colony that starved at the floor for 20 years. */

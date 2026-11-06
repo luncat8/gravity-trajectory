@@ -262,8 +262,60 @@ function claimCounts() {
 
 function claimTag(owner) {
 	if (owner === GravityGame.OWNER_CAPITAL) return 'imperial';
+	if (owner === GravityGame.OWNER_REBEL) return 'rebels';
 	if (owner < 0) return 'commercial';
 	return owner === 0 ? 'YOU' : RIVAL_TAGS[owner - 1];
+}
+
+/* how fast a rebellion's fly-by payout is ramping, as the pill shows it */
+function rebelMultiple(planet) {
+	const market = game.market;
+	const age = (game.clockSteps - market.rebelSinceStep[planet]) * DT * market.politicsRate;
+	return OrbitEcon.flybyMultiplier(age);
+}
+
+/* (0.5.12) the politics of the planet under the ship: rot, the bribe the
+ * rulers offer, an arrest transport, the rebellion and its medical quest.
+ * Rebuilt only when the drawer refreshes, so strings are fine here. */
+function politicsBlockHtml(career) {
+	const at = career.at;
+	if (at < 0) return '';
+	const market = game.market;
+	let html = '';
+	if (career.arrested) {
+		const left = Math.max(0, Math.round((career.arrestUntilStep - game.clockSteps) * DT));
+		html += '<div class="careerLine warn">under arrest · Capital transport ' + left +
+			' s · no planning until it lands</div>';
+	}
+	const task = career.contract >= 0 ? career.tasks[career.contract] : null;
+	if (task && task.kind === GravityGame.TASK_MEDIC) {
+		html += '<div class="careerLine">medical · ' + (task.aboard > 0
+			? task.aboard + ' patients → ' + planetName(career.capitalPlanet)
+			: task.medics + ' medics → ' + planetName(task.to)) + '</div>';
+	}
+	if (at === career.capitalPlanet || at === career.arfPlanet) return html;
+	if (market.rebel[at]) {
+		html += '<div class="careerLine warn">rebellion · patients ' + market.patients[at] +
+			' · visits pay ×' + rebelMultiple(at).toFixed(2) + ' · no building here</div>';
+	} else if (market.seized[at]) {
+		html += '<div class="careerLine warn">seized rail · commercial fee · no building here</div>';
+	}
+	const rot = Math.round(market.corruption[at]);
+	html += '<div class="careerLine dim">corruption ' + rot + '%' +
+		(market.bribeVisitStep[at] === market.lastVisitStep[at] ? ' · bribed this visit' : '') +
+		'</div>';
+	const amount = GravityGame.bribeAmount(market, at, game.clockSteps);
+	/* nothing worth taking: no button, just the rot line */
+	if (amount <= OrbitEcon.BRIBE_MIN || career.ended !== GravityGame.CAREER_OPEN) return html;
+	const reason = GravityGame.bribeRefusal(career, market, at);
+	const disabled = reason !== '';
+	const title = reason !== '' ? reason
+		: 'the rulers pay twice what this visit has been worth · corruption +' +
+			OrbitEcon.bribeCorruption(amount).toFixed(2) + ' · high rot can end in arrest';
+	html += '<div class="careerRow"><span class="careerBtns">' +
+		'<button class="miniBtn" data-act="bribe"' + (disabled ? ' disabled' : '') +
+		' title="' + title + '">bribe rulers · +' + amount.toFixed(2) + '</button></span></div>';
+	return html;
 }
 
 function claimLineHtml() {
@@ -289,6 +341,7 @@ function padBlockHtml(career) {
 	html += '<div class="careerLine dim">ship ' + ship.hold.id + ' · ' +
 		(ship.engine ? ship.engine.id : 'no engine') + ' · ' + ship.tank.id +
 		shipImpulseNote(ship) + '</div>';
+	html += politicsBlockHtml(career);
 	if (at === career.capitalPlanet) {
 		const lift = GravityGame.padLift(career, at);
 		html += '<div class="careerLine">free imperial EMC-3 · lifts to ' + Math.round(lift) +

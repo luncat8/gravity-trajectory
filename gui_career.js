@@ -417,6 +417,27 @@ function careerEvacuate() {
 	careerChanged();
 }
 
+/* (0.5.12) the rulers' bribe: money for the company, rot for the planet and
+ * a chance of the Capital transport instead */
+function careerBribe() {
+	const career = activeCareer();
+	const planet = career.at;
+	const result = GravityGame.acceptBribe(career, game.market, activeSim(), planet,
+		game.clockSteps);
+	if (!result.ok) {
+		careerNotice(result.reason);
+		return;
+	}
+	if (result.arrested) {
+		cancelAim();
+		cancelTurret();
+	}
+	careerNotice('bribed the rulers of ' + planetName(planet) + ' · +' +
+		result.amount.toFixed(2) + ' · corruption ' + result.corruption.toFixed(1) + '%' +
+		(result.arrested ? ' · ARRESTED · Capital transport' : ''));
+	careerChanged();
+}
+
 /* every shop / board button carries data-act (and its args) */
 function careerAct(data) {
 	if (!careerRule()) return;
@@ -438,6 +459,12 @@ function careerAct(data) {
 	/* the eased world clock owns the career for its 2 s */
 	if (careerWaitBusy() || turret.pending || activeSim().status === STATUS_FLYING) return;
 	if (act === 'wait') return waitCareer();
+	if (career.arrested && act !== 'evac') {
+		const left = Math.max(0, Math.round((career.arrestUntilStep - game.clockSteps) * DT));
+		careerNotice('under arrest · the Capital transport lands in ' + left + ' s');
+		return;
+	}
+	if (act === 'bribe') return careerBribe();
 	if (act === 'evac') return careerEvacuate();
 	if (act === 'book') return useBookEntry(Number(data.entry));
 	if (career.ended !== GravityGame.CAREER_OPEN) {

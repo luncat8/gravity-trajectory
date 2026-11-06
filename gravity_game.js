@@ -291,14 +291,37 @@
 		return Math.round(MONEY.initSec / GravitySim.DT);
 	}
 
-	/* shared planet-value state for a game run; player and rivals harvest from the same table */
+	/*
+	 * Shared per-planet state for a game run; player and rivals harvest from
+	 * the same table. The political half (0.5.12) is the same kind of shared
+	 * ground: rot, the visit that carried a bribe, the rebellion clock and the
+	 * seized rail of each planet. `galaxy` is bound by bindRun and is what
+	 * makes the political clock run at all; `politicsSeed`/`politicsSerial`
+	 * are the deterministic stream every roll reads.
+	 */
 	function createMarket() {
 		const market = {
 			lastVisitStep: new Int32Array(OrbitWorld.PLANETS),
+			visitPay: new Float64Array(OrbitWorld.PLANETS),
+			corruption: new Float64Array(OrbitWorld.PLANETS),
+			bribeVisitStep: new Int32Array(OrbitWorld.PLANETS),
+			rebel: new Uint8Array(OrbitWorld.PLANETS),
+			seized: new Uint8Array(OrbitWorld.PLANETS),
+			rebelSinceStep: new Int32Array(OrbitWorld.PLANETS),
+			patients: new Uint8Array(OrbitWorld.PLANETS),
+			rebelCooldownStep: new Int32Array(OrbitWorld.PLANETS),
+			lastCheckEpoch: new Int32Array(OrbitWorld.PLANETS),
+			rebelPads: new Array(OrbitWorld.PLANETS),
 			stamp: 0,
 			k: MONEY.k,
 			arfPlanet: -1,
-			capitalPlanet: -1
+			capitalPlanet: -1,
+			politicsSeed: 1,
+			politicsSerial: 0,
+			politicsStep: -1,
+			politicsRate: 1,
+			politicsSec: 0,
+			galaxy: null
 		};
 		resetMarket(market);
 		return market;
@@ -306,10 +329,41 @@
 
 	function resetMarket(market) {
 		market.lastVisitStep.fill(-initSteps());
+		market.visitPay.fill(0);
 		market.stamp += 1;
 		market.k = MONEY.k;
 		market.arfPlanet = -1;
 		market.capitalPlanet = -1;
+		market.corruption.fill(0);
+		market.bribeVisitStep.fill(-1);
+		market.rebel.fill(0);
+		market.seized.fill(0);
+		market.rebelSinceStep.fill(0);
+		market.patients.fill(0);
+		market.rebelCooldownStep.fill(0);
+		market.lastCheckEpoch.fill(-1);
+		market.rebelPads.fill(null);
+		market.politicsSeed = 1;
+		market.politicsSerial = 0;
+		market.politicsStep = -1;
+		market.politicsRate = 1;
+		market.politicsSec = 0;
+		market.galaxy = null;
+	}
+
+	/*
+	 * One run, one political world: the market owns the shared arrays and the
+	 * galaxy names the careers they act on. Called by the page and by benches;
+	 * without it every political rule is inert, which keeps the historical
+	 * career numbers of `career_bench` untouched.
+	 */
+	function bindRun(market, galaxy, world) {
+		market.galaxy = galaxy || null;
+		market.politicsSeed = world ? world.seed >>> 0 : 1;
+		if (!galaxy) return market;
+		galaxy.market = market;
+		for (let i = 0; i < galaxy.actors.length; i++) galaxy.actors[i].market = market;
+		return market;
 	}
 
 	/* wire the seeded world's specials into the shared market (career runs only);
@@ -322,6 +376,7 @@
 			market.arfPlanet = -1;
 			market.capitalPlanet = -1;
 		}
+		if (world) market.politicsSeed = world.seed >>> 0;
 	}
 
 	/* cap·(1 − e^(−k·age/cap)): initial slope k, asymptote cap at infinite age */
@@ -331,16 +386,34 @@
 		return -MONEY.cap * Math.expm1(-age * (k === undefined ? MONEY.k : k) / MONEY.cap);
 	}
 
+	/* career clock seconds of a step: the political formulas are priced in
+	 * the same seconds the HUD prints, scaled by the world speed setting */
+	function politicsSeconds(market, step) {
+		return step * GravitySim.DT * market.politicsRate;
+	}
+
+	/* the rail the rebels run on `planet`, or null; a seized rail outlives the
+	 * rebellion as a commercial one */
+	function rebelRail(career, planet) {
+		const market = career.market;
+		return market && market.seized[planet] ? (market.rebelPads[planet] || COMMERCIAL_PAD) : null;
+	}
+
 	/*
 	 * The one special-aware visit value every harvest and estimate reads:
 	 * A.R.F. pays 0, the Capital charges a flat −3 on each entry, every other
-	 * planet grows toward the cap. Both specials still stamp lastVisitStep, so
+	 * planet grows toward the cap. A rebellious planet multiplies its growing
+	 * value by the fly-by ramp. Every planet still stamps lastVisitStep, so
 	 * the market clock advances exactly as a normal visit would.
 	 */
 	function planetProfitAt(market, planet, at, lastStep) {
 		if (planet === market.capitalPlanet) return CAPITAL_VISIT_PAY;
 		if (planet === market.arfPlanet) return 0;
-		return planetProfitAtStep(lastStep, at, market.k);
+		const pay = planetProfitAtStep(lastStep, at, market.k);
+		if (!market.rebel[planet]) return pay;
+		const age = politicsSeconds(market, at) -
+			politicsSeconds(market, market.rebelSinceStep[planet]);
+		return pay * OrbitEcon.flybyMultiplier(age);
 	}
 
 	function planetProfit(market, planet, runStep) {
@@ -386,10 +459,22 @@
 		openFlight(ledger, sim, MONEY.cost);
 	}
 
+	/*
+	 * One fly-visit: collect the value, stamp the clock, and let the rulers
+	 * breathe — a visit is the only thing that clears rot, and it also opens a
+	 * fresh window for one bribe (the rulers only complain once per visit).
+	 */
 	function harvestPlanet(ledger, market, planet, runStep) {
 		const pay = planetProfit(market, planet, runStep);
 		market.lastVisitStep[planet] = runStep;
+		market.visitPay[planet] = pay;
 		market.stamp += 1;
+		if (planet !== market.capitalPlanet && planet !== market.arfPlanet &&
+			market.corruption[planet] > 0) {
+			market.corruption[planet] = OrbitEcon.clampCorruption(
+				market.corruption[planet] - OrbitEcon.CORRUPTION_VISIT_DECAY);
+		}
+		market.bribeVisitStep[planet] = -1;
 		ledger.purse += pay;
 		ledger.shotGain += pay;
 		ledger.shotVisits += 1;
@@ -544,11 +629,13 @@
 	const FUEL_PRICE = 0.08;
 	const FUEL_BUY_STEP = 10;
 	const CARGO_TONS = [4, 8, 16, 24];
-	const BOARD_SIZE = CAREER.deliverySlots + 1;
 	const COMPETE_SLOT = CAREER.deliverySlots;
+	const MEDIC_SLOT = CAREER.deliverySlots + 1;
+	const BOARD_SIZE = CAREER.deliverySlots + 2;
 	const TASK_NONE = 0;
 	const TASK_DELIVERY = 1;
 	const TASK_COMPETE = 2;
+	const TASK_MEDIC = 3;
 	const TASK_OFFERED = 0;
 	const TASK_ACCEPTED = 1;
 	const TASK_LOADED = 2;
@@ -559,6 +646,9 @@
 	const SALT_TASK = 0xcb;
 	const SALT_TURRET = 0xcc;
 	const SALT_RIVAL = 0xcd;
+	const SALT_POLITICS = 0xce;
+	const SALT_ARREST = 0xcf;
+	const SALT_BRIBE = 0xd0;
 	const WORLD_SEC_PER_MIN = 60;
 	const TAU = Math.PI * 2;
 
@@ -598,6 +688,26 @@
 	const TOURIST_CHANCE = 0.35;
 	const TOURIST_WEIGHT = 2;
 
+	/*
+	 * Rebellious worlds (0.5.12). A rebellion seizes every player rail on its
+	 * planet into one commercial rail the rebels run: the tiers survive, the
+	 * fee is the ordinary commercial one, and the planet can never be claimed
+	 * or built again. Until it is quelled, visits there pay a fly-by multiple
+	 * that ramps from 1x toward 4x as the rebellion ages.
+	 */
+	const OWNER_REBEL = -3;
+
+	/* politics is a property of the shared market; the A/B switch freezes the
+	 * whole clock (POLITICS=0 reproduces the 0.5.11 economy) */
+	let politics = true;
+	function setPolitics(on) {
+		politics = Boolean(on);
+		return politics;
+	}
+	function politicsOn() {
+		return politics;
+	}
+
 	/* specials are a property of the seeded world; the A/B switch turns their
 	 * rules off without touching geometry (SPECIAL=0 reproduces the old economy) */
 	let specialPlanets = true;
@@ -634,13 +744,17 @@
 
 	function createTask() {
 		return { kind: TASK_NONE, state: TASK_OFFERED, good: 0, tons: 0, from: -1, to: -1,
-			planet: -1, minLength: 0, reward: 0, deadline: 0, tourist: false };
+			planet: -1, minLength: 0, reward: 0, deadline: 0, tourist: false,
+			medics: 0, patients: 0, aboard: 0 };
 	}
 
 	function clearTask(task) {
 		task.kind = TASK_NONE;
 		task.state = TASK_OFFERED;
 		task.tourist = false;
+		task.medics = 0;
+		task.patients = 0;
+		task.aboard = 0;
 	}
 
 	/* --- EMC network ------------------------------------------------------- */
@@ -703,6 +817,8 @@
 	 * else the best rival EMC, else the commercial one again */
 	function padAt(career, planet) {
 		if (planet === career.capitalPlanet) return CAPITAL_PAD;
+		const rebel = rebelRail(career, planet);
+		if (rebel) return rebel;
 		if (career.commercialPlanet === planet) return COMMERCIAL_PAD;
 		if (career.pads[planet].catapult !== null) return career.pads[planet];
 		if (!career.galaxy) return COMMERCIAL_PAD;
@@ -714,6 +830,10 @@
 	 * fixed imperial rail on the Capital */
 	function padOwner(career, planet) {
 		if (planet === career.capitalPlanet) return OWNER_CAPITAL;
+		const market = career.market;
+		if (market && market.rebel[planet]) return OWNER_REBEL;
+		/* a quelled rebellion leaves its rail commercial for good */
+		if (market && market.seized[planet]) return OWNER_COMMERCIAL;
 		if (career.commercialPlanet === planet) return OWNER_COMMERCIAL;
 		if (career.pads[planet].catapult !== null) return career.index;
 		if (!career.galaxy) return OWNER_COMMERCIAL;
@@ -723,8 +843,9 @@
 	/* choose (planet >= 0) or drop (-1) the commercial rail for the next launch;
 	 * it never claims the planet and never blocks building your own EMC there */
 	function setCommercial(career, planet) {
-		/* the Capital rail is imperial, never a commercial one */
+		/* the Capital rail is imperial and a rebellious planet runs its own */
 		if (planet >= 0 && planet === career.capitalPlanet) return;
+		if (planet >= 0 && rebelRail(career, planet)) return;
 		career.commercialPlanet = planet;
 		syncCareerNetwork(career);
 	}
@@ -733,6 +854,9 @@
 	 * Capital is always the Empire's, never a player claim */
 	function claimOwner(galaxy, planet) {
 		if (galaxy.actors.length > 0 && galaxy.actors[0].capitalPlanet === planet) return OWNER_CAPITAL;
+		const market = galaxy.market;
+		if (market && market.rebel[planet]) return OWNER_REBEL;
+		if (market && market.seized[planet]) return OWNER_COMMERCIAL;
 		let owner = OWNER_COMMERCIAL;
 		let tier = 0;
 		for (let i = 0; i < galaxy.actors.length; i++) {
@@ -763,6 +887,7 @@
 
 	function joinGalaxy(career, galaxy) {
 		career.galaxy = galaxy;
+		career.market = galaxy.market || career.market || null;
 		career.index = galaxy.actors.indexOf(career);
 		if (career.index < 0) {
 			career.index = galaxy.actors.length;
@@ -776,7 +901,9 @@
 	function launchFee(career, planet, speed) {
 		const owner = padOwner(career, planet);
 		if (owner === career.index || owner === OWNER_CAPITAL) return 0;
-		if (owner === OWNER_COMMERCIAL) return price(career, CAREER.commercialFee);
+		if (owner === OWNER_COMMERCIAL || owner === OWNER_REBEL) {
+			return price(career, CAREER.commercialFee);
+		}
 		const pad = padAt(career, planet);
 		return price(career, CAREER.taxPerKwh *
 			OrbitTech.launchEnergy(career.ship.mass, pad.catapult, speed));
@@ -792,13 +919,15 @@
 		if (planet < 0) return price(career, CAREER.evacFee);
 		if (planet === career.capitalPlanet) return 0;
 		if (career.pads[planet].catapult !== null) return 0;
-		const lift = OrbitTech.speedLimit(COMMERCIAL_PAD.battery.capacity,
-			mass, COMMERCIAL_PAD.catapult, career.forceScale);
+		const rebel = rebelRail(career, planet);
+		const rail = rebel || COMMERCIAL_PAD;
+		const lift = OrbitTech.speedLimit(rail.battery.capacity,
+			mass, rail.catapult, career.forceScale);
 		const commercial = lift + 1e-9 >= GravitySim.SPEED_MIN
 			? price(career, CAREER.commercialFee) : Infinity;
 		let foreign = Infinity;
 		const owner = padOwner(career, planet);
-		if (owner !== OWNER_COMMERCIAL && owner !== career.index) {
+		if (owner !== OWNER_COMMERCIAL && owner !== OWNER_REBEL && owner !== career.index) {
 			const pad = padAt(career, planet);
 			const railLift = OrbitTech.speedLimit(pad.battery.capacity,
 				mass, pad.catapult, career.forceScale);
@@ -819,8 +948,13 @@
 	/* who owns the rail on `planet`, named as the page and the bot log read it */
 	function railOwnerText(career, planet) {
 		const owner = padOwner(career, planet);
-		if (owner === career.index) return 'own EMC-' + (padAt(career, planet).catapult.tier + 1);
+		const tier = padAt(career, planet).catapult ? padAt(career, planet).catapult.tier + 1 : 1;
+		if (owner === career.index) return 'own EMC-' + tier;
 		if (owner === OWNER_CAPITAL) return 'imperial EMC-3';
+		if (owner === OWNER_REBEL) return 'rebel EMC-' + tier;
+		if (owner === OWNER_COMMERCIAL && rebelRail(career, planet)) {
+			return 'seized EMC-' + tier;
+		}
 		if (owner === OWNER_COMMERCIAL) return 'commercial EMC-1';
 		return (owner === 0 ? 'YOU' : 'R' + owner) + ' rail';
 	}
@@ -852,6 +986,7 @@
 	 * line. '' means firable.
 	 */
 	function railBlock(career, sim, planet, speed) {
+		if (career.arrested) return 'under arrest · Capital transport';
 		if (career.at < 0) return 'ship in space';
 		if (career.at !== planet) return 'shot leaves from P' + planet;
 		if (!sim.canLaunchFrom(planet)) return 'no rail under the ship';
@@ -939,7 +1074,15 @@
 			fuelSpent: 0,
 			lastResearch: 0,
 			forceScale: 1,
-			ended: CAREER_OPEN
+			ended: CAREER_OPEN,
+			market: null,
+			arrested: false,
+			arrestUntilStep: 0,
+			arrests: 0,
+			bribes: 0,
+			bribeIncome: 0,
+			patientsDelivered: 0,
+			medicTrips: 0
 		};
 	}
 
@@ -1291,6 +1434,13 @@
 		career.fuelSpent = 0;
 		career.forceScale = 1;
 		career.ended = CAREER_OPEN;
+		career.arrested = false;
+		career.arrestUntilStep = 0;
+		career.arrests = 0;
+		career.bribes = 0;
+		career.bribeIncome = 0;
+		career.patientsDelivered = 0;
+		career.medicTrips = 0;
 		refreshBoard(career, trade, 0);
 	}
 
@@ -1307,6 +1457,7 @@
 		for (let i = 0; i < career.pads.length; i++) {
 			if (career.planetMask && career.planetMask[i] === 0) continue;
 			if (i === career.capitalPlanet) continue;
+			if (rebelRail(career, i)) continue;
 			fitPad(career, i, topTier(OrbitTech.CATAPULTS), topTier(OrbitTech.PANELS),
 				topTier(OrbitTech.BATTERIES));
 		}
@@ -1331,6 +1482,7 @@
 	 * every career in one run joins the same galaxy, so pads are shared ground */
 	function startCareer(career, sim, seed, trade, cheat, galaxy, homePlanet) {
 		career.galaxy = galaxy || null;
+		career.market = galaxy && galaxy.market ? galaxy.market : null;
 		resetCareer(career, seed, trade, cheat, homePlanet);
 		career.forceScale = sim.forceScale;
 		if (galaxy) joinGalaxy(career, galaxy);
@@ -1345,6 +1497,18 @@
 		return career.capitalPlanet >= 0 && planetInPlay(career, career.capitalPlanet) ? 1 : 0;
 	}
 
+	/* a seized planet is covered by the rebel rail for good: nobody may build
+	 * there, so the completion count must not ask for a catapult on it */
+	function coveredPlanets(career) {
+		let covered = capitalCovered(career);
+		const market = career.market;
+		if (!market) return covered;
+		for (let p = 0; p < OrbitWorld.PLANETS; p++) {
+			if (market.seized[p] && planetInPlay(career, p)) covered += 1;
+		}
+		return covered;
+	}
+
 	/* broke = negative purse, or no affordable way off the planet */
 	function checkEnded(career) {
 		if (career.ended !== CAREER_OPEN) return career.ended;
@@ -1352,10 +1516,224 @@
 		if (purse < -1e-9 ||
 			(career.stranded && purse + 1e-9 < exitCost(career))) career.ended = CAREER_BROKE;
 		else if (career.cheat === null &&
-			career.padCount >= career.planetCount - capitalCovered(career)) {
+			career.padCount >= career.planetCount - coveredPlanets(career)) {
 			career.ended = CAREER_COMPLETE;
 		}
 		return career.ended;
+	}
+
+	/* --- politics: rot, bribes, arrest, rebellion (0.5.12) ---------------- */
+
+	/*
+	 * The career clock every political rate is priced in. `advancePolitics`
+	 * runs once per world step from GravityBot.stepCareer, so the GUI and the
+	 * benches share one clock. It raises rot on every world nobody visited
+	 * lately, copies the rot into the trade colonies, retires finished
+	 * arrests, and rolls one rebellion per planet per epoch — never per step.
+	 */
+	function advancePolitics(market, trade, runStep, rate) {
+		const galaxy = market.galaxy;
+		if (!politics || !galaxy || runStep === market.politicsStep) return 0;
+		market.politicsStep = runStep;
+		market.politicsRate = rate > 0 ? rate : 1;
+		const seconds = politicsSeconds(market, runStep);
+		const dtSec = seconds - market.politicsSec;
+		market.politicsSec = seconds;
+		if (trade && trade.setCorruption && trade.corruption !== market.corruption) {
+			trade.setCorruption(market.corruption);
+		}
+		const secondsPerStep = GravitySim.DT * market.politicsRate;
+		const epoch = Math.floor(seconds / OrbitEcon.REBEL_CHECK_SECONDS);
+		let seized = 0;
+		const count = market.planetCount || OrbitWorld.PLANETS;
+		for (let p = 0; p < count; p++) {
+			if (market.planetMask && market.planetMask[p] !== 1) continue;
+			if (p === market.capitalPlanet || p === market.arfPlanet) continue;
+			if (!market.rebel[p] && dtSec > 0 &&
+				(seconds - market.lastVisitStep[p] * secondsPerStep) > OrbitEcon.CORRUPTION_GRACE) {
+				market.corruption[p] = OrbitEcon.clampCorruption(
+					market.corruption[p] + OrbitEcon.CORRUPTION_PASSIVE_RATE * dtSec);
+			}
+			if (market.rebel[p] || runStep < market.rebelCooldownStep[p]) continue;
+			if (epoch <= market.lastCheckEpoch[p]) continue;
+			/* a clean planet saves its epoch roll for when rot crosses the line */
+			if (market.corruption[p] <= OrbitEcon.REBEL_START) continue;
+			market.lastCheckEpoch[p] = epoch;
+			if (!rebellionRoll(market, p, epoch, market.corruption[p])) continue;
+			seizePlanet(market, galaxy, p, runStep);
+			seized += 1;
+		}
+		retireArrests(galaxy, runStep);
+		return seized;
+	}
+
+	/* one deterministic roll per planet per epoch: no wall time, no Math.random */
+	function rebellionRoll(market, planet, epoch, corruption) {
+		const chance = OrbitEcon.rebellionChance(corruption);
+		if (chance <= 0) return false;
+		const key = OrbitWorld.hashBits(market.politicsSeed, planet, SALT_POLITICS);
+		const roll = OrbitWorld.hashBits(key, epoch, SALT_ARREST) / 4294967296;
+		return roll < chance;
+	}
+
+	/* the arrested career waits for its slow transport, then is free again */
+	function retireArrests(galaxy, runStep) {
+		for (let i = 0; i < galaxy.actors.length; i++) {
+			const career = galaxy.actors[i];
+			if (!career.arrested || runStep < career.arrestUntilStep) continue;
+			career.arrested = false;
+			career.arrestUntilStep = 0;
+		}
+	}
+
+	/*
+	 * Seizure: every player rail on the planet becomes one commercial rail the
+	 * rebels run, with the best tiers that stood there. The former owners lose
+	 * the pad (and the claim), the planet can never be built on again, and a
+	 * rebellion plants the patients the medical quest has to ferry out.
+	 */
+	function seizePlanet(market, galaxy, planet, runStep) {
+		market.rebel[planet] = 1;
+		market.seized[planet] = 1;
+		market.rebelSinceStep[planet] = runStep;
+		market.patients[planet] = OrbitEcon.MEDIC_PATIENTS;
+		market.rebelCooldownStep[planet] = 0;
+		market.rebelPads[planet] = seizedPad(galaxy, planet);
+		for (let i = 0; i < galaxy.actors.length; i++) {
+			const career = galaxy.actors[i];
+			clearPad(career, planet);
+		}
+		refreshNetwork(galaxy);
+		return market.rebelPads[planet];
+	}
+
+	/* the seized rail: the strongest former player pad, else the commercial one */
+	function seizedPad(galaxy, planet) {
+		let catapult = COMMERCIAL_PAD.catapult;
+		let panel = COMMERCIAL_PAD.panel;
+		let battery = COMMERCIAL_PAD.battery;
+		for (let i = 0; i < galaxy.actors.length; i++) {
+			const pad = galaxy.actors[i].pads[planet];
+			if (pad.catapult === null || pad.catapult.tier <= catapult.tier) continue;
+			catapult = pad.catapult;
+			panel = pad.panel;
+			battery = pad.battery;
+		}
+		/* rebels keep their rail charged, so a seized planet is never a trap */
+		return { catapult: catapult, panel: panel, battery: battery,
+			chargeKwh: battery.capacity, reservedKwh: 0 };
+	}
+
+	function clearPad(career, planet) {
+		const pad = career.pads[planet];
+		if (!pad || pad.catapult === null) return;
+		career.padCount = career.padCount > 0 ? career.padCount - 1 : 0;
+		pad.catapult = null;
+		pad.panel = null;
+		pad.battery = null;
+		pad.chargeKwh = 0;
+		pad.reservedKwh = 0;
+		if (career.at === planet) {
+			career.stranded = padLift(career, planet) + 1e-9 < GravitySim.SPEED_MIN;
+		}
+	}
+
+	/* a medical mission ends for some other reason: unload and drop it */
+	function clearMedicalCargo(career) {
+		if (career.contract < 0) return false;
+		const task = career.tasks[career.contract];
+		if (task.kind !== TASK_MEDIC) return false;
+		dropContract(career);
+		return true;
+	}
+
+	/*
+	 * The bribe (0.5.12): the local rulers pay twice what the next fly-visit
+	 * would collect, the purse and the bribe stats grow, and the rot grows with
+	 * the money. One bribe per visit, and a rot-rich planet may arrest the
+	 * briber and ship them to the Capital instead of paying.
+	 */
+	const BRIBE = { ok: false, amount: 0, corruption: 0, arrested: false, reason: '' };
+
+	function bribeRefusal(career, market, planet) {
+		if (!career || career.ended !== CAREER_OPEN) return 'career over';
+		if (!market || !market.galaxy) return 'no politics here';
+		if (career.arrested) return 'under arrest';
+		if (planet < 0 || career.at !== planet) return 'not landed there';
+		if (planet === market.capitalPlanet) return 'the Empire does not deal';
+		if (planet === market.arfPlanet) return 'A.R.F. takes no bribes';
+		if (market.rebel[planet]) return 'rebels hold the planet';
+		const stamped = market.lastVisitStep[planet];
+		if (stamped >= 0 && market.bribeVisitStep[planet] === stamped) return 'already bribed this visit';
+		return '';
+	}
+
+	/*
+	 * What the rulers pay: twice what this visit has been worth so far — the
+	 * payout the landing collected plus the value that regrew while the ship
+	 * sits. A bribe is therefore never a free click on a fresh landing, and it
+	 * grows the longer the company stands around.
+	 */
+	function bribeAmount(market, planet, runStep) {
+		const grown = planetProfit(market, planet, runStep);
+		const collected = market.visitPay[planet] > 0 ? market.visitPay[planet] : 0;
+		return 2 * (collected + grown);
+	}
+
+	function acceptBribe(career, market, sim, planet, runStep) {
+		BRIBE.ok = false;
+		BRIBE.arrested = false;
+		BRIBE.amount = 0;
+		BRIBE.corruption = market ? market.corruption[planet] : 0;
+		BRIBE.reason = bribeRefusal(career, market, planet);
+		if (BRIBE.reason !== '') return BRIBE;
+		const amount = bribeAmount(market, planet, runStep);
+		if (!(amount > 0)) {
+			BRIBE.reason = 'the rulers owe nothing yet';
+			return BRIBE;
+		}
+		BRIBE.ok = true;
+		BRIBE.amount = amount;
+		career.ledger.purse += amount;
+		career.bribes += 1;
+		career.bribeIncome += amount;
+		market.bribeVisitStep[planet] = market.lastVisitStep[planet];
+		market.corruption[planet] = OrbitEcon.clampCorruption(
+			market.corruption[planet] + OrbitEcon.bribeCorruption(amount));
+		BRIBE.corruption = market.corruption[planet];
+		market.politicsSerial += 1;
+		const roll = OrbitWorld.hashBits(market.politicsSeed, market.politicsSerial, SALT_ARREST) /
+			4294967296;
+		if (roll >= OrbitEcon.arrestChance(BRIBE.corruption)) return BRIBE;
+		arrestCareer(career, market, sim, runStep);
+		BRIBE.arrested = true;
+		return BRIBE;
+	}
+
+	/* the Capital's slow transport: no fee, no reward, no medics, no planning */
+	function arrestCareer(career, market, sim, runStep) {
+		const capital = career.capitalPlanet;
+		if (capital < 0) return false;
+		career.arrestUntilStep = runStep + Math.round(OrbitEcon.ARREST_SECONDS / GravitySim.DT);
+		career.arrested = true;
+		career.arrests += 1;
+		clearMedicalCargo(career);
+		setCommercial(career, -1);
+		placeShip(career, sim, capital);
+		career.stranded = false;
+		return true;
+	}
+
+	/* quelled: no more 4x visits and no more patients, but the rail stays
+	 * commercial and the planet stays unbuildable for good */
+	function pacifyPlanet(market, planet, runStep) {
+		market.rebel[planet] = 0;
+		market.patients[planet] = 0;
+		market.rebelSinceStep[planet] = 0;
+		market.rebelCooldownStep[planet] =
+			runStep + Math.round(OrbitEcon.REBEL_CHECK_SECONDS * 2 / GravitySim.DT);
+		market.corruption[planet] = market.corruption[planet] > OrbitEcon.PACIFY_CORRUPTION_MAX
+			? OrbitEcon.PACIFY_CORRUPTION_MAX : market.corruption[planet];
 	}
 
 	/* --- building ------------------------------------------------------ */
@@ -1378,8 +1756,16 @@
 	 * the neutral commercial EMC-1 and the evacuate option). Building your
 	 * own EMC on a planet that already carries another player's rail is
 	 * forbidden — claim the planet by landing on an unclaimed one first. */
+	/* a rebel planet: seized ground that never becomes buildable again */
+	function planetSeized(career, planet) {
+		const market = career.market;
+		return market !== null && market.seized[planet] === 1;
+	}
+
 	function planetBuildable(career, planet) {
 		if (planet === career.capitalPlanet) return false;
+		/* a seized planet is the rebels' ground, quelled or not */
+		if (rebelRail(career, planet)) return false;
 		if (!career.galaxy) return true;
 		const owner = claimOwner(career.galaxy, planet);
 		return owner === OWNER_COMMERCIAL || owner === career.index;
@@ -1389,6 +1775,7 @@
 	 * a panel or battery needs a pad to sit on */
 	function buildGear(career, planet, kind, item) {
 		if (planet === career.capitalPlanet) return false;
+		if (rebelRail(career, planet)) return false;
 		const pad = career.pads[planet];
 		const fresh = kind === OrbitTech.KIND_CATAPULT && pad.catapult === null;
 		if (fresh && !planetBuildable(career, planet)) return false;
@@ -1595,6 +1982,63 @@
 		task.deadline = step + Math.round(CAREER.competeSec / GravitySim.DT);
 	}
 
+	/*
+	 * The medical quest (0.5.12): a rebellious planet's patients have to reach
+	 * the Capital. Half the hold rides out as medics, the same number rides
+	 * back as patients, and the planet is quelled once its last patient lands.
+	 * The contract's kind is TASK_MEDIC, so every other rule ignores it.
+	 */
+	function medicPlanet(career, market) {
+		let best = -1;
+		let most = 0;
+		for (let p = 0; p < OrbitWorld.PLANETS; p++) {
+			if (!market.rebel[p] || !market.patients[p]) continue;
+			if (!planetInPlay(career, p)) continue;
+			if (market.patients[p] <= most) continue;
+			best = p;
+			most = market.patients[p];
+		}
+		return best;
+	}
+
+	function makeMedic(career, market, step, task) {
+		const planet = medicPlanet(career, market);
+		if (planet < 0 || career.capitalPlanet < 0) return false;
+		/* no hold, no medics: the offer waits in the slot until a hold fits */
+		const medics = medicLoad(career, market.patients[planet]);
+		if (medics < 1) return false;
+		task.kind = TASK_MEDIC;
+		task.state = TASK_OFFERED;
+		task.good = OrbitEcon.MIGRANTS;
+		task.tourist = false;
+		task.tons = 0;
+		task.from = career.capitalPlanet;
+		task.to = planet;
+		task.planet = planet;
+		task.patients = market.patients[planet];
+		task.medics = medics;
+		task.aboard = 0;
+		task.minLength = 0;
+		task.reward = round2(task.patients * OrbitEcon.MEDIC_REWARD_PER_PATIENT);
+		/* two trips with the standard hold, one with a big one */
+		task.deadline = step + Math.round(CAREER.deliverySec * 2 / GravitySim.DT);
+		return true;
+	}
+
+	/* half the hold rides as medics: no new ship stat, no full-hold dead end */
+	function medicLoad(career, patients) {
+		const half = Math.floor(career.ship.hold.capacity / 2);
+		return Math.min(half, patients);
+	}
+
+	function loadMedics(career, task, patients) {
+		task.medics = medicLoad(career, patients);
+		task.aboard = 0;
+		career.ship.cargoTons = task.medics;
+		refitShip(career);
+		return task.medics;
+	}
+
 	function dropContract(career) {
 		if (career.contract < 0) return;
 		clearTask(career.tasks[career.contract]);
@@ -1619,12 +2063,26 @@
 		if (compete.kind === TASK_NONE && draw01(career, SALT_TASK) * CAREER.competeEvery < 1) {
 			makeCompete(career, step, compete);
 		}
+		/* the medical mission is a standing offer while a rebellion has patients,
+		 * and a stale offer leaves as soon as the planet is quelled */
+		const medic = career.tasks[MEDIC_SLOT];
+		const market = career.market;
+		if (!market || !market.galaxy) return;
+		if (medic.kind === TASK_MEDIC && career.contract !== MEDIC_SLOT &&
+			(!market.rebel[medic.to] || !market.patients[medic.to])) {
+			clearTask(medic);
+		}
+		if (medic.kind === TASK_NONE) makeMedic(career, market, step, medic);
 	}
 
 	function canAccept(career, index) {
 		const task = career.tasks[index];
-		return task.kind === TASK_DELIVERY && task.state === TASK_OFFERED &&
-			career.contract < 0 && career.ship.hold.capacity >= task.tons;
+		if (career.contract >= 0 || career.arrested || task.state !== TASK_OFFERED) return false;
+		if (task.kind === TASK_MEDIC) {
+			return career.capitalPlanet >= 0 && career.at === career.capitalPlanet &&
+				task.medics > 0 && task.patients > 0;
+		}
+		return task.kind === TASK_DELIVERY && career.ship.hold.capacity >= task.tons;
 	}
 
 	function loadCargo(career, task) {
@@ -1637,8 +2095,14 @@
 	function acceptTask(career, index) {
 		if (!canAccept(career, index)) return false;
 		const task = career.tasks[index];
-		task.state = TASK_ACCEPTED;
 		career.contract = index;
+		if (task.kind === TASK_MEDIC) {
+			/* taken at the Capital, so the medics board at once */
+			task.state = TASK_LOADED;
+			loadMedics(career, task, task.patients);
+			return true;
+		}
+		task.state = TASK_ACCEPTED;
 		if (career.at === task.from) loadCargo(career, task);
 		return true;
 	}
@@ -1661,12 +2125,46 @@
 		}
 		if (career.contract < 0) return;
 		const task = career.tasks[career.contract];
+		if (task.kind === TASK_MEDIC) return settleMedic(career, task, planet, step);
 		if (task.state === TASK_ACCEPTED && planet === task.from) loadCargo(career, task);
 		else if (task.state === TASK_LOADED && planet === task.to) {
 			pay(career, task.reward);
 			career.delivered += 1;
 			dropContract(career);
 		}
+	}
+
+	/* the medics go in at the Capital, the patients come out at the rebellion,
+	 * the patients go out at the Capital — and the last one quells the planet */
+	function settleMedic(career, task, planet, step) {
+		const market = career.market;
+		if (!market) return false;
+		if (task.aboard === 0 && planet === task.to) {
+			const picked = Math.min(task.medics, market.patients[task.to]);
+			task.aboard = picked;
+			career.ship.cargoTons = picked;
+			career.medicTrips += 1;
+			refitShip(career);
+			return true;
+		}
+		if (task.aboard === 0 || planet !== career.capitalPlanet) return false;
+		const delivered = task.aboard;
+		const left = market.patients[task.to] > delivered
+			? market.patients[task.to] - delivered : 0;
+		market.patients[task.to] = left;
+		career.patientsDelivered += delivered;
+		task.aboard = 0;
+		career.ship.cargoTons = 0;
+		refitShip(career);
+		pay(career, delivered * OrbitEcon.MEDIC_REWARD_PER_PATIENT);
+		if (left > 0) {
+			loadMedics(career, task, left);
+			task.deadline = step + Math.round(CAREER.deliverySec * 2 / GravitySim.DT);
+			return true;
+		}
+		pacifyPlanet(market, task.to, step);
+		dropContract(career);
+		return true;
 	}
 
 	/* --- flights ------------------------------------------------------- */
@@ -1683,8 +2181,9 @@
 		const pad = padAt(career, planet);
 		const owner = padOwner(career, planet);
 		const energy = OrbitTech.launchEnergy(career.ship.mass, pad.catapult, sim.speed);
-		/* the commercial and imperial rails are kept charged: they never drain */
-		const freeRail = owner === OWNER_COMMERCIAL || owner === OWNER_CAPITAL;
+		/* the commercial, imperial and rebel rails are kept charged: they never drain */
+		const freeRail = owner === OWNER_COMMERCIAL || owner === OWNER_CAPITAL ||
+			owner === OWNER_REBEL;
 		if (!freeRail) {
 			pad.chargeKwh = pad.chargeKwh > energy ? pad.chargeKwh - energy : 0;
 			releaseEnergy(pad, energy);
@@ -1751,6 +2250,7 @@
 	/* flies the stranded ship home for the fee (the cargo rides along) */
 	function evacuate(career, sim) {
 		if (!career.stranded) return false;
+		clearMedicalCargo(career);
 		career.ledger.purse -= price(career, CAREER.evacFee);
 		career.evacuations += 1;
 		placeShip(career, sim, career.hq);
@@ -1901,7 +2401,10 @@
 		planetGravity, angleUnits, angleOf, speedUnits, speedOf,
 		createBurn, encodeBurn, createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
 		initSteps, createMarket, resetMarket, planetProfit, planetProfitAt, applyMarketSpecials,
-		createLedger, resetLedger, beginFlight, stepHarvest, endFlight,
+		bindRun, politicsSeconds, rebelRail, setPolitics, politicsOn,
+		advancePolitics, acceptBribe, bribeAmount, arrestCareer, pacifyPlanet, seizePlanet, clearMedicalCargo,
+		bribeRefusal, coveredPlanets, BRIBE,
+		createLedger, resetLedger, beginFlight, stepHarvest, harvestPlanet, endFlight,
 		estimateProfit, estimateProfitLog, compareScores,
 		setSpecialPlanets, specialPlanets: specialPlanetsOn,
 		setCareerUniverse, applyMarketUniverse, planetInPlay, colonyInPlay, activePlanetDraw,
@@ -1909,19 +2412,20 @@
 		launchMask, recordLaunch, pruneLaunchBook,
 		CAREER, FUEL_KG_PER_KWH, FUEL_PRICE, FUEL_BUY_STEP, fuelPrice, produceFuel, buyFuel,
 		CAPITAL_VISIT_PAY, TOURIST_CHANCE, TOURIST_WEIGHT,
-		BOARD_SIZE, COMPETE_SLOT, CARGO_TONS,
-		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
+		BOARD_SIZE, COMPETE_SLOT, MEDIC_SLOT, CARGO_TONS,
+		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_MEDIC,
+		TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
-		createCareer, resetCareer, startCareer, checkEnded,
-		COMMERCIAL_PAD, OWNER_COMMERCIAL, CAPITAL_PAD, OWNER_CAPITAL, capitalCovered,
+		createCareer, resetCareer, startCareer, checkEnded, placeShip,
+		COMMERCIAL_PAD, OWNER_COMMERCIAL, CAPITAL_PAD, OWNER_CAPITAL, OWNER_REBEL, capitalCovered,
 		createGalaxy, resetGalaxy, joinGalaxy, rivalSeed,
 		turretPeriod, turretAngle, padAt, padOwner, claimOwner, refreshNetwork, setCommercial,
 		launchFee, exitCost, exitCostAt, careerCanFire, padLift, reserveEnergy, releaseEnergy,
 		railOwnerText, railText, railBlock,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
-		prototypesOf, prototypeById, gearKnown, planetBuildable,
+		prototypesOf, prototypeById, gearKnown, planetBuildable, planetSeized,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart,
-		refreshBoard, canAccept, acceptTask, dropContract,
+		refreshBoard, canAccept, acceptTask, dropContract, medicLoad, settleMedic,
 		careerBeginFlight, careerBurn, careerAdvance, careerEndFlight, evacuate
 	};
 

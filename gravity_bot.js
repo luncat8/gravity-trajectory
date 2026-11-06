@@ -27,6 +27,9 @@
 	const OrbitTech = typeof module !== 'undefined' && module.exports
 		? require('./orbit_tech.js')
 		: root.OrbitTech;
+	const OrbitEcon = typeof module !== 'undefined' && module.exports
+		? require('./orbit_econ.js')
+		: root.OrbitEcon;
 
 	const PLANETS = OrbitWorld.PLANETS;
 	const MAX_RIVALS = 16;
@@ -96,6 +99,19 @@
 	const CAREER_SAME_PAD_VALUE = -1;
 	const CAREER_PICKUP_VALUE = 0.35;
 	const CAREER_REFIT_VALUE = 3;
+	/* a medical mission is worth chasing: the reward is per patient and the
+	 * quelled planet turns its 4x fly-by back into normal trade */
+	const CAREER_MEDIC_VALUE = 0.8;
+	/* a rival takes the rulers' money on a planet that is already rotten, or
+	 * when another company is about to fly out of it: corruption is not a gift
+	 * the bot hands to clean worlds for pocket change */
+	const CAREER_BRIBE_ROT = 25;
+	/* how likely this rival is to take the rulers' money when it lands; the
+	 * human decides for themselves, so the roll belongs to the bot's persona */
+	const CAREER_BRIBE_PRONE = 0.5;
+	/* a bribe worth this much is taken on any planet: the rulers of a rich
+	 * world pay to be left alone, and only the arrest roll prices the risk */
+	const CAREER_BRIBE_PAY = 2;
 	/* a career rival launches again after this much world time, and keeps this
 	 * much purse back for the commercial EMC's fee when shopping; the phase
 	 * staggers the companies so they never all plan on the same world step */
@@ -1661,9 +1677,9 @@
 		if (currentSpeed > 0) {
 			out.physical = true;
 			/* the imperial Capital rail (OWNER_CAPITAL) launches free, like your
-			 * own pad; only commercial and rival rails charge a fee */
+			 * own pad; commercial, rebel and rival rails charge a fee */
 			const fee = owner === career.index || owner === GravityGame.OWNER_CAPITAL ? 0
-				: owner === GravityGame.OWNER_COMMERCIAL
+				: owner === GravityGame.OWNER_COMMERCIAL || owner === GravityGame.OWNER_REBEL
 				? careerFee(career, GravityGame.CAREER.commercialFee)
 				: careerFee(career, GravityGame.CAREER.taxPerKwh *
 					OrbitTech.launchEnergy(arrivalMass, pad.catapult, currentSpeed));
@@ -1674,6 +1690,7 @@
 				out.speed = currentSpeed;
 				out.source = owner === career.index ? 'own'
 					: owner === GravityGame.OWNER_CAPITAL ? 'capital'
+					: owner === GravityGame.OWNER_REBEL ? 'rebel'
 					: owner === GravityGame.OWNER_COMMERCIAL ? 'commercial' : 'rival';
 				out.catapult = pad.catapult;
 				out.battery = pad.battery;
@@ -1837,6 +1854,7 @@
 			if (!GravityGame.canAccept(career, i)) continue;
 			const task = career.tasks[i];
 			let score = task.reward - task.tons * 0.02;
+			if (task.kind === GravityGame.TASK_MEDIC) score += CAREER_MEDIC_VALUE;
 			if (task.from === career.at) score += 0.75;
 			if (career.pads[task.from].catapult !== null) score += 0.25;
 			if (career.pads[task.to].catapult !== null) score += 0.5;
@@ -2020,6 +2038,8 @@
 	 * committed launch, so a sit or a forced rebuild never stocks a tank for free. */
 	GravityBot.prototype.careerBetweenFlights = function (career, sim, runStep) {
 		if (career.ended !== GravityGame.CAREER_OPEN) return 0;
+		/* the Capital transport is still flying: nothing to shop, nowhere to go */
+		if (career.arrested) return 0;
 		let actions = 0;
 		const evacPrice = careerFee(career, GravityGame.CAREER.evacFee);
 		if (career.at < 0) {
@@ -2084,6 +2104,7 @@
 			while (this.careerResearch(career, sim, CAREER_PURSE_RESERVE)) actions += 1;
 		}
 		if (this.careerAccept(career)) actions += 1;
+		if (this.careerBribe(career, sim, runStep)) actions += 1;
 
 		if (career.contract >= 0) {
 			const task = career.tasks[career.contract];
@@ -2124,6 +2145,47 @@
 			actions += 1;
 		}
 		return actions;
+	};
+
+	/*
+	 * Bribes (0.5.12). Rulers pay twice what the landing collected plus what
+	 * regrew while the ship sat, and the rot the bribe adds is what can end in
+	 * the Capital transport; a seed-derived persona decides whether a company
+	 * takes that trade. Never on its own rail (rot on the company's own pad
+	 * hurts its colony), never below the small-bribe floor, never on the
+	 * Capital, A.R.F. or a rebellious planet — the rule refuses those anyway.
+	 */
+	GravityBot.prototype.careerBribeProne = function (index) {
+		return OrbitWorld.hash01(GravityGame.rivalSeed(this.seed >>> 0, index), 7, 0x39) <
+			CAREER_BRIBE_PRONE;
+	};
+
+	/* another company's queued launch is leaving from this planet: the rulers
+	 * have a reason to pay before that visitor collects instead */
+	GravityBot.prototype.careerRivalQueued = function (planet, self) {
+		for (let i = 0; i < this.count; i++) {
+			const r = this.rivals[i];
+			if (r === self || !r.turret || r.turret.origin !== planet) continue;
+			return true;
+		}
+		return false;
+	};
+
+	GravityBot.prototype.careerBribe = function (career, sim, runStep) {
+		const market = career.market;
+		const planet = career.at;
+		if (!market || !career.bribeProne || planet < 0) return false;
+		if (GravityGame.padOwner(career, planet) === career.index) return false;
+		const amount = GravityGame.bribeAmount(market, planet, runStep);
+		if (amount < OrbitEcon.BRIBE_MIN) return false;
+		if (amount < CAREER_BRIBE_PAY && market.corruption[planet] < CAREER_BRIBE_ROT &&
+			!this.careerRivalQueued(planet, career)) return false;
+		const result = GravityGame.acceptBribe(career, market, sim, planet, runStep);
+		if (!result.ok) return false;
+		this.traceAdd(career.index, 'bribe', 'P' + planet + ' paid +' +
+			result.amount.toFixed(2) + ' · rot ' + result.corruption.toFixed(1) +
+			(result.arrested ? ' · ARRESTED' : ''), runStep);
+		return true;
 	};
 
 	/*
@@ -2283,7 +2345,16 @@
 		let cashPay = visitPay;
 		if (career.contract >= 0) {
 			const task = career.tasks[career.contract];
-			if (task.state === GravityGame.TASK_LOADED && body === task.to) {
+			if (task.kind === GravityGame.TASK_MEDIC) {
+				/* patients pay at the Capital, medics are worth reaching the
+				 * rebellion at all */
+				if (task.aboard > 0 && body === career.capitalPlanet) {
+					taskPay += task.aboard * OrbitEcon.MEDIC_REWARD_PER_PATIENT;
+					cashPay += task.aboard * OrbitEcon.MEDIC_REWARD_PER_PATIENT;
+				} else if (task.aboard === 0 && body === task.to) {
+					taskPay += task.reward * CAREER_PICKUP_VALUE;
+				}
+			} else if (task.state === GravityGame.TASK_LOADED && body === task.to) {
 				taskPay += task.reward;
 				cashPay += task.reward;
 			} else if (task.state === GravityGame.TASK_ACCEPTED && body === task.from) {
@@ -2402,6 +2473,11 @@
 	GravityBot.prototype.careerTarget = function (career) {
 		if (career.contract >= 0) {
 			const task = career.tasks[career.contract];
+			/* a medical mission is a there-and-back: patients go to the
+			 * Capital, medics go to the rebellion */
+			if (task.kind === GravityGame.TASK_MEDIC) {
+				return task.aboard > 0 ? career.capitalPlanet : task.to;
+			}
 			return task.state === GravityGame.TASK_LOADED ? task.to : task.from;
 		}
 		if (career.at !== career.hq && career.ship.hold === OrbitTech.HOLDS[0] &&
@@ -2827,6 +2903,7 @@
 					this.planetUniverseCount || OrbitWorld.PLANETS);
 			}
 			GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(seed, i), trade, null, galaxy);
+			r.career.bribeProne = this.careerBribeProne(i);
 			r.sim.fieldT = trade.t;
 			r.sim.fieldRate = this.probe.fieldRate;
 			r.basePlanet = r.career.hq;
@@ -2875,6 +2952,7 @@
 		GravityGame.setCareerUniverse(r.career, this.probe.planetMask, this.planetUniverseCount);
 		GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(this.seed, i),
 			trade, null, galaxy, planet);
+		r.career.bribeProne = this.careerBribeProne(i);
 		r.sim.fieldT = trade.t;
 		r.sim.fieldRate = this.probe.fieldRate;
 		r.basePlanet = planet;
@@ -2916,11 +2994,14 @@
 		this.worldStep = runStep;
 		/* world minutes per physics step: pad cycles are priced in world time */
 		this.careerRate = rate;
+		/* one political clock for the whole run, the GUI and the benches */
+		GravityGame.advancePolitics(market, trade, runStep, rate);
 		const boardTick = runStep % BOARD_TICK_STEPS === 0;
 		for (let i = 0; i < this.count; i++) {
 			const r = this.rivals[i];
 			const career = r.career;
 			if (!career) continue;
+			career.market = market;
 			GravityGame.careerAdvance(career, rate, 1);
 			if (r.sim.status === STATUS_FLYING) {
 				this.careerFlightBurn(career, r.sim, market, runStep, r);
@@ -2950,7 +3031,7 @@
 			/* a company the page flies by hand keeps charging pads and flying
 			 * its own shots, but the bot never picks them */
 			if (!this.isRivalBot(i)) continue;
-			if (runStep < r.readyStep) continue;
+			if (career.arrested || runStep < r.readyStep) continue;
 			this.careerLaunch(r, market, trade, rate, runStep);
 		}
 	};
@@ -2962,6 +3043,7 @@
 	 * a fresh start); the returned plan is read from `careerPlayer.plan`.
 	 */
 	GravityBot.prototype.attachCareerPlayer = function (career, sim) {
+		career.bribeProne = this.careerBribeProne(PLAYER_INDEX);
 		this.careerPlayer.career = career;
 		this.careerPlayer.sim = sim;
 		this.careerPlayer.idleTries = 0;
@@ -2989,7 +3071,7 @@
 		const p = this.careerPlayer;
 		const career = p.career;
 		if (!career || !p.sim || career.ended !== GravityGame.CAREER_OPEN) return false;
-		if (p.sim.status === STATUS_FLYING) return false;
+		if (career.arrested || p.sim.status === STATUS_FLYING) return false;
 		/* the page books a landing at the end of its frame: until it does, the
 		 * career record still names the pad the ship has already left */
 		if (p.sim.landedBody !== career.at) return false;
@@ -3435,7 +3517,7 @@
 		const baseAngles = this.spec().careerAngles;
 		const angles = this.count > 2
 			? Math.max(8, Math.floor(baseAngles * Math.sqrt(2 / this.count))) : baseAngles;
-		if (career.at < 0) return null;
+		if (career.at < 0 || career.arrested) return null;
 		this.careerScanReset(runStep);
 		this.careerBurnTopReset();
 		let plan = this.careerPlan(career, sim, market, runStep, false, angles);
@@ -3445,7 +3527,10 @@
 		 * commercial EMC-1 is always charged, so try once more on it */
 		let fallbackFee = 0;
 		let rescued = false;
+		/* a seized planet keeps the rebel rail: swapping in a commercial EMC-1
+		 * would invent a pad the planet does not have */
 		if (career.commercialPlanet !== career.at &&
+			!GravityGame.planetSeized(career, career.at) &&
 			GravityGame.padOwner(career, career.at) !== GravityGame.OWNER_COMMERCIAL) {
 			GravityGame.setCommercial(career, career.at);
 			fallbackFee = GravityGame.launchFee(career, career.at, GravitySim.SPEED_MIN);
@@ -3612,7 +3697,7 @@
 		r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
 		r.idleTries = 0;
 		r.waitTries = 0;
-		this.careerBetweenFlights(career, r.sim);
+		this.careerBetweenFlights(career, r.sim, runStep);
 		this.traceAdd(r.index, 'land', (career.at < 0 ? 'lost in space' : 'P' + career.at) +
 			' · purse ' + career.ledger.purse.toFixed(2) + ' · ' + career.padCount + ' pads · ' +
 			(career.at < 0 || career.stranded ? 'no own EMC here' : 'own rail') +

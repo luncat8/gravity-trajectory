@@ -158,6 +158,25 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   (`#game=1&seed=…&rate=…[&rule=…][&bot=…]&shots=…&end=…`) re-fly and verify
   every run (`verified ✓ · purse …`). Replays made before seeded gravity was
   introduced may no longer reproduce their old results.
+- **Politics in career**: every planet carries shared `corruption` (`0…100`)
+  that throttles its colony growth (`× 1 − C/100`), rises `0.1/s` once no
+  emissary has called for 120 s and falls `0.2` per fly-visit, so the worlds a
+  company skips rot while its regular stops stay clean. The rulers of a
+  non-rebellious planet pay a bribe worth twice the visit that just landed plus
+  whatever regrew since — once per visit — in exchange for
+  `1 + 0.1 · money` corruption and an arrest roll that is `0` at `C ≤ 50` and
+  `0.5` at `C = 100`: an arrest ships the company to the Capital for 120 s with
+  no fee, no reward and its medical cargo dropped. Past `50` rot a planet can
+  rebel once per 60 s epoch (deterministic from the run seed); the rebellion
+  seizes every pad there into one shared commercial rail, keeps its tiers and
+  charge, forbids any further building, counts as covered for the catapult win
+  and raises that planet's fly-visit payout towards `4×` over 240 s. The
+  Capital and the A.R.F. world never rot, never bribe and never rebel. A
+  rebellion seeds `8` patients at the Capital's medical slot: half a standard
+  hold ferries medics out and patients home for `0.5` each, and the last
+  patient pacifies the planet (rot clamped to `40`, its rail commercial for
+  good). The pad block shows rot, the bribe button and the arrest countdown;
+  a rebellion also draws a `REBELLION` pill and its rail in the rival colour.
 - **Playback**: the flight is watched, not simulated, faster — one multiplier
   scales the wall-clock slice fed to the fixed `DT = 1/120 s` steps, so ×0.25
   and ×8 produce the same step sequence and the same replay. The trade `rate`
@@ -198,8 +217,12 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
 - `gravity_gui.js` — overlay renderer, planet-profit pills & rival ships, aiming, hop lock & arrow, adaptive 60 fps HUD, game scoreboard, the flat mode row, career drawer in three tabs (`upgrades`: pad plate, task board, shop; `shots`: the launch list; `science`: the research hull), the profit helpers seeded by the launch book, the EMC claim rings & turning barrels with the queued launch, the continuous career clock & landing auto-pause, the experimental gravity/force/stay-pay panel and replays
 - `experiments/` — node benchmarks (`gravity_bench.js`, `colony_bench.js`,
   `game_bench.js`, `route_bench.js`, `bot_bench.js`, `career_bench.js`,
-  `career_bot_bench.js`), headless DOM smoke suite
-  (`dom_smoke.js`), focused seed/URL/help tests (`gravity_seed_test.js`),
+  `career_bot_bench.js`, the seeded-gravity career bench
+  `career_gravity_bench.js` with its `SPECIAL=0` / `POLITICS=0` A/B switches),
+  headless DOM smoke suite (`dom_smoke.js`), the special-planet and politics
+  benches (`special_planets_test.js`, `politics_test.js`, and the page-side
+  `politics_gui_test.js` on the same stub), focused seed/URL/help tests
+  (`gravity_seed_test.js`),
   potential-view/card tests (`gravity_view_test.js`), and
   career departure/guidance regressions (`career_departure_test.js`,
   `career_guidance_test.js`) on the shared vm page stub (`dom_stub.js`), and a

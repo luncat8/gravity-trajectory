@@ -102,6 +102,59 @@
 	/* §7: a port never gives away its own two-year need. */
 	const GUARD_YEARS = 2;
 
+	/* --- §8 politics: corruption, bribes, arrest, rebellion ----------------- */
+
+	const CORRUPTION_MAX = 100;
+	const CORRUPTION_VISIT_DECAY = 0.2;   // points removed by one fly-visit
+	const CORRUPTION_GRACE = 120;         // world seconds after a visit before rot
+	const CORRUPTION_PASSIVE_RATE = 0.1;  // points per world second after grace
+	const CORRUPTION_BRIBE_BASE = 1;
+	const CORRUPTION_BRIBE_SCALE = 0.1;   // per money unit handed to the rulers
+	const BRIBE_MIN = 1;                  // bot's smallest worthwhile bribe
+	const ARREST_SECONDS = 120;           // slow transport to the Capital
+	const REBEL_CHECK_SECONDS = 60;       // one roll per planet per epoch
+	const REBEL_START = 50;               // no rebellion at or below this
+	const REBEL_K = 0.0322;
+	const REBEL_CAP = 0.25;
+	const FLYBY_RAMP_SECONDS = 240;
+	const FLYBY_MAX = 4;
+	const MEDIC_PATIENTS = 8;
+	const MEDIC_REWARD_PER_PATIENT = 0.5;
+	const PACIFY_CORRUPTION_MAX = 40;
+
+	/*
+	 * The four laws the career reads. Corruption throttles only positive
+	 * growth, a bribe buys the rulers' goodwill at the price of rot, an arrest
+	 * is likelier the more rot there is, and a rebellion saturates instead of
+	 * blowing up at the top of the scale. `-expm1` keeps small ages exact.
+	 */
+	function clampCorruption(c) {
+		return c < 0 ? 0 : c > CORRUPTION_MAX ? CORRUPTION_MAX : c;
+	}
+
+	function corruptionGrowthFactor(c) {
+		const f = 1 - c / CORRUPTION_MAX;
+		return f > 0 ? f : 0;
+	}
+
+	function bribeCorruption(money) {
+		return CORRUPTION_BRIBE_BASE + CORRUPTION_BRIBE_SCALE * money;
+	}
+
+	function arrestChance(c) {
+		return c <= REBEL_START ? 0 : (c - REBEL_START) / 100;
+	}
+
+	function rebellionChance(c) {
+		if (c <= REBEL_START) return 0;
+		return REBEL_CAP * -Math.expm1(-REBEL_K * (c - REBEL_START));
+	}
+
+	function flybyMultiplier(age) {
+		if (!(age > 0)) return 1;
+		return 1 + (FLYBY_MAX - 1) * -Math.expm1(-age / FLYBY_RAMP_SECONDS);
+	}
+
 	/* --- §3 the resource map ----------------------------------------------- */
 
 	function clamp01(v) {
@@ -230,6 +283,7 @@
 			capital: 1 + 5 * map.score,    // industrial points
 			stock: new Float64Array(ALL),  // t
 			comfort: 1,
+			corruption: 0,               // points, refreshed from the shared market
 			coarse: false,
 			stage: STAGE_OUTPOST,
 			starving: false,
@@ -338,6 +392,13 @@
 		STAGE_MIN_POP, STAGE_SPONSORS,
 		EVENT_STAGE, EVENT_FAMINE, EVENT_RECOVERY,
 		TAG_SURPLUS, TAG_FAIR, TAG_SCARCE, TAG_NAMES, SURPLUS_SUPPLY, SCARCE_SUPPLY, GUARD_YEARS,
+		CORRUPTION_MAX, CORRUPTION_VISIT_DECAY, CORRUPTION_GRACE, CORRUPTION_PASSIVE_RATE,
+		CORRUPTION_BRIBE_BASE, CORRUPTION_BRIBE_SCALE, BRIBE_MIN, ARREST_SECONDS,
+		REBEL_CHECK_SECONDS, REBEL_START, REBEL_K, REBEL_CAP,
+		FLYBY_RAMP_SECONDS, FLYBY_MAX, MEDIC_PATIENTS, MEDIC_REWARD_PER_PATIENT,
+		PACIFY_CORRUPTION_MAX,
+		clampCorruption, corruptionGrowthFactor, bribeCorruption, arrestChance,
+		rebellionChance, flybyMultiplier,
 		clamp01, createMap, systemFractions, resourceMapFor,
 		createColony, advanceColony, stageFor, warehouseCap, carryingCapacity, isAbandoned,
 		marketSupply, marketTag, goodShortfall, bestExport, bestImport,
@@ -361,8 +422,10 @@
 		const dt = coarse ? span / MAX_STEPS : BASE_DT;
 		const startY = colony.lastY;
 		const ease = colony.ease;
-		const stock = colony.stock;
-		let pop = colony.pop;
+	const stock = colony.stock;
+	/* rot throttles growth only: famine stays a loss whatever the rulers do */
+	const growth = corruptionGrowthFactor(colony.corruption > 0 ? colony.corruption : 0);
+	let pop = colony.pop;
 		let capital = colony.capital;
 		let comfort = 1;
 		let stage = colony.stage;
@@ -403,6 +466,7 @@
 
 			const K = 40 * (0.4 + 0.6 * ease[FOOD]) * (1 + cap);
 			let dPop = G_MAX * comfort * (1 - pop / K) * pop * dt;
+			if (dPop > 0) dPop *= growth;
 			const stepY = startY + (s + 1) * dt;
 			if (comfort < FAMINE_COMFORT) {
 				dPop -= FAMINE_RATE * pop * dt;
