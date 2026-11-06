@@ -99,9 +99,12 @@
 	const CAREER_SAME_PAD_VALUE = -1;
 	const CAREER_PICKUP_VALUE = 0.35;
 	const CAREER_REFIT_VALUE = 3;
-	/* a medical mission is worth chasing: the reward is per patient and the
-	 * quelled planet turns its 4x fly-by back into normal trade */
-	const CAREER_MEDIC_VALUE = 0.8;
+	/* a medical mission is worth chasing (0.5.13: it outranks a plain
+	 * delivery): the reward is per patient, the medic leg lands on a planet
+	 * paying the 4x fly-by ramp, and the quelled planet turns that ramp back
+	 * into normal trade — the rebellion is a contest the rivals should play,
+	 * not a tax they pay */
+	const CAREER_MEDIC_VALUE = 2.5;
 	/* a rival takes the rulers' money on a planet that is already rotten, or
 	 * when another company is about to fly out of it: corruption is not a gift
 	 * the bot hands to clean worlds for pocket change */
@@ -2148,12 +2151,14 @@
 	};
 
 	/*
-	 * Bribes (0.5.12). Rulers pay twice what the landing collected plus what
-	 * regrew while the ship sat, and the rot the bribe adds is what can end in
-	 * the Capital transport; a seed-derived persona decides whether a company
-	 * takes that trade. Never on its own rail (rot on the company's own pad
-	 * hurts its colony), never below the small-bribe floor, never on the
-	 * Capital, A.R.F. or a rebellious planet — the rule refuses those anyway.
+	 * Bribes (0.5.12, repriced 0.5.13). Rulers pay the visit value — what the
+	 * landing collected plus what regrew while the ship sat — scaled by the
+	 * planet's rot, so the trade only exists on rotten worlds, and the rot the
+	 * bribe adds is what can end in the Capital transport; a seed-derived
+	 * persona decides whether a company takes it. Never on its own rail (rot on
+	 * the company's own pad hurts its colony), never below the small-bribe
+	 * floor, never on the Capital, A.R.F. or a rebellious planet — the rule
+	 * refuses those anyway.
 	 */
 	GravityBot.prototype.careerBribeProne = function (index) {
 		return OrbitWorld.hash01(GravityGame.rivalSeed(this.seed >>> 0, index), 7, 0x39) <

@@ -1648,10 +1648,14 @@
 	}
 
 	/*
-	 * The bribe (0.5.12): the local rulers pay twice what the next fly-visit
-	 * would collect, the purse and the bribe stats grow, and the rot grows with
-	 * the money. One bribe per visit, and a rot-rich planet may arrest the
-	 * briber and ship them to the Capital instead of paying.
+	 * The bribe (0.5.12, repriced 0.5.13): the local rulers pay for the visit's
+	 * silence — the visit value (what the landing collected plus what regrew
+	 * while the ship sits) scaled by the planet's rot. A clean lord pays
+	 * nothing, a freshly reported planet is worth nothing, and a rot-rich
+	 * planet pays well right where the arrest roll is at its worst. The purse
+	 * and the bribe stats grow, and the rot grows with the money. One bribe per
+	 * visit, and a rot-rich planet may arrest the briber and ship them to the
+	 * Capital instead of paying.
 	 */
 	const BRIBE = { ok: false, amount: 0, corruption: 0, arrested: false, reason: '' };
 
@@ -1669,15 +1673,18 @@
 	}
 
 	/*
-	 * What the rulers pay: twice what this visit has been worth so far — the
-	 * payout the landing collected plus the value that regrew while the ship
-	 * sits. A bribe is therefore never a free click on a fresh landing, and it
-	 * grows the longer the company stands around.
+	 * What the rulers pay (0.5.13): the visit value — the payout the landing
+	 * collected plus the value that regrew while the ship sits — times the rot
+	 * fraction times BRIBE_VALUE_COEF. The visit value is the base: a planet
+	 * whose profit is low has already been reported to the Capital, so its lord
+	 * has nothing to buy. The rot is the lord's appetite: clean worlds pay
+	 * nothing, and a long sit on a rotten world is a parking income the player
+	 * collects without flying — at the price of the arrest roll.
 	 */
 	function bribeAmount(market, planet, runStep) {
 		const grown = planetProfit(market, planet, runStep);
 		const collected = market.visitPay[planet] > 0 ? market.visitPay[planet] : 0;
-		return 2 * (collected + grown);
+		return OrbitEcon.bribeValue(collected + grown, market.corruption[planet]);
 	}
 
 	function acceptBribe(career, market, sim, planet, runStep) {

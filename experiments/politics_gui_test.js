@@ -87,22 +87,22 @@ land(planet);
 Game.placeShip(career, scene.sim, planet);
 market.lastVisitStep[planet] = game.clockSteps;
 market.visitPay[planet] = 2;
-market.corruption[planet] = 10;
+market.corruption[planet] = 25;
 context.refreshCareerPanel();
 let html = drawerHtml();
-check(html.includes('corruption 10%'), 'the pad block hides corruption: ' + html);
+check(html.includes('corruption 25%'), 'the pad block hides corruption: ' + html);
 check(html.includes('data-act="bribe"'), 'the pad block has no bribe button');
-check(html.includes('+4.00'), 'the bribe button does not price the visit: ' + html);
+check(html.includes('+2.00'), 'the bribe button does not price the visit: ' + html);
 const purse = career.ledger.purse;
 act({ act: 'bribe' });
 check(career.bribes === 1, 'the bribe click did nothing');
-check(Math.abs(career.ledger.purse - (purse + 4)) < 1e-9,
-	'the bribe did not pay twice the visit: ' + career.ledger.purse);
-check(Math.abs(market.corruption[planet] - (10 + context.OrbitEcon.bribeCorruption(4))) < 1e-9,
+check(Math.abs(career.ledger.purse - (purse + 2)) < 1e-9,
+	'the bribe did not pay the rot-scaled visit: ' + career.ledger.purse);
+check(Math.abs(market.corruption[planet] - (25 + context.OrbitEcon.bribeCorruption(2))) < 1e-9,
 	'the bribe did not rot the planet: ' + market.corruption[planet]);
 html = drawerHtml();
 check(html.includes('bribed this visit'), 'the drawer does not mark the visit as bribed: ' + html);
-check(!career.arrested, 'a 10% planet arrested the briber');
+check(!career.arrested, 'a 25% planet arrested the briber');
 
 /* --- arrest: the clock, the gate and the drawer ------------------------ */
 

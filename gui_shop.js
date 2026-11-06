@@ -310,7 +310,8 @@ function politicsBlockHtml(career) {
 	const reason = GravityGame.bribeRefusal(career, market, at);
 	const disabled = reason !== '';
 	const title = reason !== '' ? reason
-		: 'the rulers pay twice what this visit has been worth · corruption +' +
+		: 'the rulers pay for this visit\u2019s silence: its value \u00d7 the rot \u00d7 ' +
+			OrbitEcon.BRIBE_VALUE_COEF.toFixed(0) + ' · corruption +' +
 			OrbitEcon.bribeCorruption(amount).toFixed(2) + ' · high rot can end in arrest';
 	html += '<div class="careerRow"><span class="careerBtns">' +
 		'<button class="miniBtn" data-act="bribe"' + (disabled ? ' disabled' : '') +

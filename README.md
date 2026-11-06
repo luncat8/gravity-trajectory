@@ -162,8 +162,12 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   that throttles its colony growth (`× 1 − C/100`), rises `0.1/s` once no
   emissary has called for 120 s and falls `0.2` per fly-visit, so the worlds a
   company skips rot while its regular stops stay clean. The rulers of a
-  non-rebellious planet pay a bribe worth twice the visit that just landed plus
-  whatever regrew since — once per visit — in exchange for
+  non-rebellious planet pay a bribe worth that visit's value — what the
+  landing collected plus whatever regrew since — times the planet's rot
+  fraction times `4`, so a clean lord pays nothing and a planet whose visit
+  profit is low has already been reported to the Capital and is worth no
+  bribe; a long sit on a rotten world is a parking income, priced by the
+  arrest roll. Once per visit, in exchange for
   `1 + 0.1 · money` corruption and an arrest roll that is `0` at `C ≤ 50` and
   `0.5` at `C = 100`: an arrest ships the company to the Capital for 120 s with
   no fee, no reward and its medical cargo dropped. Past `50` rot a planet can
@@ -173,7 +177,7 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   and raises that planet's fly-visit payout towards `4×` over 240 s. The
   Capital and the A.R.F. world never rot, never bribe and never rebel. A
   rebellion seeds `8` patients at the Capital's medical slot: half a standard
-  hold ferries medics out and patients home for `0.5` each, and the last
+  hold ferries medics out and patients home for `1.0` each, and the last
   patient pacifies the planet (rot clamped to `40`, its rail commercial for
   good). The pad block shows rot, the bribe button and the arrest countdown;
   a rebellion also draws a `REBELLION` pill and its rail in the rival colour.

@@ -1,0 +1,54 @@
+0.5.13 bribe reprice + rebellion contest — career_gravity_bench A/B (13-planet career universe, rate 1)
+
+Changes measured here, in the order they were applied:
+  1. bribe reprice: bribeAmount = visitValue * (rot/100) * BRIBE_VALUE_COEF(4)
+     (was 2 * visitValue regardless of rot)
+  2. CAREER_MEDIC_VALUE 0.8 -> 2.5 (bot accept scoring)
+  3. MEDIC_REWARD_PER_PATIENT 0.5 -> 1.0
+  4. probe: REBEL_CHECK_SECONDS 60 -> 120 (measured, rejected, reverted)
+
+2400 s, seeds 1-3 (6 rival-games)
+0.5.12 on   flights 147 · earned 43.84 · pads 15 · seized 21 · rot 55.2 ·
+            bribes 12 · arrests 1 · medic trips 10 · patients home 32
+step 1+2    flights 141 · earned 47.03 · pads 13 · seized 21 · rot 53.7 ·
+            bribes 5 · arrests 0 · medic trips 10 · patients home 32
+step 4      flights 130 · earned 35.77 · pads 11 · seized 21 · rot 54.0 ·
+(probe)     bribes 4 · arrests 0 · medic trips 2 · patients home 4 · stuck 1
+            => REJECTED: halving the rolls does not make seizure less certain
+            while rot pins near the cap (seized 21 unchanged); it only reshuffles
+            the chaotic timeline and cost a third of the earnings. Reverted to 60.
+step 1+2+3  flights 141 · earned 63.03 · pads 13 · seized 21 · rot 53.7 ·
+            bribes 5 · arrests 0 · medic trips 10 · patients home 32
+off (0.5.12) flights 195 · earned 64.50 · pads 24 · seized — ·
+            => the long-run earnings gap is nearly closed: 63.03 vs 64.50 (97%),
+            was 43.84 (68%). The rebellion still reshapes the map (21 seized,
+            pads 13 vs 24) but the medical quest now pays the loss back:
+            32 patients home x 1.0 = 32.0 of the 63.03.
+
+1200 s, seeds 1-6 (12 rival-games)
+step 1+2+3  flights 200 · earned 36.19 · pads 30 · seized 24 · rot 43.1 ·
+on          bribes 1 · arrests 0 · medic trips 2 · patients home 8
+off (0.5.12) flights 205 · earned 35.61 · pads 40
+0.5.12 on    flights 200 · earned 33.92 · pads 30 · bribes 6 · medic trips 2
+            => now slightly above the off baseline (36.19 vs 35.61, was 33.92).
+
+400 s, seeds 1-12 (24 rival-games)
+step 1+2+3  flights 157 · earned 15.96 · pads 66 · reach 4.67 · rot 13.2 ·
+on          bribes 1 · arrests 0 · medic trips 0
+0.5.12 on    flights 157 · earned 15.96 · pads 67 · reach 4.69 · bribes 3
+off (0.5.12) flights 157 · earned 15.96 · pads 67 · reach 4.69
+            => short runs stay effectively unchanged; the bribe reprice (a
+            rot-13 world now pays 0.53x the visit, not 2x) removed two bribes
+            and with them one pad decision (66 vs 67 pads).
+
+bribe reprice reading: bribes fall from 12 to 5 at 2400 s and 6 to 1 at 1200 s
+because the rulers of a clean or freshly reported world no longer pay. The
+remaining bribes are the parking income the design wanted: taken on rotten
+worlds where the visit value is real, at the rot levels where the arrest roll
+is live (arrests 0 in this sample — the bot's CAREER_BRIBE_ROT 25 gate plus the
+rot-scaled amount keeps it below the C>50 arrest line).
+
+validation: politics_test 17 groups OK (with the new bribeValue formula checks
+and the clean-lord refusal), politics_gui_test OK (bribe button now prices
++2.00 at rot 25), career_bench same 3 pre-existing failures, career_bot_bench
+same 11 pre-existing failures, git diff --check clean.

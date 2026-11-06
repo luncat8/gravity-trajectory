@@ -107,6 +107,13 @@ check('growth factor throttles positive growth only, halved at 50 and 0 at 100',
 check('bribe formula, arrest endpoints and the saturating rebellion chance', () => {
 	assert.strictEqual(Econ.bribeCorruption(0), 1);
 	assert.ok(Math.abs(Econ.bribeCorruption(10) - 2) < 1e-12);
+	/* (0.5.13) the bribe is the visit value scaled by the rot fraction */
+	assert.strictEqual(Econ.bribeValue(2, 0), 0);
+	assert.strictEqual(Econ.bribeValue(0, 100), 0);
+	assert.ok(Math.abs(Econ.bribeValue(2, 50) - 4) < 1e-12, 'rot 50 pays 2x the value');
+	assert.ok(Math.abs(Econ.bribeValue(2, 100) - 8) < 1e-12, 'rot 100 pays 4x the value');
+	assert.ok(Math.abs(Econ.bribeValue(2, 150) - Econ.bribeValue(2, 100)) < 1e-12, 'clamped');
+	assert.ok(Econ.bribeValue(-1, 100) === 0, 'no value, no bribe');
 	assert.strictEqual(Econ.arrestChance(50), 0);
 	assert.strictEqual(Econ.arrestChance(49.9), 0);
 	assert.ok(Math.abs(Econ.arrestChance(100) - 0.5) < 1e-12);
@@ -195,7 +202,7 @@ check('the political clock runs once per step number and not at all without a bo
 
 /* --- §3 bribes and arrest ---------------------------------------------- */
 
-check('a bribe pays twice the visit value, rots the planet and is refused twice per visit', () => {
+check('a bribe pays the visit value scaled by rot, rots the planet and is refused twice per visit', () => {
 	const w = setup(17);
 	const career = w.career;
 	const planet = normalPlanet(w);
@@ -203,15 +210,29 @@ check('a bribe pays twice the visit value, rots the planet and is refused twice 
 	career.ledger.purse = 3;
 	w.market.lastVisitStep[planet] = 100;   // the landing that collected 2.00
 	w.market.visitPay[planet] = 2;
-	w.market.corruption[planet] = 10;
-	const expect = 2 * 2;
+	w.market.corruption[planet] = 25;
+	const expect = Econ.bribeValue(2, 25);  // 2.00: a quarter-rot lord pays 1x
+	assert.ok(Math.abs(expect - 2) < 1e-9, 'fixture amount ' + expect);
 	const result = Game.acceptBribe(career, w.market, w.sim, planet, 100);
 	assert.ok(result.ok, result.reason);
 	assert.ok(Math.abs(result.amount - expect) < 1e-9, 'bribe amount ' + result.amount);
 	assert.ok(Math.abs(career.ledger.purse - (3 + expect)) < 1e-9);
 	assert.strictEqual(career.bribes, 1);
 	assert.ok(Math.abs(career.bribeIncome - expect) < 1e-9);
-	assert.ok(Math.abs(w.market.corruption[planet] - (10 + Econ.bribeCorruption(expect))) < 1e-9);
+	assert.ok(Math.abs(w.market.corruption[planet] - (25 + Econ.bribeCorruption(expect))) < 1e-9);
+	/* a clean lord owes nothing: the visit is already worth no bribe */
+	let clean = -1;
+	for (let p = planet + 1; p < UNIVERSE; p++) {
+		if (p !== w.market.capitalPlanet && p !== w.market.arfPlanet) { clean = p; break; }
+	}
+	assert.ok(clean >= 0, 'no second normal planet');
+	career.at = clean;
+	w.market.lastVisitStep[clean] = 100;
+	w.market.visitPay[clean] = 2;
+	w.market.corruption[clean] = 0;
+	const refused = Game.acceptBribe(career, w.market, w.sim, clean, 100);
+	assert.ok(!refused.ok && refused.reason.indexOf('owe nothing') >= 0, refused.reason);
+	career.at = planet;
 	const again = Game.acceptBribe(career, w.market, w.sim, planet, 101);
 	assert.ok(!again.ok && again.reason.indexOf('already bribed') >= 0, again.reason);
 	/* a new visit opens a new window */
