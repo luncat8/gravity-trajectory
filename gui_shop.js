@@ -146,7 +146,7 @@ function shopButton(label, act, kind, tier, disabled, title, costly) {
 
 /* `ref` names the record: a table tier, or the id of a research prototype;
  * `costly` marks the purse itself as the blocker, so the price stays red
- * instead of fading like a state gate (HQ only, cargo, no catapult) */
+ * instead of fading like a state gate (in flight, cargo, no catapult) */
 function shopButtonRef(label, act, kind, ref, disabled, title, costly) {
 	return '<button class="miniBtn' + (disabled && costly ? ' costly' : '') +
 		'" data-act="' + act + '" data-kind="' + kind + '" ' + ref +
@@ -300,22 +300,31 @@ function politicsBlockHtml(career) {
 	} else if (market.seized[at]) {
 		html += '<div class="careerLine warn">seized rail · commercial fee · no building here</div>';
 	}
+	const bribed = market.bribeVisitStep[at] === market.lastVisitStep[at];
 	const rot = Math.round(market.corruption[at]);
 	html += '<div class="careerLine dim">corruption ' + rot + '%' +
-		(market.bribeVisitStep[at] === market.lastVisitStep[at] ? ' · bribed this visit' : '') +
-		'</div>';
+		(bribed ? ' · bribed this visit' : '') + '</div>';
+	/* the bribe is taken once per visit: after that the rot line says so and
+	 * the next landing opens it again */
+	if (career.ended !== GravityGame.CAREER_OPEN || bribed) return html;
 	const amount = GravityGame.bribeAmount(market, at, game.clockSteps);
-	/* nothing worth taking: no button, just the rot line */
-	if (amount <= OrbitEcon.BRIBE_MIN || career.ended !== GravityGame.CAREER_OPEN) return html;
+	const owes = amount > OrbitEcon.BRIBE_MIN;
 	const reason = GravityGame.bribeRefusal(career, market, at);
-	const disabled = reason !== '';
+	/* the button shows the rule, not just the price: it is on the pad block
+	 * from the landing, priced even when the lord owes nothing, so a player
+	 * never wonders where the bribe went */
 	const title = reason !== '' ? reason
-		: 'the rulers pay for this visit\u2019s silence: its value \u00d7 the rot \u00d7 ' +
+		: owes ? 'the rulers pay for this visit\u2019s silence: its value \u00d7 the rot \u00d7 ' +
 			OrbitEcon.BRIBE_VALUE_COEF.toFixed(0) + ' · corruption +' +
-			OrbitEcon.bribeCorruption(amount).toFixed(2) + ' · high rot can end in arrest';
+			OrbitEcon.bribeCorruption(amount).toFixed(2) + ' · high rot can end in arrest'
+		: 'nothing to take: the visit value \u00d7 rot is under ' + OrbitEcon.BRIBE_MIN.toFixed(2) +
+			' · a clean or poor world pays nothing, and rot grows while it is left alone';
 	html += '<div class="careerRow"><span class="careerBtns">' +
-		'<button class="miniBtn" data-act="bribe"' + (disabled ? ' disabled' : '') +
+		'<button class="miniBtn" data-act="bribe"' + (reason !== '' || !owes ? ' disabled' : '') +
 		' title="' + title + '">bribe rulers · +' + amount.toFixed(2) + '</button></span></div>';
+	if (reason === '' && !owes) {
+		html += '<div class="careerLine dim">nothing to take yet · the bribe is the visit value \u00d7 rot</div>';
+	}
 	return html;
 }
 
@@ -518,14 +527,16 @@ function lighterTier(career, table, cur) {
 	return null;
 }
 
-/* full-battery cap of HQ with `item` in `kind` and the ship as loaded now */
+/* full-battery cap of the pad under the ship with `item` in `kind` and the
+ * ship as loaded now: the refit is made anywhere, so the cap that matters is
+ * the rail the ship stands on, and HQ only when it is still in flight */
 function partCap(career, row, item) {
-	const pad = career.pads[career.hq];
+	const pad = career.pads[career.at >= 0 ? career.at : career.hq];
 	return padCapMass(pad.catapult, pad.battery,
 		OrbitTech.refitMass(career.ship, row.kind, item, career.ship.cargoTons));
 }
 
-/* `8 → 24 t · 88 → 78 px/s`: the stat the offered refit holds and the HQ cap
+/* `8 → 24 t · 88 → 78 px/s`: the stat the offered refit holds and the pad cap
  * it buys, so a heavy fit reads as a launch limit before it is fitted;
  * `change` undefined prints the fit as it is, null means the empty engine slot */
 function partCapText(career, row, cur, change) {
@@ -538,9 +549,11 @@ function partCapText(career, row, cur, change) {
 }
 
 /* one refit button: forward buys/installs the next tier, `back` returns to
- * an owned lighter one (item null = strip the engine) */
+ * an owned lighter one (item null = strip the engine). Any landed ship can be
+ * refitted; only a ship still in flight is gated. */
 function partButtonHtml(career, row, item, back) {
-	const atHq = career.at === career.hq;
+	const landed = career.at >= 0;
+	const at = landed ? career.at : career.hq;
 	const owned = item === null || Boolean(career.owned[item.id]);
 	const price = owned ? 0 : careerCost(career, item.buildCost);
 	const fits = row.kind !== OrbitTech.KIND_HOLD || item.capacity >= career.ship.cargoTons;
@@ -552,16 +565,16 @@ function partButtonHtml(career, row, item, back) {
 		? ' · Δv ' + dv.toFixed(1) + ' px/s' +
 			(burnCap < dv - 0.05 ? ' (burn ' + burnCap.toFixed(1) + ')' : '')
 		: '';
-	const title = 'refit ' + name + (atHq ? '' : ' at HQ only') + ' · ' +
-		partStatText(row.kind, item) + ' · ship ' + mass.toFixed(1) + ' t · HQ cap ' +
-		Math.round(partCap(career, row, item)) + ' px/s' + dvNote +
+	const title = 'refit ' + name + (landed ? '' : ' · land on a planet first') + ' · ' +
+		partStatText(row.kind, item) + ' · ship ' + mass.toFixed(1) + ' t · ' +
+		planetName(at) + ' cap ' + Math.round(partCap(career, row, item)) + ' px/s' + dvNote +
 		(fits ? '' : ' · drops ' + career.ship.cargoTons + ' t cargo first');
 	const label = back ? 'back ' + name
 		: (owned ? 'fit ' : 'buy ') + name + ' · ' + costText(price);
 	const poor = purseTooSmall(career, price);
 	return shopButton(label, 'part', row.kind,
 		item === null ? NO_TIER : tierIndex(row.table, item),
-		!atHq || !fits || poor, title, poor && atHq && fits);
+		!landed || !fits || poor, title, poor && landed && fits);
 }
 
 function partRowHtml(career, row) {
@@ -582,7 +595,7 @@ function partRowHtml(career, row) {
 }
 
 /* a researched ship part (engine or tank) is owned like a bought part: refit
- * free at HQ, and the fitted one is marked instead of offered */
+ * free on any planet, and the fitted one is marked instead of offered */
 function protoPartRowHtml(career, row, proto) {
 	const fitted = career.ship[row.kind] === proto;
 	let html = '<div class="careerRow"><span class="careerKind">↳ ' + row.label + '</span>' +
@@ -596,8 +609,8 @@ function protoPartRowHtml(career, row, proto) {
 			: row.kind === OrbitTech.KIND_TANK ? ' · empty ' + proto.emptyMass + ' t' : '';
 		const dvNote = dv > 0 ? ' · Δv ' + dv.toFixed(1) + ' px/s' : '';
 		html += shopButtonRef('fit ' + proto.id, 'part', row.kind, 'data-item="' + proto.id + '"',
-			career.at !== career.hq, 'refit ' + proto.id + ' at HQ ' + planetName(career.hq) +
-			' · ' + partStatText(row.kind, proto) + note + ' · ship ' + mass.toFixed(1) + ' t' + dvNote);
+			career.at < 0, 'refit ' + proto.id + ' · ' + partStatText(row.kind, proto) + note +
+			' · ship ' + mass.toFixed(1) + ' t' + dvNote);
 	}
 	return html + copyButtonHtml(row, proto) + '</span></div>';
 }
@@ -715,8 +728,13 @@ function shopBlockHtml(career) {
 			if (list[j] !== next) html += protoGearRowHtml(career, row, planet, list[j]);
 		}
 	}
-	html += '<div class="careerHead">ship refit · HQ ' + planetName(career.hq) + '</div>';
-	if (career.at !== career.hq) return html + '<div class="careerLine dim">land at HQ to refit the ship</div>';
+	/* the ship is refitted wherever it stands, so the block follows the ship's
+	 * planet, not the planet picked for the pad rows above */
+	html += '<div class="careerHead">ship refit · ' +
+		(career.at >= 0 ? planetName(career.at) : 'land on a planet') + '</div>';
+	if (career.at < 0) {
+		return html + '<div class="careerLine dim">any planet is a shipyard · land to refit</div>';
+	}
 	for (let i = 0; i < PART_ROWS.length; i++) {
 		const row = PART_ROWS[i];
 		html += partRowHtml(career, row);

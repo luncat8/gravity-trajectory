@@ -567,7 +567,11 @@ check('career contracts: hold required, cargo adds mass, delivery pays on landin
 	assert.ok(Math.abs(career.ship.mass - dryMass) < 1e-9);
 	assert.strictEqual(career.lastReward, reward);
 	assert.ok(career.tasks[0].kind === GravityGame.TASK_DELIVERY, 'board refilled');
-	assert.ok(!GravityGame.installPart(career, 'hold', HOLD[0]), 'refits only at HQ');
+	/* any planet is a shipyard; only a ship in flight cannot be refitted */
+	assert.ok(GravityGame.installPart(career, 'hold', HOLD[0]), 'refit where the ship landed');
+	career.at = -1;
+	assert.ok(!GravityGame.installPart(career, 'hold', HOLD[1]), 'no refit in flight');
+	assert.ok(GravityGame.partRefusal(career, 'hold', HOLD[1]).indexOf('land') >= 0);
 });
 
 check('post-pickup EMC-1 cap: cargo mass lowers the starter-rail cap', () => {
@@ -1540,8 +1544,11 @@ check('prototypes: an engine record refits free at HQ, is ship-mass correct, and
 	assert.ok(Math.abs(career.ledger.purse - (purse - OrbitTech.ENGINES[0].buildCost)) < 1e-9);
 	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, proto), 'and back to the prototype');
 	career.at = (career.hq + 1) % PLANETS;
-	assert.strictEqual(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, OrbitTech.ENGINES[0]), false,
-		'refit only at HQ');
+	assert.ok(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, OrbitTech.ENGINES[0]),
+		'an owned record refits on any planet');
+	career.at = -1;
+	assert.strictEqual(GravityGame.installPart(career, OrbitTech.KIND_ENGINE, proto), false,
+		'no refit while the ship is in flight');
 });
 
 check('prototypes: a catapult record builds on an empty pad or one rung up, never below', () => {

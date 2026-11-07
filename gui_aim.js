@@ -350,7 +350,7 @@ function executeBurn() {
 function toggleFlightPause() {
 	if (canImpulse()) return setBurnPaused(!burnPaused);
 	if (careerRule() && cargoSim.status === STATUS_FLYING) {
-		careerNotice(game.career.ship.engine ? 'fuel tank empty' : 'no impulse engine fitted · refit at HQ');
+		careerNotice(game.career.ship.engine ? 'fuel tank empty' : 'no impulse engine fitted · fit one in the shop');
 	}
 	return false;
 }

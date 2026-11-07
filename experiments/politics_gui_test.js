@@ -104,6 +104,40 @@ html = drawerHtml();
 check(html.includes('bribed this visit'), 'the drawer does not mark the visit as bribed: ' + html);
 check(!career.arrested, 'a 25% planet arrested the briber');
 
+/* --- the bribe button is a state, not a price (0.5.18) ------------------ */
+
+/* the bribe is once per visit: the closed visit offers no button */
+check(!drawerHtml().includes('data-act="bribe"'),
+	'the pad block still offers a bribe after the bribe: ' + drawerHtml());
+/* a new visit opens it again: the harvest clears the marker the drawer reads */
+Game.harvestPlanet(career.ledger, market, planet, game.clockSteps);
+check(market.bribeVisitStep[planet] === -1, 'a visit does not reopen the bribe window');
+market.visitPay[planet] = 2;
+context.refreshCareerPanel();
+html = drawerHtml();
+check(html.includes('data-act="bribe"') && !/data-act="bribe" disabled/.test(html),
+	'a new visit does not reopen the bribe: ' + html);
+/* a clean world keeps the button and simply prices it at nothing */
+const fresh = normalPlanet(planet);
+market.corruption[fresh] = 0;
+land(fresh);
+market.lastVisitStep[fresh] = game.clockSteps;
+market.visitPay[fresh] = 2;
+context.refreshCareerPanel();
+html = drawerHtml();
+check(html.includes('data-act="bribe"'), 'a clean world hides the bribe button: ' + html);
+check(html.includes('+0.00'), 'a clean world does not price the bribe at nothing: ' + html);
+check(/data-act="bribe" disabled/.test(html), 'a clean world offers an enabled bribe');
+check(html.includes('nothing to take yet'), 'a clean world does not explain why: ' + html);
+/* the Capital and the A.R.F. world take no bribes at all */
+Game.placeShip(career, scene.sim, career.capitalPlanet);
+context.refreshCareerPanel();
+check(!drawerHtml().includes('data-act="bribe"'), 'the Capital offers a bribe');
+Game.placeShip(career, scene.sim, career.arfPlanet);
+context.refreshCareerPanel();
+check(!drawerHtml().includes('data-act="bribe"'), 'the A.R.F. offers a bribe');
+land(planet);
+
 /* --- arrest: the clock, the gate and the drawer ------------------------ */
 
 const arrestPlanet = normalPlanet(planet);

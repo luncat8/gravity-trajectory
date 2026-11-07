@@ -282,7 +282,7 @@ function updateFlightHud() {
 	const engineText = ship
 		? ship.engine
 			? ship.engine.id + ' · Δv ' + OrbitTech.shipDeltaV(ship, ship.cargoTons).toFixed(1)
-			: 'none · refit at HQ'
+			: 'none · fit in the shop'
 		: '';
 	if (engineText !== flightHud.engine) {
 		flightHud.engine = engineText;

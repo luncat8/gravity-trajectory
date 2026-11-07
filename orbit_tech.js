@@ -52,12 +52,17 @@
 		{ id: 'EMC-5', tier: 5, maxForce: 180, efficiency: 0.88 }
 	];
 
-	/* kW: SP-1 refills BAT-1 in ~90 flight-seconds of full sunlight at world rate ×1 */
+	/* kW. The base SP-1 is unchanged; every upgrade gain is doubled, because a
+	 * panel only ever showed up as a slow wait: SP-2 1.0 → 3.8, SP-3 → 8.0,
+	 * SP-4 → 14.0 kW. Charging BAT-1 to full takes 90 min of world sunlight on
+	 * SP-1 and 24 min on SP-2. A stronger spec also costs more to build — the
+	 * price is the research work from the origin (0.40 / 2.15 / 5.64 / 11.74) —
+	 * so gains, not kW, are the balance lever: see balance_lab.html. */
 	const PANELS = [
 		{ id: 'SP-1', tier: 1, power: 1.0 },
-		{ id: 'SP-2', tier: 2, power: 2.4 },
-		{ id: 'SP-3', tier: 3, power: 4.5 },
-		{ id: 'SP-4', tier: 4, power: 7.5 }
+		{ id: 'SP-2', tier: 2, power: 3.8 },
+		{ id: 'SP-3', tier: 3, power: 8.0 },
+		{ id: 'SP-4', tier: 4, power: 14.0 }
 	];
 
 	/* capacity kWh, leak fraction per colony year */
@@ -69,7 +74,7 @@
 		{ id: 'BAT-5', tier: 5, capacity: 16.0, leak: 0.0003 }
 	];
 
-	/* --- ship parts (add mass, refitted at HQ) ------------------------- */
+	/* --- ship parts (add mass, refitted on any planet) ------------------ */
 
 	const HOLDS = [
 		{ id: 'HOLD-0', tier: 0, capacity: 0, emptyMass: 0.0 },

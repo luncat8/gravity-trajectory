@@ -1842,14 +1842,29 @@
 		return true;
 	}
 
-	/* ship parts are refitted at HQ; a bought part stays owned, so swapping back
-	 * to a lighter owned tier is free; only the engine has a `null` = none step */
+	/*
+	 * A ship part is refitted wherever the vessel stands: any planet is a yard,
+	 * so the player never has to find HQ to fit an engine. A bought part stays
+	 * owned, so swapping back to a lighter owned tier is free; only the engine
+	 * has a `null` = none step. The reason the shop prints comes from
+	 * partRefusal, never from a second copy of these gates.
+	 */
+	function partRefusal(career, kind, item) {
+		if (!career || career.at < 0) return 'land on a planet to refit';
+		if (career.ship[kind] === item) return 'already fitted';
+		if (item === null) {
+			return kind === OrbitTech.KIND_ENGINE ? '' : 'a ' + kind + ' slot cannot be empty';
+		}
+		if (kind === OrbitTech.KIND_HOLD && item.capacity < career.ship.cargoTons) {
+			return 'drop the ' + career.ship.cargoTons + ' t cargo first';
+		}
+		if (!career.owned[item.id] && !canPay(career, item.buildCost)) return 'purse too small';
+		return '';
+	}
+
 	function installPart(career, kind, item) {
-		if (career.at !== career.hq || career.ship[kind] === item) return false;
-		if (item === null && kind !== OrbitTech.KIND_ENGINE) return false;
-		if (kind === OrbitTech.KIND_HOLD && item.capacity < career.ship.cargoTons) return false;
+		if (partRefusal(career, kind, item) !== '') return false;
 		if (item !== null && !career.owned[item.id]) {
-			if (!canPay(career, item.buildCost)) return false;
 			career.ledger.purse -= price(career, item.buildCost);
 			ownPart(career, item);
 		}
@@ -2506,7 +2521,7 @@
 		railOwnerText, railText, railBlock,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById, gearKnown, planetBuildable, planetSeized,
-		buildGear, bulkUpgradeCost, bulkUpgrade, installPart,
+		buildGear, bulkUpgradeCost, bulkUpgrade, installPart, partRefusal,
 		refreshBoard, canAccept, acceptTask, dropContract, medicLoad, settleMedic,
 		careerBeginFlight, careerBurn, careerAdvance, careerEndFlight, evacuate
 	};

@@ -2913,6 +2913,9 @@ function protoOf(career, family, id) {
 	cCareer.contract = 0;
 	cCareer.tasks[0].kind = cEnv.context.GravityGame.TASK_DELIVERY;
 	cCareer.tasks[0].state = cEnv.context.GravityGame.TASK_LOADED;
+	/* the page's ship is dry (HOLD-0): a faked loaded leg has to carry the tons
+	 * the hold really holds, or the arrival mass goes negative */
+	cCareer.tasks[0].tons = cCareer.ship.cargoTons;
 	cSim.predict(cCareer.hq, shotAngle, CAREER_TEST_SPEED);
 	const targetPlanet = cSim.predBody;
 	const baseVisitGain = cEnv.context.GravityGame.estimateProfit(
@@ -2932,6 +2935,7 @@ function protoOf(career, family, id) {
 	const arrivalMass = cScene.bot.careerArrivalMass(cCareer, targetPlanet);
 	const departure = cScene.bot.careerDeparture(cCareer, targetPlanet,
 		cCareer.ledger.purse + actualGain - fee, arrivalMass, cSim);
+	if (!(departure.ok && departure.source === 'commercial')) console.log('DBG', targetPlanet, JSON.stringify({ok:departure.ok,src:departure.source,reason:departure.reason,cost:departure.cost,speed:departure.speed}), 'purse', cCareer.ledger.purse, 'gain', actualGain, 'fee', fee, 'owner', cEnv.context.GravityGame.padOwner(cCareer, targetPlanet), 'mass', arrivalMass, 'tons', cCareer.tasks[0].tons, 'cargo', cCareer.ship.cargoTons);
 	check(departure.ok && departure.source === 'commercial',
 		'padless destination must use its affordable commercial departure');
 	const net = actualGain - fee - departure.cost;

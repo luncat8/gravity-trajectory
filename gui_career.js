@@ -231,8 +231,8 @@ function careerBulk(career, kind, item) {
 function careerPart(career, kind, item) {
 	const name = item === null ? 'no engine' : item.id;
 	if (!GravityGame.installPart(career, kind, item)) {
-		careerNotice('cannot fit ' + name + ' · refit at HQ ' + planetName(career.hq) +
-			(kind === OrbitTech.KIND_HOLD ? ' and keep the hold at least as big as the cargo' : ''));
+		const reason = GravityGame.partRefusal(career, kind, item);
+		careerNotice('cannot fit ' + name + (reason ? ' · ' + reason : ''));
 		return;
 	}
 	const dv = OrbitTech.shipDeltaV(career.ship, career.ship.cargoTons);
