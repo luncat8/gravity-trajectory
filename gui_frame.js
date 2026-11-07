@@ -111,7 +111,7 @@ function frame(now) {
 				refreshAimLabel();
 				dirty = false;
 			}
-		} else if (dirty || (autoSkip === 0 && !burnPaused)) {
+		} else if (dirty || (autoSkip === 0 && !isBurnPaused())) {
 			sim.predictFlight(budgetMs);
 			refreshPredGain();
 			dirty = false;

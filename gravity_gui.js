@@ -341,7 +341,6 @@ let savedArmed = false;
 let savedBody = -1;
 let savedAngle = 0;
 let savedSpeed = SPEED_MIN;
-let burnPaused = false;
 let burnAiming = false;
 let burnArmed = false;
 let burnAngle = 0;
@@ -603,7 +602,6 @@ horizonSlider.addEventListener('input', () => {
 	hudAt = -Infinity;
 });
 launchButton.addEventListener('click', launchShot);
-if (flightPauseBtn) flightPauseBtn.addEventListener('click', toggleFlightPause);
 if (flightRefuelBtn) flightRefuelBtn.addEventListener('click', flightRefuel);
 if (flightHudEl) {
 	flightHudEl.addEventListener('pointerover', flightQuestsOver);
@@ -683,7 +681,7 @@ if (launchEvacBtn) {
 }
 if (careerClockBtn) {
 	careerClockBtn.addEventListener('click', () => {
-		if (careerRule()) setCareerPaused(!careerPaused);
+		toggleFlightPause();
 	});
 }
 if (careerPauseLandEl) {
@@ -906,9 +904,9 @@ window.addEventListener('keydown', event => {
 		!event.ctrlKey && !event.metaKey && !event.altKey) {
 		const tag = event.target && event.target.tagName;
 		if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT' &&
-			careerRule() && !replay.on && cargoSim.status === STATUS_FLYING) {
+			careerRule() && !replay.on) {
 			if (event.preventDefault) event.preventDefault();
-			toggleFlightPause();
+			if (!event.repeat) toggleFlightPause();
 			return;
 		}
 	}
@@ -934,7 +932,7 @@ window.addEventListener('keydown', event => {
 			refreshAimLabel();
 			launchState = -1;
 			hudAt = -Infinity;
-		} else if (burnPaused) setBurnPaused(false);
+		} else if (isBurnPaused()) setBurnPaused(false);
 		else if (!replay.on) cancelAim();
 	}
 });
@@ -999,14 +997,14 @@ root.GravityScene = {
 	harvestMarks: () => ({ inside: liveHarvestMask, route: predHarvestMask }),
 	careerPadInfo: () => (game.career ? careerPadPlate(game.career) : null),
 	aimState: () => ({ angle: aimAngle, speed: aimSpeed, grip: gripLen, ceiling: aimCeiling }),
-	burnPaused: () => burnPaused,
+	burnPaused: isBurnPaused,
 	setBurnPaused,
 	toggleFlightPause,
 	flightRefuel,
 	questHover: () => questHoverBody,
 	flightHudState: () => (flightHud.action = flightStateText()),
 	burnState: () => ({
-		paused: burnPaused, armed: burnArmed,
+		paused: isBurnPaused(), armed: burnArmed,
 		angle: burnAngle, dv: burnDv, grip: gripLen, ceiling: burnCeiling
 	}),
 	startReplay,

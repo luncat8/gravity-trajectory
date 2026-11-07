@@ -337,6 +337,10 @@ or
 
 while landed show refuel button (cost) near launch button.
 
+## career map generator improve
+ choose seed and/or adjust player's planet start positions to 1st predicted flight be more or less similar profit. and all has in more or less equal ability to land on not heavy planet to build new EMC in 1st fly.
+ because if some player possible to land on only heavy G>~1.5 planets this cause big score impact from start. 
+
 
 ### flight HUD panel.
 
@@ -360,3 +364,7 @@ add short help drawer on hover bribe button to explain how work bribe, corruptio
 
 ## bribe button
 it should be visible while ship landed until take bribe, then show again after visit ANOTHER planet
+
+## deferred
+casual mode - refit at any planet else at HQ
+

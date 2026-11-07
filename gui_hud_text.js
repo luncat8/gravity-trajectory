@@ -314,7 +314,7 @@ function updateLiveHud() {
 function setLaunchState(blocked, exitWarning) {
 	if (canImpulse()) {
 		/* the impulse loop is pause-first: the context button only offers the
-		 * burn while it is armed; pause / resume has its own button and Space */
+		 * burn while it is armed; pause / resume uses the footer clock and Space */
 		const ship = activeCareer().ship;
 		const usedKg = burnArmed
 			? OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg) : 0;
@@ -325,10 +325,10 @@ function setLaunchState(blocked, exitWarning) {
 			? (warnExit ? 'burn · leaves map · ' : 'burn · Δv ') +
 				burnDv.toFixed(1) + ' px/s (−' + usedKg.toFixed(1) + ' kg · ' +
 				costText(usedKg * GravityGame.fuelPrice(activeCareer())) + ')'
-			: burnPaused ? 'burn … drag from the ship' : 'coasting · ' +
+			: isBurnPaused() ? 'burn … drag from the ship' : 'coasting · ' +
 				Math.sqrt(cargoSim.cargo.vx * cargoSim.cargo.vx +
 					cargoSim.cargo.vy * cargoSim.cargo.vy).toFixed(1) + ' px/s';
-		const state = 1024 + (burnPaused ? 2048 : 0) + (burnArmed ? 4096 : 0) +
+		const state = 1024 + (isBurnPaused() ? 2048 : 0) + (burnArmed ? 4096 : 0) +
 			(burnAiming ? 8192 : 0) + (warnExit ? 2 : 0);
 		if (state === launchState && text === launchNote) return;
 		launchState = state;
@@ -342,9 +342,9 @@ function setLaunchState(blocked, exitWarning) {
 			? 'Execute impulse burn and resume flight (Enter) · Space / resume drops the arm'
 			: burnAiming
 			? 'Release the drag to arm this burn'
-			: burnPaused
+			: isBurnPaused()
 			? 'Drag from the paused ship to aim a burn, or press Space / resume to coast on'
-			: 'Press Space / P to pause the flight and aim an impulse burn';
+			: 'Click the footer time button or press Space / P to pause and aim an impulse burn';
 		return;
 	}
 	if (turret.pending) {
@@ -545,7 +545,8 @@ function statusText() {
 	}
 	if (burnAiming) return 'aiming impulse · Δv ' + burnDv.toFixed(1) + ' px/s';
 	if (burnArmed) return 'burn armed · Δv ' + burnDv.toFixed(1) + ' px/s';
-	if (burnPaused) return 'flight paused · drag the ship for impulse';
+	if (isBurnPaused()) return 'flight paused · drag the ship for impulse';
+	if (careerRule() && careerPaused && sim.status === STATUS_FLYING) return 'flight paused · clock paused';
 	if (aiming) return whoPrefix + 'aiming ' + planetName(aimBody);
 	if (armed) return whoPrefix + 'armed · ' + planetName(aimBody);
 	if (sim.status === STATUS_FLYING) {

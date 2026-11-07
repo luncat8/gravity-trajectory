@@ -449,10 +449,6 @@ function stepGame(now, dt) {
 		}
 		return;
 	}
-	if (burnPaused || burnAiming) {
-		playAcc = 0;
-		return;
-	}
 	let scale = playScale() * (replay.on ? REPLAY_SPEEDS[replay.speed] : 1);
 	if (scale > PLAY_MAX) scale = PLAY_MAX;
 	playAcc += dt * scale;

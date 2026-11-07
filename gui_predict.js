@@ -307,8 +307,8 @@ function refreshCareerClockUi() {
 		careerClockBtn.textContent = careerPaused ? '▶ time' : '❚❚ time';
 		careerClockBtn.classList.toggle('on', career && careerPaused);
 		careerClockBtn.title = careerPaused
-			? 'career world clock is paused — click to run time (pads charge, rivals fly, visit profits grow)'
-			: 'career world clock is running — click to pause time and aim in peace';
+			? 'career world clock is paused — click or press Space / P to resume; an armed burn is cancelled'
+			: 'career world clock is running — click or press Space / P to pause and aim in peace';
 	}
 	if (careerPauseLandLabelEl) careerPauseLandLabelEl.hidden = !career;
 	if (careerPauseLandEl) careerPauseLandEl.checked = pauseOnLanding;
@@ -317,6 +317,10 @@ function refreshCareerClockUi() {
 function setCareerPaused(next) {
 	if (careerPaused === next) return;
 	careerPaused = next;
+	if (!next) clearBurnAim();
+	dirty = true;
+	refreshAimLabel();
+	launchState = -1;
 	playAcc = 0;
 	if (next) careerPauseNow = performance.now();
 	if (scene.setFrozen) scene.setFrozen(careerRule() && next);

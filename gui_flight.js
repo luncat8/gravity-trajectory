@@ -12,7 +12,6 @@
 
 const flightHudEl = $('flightHud');
 const flightStateEl = $('flightState');
-const flightPauseBtn = $('flightPauseBtn');
 const flightShipTagEl = $('flightShipTag');
 const flightSpeedEl = $('flightSpeed');
 const flightTimeEl = $('flightTime');
@@ -238,7 +237,7 @@ function flightStateText() {
 	if (careerRule() && activeCareer().ended !== GravityGame.CAREER_OPEN) return 'career over';
 	if (burnArmed) return 'burn armed';
 	if (burnAiming) return 'aiming impulse';
-	if (burnPaused) return 'flight paused';
+	if (careerRule() && careerPaused && cargoSim.status === STATUS_FLYING) return 'flight paused';
 	if (cargoSim.status === STATUS_FLYING) return 'coasting';
 	if (game.on && playerIsBot()) return 'bot flying';
 	if (careerRule()) {
@@ -287,16 +286,6 @@ function updateFlightHud() {
 	if (engineText !== flightHud.engine) {
 		flightHud.engine = engineText;
 		if (flightEngineEl) flightEngineEl.textContent = engineText;
-	}
-	if (flightPauseBtn) {
-		const pausable = canImpulse();
-		flightPauseBtn.hidden = !pausable;
-		flightPauseBtn.disabled = !pausable;
-		flightPauseBtn.textContent = burnPaused ? 'resume' : 'pause';
-		flightPauseBtn.classList.toggle('on', burnPaused);
-		flightPauseBtn.title = burnPaused
-			? 'resume the coast · an armed burn is dropped (Space / P)'
-			: 'pause the flight to aim an impulse burn (Space / P)';
 	}
 	if (flightShipTagEl) {
 		const tag = ship ? ship.mass.toFixed(1) + ' t' : flying ? 'coasting' : 'one ship';

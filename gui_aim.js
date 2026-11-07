@@ -220,29 +220,19 @@ function canImpulse() {
 		cargoSim.burnLimit() > 0;
 }
 
+function isBurnPaused() {
+	return careerPaused && canImpulse();
+}
+
 function clearBurnAim() {
-	burnPaused = false;
 	burnAiming = false;
 	burnArmed = false;
 	savedBurnArmed = false;
 }
 
 function setBurnPaused(next) {
-	if (next) {
-		if (!canImpulse()) return false;
-		burnPaused = true;
-		playAcc = 0;
-		dirty = true;
-		launchState = -1;
-		hudAt = -Infinity;
-		return true;
-	}
-	clearBurnAim();
-	playAcc = 0;
-	dirty = true;
-	refreshAimLabel();
-	launchState = -1;
-	hudAt = -Infinity;
+	if (next && !canImpulse()) return false;
+	setCareerPaused(next);
 	return true;
 }
 
@@ -291,7 +281,7 @@ function placeBurnGrip() {
 /* the burn press is taken only on a paused flight: a flying ship is still a
  * moving target, so a press there belongs to the planets underneath */
 function beginBurnPress(event, wx, wy) {
-	if (!canImpulse() || !burnPaused) return false;
+	if (!isBurnPaused()) return false;
 	lastWX = wx;
 	lastWY = wy;
 	pressClientX = event.clientX;
@@ -303,7 +293,7 @@ function beginBurnPress(event, wx, wy) {
 }
 
 function takeOverBurnAim() {
-	if (!canImpulse() || !burnPaused) return;
+	if (!isBurnPaused()) return;
 	savedBurnArmed = burnArmed;
 	savedBurnAngle = burnAngle;
 	savedBurnDv = burnDv;
@@ -333,10 +323,7 @@ function executeBurn() {
 	if (game.shots.length > 0) {
 		game.shots[game.shots.length - 1].burns.push(GravityGame.createBurn(step, angleU, dvU));
 	}
-	clearBurnAim();
-	playAcc = 0;
-	dirty = true;
-	launchState = -1;
+	setCareerPaused(false);
 	const remDv = OrbitTech.impulseDeltaV(ship.fuelKg, ship.engine, ship.mass, ship.fuelKg);
 	careerNotice('burned Δv ' + dv.toFixed(1) + ' px/s (−' + used.toFixed(1) + ' kg) · fuel ' +
 		ship.fuelKg.toFixed(1) + ' kg · replacement ' + costText(used * GravityGame.fuelPrice(game.career)) +
@@ -345,20 +332,16 @@ function executeBurn() {
 	return true;
 }
 
-/* Space / P and the flight hud's pause button: pausing keeps an arm, resuming
- * drops it, so an armed burn never survives a coast */
+/* The footer and keyboard both control the shared career clock. */
 function toggleFlightPause() {
-	if (canImpulse()) return setBurnPaused(!burnPaused);
-	if (careerRule() && cargoSim.status === STATUS_FLYING) {
-		careerNotice(game.career.ship.engine ? 'fuel tank empty' : 'no impulse engine fitted · fit one in the shop');
-	}
-	return false;
+	if (!careerRule() || replay.on) return false;
+	setCareerPaused(!careerPaused);
+	return true;
 }
 
 function launchShot() {
 	if (canImpulse()) {
 		if (burnArmed) executeBurn();
-		else if (!burnPaused) toggleFlightPause();
 		return;
 	}
 	if (routeRule() && game.on) return;
@@ -480,7 +463,7 @@ function hudPadPress(event) {
 	if (node.closest && node.closest('button, input, select, label, textarea, summary, .scoreEntry')) return false;
 	const wx = worldX(event.clientX);
 	const wy = worldY(event.clientY);
-	if (canImpulse() && burnPaused && shipAt(wx, wy)) return true;
+	if (isBurnPaused() && shipAt(wx, wy)) return true;
 	const planet = planetAt(wx, wy);
 	return planet >= 0 && canAimFrom(planet);
 }
@@ -490,7 +473,7 @@ function onPointerDown(event) {
 	if (event.button !== 0 || (event.target !== tradeCanvas && !hudPadPress(event))) return;
 	const wx = worldX(event.clientX);
 	const wy = worldY(event.clientY);
-	if (canImpulse() && burnPaused && shipAt(wx, wy)) {
+	if (isBurnPaused() && shipAt(wx, wy)) {
 		if (beginBurnPress(event, wx, wy)) return;
 	}
 	const planet = planetAt(wx, wy);

@@ -496,7 +496,7 @@ function drawCargo(now) {
 	const x = cargoSim.cargo.x;
 	const y = cargoSim.cargo.y;
 	if (cargoSim.status === STATUS_FLYING) {
-		if (burnPaused) {
+		if (isBurnPaused()) {
 			const holdPulse = 0.5 + 0.5 * Math.sin(now * 0.006);
 			ctx.beginPath();
 			ctx.arc(x, y, (8 + holdPulse * 3) * px, 0, TAU);

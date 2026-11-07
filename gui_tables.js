@@ -273,6 +273,6 @@ const RULE_HELP = {
 			'pays the price back in money per world second, a rail always with the battery that fills it. ' +
 			'The career runs on the world clock; pause on landing holds it still. Evacuation to HQ costs ' +
 			GravityGame.CAREER.evacFee.toFixed(2) + '.',
-		controls: 'Wait charges pads. Fuel is bought or converted from your own pad battery; tanks never refill for free. With an impulse engine and fuel, use Space / P or drag the ship in flight to aim a burn; a bot flying your company burns on its own.'
+		controls: 'Wait charges pads. Fuel is bought or converted from your own pad battery; tanks never refill for free. With an impulse engine and fuel, pause time with Space / P or the footer time button, then drag the ship to aim a burn; a bot flying your company burns on its own.'
 	}
 };

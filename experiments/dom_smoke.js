@@ -2148,7 +2148,7 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	bEnv.runFrames(6, 16.7);
 	check(bSim.status === pageSim.STATUS_FLYING && bSim.liveSteps > 0, 'career ship in flight');
 	/* a flying ship is not a handle: pressing it aims nothing and does not pause */
-	check(!bUi.get('flightPauseBtn').hidden && bUi.get('flightPauseBtn').textContent === 'pause' &&
+	check(!bUi.has('flightPauseBtn') && !bScene.careerPaused() &&
 		bUi.get('flightSpeed').textContent.endsWith(' px/s') &&
 		bUi.get('flightTime').textContent.includes(' s · '),
 		'flight hud reads live speed and flight time: ' + bUi.get('flightSpeed').textContent +
@@ -2159,14 +2159,14 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 		bSim.liveSteps > 0 && bSim.status === pageSim.STATUS_FLYING,
 		'pressing the flying ship must aim nothing: drag from a paused ship only');
 
-	/* Space pauses flight at exact step boundary */
-	bEnv.fireWindow('keydown', { code: 'Space', key: ' ', target: { tagName: 'BODY' }, preventDefault() {} });
+	/* The footer freezes the same world and flight clock used by Space. */
+	bEnv.click('careerClock');
 	bEnv.runFrames(1, 16.7);
 	const pausedSteps = bSim.liveSteps;
 	const pausedClock = bScene.game.clockSteps;
 	bEnv.runFrames(5, 16.7);
-	check(bScene.burnPaused() && bSim.liveSteps === pausedSteps &&
-		bScene.game.clockSteps === pausedClock,
+	check(bScene.careerPaused() && bScene.burnPaused() && bSim.liveSteps === pausedSteps &&
+		bScene.game.clockSteps === pausedClock && bUi.get('careerClock').textContent === '▶ time',
 		'paused flight freezes liveSteps and clockSteps');
 
 	/* drag burn vector from ship, trim +5%, Escape disarms, re-drag + Enter executes burn */
@@ -2193,17 +2193,18 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	bEnv.dragBurn(-1.15, wantDv);
 	bEnv.runFrames(2, 16.7);
 	check(bScene.burnState().armed, 're-drag after Escape armed the burn again');
-	bEnv.click('flightPauseBtn');
+	bEnv.click('careerClock');
 	bEnv.runFrames(2, 16.7);
-	check(!bScene.burnPaused() && !bScene.burnState().armed &&
-		bUi.get('flightPauseBtn').textContent === 'pause',
-		'resuming from the flight hud drops the armed burn');
+	check(!bScene.careerPaused() && !bScene.burnPaused() && !bScene.burnState().armed &&
+		bUi.get('careerClock').textContent === '❚❚ time',
+		'resuming from the footer drops the armed burn');
 
 	bEnv.fireWindow('keydown', { code: 'Space', key: ' ', target: { tagName: 'BODY' }, preventDefault() {} });
 	bEnv.runFrames(1, 16.7);
 	const repausedSteps = bSim.liveSteps;
 	bEnv.runFrames(3, 16.7);
-	check(bScene.burnPaused() && bSim.liveSteps === repausedSteps,
+	check(bScene.careerPaused() && bScene.burnPaused() && bSim.liveSteps === repausedSteps &&
+		bUi.get('careerClock').textContent === '▶ time',
 		'the pause button and Space reach the same pause');
 	bEnv.dragBurn(-1.15, wantDv);
 	bEnv.runFrames(2, 16.7);
@@ -2213,7 +2214,7 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	const expectedRemSteps = bSim.predSteps;
 	bEnv.fireWindow('keydown', { code: 'Enter', key: 'Enter', target: { tagName: 'BODY' }, preventDefault() {} });
 	const fuelAfterBurn = bCareer2.ship.fuelKg;
-	check(!bScene.burnPaused() && bCareer2.burns === 1 && fuelAfterBurn < 90 &&
+	check(!bScene.careerPaused() && !bScene.burnPaused() && bUi.get('careerClock').textContent === '❚❚ time' && bCareer2.burns === 1 && fuelAfterBurn < 90 &&
 		bScene.game.shots[0].burns.length === 1 &&
 		bScene.game.shots[0].burns[0].step === burnStep &&
 		bUi.get('careerPad').innerHTML.includes(fuelAfterBurn.toFixed(1) + ' / 90 kg') &&
@@ -2242,9 +2243,9 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 		'a landed ship with no drive reads as such: ' + hudUi.get('flightState').textContent +
 		' / ' + hudUi.get('flightEngine').textContent);
 	check(hudUi.get('flightRefuelRow').hidden && hudUi.get('flightFuelRow').hidden &&
-		hudUi.get('flightPauseBtn').hidden && !hudUi.get('flightQuestGroup').hidden &&
+		!hudUi.has('flightPauseBtn') && !hudUi.get('flightQuestGroup').hidden &&
 		hudUi.get('flightQuests').innerHTML.includes('no contract open'),
-		'the fuel row and the pause button need a drive; the work rows always list');
+		'the fuel row needs a drive; the work rows always list');
 	check(hudUi.get('flightState').textContent !== 'coasting' &&
 		hudUi.get('flightActionTag').textContent === 'enter',
 		'the action caption names the shortcut: ' + hudUi.get('flightActionTag').textContent);
@@ -2290,7 +2291,7 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	hudEnv.runFrames(2, 16.0);
 	check(hudCareer.ship.engine !== null && hudCareer.ship.tank.fuelCap > 0 &&
 		!hudUi.get('flightRefuelRow').hidden && !hudUi.get('flightFuelRow').hidden &&
-		hudUi.get('flightPauseBtn').hidden,
+		!hudUi.has('flightPauseBtn'),
 		'fitting an engine and a tank must reveal the fuel row; a landed ship has nothing to pause');
 	check(hudUi.get('flightRefuel').textContent.includes('refuel +10') &&
 		hudUi.get('flightRefuel').title.includes('kg fuel'),
@@ -2880,7 +2881,7 @@ function protoOf(career, family, id) {
 		footMatch[1].includes('id="flightFuel"') &&
 		footMatch[1].includes('id="flightRefuel"') &&
 		footMatch[1].includes('id="flightQuests"') &&
-		footMatch[1].includes('id="flightPauseBtn"'),
+		!footMatch[1].includes('id="flightPauseBtn"'),
 		'the flight hud must own the ship facts, the fuel row, the work rows and the action row');
 
 	const cEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
