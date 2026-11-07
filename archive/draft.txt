@@ -360,3 +360,7 @@ add short help drawer on hover bribe button to explain how work bribe, corruptio
 
 ## bribe button
 it should be visible while ship landed until take bribe, then show again after visit ANOTHER planet
+
+## deferred
+casual mode - refit at any planet else at HQ
+
