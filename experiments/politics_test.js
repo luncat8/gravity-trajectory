@@ -146,7 +146,7 @@ check('a visit takes 0.2 rot off and stamps the clock; the A.R.F. and Capital st
 	Game.harvestPlanet(ledger, w.market, planet, 100);
 	assert.ok(Math.abs(w.market.corruption[planet] - 4.8) < 1e-9, 'visit decay');
 	assert.strictEqual(w.market.lastVisitStep[planet], 100);
-	assert.strictEqual(w.market.bribeVisitStep[planet], -1);
+	assert.ok(Game.bribeWindowOpen(w.market, planet), 'the visit leaves the bribe window shut');
 	w.market.corruption[w.market.capitalPlanet] = 9;
 	w.market.corruption[w.market.arfPlanet] = 9;
 	Game.harvestPlanet(ledger, w.market, w.market.capitalPlanet, 200);
@@ -238,6 +238,29 @@ check('a bribe pays the visit value scaled by rot, rots the planet and is refuse
 	/* a new visit opens a new window */
 	w.market.lastVisitStep[planet] = 105;
 	assert.strictEqual(Game.bribeRefusal(career, w.market, planet), '');
+});
+
+/* the window is a state of the visit, not of the price: a company sitting on
+ * its start pad (no landing ever stamped it) can be bribed, once, and even a
+ * bribe below the bot's floor closes it until the next landing */
+check('the bribe window opens on any visit, including an unstamped start pad', () => {
+	const w = setup(23);
+	const career = w.career;
+	const planet = normalPlanet(w);
+	career.at = planet;
+	w.market.visitPay[planet] = 2;
+	w.market.corruption[planet] = 1;
+	assert.ok(Game.bribeWindowOpen(w.market, planet), 'a never-visited world starts shut');
+	const purse = career.ledger.purse;
+	const small = Game.acceptBribe(career, w.market, w.sim, planet, 0);
+	assert.ok(small.ok, 'a small bribe was refused: ' + small.reason);
+	assert.ok(small.amount < Econ.BRIBE_MIN, 'fixture is no longer a small bribe: ' + small.amount);
+	assert.ok(career.ledger.purse > purse, 'a small bribe paid nothing');
+	assert.ok(!Game.bribeWindowOpen(w.market, planet), 'a start-pad bribe can be taken twice');
+	const twice = Game.acceptBribe(career, w.market, w.sim, planet, 0);
+	assert.ok(!twice.ok && twice.reason.indexOf('already bribed') >= 0, twice.reason);
+	Game.harvestPlanet(career.ledger, w.market, planet, 10);
+	assert.ok(Game.bribeWindowOpen(w.market, planet), 'a landing did not reopen the window');
 });
 
 check('the Capital, A.R.F. and a rebellion take no bribes', () => {

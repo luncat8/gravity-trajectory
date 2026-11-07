@@ -241,14 +241,49 @@ prediction buffers round away exactly the differences being measured.
 	`P4 · EMC-2 · 118 px/s`.
 - Mass is a purchase too: a heavier part buys nothing a lighter one does not, so
 	every ship-part row prints what it adds (`8 → 24 t`, `40 → 90 kg`) **and** the
-	HQ pad cap it costs (`88 → 78 px/s`, from the same `speedLimit` the launch
-	button gates on). Without the second number the shop sells a downforce the
-	player only discovers when the rail refuses to fire.
+	pad cap the ship is standing on (`88 → 78 px/s`, from the same `speedLimit`
+	the launch button gates on). Without the second number the shop sells a
+	downforce the player only discovers when the rail refuses to fire.
+- A gate the shop re-derives is a gate that drifts. The pad block used to compare
+	`bribeVisitStep[planet] === lastVisitStep[planet]` itself while the law behind
+	the button checked the same pair *with a `>= 0` guard added*: two readings of
+	one rule, and they disagree on a planet nobody has landed on yet (the ship's
+	own start pad), so the button hid while the rulers still owed a bribe and stayed
+	open after one had been paid. Export the predicate the law uses
+	(`bribeWindowOpen`) and let the view call it; never copy the comparison.
+- A sentinel in an `Int32Array` clock must not be able to collide with a real
+	stamp. `bribeVisitStep` used `-1` while `lastVisitStep` was filled with
+	`-initSteps()` — a number that reaches `-1` as soon as `initSec` is one `DT`,
+	an accident waiting one constant change away. Keep the "no visit yet" marker
+	far outside the reachable range (`BRIBE_OPEN = -0x7fffffff`) and the equality
+	test needs no extra guard.
+- A button that says "the state is not met" should not be *hidden*: hide it only
+	where the rule has nothing to do at all (the Capital, an A.R.F. world), and
+	else print it priced (`+0.00`, dim, explained). A missing control reads as a
+	bug; a dim one reads as a rule.
 - Make refits reversible in the data, not in the markup: own every bought part
 	(`career.owned[id]`), charge only for a part that is not owned, and price the
 	starter fit as owned from the first frame — then "buy up" and "fit back down"
 	are the same call and cannot drift. Offer the *heaviest owned tier below* the
 	fitted one so a three-tier table still has a one-click way back.
+
+## repricing a ladder from a complaint
+
+- "this upgrade is too weak" is a complaint about a **step**, not about a top
+	value: the player buys the difference between the rung they own and the next
+	one. So express the change as `new = kept + factor × (old − kept)` — the base
+	record stays and every step above it scales — which is one formula, keeps the
+	ladder monotone and never quietly rebuys the starter gear. The lab's ladder
+	card does exactly this for every table, build-only kinds included.
+- Judge the result on `step ÷ Δprice`, per rung, not on the new numbers. A rung
+	whose ratio falls below the rung under it is a step nobody takes; a mild
+	decline is a normal convex ladder, a ratio under half is where it stops
+	paying off. Compare the top rung's price against the gear it feeds (a panel
+	priced above the rail it charges is dead gear), and remember the price is
+	*derived* from the spec here, so ×2 of a gain is not ×2 of a cost.
+- Paste specs, never derived prices: `orbit_tech.js` recomputes `buildCost` from
+	the table through `priceStock`, so a patch that carried prices would freeze a
+	number the fee knobs are supposed to move.
 
 ## an armed drag input outlives its range
 

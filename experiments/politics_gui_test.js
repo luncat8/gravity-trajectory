@@ -111,7 +111,7 @@ check(!drawerHtml().includes('data-act="bribe"'),
 	'the pad block still offers a bribe after the bribe: ' + drawerHtml());
 /* a new visit opens it again: the harvest clears the marker the drawer reads */
 Game.harvestPlanet(career.ledger, market, planet, game.clockSteps);
-check(market.bribeVisitStep[planet] === -1, 'a visit does not reopen the bribe window');
+check(Game.bribeWindowOpen(market, planet), 'a visit does not reopen the bribe window');
 market.visitPay[planet] = 2;
 context.refreshCareerPanel();
 html = drawerHtml();

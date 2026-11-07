@@ -122,5 +122,48 @@ ok('full ladder keeps plot', el('plotWrap').innerHTML.includes('<svg'));
 fire('change', { dataset: { knob: 'buildShare' }, value: '0.1', type: 'number' });
 ok('build share rewrites blob', el('copySettings').value.includes('buildShare: 0.100'));
 
+/* --- the ladder gain card: reprice a table, build-only kinds included --- */
+
+ok('ladder starts on panels', el('ladderRow').innerHTML.includes('data-ladder-kind="panel"'));
+ok('ladder lists every rung', el('ladderBlock').innerHTML.includes('SP-4'));
+ok('ladder names the kept base', el('ladderBlock').innerHTML.includes('kept base'));
+ok('ladder prices a rung per money', el('ladderBlock').innerHTML.includes('per 1.00'));
+ok('ladder says a build-only table has no fee',
+	el('ladderBlock').innerHTML.includes('build-only'));
+ok('ladder patch is a paste-ready table', el('copyLadder').value.includes("const PANELS = ["));
+ok('ladder patch keeps the digits of the shipped table',
+	el('copyLadder').value.includes("id: 'SP-1', tier: 1, power: 1.0"));
+
+/* gain ×2 moves every step above the kept rung and leaves the rung itself be */
+fire('input', { dataset: { ladder: 'gain' }, type: 'range', value: '2' });
+ok('gain ×2 doubles the step', el('copyLadder').value.includes("power: 6.6"));
+ok('gain ×2 keeps the base rung', el('copyLadder').value.includes("id: 'SP-1', tier: 1, power: 1.0"));
+ok('gain ×2 reports the drift against the shipped table',
+	el('ladderBlock').innerHTML.includes('write the patch'));
+ok('the shipped table is not mutated', sandbox.OrbitTech.PANELS[1].power === 3.8);
+
+/* gain ×0 collapses the ladder: every moved rung buys nothing over the base */
+fire('change', { dataset: { ladder: 'gain' }, type: 'number', value: '0' });
+ok('a flat ladder is called out', el('ladderBlock').innerHTML.includes('flat step: SP-2'));
+fire('click', { closest: () => ({ dataset: { act: 'ladderReset' } }) });
+ok('reset restores the shipped specs', el('copyLadder').value.includes('gain ×1.00'));
+ok('reset puts the doubled step back to the table value',
+	el('copyLadder').value.includes("power: 3.8"));
+
+/* another kind, and its tier-0 record survives the patch */
+fire('click', { closest: () => ({ dataset: { act: 'ladder', ladderKind: 'hold' } }) });
+ok('ladder follows the kind', el('ladderBlock').innerHTML.includes('HOLD-24'));
+ok('the patch keeps the free tier-0 record', el('copyLadder').value.includes("'HOLD-0'"));
+ok('the keep select lists the rungs', el('ladderKnob').innerHTML.includes('HOLD-8 · capacity 8'));
+fire('change', { dataset: { ladder: 'keep' }, type: 'select-one', value: '1' });
+ok('a rung below the kept one is marked, not moved',
+	el('ladderBlock').innerHTML.includes('kept below'));
+ok('the kept rung is the selected one', el('ladderBlock').innerHTML.includes('kept base'));
+
+/* the fee knobs drive the ladder too: the build cost is the same formula */
+const patchBeforeK = el('copyLadder').value;
+fire('input', { dataset: { knob: 'k', min: '0', max: '12' }, value: '1000', type: 'range' });
+ok('the ladder re-prices with the fee knobs', el('copyLadder').value !== patchBeforeK);
+
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

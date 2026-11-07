@@ -71,6 +71,18 @@ svg text { font: 10px ui-monospace, Menlo, Consolas, monospace; }
 .tierLabelUnknown { fill: var(--dim); font-size: 8px; }
 .draftMarker { fill: none; stroke: #ffffff; stroke-width: 1.5; }
 .draftCallout { fill: var(--accent2); font-size: 9px; }
+.labHelp { margin: 14px 18px 0; }
+.labHelp summary { color: var(--accent); cursor: pointer; font-size: 13px; }
+.helpCols { display: flex; gap: 18px; flex-wrap: wrap; }
+.helpCols > div { flex: 1 1 380px; }
+.labHelp p, .labHelp li { color: var(--dim); font-size: 12px; margin: 4px 0; }
+.labHelp b { color: var(--text); font-weight: normal; }
+.labHelp code { color: var(--accent2); }
+.labHelp ol { margin: 4px 0 0; padding-left: 16px; }
+select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; font: inherit; font-size: 11px; }
+.ladderRow { display: flex; gap: 6px; margin: 6px 0 8px; flex-wrap: wrap; }
+.ladderNote { color: var(--dim); font-size: 11px; margin-top: 6px; }
+.ladderWarn { color: var(--warn); }
 .rungMarker { fill: var(--bg); stroke: var(--accent); stroke-width: 1.2; }
 .rungLabel { fill: var(--accent); font-size: 8px; }
 .forceLine { stroke: #ffffff; stroke-width: 1; stroke-dasharray: 2 2; opacity: 0.55; }
@@ -80,9 +92,48 @@ svg text { font: 10px ui-monospace, Menlo, Consolas, monospace; }
 <body>
 <header>
 	<h1>gravity-trajectory · balance lab</h1>
-	<div class="sub">one screen: sci fee surface with the ladder tiers, live build cost and balance sliders — move a slider and watch the plot and the costs change. open <a href="index.html">index.html</a> → career → science for the in-game panel. file:// friendly, no build.</div>
+	<div class="sub">one screen: sci fee surface with the ladder tiers, live build cost and balance sliders — move a slider and watch the plot and the costs change; the <b>ladder gain</b> card reprices a whole table, build-only kinds included. open <a href="index.html">index.html</a> → career → science for the in-game panel. file:// friendly, no build.</div>
 	<div class="familyRow" id="familyRow"></div>
 </header>
+<details class="card labHelp" id="labHelp">
+	<summary>how to read this screen · worked case: “the solar panel upgrade is too weak — double the gain, keep the base level”</summary>
+	<div class="helpCols">
+		<div>
+			<div class="groupTitle">the blocks</div>
+			<p><b>plot</b> — the research fee surface of the selected family: the dashed box is the range science has already
+			reached, green dots are known tiers, the white cross is your draft point, the circle on the ladder line is the rung
+			it maps to. <b>draft sliders</b> — the spec you are considering. <b>result</b> — its fee, build cost and merit, plus
+			the fee <i>at par</i>. <b>balance sliders</b> — the law itself: frontier, metric scale, merit curves, k, base price,
+			build share. <b>build cost · ladder</b> — every rung of the table, live against shipped; the <b>Δ</b> column is the
+			drift you have to write back into <code>orbit_tech.js</code>. <b>copy</b> — the same settings as text.</p>
+		</div>
+		<div>
+			<div class="groupTitle">the case, step by step</div>
+			<ol>
+				<li>A panel is only ever felt as a wait, so &ldquo;too weak&rdquo; is about the <i>step</i> between rungs next to
+				its price, never about the top number. The shipped SP-1..SP-4 are exactly one move of this kind: <code>keep
+				SP-1</code> plus <code>gain &times;2</code> on the old 1.0 / 2.4 / 4.5 / 7.5 kW ladder made today's
+				1.0 / 3.8 / 8.0 / 14.0 &mdash; 1.90 kWh per wait and a 24 min BAT-1 refill at SP-2, where it was 1.20 and 38.</li>
+				<li>Open <b>ladder gain</b> and pick <code>panel</code>. It covers the tables the plot cannot: panel and hold are
+				build-only, so the only price they have is the build cost &mdash; no research family, no science panel.</li>
+				<li>Leave <code>keep = SP-1</code> (that is the &ldquo;base level same&rdquo; of the request) and drag
+				<code>gain &times;</code>: every rung above the kept one moves by that multiple of its distance from it, so
+				another &times;2 here reads 1.0 / 6.6 / 15.0 / 27.0 kW &mdash; 3.30 kWh per wait at SP-2, a 14 min BAT-1.</li>
+				<li>What to look for: <b>value</b> is what a rung is worth in the unit the shop prints; <b>step for &Delta;price</b>
+				is that value over the rung under it against what it costs extra; <b>per 1.00</b> is the ladder's own value curve.
+				A <b>!</b> rung buys nothing over the one under it, so it is never taken; a <b>&darr;</b> rung pays less per money
+				than the rung under it &mdash; mild at the top is normal, under half (<b>thin</b>) is the ladder quitting there.
+				Then <b>build</b>: the price is derived from the spec, so a second &times;2 of gain prices SP-4 at 27.83, 3.5&times;
+				the EMC-2 rail it feeds. If a pad never earns that back, drop the factor or the build share, not the gain.</li>
+				<li>Ship it: <code>copy table patch</code> is the new <code>const PANELS = [&hellip;]</code> with specs only,
+				because the game prices them; <code>copy final settings</code> is the knob block for
+				<code>orbit_science.js</code>, only if the fee moved too. Then <code>node experiments/balance_lab_test.js</code>,
+				<code>node experiments/career_bench.js</code> &mdash; and refresh the numbers the shop quotes in
+				<code>README.md</code>.</li>
+			</ol>
+		</div>
+	</div>
+</details>
 <main>
 	<div class="labGrid">
 		<div class="labLeft">
@@ -97,6 +148,13 @@ svg text { font: 10px ui-monospace, Menlo, Consolas, monospace; }
 			</section>
 			<section class="card">
 				<div id="buildBlock"></div>
+			</section>
+			<section class="card">
+				<div class="copyHead"><span>ladder gain · reprice a whole table</span>
+					<button class="miniBtn" data-act="copyLadder">copy table patch</button></div>
+				<div class="ladderRow" id="ladderRow"></div>
+				<div id="ladderKnob"></div>
+				<div id="ladderBlock"></div>
 			</section>
 		</div>
 		<section class="card controlCard">
@@ -120,6 +178,10 @@ svg text { font: 10px ui-monospace, Menlo, Consolas, monospace; }
 			<div>
 				<div class="copyHead"><span>build table</span></div>
 				<textarea id="copyBuild" rows="5" readonly></textarea>
+			</div>
+			<div>
+				<div class="copyHead"><span>ladder patch</span></div>
+				<textarea id="copyLadder" rows="5" readonly></textarea>
 			</div>
 		</div>
 	</section>
@@ -938,6 +1000,255 @@ function createPricing() {
 		return s;
 	}
 
+	/* --- ladder gain · reprice a whole table ---------------------------- */
+	/* The lab's answer to “this upgrade is too weak, double the gain, keep the
+	 * base”: every rung above the kept one moves by `gain ×` its distance from
+	 * the kept rung, so the starter record stays and what changes is the *step*
+	 * — the only thing a player feels. It runs on every table, build-only
+	 * kinds (panel, hold) included, which is why it is not part of the plot. */
+	var LADDER_KINDS = ['catapult', 'panel', 'battery', 'hold', 'engine', 'tank'];
+	var LADDER_TABLE = {
+		catapult: 'CATAPULTS', panel: 'PANELS', battery: 'BATTERIES',
+		hold: 'HOLDS', engine: 'ENGINES', tank: 'TANKS'
+	};
+	/* mirrors gui_tables.js CAREER_WAIT_MIN: the world minutes one wait buys */
+	var LADDER_WAIT_SEC = 30 * 60;
+	var ladder = { kind: 'panel', keep: 0, gain: 1 };
+
+	/* the biggest single burn on a dry 10 t hull plus the fitted gear: the
+	 * lesser of what the fuel buys and what the thrust can deliver over BURN_SEC */
+	function ladderBurn(engine, tank, partMass) {
+		var mass = OrbitTech.SHIP_DRY_MASS + partMass + tank.emptyMass;
+		var byFuel = OrbitTech.impulseDeltaV(tank.fuelCap, engine, mass, tank.fuelCap);
+		var byThrust = OrbitTech.burnMaxDeltaV(engine, mass, tank.fuelCap);
+		return byFuel < byThrust ? byFuel : byThrust;
+	}
+
+	/* what one rung is worth, in the unit the shop prints for it */
+	var LADDER_EFFECT = {
+		catapult: { unit: 'px/s rail cap · 10 t ship', of: item =>
+			OrbitTech.maxSpeed(OrbitTech.SHIP_DRY_MASS, item, 1) },
+		panel: { unit: 'kWh per 30 min wait · full sun', of: item =>
+			OrbitTech.solarCharge(item, 1, LADDER_WAIT_SEC) },
+		battery: { unit: 'kWh stored', of: item => item.capacity },
+		hold: { unit: 't of cargo', of: item => item.capacity },
+		engine: { unit: 'px/s one burn · FT-1', of: item =>
+			ladderBurn(item, OrbitTech.TANKS[1], item.mass) },
+		tank: { unit: 'px/s one burn · IMP-1', of: item =>
+			ladderBurn(OrbitTech.ENGINES[0], item, OrbitTech.ENGINES[0].mass) }
+	};
+
+	/* the table's rungs: tier 0 is the free “none” record, never a rung */
+	function ladderRungs(kind) {
+		var table = OrbitTech.TABLES[kind];
+		var rungs = [];
+		for (var i = 0; i < table.length; i++) {
+			if (table[i].tier > 0) rungs.push(table[i]);
+		}
+		return rungs;
+	}
+	function ladderKeep(rungs) {
+		return Math.max(0, Math.min(ladder.keep, rungs.length - 1));
+	}
+	/* the shipped record with its primary axis moved off the kept rung; the
+	 * other axes ride along as shipped, and the value is rounded to the digits
+	 * the table itself is written with */
+	function ladderRung(kind, item, idx, keep, keepValue) {
+		var out = {};
+		for (var key in item) out[key] = item[key];
+		if (idx <= keep) return out;
+		var axis = PRIMARY_KEY[kind];
+		out[axis] = Number((keepValue + ladder.gain * (item[axis] - keepValue))
+			.toFixed(AXES[kind][0].digits));
+		return out;
+	}
+
+	/* one row per table record: the previewed spec, what it is worth, the step
+	 * from the rung under it and the price that step costs */
+	function ladderRows() {
+		var kind = ladder.kind;
+		var table = OrbitTech.TABLES[kind];
+		var rungs = ladderRungs(kind);
+		var keep = ladderKeep(rungs);
+		var keepValue = rungs[keep][PRIMARY_KEY[kind]];
+		var effect = LADDER_EFFECT[kind];
+		var rows = [];
+		var prev = null;
+		var rung = 0;
+		for (var i = 0; i < table.length; i++) {
+			var shipped = table[i];
+			var isRung = shipped.tier > 0;
+			var item = isRung ? ladderRung(kind, shipped, rung, keep, keepValue) : shipped;
+			if (isRung) rung++;
+			var value = isRung ? effect.of(item) : 0;
+			var build = isRung ? pricing.buildCost(kind, FAMILY_PARAMS[kind](item), K, originHulls) : 0;
+			var rungOf = rung - 1;
+			var row = {
+				id: shipped.id, item: item, shipped: shipped, rung: isRung,
+				keep: isRung && rungOf === keep,
+				below: isRung && rungOf < keep,
+				above: isRung && rungOf > keep,
+				moved: isRung && item[PRIMARY_KEY[kind]] !== shipped[PRIMARY_KEY[kind]],
+				value: value, build: build,
+				step: isRung && prev && rungOf > keep ? value - prev.value : 0,
+				cost: isRung && prev && rungOf > keep ? build - prev.build : 0
+			};
+			row.per = row.cost > 1e-9 ? row.step / row.cost : Infinity;
+			rows.push(row);
+			if (isRung) prev = row;
+		}
+		return rows;
+	}
+
+	function ladderRowHtml() {
+		var s = '';
+		for (var i = 0; i < LADDER_KINDS.length; i++) {
+			var kind = LADDER_KINDS[i];
+			s += '<button class="miniBtn' + (kind === ladder.kind ? ' on' : '') +
+				'" data-act="ladder" data-ladder-kind="' + kind + '">' + kind + '</button>';
+		}
+		return s;
+	}
+
+	function ladderKnobHtml() {
+		var kind = ladder.kind;
+		var rungs = ladderRungs(kind);
+		var keep = ladderKeep(rungs);
+		var s = '<div class="knobRow"><span class="knobLabel">gain × of every step</span>' +
+			'<input type="range" min="0.05" max="4" step="0.05" value="' + ladder.gain +
+			'" data-ladder="gain">' +
+			'<input type="number" min="0" step="0.05" value="' + ladder.gain.toFixed(2) +
+			'" data-ladder="gain"></div>';
+		s += '<div class="knobRow"><span class="knobLabel">keep this rung as it is</span>' +
+			'<select data-ladder="keep">';
+		for (var i = 0; i < rungs.length; i++) {
+			s += '<option value="' + i + '"' + (i === keep ? ' selected' : '') + '>' + rungs[i].id +
+				' · ' + PRIMARY_KEY[kind] + ' ' + rungs[i][PRIMARY_KEY[kind]] + '</option>';
+		}
+		return s + '</select><button class="miniBtn" data-act="ladderReset">reset</button></div>';
+	}
+
+	/* the one line a balance pass reads out of the table: what the curve does,
+	 * and which rung, if any, nobody would ever buy */
+	function ladderVerdict(flatList, thinList, falls, steps) {
+		if (flatList !== '') return '<span class="ladderWarn">flat step: ' + flatList +
+			'</span> — the rung below already buys as much, so this one is never taken';
+		if (thinList !== '') return '<span class="ladderWarn">thin: ' + thinList +
+			'</span> — under half the value per money of the rung below, so the ladder stops paying off there';
+		if (falls === 0) return 'every rung buys at least as much per 1.00 as the one under it';
+		return 'value per money falls at ' + falls + ' of ' + steps +
+			' steps — normal on a convex ladder, as long as the top rung still earns back';
+	}
+
+	function ladderBlockHtml() {
+		var kind = ladder.kind;
+		var effect = LADDER_EFFECT[kind];
+		var axis = PRIMARY_KEY[kind];
+		var digits = AXES[kind][0].digits;
+		var rows = ladderRows();
+		var flatList = '';
+		var thinList = '';
+		var falls = 0;
+		var steps = 0;
+		var drift = 0;
+		var total = 0;
+		var kept = '';
+		var prevMoved = null;
+		var s = '<table class="buildTable"><thead><tr><th>rung</th><th>' + axis + '</th><th>' +
+			effect.unit + '</th><th>step for Δprice</th><th>per 1.00</th><th>build</th></tr></thead><tbody>';
+		for (var i = 0; i < rows.length; i++) {
+			var r = rows[i];
+			if (!r.rung) continue;
+			var delta = r.build - r.shipped.buildCost;
+			drift += delta;
+			total += r.build;
+			if (r.keep) kept = r.id;
+			var spec = r.moved ? r.shipped[axis] + ' → <b>' + r.item[axis].toFixed(digits) + '</b>'
+				: String(r.shipped[axis]);
+			/* a rung the gain touched is `above` the kept one: its step is what
+			 * the player climbs, and a step of nothing is the flat rung nobody
+			 * buys — a rung below the kept one is only printed as it is */
+			var moved = r.above;
+			var step = moved
+				? '<span class="' + (r.step <= 0 ? 'ladderWarn' : 'up') + '">' + (r.step > 0 ? '+' : '') +
+					r.step.toFixed(2) + '</span> <span class="dim">for ' +
+					(r.cost > 0.005 ? '+' + r.cost.toFixed(2) : r.cost < -0.005
+						? r.cost.toFixed(2) : '0.00') + '</span>'
+				: '<span class="dim">' + (r.keep ? 'kept base' : 'kept below') + '</span>';
+			/* a rung is *flat* when it buys nothing over the one below it and
+			 * *thin* when it buys at half the value per money: only a flat step
+			 * is never taken, a thin one is a ladder that stops paying off */
+			var flat = moved && r.step <= 1e-9;
+			var thin = moved && !flat && prevMoved && r.per < prevMoved.per * 0.5;
+			var worse = moved && prevMoved && r.per < prevMoved.per;
+			if (moved) steps += 1;
+			if (worse) falls += 1;
+			if (flat) flatList += (flatList ? ', ' : '') + r.id;
+			if (thin) thinList += (thinList ? ', ' : '') + r.id;
+			if (moved) prevMoved = r;
+			s += '<tr' + (r.keep ? ' class="draftRow"' : '') + '><td>' + r.id +
+				(thin || flat ? ' <span class="ladderWarn">!</span>' : worse ? ' <span class="dim">↓</span>' : '') + '</td>' +
+				'<td class="dim">' + spec + '</td><td>' + r.value.toFixed(2) + '</td>' +
+				'<td>' + step + '</td><td>' + (moved ? (Number.isFinite(r.per) ? r.per.toFixed(2)
+					: r.step > 0 ? '∞' : '0') : '') + '</td>' +
+				'<td>' + r.build.toFixed(2) + ' <span class="dim">shipped ' + r.shipped.buildCost.toFixed(2) +
+				' · Δ' + (delta > 0.005 ? '+' : '') + delta.toFixed(2) + '</span></td></tr>';
+		}
+		s += '</tbody></table>';
+		s += '<div class="ladderNote">gain ×' + ladder.gain.toFixed(2) + ' above <b>' + kept +
+			'</b> · the whole ladder costs ' + total.toFixed(2) + ' · Δ ' + (drift > 0 ? '+' : '') +
+			drift.toFixed(2) + ' against the shipped table' + (Math.abs(drift) < 0.005
+				? ' — the knobs and <code>orbit_tech.js</code> agree'
+				: ' — write the patch, or a fee knob moved') + '</div>';
+		s += '<div class="ladderNote">' + ladderVerdict(flatList, thinList, falls, steps) +
+			(kind === 'panel' || kind === 'hold'
+				? ' · build-only: no research family and no fee, the build cost is the whole price' : '') +
+			'</div>';
+		s += '<div class="ladderNote dim">read: <b>step</b> is what the player feels and <b>per 1.00</b> is ' +
+			'that step over the price it costs — the two columns that decide whether a ladder is “too weak”; ' +
+			'<b>!</b> marks a step nobody would take, <b>↓</b> one that pays less than the rung under it. ' +
+			'The gain is linear in the spec, so ×2 of a step is not ×2 of the price: watch <b>build</b> too. ' +
+			'Copy the patch into <code>orbit_tech.js</code> — specs only, the game prices them.</div>';
+		return s;
+	}
+
+	/* the table as `orbit_tech.js` wants it: every record, specs only, because
+	 * `priceStock` derives each build cost from them at load; the moved axis
+	 * keeps the digits the table is written with, so the paste is a clean diff */
+	function ladderPatchText() {
+		var kind = ladder.kind;
+		var rows = ladderRows();
+		var effect = LADDER_EFFECT[kind];
+		var axis = PRIMARY_KEY[kind];
+		var digits = AXES[kind][0].digits;
+		var kept = rows.filter(r => r.keep).map(r => r.id).join('');
+		var lines = ['/* ' + kind + ' ladder · gain ×' + ladder.gain.toFixed(2) +
+			' of every step above ' + kept + ' (balance_lab; build cost is derived from the spec) */',
+			'const ' + LADDER_TABLE[kind] + ' = ['];
+		var values = [];
+		var costs = [];
+		for (var i = 0; i < rows.length; i++) {
+			var item = rows[i].item;
+			var fields = [];
+			for (var key in item) {
+				if (key === 'buildCost') continue;
+				var v = item[key];
+				if (typeof v === 'string') v = '\'' + v + '\'';
+				else if (key === axis) v = v.toFixed(digits);
+				fields.push(key + ': ' + v);
+			}
+			lines.push('\t{ ' + fields.join(', ') + ' }' + (i + 1 < rows.length ? ',' : ''));
+			if (rows[i].rung) {
+				values.push(rows[i].value.toFixed(2));
+				costs.push(rows[i].build.toFixed(2));
+			}
+		}
+		lines.push('];');
+		lines.push('/* ' + effect.unit + ': ' + values.join(' / ') +
+			' · build: ' + costs.join(' / ') + ' */');
+		return lines.join('\n');
+	}
+
 	/* --- copy ------------------------------------------------------------ */
 	function familyKnobsBlock(kind) {
 		var axes = AXES[kind];
@@ -1008,6 +1319,7 @@ function createPricing() {
 		$('copySettings').value = settingsBlob();
 		$('copyFees').value = feeLinesText();
 		$('copyBuild').value = buildTableText();
+		$('copyLadder').value = ladderPatchText();
 	}
 
 	/* --- copy / toast ---------------------------------------------------- */
@@ -1048,6 +1360,15 @@ function createPricing() {
 	function renderBuild() {
 		$('buildBlock').innerHTML = buildBlockHtml();
 	}
+	function renderLadderRow() {
+		$('ladderRow').innerHTML = ladderRowHtml();
+	}
+	function renderLadderKnob() {
+		$('ladderKnob').innerHTML = ladderKnobHtml();
+	}
+	function renderLadder() {
+		$('ladderBlock').innerHTML = ladderBlockHtml();
+	}
 	function renderDraft() {
 		$('draftBlock').innerHTML = draftBlockHtml();
 	}
@@ -1066,6 +1387,9 @@ function createPricing() {
 		renderResult();
 		renderKnobs();
 		renderBuild();
+		renderLadderRow();
+		renderLadderKnob();
+		renderLadder();
 		renderCopy();
 	}
 	/* everything except the knob block: used while dragging a knob range so
@@ -1074,6 +1398,7 @@ function createPricing() {
 		renderPlot();
 		renderResult();
 		renderBuild();
+		renderLadder();
 		renderCopy();
 	}
 
@@ -1129,12 +1454,34 @@ function createPricing() {
 			copyText(feeLinesText(), 'fee lines', 'copyFees');
 		} else if (act === 'copyBuild') {
 			copyText(buildTableText(), 'build table', 'copyBuild');
+		} else if (act === 'copyLadder') {
+			copyText(ladderPatchText(), 'ladder patch', 'copyLadder');
+		} else if (act === 'ladder') {
+			ladder.kind = el.dataset.ladderKind;
+			ladder.keep = 0;
+			renderLadderRow();
+			renderLadderKnob();
+			renderLadder();
+			renderCopy();
+		} else if (act === 'ladderReset') {
+			ladder.gain = 1;
+			ladder.keep = 0;
+			renderLadderKnob();
+			renderLadder();
+			renderCopy();
 		}
 	});
 
 	document.addEventListener('change', function (ev) {
 		var el = ev.target;
 		if (el.dataset.knob && (el.type === 'number' || el.type === 'checkbox')) onKnob(el);
+		if (el.dataset.ladder) {
+			if (el.dataset.ladder === 'gain') ladder.gain = Number(el.value) || 0;
+			else ladder.keep = Number(el.value) || 0;
+			renderLadderKnob();
+			renderLadder();
+			renderCopy();
+		}
 		if (el.dataset.act === 'fullladder') {
 			fullLadder = el.checked;
 			resetHull();
@@ -1144,6 +1491,15 @@ function createPricing() {
 	document.addEventListener('input', function (ev) {
 		var el = ev.target;
 		if (el.dataset.knob && el.type === 'range') { onKnob(el); return; }
+		if (el.dataset.ladder === 'gain' && el.type === 'range') {
+			/* the ladder card only: the slider being dragged is not rebuilt */
+			ladder.gain = Number(el.value) || 0;
+			var num = document.querySelector('input[type=number][data-ladder="gain"]');
+			if (num) num.value = ladder.gain.toFixed(2);
+			renderLadder();
+			renderCopy();
+			return;
+		}
 		if (el.dataset.spec) {
 			var parts = el.dataset.spec.split(':');
 			var fam = parts[0];
@@ -1165,6 +1521,17 @@ function createPricing() {
 	/* init */
 	techHull = seedHull(false);
 	researchHull = seedHull(false);
+	/* the help is for whoever opens the lab next: it stays open until it has
+	 * been read once, then keeps out of the way (`file://` has no storage
+	 * promise to await, so a throw simply means "always show it") */
+	var helpEl = $('labHelp');
+	if (helpEl) {
+		try { helpEl.open = localStorage.getItem('labHelpRead') !== '1'; } catch (e) { helpEl.open = true; }
+		helpEl.addEventListener('toggle', function () {
+			if (helpEl.open) return;
+			try { localStorage.setItem('labHelpRead', '1'); } catch (e) {}
+		});
+	}
 	renderAll();
 })();
 </script>

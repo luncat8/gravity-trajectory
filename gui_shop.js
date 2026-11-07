@@ -300,29 +300,34 @@ function politicsBlockHtml(career) {
 	} else if (market.seized[at]) {
 		html += '<div class="careerLine warn">seized rail · commercial fee · no building here</div>';
 	}
-	const bribed = market.bribeVisitStep[at] === market.lastVisitStep[at];
+	/* The bribe is a state, not a price: the button stands on the pad block
+	 * from the landing until this visit has carried one, and the next landing
+	 * (here or anywhere else) opens it again. The once-per-visit test is the
+	 * law's own `bribeWindowOpen`, never a second copy of the stamp
+	 * comparison, so a hidden button and an owed bribe cannot disagree. */
+	const bribed = !GravityGame.bribeWindowOpen(market, at);
 	const rot = Math.round(market.corruption[at]);
 	html += '<div class="careerLine dim">corruption ' + rot + '%' +
 		(bribed ? ' · bribed this visit' : '') + '</div>';
-	/* the bribe is taken once per visit: after that the rot line says so and
-	 * the next landing opens it again */
-	if (career.ended !== GravityGame.CAREER_OPEN || bribed) return html;
+	if (bribed || career.ended !== GravityGame.CAREER_OPEN) return html;
 	const amount = GravityGame.bribeAmount(market, at, game.clockSteps);
-	const owes = amount > OrbitEcon.BRIBE_MIN;
 	const reason = GravityGame.bribeRefusal(career, market, at);
-	/* the button shows the rule, not just the price: it is on the pad block
-	 * from the landing, priced even when the lord owes nothing, so a player
-	 * never wonders where the bribe went */
+	const offered = amount > 0;
+	/* the button shows the rule, not just the price, and it is priced even
+	 * when the lord owes nothing, so a player never wonders where the bribe
+	 * went; only a bot walks away from a small one — that is advice here */
 	const title = reason !== '' ? reason
-		: owes ? 'the rulers pay for this visit\u2019s silence: its value \u00d7 the rot \u00d7 ' +
+		: offered ? 'the rulers pay for this visit\u2019s silence: its value \u00d7 the rot \u00d7 ' +
 			OrbitEcon.BRIBE_VALUE_COEF.toFixed(0) + ' · corruption +' +
-			OrbitEcon.bribeCorruption(amount).toFixed(2) + ' · high rot can end in arrest'
-		: 'nothing to take: the visit value \u00d7 rot is under ' + OrbitEcon.BRIBE_MIN.toFixed(2) +
-			' · a clean or poor world pays nothing, and rot grows while it is left alone';
+			OrbitEcon.bribeCorruption(amount).toFixed(2) +
+			(amount > OrbitEcon.BRIBE_MIN ? '' : ' · a bot leaves anything under ' +
+				OrbitEcon.BRIBE_MIN.toFixed(2) + ' alone') + ' · high rot can end in arrest'
+		: 'nothing to take: the visit value \u00d7 rot pays 0.00 · a clean or poor world ' +
+			'owes nothing, and rot grows while the ship is left alone';
 	html += '<div class="careerRow"><span class="careerBtns">' +
-		'<button class="miniBtn" data-act="bribe"' + (reason !== '' || !owes ? ' disabled' : '') +
+		'<button class="miniBtn" data-act="bribe"' + (reason !== '' || !offered ? ' disabled' : '') +
 		' title="' + title + '">bribe rulers · +' + amount.toFixed(2) + '</button></span></div>';
-	if (reason === '' && !owes) {
+	if (reason === '' && !offered) {
 		html += '<div class="careerLine dim">nothing to take yet · the bribe is the visit value \u00d7 rot</div>';
 	}
 	return html;

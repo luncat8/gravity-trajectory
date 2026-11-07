@@ -291,6 +291,11 @@
 		return Math.round(MONEY.initSec / GravitySim.DT);
 	}
 
+	/* the `bribeVisitStep` marker of a visit that has not carried a bribe: far
+	 * below any step a run holds, so it can never equal a visit stamp by
+	 * accident and open the window shut, or shut one still open */
+	const BRIBE_OPEN = -0x7fffffff;
+
 	/*
 	 * Shared per-planet state for a game run; player and rivals harvest from
 	 * the same table. The political half (0.5.12) is the same kind of shared
@@ -335,7 +340,7 @@
 		market.arfPlanet = -1;
 		market.capitalPlanet = -1;
 		market.corruption.fill(0);
-		market.bribeVisitStep.fill(-1);
+		market.bribeVisitStep.fill(BRIBE_OPEN);
 		market.rebel.fill(0);
 		market.seized.fill(0);
 		market.rebelSinceStep.fill(0);
@@ -474,7 +479,7 @@
 			market.corruption[planet] = OrbitEcon.clampCorruption(
 				market.corruption[planet] - OrbitEcon.CORRUPTION_VISIT_DECAY);
 		}
-		market.bribeVisitStep[planet] = -1;
+		market.bribeVisitStep[planet] = BRIBE_OPEN;
 		ledger.purse += pay;
 		ledger.shotGain += pay;
 		ledger.shotVisits += 1;
@@ -1671,6 +1676,15 @@
 	 */
 	const BRIBE = { ok: false, amount: 0, corruption: 0, arrested: false, reason: '' };
 
+	/* The once-per-visit window: shut the moment the visit being stamped has
+	 * carried a bribe, opened again by the next landing (`harvestPlanet`) on
+	 * any planet. A world nobody has visited yet carries `BRIBE_OPEN`, so the
+	 * offer stands from the start. The drawer asks this rather than comparing
+	 * the two stamps itself, so the button and the law cannot drift apart. */
+	function bribeWindowOpen(market, planet) {
+		return market.bribeVisitStep[planet] !== market.lastVisitStep[planet];
+	}
+
 	function bribeRefusal(career, market, planet) {
 		if (!career || career.ended !== CAREER_OPEN) return 'career over';
 		if (!market || !market.galaxy) return 'no politics here';
@@ -1679,8 +1693,7 @@
 		if (planet === market.capitalPlanet) return 'the Empire does not deal';
 		if (planet === market.arfPlanet) return 'A.R.F. takes no bribes';
 		if (market.rebel[planet]) return 'rebels hold the planet';
-		const stamped = market.lastVisitStep[planet];
-		if (stamped >= 0 && market.bribeVisitStep[planet] === stamped) return 'already bribed this visit';
+		if (!bribeWindowOpen(market, planet)) return 'already bribed this visit';
 		return '';
 	}
 
@@ -2497,8 +2510,8 @@
 		createBurn, encodeBurn, createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
 		initSteps, createMarket, resetMarket, planetProfit, planetProfitAt, applyMarketSpecials,
 		bindRun, politicsSeconds, rebelRail, setPolitics, politicsOn,
-		advancePolitics, acceptBribe, bribeAmount, arrestCareer, pacifyPlanet, seizePlanet, clearMedicalCargo,
-		bribeRefusal, coveredPlanets, BRIBE,
+		advancePolitics, acceptBribe, bribeAmount, bribeWindowOpen, bribeRefusal,
+		arrestCareer, pacifyPlanet, seizePlanet, clearMedicalCargo, coveredPlanets, BRIBE,
 		createLedger, resetLedger, beginFlight, stepHarvest, harvestPlanet, endFlight,
 		estimateProfit, estimateProfitLog, compareScores,
 		setSpecialPlanets, specialPlanets: specialPlanetsOn,
