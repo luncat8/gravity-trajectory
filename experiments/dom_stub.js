@@ -313,16 +313,15 @@ function loadPage(options = {}) {
 			fire(windowListeners, 'pointermove', { clientX: gripX, clientY: gripY, target: canvas, shiftKey: false });
 			fire(windowListeners, 'pointerup', { clientX: gripX, clientY: gripY, target: canvas, shiftKey: false });
 		},
-		dragBurn(angle, dv) {
+		dragBurn(angle, dv, hitOffset = 0, pointerTarget = elements.get('c')) {
 			const origin = env.shipScreen();
-			const canvas = elements.get('c');
 			const sim = context.GravityScene.sim;
 			const reach = sim.gripLength(dv, sim.burnLimit(), 0) * context.OrbitScene.view.scale;
 			const gripX = origin.x + Math.cos(angle) * reach;
 			const gripY = origin.y + Math.sin(angle) * reach;
-			fire(windowListeners, 'pointerdown', { button: 0, clientX: origin.x, clientY: origin.y, target: canvas, shiftKey: false });
-			fire(windowListeners, 'pointermove', { clientX: gripX, clientY: gripY, target: canvas, shiftKey: false });
-			fire(windowListeners, 'pointerup', { clientX: gripX, clientY: gripY, target: canvas, shiftKey: false });
+			fire(windowListeners, 'pointerdown', { button: 0, clientX: origin.x + hitOffset, clientY: origin.y, target: pointerTarget, shiftKey: false });
+			fire(windowListeners, 'pointermove', { clientX: gripX, clientY: gripY, target: pointerTarget, shiftKey: false });
+			fire(windowListeners, 'pointerup', { clientX: gripX, clientY: gripY, target: pointerTarget, shiftKey: false });
 		},
 		/* stepMs: number, or function(frameIndex) for variable cadence */
 		runFrames(count, stepMs) {

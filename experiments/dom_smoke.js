@@ -2169,10 +2169,10 @@ console.log('career:', 'HQ P' + career.hq, 'Â· limit', limit.toFixed(0), 'px/s Â
 		bScene.game.clockSteps === pausedClock,
 		'paused flight freezes liveSteps and clockSteps');
 
-	/* drag burn vector from ship, trim +5%, Escape disarms, re-drag + Enter executes burn */
+	/* hit the paused ship through the drawing layer, off-center, as well as the field canvas */
 	const maxBurn = bSim.burnLimit();
 	const wantDv = maxBurn * 0.6;
-	bEnv.dragBurn(-1.15, wantDv);
+	bEnv.dragBurn(-1.15, wantDv, 22, bUi.get('g'));
 	bEnv.runFrames(2, 16.7);
 	const armedBurn1 = bScene.burnState();
 	check(armedBurn1.armed && Math.abs(armedBurn1.dv - wantDv) < 0.05 &&

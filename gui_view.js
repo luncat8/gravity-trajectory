@@ -224,7 +224,7 @@ function bodyAt(wx, wy) {
 
 function shipAt(wx, wy) {
 	if (cargoSim.status !== STATUS_FLYING) return false;
-	const reach = HIT_PX / view.scale;
+	const reach = SHIP_HIT_PX / view.scale;
 	const dx = cargoSim.cargo.x - wx;
 	const dy = cargoSim.cargo.y - wy;
 	return dx * dx + dy * dy <= reach * reach;

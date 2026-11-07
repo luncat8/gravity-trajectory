@@ -499,7 +499,7 @@ function drawCargo(now) {
 		if (burnPaused) {
 			const holdPulse = 0.5 + 0.5 * Math.sin(now * 0.006);
 			ctx.beginPath();
-			ctx.arc(x, y, (8 + holdPulse * 3) * px, 0, TAU);
+			ctx.arc(x, y, (SHIP_HIT_PX - 4 + holdPulse * 2) * px, 0, TAU);
 			ctx.strokeStyle = ICE;
 			ctx.lineWidth = 1.25 * px;
 			ctx.stroke();

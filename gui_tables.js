@@ -186,6 +186,7 @@ const PHASE_GAP = 2;
 const SEED_RANGE = 999999;
 const PORT_R = 6;
 const HIT_PX = 18;
+const SHIP_HIT_PX = 26;
 const HUD_INTERVAL = 100;
 const FPS_FRAME_MS = 1000 / 60;
 const FPS_DROP_MS = 17.5;

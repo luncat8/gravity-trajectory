@@ -487,12 +487,15 @@ function hudPadPress(event) {
 
 function onPointerDown(event) {
 	sound.unlock();
-	if (event.button !== 0 || (event.target !== tradeCanvas && !hudPadPress(event))) return;
+	if (event.button !== 0) return;
 	const wx = worldX(event.clientX);
 	const wy = worldY(event.clientY);
-	if (canImpulse() && burnPaused && shipAt(wx, wy)) {
-		if (beginBurnPress(event, wx, wy)) return;
-	}
+	const target = event.target;
+	const control = target && target.closest &&
+		target.closest('button, input, select, label, textarea, summary, .scoreEntry');
+	const pausedShip = !control && canImpulse() && burnPaused && shipAt(wx, wy);
+	if (target !== tradeCanvas && !hudPadPress(event) && !pausedShip) return;
+	if (pausedShip && beginBurnPress(event, wx, wy)) return;
 	const planet = planetAt(wx, wy);
 	const body = bodyAt(wx, wy);
 	if (planet < 0 && body < 0) {
