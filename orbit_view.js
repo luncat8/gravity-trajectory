@@ -116,6 +116,28 @@
 	}
 	function setPlanetMask(mask) {
 		planetMask = mask || null;
+		/* the trade world must not colonise a planet the run does not play */
+		if (sim.setPlanetMask) sim.setPlanetMask(planetMask);
+	}
+
+	/*
+	 * Ship and builder records are indexed by PORT, not by planet, and the
+	 * trade world keeps colonising past the planet subset a run plays. A route
+	 * whose origin or destination planet is not in play must not be drawn: the
+	 * old code tested the port id against the planet mask, so port 3 (on a
+	 * hidden planet) passed for planet 3 and its straight trace hung in space
+	 * from a station that is not on screen. `portInPlay` is the one test.
+	 */
+	function portInPlay(port) {
+		if (port < 0 || port >= sim.portCount) return false;
+		return planetInPlay(sim.portPlanet[port]);
+	}
+
+	/* a ship is drawn only when both ends of its current plan are on screen */
+	function shipInPlay(ship) {
+		if (!portInPlay(sim.shipHome[ship])) return false;
+		if (sim.shipState[ship] === 0) return portInPlay(sim.shipDock[ship]);
+		return portInPlay(sim.shipTarget[ship]);
 	}
 
 	const sim = new OrbitSim(7);
@@ -642,7 +664,8 @@
 		ctx.lineWidth = 1;
 		for (let p = 0; p < sim.portCount; p++) {
 			if (sim.builderActive[p] === 0) continue;
-			if (!planetInPlay(sim.portPlanet[p])) continue;
+			if (!portInPlay(p)) continue;
+			if (!planetInPlay(sim.builderTarget[p])) continue;
 			const span = sim.builderArrive[p] - sim.builderDepart[p];
 			let f = span > 0 ? (sim.t - sim.builderDepart[p]) / span : 1;
 			if (f < 0) f = 0;
@@ -683,7 +706,7 @@
 	function drawRoutes() {
 		for (let ship = 0; ship < sim.shipCount; ship++) {
 			if (sim.shipState[ship] === 0) continue;
-			if (!planetInPlay(sim.shipHome[ship])) continue;
+			if (!shipInPlay(ship)) continue;
 			const good = sim.shipGood[ship];
 			const colour = good === NO_GOOD ? '#8aa6bd' : GOOD_COLORS[good];
 			ctx.beginPath();
@@ -763,7 +786,7 @@
 
 	function drawShips() {
 		for (let ship = 0; ship < sim.shipCount; ship++) {
-			if (!planetInPlay(sim.shipHome[ship])) continue;
+			if (!shipInPlay(ship)) continue;
 			const x = shipPX[ship];
 			const y = shipPY[ship];
 			const angle = shipAngle[ship];

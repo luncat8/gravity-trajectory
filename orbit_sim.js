@@ -75,6 +75,10 @@
 	 * is identical to a new Sim; holders of array references must re-read them.
 	 */
 	Sim.prototype.reset = function (seed) {
+		/* the run's universe filter belongs to the player, not to the world:
+		 * rebuilding the world for a new seed keeps it (applyPlanetUniverse
+		 * re-applies it anyway, and a stale mask would hide new colonies) */
+		const savedMask = this.planetMask;
 		this.seed = seed || 1;
 		this.rand = seedRandom(this.seed);
 		this.t = 0;
@@ -84,6 +88,8 @@
 		this.shipCount = 0;
 		this.tradePlanetLimit = OrbitWorld.DEFAULT_PLANETS;
 		this.planetEmpty = this.tradePlanetLimit;
+		/* the run's in-play subset; null = every enabled planet trades */
+		this.planetMask = null;
 		this.reserved = 0;
 		this.delivered = 0;
 		this.coloniesBuilt = 0;
@@ -153,6 +159,7 @@
 		for (let p = 0; p < INITIAL_PORTS; p++) {
 			this.portNext[p] = 10 + this.rand() * 30;
 		}
+		this.planetMask = savedMask;
 	};
 
 	Sim.prototype.econY = function (time) {
@@ -224,6 +231,8 @@
 
 	Sim.prototype.activatePort = function (planet, time) {
 		if (planet < 0 || planet >= PLANETS) return null;
+		/* never found a colony on a world the run does not play */
+		if (!this.planetInPlay(planet)) return null;
 		this.setPlanetLimit(planet + 1);
 		if (this.colonyOn[planet] !== NO_PORT) {
 			return this.colonies[this.colonyOn[planet]];
@@ -283,6 +292,7 @@
 	/* Found an outpost on a free planet (or return the existing colony). */
 	Sim.prototype.seedColony = function (planet, time) {
 		if (planet < 0 || planet >= PLANETS) return null;
+		if (!this.planetInPlay(planet)) return null;
 		if (this.colonyOn[planet] !== NO_PORT) {
 			return this.colonies[this.colonyOn[planet]];
 		}
@@ -297,102 +307,28 @@
 		if (port < 0 || port >= this.portCount) return;
 		const planet = this.portPlanet[port];
 		const colony = this.colonies[port];
-		if (this.builderActive[port] === 1) {
-			const bt = this.builderTarget[port];
-			if (this.planetState[bt] === 2) {
-				this.planetState[bt] = 0;
-				this.reserved -= 1;
-				this.planetEmpty += 1;
-			}
-			this.builderActive[port] = 0;
-		}
-		this.planetState[planet] = 0;
-		this.planetPort[planet] = NO_PORT;
-		this.colonyOn[planet] = NO_PORT;
-		this.planetEmpty += 1;
 		this.abandonEvents += 1;
 		this.pushLog(year, 'abandoned', planet,
 			(colony ? colony.name : 'planet ' + planet) + ' abandoned');
-
-		const last = this.portCount - 1;
-		/* Redirect any other ship that was docked at or flying to `port`. */
-		for (let s = 0; s <= last; s++) {
-			if (s === port) continue;
-			if (this.shipDock[s] === port) this.shipDock[s] = this.shipHome[s];
-			if (this.shipTarget[s] === port) {
-				this.shipTarget[s] = this.shipHome[s];
-				this.shipLeg[s] = 1;
-			}
-		}
-
-		/* Rewrite heap references for `port` (cancel) and `last` (compact). */
-		const kinds = this.events.kind;
-		const refs = this.events.ref;
-		for (let i = 0; i < this.events.size; i++) {
-			if (kinds[i] === KIND_TICK) continue;
-			if (refs[i] === port) refs[i] = NO_PORT;
-			else if (refs[i] === last) refs[i] = port;
-		}
-
-		if (port !== last) {
-			const movedPlanet = this.portPlanet[last];
-			this.portPlanet[port] = movedPlanet;
-			this.planetPort[movedPlanet] = port;
-			this.colonyOn[movedPlanet] = port;
-			this.portSpec[port] = this.portSpec[last];
-			this.portProgress[port] = this.portProgress[last];
-			this.portNext[port] = this.portNext[last];
-			this.portTrade[port] = this.portTrade[last];
-			this.portMigrants[port] = this.portMigrants[last];
-
-			this.builderActive[port] = this.builderActive[last];
-			this.builderTarget[port] = this.builderTarget[last];
-			this.builderStartX[port] = this.builderStartX[last];
-			this.builderStartY[port] = this.builderStartY[last];
-			this.builderEndX[port] = this.builderEndX[last];
-			this.builderEndY[port] = this.builderEndY[last];
-			this.builderDepart[port] = this.builderDepart[last];
-			this.builderArrive[port] = this.builderArrive[last];
-
-			this.shipHome[port] = port;
-			this.shipDock[port] = this.shipDock[last] === last ? port : this.shipDock[last];
-			this.shipTarget[port] = this.shipTarget[last] === last ? port : this.shipTarget[last];
-			this.shipLeg[port] = this.shipLeg[last];
-			this.shipState[port] = this.shipState[last];
-			this.shipGood[port] = this.shipGood[last];
-			this.shipAmount[port] = this.shipAmount[last];
-			this.shipDepart[port] = this.shipDepart[last];
-			this.shipArrive[port] = this.shipArrive[last];
-			this.shipStartX[port] = this.shipStartX[last];
-			this.shipStartY[port] = this.shipStartY[last];
-			this.shipAimX[port] = this.shipAimX[last];
-			this.shipAimY[port] = this.shipAimY[last];
-			this.shipSpeed[port] = this.shipSpeed[last];
-			this.shipDockAngle[port] = this.shipDockAngle[last];
-
-			this.colonies[port] = this.colonies[last];
-			this.colonies[port].idx = port;
-
-			for (let s = 0; s < last; s++) {
-				if (this.shipDock[s] === last) this.shipDock[s] = port;
-				if (this.shipTarget[s] === last) this.shipTarget[s] = port;
-			}
-		}
-
-		this.colonies.pop();
-		this.portCount = last;
-		this.shipCount = last;
+		this.dropPort(port);
 	};
 
 	Sim.prototype.refreshPartners = function () {
 		const active = this.portCount;
 		const n = this.partnerN;
 		for (let p = 0; p < active; p++) {
+			if (!this.portInPlay(p)) {
+				this.partnerCount[p] = 0;
+				const empty = p * MAX_LINKS;
+				for (let k = 0; k < MAX_LINKS; k++) this.partners[empty + k] = NO_PORT;
+				continue;
+			}
 			const px = this.portX(p, this.t);
 			const py = this.portY(p, this.t);
 			let count = 0;
 			for (let q = 0; q < active; q++) {
 				if (q === p) continue;
+				if (!this.planetInPlay(this.portPlanet[q])) continue;
 				const dx = px - this.portX(q, this.t);
 				const dy = py - this.portY(q, this.t);
 				const dist = dx * dx + dy * dy;
@@ -461,6 +397,7 @@
 		for (let k = 0; k < links; k++) {
 			const q = this.partners[partnerBase + k];
 			if (q === NO_PORT || q >= this.portCount) continue;
+			if (!this.portInPlay(q)) continue;
 			const dst = this.colonies[q];
 			if (!dst) continue;
 			const shortfall = OrbitEcon.goodShortfall(dst, good);
@@ -491,6 +428,7 @@
 		for (let k = 0; k < links; k++) {
 			const q = this.partners[partnerBase + k];
 			if (q === NO_PORT || q >= this.portCount) continue;
+			if (!this.portInPlay(q)) continue;
 			const dst = this.colonies[q];
 			if (!dst || dst.comfort < MIGRANT_COMFORT) continue;
 			const K = OrbitEcon.carryingCapacity(dst);
@@ -535,6 +473,7 @@
 	 */
 	Sim.prototype.load = function (ship, time) {
 		if (ship >= this.portCount) return;
+		if (!this.portInPlay(ship)) return;
 		const home = this.shipHome[ship];
 		const src = this.colonies[home];
 		if (!src) return;
@@ -566,6 +505,7 @@
 
 	Sim.prototype.arrive = function (ship, time) {
 		if (ship >= this.portCount) return;
+		if (!this.portInPlay(ship)) return;
 		const target = this.shipTarget[ship];
 		if (target >= this.portCount) return;
 		const dx = this.shipAimX[ship] - this.portX(target, time);
@@ -659,6 +599,10 @@
 
 	Sim.prototype.finishColony = function (port, time) {
 		if (port >= this.portCount) return;
+		if (!this.portInPlay(port)) {
+			this.cancelBuilder(port);
+			return;
+		}
 		const target = this.builderTarget[port];
 		this.builderActive[port] = 0;
 		this.activatePort(target, time);
@@ -666,13 +610,171 @@
 		this.refreshPartners();
 	};
 
-	/* Trade only considers extra worlds once they are enabled in the game. */
+	/*
+	 * Trade only considers planets in the run's enabled set once they are
+	 * enabled. Raising the count is a one-way door (a world once opened keeps
+	 * trading); `planetMask` is the player's universe filter, the same array the
+	 * gravity field and the drawing read, so a 13-planet career run does not
+	 * keep trading with the worlds it cannot see.
+	 */
 	Sim.prototype.setPlanetLimit = function (count) {
 		const limit = Math.min(PLANETS, Math.max(this.tradePlanetLimit, count));
 		for (let i = this.tradePlanetLimit; i < limit; i++) {
 			if (this.planetState[i] === 0) this.planetEmpty++;
 		}
 		this.tradePlanetLimit = limit;
+	};
+
+	/* the run's in-play planet subset; null trades every planet in the limit */
+	Sim.prototype.setPlanetMask = function (mask) {
+		this.planetMask = mask || null;
+		if (this.planetMask) this.retireHidden();
+	};
+
+	/* a planet the trade world may still touch: enabled and inside the subset */
+	Sim.prototype.planetInPlay = function (planet) {
+		if (planet < 0 || planet >= this.tradePlanetLimit) return false;
+		return !this.planetMask || this.planetMask[planet] !== 0;
+	};
+
+	/* a port whose own planet is still in play */
+	Sim.prototype.portInPlay = function (port) {
+		if (port < 0 || port >= this.portCount) return false;
+		return this.planetInPlay(this.portPlanet[port]);
+	};
+
+	/*
+	 * Close every colony and ship that sits on a planet outside the run. This is
+	 * what keeps the background animation honest: without it a narrower universe
+	 * left ports trading on invisible planets, and their traces were drawn from
+	 * stations that are not on screen. Nothing is refunded and no citizen moves
+	 * — the world simply stops trading there, as if the run never enabled it.
+	 */
+	Sim.prototype.retireHidden = function () {
+		let retired = 0;
+		for (let p = this.portCount - 1; p >= 0; p--) {
+			if (this.portInPlay(p)) continue;
+			this.retirePort(p);
+			retired += 1;
+		}
+		if (retired > 0) this.refreshPartners();
+		return retired;
+	};
+
+	Sim.prototype.retirePort = function (port) {
+		if (port < 0 || port >= this.portCount) return;
+		const planet = this.portPlanet[port];
+		this.pushLog(this.econY(), 'retired', planet,
+			'planet ' + planet + ' left the run · trade retired');
+		this.dropPort(port);
+	};
+
+	/* a builder that is still flying loses its target reservation */
+	Sim.prototype.cancelBuilder = function (port) {
+		if (this.builderActive[port] !== 1) return;
+		const target = this.builderTarget[port];
+		if (this.planetState[target] === 2) {
+			this.planetState[target] = 0;
+			this.reserved -= 1;
+			this.planetEmpty += 1;
+		}
+		this.builderActive[port] = 0;
+	};
+
+	/* park one ship at its own port with an empty hold */
+	Sim.prototype.cancelShip = function (port) {
+		this.shipState[port] = 0;
+		this.shipGood[port] = NO_GOOD;
+		this.shipAmount[port] = 0;
+		this.shipDock[port] = port;
+		this.shipTarget[port] = port;
+		this.shipLeg[port] = 0;
+	};
+
+	/*
+	 * Remove one port and compact the roster: the builder and ship go with it,
+	 * any other ship that was docked at or flying to it heads home, the event
+	 * heap is rewritten for the vacated index, and the last port's records move
+	 * into the hole. Starvation (`removePort`) and a shrinking universe
+	 * (`retirePort`) both end here, so there is one removal path to reason about.
+	 */
+	Sim.prototype.dropPort = function (port) {
+		if (port < 0 || port >= this.portCount) return;
+		const planet = this.portPlanet[port];
+		const last = this.portCount - 1;
+		this.cancelBuilder(port);
+		this.cancelShip(port);
+		/* Redirect any other ship that was docked at or flying to `port`. */
+		for (let s = 0; s <= last; s++) {
+			if (s === port) continue;
+			if (this.shipDock[s] === port) this.shipDock[s] = this.shipHome[s];
+			if (this.shipTarget[s] === port) {
+				this.shipTarget[s] = this.shipHome[s];
+				this.shipLeg[s] = 1;
+			}
+		}
+
+		/* Rewrite heap references for `port` (cancel) and `last` (compact). */
+		const kinds = this.events.kind;
+		const refs = this.events.ref;
+		for (let i = 0; i < this.events.size; i++) {
+			if (kinds[i] === KIND_TICK) continue;
+			if (refs[i] === port) refs[i] = NO_PORT;
+			else if (refs[i] === last) refs[i] = port;
+		}
+
+		if (port !== last) {
+			const movedPlanet = this.portPlanet[last];
+			this.portPlanet[port] = movedPlanet;
+			this.planetPort[movedPlanet] = port;
+			this.colonyOn[movedPlanet] = port;
+			this.portSpec[port] = this.portSpec[last];
+			this.portProgress[port] = this.portProgress[last];
+			this.portNext[port] = this.portNext[last];
+			this.portTrade[port] = this.portTrade[last];
+			this.portMigrants[port] = this.portMigrants[last];
+
+			this.builderActive[port] = this.builderActive[last];
+			this.builderTarget[port] = this.builderTarget[last];
+			this.builderStartX[port] = this.builderStartX[last];
+			this.builderStartY[port] = this.builderStartY[last];
+			this.builderEndX[port] = this.builderEndX[last];
+			this.builderEndY[port] = this.builderEndY[last];
+			this.builderDepart[port] = this.builderDepart[last];
+			this.builderArrive[port] = this.builderArrive[last];
+
+			this.shipHome[port] = port;
+			this.shipDock[port] = this.shipDock[last] === last ? port : this.shipDock[last];
+			this.shipTarget[port] = this.shipTarget[last] === last ? port : this.shipTarget[last];
+			this.shipLeg[port] = this.shipLeg[last];
+			this.shipState[port] = this.shipState[last];
+			this.shipGood[port] = this.shipGood[last];
+			this.shipAmount[port] = this.shipAmount[last];
+			this.shipDepart[port] = this.shipDepart[last];
+			this.shipArrive[port] = this.shipArrive[last];
+			this.shipStartX[port] = this.shipStartX[last];
+			this.shipStartY[port] = this.shipStartY[last];
+			this.shipAimX[port] = this.shipAimX[last];
+			this.shipAimY[port] = this.shipAimY[last];
+			this.shipSpeed[port] = this.shipSpeed[last];
+			this.shipDockAngle[port] = this.shipDockAngle[last];
+
+			this.colonies[port] = this.colonies[last];
+			this.colonies[port].idx = port;
+
+			for (let s = 0; s < last; s++) {
+				if (this.shipDock[s] === last) this.shipDock[s] = port;
+				if (this.shipTarget[s] === last) this.shipTarget[s] = port;
+			}
+		}
+
+		this.colonies.pop();
+		this.portCount = last;
+		this.shipCount = last;
+		this.planetState[planet] = 0;
+		this.planetPort[planet] = NO_PORT;
+		this.colonyOn[planet] = NO_PORT;
+		this.planetEmpty += 1;
 	};
 
 	/* Habitat-weighted target selection within EXPAND_RADIUS. */
@@ -684,6 +786,7 @@
 		const maxD2 = EXPAND_RADIUS * EXPAND_RADIUS;
 		for (let planet = 0; planet < this.tradePlanetLimit; planet++) {
 			if (this.planetState[planet] !== 0) continue;
+			if (!this.planetInPlay(planet)) continue;
 			if (this.planetHabitat[planet] < MIN_EXPAND_HABITAT) continue;
 			const dx = this.planetX[planet] - px;
 			const dy = this.planetY[planet] - py;
@@ -708,6 +811,7 @@
 		for (let p = 0; p < this.portCount; p++) {
 			const colony = this.colonies[p];
 			colony.corruption = corruption ? corruption[colony.planet] : 0;
+			if (!this.planetInPlay(colony.planet)) continue;
 			OrbitEcon.advanceColony(colony, toY, this.onColonyEvent);
 		}
 

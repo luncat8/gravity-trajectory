@@ -45,6 +45,9 @@ function syncPlanetStrengths() {
 
 /* push the current subset into the career, market, field, scene and bot */
 function applyPlanetUniverse() {
+	/* the trade world follows the run's subset: a 13-planet career does not
+	 * keep colonies alive on the 13 worlds the player cannot see */
+	tradeSim.setPlanetMask(planetMask);
 	tradeSim.setPlanetLimit(activePlanetExtent());
 	GravityGame.setCareerUniverse(game.career, planetMask, planetCount);
 	GravityGame.applyMarketUniverse(game.market, planetMask, planetCount);
