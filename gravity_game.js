@@ -788,6 +788,9 @@
 			seed: 0,
 			actors: [],
 			mapSeats: null,
+			/* safe first-flight pay the initial seating was balanced around; live
+			 * expansion uses the same target when choosing a new rival's world */
+			openingTargetPay: NaN,
 			period: new Float64Array(OrbitWorld.PLANETS),
 			phase: new Float64Array(OrbitWorld.PLANETS)
 		};
@@ -799,6 +802,7 @@
 		galaxy.seed = seed >>> 0;
 		galaxy.actors.length = 0;
 		galaxy.mapSeats = null;
+		galaxy.openingTargetPay = NaN;
 		for (let p = 0; p < OrbitWorld.PLANETS; p++) {
 			galaxy.period[p] = CAREER.turretMinSec + CAREER.turretSpanSec *
 				(OrbitWorld.hashBits(galaxy.seed, p, SALT_TURRET) / 4294967296);
@@ -2366,6 +2370,7 @@
 		const pools = startCandidatePools(world, mask, seatsWanted);
 		const forcedHomes = new Uint8Array(OrbitWorld.PLANETS);
 		let homes = null;
+		let openingStats = null;
 		if (seatsWanted <= 4 && count <= 26) {
 			/* Every candidate home is searched together and the sunlit planets are
 			 * only a tie-break. Filtering the search to sunlit homes used to throw
@@ -2376,6 +2381,7 @@
 				sourceSim, pools.length > 1 ? pools[1] : null);
 			if (!plan) return null;
 			homes = plan.homes;
+			openingStats = plan.stats;
 		} else {
 			for (let pool = 0; pool < pools.length && !homes; pool++) {
 				const attempt = [];
@@ -2400,7 +2406,115 @@
 			homes[j] = home;
 		}
 		galaxy.mapSeats = homes;
+		if (openingStats && Number.isFinite(openingStats.minPay) &&
+			Number.isFinite(openingStats.maxPay) && openingStats.minPay > 0) {
+			/* geometric mean gives equal weight to being richer or poorer than the
+			 * initial band when a later rival needs a newly enabled home */
+			galaxy.openingTargetPay = Math.sqrt(openingStats.minPay * openingStats.maxPay);
+		}
 		return homes;
+	}
+
+	/*
+	 * Pick the one inactive generated planet that should be enabled when a live
+	 * career adds a rival. Extra planets already have deterministic, spaced
+	 * geometry; do not move one (that would invalidate background trade routes).
+	 * Instead, test each candidate as a G=1 HQ in the resulting field and require
+	 * a free, non-heavy first landing whose starter EMC can leave again.
+	 *
+	 * The chosen return stays close to the initial seating's opening-pay target,
+	 * then favours more safe sites, brighter charging and spatial clearance.
+	 * This is intentionally a one-seat search: existing companies keep their
+	 * live HQs and possessions while the new company gets a properly planned
+	 * world rather than whichever inactive index Math.random happened to pick.
+	 */
+	function planCareerExpansion(galaxy, world, trade, mask, count, sourceSim) {
+		if (!galaxy || !world || !trade || !mask || !sourceSim) return null;
+		const planets = OrbitWorld.PLANETS;
+		const homes = new Uint8Array(planets);
+		for (let i = 0; i < galaxy.actors.length; i++) {
+			const home = galaxy.actors[i].hq;
+			if (home >= 0) homes[home] = 1;
+		}
+		const trialMask = new Uint8Array(mask);
+		const sitePay = new Float64Array(planets * planets);
+		const options = [];
+		for (let candidate = 0; candidate < planets; candidate++) {
+			if (trialMask[candidate] || hqForbidden(world, candidate)) continue;
+			trialMask[candidate] = 1;
+			homes[candidate] = 1;
+			openingPrepare(world, trade, trialMask, count + 1, homes, sourceSim);
+			sitePay.fill(-Infinity);
+			openingTraceHome(world, trialMask, homes, candidate, true, sitePay, null, null);
+			const row = candidate * planets;
+			let safeSites = 0;
+			let pay = -Infinity;
+			let landing = -1;
+			for (let body = 0; body < planets; body++) {
+				if (!trialMask[body] || homes[body]) continue;
+				const market = galaxy.market;
+				if ((market && market.seized[body]) || claimOwner(galaxy, body) !== OWNER_COMMERCIAL) {
+					continue;
+				}
+				const earned = sitePay[row + body];
+				if (!Number.isFinite(earned)) continue;
+				safeSites += 1;
+				if (earned > pay) {
+					pay = earned;
+					landing = body;
+				}
+			}
+			let clearance2 = Infinity;
+			for (let body = 0; body < planets; body++) {
+				if (!mask[body]) continue;
+				const dx = world.planetX[candidate] - world.planetX[body];
+				const dy = world.planetY[candidate] - world.planetY[body];
+				const d2 = dx * dx + dy * dy;
+				if (d2 < clearance2) clearance2 = d2;
+			}
+			if (safeSites > 0 && pay > OPENING_COMPARE_EPS) {
+				options.push({
+					planet: candidate,
+					landing: landing,
+					pay: pay,
+					sites: safeSites,
+					light: world.planetLight[candidate],
+					clearance2: clearance2,
+					tie: OrbitWorld.hashBits(galaxy.seed, candidate,
+						SALT_HQ + galaxy.actors.length + 1)
+				});
+			}
+			homes[candidate] = 0;
+			trialMask[candidate] = 0;
+		}
+		if (!options.length) return null;
+		let target = galaxy.openingTargetPay;
+		if (!(target > OPENING_COMPARE_EPS)) {
+			const pays = options.map(option => option.pay).sort((a, b) => a - b);
+			target = pays[(pays.length - 1) >> 1];
+		}
+		for (let i = 0; i < options.length; i++) {
+			const option = options[i];
+			option.ratio = target > OPENING_COMPARE_EPS && option.pay > OPENING_COMPARE_EPS
+				? Math.min(target, option.pay) / Math.max(target, option.pay) : 0;
+		}
+		options.sort((left, right) => {
+			if (Math.abs(left.ratio - right.ratio) > OPENING_RATIO_EPS) {
+				return right.ratio - left.ratio;
+			}
+			if (left.sites !== right.sites) return right.sites - left.sites;
+			if (Math.abs(left.light - right.light) > 1e-9) return right.light - left.light;
+			if (Math.abs(left.clearance2 - right.clearance2) > 1e-6) {
+				return right.clearance2 - left.clearance2;
+			}
+			return left.tie - right.tie;
+		});
+		const selected = options[0];
+		selected.targetPay = target;
+		if (!(galaxy.openingTargetPay > OPENING_COMPARE_EPS)) {
+			galaxy.openingTargetPay = selected.pay;
+		}
+		return selected;
 	}
 
 	/* HQ: take the map's planned seat; standalone careers choose from the same
@@ -3736,7 +3850,7 @@
 		setCareerUniverse, applyMarketUniverse, planetInPlay, colonyInPlay, activePlanetDraw,
 		openingGroupStats, openingStatsFromTracks, openingTracks, openingPrepare,
 		openingGroupStatsFromRows, compareOpeningGroups, seatAssignment,
-		careerOpenings, prepareCareerStarts, OPENING_BANDS,
+		careerOpenings, prepareCareerStarts, planCareerExpansion, OPENING_BANDS,
 		BOOK_MAX, BOOK_LOG_MAX, createLaunchBook, resetLaunchBook, launchBookTag, bookReady,
 		launchMask, recordLaunch, pruneLaunchBook,
 		CAREER, FUEL_KG_PER_KWH, FUEL_PRICE, FUEL_BUY_STEP, fuelPrice, produceFuel, buyFuel,

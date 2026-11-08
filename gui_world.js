@@ -98,9 +98,10 @@ function clearPlanetPads(planet) {
 	if (game.galaxy) GravityGame.refreshNetwork(game.galaxy);
 }
 
-/* grow or shrink the active subset by the requested amount, one random
- * planet per step, refusing to touch a protected planet */
-function setPlanetUniverseSize(next) {
+/* Grow or shrink the active subset by the requested amount, refusing to touch
+ * a protected planet. Career rival expansion may nominate its planned HQ as
+ * the first added world; ordinary size edits keep their random selection. */
+function setPlanetUniverseSize(next, preferredPlanet) {
 	const count = Math.max(PLANET_UNIVERSE_MIN, Math.min(next, PLANET_UNIVERSE_MAX));
 	if (count === planetCount) return false;
 	if (count > planetCount) {
@@ -110,11 +111,21 @@ function setPlanetUniverseSize(next) {
 			if (!planetMask[i]) free.push(i);
 		}
 		if (free.length < need) return false;
+		let fixed = 0;
+		const preferred = free.indexOf(preferredPlanet);
+		if (preferred >= 0 && need > 0) {
+			const swap = free[0];
+			free[0] = free[preferred];
+			free[preferred] = swap;
+			fixed = 1;
+		}
 		for (let k = 0; k < need; k++) {
-			const j = k + Math.floor(Math.random() * (free.length - k));
-			const swap = free[k];
-			free[k] = free[j];
-			free[j] = swap;
+			if (k >= fixed) {
+				const j = k + Math.floor(Math.random() * (free.length - k));
+				const swap = free[k];
+				free[k] = free[j];
+				free[j] = swap;
+			}
 			planetMask[free[k]] = 1;
 		}
 	} else {

@@ -154,8 +154,20 @@ function setPlayerCount(delta) {
 	if (count === current) return;
 	if (delta > 0) {
 		if (planetCount >= PLANET_UNIVERSE_MAX) return;
+		/* A live career must choose the new bot's generated world before enabling
+		 * it. The planner keeps existing companies in place and verifies that the
+		 * new G=1 HQ has a free, non-heavy, starter-exitable first landing at pay
+		 * comparable to the run's original opening band. */
+		const expansion = game.on && careerRule()
+			? GravityGame.planCareerExpansion(game.galaxy, tradeSim.world, tradeSim,
+				planetMask, planetCount, cargoSim)
+			: null;
+		if (game.on && careerRule() && !expansion) {
+			careerNotice('no safe generated HQ is available for another player');
+			return;
+		}
 		const before = planetMask.slice();
-		if (!setPlanetUniverseSize(planetCount + 1)) return;
+		if (!setPlanetUniverseSize(planetCount + 1, expansion ? expansion.planet : -1)) return;
 		let added = -1;
 		for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
 			if (planetMask[i] && !before[i]) { added = i; break; }
