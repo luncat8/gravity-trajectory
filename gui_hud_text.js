@@ -314,7 +314,7 @@ function updateLiveHud() {
 function setLaunchState(blocked, exitWarning) {
 	if (canImpulse()) {
 		/* the impulse loop is pause-first: the context button only offers the
-		 * burn while it is armed; pause / resume uses the footer clock and Space */
+		 * burn while it is armed; pause / resume uses the game clock button and Space */
 		const ship = activeCareer().ship;
 		const usedKg = burnArmed
 			? OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg) : 0;
@@ -344,7 +344,7 @@ function setLaunchState(blocked, exitWarning) {
 			? 'Release the drag to arm this burn'
 			: isBurnPaused()
 			? 'Drag from the paused ship to aim a burn, or press Space / resume to coast on'
-			: 'Click the footer time button or press Space / P to pause and aim an impulse burn';
+			: 'Click the game-bar time button or press Space / P to pause and aim an impulse burn';
 		return;
 	}
 	if (turret.pending) {
@@ -438,6 +438,10 @@ function setLaunchState(blocked, exitWarning) {
 					' for ' + costText(evacCost);
 			}
 		}
+	} else {
+		if (launchBuildBtn) launchBuildBtn.hidden = true;
+		if (launchCommercialBtn) launchCommercialBtn.hidden = true;
+		if (launchEvacBtn) launchEvacBtn.hidden = true;
 	}
 	const note = career ? careerOverText() || careerPadNote() : '';
 	const broke = game.on && !route && (career ? note !== '' : ledger.purse < MONEY.cost);

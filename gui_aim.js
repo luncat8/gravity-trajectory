@@ -332,7 +332,7 @@ function executeBurn() {
 	return true;
 }
 
-/* The footer and keyboard both control the shared career clock. */
+/* The game bar and keyboard both control the shared career clock. */
 function toggleFlightPause() {
 	if (!careerRule() || replay.on) return false;
 	setCareerPaused(!careerPaused);

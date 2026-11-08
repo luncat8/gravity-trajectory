@@ -53,6 +53,11 @@ function makeWorld(seed) {
 	for (let p = 0; p < PLANETS; p++) {
 		strength[p] = mask[p] ? GravityGame.planetGravity(seed, p) : 0;
 	}
+	/* The live career pins special worlds and every final HQ to standard G. */
+	if (GravityGame.specialPlanets()) {
+		if (trade.world.capitalPlanet >= 0) strength[trade.world.capitalPlanet] = 1;
+		if (trade.world.arfPlanet >= 0) strength[trade.world.arfPlanet] = 1;
+	}
 	gravity.setField(PLANETS, trade.planetR, strength, function (t, outX, outY, count) {
 		for (let i = 0; i < count; i++) { outX[i] = trade.planetX[i]; outY[i] = trade.planetY[i]; }
 	}, true);
@@ -65,6 +70,7 @@ function makeWorld(seed) {
 	GravityGame.applyMarketSpecials(market, trade.world);
 	const galaxy = GravityGame.createGalaxy();
 	GravityGame.resetGalaxy(galaxy, seed);
+	GravityGame.prepareCareerStarts(galaxy, trade.world, trade, mask, UNIVERSE, 3);
 	GravityGame.bindRun(market, galaxy, trade.world);
 	const player = GravityGame.createCareer(GravityGame.createLedger());
 	GravityGame.setCareerUniverse(player, mask, UNIVERSE);
@@ -91,45 +97,53 @@ function makeWorld(seed) {
 }
 
 /* the starter rail's fastest shot for the dry ship at home gravity */
-const STARTER_CAP = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
-	OrbitTech.SHIP_DRY_MASS, OrbitTech.CATAPULTS[0], 1);
+const STARTER_CAP = GravityGame.speedOf(Math.floor(OrbitTech.speedLimit(
+	OrbitTech.BATTERIES[0].capacity, OrbitTech.SHIP_DRY_MASS,
+	OrbitTech.CATAPULTS[0], 1) * GravityGame.SPEED_STEPS + 1e-9));
 
 /* planets the starter rail can land on from `planet`, and which of those a
  * fresh starter rail could leave again (the site a new EMC may be built on) */
-function openingSites(bot, sim, planet, strength) {
+function openingSites(bot, sim, planet, strength, occupied) {
 	const sites = [];
 	const seen = new Uint8Array(PLANETS);
+	const steps = GravityGame.SPEED_STEPS;
+	const minU = GravitySim.SPEED_MIN * steps;
+	const capU = Math.floor(STARTER_CAP * steps + 1e-9);
+	const span = capU - minU;
 	for (let f = 0; f < EXIT_FRACTIONS.length; f++) {
-		const speed = EXIT_FRACTIONS[f] === 1 ? STARTER_CAP
-			: GravitySim.SPEED_MIN + (STARTER_CAP - GravitySim.SPEED_MIN) * EXIT_FRACTIONS[f];
+		const speedU = f === EXIT_FRACTIONS.length - 1
+			? capU : minU + Math.round(span * EXIT_FRACTIONS[f]);
+		const speed = GravityGame.speedOf(speedU);
 		for (let a = 0; a < EXIT_ANGLES; a++) {
-			const angle = (a + 0.5) / EXIT_ANGLES * TAU;
+			const angle = GravityGame.angleOf(GravityGame.angleUnits((a + 0.5) / EXIT_ANGLES * TAU));
 			sim.predictFast(planet, angle, speed, GravityGame.CAP_SECONDS);
 			if (sim.predReason !== GravitySim.END_IMPACT || sim.predBody < 0) continue;
 			const body = sim.predBody;
 			if (body === planet || seen[body]) continue;
 			seen[body] = 1;
-			sites.push({ planet: body, gravity: strength[body] });
+			const gravityLevel = strength[body];
+			if (occupied[body] || gravityLevel > 1.5) continue;
+			sites.push({ planet: body, gravity: gravityLevel,
+				buildable: bot.careerExitSpeed(body, STARTER_CAP) > 0 });
 		}
 	}
 	return sites;
 }
 
-function report(name, world, career, sim) {
+function report(name, world, career, sim, occupied, openings) {
 	botPrepare(world.bot, sim);
 	GravityGame.placeShip(career, sim, career.hq);
 	sim.setLaunchNetwork(career.launchPads, career.ship);
 	const plan = world.bot.careerPlan(career, sim, world.market, 0);
-	const sites = openingSites(world.bot, sim, career.hq, world.strength);
-	const light = sites.filter(s => s.gravity <= GravityGame.HQ_GRAVITY_MAX).length;
-	const heavy = sites.filter(s => s.gravity > 1.5).length;
+	const sites = openingSites(world.bot, sim, career.hq, world.strength, occupied);
 	return {
 		name: name,
 		hq: career.hq,
 		hqG: world.strength[career.hq],
-		light: light,
-		heavy: heavy,
+		light: sites.filter(s => s.buildable).length,
+		heavy: sites.filter(s => s.gravity > 1.5).length,
 		reach: sites.length,
+		buildPay: openings.buildPay[career.hq],
 		profit: plan ? plan.score : -Infinity,
 		dest: plan ? plan.body : -1,
 		destG: plan && plan.body >= 0 ? world.strength[plan.body] : NaN,
@@ -142,7 +156,7 @@ function botPrepare(bot, sim) {
 	bot.prepareCareerExitProbe(sim);
 }
 
-const totals = { rows: 0, profitSpread: 0, lightShort: 0 };
+const totals = { rows: 0, safePaySpread: 0, planProfitSpread: 0, minSafePay: Infinity, lightShort: 0 };
 for (const seed of SEEDS) {
 	const world = makeWorld(seed);
 	const sim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
@@ -155,22 +169,31 @@ for (const seed of SEEDS) {
 	sim.setPlanetMask(mask);
 	sim.stepLimit = GravityGame.CAP_STEPS;
 	const names = ['YOU', 'R1', 'R2'];
+	const occupied = new Uint8Array(PLANETS);
+	for (let i = 0; i < world.galaxy.actors.length; i++) occupied[world.galaxy.actors[i].hq] = 1;
+	const openings = GravityGame.careerOpenings(world.trade.world, world.trade, mask, UNIVERSE, occupied);
 	const rows = [];
 	for (let i = 0; i < world.galaxy.actors.length; i++) {
-		rows.push(report(names[i] || ('R' + i), world, world.galaxy.actors[i], sim));
+		rows.push(report(names[i] || ('R' + i), world, world.galaxy.actors[i], sim, occupied, openings));
 	}
 	const profits = rows.map(r => r.profit).filter(Number.isFinite);
-	const spread = profits.length > 1 ? Math.max(...profits) - Math.min(...profits) : 0;
+	const planProfitSpread = profits.length > 1 ? Math.max(...profits) - Math.min(...profits) : 0;
+	const safePays = rows.map(r => r.buildPay).filter(Number.isFinite);
+	const safePaySpread = safePays.length > 1 ? Math.max(...safePays) - Math.min(...safePays) : 0;
+	const minSafePay = safePays.length ? Math.min(...safePays) : 0;
 	const minLight = Math.min(...rows.map(r => r.light));
 	totals.rows += rows.length;
-	totals.profitSpread += spread;
+	totals.safePaySpread += safePaySpread;
+	totals.planProfitSpread += planProfitSpread;
+	totals.minSafePay = Math.min(totals.minSafePay, minSafePay);
 	if (minLight < 1) totals.lightShort += 1;
 	const line = rows.map(r => r.name + ' P' + r.hq + ' g' + r.hqG.toFixed(2) +
-		' · light ' + r.light + '/' + r.reach + ' · profit ' +
+		' · safe ' + r.light + '/' + r.reach + ' · build ' + r.buildPay.toFixed(2) + ' · profit ' +
 		(Number.isFinite(r.profit) ? r.profit.toFixed(2) : '—') +
 		(r.dest >= 0 ? ' → P' + r.dest + ' g' + r.destG.toFixed(2) : '') +
 		(r.builds ? ' +EMC' : '')).join(' | ');
-	console.log('seed ' + seed + ' · spread ' + spread.toFixed(2) + ' · ' + line);
+	console.log('seed ' + seed + ' · safe-pay spread ' + safePaySpread.toFixed(2) +
+		' · bot-plan spread ' + planProfitSpread.toFixed(2) + ' · ' + line);
 	if (TRACE) {
 		for (const r of rows) {
 			console.log('    ' + r.name + ' HQ P' + r.hq + ' heavy ' + r.heavy +
@@ -180,6 +203,8 @@ for (const seed of SEEDS) {
 		}
 	}
 }
-console.log('mean profit spread ' + (totals.profitSpread / SEEDS.length).toFixed(2) +
+console.log('mean safe-pay spread ' + (totals.safePaySpread / SEEDS.length).toFixed(2) +
+	' · minimum safe first-flight pay ' + totals.minSafePay.toFixed(2) +
+	' · mean bot-plan spread ' + (totals.planProfitSpread / SEEDS.length).toFixed(2) +
 	' · seeds where a company has no starter-exitable first landing ' + totals.lightShort +
 	' / ' + SEEDS.length + ' · ' + totals.rows + ' companies');

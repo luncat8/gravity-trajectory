@@ -324,6 +324,25 @@
 		</label>
 	</div>
 
+	<details id="backgroundSettings" class="group backgroundSettings">
+		<summary><span>background animation</span><span class="settingsTag">trade · orbits</span></summary>
+		<div class="backgroundControls">
+			<div class="backgroundTimeControls">
+				<button id="tradePause" class="miniBtn" title="pause or resume lab background animation; a running game follows its game clock">pause</button>
+				<label class="ctl" title="world-time rate: background trade animation in lab, gameplay world clock during a run">rate
+					<input id="tradeSpeed" type="range" min="0.5" max="12" step="0.5" value="0.5">
+					<output id="tradeSpeedLabel">×0.5</output>
+				</label>
+			</div>
+			<div class="backgroundOptions" role="group" aria-label="background layers">
+				<label><input id="showOrbits" type="checkbox" checked> orbits</label>
+				<label><input id="showMoons" type="checkbox" checked> moons</label>
+				<label><input id="showLinks" type="checkbox" checked> links</label>
+				<label><input id="showRoutes" type="checkbox" checked> routes</label>
+			</div>
+		</div>
+	</details>
+
 	</div>
 </aside>
 
@@ -425,26 +444,15 @@
 	</div>
 </aside>
 
-<footer id="tradeControls">
+<footer id="gameControls" aria-label="game controls">
 	<button id="careerWait" class="miniBtn" title="run the world clock so every pad charges" hidden>wait · 30 min</button>
 	<button id="careerClock" class="miniBtn" title="career world clock: click to pause or resume time (pads charge, rivals fly, visit profits grow while it runs)" hidden>❚❚ time</button>
 	<label id="careerPauseLandLabel" class="careerPauseLand" title="pause the career world clock when your flight ends, so you can aim in peace; launching or the time button resumes it" hidden><input id="careerPauseLand" type="checkbox" checked> pause on landing</label>
-	<button id="tradePause" title="space">pause</button>
-	<label class="ctl" title="trade simulation minutes per real second">time
-		<input id="tradeSpeed" type="range" min="0.5" max="12" step="0.5" value="0.5">
-		<output id="tradeSpeedLabel">×0.5</output>
-	</label>
-	<span id="playbackGroup" class="tradePlay" title="flight playback · only the wall-clock pace changes">
-		<span class="tradeLabel">play <b id="playTag">×1</b></span>
+	<span id="playbackGroup" class="flightPlayback" title="flight playback · only the wall-clock pace changes">
+		<span class="playbackLabel">play <b id="playTag">×1</b></span>
 		<button id="playSlower" class="miniBtn" title="slower · physics unchanged">−</button>
 		<button id="playReset" class="miniBtn" title="back to real time">reset</button>
 		<button id="playFaster" class="miniBtn" title="faster · physics unchanged">+</button>
-	</span>
-	<span class="opts">
-		<label><input id="showOrbits" type="checkbox" checked> orbits</label>
-		<label><input id="showMoons" type="checkbox" checked> moons</label>
-		<label><input id="showLinks" type="checkbox" checked> links</label>
-		<label><input id="showRoutes" type="checkbox" checked> routes</label>
 	</span>
 	<span id="careerWaitInfo" class="careerLine dim" hidden></span>
 </footer>

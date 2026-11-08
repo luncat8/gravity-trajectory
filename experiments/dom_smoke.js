@@ -1566,8 +1566,11 @@ console.log('DEBUG evac', JSON.stringify({ at: career.at, hq: career.hq, strande
 check(kui.get('launchEvac').hidden, 'the inline evacuate hides once home at HQ');
 check(kui.get('careerMsg').textContent.startsWith('evacuated to HQ P' + career.hq),
 	'evacuation note: ' + kui.get('careerMsg').textContent);
-check(kui.get('cargoStatus').textContent === 'landed P' + career.hq + ' · clock paused',
-	'after evacuation: ' + kui.get('cargoStatus').textContent);
+const evacStatus = career.ended === pageGame.CAREER_OPEN
+	? 'landed P' + career.hq + ' · clock paused'
+	: career.ended === pageGame.CAREER_BROKE ? 'broke · career over' : 'complete · career over';
+check(kui.get('cargoStatus').textContent === evacStatus,
+	'after evacuation: expected ' + evacStatus + ', got ' + kui.get('cargoStatus').textContent);
 careerEnv.click('gameCopy');
 check(kui.get('gameLink').value.endsWith('#game=1&seed=42&rate=1&rule=career&bot=normal'),
 	'career link keeps the flying rivals: ' + kui.get('gameLink').value);
@@ -1670,7 +1673,14 @@ function shopTier(ui, act, kind, tier) {
 	return shopButtons(ui, act, kind).find(button => button.tier === tier) || null;
 }
 check(shopCareer.cheat === 'communism', 'communism career: ' + shopCareer.cheat);
-const far = (shopCareer.hq + 4) % pageWorld.PLANETS;
+let far = -1;
+for (let offset = 1; offset < pageWorld.PLANETS; offset++) {
+	const candidate = (shopCareer.hq + offset) % pageWorld.PLANETS;
+	if (!sGame.planetInPlay(shopCareer, candidate) || !sGame.planetBuildable(shopCareer, candidate)) continue;
+	far = candidate;
+	break;
+}
+check(far >= 0, 'no unclaimed active planet for the shop fixture');
 shopEnv.setValue('careerPlanet', far);
 shopEnv.runFrames(1, 16.0);
 check(sScene.careerPickPlanet() === far, 'planet selector: ' + sui.get('careerPlanet').value);
@@ -1948,12 +1958,18 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 
 	let dimPlanet = -1;
 	for (let i = 0; i < 26; i++) {
-		if (i !== hq && pCareer.light[i] < pCareer.light[hq] * 0.7 && pGame.planetBuildable(pCareer, i)) {
+		if (!pGame.planetInPlay(pCareer, i) || i === hq || !pGame.planetBuildable(pCareer, i)) continue;
+		if (dimPlanet < 0) dimPlanet = i;
+		if (pCareer.light[i] < pCareer.light[hq] * 0.7) {
 			dimPlanet = i;
 			break;
 		}
 	}
-	check(dimPlanet >= 0, 'found dimmer planet than HQ');
+	check(dimPlanet >= 0, 'found another active, buildable planet');
+	/* Some seeded subsets have no naturally dimmer free body than the HQ. */
+	if (dimPlanet >= 0 && pCareer.light[dimPlanet] >= pCareer.light[hq] * 0.7) {
+		pCareer.light[dimPlanet] = pCareer.light[hq] * 0.25;
+	}
 	check(pGame.buildGear(pCareer, dimPlanet, 'catapult', pTech.CATAPULTS[0]), 'dim planet needs an owned base for its panel row');
 	pEnv.setValue('careerPlanet', String(dimPlanet));
 	pEnv.fireElement(pui.get('careerPlanet'), 'change');
@@ -2749,7 +2765,14 @@ function protoOf(career, family, id) {
 
 	/* a second pad first, so the bulk rule has a network to reach */
 	const hq = yCareer.hq;
-	const far = (hq + 5) % yCareer.pads.length;
+	let far = -1;
+	for (let offset = 1; offset < yCareer.pads.length; offset++) {
+		const candidate = (hq + offset) % yCareer.pads.length;
+		if (!yGame.planetInPlay(yCareer, candidate) || !yGame.planetBuildable(yCareer, candidate)) continue;
+		far = candidate;
+		break;
+	}
+	check(far >= 0, 'no unclaimed active planet for the battery fixture');
 	yCareer.ledger.purse = 200;
 	yEnv.setValue('careerPlanet', far);
 	yClick({ act: 'build', kind: 'catapult', tier: '0' });
@@ -2781,7 +2804,16 @@ function protoOf(career, family, id) {
 		'a fitted prototype is marked instead of offered');
 
 	/* a battery is pad gear like a panel: it needs a catapult on that planet */
-	yEnv.setValue('careerPlanet', (hq + 3) % yCareer.pads.length);
+	let emptyPad = -1;
+	for (let offset = 1; offset < yCareer.pads.length; offset++) {
+		const candidate = (hq + offset) % yCareer.pads.length;
+		if (candidate === far || !yGame.planetInPlay(yCareer, candidate) ||
+			!yGame.planetBuildable(yCareer, candidate) || yCareer.pads[candidate].catapult !== null) continue;
+		emptyPad = candidate;
+		break;
+	}
+	check(emptyPad >= 0, 'no catapult-less active planet for the battery fixture');
+	yEnv.setValue('careerPlanet', emptyPad);
 	check(!/data-kind="battery"/.test(yShop()),
 		'a battery prototype is hidden on a catapult-less planet');
 	let foreign = -1;
@@ -2843,14 +2875,30 @@ function protoOf(career, family, id) {
 	console.log('0.4.15 verified: 36x24 directional cost surface · hard-edge SVG lines · bot R&D · grouped shop prototype stats');
 }
 
-/* 0.4.16: the trade bar owns wait + flight playback, wait is eased, prices red */
+/* 0.4.16: game bar time/playback, background animation settings, eased wait, prices red */
 {
 	const bar = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
 	bar.runFrames(2, 16.0);
 	const bui = bar.elements;
 	const bScene = bar.context.GravityScene;
+	const html = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
+	const gameBar = /<footer id="gameControls"[^>]*>([\s\S]*?)<\/footer>/.exec(html);
+	const backgroundSettings = /<details id="backgroundSettings"[^>]*>([\s\S]*?)<\/details>/.exec(html);
+	check(gameBar !== null && gameBar[1].includes('id="careerWait"') &&
+		gameBar[1].includes('id="careerClock"') && gameBar[1].includes('id="playbackGroup"') &&
+		!gameBar[1].includes('id="tradePause"') && !gameBar[1].includes('id="tradeSpeed"') &&
+		!gameBar[1].includes('id="showOrbits"') && !gameBar[1].includes('id="showMoons"') &&
+		!gameBar[1].includes('id="showLinks"') && !gameBar[1].includes('id="showRoutes"'),
+		'game footer must keep gameplay time/playback and exclude background controls');
+	check(backgroundSettings !== null && backgroundSettings[1].includes('id="tradePause"') &&
+		backgroundSettings[1].includes('id="tradeSpeed"') &&
+		backgroundSettings[1].includes('id="showOrbits"') &&
+		backgroundSettings[1].includes('id="showMoons"') &&
+		backgroundSettings[1].includes('id="showLinks"') &&
+		backgroundSettings[1].includes('id="showRoutes"'),
+		'background pause, rate and layers must live in background settings');
 	check(!bui.get('careerWait').hidden && bui.get('careerWaitInfo').hidden === false,
-		'career wait is not visible in the trade bar');
+		'career wait controls must be visible in the game bar');
 	bScene.setPlayMode('lab');
 	bar.runFrames(2, 16.0);
 	check(bui.get('careerWait').hidden && bui.get('careerWaitInfo').hidden,
@@ -2858,7 +2906,7 @@ function protoOf(career, family, id) {
 	check(bui.get('playbackGroup').hidden === false && bui.get('playTag').textContent === '×1',
 		'flight playback did not stay in lab');
 	check(bui.get('tradeSpeedLabel').textContent === '×1', 'trade time slider label');
-	console.log('0.4.16 verified: wait + flight playback in the bottom trade bar · ' +
+	console.log('0.4.16 verified: wait + flight playback in the bottom game bar · ' +
 		'2 s eased fast-forward · cost-blocked prices red');
 }
 

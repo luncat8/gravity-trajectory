@@ -107,7 +107,7 @@ function resizeOverlay() {
 		fieldCanvas.style.height = height + 'px';
 	}
 	if (fieldRenderer) fieldRenderer.invalidate();
-	reserveTradeFooter();
+	reserveGameFooter();
 	measureHudRects();
 }
 
@@ -142,17 +142,17 @@ function rectUnderHud(x, y, width, height) {
 	return false;
 }
 
-/* the wrapped trade footer grows; both HUD columns stop above it, and the
+/* the wrapped game footer grows; both HUD columns stop above it, and the
  * right cargo HUD also stops above the separate bottom launch/helpers panel */
-function reserveTradeFooter() {
+function reserveGameFooter() {
 	if (!cargoHudEl) return;
 	const vv = root.visualViewport;
 	const vh = vv && vv.height > 0 ? vv.height : window.innerHeight;
 	if (!(vh > 0)) return;
 	const hudRect = cargoHudEl.getBoundingClientRect();
 	const hudTop = hudRect.top > 0 && hudRect.top < vh * 0.5 ? hudRect.top : 14;
-	const tradeEl = $('tradeControls');
-	const rect = tradeEl ? tradeEl.getBoundingClientRect() : null;
+	const footerEl = $('gameControls');
+	const rect = footerEl ? footerEl.getBoundingClientRect() : null;
 	let bottomY = vh - 10;
 	if (rect && rect.height > 0 && rect.height < vh * 0.5) {
 		bottomY = Math.min(bottomY, rect.top - 10);

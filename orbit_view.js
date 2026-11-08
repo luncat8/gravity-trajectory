@@ -1015,7 +1015,7 @@
 	function setGameClock(on) {
 		tradeState.gameClock = on;
 		pauseButton.disabled = on;
-		pauseButton.title = on ? 'game clock · runs only while the cargo flies' : 'space';
+		pauseButton.title = on ? 'background animation follows the running game clock' : 'Space pauses or resumes background animation';
 		moonClockT = sim.t;
 	}
 

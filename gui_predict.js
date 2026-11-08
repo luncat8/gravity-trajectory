@@ -299,7 +299,7 @@ function careerOverText() {
 }
 
 /* the career clock button mirrors the pause; both career time controls
- * live in the trade bar and only show in career runs */
+ * live in the game bar and only show in career runs */
 function refreshCareerClockUi() {
 	const career = careerRule();
 	if (careerClockBtn) {

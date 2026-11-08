@@ -787,6 +787,7 @@
 		return {
 			seed: 0,
 			actors: [],
+			mapSeats: null,
 			period: new Float64Array(OrbitWorld.PLANETS),
 			phase: new Float64Array(OrbitWorld.PLANETS)
 		};
@@ -797,6 +798,7 @@
 	function resetGalaxy(galaxy, seed) {
 		galaxy.seed = seed >>> 0;
 		galaxy.actors.length = 0;
+		galaxy.mapSeats = null;
 		for (let p = 0; p < OrbitWorld.PLANETS; p++) {
 			galaxy.period[p] = CAREER.turretMinSec + CAREER.turretSpanSec *
 				(OrbitWorld.hashBits(galaxy.seed, p, SALT_TURRET) / 4294967296);
@@ -1179,49 +1181,38 @@
 		return planetInPlay(career, colony.planet);
 	}
 
-	/* deepest well a starter rail leaves: the EMC-1 + BAT-1 reaches another
-	 * system from nearly every planet at or below this strength and from fewer
-	 * and fewer above it (experiments/hq_gravity_probe.js), so a heavier HQ is
-	 * a company that can never fly */
+	/* Conservative gravity band used for seeded HQ fallbacks. Opening landing
+	 * eligibility uses the measured EMC-1 + BAT-1 exit probe below instead. */
 	const HQ_GRAVITY_MAX = 1;
 
-	/* --- career map generator: one fair opening per company ---------------- */
+	/* --- career map generator: fair first flights and useful first landings --- */
 
 	/*
-	 * A career's first flight is its whole opening: the 6.00 purse buys one
-	 * new EMC, so a company whose first landing can only be a heavy world
-	 * cannot build on flight one and pays for it all run. Whether a home can
-	 * open well is not readable from its own gravity — the starter rail's
-	 * 92 px/s fan depends on where the other worlds sit — so the generator
-	 * traces the fan once per world and bands the homes on what it finds:
-	 *
-	 *   light — distinct light worlds (g ≤ HQ_GRAVITY_MAX) the fan lands on.
-	 *           A landing there is a site a fresh EMC-1 + BAT-1 can leave
-	 *           again, which is the first real move of a career, so
-	 *           `light > 0` means "can play flight one".
-	 *   pay   — the harvest of the fan's best shot at the opening market
-	 *           (every planet starts with 40 s of accrued age), i.e. what a
-	 *           first flight can earn before any contract.
-	 *
-	 * The yardstick is identical for every company of a galaxy: a candidate is
-	 * traced alone, its own well pinned to 1 like every HQ and special, so the
-	 * order a galaxy seats its companies in cannot change what an opening is
-	 * worth. The band then keeps every first flight within a share of the
-	 * best, and the seeded hash only decides which home inside the band.
+	 * A first flight needs to do two things: pay roughly as well as the other
+	 * companies' openings, and end on a free planet at G ≤ 1.5 where the starter
+	 * EMC-1 + BAT-1 can physically launch again. The exit probe matters more
+	 * than gravity alone: a new rail must not become a dead-end claim.
 	 */
 	const OPENING_ANGLES = 8;
-	const OPENING_SPEEDS = 2;
-	const OPENING_HORIZON = 45;
-	/* share of the best opening a home must still offer; the ladder widens
-	 * only when the band is too small to seat another company, and the last
-	 * rung (0) is "any home that can land somewhere light" */
+	const OPENING_SPEEDS = 4;
+	const OPENING_EXIT_ANGLES = 8;
+	const OPENING_EXIT_FRACTIONS = [0, 1 / 3, 2 / 3, 1];
+	const OPENING_BUILD_GRAVITY_MAX = 1.5;
+	const OPENING_HORIZON = CAP_SECONDS;
 	const OPENING_BANDS = [0.85, 0.7, 0.5, 0.25, 0];
 	const OPENING_CACHE_MAX = 8;
+	const OPENING_COMPARE_EPS = 0.01;
 	const openingCache = new Map();
+	const openingSeen = new Uint8Array(OrbitWorld.PLANETS);
+	const openingTargetPay = new Float64Array(OrbitWorld.PLANETS);
+	const openingAnyTargetPay = new Float64Array(OrbitWorld.PLANETS);
+	const openingResult = { reach: 0, light: 0, pay: 0, openPay: 0, buildable: 0, buildPay: 0 };
 	let openingSim = null;
 	let openingMarket = null;
 	let openingStrengths = null;
-	let openingFill = null;
+	let openingTrade = null;
+	let openingGravityScale = 1;
+	let openingForceScale = 1;
 
 	function openingMaskTag(mask, count) {
 		let tag = Math.imul(count + 1, 0x01000193) >>> 0;
@@ -1238,86 +1229,192 @@
 		return extent;
 	}
 
+	/* The shared scratch sim follows the current trade world, not the first
+	 * world that happened to initialize it. A new seed replaces all geometry. */
+	function openingFill(t, outX, outY, count) {
+		const trade = openingTrade;
+		for (let i = 0; i < count; i++) {
+			outX[i] = trade.planetX[i];
+			outY[i] = trade.planetY[i];
+		}
+	}
+
 	function openingEnsureSim(trade) {
 		if (openingSim === null) {
 			openingSim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
 			openingMarket = createMarket();
 			openingStrengths = new Float64Array(GravitySim.MAX_BODIES);
-			openingFill = function (t, outX, outY, count) {
-				for (let i = 0; i < count; i++) {
-					outX[i] = trade.planetX[i];
-					outY[i] = trade.planetY[i];
-				}
-			};
-			openingSim.setPlanets(OrbitWorld.PLANETS, trade.planetX, trade.planetY, trade.planetR,
-				trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+		}
+		openingTrade = trade;
+		openingSim.setPlanets(OrbitWorld.PLANETS, trade.planetX, trade.planetY, trade.planetR,
+			trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+	}
+
+	function openingPrepare(world, trade, mask, count, forcedHomes, sourceSim) {
+		openingEnsureSim(trade);
+		openingGravityScale = sourceSim && Number.isFinite(sourceSim.gravityScale)
+			? sourceSim.gravityScale : 1;
+		openingForceScale = sourceSim && Number.isFinite(sourceSim.forceScale)
+			? sourceSim.forceScale : 1;
+		openingSim.setScales(openingGravityScale, openingForceScale);
+		openingSim.setPlanetMask(mask);
+		resetMarket(openingMarket);
+		applyMarketUniverse(openingMarket, mask, count);
+		applyMarketSpecials(openingMarket, world);
+		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+			if (mask && mask[i] === 0) openingStrengths[i] = 0;
+			else if (specialPlanets && (i === world.capitalPlanet || i === world.arfPlanet)) {
+				openingStrengths[i] = 1;
+			} else if (forcedHomes && forcedHomes[i]) openingStrengths[i] = 1;
+			else openingStrengths[i] = planetGravity(world.seed, i);
 		}
 	}
 
-	/*
-	 * The opening table of one world: `light`/`reach` count the distinct
-	 * worlds the starter fan lands on (light ones only, all of them) and `pay`
-	 * is the best harvest of the fan. Pure in (world seed, mask, count), so it
-	 * is cached per world and every company of a galaxy reads the same table.
-	 */
-	function careerOpenings(world, trade, mask, count) {
-		const key = (world.seed >>> 0) + ':' + openingMaskTag(mask, count);
+	/* Mirror the bot's starter-departure probe: eight bearings and four snapped
+	 * speeds across the EMC-1 + BAT-1 cap, with a full flight horizon. */
+	function openingStarterCanExit(planet) {
+		const sim = openingSim;
+		if (!sim.planetActive(planet)) return false;
+		const cap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
+			OrbitTech.SHIP_DRY_MASS, OrbitTech.CATAPULTS[0], openingForceScale);
+		const minU = GravitySim.SPEED_MIN * SPEED_STEPS;
+		let capU = Math.floor(cap * SPEED_STEPS + 1e-9);
+		const maxU = GravitySim.SPEED_MAX * SPEED_STEPS;
+		if (capU > maxU) capU = maxU;
+		if (capU < minU) return false;
+		const span = capU - minU;
+		let previous = -1;
+		for (let f = 0; f < OPENING_EXIT_FRACTIONS.length; f++) {
+			const speedU = f === OPENING_EXIT_FRACTIONS.length - 1
+				? capU : minU + Math.round(span * OPENING_EXIT_FRACTIONS[f]);
+			if (speedU === previous) continue;
+			previous = speedU;
+			const speed = speedU / SPEED_STEPS;
+			for (let a = 0; a < OPENING_EXIT_ANGLES; a++) {
+				const angle = angleOf(angleUnits((a + 0.5) / OPENING_EXIT_ANGLES * Math.PI * 2));
+				sim.predictFast(planet, angle, speed, OPENING_HORIZON);
+				if (sim.predReason === GravitySim.END_IMPACT && sim.predBody >= 0 &&
+					sim.predBody !== planet) return true;
+			}
+		}
+		return false;
+	}
+
+	/* Trace one company's starter-speed fan. A safe landing is a free planet
+	 * the other starting HQs do not occupy, below the heavy-world cutoff, and
+	 * from which an EMC-1 can actually leave again. */
+	function openingTraceHome(world, mask, forcedHomes, home, strictExit, sitePay, targetPay) {
+		const sim = openingSim;
+		const savedStrength = openingStrengths[home];
+		openingStrengths[home] = 1;
+		sim.setField(openingExtent(mask), openingTrade.planetR,
+			openingStrengths, openingFill, true);
+		openingSeen.fill(0);
+		openingTargetPay.fill(-Infinity);
+		openingAnyTargetPay.fill(-Infinity);
+		openingResult.reach = 0;
+		openingResult.light = 0;
+		openingResult.pay = -Infinity;
+		openingResult.openPay = -Infinity;
+		openingResult.buildable = 0;
+		openingResult.buildPay = -Infinity;
+		const cap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
+			OrbitTech.SHIP_DRY_MASS, OrbitTech.CATAPULTS[0], openingForceScale);
+		const minU = GravitySim.SPEED_MIN * SPEED_STEPS;
+		let capU = Math.floor(cap * SPEED_STEPS + 1e-9);
+		const maxU = GravitySim.SPEED_MAX * SPEED_STEPS;
+		if (capU > maxU) capU = maxU;
+		if (capU < minU) {
+			openingResult.pay = 0;
+			openingResult.openPay = 0;
+			openingStrengths[home] = savedStrength;
+			return openingResult;
+		}
+		const span = capU - minU;
+		for (let s = 0; s < OPENING_SPEEDS; s++) {
+			const speedU = s === OPENING_SPEEDS - 1 ? capU
+				: minU + Math.round(span * s / (OPENING_SPEEDS - 1));
+			const speed = speedOf(speedU);
+			for (let a = 0; a < OPENING_ANGLES; a++) {
+				const angle = angleOf(angleUnits((a + 0.5) / OPENING_ANGLES * Math.PI * 2));
+				sim.predictFast(home, angle, speed, OPENING_HORIZON);
+				if (sim.predReason !== GravitySim.END_IMPACT || sim.predBody < 0) continue;
+				const body = sim.predBody;
+				const earned = estimateProfit(openingMarket, 0, sim);
+				if (earned > openingResult.pay) openingResult.pay = earned;
+				if (body === home) continue;
+				if (!openingSeen[body]) {
+					openingSeen[body] = 1;
+					openingResult.reach += 1;
+				}
+				if (!forcedHomes || !forcedHomes[body]) {
+					if (earned > openingAnyTargetPay[body]) openingAnyTargetPay[body] = earned;
+				}
+				if (body === world.capitalPlanet && specialPlanets) continue;
+				if (forcedHomes && forcedHomes[body]) continue;
+				if (openingStrengths[body] > OPENING_BUILD_GRAVITY_MAX) continue;
+				if (earned > openingTargetPay[body]) openingTargetPay[body] = earned;
+			}
+		}
+		for (let body = 0; body < OrbitWorld.PLANETS; body++) {
+			const openPay = openingAnyTargetPay[body];
+			if (Number.isFinite(openPay)) {
+				if (openPay > openingResult.openPay) openingResult.openPay = openPay;
+				if (targetPay) targetPay[home * OrbitWorld.PLANETS + body] = openPay;
+			}
+			const earned = openingTargetPay[body];
+			if (!Number.isFinite(earned)) continue;
+			if (strictExit && !openingStarterCanExit(body)) continue;
+			openingResult.light += 1;
+			openingResult.buildable += 1;
+			if (sitePay) sitePay[home * OrbitWorld.PLANETS + body] = earned;
+			if (openingResult.buildable === 1 || earned > openingResult.buildPay) {
+				openingResult.buildPay = earned;
+			}
+		}
+		if (!Number.isFinite(openingResult.pay)) openingResult.pay = 0;
+		if (!Number.isFinite(openingResult.openPay)) openingResult.openPay = 0;
+		openingStrengths[home] = savedStrength;
+		return openingResult;
+	}
+
+	/* One world and one set of already-pinned HQs have the same opening table
+	 * for every actor; the company-specific seed only breaks equal choices. */
+	function careerOpenings(world, trade, mask, count, forcedHomes, sourceSim) {
+		const key = (world.seed >>> 0) + ':' + (trade.seed >>> 0) + ':' + trade.t.toFixed(3) + ':' +
+			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
+			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
+			openingMaskTag(mask, count) + ':' + openingMaskTag(forcedHomes, 0) + ':' +
+			(specialPlanets ? 1 : 0);
 		const cached = openingCache.get(key);
 		if (cached) return cached;
-		openingEnsureSim(trade);
-		const sim = openingSim;
+		openingPrepare(world, trade, mask, count, forcedHomes, sourceSim);
+		const sitePay = new Float64Array(OrbitWorld.PLANETS * OrbitWorld.PLANETS);
+		const targetPay = new Float64Array(OrbitWorld.PLANETS * OrbitWorld.PLANETS);
+		sitePay.fill(-Infinity);
+		targetPay.fill(-Infinity);
 		const rows = {
 			light: new Int8Array(OrbitWorld.PLANETS),
 			reach: new Int8Array(OrbitWorld.PLANETS),
 			pay: new Float64Array(OrbitWorld.PLANETS),
-			best: 0
+			buildable: new Int8Array(OrbitWorld.PLANETS),
+			buildPay: new Float64Array(OrbitWorld.PLANETS),
+			openPay: new Float64Array(OrbitWorld.PLANETS),
+			sitePay: sitePay,
+			targetPay: targetPay,
+			best: -Infinity
 		};
-		const extent = openingExtent(mask);
-		sim.setPlanetMask(mask);
-		resetMarket(openingMarket);
-		applyMarketUniverse(openingMarket, mask, count);
-		applyMarketSpecials(openingMarket, trade.world);
-		const cap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
-			OrbitTech.SHIP_DRY_MASS, OrbitTech.CATAPULTS[0], 1);
-		const seen = new Uint8Array(OrbitWorld.PLANETS);
 		for (let planet = 0; planet < OrbitWorld.PLANETS; planet++) {
-			if (mask && mask[planet] === 0) continue;
-			if (planet === world.capitalPlanet && specialPlanets) continue;
-			/* a candidate is traced with its own well pinned to 1 (every HQ
-			 * gets that), specials pinned like the page pins them, and out of
-			 * play worlds weightless */
-			for (let i = 0; i < OrbitWorld.PLANETS; i++) {
-				openingStrengths[i] = mask && mask[i] === 0 ? 0 : planetGravity(world.seed, i);
-			}
-			if (specialPlanets) {
-				if (world.capitalPlanet >= 0) openingStrengths[world.capitalPlanet] = 1;
-				if (world.arfPlanet >= 0) openingStrengths[world.arfPlanet] = 1;
-			}
-			openingStrengths[planet] = 1;
-			sim.setField(extent, trade.planetR, openingStrengths, openingFill, true);
-			seen.fill(0);
-			let reach = 0;
-			let light = 0;
-			let pay = 0;
-			for (let s = 0; s < OPENING_SPEEDS; s++) {
-				const speed = OPENING_SPEEDS === 1 ? cap
-					: GravitySim.SPEED_MIN + (cap - GravitySim.SPEED_MIN) * s / (OPENING_SPEEDS - 1);
-				for (let a = 0; a < OPENING_ANGLES; a++) {
-					sim.predictFast(planet, (a + 0.5) / OPENING_ANGLES * Math.PI * 2, speed, OPENING_HORIZON);
-					if (sim.predReason !== GravitySim.END_IMPACT || sim.predBody < 0) continue;
-					const body = sim.predBody;
-					const earned = estimateProfit(openingMarket, 0, sim);
-					if (earned > pay) pay = earned;
-					if (body === planet || seen[body]) continue;
-					seen[body] = 1;
-					reach += 1;
-					if (openingStrengths[body] <= HQ_GRAVITY_MAX) light += 1;
-				}
-			}
-			rows.reach[planet] = reach;
-			rows.light[planet] = light;
-			rows.pay[planet] = pay;
-			if (pay > rows.best) rows.best = pay;
+			if ((mask && mask[planet] === 0) || hqForbidden(world, planet)) continue;
+			const profile = openingTraceHome(world, mask, forcedHomes, planet, true, sitePay, targetPay);
+			rows.reach[planet] = profile.reach;
+			rows.light[planet] = profile.light;
+			rows.pay[planet] = profile.pay;
+			rows.openPay[planet] = profile.openPay;
+			rows.buildable[planet] = profile.buildable;
+			rows.buildPay[planet] = profile.buildPay;
+			if ((!forcedHomes || !forcedHomes[planet]) && profile.buildable > 0 &&
+				profile.buildPay > rows.best) rows.best = profile.buildPay;
 		}
 		openingCache.set(key, rows);
 		if (openingCache.size > OPENING_CACHE_MAX) {
@@ -1326,22 +1423,22 @@
 		return rows;
 	}
 
-	/*
-	 * The fair home: a planet in play whose first flight can land somewhere a
-	 * fresh starter rail leaves, inside the tightest band of the best opening
-	 * that still has a free seat. The page pins every home's own well to 1, so
-	 * the shallow search comes first (a home that starts shallow needs no pin)
-	 * and only a world where no shallow planet opens at all widens to every
-	 * planet. Sunlight is the last cut inside a band — the starter panel
-	 * charges the rail, but a narrow view beats a bright dead end — and the
-	 * seeded hash decides among the homes that survive every cut.
-	 */
-	function pickFairHq(seed, world, used, mask, count, trade) {
-		if (!trade) return -1;
-		const rows = careerOpenings(world, trade, mask, count);
-		if (!(rows.best > 0)) return -1;
+	function hqCandidate(world, used, mask, i, rows, floor, shallowOnly, needLight) {
+		if (mask && mask[i] === 0) return false;
+		if (used && used[i]) return false;
+		if (hqForbidden(world, i) || rows.buildable[i] <= 0) return false;
+		if (shallowOnly && planetGravity(world.seed, i) > HQ_GRAVITY_MAX) return false;
+		if (rows.buildPay[i] < floor) return false;
+		if (needLight && world.planetLight[i] < CAREER.hqMinLight) return false;
+		return true;
+	}
+
+	/* Seeded choice from the tightest opening-profit band with a free HQ seat. */
+	function pickFairHq(seed, world, used, mask, count, trade, sourceSim) {
+		const rows = careerOpenings(world, trade, mask, count, used, sourceSim);
+		if (!Number.isFinite(rows.best)) return -1;
 		for (let b = 0; b < OPENING_BANDS.length; b++) {
-			const floor = rows.best * OPENING_BANDS[b];
+			const floor = rows.best > 0 ? rows.best * OPENING_BANDS[b] : rows.best;
 			for (let shallowOnly = 1; shallowOnly >= 0; shallowOnly--) {
 				for (let needLight = 1; needLight >= 0; needLight--) {
 					const home = hashPickHq(seed, world, used, mask, rows, floor,
@@ -1353,7 +1450,11 @@
 		return -1;
 	}
 
-	/* the seeded pick among the homes a band and its cuts leave */
+	/* The Capital is the Empire's: no company may call it home. */
+	function hqForbidden(world, i) {
+		return specialPlanets && i === world.capitalPlanet;
+	}
+
 	function hashPickHq(seed, world, used, mask, rows, floor, shallowOnly, needLight) {
 		let total = 0;
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
@@ -1369,37 +1470,237 @@
 		return -1;
 	}
 
-	function hqCandidate(world, used, mask, i, rows, floor, shallowOnly, needLight) {
-		if (mask && mask[i] === 0) return false;
-		if (used && used[i]) return false;
-		if (hqForbidden(world, i)) return false;
-		if (shallowOnly && planetGravity(world.seed, i) > HQ_GRAVITY_MAX) return false;
-		if (rows.light[i] <= 0) return false;
-		if (rows.pay[i] < floor) return false;
-		if (needLight && world.planetLight[i] < CAREER.hqMinLight) return false;
-		return true;
+	/* 0 = sunlit home with a comparable buildable opening; 3 = no safe opening */
+	function openingGroupStats(world, trade, mask, count, forcedHomes, homes, sourceSim) {
+		openingPrepare(world, trade, mask, count, forcedHomes, sourceSim);
+		const stats = {
+			missing: 0,
+			missingHomes: [],
+			minPay: Infinity,
+			maxPay: -Infinity,
+			spread: Infinity,
+			minSites: Infinity,
+			minAnyPay: Infinity,
+			maxAnyPay: -Infinity,
+			anySpread: Infinity,
+			sumPay: 0
+		};
+		for (let i = 0; i < homes.length; i++) {
+			const home = homes[i];
+			const profile = openingTraceHome(world, mask, forcedHomes, home, true);
+			if (profile.openPay < stats.minAnyPay) stats.minAnyPay = profile.openPay;
+			if (profile.openPay > stats.maxAnyPay) stats.maxAnyPay = profile.openPay;
+			if (profile.buildable <= 0) {
+				stats.missing += 1;
+				stats.missingHomes.push(home);
+				stats.minPay = -Infinity;
+				stats.minSites = 0;
+				continue;
+			}
+			if (profile.buildPay < stats.minPay) stats.minPay = profile.buildPay;
+			if (profile.buildPay > stats.maxPay) stats.maxPay = profile.buildPay;
+			if (profile.buildable < stats.minSites) stats.minSites = profile.buildable;
+			stats.sumPay += profile.buildPay;
+		}
+		if (stats.missing === 0) stats.spread = stats.maxPay - stats.minPay;
+		stats.anySpread = stats.maxAnyPay - stats.minAnyPay;
+		return stats;
 	}
 
-	/* HQ: a planet in play that no other player already calls home. The fair
-	 * opening picks first; a world the starter fan cannot open from anywhere
-	 * (or a caller with no trade world) falls back to the old tiers — sunlit
-	 * and shallow, then shallow, then sunlit, then any free planet. */
-	/* the Capital is the Empire's: no company may call it home (0.5.11) */
-	function hqForbidden(world, i) {
-		return specialPlanets && i === world.capitalPlanet;
+	/* Cheap group score from the once-traced exact-exit target/pay matrix; the
+	 * winner is re-traced with all final HQ gravity overrides before use. */
+	function openingGroupStatsFromRows(mask, rows, homes, occupied) {
+		const stats = {
+			missing: 0,
+			minPay: Infinity,
+			maxPay: -Infinity,
+			spread: Infinity,
+			minSites: Infinity,
+			minAnyPay: Infinity,
+			maxAnyPay: -Infinity,
+			anySpread: Infinity,
+			sumPay: 0
+		};
+		for (let i = 0; i < homes.length; i++) {
+			const offset = homes[i] * OrbitWorld.PLANETS;
+			let anyPay = -Infinity;
+			let sites = 0;
+			let bestPay = -Infinity;
+			for (let body = 0; body < OrbitWorld.PLANETS; body++) {
+				if (!planetInMask(mask, body) || occupied[body]) continue;
+				const openPay = rows.targetPay[offset + body];
+				if (openPay > anyPay) anyPay = openPay;
+				const pay = rows.sitePay[offset + body];
+				if (!Number.isFinite(pay)) continue;
+				sites += 1;
+				if (pay > bestPay) bestPay = pay;
+			}
+			if (anyPay < stats.minAnyPay) stats.minAnyPay = anyPay;
+			if (anyPay > stats.maxAnyPay) stats.maxAnyPay = anyPay;
+			if (sites === 0) {
+				stats.missing += 1;
+				stats.minPay = -Infinity;
+				stats.minSites = 0;
+				continue;
+			}
+			if (bestPay < stats.minPay) stats.minPay = bestPay;
+			if (bestPay > stats.maxPay) stats.maxPay = bestPay;
+			if (sites < stats.minSites) stats.minSites = sites;
+			stats.sumPay += bestPay;
+		}
+		if (stats.missing === 0) stats.spread = stats.maxPay - stats.minPay;
+		stats.anySpread = stats.maxAnyPay - stats.minAnyPay;
+		return stats;
 	}
 
-	function pickHq(seed, world, used, mask, count, trade) {
-		const fair = pickFairHq(seed, world, used, mask, count, trade);
+	/* Positive means a better set: keep every seat safe, minimize profit spread,
+	 * then raise the worst return and increase the number of good sites. */
+	function compareOpeningGroups(a, b) {
+		if (!b) return 1;
+		if (a.missing !== b.missing) return b.missing - a.missing;
+		if (a.spread !== b.spread && Math.abs(a.spread - b.spread) > OPENING_COMPARE_EPS) {
+			return a.spread < b.spread ? 1 : -1;
+		}
+		if (Number.isFinite(a.minPay) && Number.isFinite(b.minPay) &&
+			Math.abs(a.minPay - b.minPay) > OPENING_COMPARE_EPS) {
+			return a.minPay > b.minPay ? 1 : -1;
+		}
+		if (a.minSites !== b.minSites) return a.minSites > b.minSites ? 1 : -1;
+		if (Math.abs(a.minAnyPay - b.minAnyPay) > OPENING_COMPARE_EPS) {
+			return a.minAnyPay > b.minAnyPay ? 1 : -1;
+		}
+		if (Math.abs(a.anySpread - b.anySpread) > OPENING_COMPARE_EPS) {
+			return a.anySpread < b.anySpread ? 1 : -1;
+		}
+		if (Math.abs(a.sumPay - b.sumPay) > OPENING_COMPARE_EPS) {
+			return a.sumPay > b.sumPay ? 1 : -1;
+		}
+		return 0;
+	}
+
+	function startCandidates(world, mask, wanted) {
+		const all = [];
+		const bright = [];
+		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+			if ((mask && mask[i] === 0) || hqForbidden(world, i)) continue;
+			all.push(i);
+			if (world.planetLight[i] >= CAREER.hqMinLight) bright.push(i);
+		}
+		return bright.length >= wanted ? bright : all;
+	}
+
+	/* Prepare all starting HQs together so one player's new G=1 home cannot
+	 * turn another player's planned first-flight target into a claimed heavy well. */
+	function prepareCareerStarts(galaxy, world, trade, mask, count, wanted, sourceSim) {
+		const seatsWanted = Math.max(0, Math.min(Math.floor(wanted), count || OrbitWorld.PLANETS));
+		if (!galaxy || !world || !trade || seatsWanted <= 0) return null;
+		const candidates = startCandidates(world, mask, seatsWanted);
+		if (candidates.length < seatsWanted) return null;
+		const forcedHomes = new Uint8Array(OrbitWorld.PLANETS);
+		let homes = [];
+		if (seatsWanted <= 4 && count <= 26) {
+			const rows = careerOpenings(world, trade, mask, count, null, sourceSim);
+			const chosen = [];
+			const occupied = new Uint8Array(OrbitWorld.PLANETS);
+			const shortlist = [];
+			const SHORTLIST_MAX = 32;
+			function keepSet(stats, tie) {
+				let at = 0;
+				while (at < shortlist.length) {
+					const cmp = compareOpeningGroups(stats, shortlist[at].stats);
+					if (cmp > 0 || (cmp === 0 && tie < shortlist[at].tie)) break;
+					at += 1;
+				}
+				if (at >= SHORTLIST_MAX) return;
+				shortlist.splice(at, 0, { homes: chosen.slice(), stats: stats, tie: tie });
+				if (shortlist.length > SHORTLIST_MAX) shortlist.pop();
+			}
+			function searchSets(from) {
+				if (chosen.length === seatsWanted) {
+					const stats = openingGroupStatsFromRows(mask, rows, chosen, occupied);
+					let tie = OrbitWorld.hashBits(world.seed, seatsWanted, SALT_HQ);
+					for (let i = 0; i < chosen.length; i++) tie = OrbitWorld.hashBits(tie, chosen[i], SALT_HQ);
+					keepSet(stats, tie);
+					return;
+				}
+				const need = seatsWanted - chosen.length;
+				for (let c = from; c <= candidates.length - need; c++) {
+					const home = candidates[c];
+					chosen.push(home);
+					occupied[home] = 1;
+					searchSets(c + 1);
+					occupied[home] = 0;
+					chosen.pop();
+				}
+			}
+			searchSets(0);
+			if (!shortlist.length) return null;
+			let exactHomes = null;
+			let exactBest = null;
+			let exactTie = 0xffffffff;
+			for (let i = 0; i < shortlist.length; i++) {
+				const proposal = shortlist[i];
+				const proposalMask = new Uint8Array(OrbitWorld.PLANETS);
+				for (let j = 0; j < proposal.homes.length; j++) proposalMask[proposal.homes[j]] = 1;
+				const exact = openingGroupStats(world, trade, mask, count, proposalMask, proposal.homes, sourceSim);
+				const better = compareOpeningGroups(exact, exactBest);
+				if (better > 0 || (better === 0 && proposal.tie < exactTie)) {
+					exactHomes = proposal.homes.slice();
+					exactBest = exact;
+					exactTie = proposal.tie;
+				}
+			}
+			if (!exactHomes) return null;
+			homes = exactHomes;
+			for (let i = 0; i < homes.length; i++) forcedHomes[homes[i]] = 1;
+			let exact = exactBest;
+			/* Pinning the other HQs can move a route. Repair only a failed seat
+			 * with a home that passes the exact final-field exit probe. */
+			for (let repair = 0; exact.missing > 0 && repair < seatsWanted; repair++) {
+				const badHome = exact.missingHomes[0];
+				const seat = homes.indexOf(badHome);
+				if (seat < 0) break;
+				forcedHomes[badHome] = 0;
+				const replacement = pickFairHq(world.seed + seat + repair, world,
+					forcedHomes, mask, count, trade, sourceSim);
+				if (replacement < 0 || replacement === badHome) {
+					forcedHomes[badHome] = 1;
+					break;
+				}
+				homes[seat] = replacement;
+				forcedHomes[replacement] = 1;
+				exact = openingGroupStats(world, trade, mask, count, forcedHomes, homes, sourceSim);
+			}
+			if (exact.missing > 0) return null;
+		} else {
+			for (let seat = 0; seat < seatsWanted; seat++) {
+				const home = pickFairHq(world.seed + seat, world, forcedHomes, mask, count, trade, sourceSim);
+				if (home < 0) return null;
+				forcedHomes[home] = 1;
+				homes.push(home);
+			}
+		}
+		for (let i = homes.length - 1; i > 0; i--) {
+			const j = OrbitWorld.hashBits(world.seed, i, SALT_HQ + homes.length) % (i + 1);
+			const home = homes[i];
+			homes[i] = homes[j];
+			homes[j] = home;
+		}
+		galaxy.mapSeats = homes;
+		return homes;
+	}
+
+	/* HQ: take the map's planned seat; standalone careers choose from the same
+	 * safe-profit table and only fall back when the world has no viable opening. */
+	function pickHq(seed, world, used, mask, count, trade, sourceSim) {
+		const fair = pickFairHq(seed, world, used, mask, count, trade, sourceSim);
 		if (fair >= 0) return fair;
 		for (let tier = 0; tier < 4; tier++) {
 			const needLight = tier === 0 || tier === 2;
 			const needShallow = tier < 2;
 			let total = 0;
 			for (let i = 0; i < OrbitWorld.PLANETS; i++) {
-				if (mask && mask[i] === 0) continue;
-				if (used && used[i]) continue;
-				if (hqForbidden(world, i)) continue;
+				if ((mask && mask[i] === 0) || (used && used[i]) || hqForbidden(world, i)) continue;
 				if (needLight && world.planetLight[i] < CAREER.hqMinLight) continue;
 				if (needShallow && planetGravity(world.seed, i) > HQ_GRAVITY_MAX) continue;
 				total += 1;
@@ -1407,9 +1708,7 @@
 			if (total === 0) continue;
 			let pick = OrbitWorld.hashBits(seed, 0, SALT_HQ) % total;
 			for (let i = 0; i < OrbitWorld.PLANETS; i++) {
-				if (mask && mask[i] === 0) continue;
-				if (used && used[i]) continue;
-				if (hqForbidden(world, i)) continue;
+				if ((mask && mask[i] === 0) || (used && used[i]) || hqForbidden(world, i)) continue;
 				if (needLight && world.planetLight[i] < CAREER.hqMinLight) continue;
 				if (needShallow && planetGravity(world.seed, i) > HQ_GRAVITY_MAX) continue;
 				if (pick === 0) return i;
@@ -1419,117 +1718,8 @@
 		return 0;
 	}
 
-	/* --- the map: one seat per company on the same opening ---------------- */
-
-	/*
-	 * A career's first flight is its whole opening: the 6.00 purse buys one
-	 * new EMC, so a company that opens on a heavy world only — or whose
-	 * first flight earns far less than its neighbours' — pays for it all run,
-	 * before any decision. Whether a home opens well is not readable from its
-	 * own gravity: the starter rail's 92 px/s fan depends on where every
-	 * other world sits. So the generator traces the fan once per world and
-	 * ranks the homes on what it finds (see `careerOpenings`), then seats the
-	 * companies on the top of that ranking instead of letting each one draw
-	 * freely from the whole map.
-	 *
-	 * `careerMap` keeps the seats of a galaxy in one place: the page asks for
-	 * one seat at a time, in the order the companies start, and a rival seeded
-	 * head-less straight into `startCareer` (a bench or a probe) gets the
-	 * first free seat of its own mask. A seat only disappears when the planet
-	 * leaves play, so the same world and the same companies always produce
-	 * the same homes.
-	 */
-	const MAP_KEY_MAX = 4;
-	const careerMaps = new Map();
-	let careerMapSerial = 0;
-
-	/* one key per galaxy: the page's galaxy object carries its seed, a caller
-	 * without one (resetCareer before startCareer) keys on the world seed */
-	function mapKey(galaxy, world, trade, mask, count) {
-		const seed = galaxy && galaxy.seed ? galaxy.seed : world.seed >>> 0;
-		return seed + ':' + openingMaskTag(mask, count) + ':' + (galaxy && galaxy.mapId ? galaxy.mapId : 0);
-	}
-
-	/* the seat list of a galaxy: built from the opening table on first use */
-	function careerMap(galaxy, world, trade, mask, count) {
-		if (galaxy && galaxy.mapSeats) return galaxy.mapSeats;
-		if (!trade) return null;
-		const key = mapKey(galaxy, world, trade, mask, count);
-		let seats = careerMaps.get(key);
-		if (!seats) {
-			seats = buildSeats(world, trade, mask, count, galaxy && galaxy.actors ? galaxy.actors.length : 0);
-			careerMaps.set(key, seats);
-			if (careerMaps.size > MAP_KEY_MAX) careerMaps.delete(careerMaps.keys().next().value);
-		}
-		if (galaxy) galaxy.mapSeats = seats;
-		return seats;
-	}
-
-	/*
-	 * The seats of one world, best opening first. A home qualifies by what its
-	 * starter fan finds (see `careerOpenings`) and the list is ordered so that
-	 * seating the first free seat gives every company — whoever starts first —
-	 * a first flight within a narrow share of the best:
-	 *
-	 *   1. the seats that open on a light world and earn a strong harvest,
-	 *   2. then the remaining light worlds, best earning first,
-	 *   3. then a heavy home whose fan still reaches a light world,
-	 *   4. then anything, so a company is never left without a home.
-	 *
-	 * Sunlight is a tiebreak inside a tier (the starter panel charges the
-	 * rail), and the seeded hash only orders equal openings.
-	 */
-	function buildSeats(world, trade, mask, count, wanted) {
-		const rows = careerOpenings(world, trade, mask, count);
-		const list = [];
-		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
-			if (!planetInMask(mask, i)) continue;
-			if (hqForbidden(world, i)) continue;
-			list.push(i);
-		}
-		const seed = world.seed >>> 0;
-		list.sort(function (a, b) {
-			const tierA = seatTier(rows, world, a);
-			const tierB = seatTier(rows, world, b);
-			if (tierA !== tierB) return tierA - tierB;
-			if (rows.pay[a] !== rows.pay[b]) return rows.pay[b] - rows.pay[a];
-			if (rows.light[a] !== rows.light[b]) return rows.light[b] - rows.light[a];
-			const lightA = world.planetLight[a];
-			const lightB = world.planetLight[b];
-			if (lightA !== lightB) return lightB - lightA;
-			return (OrbitWorld.hashBits(seed, a, SALT_HQ) - OrbitWorld.hashBits(seed, b, SALT_HQ)) || (a - b);
-		});
-		return list;
-	}
-
-	function planetInMask(mask, i) {
-		return !mask || mask[i] !== 0;
-	}
-
-	/* 0 = light home earning near the best opening, 3 = no opening at all */
-	function seatTier(rows, world, i) {
-		if (rows.light[i] > 0) return rows.pay[i] >= rows.best * SEAT_STRONG ? 0 : 1;
-		return planetGravity(world.seed, i) <= HQ_GRAVITY_MAX ? 2 : 3;
-	}
-
-	/* the next free seat for a company; -1 only when every seat is taken */
-	function takeSeat(galaxy, world, trade, mask, count) {
-		const seats = careerMap(galaxy, world, trade, mask, count);
-		if (!seats) return -1;
-		for (let i = 0; i < seats.length; i++) {
-			if (seatFree(galaxy, seats[i], mask)) return seats[i];
-		}
-		return -1;
-	}
-
-	/* a seat is free while no company sits on it and it is still in play */
-	function seatFree(galaxy, planet, mask) {
-		if (!planetInMask(mask, planet)) return false;
-		const actors = galaxy && galaxy.actors ? galaxy.actors : null;
-		for (let i = 0; actors && i < actors.length; i++) {
-			if (actors[i].hq === planet) return false;
-		}
-		return true;
+	function planetInMask(mask, planet) {
+		return !mask || mask[planet] !== 0;
 	}
 
 	/* HQs already taken by the players of `galaxy` */
@@ -1700,7 +1890,7 @@
 		return true;
 	}
 
-	function resetCareer(career, seed, trade, cheat, homePlanet) {
+	function resetCareer(career, seed, trade, cheat, homePlanet, sim) {
 		const grant = OrbitTech.starterGrant();
 		career.seed = seed >>> 0;
 		career.cheat = cheat || null;
@@ -1718,7 +1908,7 @@
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) career.launchPads[i] = COMMERCIAL_PAD;
 		fillLight(career, trade.world);
 		career.hq = homePlanet === undefined ? pickHq(career.seed, trade.world, hqMask(career),
-			career.planetMask, career.planetCount, trade) : homePlanet;
+			career.planetMask, career.planetCount, trade, sim) : homePlanet;
 		career.at = career.hq;
 		career.stranded = false;
 		career.commercialPlanet = -1;
@@ -1810,7 +2000,12 @@
 	function startCareer(career, sim, seed, trade, cheat, galaxy, homePlanet) {
 		career.galaxy = galaxy || null;
 		career.market = galaxy && galaxy.market ? galaxy.market : null;
-		resetCareer(career, seed, trade, cheat, homePlanet);
+		let plannedHome = homePlanet;
+		if (plannedHome === undefined && galaxy && galaxy.mapSeats &&
+			galaxy.actors.length < galaxy.mapSeats.length) {
+			plannedHome = galaxy.mapSeats[galaxy.actors.length];
+		}
+		resetCareer(career, seed, trade, cheat, plannedHome, sim);
 		career.forceScale = sim.forceScale;
 		if (galaxy) joinGalaxy(career, galaxy);
 		else syncCareerNetwork(career);
@@ -2826,7 +3021,7 @@
 		estimateProfit, estimateProfitLog, compareScores,
 		setSpecialPlanets, specialPlanets: specialPlanetsOn,
 		setCareerUniverse, applyMarketUniverse, planetInPlay, colonyInPlay, activePlanetDraw,
-		careerOpenings, OPENING_BANDS,
+		careerOpenings, prepareCareerStarts, OPENING_BANDS,
 		BOOK_MAX, BOOK_LOG_MAX, createLaunchBook, resetLaunchBook, launchBookTag, bookReady,
 		launchMask, recordLaunch, pruneLaunchBook,
 		CAREER, FUEL_KG_PER_KWH, FUEL_PRICE, FUEL_BUY_STEP, fuelPrice, produceFuel, buyFuel,

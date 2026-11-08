@@ -37,14 +37,14 @@ function check(ok, message) {
 	failures.push(message);
 }
 
-/* rects + the invariant: foot row above the trade footer, nothing outside the viewport */
+/* rects + the invariant: foot row above the game footer, nothing outside the viewport */
 async function measure(page) {
 	return page.evaluate(() => {
 		const rect = id => document.getElementById(id).getBoundingClientRect();
 		const hud = document.getElementById('cargoHud');
 		const body = document.getElementById('cargoBody');
 		const foot = rect('flightHud');
-		const trade = rect('tradeControls');
+		const gameBar = rect('gameControls');
 		const launch = rect('launch');
 		const best = rect('routeBest');
 		const clear = rect('clear');
@@ -57,7 +57,7 @@ async function measure(page) {
 			: null;
 		return {
 			footBottom: foot.bottom, footTop: foot.top,
-			tradeTop: trade.top, viewport: innerHeight,
+			gameBarTop: gameBar.top, viewport: innerHeight,
 			launch: [launch.top, launch.height],
 			best: [best.top, best.width, document.getElementById('routeBest').hidden,
 				best.bottom, best.height, bestHit ? bestHit.id : ''],
@@ -174,8 +174,8 @@ async function scoreboardStable(page) {
 
 			const layout = await measure(page);
 			const label = width + 'x' + height;
-			check(layout.footBottom <= layout.tradeTop,
-				label + ': action row overlaps the trade footer (' + Math.round(layout.footBottom) + ' > ' + Math.round(layout.tradeTop) + ')');
+			check(layout.footBottom <= layout.gameBarTop,
+				label + ': action row overlaps the game footer (' + Math.round(layout.footBottom) + ' > ' + Math.round(layout.gameBarTop) + ')');
 			check(layout.hudBottom <= layout.footTop + 1,
 				label + ': cargoHud overlaps flightHud (' + Math.round(layout.hudBottom) + ' > ' + Math.round(layout.footTop) + ')');
 			check(layout.best[3] <= layout.viewport && layout.best[0] >= 0 && !layout.best[2],
@@ -218,7 +218,7 @@ async function scoreboardStable(page) {
 					label + ': scoreboard checkbox geometry invalid ' + JSON.stringify(multiCheck));
 			}
 			console.log(label, 'foot', Math.round(layout.footTop) + '..' + Math.round(layout.footBottom),
-				'| trade', Math.round(layout.tradeTop),
+				'| game bar', Math.round(layout.gameBarTop),
 				'| use best', Math.round(layout.best[1]) + 'px',
 				'| body scrolls', layout.scrollable ? 'yes' : 'no');
 			await page.close();
@@ -376,7 +376,7 @@ async function scoreboardStable(page) {
 				};
 			});
 			check(errors.length === 0, label + ': page error ' + errors.join(' / '));
-			check(layout.footBottom <= layout.tradeTop, label + ': foot row overlaps the trade footer');
+			check(layout.footBottom <= layout.gameBarTop, label + ': foot row overlaps the game footer');
 			check(layout.hudBottom <= layout.footTop + 1,
 				label + ': cargoHud overlaps flightHud (' + Math.round(layout.hudBottom) + ' > ' + Math.round(layout.footTop) + ')');
 			check(strandedLayout.helperInFoot && strandedLayout.launchShown &&
@@ -386,7 +386,7 @@ async function scoreboardStable(page) {
 				strandedLayout.insideFoot && strandedLayout.lostBuildHidden &&
 				strandedLayout.lostEvacW >= 120 && strandedLayout.restoredLaunch,
 				label + ': stranded flightHud layout invalid ' + JSON.stringify(strandedLayout));
-			check(drawer.leftBottom <= layout.tradeTop + 1, label + ': leftHud overlaps the trade footer');
+			check(drawer.leftBottom <= layout.gameBarTop + 1, label + ': leftHud overlaps the game footer');
 			check(drawer.visible && drawer.run && drawer.rivals, label + ': boxes ' + JSON.stringify(drawer));
 			check(drawer.buttons >= 7 && drawer.pad && drawer.fuel, label + ': shop ' + drawer.buttons + ' buttons / fuel controls');
 			if (width >= 1280) check(drawer.leftWidth >= (width >= 1440 ? 330 : 300),
@@ -423,7 +423,7 @@ async function scoreboardStable(page) {
 					label + ': seeded URL reload ' + JSON.stringify(restored));
 			}
 			console.log(label, 'foot', Math.round(layout.footTop) + '..' + Math.round(layout.footBottom),
-				'| trade', Math.round(layout.tradeTop), '| shop', drawer.buttons, 'buttons');
+				'| game bar', Math.round(layout.gameBarTop), '| shop', drawer.buttons, 'buttons');
 			await page.close();
 		}
 	} finally {

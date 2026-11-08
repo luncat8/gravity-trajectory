@@ -81,6 +81,8 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 function startCareerRun(seed) {
 	cancelTurret();
 	GravityGame.resetGalaxy(game.galaxy, seed);
+	GravityGame.prepareCareerStarts(game.galaxy, tradeSim.world, tradeSim,
+		planetMask, planetCount, 1 + bot.count, cargoSim);
 	GravityGame.startCareer(game.career, cargoSim, seed, tradeSim, game.cheat, game.galaxy);
 	bot.startCareers(game.galaxy, seed, tradeSim);
 	/* Special worlds and every starting HQ have a standard gravity well. */

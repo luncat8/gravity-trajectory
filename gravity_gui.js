@@ -863,13 +863,13 @@ if (root.visualViewport && root.visualViewport.addEventListener) {
 }
 
 /* ── boot · gravity_gui.js ── observers, keyboard, initial view and mode, the first frame */
-const tradeControlsEl = $('tradeControls');
-if (typeof root.ResizeObserver === 'function' && tradeControlsEl) {
+const gameControlsEl = $('gameControls');
+if (typeof root.ResizeObserver === 'function' && gameControlsEl) {
 	const footObserver = new root.ResizeObserver(() => {
-		reserveTradeFooter();
+		reserveGameFooter();
 		measureHudRects();
 	});
-	footObserver.observe(tradeControlsEl);
+	footObserver.observe(gameControlsEl);
 	if (flightHudEl) footObserver.observe(flightHudEl);
 }
 window.addEventListener('keydown', event => {

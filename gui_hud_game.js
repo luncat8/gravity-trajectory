@@ -99,7 +99,7 @@ function refreshGameUi() {
 	helperUpdateUi();
 	updateLiveHud();
 	measureHudRects();
-	reserveTradeFooter();
+	reserveGameFooter();
 	hudAt = -Infinity;
 }
 

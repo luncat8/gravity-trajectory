@@ -159,7 +159,7 @@ function careerSelectTab(tab) {
 function refreshCareerPanel() {
 	if (!careerBoxEl) return;
 	refreshCareerTabs();
-	/* the wait button sits in the bottom trade bar, so it follows the rule */
+	/* the wait button sits in the game bar, so it follows the rule */
 	careerWaitBtn.hidden = !careerRule();
 	if (careerWaitInfoEl && !careerRule()) careerWaitInfoEl.hidden = true;
 	if (!careerRule()) {
