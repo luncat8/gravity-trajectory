@@ -98,8 +98,9 @@ function taskBlockHtml(career) {
 /* ── launch book & money trace ── book tags, net and trace of money, ranked launch list and rail lines */
 /* the field the page traces in: stored paths only hold inside this world */
 function pageBookTag() {
-	return GravityGame.launchBookTag(cargoSim.fieldStatic, cargoSim.gravityScale,
-		cargoSim.forceScale, cargoSim.strength, cargoSim.bodyCount);
+	const sim = activeCareerSim();
+	return GravityGame.launchBookTag(sim.fieldStatic, sim.gravityScale,
+		sim.forceScale, sim.strength, sim.bodyCount);
 }
 
 /* one scratch result: callers read it before the next pricing call */
@@ -120,7 +121,7 @@ function moneyFacts(origin, speed, body, steps, length, visitPay) {
 	const fee = GravityGame.launchFee(career, origin, speed);
 	const available = career.ledger.purse + shotMoney.cash - fee;
 	const mass = bot.careerArrivalMass(career, body);
-	const departure = bot.careerDeparture(career, body, available, mass, activeSim());
+	const departure = bot.careerDeparture(career, body, available, mass, activeCareerSim());
 	const padless = career.pads[body].catapult === null;
 	shotMoney.fee = fee;
 	shotMoney.exit = departure.ok ? departure.cost : Infinity;
@@ -157,7 +158,7 @@ function escapeHtml(text) {
 
 /* one finished page trace joins the career's book */
 function saveTrace(probe, origin, angleU, speedU) {
-	if (!careerRule() || !activeSim().fieldStatic) return;
+	if (!careerRule() || !activeCareerSim().fieldStatic) return;
 	if (probe.predReason !== END_IMPACT || probe.predBody < 0) return;
 	const money = traceMoney(probe, origin, GravityGame.speedOf(speedU));
 	GravityGame.recordLaunch(activeCareer().launchBook, pageBookTag(), {
@@ -193,9 +194,9 @@ const bookFire = new Uint8Array(GravityGame.BOOK_MAX);
 /* what stops a saved shot now: a moving field voids the path itself, the
  * rest is the live rail gate the bot log prints */
 function launchBlock(career, entry, speed) {
-	if (!cargoSim.fieldStatic) return 'moving field';
+	if (!activeCareerSim().fieldStatic) return 'moving field';
 	if (playerIsBot()) return 'bot controls the ship';
-	return GravityGame.railBlock(career, activeSim(), entry.origin, speed) ||
+	return GravityGame.railBlock(career, activeCareerSim(), entry.origin, speed) ||
 		(turret.pending ? 'a shot is already queued'
 			: careerWaitBusy() ? 'the clock is settling a wait' : '');
 }
@@ -262,11 +263,11 @@ function railLinesHtml(rail) {
 function launchListHtml(career) {
 	const head = '<div class="careerHead">launch list</div>';
 	const book = career.launchBook;
-	const html = head + railLinesHtml(GravityGame.railText(career, activeSim(), career.at));
+	const html = head + railLinesHtml(GravityGame.railText(career, activeCareerSim(), career.at));
 	if (book.entries.length === 0) {
 		return html + '<div class="careerLine dim">empty · aim or scan to save a shot</div>';
 	}
-	if (!cargoSim.fieldStatic) {
+	if (!activeCareerSim().fieldStatic) {
 		return html + '<div class="careerLine warn">paused · gravity bodies move · ' +
 			'paths only hold in a static field</div>' + launchRowsHtml(career);
 	}
@@ -302,9 +303,10 @@ function refreshLaunchList(force) {
 		return;
 	}
 	const career = activeCareer();
+	const sim = activeCareerSim();
 	const pad = career.at >= 0 ? GravityGame.padAt(career, career.at) : null;
 	const key = career.launchBook.version + '|' + pageBookTag() + '|' + career.at + '|' +
-		(cargoSim.fieldStatic ? 1 : 0) + '|' + cargoSim.status + '|' +
+		(sim.fieldStatic ? 1 : 0) + '|' + sim.status + '|' +
 		(turret.pending ? 1 : 0) + '|' + (careerWaitBusy() ? 1 : 0) + '|' +
 		(pad ? Math.round(pad.chargeKwh * 100) : -1) + '|' +
 		Math.round(career.ledger.purse * 100) + '|' + Math.round(game.clockSteps / 240);

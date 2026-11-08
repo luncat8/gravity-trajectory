@@ -22,7 +22,7 @@ function refreshPredGain() {
 		 * a taken delivery or medical quest pays here, not only on the pad */
 		const origin = sim.status === STATUS_FLYING ? sim.origin : aimBody;
 		const flown = sim.status === STATUS_FLYING ? sim.flightLength : 0;
-		GravityGame.careerLandingFacts(predLanding, game.career, origin, sim.predBody,
+		GravityGame.careerLandingFacts(predLanding, playerCareer(), origin, sim.predBody,
 			flown, sim.predLength, sim.predSteps, game.clockSteps, gain);
 		gain = predLanding.cash;
 	}
@@ -44,7 +44,7 @@ function predictedCareerEconomics(sim) {
 	out.own = false;
 	if (!careerRule() || sim.predCount < 2 || sim.predReason !== END_IMPACT ||
 		sim.predBody < 0) return out;
-	const career = game.career;
+	const career = playerCareer();
 	const origin = sim.status === STATUS_FLYING ? sim.origin
 		: aimBody >= 0 ? aimBody : career.at;
 	const fee = sim.status === STATUS_FLYING ? 0
@@ -53,7 +53,7 @@ function predictedCareerEconomics(sim) {
 	out.fuel = burnArmed ? OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg) * GravityGame.fuelPrice(career) : 0;
 	const cash = career.ledger.purse + predGain - fee;
 	const mass = bot.careerArrivalMass(career, sim.predBody);
-	const departure = bot.careerDeparture(career, sim.predBody, cash, mass, cargoSim);
+	const departure = bot.careerDeparture(career, sim.predBody, cash, mass, activeCareerSim());
 	out.fee = fee;
 	out.exit = departure.cost;
 	out.source = departure.source;
@@ -113,7 +113,7 @@ function refreshAimLabel() {
 	aimGuidance = 0;
 	if (burnAiming || burnArmed) {
 		const deg = ((-burnAngle * 180 / Math.PI) % 360 + 360) % 360;
-		const ship = game.career.ship;
+		const ship = playerCareer().ship;
 		const usedKg = OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg);
 		const economics = sim.predCount >= 2 && careerRule()
 			? predictedCareerEconomics(sim) : null;
@@ -124,7 +124,7 @@ function refreshAimLabel() {
 				' (' + sim.predVisits + ' sys)' + predTickNote()
 			: '';
 		aimLabel = 'Δv ' + burnDv.toFixed(1) + ' px/s · ' + deg.toFixed(1) + '° · −' +
-			usedKg.toFixed(1) + ' kg / ' + costText(usedKg * GravityGame.fuelPrice(game.career)) +
+			usedKg.toFixed(1) + ' kg / ' + costText(usedKg * GravityGame.fuelPrice(playerCareer())) +
 			(fine ? ' · fine' : '') + visitNote;
 		return;
 	}
@@ -149,14 +149,14 @@ function refreshAimLabel() {
 	aimLabel = Math.round(aimSpeed) + ' px/s · ' + deg.toFixed(1) + '°' +
 		(fine ? ' · fine' : '') +
 		(ceiling < SPEED_MAX - 1e-9 ? ' · max ' + Math.round(ceiling) : '') + visitNote +
-		(careerRule() ? careerPickupNote(game.career, aimBody) : '');
+		(careerRule() ? careerPickupNote(playerCareer(), aimBody) : '');
 }
 
 /* the drag maps all of GRIP_MAX onto SPEED_MIN…this planet's real ceiling:
  * a weak rail or a drained career battery shrinks the range instead of
  * letting the player aim a shot the pad then refuses to fire */
 function speedCeiling(planet) {
-	const limit = careerRule() && planet >= 0 ? cargoSim.speedLimit(planet) : SPEED_MAX;
+	const limit = careerRule() && planet >= 0 ? activeCareerSim().speedLimit(planet) : SPEED_MAX;
 	if (limit < SPEED_MIN) return SPEED_MIN;
 	return limit > SPEED_MAX ? SPEED_MAX : limit;
 }
@@ -168,7 +168,11 @@ function applyExperiment() {
 	cargoSim.setScales(gravityScale, forceScale);
 	helperProbe.setScales(gravityScale, forceScale);
 	bot.setScales(gravityScale, forceScale);
-	if (game.career) game.career.forceScale = forceScale;
+	/* every company prices its own pads with the panel's force multiplier */
+	for (let s = 0; s < slotCount(); s++) {
+		const career = slotCareer(s);
+		if (career) career.forceScale = forceScale;
+	}
 	GravityGame.setHarvestMode(harvestTick && careerRule()
 		? GravityGame.HARVEST_TICK : GravityGame.HARVEST_ENTRY);
 }
@@ -286,7 +290,7 @@ function slotBroke(slot) {
 }
 
 function careerOverText() {
-	const career = game.career;
+	const career = playerCareer();
 	if (career.ended === GravityGame.CAREER_BROKE) return 'broke · career over';
 	if (career.ended === GravityGame.CAREER_COMPLETE) return 'catapult network complete';
 	if (!career.stranded) return '';
@@ -331,15 +335,16 @@ function setCareerPaused(next) {
 /* why the armed shot cannot fire from its pad right now ('' when it can) */
 function careerPadNote() {
 	if (!careerRule() || !armed || aimBody < 0) return '';
-	const career = game.career;
+	const career = playerCareer();
 	const fee = GravityGame.launchFee(career, aimBody, aimSpeed);
 	if (fee > 0 && career.ledger.purse + 1e-9 < fee) {
 		return 'EMC fee ' + fee.toFixed(2) + ' · purse ' + career.ledger.purse.toFixed(2);
 	}
-	if (cargoSim.canFire(aimBody, aimSpeed)) return '';
-	return 'pad ' + cargoSim.pads[aimBody].chargeKwh.toFixed(2) + ' kWh · shot ' +
-		cargoSim.launchEnergy(aimBody, aimSpeed).toFixed(2) + ' · max ' +
-		Math.round(cargoSim.speedLimit(aimBody)) + ' px/s';
+	const sim = activeCareerSim();
+	if (sim.canFire(aimBody, aimSpeed)) return '';
+	return 'pad ' + sim.pads[aimBody].chargeKwh.toFixed(2) + ' kWh · shot ' +
+		sim.launchEnergy(aimBody, aimSpeed).toFixed(2) + ' · max ' +
+		Math.round(sim.speedLimit(aimBody)) + ' px/s';
 }
 
 function routeOccupiedBy(planet) {

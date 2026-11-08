@@ -88,7 +88,7 @@ function updateGameHud() {
 	}
 	const replayText = replay.on
 		? replay.route
-			? 'tracing one plan · ' + Math.round(cargoSim.routeProgress() * 100) + ' %'
+			? 'tracing one plan · ' + Math.round(slotSim(0).routeProgress() * 100) + ' %'
 			: 'shot ' + (replay.index + (replay.phase === PHASE_AIM ? 1 : 0)) + ' / ' +
 				replay.shots.length + ' · ×' + REPLAY_SPEEDS[replay.speed]
 		: replay.verdict;
@@ -315,7 +315,7 @@ function setLaunchState(blocked, exitWarning) {
 	if (canImpulse()) {
 		/* the impulse loop is pause-first: the context button only offers the
 		 * burn while it is armed; pause / resume uses the game clock button and Space */
-		const ship = activeCareer().ship;
+		const ship = playerCareer().ship;
 		const usedKg = burnArmed
 			? OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg) : 0;
 		const warnExit = burnArmed && exitWarning;
@@ -324,7 +324,8 @@ function setLaunchState(blocked, exitWarning) {
 			: burnArmed
 			? (warnExit ? 'burn · leaves map · ' : 'burn · Δv ') +
 				burnDv.toFixed(1) + ' px/s (−' + usedKg.toFixed(1) + ' kg · ' +
-				costText(usedKg * GravityGame.fuelPrice(activeCareer())) + ')'
+				costText(usedKg * GravityGame.fuelPrice(playerCareer())) + ')'
+			/* the impulse loop flies YOU's ship: canImpulse() gates on cargoSim */
 			: isBurnPaused() ? 'burn … drag from the ship' : 'coasting · ' +
 				Math.sqrt(cargoSim.cargo.vx * cargoSim.cargo.vx +
 					cargoSim.cargo.vy * cargoSim.cargo.vy).toFixed(1) + ' px/s';
@@ -363,13 +364,14 @@ function setLaunchState(blocked, exitWarning) {
 	const botPlayer = slotIsBot(slot);
 	const ledger = slotLedger(slot);
 	const plan = slotPlans[slot];
+	const sim = slotSim(slot);
 	const career = careerRule();
 	/* planet actions beside launch: build yours, fire the commercial rail
 	 * that stands on every planet, or evacuate — shown whenever the career
 	 * ship sits landed (lost in space keeps only the evacuation) */
-	const c = activeCareer();
+	const c = playerCareer();
 	const landed = career && c.ended === GravityGame.CAREER_OPEN &&
-		cargoSim.status !== STATUS_FLYING;
+		sim.status !== STATUS_FLYING;
 	const showActions = landed && (c.at >= 0 || c.stranded);
 	const commercialOn = showActions && c.at >= 0 && c.commercialPlanet === c.at;
 	launchButton.hidden = showActions && c.at < 0;
@@ -484,7 +486,7 @@ function launchRideText(career) {
 	if (!career) return game.on ? ' · ' + MONEY.cost.toFixed(2) : '';
 	if (aimBody < 0) return '';
 	if (GravityGame.padOwner(career, aimBody) === career.index) {
-		return ', ' + cargoSim.launchEnergy(aimBody, aimSpeed).toFixed(2) + ' kWh';
+		return ', ' + activeCareerSim().launchEnergy(aimBody, aimSpeed).toFixed(2) + ' kWh';
 	}
 	return ', ' + costText(GravityGame.launchFee(career, aimBody, aimSpeed));
 }
@@ -493,7 +495,7 @@ function launchRideTitle(career) {
 	if (!career || aimBody < 0) return '';
 	if (GravityGame.padOwner(career, aimBody) === career.index) {
 		const pad = career.pads[aimBody];
-		return 'the shot drains ' + cargoSim.launchEnergy(aimBody, aimSpeed).toFixed(2) +
+		return 'the shot drains ' + activeCareerSim().launchEnergy(aimBody, aimSpeed).toFixed(2) +
 			' kWh of the ' + pad.catapult.id + ' battery (' + pad.chargeKwh.toFixed(2) + ' kWh charged)';
 	}
 	const owner = GravityGame.padOwner(career, aimBody);
@@ -512,7 +514,8 @@ function launchRideTitle(career) {
 function statusText() {
 	if (replay.on) {
 		if (replay.route) return 'replay · tracing plan';
-		return cargoSim.status === STATUS_FLYING ? 'replay · in flight' : 'replay · aiming';
+		return slotSim(activeSlotIndex()).status === STATUS_FLYING
+			? 'replay · in flight' : 'replay · aiming';
 	}
 	const slot = activeSlotIndex();
 	const sim = slotSim(slot);

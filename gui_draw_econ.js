@@ -44,8 +44,8 @@ function drawRoutePlanEntry(sim, leader, colour, dimColour, px) {
 function drawRivalsWorld(now) {
 	const px = 1 / view.scale;
 	const active = activeSlotIndex();
-	if (active > 0 && routeRule() && cargoSim.predCount >= 2) {
-		drawRoutePlanEntry(cargoSim, routeLeader === -1, MINT,
+	if (active > 0 && routeRule() && slotSim(0).predCount >= 2) {
+		drawRoutePlanEntry(slotSim(0), routeLeader === -1, MINT,
 			'rgba(142, 240, 192, 0.48)', px);
 	}
 	for (let rIdx = 0; rIdx < bot.count; rIdx++) {
@@ -263,7 +263,7 @@ function padPlateInfo(career, planet, plate) {
 	const mass = career.ship.mass;
 	const key = (((((planet + 1) * 8 + (owner + 2)) * 16 + tier) * 20000 +
 		(charged ? Math.round(pad.chargeKwh * 100) : 0)) * 40000 +
-		Math.round(mass * 100)) * 400 + Math.round(cargoSim.forceScale * 100);
+		Math.round(mass * 100)) * 400 + Math.round(forceScale * 100);
 	if (key === plate.key) return plate;
 	plate.key = key;
 	if (!pad) {
@@ -278,7 +278,11 @@ function padPlateInfo(career, planet, plate) {
 		plate.warn = true;
 		return plate;
 	}
-	const limit = cargoSim.speedLimit(planet);
+	/* the plate prices the rail of the company it is drawn for, not the ship
+	 * the page happens to have selected */
+	const free = pad.chargeKwh - pad.reservedKwh;
+	const limit = OrbitTech.speedLimit(free > 0 ? free : 0, career.ship.mass,
+		pad.catapult, forceScale);
 	const tag = owner === career.index ? '' : (owner === 0 ? 'YOU ' : 'R' + owner + ' ');
 	plate.text = tag + pad.catapult.id + ' · ' + pad.chargeKwh.toFixed(2) + ' kWh · ' +
 		Math.round(limit) + ' px/s';

@@ -27,7 +27,7 @@ function updateAim() {
 		gripLen = 0;
 	}
 	aimCeiling = speedCeiling(aimBody);
-	aimSpeed = cargoSim.speedAt(gripLen, aimCeiling);
+	aimSpeed = activeCareerSim().speedAt(gripLen, aimCeiling);
 	snapAim();
 	refreshAimLabel();
 }
@@ -49,7 +49,7 @@ function placeGripFromSpeed() {
 	if (aimSpeed > ceiling) aimSpeed = ceiling;
 	else if (aimSpeed < SPEED_MIN) aimSpeed = SPEED_MIN;
 	snapAim();
-	gripLen = cargoSim.gripLength(aimSpeed, ceiling);
+	gripLen = activeCareerSim().gripLength(aimSpeed, ceiling);
 	const cx = tradeSim.planetX[aimBody];
 	const cy = tradeSim.planetY[aimBody];
 	gripX = cx + Math.cos(aimAngle) * gripLen;
@@ -151,7 +151,7 @@ function cancelTurret() {
 	launchState = -1;
 	hudAt = -Infinity;
 	refreshGameUi();
-	refreshCareerWaitUi(game.career, game.career.ended !== GravityGame.CAREER_OPEN);
+	refreshCareerWaitUi(playerCareer(), playerCareer().ended !== GravityGame.CAREER_OPEN);
 }
 
 /* the barrel turns with the in-game career clock, so a queued launch fires
@@ -170,8 +170,8 @@ function queueTurretShot() {
 	turret.speed = aimSpeed;
 	/* the queued shot claims its energy now: the first to queue gets the
 	 * charge, whether it is the pad owner or a guest */
-	turret.pad = GravityGame.padAt(game.career, aimBody);
-	turret.energy = cargoSim.launchEnergy(aimBody, aimSpeed);
+	turret.pad = GravityGame.padAt(playerCareer(), aimBody);
+	turret.energy = activeCareerSim().launchEnergy(aimBody, aimSpeed);
 	GravityGame.reserveEnergy(turret.pad, turret.energy);
 	turret.fireAt = game.clockSteps + Math.ceil(wait / DT);
 	/* the barrel only turns while the world clock runs */
@@ -316,9 +316,10 @@ function executeBurn() {
 	const angle = GravityGame.angleOf(angleU);
 	const dv = GravityGame.speedOf(dvU);
 	const step = cargoSim.liveSteps;
-	const ship = game.career.ship;
+	const career = playerCareer();
+	const ship = career.ship;
 	const beforeFuel = ship.fuelKg;
-	if (!GravityGame.careerBurn(game.career, cargoSim, angle, dv)) return false;
+	if (!GravityGame.careerBurn(career, cargoSim, angle, dv)) return false;
 	const used = beforeFuel - ship.fuelKg;
 	if (game.shots.length > 0) {
 		game.shots[game.shots.length - 1].burns.push(GravityGame.createBurn(step, angleU, dvU));
@@ -326,7 +327,7 @@ function executeBurn() {
 	setCareerPaused(false);
 	const remDv = OrbitTech.impulseDeltaV(ship.fuelKg, ship.engine, ship.mass, ship.fuelKg);
 	careerNotice('burned Δv ' + dv.toFixed(1) + ' px/s (−' + used.toFixed(1) + ' kg) · fuel ' +
-		ship.fuelKg.toFixed(1) + ' kg · replacement ' + costText(used * GravityGame.fuelPrice(game.career)) +
+		ship.fuelKg.toFixed(1) + ' kg · replacement ' + costText(used * GravityGame.fuelPrice(career)) +
 		(remDv > 0.05 ? ' · Δv ' + remDv.toFixed(1) + ' px/s left' : ' · tank empty'));
 	refreshGameUi();
 	return true;
@@ -352,7 +353,7 @@ function launchShot() {
 	}
 	if (!armed || !canAimFrom(aimBody) || gameLocked()) return;
 	if (!activeSim().canFire(aimBody, aimSpeed)) return;
-	if (careerRule() && !GravityGame.careerCanFire(game.career, cargoSim, aimBody, aimSpeed)) return;
+	if (careerRule() && !GravityGame.careerCanFire(playerCareer(), activeCareerSim(), aimBody, aimSpeed)) return;
 	/* in career the click queues the shot: the barrel winds to the aim */
 	if (careerRule() && !replay.on) {
 		queueTurretShot();
@@ -377,7 +378,7 @@ function fire(abortStep) {
 	}
 	if (game.on) {
 		if (careerRule()) {
-			GravityGame.careerBeginFlight(game.career, sim);
+			GravityGame.careerBeginFlight(playerCareer(), sim);
 			careerPhoto('catapult');
 		} else GravityGame.beginFlight(slotLedger(slot), sim);
 		if (slot > 0) bot.rivals[slot - 1].basePlanet = aimBody;

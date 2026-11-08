@@ -2283,7 +2283,7 @@
 	}
 
 	function planHomeSet(world, trade, mask, count, candidates, seatsWanted, sourceSim,
-		sunlit) {
+		sunlit, resume) {
 		if (candidates.length < seatsWanted) return null;
 		const forcedHomes = new Uint8Array(OrbitWorld.PLANETS);
 		const chosen = [];
@@ -2311,15 +2311,23 @@
 
 		/* Proxy order first, exact final-field authority second. Complete each
 		 * batch before accepting it so all ranking families get an equal chance;
-		 * a default map with no fair set still evaluates every proposal. */
-		let bestHomes = null;
-		let bestStats = null;
-		let bestTie = 0xffffffff;
+		 * a default map with no fair set still evaluates every proposal.
+		 *
+		 * `resume` is the caller's own place in that walk. The page asks for the
+		 * same map twice on one click (the scoreboard plans it, then the run
+		 * rebuilds it); a second request resumes at the batch it stopped on instead
+		 * of flying every pair trace again. The ranking is a pure function of the
+		 * same inputs, so resuming lands on the same sets and the same answer. */
 		const consider = sets.length <= OPENING_EXACT_BATCH
 			? sets : rankOpeningSets(world, trade, mask, count, sets, candidates,
 				seatsWanted, sourceSim);
 		const exactLimit = Math.min(consider.length, OPENING_EXACT_SETS);
-		for (let i = 0; i < exactLimit; i++) {
+		const resumable = resume && resume.consider === consider;
+		const from = resumable ? resume.exactAt : 0;
+		let bestHomes = resumable ? resume.homes : null;
+		let bestStats = resumable ? resume.stats : null;
+		let bestTie = resumable ? resume.tie : 0xffffffff;
+		for (let i = from; i < exactLimit; i++) {
 			const proposal = consider[i];
 			const proposalMask = new Uint8Array(OrbitWorld.PLANETS);
 			for (let j = 0; j < proposal.homes.length; j++) proposalMask[proposal.homes[j]] = 1;
@@ -2336,6 +2344,14 @@
 			if (batchDone && openingGroupAccepted(bestStats)) break;
 		}
 		if (!bestHomes) return null;
+		if (resume) {
+			resume.consider = consider;
+			/* an accepted batch ends the walk; the plan is complete as it stands */
+			resume.exactAt = exactLimit;
+			resume.homes = bestHomes;
+			resume.stats = bestStats;
+			resume.tie = bestTie;
+		}
 		const homes = bestHomes;
 		for (let i = 0; i < homes.length; i++) forcedHomes[homes[i]] = 1;
 		let exact = bestStats;
@@ -2360,13 +2376,82 @@
 		return { homes: homes, stats: exact };
 	}
 
-	/* A map every company can actually start: one seat each, one site each,
+	/*
+	 * Seat plans are a pure function of the world, the universe and the seat
+	 * count, and the page asks for the same plan twice on one click: the
+	 * scoreboard's player +/- plans the map once and then `startGame` rebuilds it
+	 * from the same seed. Re-planning spent seconds of blocked main thread to
+	 * arrive at the identical HQs, so the last few answers are kept. A new seed,
+	 * universe, seat count or field scale misses and plans again.
+	 */
+	const SEAT_PLAN_CACHE_MAX = 4;
+	const seatPlanCache = [];
+	/* the search a repeat request resumes, dropped when a later one replaces it */
+	let resumeMemory = null;
+
+	function seatPlanKey(world, trade, mask, count, seatsWanted, sourceSim) {
+		return (world.seed >>> 0) + ':' + (trade.seed >>> 0) + ':' +
+			openingMaskTag(mask, count) + ':' + seatsWanted + ':' +
+			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
+			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
+			(specialPlanets ? 1 : 0);
+	}
+
+	function seatPlanCached(key) {
+		for (let i = 0; i < seatPlanCache.length; i++) {
+			if (seatPlanCache[i].key === key) return seatPlanCache[i];
+		}
+		return null;
+	}
+
+	function seatPlanRemember(key, plan) {
+		if (!plan) return null;
+		seatPlanCache.push({ key: key, plan: plan });
+		if (seatPlanCache.length > SEAT_PLAN_CACHE_MAX) seatPlanCache.shift();
+		return plan;
+	}
+
+	/*
+	 * A map every company can actually start: one seat each, one site each,
 	 * comparable profit, and a way off every new rail. Sunlit homes are tried
 	 * first and a dimmer map is only accepted when the sunlit pool cannot seat
-	 * everybody fairly. */
+	 * everybody fairly.
+	 */
 	function prepareCareerStarts(galaxy, world, trade, mask, count, wanted, sourceSim) {
 		const seatsWanted = Math.max(0, Math.min(Math.floor(wanted), count || OrbitWorld.PLANETS));
 		if (!galaxy || !world || !trade || seatsWanted <= 0) return null;
+		const key = seatPlanKey(world, trade, mask, count, seatsWanted, sourceSim);
+		const memo = seatPlanCached(key);
+		if (memo) {
+			seatPlanApply(galaxy, memo.plan);
+			return memo.plan.homes.slice();
+		}
+		const resume = resumeMemory && resumeMemory.key === key ? resumeMemory : null;
+		/* the boxes may accept the first plan a restarted search then rejects */
+		if (resume && resume.plan && resume.plan.homes && resume.plan.stats) {
+			seatPlanApply(galaxy, resume.plan);
+			seatPlanRemember(key, resume.plan);
+			resumeMemory = null;
+			return resume.plan.homes.slice();
+		}
+		const slot = { key: key, seats: seatsWanted, plan: resume ? resume.plan : null };
+		resumeMemory = slot;
+		const plan = planCareerSeats(world, trade, mask, count, seatsWanted, sourceSim, slot);
+		/* a failed search is kept too: asking again resumes at its tail */
+		if (!plan) return null;
+		resumeMemory = null;
+		seatPlanRemember(key, plan);
+		seatPlanApply(galaxy, plan);
+		return plan.homes.slice();
+	}
+
+	/* the galaxy keeps the HQs, their shuffle and the pay target the plan chose */
+	function seatPlanApply(galaxy, plan) {
+		galaxy.mapSeats = plan.homes.slice();
+		if (plan.targetPay > OPENING_COMPARE_EPS) galaxy.openingTargetPay = plan.targetPay;
+	}
+
+	function planCareerSeats(world, trade, mask, count, seatsWanted, sourceSim, resume) {
 		const pools = startCandidatePools(world, mask, seatsWanted);
 		const forcedHomes = new Uint8Array(OrbitWorld.PLANETS);
 		let homes = null;
@@ -2378,7 +2463,8 @@
 			 * exit-safe seating paid its weakest company 11% of its best, while the
 			 * same world seated everybody at 84% once the dimmer planets were in. */
 			const plan = planHomeSet(world, trade, mask, count, pools[0], seatsWanted,
-				sourceSim, pools.length > 1 ? pools[1] : null);
+				sourceSim, pools.length > 1 ? pools[1] : null, resume && resume.seats === seatsWanted
+					? resume.plan : null);
 			if (!plan) return null;
 			homes = plan.homes;
 			openingStats = plan.stats;
@@ -2405,14 +2491,14 @@
 			homes[i] = homes[j];
 			homes[j] = home;
 		}
-		galaxy.mapSeats = homes;
+		let targetPay = 0;
 		if (openingStats && Number.isFinite(openingStats.minPay) &&
 			Number.isFinite(openingStats.maxPay) && openingStats.minPay > 0) {
 			/* geometric mean gives equal weight to being richer or poorer than the
 			 * initial band when a later rival needs a newly enabled home */
-			galaxy.openingTargetPay = Math.sqrt(openingStats.minPay * openingStats.maxPay);
+			targetPay = Math.sqrt(openingStats.minPay * openingStats.maxPay);
 		}
-		return homes;
+		return { homes: homes, targetPay: targetPay };
 	}
 
 	/*
@@ -2836,7 +2922,7 @@
 		career.forceScale = sim.forceScale;
 		if (galaxy) joinGalaxy(career, galaxy);
 		else syncCareerNetwork(career);
-		sim.setLaunchNetwork(career.launchPads, career.ship);
+		sim.attachCareer(career);
 		placeShip(career, sim, career.hq);
 	}
 

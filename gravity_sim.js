@@ -271,7 +271,17 @@
 		return worst;
 	};
 
-	/* with a launch network the vessel fires only from the pad it sits on */
+	/*
+	 * With a launch network the vessel fires only from the pad it sits on. Every
+	 * rail gate (the drag ceiling, the launch button, the launch book) reads this
+	 * pair, so the page points it at the selected player's ship and network: a
+	 * career company's sim knows only its own landing.
+	 */
+	GravitySim.prototype.attachCareer = function (career) {
+		this.pads = career.launchPads;
+		this.ship = career.ship;
+	};
+
 	GravitySim.prototype.canLaunchFrom = function (planet) {
 		const limit = this.planetCount > 0 ? this.planetCount : this.bodyCount;
 		if (planet < 0 || planet >= limit) return false;

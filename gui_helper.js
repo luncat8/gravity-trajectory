@@ -43,10 +43,13 @@ function helperUpdateUi() {
 			? 'nudge the ' + Math.round(best.length) + ' px best by ± small angle and ±8 % speed · each press tries new jitter'
 			: 'make a best plan first (drag and wait for trace to finish)';
 	}
+	/* the scans price the selected player's company: its landing, purse and rail */
 	const career = careerRule();
-	const landed = career && !gameLocked() && cargoSim.status !== STATUS_FLYING ? game.career.at : -1;
-	const profitOk = canScan && landed >= 0 && cargoSim.fieldStatic &&
-		game.career.ended === GravityGame.CAREER_OPEN;
+	const mine = career ? playerCareer() : null;
+	const fieldStatic = activeCareerSim().fieldStatic;
+	const landed = career && !gameLocked() && activeSim().status !== STATUS_FLYING ? mine.at : -1;
+	const profitOk = canScan && landed >= 0 && fieldStatic &&
+		mine.ended === GravityGame.CAREER_OPEN;
 	if (helperProfitBtn) {
 		helperProfitBtn.hidden = !career;
 		helperProfitBtn.disabled = !profitOk;
@@ -101,12 +104,14 @@ function helperUpdateUi() {
 }
 
 function helperAttachWorld() {
+	const sim = activeCareerSim();
 	helperProbe.setPlanets(PLANETS, tradeSim.planetX, tradeSim.planetY, tradeSim.planetR,
 		tradeSim.orbitRX, tradeSim.orbitRY, tradeSim.orbitTiltCos, tradeSim.orbitTiltSin);
 	helperProbe.setPlanetMask(planetMask);
-	helperProbe.setField(cargoSim.bodyCount, cargoSim.bodyR, cargoSim.strength, cargoSim.fillField, cargoSim.fieldStatic);
-	helperProbe.fieldT = cargoSim.fieldT;
-	helperProbe.fieldRate = cargoSim.fieldRate;
+	helperProbe.setScales(sim.gravityScale, sim.forceScale);
+	helperProbe.setField(sim.bodyCount, sim.bodyR, sim.strength, sim.fillField, sim.fieldStatic);
+	helperProbe.fieldT = sim.fieldT;
+	helperProbe.fieldRate = sim.fieldRate;
 }
 
 /*
@@ -164,7 +169,7 @@ function helperScore(probe, cand) {
 	if (careerRule()) {
 		/* the untargeted scan weighs the same factors as the targeted ones,
 		 * so a taken leg is never invisible just because no goal is set */
-		GravityGame.careerLandingFacts(helperLanding, game.career, origin, probe.predBody, 0,
+		GravityGame.careerLandingFacts(helperLanding, playerCareer(), origin, probe.predBody, 0,
 			probe.predLength, probe.predSteps, game.clockSteps, profit);
 		score += helperLanding.cash * 30 + helperLanding.credit * 60 + newVisits * 4 -
 			probe.predTime * 0.12;
@@ -260,10 +265,11 @@ function helperMakeTweak(base, count) {
 function helperBeginCandidate() {
 	if (!helperState.active || helperState.index >= helperState.candidates.length) return;
 	const cand = helperState.candidates[helperState.index];
-	helperProbe.visited.set(activeSim().visited);
-	helperProbe.visitedCount = activeSim().visitedCount;
-	helperProbe.fieldT = cargoSim.fieldT;
-	helperProbe.fieldRate = cargoSim.fieldRate;
+	const live = activeCareerSim();
+	helperProbe.visited.set(live.visited);
+	helperProbe.visitedCount = live.visitedCount;
+	helperProbe.fieldT = live.fieldT;
+	helperProbe.fieldRate = live.fieldRate;
 	helperProbe.horizon = helperState.horizon;
 	if (!helperProbe.fieldStatic) helperProbe.refreshField();
 	const angle = GravityGame.angleOf(cand.angleU);
@@ -288,7 +294,7 @@ function helperRun(candidates, mode, goal, seed) {
 	if (routeRule()) helperState.horizon = ruleSpec().horizon;
 	/* a career flight is capped by the rule, not by the preview slider */
 	else if (careerRule()) helperState.horizon = GravityGame.CAP_SECONDS;
-	else helperState.horizon = cargoSim.horizon;
+	else helperState.horizon = activeCareerSim().horizon;
 	helperBeginCandidate();
 	helperUpdateUi();
 	hudAt = -Infinity;
@@ -323,23 +329,23 @@ function helperStartFocus() {
 function helperMakeProfit(origin, count, requireEmc) {
 	const out = helperMakeFocus(origin, count);
 	if (!requireEmc) return out;
-	const career = game.career;
+	const career = playerCareer();
 	const cap = speedCeiling(origin);
 	const span = Math.max(0, cap - SPEED_MIN);
 	const near = [];
 	for (let p = 0; p < PLANETS; p++) {
 		if (!planetMask[p]) continue;
 		if (p === origin || career.pads[p].catapult !== null) continue;
-		const dx = cargoSim.planetX[p] - cargoSim.planetX[origin];
-		const dy = cargoSim.planetY[p] - cargoSim.planetY[origin];
+		const dx = tradeSim.planetX[p] - tradeSim.planetX[origin];
+		const dy = tradeSim.planetY[p] - tradeSim.planetY[origin];
 		near.push({ planet: p, dist: dx * dx + dy * dy });
 	}
 	near.sort((a, b) => a.dist - b.dist);
 	const picks = Math.min(4, near.length);
 	for (let i = 0; i < picks; i++) {
 		const planet = near[i].planet;
-		const angle = Math.atan2(cargoSim.planetY[planet] - cargoSim.planetY[origin],
-			cargoSim.planetX[planet] - cargoSim.planetX[origin]);
+		const angle = Math.atan2(tradeSim.planetY[planet] - tradeSim.planetY[origin],
+			tradeSim.planetX[planet] - tradeSim.planetX[origin]);
 		for (let k = 0; k < 3; k++) {
 			const a = (angle + (k - 1) * 0.08) % TAU;
 			const speed = SPEED_MIN + span * (0.35 + 0.2 * k);
@@ -395,14 +401,15 @@ function helperBookSeed(career, origin, requireEmc, creditWeight) {
  * ranking with the best saved shot priced on the same goal */
 function helperStartCareer(goal, mode, build) {
 	if (helperState.active || replay.on || playerIsBot()) return;
-	if (!careerRule() || gameLocked() || !cargoSim.fieldStatic) return;
-	const origin = game.career.at;
-	if (origin < 0 || cargoSim.status === STATUS_FLYING) return;
-	if (game.career.ended !== GravityGame.CAREER_OPEN) return;
+	const career = playerCareer();
+	if (!careerRule() || gameLocked() || !activeCareerSim().fieldStatic) return;
+	const origin = career.at;
+	if (origin < 0 || activeSim().status === STATUS_FLYING) return;
+	if (career.ended !== GravityGame.CAREER_OPEN) return;
 	const rule = HELPER_GOALS[goal];
 	const cands = build(origin);
 	if (cands.length === 0) return;
-	const seed = helperBookSeed(game.career, origin, rule.builds, rule.credit);
+	const seed = helperBookSeed(career, origin, rule.builds, rule.credit);
 	helperRun(cands, mode, goal, seed);
 }
 
@@ -416,14 +423,14 @@ function helperStartProfit(requireEmc) {
  * shots at the planets the open work wants next, whatever kind it is */
 function helperMakeQuest(origin, count) {
 	const out = helperMakeFocus(origin, Math.max(8, Math.floor(count / 2)));
-	const targets = GravityGame.careerGoalBodies(game.career);
+	const targets = GravityGame.careerGoalBodies(playerCareer());
 	const cap = speedCeiling(origin);
 	const span = Math.max(0, cap - SPEED_MIN);
 	for (let t = 0; t < targets.length && out.length < count; t++) {
 		const planet = targets[t];
 		if (planet < 0 || planet >= PLANETS || planet === origin || !planetMask[planet]) continue;
-		const angle = Math.atan2(cargoSim.planetY[planet] - cargoSim.planetY[origin],
-			cargoSim.planetX[planet] - cargoSim.planetX[origin]);
+		const angle = Math.atan2(tradeSim.planetY[planet] - tradeSim.planetY[origin],
+			tradeSim.planetX[planet] - tradeSim.planetX[origin]);
 		for (let k = 0; k < 3 && out.length < count; k++) {
 			const a = (angle + (k - 1) * 0.08 + TAU) % TAU;
 			const speed = SPEED_MIN + span * (0.35 + 0.25 * k);

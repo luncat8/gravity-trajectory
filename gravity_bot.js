@@ -2882,6 +2882,8 @@
 					this.planetUniverseCount || OrbitWorld.PLANETS);
 			}
 			GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(seed, i), trade, null, galaxy);
+			/* whoever flies this company by hand needs the live rail gate */
+			r.sim.attachCareer(r.career);
 			r.career.bribeProne = this.careerBribeProne(i);
 			r.sim.fieldT = trade.t;
 			r.sim.fieldRate = this.probe.fieldRate;
@@ -2931,6 +2933,7 @@
 		GravityGame.setCareerUniverse(r.career, this.probe.planetMask, this.planetUniverseCount);
 		GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(this.seed, i),
 			trade, null, galaxy, planet);
+		r.sim.attachCareer(r.career);
 		r.career.bribeProne = this.careerBribeProne(i);
 		r.sim.fieldT = trade.t;
 		r.sim.fieldRate = this.probe.fieldRate;

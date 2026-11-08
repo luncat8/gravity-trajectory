@@ -45,7 +45,7 @@ function costText(value) {
  * speed?" from the same rail model; 0 = no pad */
 function padCapMass(catapult, battery, mass) {
 	if (catapult === null || battery === null) return 0;
-	const cap = OrbitTech.speedLimit(battery.capacity, mass, catapult, cargoSim.forceScale);
+	const cap = OrbitTech.speedLimit(battery.capacity, mass, catapult, activeCareerSim().forceScale);
 	return cap > SPEED_MAX ? SPEED_MAX : cap;
 }
 
@@ -402,7 +402,7 @@ function padBlockHtml(career) {
 		html += claimLineHtml();
 		return html + fuelBlockHtml(career);
 	}
-	const limit = cargoSim.speedLimit(at);
+	const limit = activeCareerSim().speedLimit(at);
 	const full = padCap(career, pad.catapult, pad.battery);
 	const shot = OrbitTech.launchEnergy(ship.mass, pad.catapult, limit);
 	const frac = pad.battery.capacity > 0 ? pad.chargeKwh / pad.battery.capacity : 0;

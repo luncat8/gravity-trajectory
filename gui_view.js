@@ -415,6 +415,28 @@ function activeCareer() {
 	return slotCareer(activeSlotIndex());
 }
 
+/*
+ * The selected player's company and ship. Every skill, pad and launch gate on
+ * the page reads this pair, never YOU's record: a hand-flown rival company
+ * aims and fires with its own purse, battery and landing, so selecting R1
+ * cannot borrow YOU's pads or strand R1 on YOU's planet.
+ */
+function playerCareer() {
+	const career = careerRule() ? activeCareer() : null;
+	return career || game.career;
+}
+
+/*
+ * The sim takes the network of the company the page is pointed at, so the drag
+ * ceiling, the launch gate and the launch book all answer for that ship. A
+ * rival's own controller re-binds its company when it plans a shot.
+ */
+function activeCareerSim() {
+	const sim = activeSim();
+	if (careerRule()) sim.attachCareer(playerCareer());
+	return sim;
+}
+
 /* any company still in business keeps the shared world clock turning */
 function careerWorldOpen() {
 	for (let s = 0; s < slotCount(); s++) {

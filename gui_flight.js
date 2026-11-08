@@ -233,19 +233,21 @@ function flightActionState() {
 }
 
 function flightStateText() {
+	/* every line here describes the selected player's ship, never YOU's */
+	const sim = activeSim();
+	const career = careerRule() ? activeCareer() : null;
 	if (replay.on) return 'replay';
-	if (careerRule() && activeCareer().ended !== GravityGame.CAREER_OPEN) return 'career over';
+	if (career && career.ended !== GravityGame.CAREER_OPEN) return 'career over';
 	if (burnArmed) return 'burn armed';
 	if (burnAiming) return 'aiming impulse';
-	if (careerRule() && careerPaused && cargoSim.status === STATUS_FLYING) return 'flight paused';
-	if (cargoSim.status === STATUS_FLYING) return 'coasting';
+	if (career && careerPaused && sim.status === STATUS_FLYING) return 'flight paused';
+	if (sim.status === STATUS_FLYING) return 'coasting';
 	if (game.on && playerIsBot()) return 'bot flying';
-	if (careerRule()) {
-		const at = activeCareer().at;
-		if (at >= 0 && cargoSim.status !== STATUS_FLYING) return 'landed ' + planetName(at);
-		if (activeCareer().stranded) return 'stranded';
+	if (career) {
+		if (career.at >= 0 && sim.status !== STATUS_FLYING) return 'landed ' + planetName(career.at);
+		if (career.stranded) return 'stranded';
 	}
-	const landed = activeSim().landedBody;
+	const landed = sim.landedBody;
 	if (landed >= 0) return 'landed ' + planetName(landed);
 	if (helperState.active) return 'scanning ' + (helperState.index + 1) + '/' +
 		helperState.candidates.length;
@@ -255,7 +257,7 @@ function flightStateText() {
 /* the panel repaints on the HUD tick; every node is written only on change */
 function updateFlightHud() {
 	const sim = activeSim();
-	const flying = cargoSim.status === STATUS_FLYING;
+	const flying = sim.status === STATUS_FLYING;
 	const state = flightStateText();
 	if (state !== flightHud.state) {
 		flightHud.state = state;
@@ -263,8 +265,8 @@ function updateFlightHud() {
 	}
 	const career = careerRule() ? activeCareer() : null;
 	const ship = career ? career.ship : null;
-	const speed = flying ? Math.sqrt(cargoSim.cargo.vx * cargoSim.cargo.vx +
-		cargoSim.cargo.vy * cargoSim.cargo.vy)
+	const speed = flying ? Math.sqrt(sim.cargo.vx * sim.cargo.vx +
+		sim.cargo.vy * sim.cargo.vy)
 		: burnArmed ? burnDv : armed ? aimSpeed : 0;
 	const speedText = flying || burnArmed || armed ? speed.toFixed(1) + ' px/s' : '—';
 	if (speedText !== flightHud.speed) {
@@ -322,7 +324,7 @@ function updateFlightFuel(career, ship) {
 	}
 	/* refuelling is a landing transaction: in space there is nothing to buy from */
 	const landed = career.ended === GravityGame.CAREER_OPEN && !gameLocked() &&
-		cargoSim.status !== STATUS_FLYING;
+		activeSim().status !== STATUS_FLYING;
 	const kg = landed ? flightRefuelPlan(career) : 0;
 	const label = kg > 0 ? flightHud.refuel : 'refuel';
 	const why = !landed ? 'land to refuel' : flightHud.refuelWhy || 'the tank is full';
@@ -350,7 +352,8 @@ function updateFlightQuests(career) {
 /* the guide arrow: the ship (flying) or its pad (landed) to the pointed row */
 function drawQuestGuide(now) {
 	if (questHoverBody < 0 || !careerRule()) return;
-	const from = cargoSim.status === STATUS_FLYING ? -2 : activeCareer().at;
+	const sim = activeSim();
+	const from = sim.status === STATUS_FLYING ? -2 : activeCareer().at;
 	if (from === -1) return;
 	const px = 1 / view.scale;
 	ctx.beginPath();
@@ -363,7 +366,7 @@ function drawQuestGuide(now) {
 	ctx.stroke();
 	ctx.globalAlpha = 1;
 	if (from === -2) {
-		drawGuideArrow(cargoSim.cargo.x, cargoSim.cargo.y, 6 * px,
+		drawGuideArrow(sim.cargo.x, sim.cargo.y, 6 * px,
 			tradeSim.planetX[questHoverBody], tradeSim.planetY[questHoverBody],
 			tradeSim.planetR[questHoverBody] + 10 * px, now,
 			'rgba(142, 240, 192, 0.72)', MINT);
