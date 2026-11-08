@@ -337,10 +337,15 @@ or
 
 while landed show refuel button (cost) near launch button.
 
-## career map generator improve
- choose seed and/or adjust player's planet start positions to 1st predicted flight be more or less similar profit. and all has in more or less equal ability to land on not heavy planet to build new EMC in 1st fly.
- because if some player possible to land on only heavy G>~1.5 planets this cause big score impact from start. 
+## refactoring time
 
+i think we (should) have only 2 time
+- 'career' - actually not just for career but main time for game, useful for fly and play
+- background animation (trade, orbits) - this should be only in settings panel, no need in footer, because it currently not gameplay important.
+
+## career map generator improve
+choose seed and/or adjust player's planet start positions to 1st predicted flight be more or less similar profit. and all has in more or less equal ability to land on not heavy planet to build new EMC in 1st fly.
+because if some player possible to land on only heavy G>~1.5 planets this cause big score impact from start. 
 
 ### flight HUD panel.
 
