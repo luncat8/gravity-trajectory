@@ -49,6 +49,11 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	predGain = 0;
 	GravityGame.resetMarket(game.market);
 	GravityGame.resetLedger(game.money);
+	/* Select the new rule's universe before the trade world is rebuilt and
+	 * fast-forwarded. Otherwise a career first simulates the previous 26-world
+	 * map, then retires half its ports at t+07:00; ships already in flight keep
+	 * route coordinates from that discarded map. */
+	initPlanetUniverse(game.planetUniverse > 0 ? game.planetUniverse : planetUniverseDefault(game.rule));
 	scene.reset(seed);
 	scene.setGameClock(true);
 	clearCargo();
@@ -56,7 +61,6 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	cargoSim.fieldRate = scene.trade.speed;
 	bot.reset(seed, game.rule, game.bot, game.player, rivalTypesArg,
 		game.playerCount > 0 ? game.playerCount - 1 : undefined);
-	initPlanetUniverse(game.planetUniverse > 0 ? game.planetUniverse : planetUniverseDefault(game.rule));
 	applyPlanetUniverse();
 	ensureValidActiveSlot(-1);
 	attachWorld();

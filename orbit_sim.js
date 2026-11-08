@@ -598,7 +598,7 @@
 	};
 
 	Sim.prototype.finishColony = function (port, time) {
-		if (port >= this.portCount) return;
+		if (port >= this.portCount || this.builderActive[port] !== 1) return;
 		if (!this.portInPlay(port)) {
 			this.cancelBuilder(port);
 			return;
@@ -657,6 +657,14 @@
 			this.retirePort(p);
 			retired += 1;
 		}
+		/* A visible sponsor may already have a builder headed to a planet the
+		 * new mask removed. Cancel it now; otherwise its delayed BUILD event
+		 * recreates a hidden port after this cleanup has finished. */
+		for (let p = 0; p < this.portCount; p++) {
+			if (this.builderActive[p] && !this.planetInPlay(this.builderTarget[p])) {
+				this.cancelBuilder(p);
+			}
+		}
 		if (retired > 0) this.refreshPartners();
 		return retired;
 	};
@@ -679,6 +687,13 @@
 			this.planetEmpty += 1;
 		}
 		this.builderActive[port] = 0;
+		/* Do not let this builder's delayed event finish a later expedition that
+		 * happens to reuse the same sponsor slot. */
+		for (let i = 0; i < this.events.size; i++) {
+			if (this.events.kind[i] === KIND_BUILD && this.events.ref[i] === port) {
+				this.events.ref[i] = NO_PORT;
+			}
+		}
 	};
 
 	/* park one ship at its own port with an empty hold */
@@ -704,23 +719,34 @@
 		const last = this.portCount - 1;
 		this.cancelBuilder(port);
 		this.cancelShip(port);
-		/* Redirect any other ship that was docked at or flying to `port`. */
+		/*
+		 * A route stores absolute start/aim coordinates. Merely changing its
+		 * `shipTarget` after that target disappears leaves the old line and ship
+		 * flying toward an invisible planet. Park every affected foreign ship at
+		 * home instead, cancel its stale arrival, and give it a fresh load event
+		 * after the roster has been compacted.
+		 */
+		const parked = [];
 		for (let s = 0; s <= last; s++) {
 			if (s === port) continue;
-			if (this.shipDock[s] === port) this.shipDock[s] = this.shipHome[s];
-			if (this.shipTarget[s] === port) {
-				this.shipTarget[s] = this.shipHome[s];
-				this.shipLeg[s] = 1;
-			}
+			if (this.shipDock[s] !== port && this.shipTarget[s] !== port) continue;
+			this.cancelShip(s);
+			parked.push(s);
 		}
 
-		/* Rewrite heap references for `port` (cancel) and `last` (compact). */
+		/* Rewrite heap references for `port` (cancel) and `last` (compact).
+		 * An affected ship's old ARRIVE must be cancelled before a last→port
+		 * rewrite can make it look like the moved ship's current route. */
 		const kinds = this.events.kind;
 		const refs = this.events.ref;
 		for (let i = 0; i < this.events.size; i++) {
 			if (kinds[i] === KIND_TICK) continue;
-			if (refs[i] === port) refs[i] = NO_PORT;
-			else if (refs[i] === last) refs[i] = port;
+			const ref = refs[i];
+			if (ref === port || (kinds[i] === KIND_ARRIVE && parked.indexOf(ref) >= 0)) {
+				refs[i] = NO_PORT;
+			} else if (ref === last) {
+				refs[i] = port;
+			}
 		}
 
 		if (port !== last) {
@@ -775,6 +801,12 @@
 		this.planetPort[planet] = NO_PORT;
 		this.colonyOn[planet] = NO_PORT;
 		this.planetEmpty += 1;
+		for (let i = 0; i < parked.length; i++) {
+			const ship = parked[i] === last ? port : parked[i];
+			if (ship < this.shipCount) {
+				this.events.push(this.t + 1 + this.rand() * 1.5, KIND_LOAD, ship);
+			}
+		}
 	};
 
 	/* Habitat-weighted target selection within EXPAND_RADIUS. */

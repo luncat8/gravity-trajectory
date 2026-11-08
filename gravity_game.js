@@ -1497,17 +1497,23 @@
 	const openingTraceCache = new Map();
 	const OPENING_TRACE_CACHE_MAX = 512;
 
-	function openingTracks(world, mask, forcedHomes, home, angles, speeds) {
+	function openingTracks(world, mask, forcedHomes, home, angles, speeds, strictExit) {
 		const nAngles = angles || OPENING_ANGLES;
 		const nSpeeds = speeds || OPENING_SPEEDS;
-		let key = (world.seed >>> 0) + ':' + home + ':' + nAngles + 'x' + nSpeeds + ':' +
-			openingMaskTag(forcedHomes, OrbitWorld.PLANETS);
+		const checkExit = strictExit !== false;
+		let key = (world.seed >>> 0) + ':' +
+			(openingTrade ? (openingTrade.seed >>> 0) + ':' + openingTrade.t.toFixed(3) : '-') + ':' +
+			openingGravityScale + ':' + openingForceScale + ':' +
+			openingMaskTag(mask, openingMarket && Number.isFinite(openingMarket.planetCount)
+				? openingMarket.planetCount : openingExtent(mask)) + ':' +
+			home + ':' + nAngles + 'x' + nSpeeds + ':' + (specialPlanets ? 1 : 0) + ':' +
+			(checkExit ? 'exit:' : 'land:') + openingMaskTag(forcedHomes, OrbitWorld.PLANETS);
 		const cached = openingTraceCache.get(key);
 		if (cached) return cached;
 		const sitePay = new Float64Array(OrbitWorld.PLANETS * OrbitWorld.PLANETS);
 		const exitOk = new Uint8Array(OrbitWorld.PLANETS * OrbitWorld.PLANETS);
 		sitePay.fill(-Infinity);
-		const profile = openingTraceHome(world, mask, forcedHomes, home, true,
+		const profile = openingTraceHome(world, mask, forcedHomes, home, checkExit,
 			sitePay, null, exitOk, nAngles, nSpeeds);
 		const track = {
 			home: home,
@@ -2100,28 +2106,26 @@
 	}
 
 	/*
-	 * Seat search for one candidate pool: enumerate HQ sets, keep a shortlist by
-	 * the cheap distinct-site score, re-trace the shortlist in the final field,
-	 * and repair a seat that still fails. Returns null when the pool cannot
-	 * build a usable map.
+	 * Seat search for one candidate pool. A final three-HQ field has 220 sets
+	 * in the ordinary 13-world career, and flying every fan in every set blocks
+	 * map load for several seconds. Rank those sets first from pair-pinned
+	 * fields: for each seat, the union of its two one-neighbour traces predicts
+	 * the routes that either of the other HQs can bend into reach. This catches
+	 * the important pin interaction that an unpinned table misses (including a
+	 * rare fair set that otherwise ranks near the bottom), at one fifth of the
+	 * full trace count. Exact final-field checks are still the authority.
+	 *
+	 * More than one ranking family is interleaved so equal or noisy proxy scores
+	 * cannot hide a useful set. Exact checks run in deterministic batches until
+	 * one set satisfies the actual fairness and starter-exit contract; if none
+	 * does, the ordinary career exhausts all 220 sets and keeps the best one.
 	 */
-	/*
-	 * The shortlist has to hold more than one *kind* of map. Keeping only the
-	 * best N sets by a single order buries the fair map whenever the cheap
-	 * table misjudges the pins: the exact re-trace then has nothing good left
-	 * to choose from. So the search keeps the leaders of several orders — best
-	 * ratio, highest weakest, most distinct sites, highest total — and the
-	 * exact re-trace decides between them.
-	 */
-	const OPENING_SHORTLIST_MAX = 32;
 	const OPENING_FAMILY_DEPTH = 4;
-	/* sets the search may fly for real; 220 covers 12 candidate homes for
-	 * three companies, which is the usual career map */
+	const OPENING_EXACT_BATCH = 16;
+	const OPENING_PAIR_CANDIDATES_MAX = 14;
+	/* A larger custom universe remains bounded; the default 12-home pool has
+	 * only 220 triples and therefore still falls back to a complete search. */
 	const OPENING_EXACT_SETS = 400;
-	/* the sampling pass: enough of the fan to tell sets apart, cheap enough to
-	 * run on a shortlist at load time */
-	const OPENING_COARSE_ANGLES = 6;
-	const OPENING_COARSE_SPEEDS = 3;
 	const OPENING_ORDERS = [
 		/* the map's own objective */
 		(a, b) => compareOpeningGroups(a, b),
@@ -2159,14 +2163,119 @@
 		}
 	];
 
+	function openingProposalSort(order) {
+		return function (left, right) {
+			const better = order(left.rank, right.rank);
+			if (better !== 0) return -better;
+			return left.tie - right.tie;
+		};
+	}
+
+	/* Put four leaders from each reading first, then the map objective's full
+	 * order. Object identity is enough here: every proposal is created once. */
+	function diverseOpeningOrder(sets) {
+		const families = [];
+		for (let i = 0; i < OPENING_ORDERS.length; i++) {
+			families.push(sets.slice().sort(openingProposalSort(OPENING_ORDERS[i])));
+		}
+		const ordered = [];
+		const seen = new Set();
+		for (let depth = 0; depth < OPENING_FAMILY_DEPTH; depth++) {
+			for (let family = 0; family < families.length; family++) {
+				const proposal = families[family][depth];
+				if (proposal && !seen.has(proposal)) {
+					seen.add(proposal);
+					ordered.push(proposal);
+				}
+			}
+		}
+		for (let i = 0; i < families[0].length; i++) {
+			const proposal = families[0][i];
+			if (seen.has(proposal)) continue;
+			seen.add(proposal);
+			ordered.push(proposal);
+		}
+		return ordered;
+	}
+
+	/* Baseline rank for a large custom pool: one unpinned trace table. */
+	function rankOpeningSetsCold(world, trade, mask, count, sets, sourceSim) {
+		const rows = careerOpenings(world, trade, mask, count, null, sourceSim);
+		for (let i = 0; i < sets.length; i++) {
+			const proposal = sets[i];
+			const occupied = new Uint8Array(OrbitWorld.PLANETS);
+			for (let h = 0; h < proposal.homes.length; h++) occupied[proposal.homes[h]] = 1;
+			proposal.rank = openingGroupStatsFromRows(mask, rows, proposal.homes, occupied);
+			proposal.rank.dim = proposal.dim || 0;
+		}
+		return diverseOpeningOrder(sets);
+	}
+
 	/*
-	 * Fallback for a pool too large to fly exhaustively: keep the leaders of
-	 * several different readings of the cheap table, so the exact pass still
-	 * sees more than one kind of map.
+	 * Pair-pinned proxy for the ordinary career pool. A seat's final row is the
+	 * union (best pay per site) of the rows made by pinning it with each other
+	 * proposed HQ. It is deliberately optimistic: its job is to put plausible
+	 * sets in front of the exact scorer, never to approve a map itself.
 	 */
-	function shortlistOpeningSets(world, mask, count, sets, seatsWanted, occupied, sourceSim) {
-		const rows = careerOpenings(world, null, mask, count, null, sourceSim);
-		return sets;
+	function rankOpeningSetsByPairs(world, trade, mask, count, sets, candidates,
+		sourceSim) {
+		const planets = OrbitWorld.PLANETS;
+		const pairTracks = new Array(planets * planets);
+		const pairMask = new Uint8Array(planets);
+		for (let a = 0; a < candidates.length; a++) {
+			const homeA = candidates[a];
+			for (let b = a + 1; b < candidates.length; b++) {
+				const homeB = candidates[b];
+				pairMask.fill(0);
+				pairMask[homeA] = 1;
+				pairMask[homeB] = 1;
+				openingPrepare(world, trade, mask, count, pairMask, sourceSim);
+				pairTracks[homeA * planets + homeB] = openingTracks(
+					world, mask, pairMask, homeA, OPENING_ANGLES, OPENING_SPEEDS, false);
+				pairTracks[homeB * planets + homeA] = openingTracks(
+					world, mask, pairMask, homeB, OPENING_ANGLES, OPENING_SPEEDS, false);
+			}
+		}
+		for (let i = 0; i < sets.length; i++) {
+			const proposal = sets[i];
+			const homes = proposal.homes;
+			const occupied = new Uint8Array(planets);
+			for (let h = 0; h < homes.length; h++) occupied[homes[h]] = 1;
+			const sitePay = new Float64Array(planets * planets);
+			sitePay.fill(-Infinity);
+			for (let seat = 0; seat < homes.length; seat++) {
+				const home = homes[seat];
+				const row = home * planets;
+				for (let body = 0; body < planets; body++) {
+					let best = -Infinity;
+					for (let other = 0; other < homes.length; other++) {
+						if (other === seat) continue;
+						const track = pairTracks[row + homes[other]];
+						if (track && track.sitePay[row + body] > best) {
+							best = track.sitePay[row + body];
+						}
+					}
+					sitePay[row + body] = best;
+				}
+			}
+			proposal.rank = openingGroupStatsFromRows(mask,
+				{ sitePay: sitePay, targetPay: sitePay }, homes, occupied);
+			proposal.rank.dim = proposal.dim || 0;
+		}
+		return diverseOpeningOrder(sets);
+	}
+
+	function rankOpeningSets(world, trade, mask, count, sets, candidates, seatsWanted,
+		sourceSim) {
+		if (seatsWanted > 1 && candidates.length <= OPENING_PAIR_CANDIDATES_MAX) {
+			return rankOpeningSetsByPairs(world, trade, mask, count, sets, candidates, sourceSim);
+		}
+		return rankOpeningSetsCold(world, trade, mask, count, sets, sourceSim);
+	}
+
+	function openingGroupAccepted(stats) {
+		return stats && stats.missing === 0 && stats.distinct && stats.exitOk &&
+			openingRatio(stats) >= OPENING_FAIR_RATIO;
 	}
 
 	function planHomeSet(world, trade, mask, count, candidates, seatsWanted, sourceSim,
@@ -2174,7 +2283,6 @@
 		if (candidates.length < seatsWanted) return null;
 		const forcedHomes = new Uint8Array(OrbitWorld.PLANETS);
 		const chosen = [];
-		const occupied = new Uint8Array(OrbitWorld.PLANETS);
 		const sets = [];
 		function searchSets(from) {
 			if (chosen.length === seatsWanted) {
@@ -2189,33 +2297,25 @@
 			}
 			const need = seatsWanted - chosen.length;
 			for (let c = from; c <= candidates.length - need; c++) {
-				const home = candidates[c];
-				chosen.push(home);
-				occupied[home] = 1;
+				chosen.push(candidates[c]);
 				searchSets(c + 1);
-				occupied[home] = 0;
 				chosen.pop();
 			}
 		}
 		searchSets(0);
 		if (!sets.length) return null;
 
-		/*
-		 * Score the sets in the field they will actually be played in. Ranking
-		 * them from the unpinned table is what produced unfair maps: pinning the
-		 * other two HQs moves a route, so a target that reads 4.60 cold can pay
-		 * nothing once the map is set up, and the one good seating hides behind a
-		 * bad cold ranking. The table needed here is per-set, so the search asks
-		 * the exact scorer about every set it can afford, and falls back to the
-		 * cheap shortlist only when a pool is too big to enumerate.
-		 */
+		/* Proxy order first, exact final-field authority second. Complete each
+		 * batch before accepting it so all ranking families get an equal chance;
+		 * a default map with no fair set still evaluates every proposal. */
 		let bestHomes = null;
 		let bestStats = null;
 		let bestTie = 0xffffffff;
-		const exhaustive = sets.length <= OPENING_EXACT_SETS;
-		const consider = exhaustive ? sets : shortlistOpeningSets(world, mask, count, sets,
-			seatsWanted, occupied, sourceSim);
-		for (let i = 0; i < consider.length; i++) {
+		const consider = sets.length <= OPENING_EXACT_BATCH
+			? sets : rankOpeningSets(world, trade, mask, count, sets, candidates,
+				seatsWanted, sourceSim);
+		const exactLimit = Math.min(consider.length, OPENING_EXACT_SETS);
+		for (let i = 0; i < exactLimit; i++) {
 			const proposal = consider[i];
 			const proposalMask = new Uint8Array(OrbitWorld.PLANETS);
 			for (let j = 0; j < proposal.homes.length; j++) proposalMask[proposal.homes[j]] = 1;
@@ -2228,6 +2328,8 @@
 				bestStats = exact;
 				bestTie = proposal.tie;
 			}
+			const batchDone = (i + 1) % OPENING_EXACT_BATCH === 0 || i + 1 === exactLimit;
+			if (batchDone && openingGroupAccepted(bestStats)) break;
 		}
 		if (!bestHomes) return null;
 		const homes = bestHomes;

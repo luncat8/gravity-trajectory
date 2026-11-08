@@ -1049,6 +1049,10 @@
 	/* rebuilds the world in place, so OrbitScene.sim stays the same object */
 	function resetWorld(seed) {
 		sim.reset(seed);
+		/* startGame has already selected the new rule's universe. Retire hidden
+		 * seed ports before the seven-minute fast-forward, so no background ship
+		 * can depart on a route that the career immediately removes. */
+		if (planetMask) sim.setPlanetMask(planetMask);
 		sim.step(START_MINUTES);
 		initMoonSystems();
 		moonClockT = sim.t;
