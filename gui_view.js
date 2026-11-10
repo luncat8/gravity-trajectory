@@ -222,11 +222,13 @@ function bodyAt(wx, wy) {
 	return best;
 }
 
+/* the selected player's flying ship: the only one a burn drag can start from */
 function shipAt(wx, wy) {
-	if (cargoSim.status !== STATUS_FLYING) return false;
+	const sim = activeSim();
+	if (sim.status !== STATUS_FLYING) return false;
 	const reach = HIT_PX / view.scale;
-	const dx = cargoSim.cargo.x - wx;
-	const dy = cargoSim.cargo.y - wy;
+	const dx = sim.cargo.x - wx;
+	const dy = sim.cargo.y - wy;
 	return dx * dx + dy * dy <= reach * reach;
 }
 

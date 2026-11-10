@@ -234,9 +234,12 @@ function cancelAim() {
 	hudAt = -Infinity;
 }
 
+/* the manual burn belongs to the selected player's own ship: another player's
+ * coasting drive must not take the launch row, and a bot burns by itself */
 function canImpulse() {
-	return careerRule() && !replay.on && cargoSim.status === STATUS_FLYING &&
-		cargoSim.burnLimit() > 0;
+	if (!careerRule() || replay.on || playerIsBot()) return false;
+	const sim = activeSim();
+	return sim.status === STATUS_FLYING && sim.burnLimit() > 0;
 }
 
 function isBurnPaused() {
@@ -263,8 +266,9 @@ function snapBurnAim() {
 }
 
 function updateBurnAim() {
-	const cx = cargoSim.cargo.x;
-	const cy = cargoSim.cargo.y;
+	const sim = activeSim();
+	const cx = sim.cargo.x;
+	const cy = sim.cargo.y;
 	const dx = gripX - cx;
 	const dy = gripY - cy;
 	let len = Math.sqrt(dx * dx + dy * dy);
@@ -280,20 +284,21 @@ function updateBurnAim() {
 	} else {
 		gripLen = 0;
 	}
-	burnCeiling = cargoSim.burnLimit();
-	burnDv = cargoSim.speedAt(gripLen, burnCeiling, 0);
+	burnCeiling = sim.burnLimit();
+	burnDv = sim.speedAt(gripLen, burnCeiling, 0);
 	snapBurnAim();
 	refreshAimLabel();
 }
 
 function placeBurnGrip() {
-	burnCeiling = cargoSim.burnLimit();
+	const sim = activeSim();
+	burnCeiling = sim.burnLimit();
 	if (burnDv > burnCeiling) burnDv = burnCeiling;
 	else if (burnDv < 0) burnDv = 0;
 	snapBurnAim();
-	gripLen = cargoSim.gripLength(burnDv, burnCeiling, 0);
-	gripX = cargoSim.cargo.x + Math.cos(burnAngle) * gripLen;
-	gripY = cargoSim.cargo.y + Math.sin(burnAngle) * gripLen;
+	gripLen = sim.gripLength(burnDv, burnCeiling, 0);
+	gripX = sim.cargo.x + Math.cos(burnAngle) * gripLen;
+	gripY = sim.cargo.y + Math.sin(burnAngle) * gripLen;
 	refreshAimLabel();
 }
 
@@ -334,14 +339,17 @@ function executeBurn() {
 	if (dvU < 1) return false;
 	const angle = GravityGame.angleOf(angleU);
 	const dv = GravityGame.speedOf(dvU);
-	const step = cargoSim.liveSteps;
+	const slot = activeSlotIndex();
+	const sim = slotSim(slot);
+	const step = sim.liveSteps;
 	const career = playerCareer();
 	const ship = career.ship;
 	const beforeFuel = ship.fuelKg;
-	if (!GravityGame.careerBurn(career, cargoSim, angle, dv)) return false;
+	if (!GravityGame.careerBurn(career, sim, angle, dv)) return false;
 	const used = beforeFuel - ship.fuelKg;
-	if (game.shots.length > 0) {
-		game.shots[game.shots.length - 1].burns.push(GravityGame.createBurn(step, angleU, dvU));
+	const shots = slotShots(slot);
+	if (shots.length > 0) {
+		shots[shots.length - 1].burns.push(GravityGame.createBurn(step, angleU, dvU));
 	}
 	setCareerPaused(false);
 	const remDv = OrbitTech.impulseDeltaV(ship.fuelKg, ship.engine, ship.mass, ship.fuelKg);
@@ -640,7 +648,7 @@ function onTrimInput() {
 	cancelTurret();
 	const factor = 1 + delta / 100;
 	if (burnArmed && canImpulse()) {
-		const ceiling = cargoSim.burnLimit();
+		const ceiling = activeSim().burnLimit();
 		const minDv = GravityGame.speedOf(1);
 		burnDv = burnDv * factor;
 		if (burnDv < minDv) burnDv = minDv;

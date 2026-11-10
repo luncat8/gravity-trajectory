@@ -294,10 +294,10 @@ function loadPage(options = {}) {
 			const sim = context.OrbitScene.sim;
 			return { x: sim.planetX[index] * view.scale + view.offX, y: sim.planetY[index] * view.scale + view.offY };
 		},
-		shipScreen() {
+		/* YOU's ship, or a hand-flown rival's when its sim is passed */
+		shipScreen(sim = context.GravityScene.sim) {
 			const view = context.OrbitScene.view;
-			const cargo = context.GravityScene.sim.cargo;
-			return { x: cargo.x * view.scale + view.offX, y: cargo.y * view.scale + view.offY };
+			return { x: sim.cargo.x * view.scale + view.offX, y: sim.cargo.y * view.scale + view.offY };
 		},
 		/* a real pointer drag from a planet to the grip of (angle, speed); the
 		 * grip uses the same pad ceiling the page maps the drag range onto */
@@ -313,10 +313,9 @@ function loadPage(options = {}) {
 			fire(windowListeners, 'pointermove', { clientX: gripX, clientY: gripY, target: canvas, shiftKey: false });
 			fire(windowListeners, 'pointerup', { clientX: gripX, clientY: gripY, target: canvas, shiftKey: false });
 		},
-		dragBurn(angle, dv) {
-			const origin = env.shipScreen();
+		dragBurn(angle, dv, sim = context.GravityScene.sim) {
+			const origin = env.shipScreen(sim);
 			const canvas = elements.get('c');
-			const sim = context.GravityScene.sim;
 			const reach = sim.gripLength(dv, sim.burnLimit(), 0) * context.OrbitScene.view.scale;
 			const gripX = origin.x + Math.cos(angle) * reach;
 			const gripY = origin.y + Math.sin(angle) * reach;

@@ -48,8 +48,10 @@ function updateGameHud() {
 			hudRivalScoreTexts[i] = rivalScore;
 			rivalScoreEls[i].textContent = rivalScore;
 		}
-		const rivalMeta = scoreMeta(summary) + ' · ' +
-			bot.actorStateShort(i, game.clockSteps);
+		/* the state is the controller's schedule: a hand-flown rival reads like YOU */
+		const rivalMeta = bot.isRivalBot(i)
+			? scoreMeta(summary) + ' · ' + bot.actorStateShort(i, game.clockSteps)
+			: scoreMeta(summary);
 		if (rivalMeta !== hudRivalMetaTexts[i]) {
 			hudRivalMetaTexts[i] = rivalMeta;
 			rivalMetaEls[i].textContent = rivalMeta;
@@ -316,6 +318,7 @@ function setLaunchState(blocked, exitWarning) {
 		/* the impulse loop is pause-first: the context button only offers the
 		 * burn while it is armed; pause / resume uses the game clock button and Space */
 		const ship = playerCareer().ship;
+		const cargo = activeSim().cargo;
 		const usedKg = burnArmed
 			? OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg) : 0;
 		const warnExit = burnArmed && exitWarning;
@@ -325,10 +328,8 @@ function setLaunchState(blocked, exitWarning) {
 			? (warnExit ? 'burn · leaves map · ' : 'burn · Δv ') +
 				burnDv.toFixed(1) + ' px/s (−' + usedKg.toFixed(1) + ' kg · ' +
 				costText(usedKg * GravityGame.fuelPrice(playerCareer())) + ')'
-			/* the impulse loop flies YOU's ship: canImpulse() gates on cargoSim */
 			: isBurnPaused() ? 'burn … drag from the ship' : 'coasting · ' +
-				Math.sqrt(cargoSim.cargo.vx * cargoSim.cargo.vx +
-					cargoSim.cargo.vy * cargoSim.cargo.vy).toFixed(1) + ' px/s';
+				Math.sqrt(cargo.vx * cargo.vx + cargo.vy * cargo.vy).toFixed(1) + ' px/s';
 		const state = 1024 + (isBurnPaused() ? 2048 : 0) + (burnArmed ? 4096 : 0) +
 			(burnAiming ? 8192 : 0) + (warnExit ? 2 : 0);
 		if (state === launchState && text === launchNote) return;

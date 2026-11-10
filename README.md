@@ -72,7 +72,7 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
 | `? help` / `h` | toggles the help drawer: shared controls first, followed by the selected mode’s goal, score and specific details |
 | `−` / `+` panel header button | collapses or expands any HUD panel (`game scoreboard`, `career`, `orbital trade · background`, `gravity cargo`); panels in the left HUD column push each other from top to down, and the whole column scrolls vertically when panels extend past the viewport |
 | space / `p` | in career, toggles the selected player's hold on the gameplay clock like the game-bar time button, in flight or while landed (with several human players the clock runs once every one of them has released; the scoreboard hatches the rows still holding); resuming cancels an armed burn; in lab, `Space` pauses/resumes background trade animation |
-| drag from the paused ship (career) | aims an impulse burn up to `min(fuel Δv, thrust Δv)`; `Enter` or `#launch` burns tank fuel and resumes along the continuation path; the aim line and predicted net price the burn at `FUEL_PRICE × kg` |
+| drag from the paused ship (career) | aims an impulse burn up to `min(fuel Δv, thrust Δv)`; `Enter` or `#launch` burns tank fuel and resumes along the continuation path; the aim line and predicted net price the burn at `FUEL_PRICE × kg` · the burn belongs to the selected player's own ship, hand-flown rivals included: another player's coasting ship never takes over the launch row and cannot be burned from this seat, and a bot-flown ship burns only on its controller's schedule |
 | mode `career` / `lab` / `visit all tour` / `route length` / `money for visit` | one radio row: `lab` is the free lab, every other choice starts its seeded run at once (rebuilds the world at `t+07:00` with seeded planet gravity); switching restarts the seed, `lab` stops the run |
 | `tour` | 120 s flight cap, score systems → shots → time |
 | `route` | 1 800 s wall, score trajectory length, no launch |
@@ -239,9 +239,9 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   affordability regression (`career_start_affordability.js`), career
   departure/guidance regressions (`career_departure_test.js`, `career_guidance_test.js`) and
   the two-player helper/level switch (`multiplayer_career_test.js`,
-  `helper_multiplayer_test.js`), the career clock with its per-player holds
-  and scoreboard pause marks (`career_pause_test.js`,
-  `multiplayer_pause_preview_test.js`) and the
+  `helper_multiplayer_test.js`), the career clock with its per-player holds,
+  scoreboard pause marks and per-player impulse loop (`career_pause_test.js`,
+  `multiplayer_pause_preview_test.js`, `multiplayer_impulse_test.js`) and the
   mid-flight career skill switch
   (`career_level_probe.js`) on the shared vm page stub (`dom_stub.js`), and a
   real-browser HUD layout check

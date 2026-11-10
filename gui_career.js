@@ -65,20 +65,25 @@ function waitSettlement(career) {
 	};
 }
 
+/* another human shares the clock: a wait may not fast-forward past their ship or hold */
+function otherHumanPlays() {
+	for (let s = 0; s < slotCount(); s++) {
+		if (s !== activeSlotIndex() && !slotIsBot(s)) return true;
+	}
+	return false;
+}
+
 function refreshCareerWaitUi(career, ended) {
 	const busy = careerWaitBusy();
 	careerWaitBtn.disabled = busy || ended || turret.pending ||
 		activeSim().status === STATUS_FLYING;
 	careerWaitBtn.classList.toggle('on', busy);
 	if (!busy) careerWaitBtn.textContent = 'wait · ' + CAREER_WAIT_MIN + ' min';
-	if (!busy) {
-		for (let s = 0; s < slotCount(); s++) {
-			if (s === activeSlotIndex() || slotIsBot(s)) continue;
-			careerWaitBtn.textContent = 'wait · resume time';
-			careerWaitBtn.title = 'Release this player’s pause; all players must resume before time advances';
-			if (careerWaitInfoEl) careerWaitInfoEl.hidden = true;
-			return;
-		}
+	if (!busy && otherHumanPlays()) {
+		careerWaitBtn.textContent = 'wait · resume time';
+		careerWaitBtn.title = 'Release this player’s pause; all players must resume before time advances';
+		if (careerWaitInfoEl) careerWaitInfoEl.hidden = true;
+		return;
 	}
 	/* the running fast-forward keeps its own live progress line */
 	if (busy) return;
@@ -392,8 +397,7 @@ function waitCareer() {
 	if (career.ended !== GravityGame.CAREER_OPEN) return;
 	setCareerPaused(false);
 	/* Multiplayer waits use the shared step loop, preserving other ships and holds. */
-	for (let s = 0; s < slotCount(); s++) {
-		if (s === activeSlotIndex() || slotIsBot(s)) continue;
+	if (otherHumanPlays()) {
 		careerNotice(careerPaused ? 'waiting for other players to resume' : 'world clock running');
 		return;
 	}
