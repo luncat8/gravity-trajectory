@@ -335,6 +335,15 @@ in fly input event on ship - do not need. we interact only on pause.
 or
 - unpause cause cancel arm
 
+## auto pause and pause in game modes that allow pause. useful to avoid players waste game time
+career/ game time paused if one or more of player has paused state.
+unpause, launch - should unpause after all player unpaused in some way.
+
+paused buttons has independent state for each player. bots dont use pause button.
+
+
+
+
 while landed show refuel button (cost) near launch button.
 
 ## refactoring time
@@ -376,6 +385,10 @@ limit range of drag ui to actual catapult strength. so player will not drag and 
 
 ##
 make new experimental settings panel add sliders to adjust system global gravity and catapult force.
+
+## add quest
+fragile load - cant survive >EMC1. available on light planets
+
 
 ## deferred
 casual mode - refit at any planet else at HQ
