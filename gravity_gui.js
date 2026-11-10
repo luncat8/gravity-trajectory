@@ -642,8 +642,8 @@ if (careerBoxEl) {
 if (careerWaitBtn) careerWaitBtn.addEventListener('click', () => careerAct({ act: 'wait' }));
 if (launchBuildBtn) {
 	launchBuildBtn.addEventListener('click', () => {
-		if (!careerRule() || careerWaitBusy() || cargoSim.status === STATUS_FLYING) return;
-		const career = game.career;
+		if (!careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return;
+		const career = playerCareer();
 		if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
 			career.pads[career.at].catapult !== null) return;
 		careerFollow = true;
@@ -652,8 +652,8 @@ if (launchBuildBtn) {
 }
 if (launchCommercialBtn) {
 	launchCommercialBtn.addEventListener('click', () => {
-		if (!careerRule() || careerWaitBusy() || cargoSim.status === STATUS_FLYING) return;
-		const career = game.career;
+		if (!careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return;
+		const career = playerCareer();
 		if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0) return;
 		if (career.commercialPlanet === career.at) {
 			/* selected and armed: the button is the commercial launch itself */
@@ -996,7 +996,7 @@ root.GravityScene = {
 	 * the traced path ahead will enter */
 	harvestMarks: () => ({ inside: liveHarvestMask, route: predHarvestMask }),
 	careerPadInfo: () => (game.career ? careerPadPlate(game.career) : null),
-	aimState: () => ({ angle: aimAngle, speed: aimSpeed, grip: gripLen, ceiling: aimCeiling }),
+	aimState: () => ({ armed: armed, body: aimBody, angle: aimAngle, speed: aimSpeed, grip: gripLen, ceiling: aimCeiling }),
 	burnPaused: isBurnPaused,
 	setBurnPaused,
 	toggleFlightPause,

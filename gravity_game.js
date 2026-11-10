@@ -3820,7 +3820,7 @@
 	}
 
 	/* planets a trace entered as a bit mask: two shots with one mask harvest
-	 * the same systems, so only the faster arrival is worth keeping */
+	 * the same systems, but their timing can change the money earned */
 	function launchMask(planets, count) {
 		let mask = 0;
 		for (let i = 0; i < count; i++) {
@@ -3860,7 +3860,7 @@
 	/*
 	 * Save one finished trace; `trace` carries origin, angleU, speedU, body,
 	 * steps, time, length, score and the visit log arrays. Same start planet,
-	 * landing and visited set: the slower arrival never replaces the faster one.
+	 * landing and visited set: retain the higher-scoring trace, breaking ties by time.
 	 */
 	function recordLaunch(book, tag, trace) {
 		if (book.tag !== tag) {
@@ -3870,7 +3870,8 @@
 		const count = trace.logCount < BOOK_LOG_MAX ? trace.logCount : BOOK_LOG_MAX;
 		const mask = launchMask(trace.logPlanet, count);
 		const at = findLaunchEntry(book, trace.origin, trace.body, mask);
-		if (at >= 0 && book.entries[at].steps <= trace.steps) return book.entries[at];
+		if (at >= 0 && (book.entries[at].score > trace.score ||
+			(book.entries[at].score === trace.score && book.entries[at].steps <= trace.steps))) return book.entries[at];
 		const entry = at >= 0 ? book.entries[at] : null;
 		const out = entry || { logPlanet: new Int32Array(BOOK_LOG_MAX), logStep: new Int32Array(BOOK_LOG_MAX) };
 		out.origin = trace.origin;

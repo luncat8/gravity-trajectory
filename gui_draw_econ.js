@@ -44,6 +44,10 @@ function drawRoutePlanEntry(sim, leader, colour, dimColour, px) {
 function drawRivalsWorld(now) {
 	const px = 1 / view.scale;
 	const active = activeSlotIndex();
+	if (active > 0) {
+		drawTrail(slotSim(0), true);
+		drawCargo(now, slotSim(0), true);
+	}
 	if (active > 0 && routeRule() && slotSim(0).predCount >= 2) {
 		drawRoutePlanEntry(slotSim(0), routeLeader === -1, MINT,
 			'rgba(142, 240, 192, 0.48)', px);
@@ -56,6 +60,7 @@ function drawRivalsWorld(now) {
 		if (routeRule() && sim.predCount >= 2 && active !== rIdx + 1) {
 			drawRoutePlanEntry(sim, routeLeader === rIdx, colour, RIVAL_TRAILS[rIdx], px);
 		}
+		if (active === rIdx + 1) continue;
 		/* rival trail */
 		const count = sim.trailCount;
 		if (count >= 2 && !(careerRule() && cleanCareerView)) {

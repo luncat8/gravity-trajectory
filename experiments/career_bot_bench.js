@@ -701,6 +701,24 @@ function nextShotWorld(seed, fitted) {
 	return w;
 }
 
+check('an unreachable contract still permits a profitable open fan', () => {
+	const w = nextShotWorld(42, false);
+	w.ledger.purse = 20;
+	assert.ok(GravityGame.installPart(w.career, OrbitTech.KIND_HOLD, OrbitTech.HOLDS[2]));
+	for (let i = 0; i < GravityGame.BOARD_SIZE && w.career.contract < 0; i++) {
+		GravityGame.acceptTask(w.career, i);
+	}
+	assert.ok(w.career.contract >= 0, 'fixture needs a contract');
+	const contract = w.career.contract;
+	/* A same-pad target cannot produce a worthwhile contract landing. */
+	w.bot.careerTarget = () => w.career.at;
+	w.bot.traceReset();
+	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);
+	assert.ok(plan && plan.body !== w.career.at, 'open fan found no alternative');
+	assert.strictEqual(w.career.contract, contract, 'fallback dropped the contract');
+	assert.ok(w.bot.trace.some(line => line.includes('open fan')), 'fallback not logged');
+});
+
 check('launch pricing is skipped without a drive', () => {
 	const w = nextShotWorld(42, false);
 	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);

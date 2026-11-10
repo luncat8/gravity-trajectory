@@ -471,32 +471,32 @@ function drawPrediction() {
 	}
 }
 
-function drawTrail() {
+function drawTrail(sim = activeSim(), other = false) {
 	if (careerRule() && cleanCareerView) return;
-	const count = cargoSim.trailCount;
+	const count = sim.trailCount;
 	if (count < 2) return;
 	const px = 1 / view.scale;
 	const stride = count > 2400 ? 2 : 1;
 	ctx.beginPath();
-	ctx.moveTo(cargoSim.trailX[0], cargoSim.trailY[0]);
+	ctx.moveTo(sim.trailX[0], sim.trailY[0]);
 	for (let i = stride; i < count; i += stride) {
-		ctx.lineTo(cargoSim.trailX[i], cargoSim.trailY[i]);
+		ctx.lineTo(sim.trailX[i], sim.trailY[i]);
 	}
 	const last = count - 1;
-	if (last % stride !== 0) ctx.lineTo(cargoSim.trailX[last], cargoSim.trailY[last]);
-	ctx.strokeStyle = 'rgba(103, 224, 255, 0.9)';
-	ctx.lineWidth = 1.8 * px;
+	if (last % stride !== 0) ctx.lineTo(sim.trailX[last], sim.trailY[last]);
+	ctx.strokeStyle = other ? 'rgba(142, 240, 192, 0.65)' : 'rgba(103, 224, 255, 0.9)';
+	ctx.lineWidth = (other ? 1.4 : 1.8) * px;
 	ctx.setLineDash(NO_DASH);
 	ctx.stroke();
 }
 
-function drawCargo(now) {
-	if (cargoSim.status === GravitySim.STATUS_IDLE) return;
+function drawCargo(now, sim = activeSim(), other = false) {
+	if (sim.status === GravitySim.STATUS_IDLE) return;
 	const px = 1 / view.scale;
-	const x = cargoSim.cargo.x;
-	const y = cargoSim.cargo.y;
-	if (cargoSim.status === STATUS_FLYING) {
-		if (isBurnPaused()) {
+	const x = sim.cargo.x;
+	const y = sim.cargo.y;
+	if (sim.status === STATUS_FLYING) {
+		if (!other && sim === cargoSim && isBurnPaused()) {
 			const holdPulse = 0.5 + 0.5 * Math.sin(now * 0.006);
 			ctx.beginPath();
 			ctx.arc(x, y, (8 + holdPulse * 3) * px, 0, TAU);
@@ -504,7 +504,7 @@ function drawCargo(now) {
 			ctx.lineWidth = 1.25 * px;
 			ctx.stroke();
 		}
-		const angle = Math.atan2(cargoSim.cargo.vy, cargoSim.cargo.vx);
+		const angle = Math.atan2(sim.cargo.vy, sim.cargo.vx);
 		ctx.globalAlpha = 0.7;
 		ctx.drawImage(glow, x - 18 * px, y - 18 * px, 36 * px, 36 * px);
 		ctx.globalAlpha = 1;
@@ -514,7 +514,7 @@ function drawCargo(now) {
 		ctx.lineTo(x + Math.cos(angle + 2.4) * size, y + Math.sin(angle + 2.4) * size);
 		ctx.lineTo(x + Math.cos(angle - 2.4) * size, y + Math.sin(angle - 2.4) * size);
 		ctx.closePath();
-		ctx.fillStyle = GOLD;
+		ctx.fillStyle = other ? MINT : GOLD;
 		ctx.fill();
 		ctx.strokeStyle = 'rgba(3, 8, 16, 0.8)';
 		ctx.lineWidth = 0.8 * px;
@@ -527,17 +527,18 @@ function drawCargo(now) {
 	ctx.globalAlpha = 1;
 	ctx.beginPath();
 	ctx.arc(x, y, (5 + pulse * 4) * px, 0, TAU);
-	ctx.strokeStyle = cargoSim.endReason === END_IMPACT ? GOLD : 'rgba(190, 210, 230, 0.6)';
+	ctx.strokeStyle = sim.endReason === END_IMPACT ? (other ? MINT : GOLD) : 'rgba(190, 210, 230, 0.6)';
 	ctx.lineWidth = 1.2 * px;
 	ctx.stroke();
 }
 
 function drawAim() {
-	const isBurn = (burnArmed || burnAiming) && cargoSim.status === STATUS_FLYING;
+	const sim = activeSim();
+	const isBurn = (burnArmed || burnAiming) && sim.status === STATUS_FLYING;
 	if (!isBurn && !armed && !aiming) return;
 	const px = 1 / view.scale;
-	const cx = isBurn ? cargoSim.cargo.x : tradeSim.planetX[aimBody];
-	const cy = isBurn ? cargoSim.cargo.y : tradeSim.planetY[aimBody];
+	const cx = isBurn ? sim.cargo.x : tradeSim.planetX[aimBody];
+	const cy = isBurn ? sim.cargo.y : tradeSim.planetY[aimBody];
 	const angle = isBurn ? burnAngle : aimAngle;
 	const mainStroke = isBurn ? ICE : GOLD;
 	GRIP_DASH[0] = 3 * px;
@@ -550,7 +551,6 @@ function drawAim() {
 	ctx.stroke();
 	ctx.setLineDash(NO_DASH);
 
-	const sim = activeSim();
 	const sx = !isBurn && sim.predCount > 0 ? sim.predX[0] : cx;
 	const sy = !isBurn && sim.predCount > 0 ? sim.predY[0] : cy;
 	ctx.beginPath();

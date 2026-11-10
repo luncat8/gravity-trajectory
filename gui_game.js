@@ -264,6 +264,8 @@ function selectSlot(slot) {
 	if (!game.on || replay.on) return;
 	if (slot < 0 || slot >= slotCount()) return;
 	if (slot === activeSlot) return;
+	if (helperState.active) stopHelper();
+	lastAimTrace.origin = -1;
 	const prev = activeSlot;
 	slotAim[prev].armed = armed;
 	slotAim[prev].body = aimBody;

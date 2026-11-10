@@ -1776,7 +1776,7 @@ function bookTrace(origin, body, speedU, planets, logSteps, score) {
 	};
 }
 
-check('launch book: same start, landing and visited set keep only the faster arrival', () => {
+check('launch book: same route keeps the higher score, then faster arrival', () => {
 	const book = GravityGame.createLaunchBook();
 	const tag = 7;
 	GravityGame.recordLaunch(book, tag, bookTrace(3, 5, 30, [5, 9], [400, 900], 2));
@@ -1788,6 +1788,9 @@ check('launch book: same start, landing and visited set keep only the faster arr
 	assert.strictEqual(slower.steps, 800, 'a slower arrival must not replace the faster one');
 	assert.strictEqual(slower.speedU, 31);
 	assert.strictEqual(book.entries.length, 1);
+	const richer = GravityGame.recordLaunch(book, tag, bookTrace(3, 5, 32, [5, 9], [500, 1000], 4));
+	assert.strictEqual(richer.steps, 1000, 'higher profit must survive even when slower');
+	assert.strictEqual(book.entries[0].score, 4);
 	/* another visited set is another harvest, so it earns its own row */
 	GravityGame.recordLaunch(book, tag, bookTrace(3, 5, 33, [5, 9, 11], [500, 1000, 1200], 1));
 	assert.strictEqual(book.entries.length, 2);

@@ -2571,7 +2571,7 @@
 		if (top.count < CAREER_BURN_PRICE_TOP) top.count += 1;
 	};
 
-	GravityBot.prototype.careerPlan = function (career, sim, market, runStep, fallback, angles) {
+	GravityBot.prototype.careerPlan = function (career, sim, market, runStep, fallback, angles, relaxed) {
 		const best = this.careerBest;
 		const scan = this.careerScan;
 		this.careerScanReset(runStep);
@@ -2598,7 +2598,7 @@
 		this.probe.fieldRate = sim.fieldRate;
 		this.careerPlans += 1;
 		const target = this.careerTarget(career);
-		const requiredBody = career.contract >= 0 ? target : -1;
+		const requiredBody = career.contract >= 0 && !relaxed ? target : -1;
 		const targetAngle = target >= 0
 			? Math.atan2(sim.planetY[target] - sim.planetY[origin],
 				sim.planetX[target] - sim.planetX[origin]) : 0;
@@ -3505,6 +3505,14 @@
 		let plan = this.careerPlan(career, sim, market, runStep, false, angles);
 		if (!plan) plan = this.careerPlan(career, sim, market, runStep, true, angles);
 		if (plan) return this.careerReadyShot(r, plan, market, runStep, true);
+		if (career.contract >= 0) {
+			plan = this.careerPlan(career, sim, market, runStep, true, angles, true);
+			if (plan) {
+				this.traceAdd(who, 'open fan', 'contract wants P' + this.careerTarget(career) +
+					' · next best is P' + plan.body, runStep);
+				return this.careerReadyShot(r, plan, market, runStep, true);
+			}
+		}
 		/* no shot from the standing rail (drained battery, weak pad): the
 		 * commercial EMC-1 is always charged, so try once more on it */
 		let fallbackFee = 0;
@@ -3520,6 +3528,11 @@
 				career.ledger.purse + 1e-9 >= fallbackFee) {
 				plan = this.careerPlan(career, sim, market, runStep, false, angles);
 				if (!plan) plan = this.careerPlan(career, sim, market, runStep, true, angles);
+			}
+			if (!plan && career.contract >= 0 && career.ledger.purse + 1e-9 >= fallbackFee) {
+				plan = this.careerPlan(career, sim, market, runStep, true, angles, true);
+				if (plan) this.traceAdd(who, 'open fan', 'contract wants P' + this.careerTarget(career) +
+					' · next best is P' + plan.body, runStep);
 			}
 			if (!plan) {
 				plan = this.careerRescueBurn(r, market, runStep);

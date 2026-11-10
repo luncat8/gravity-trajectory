@@ -96,6 +96,12 @@ assert.ok(rivalCareer.launchBook.entries.length > 0,
 assert.strictEqual(you.launchBook.entries.length, 0, 'R1 scan wrote into YOU launch book');
 assert.ok(ui.get('careerMsg').textContent.length > 0, 'the scan did not report a find');
 
+/* Switching during a scan must not apply R1's candidates to YOU. */
+env.click('helperProfit');
+assert.strictEqual(ui.get('helperStop').hidden, false, 'scan did not start');
+env.click('scorePlayer');
+assert.strictEqual(ui.get('helperStop').hidden, true, 'slot switch did not cancel scan');
+
 /* switching back restores YOU's own gate: no R1 pad is usable from P3 */
 env.click('scorePlayer');
 env.runFrames(2, 16);

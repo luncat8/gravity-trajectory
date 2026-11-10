@@ -409,7 +409,27 @@ function helperStartCareer(goal, mode, build) {
 	const rule = HELPER_GOALS[goal];
 	const cands = build(origin);
 	if (cands.length === 0) return;
-	const seed = helperBookSeed(career, origin, rule.builds, rule.credit);
+	let seed = helperBookSeed(career, origin, rule.builds, rule.credit);
+	const sim = activeSim();
+	if (armed && aimBody === origin && !dirty && sim.predReason === END_IMPACT &&
+		sim.predBody >= 0 && aimSpeed <= speedCeiling(origin) + 1e-9) {
+		const money = traceMoney(sim, origin, aimSpeed);
+		const score = money.net + money.credit * rule.credit;
+		if (moneyFlyable(money) && (!rule.builds || money.builds) &&
+			(!seed || score > seed.score)) {
+			helperSeed.origin = origin;
+			helperSeed.angleU = GravityGame.angleUnits(aimAngle);
+			helperSeed.speedU = GravityGame.speedUnits(aimSpeed);
+			helperSeed.length = sim.predLength;
+			helperSeed.steps = sim.predSteps;
+			helperSeed.body = sim.predBody;
+			helperSeed.score = score;
+			helperSeed.money = money.net;
+			helperSeed.credit = money.credit;
+			helperSeed.leg = money.leg;
+			seed = helperSeed;
+		}
+	}
 	helperRun(cands, mode, goal, seed);
 }
 
