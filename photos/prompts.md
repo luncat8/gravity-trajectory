@@ -33,6 +33,34 @@ Shared notes:
 - No lettering, logos or watermarks.
 - Layout JSON is not needed here (only for placing text panels).
 
+## rules that hold the set together
+
+Seven rules the seventeen captions are judged by. They are the *prompt* work the
+draft asked for — the paragraphs below are already MOSS-shaped and are not
+rewritten; a caption that breaks a rule is fixed against it.
+
+1. **One camera, one light, named.** Every caption names the lens or the view
+   (35 mm, long telephoto, isometric, low tripod) and the sun's side (upper
+   right, low behind). MOSS follows a light direction that is stated; two
+   pictures of the same planet type must not fight over it.
+2. **The cargo lander is the same machine.** Wherever it appears it is a blunt
+   three-legged pod with a ramp and a scuffed hull; only the setting changes.
+   That is what makes the deck read as one game. *Partially true: the craft is
+   the same idea in all five landed captions (a blunt pod on three legs with a
+   ramp), but its description and its lighting vary; tighten the wording, not
+   the design.*
+3. **A third of the frame is air.** The card crops under the picture, so the
+   subject sits low with sky or space above it.
+4. **One style per situation, never per planet.** Every entry names its style and
+   no two neighbours share one, so a tour through systems is not one filter.
+5. **No spacecraft in a planet view.** The ship is the player's; an orbital card
+   is the world as it is, not as it is visited. Career scenes are the only place
+   a vehicle belongs; a surface card may show a second body in the sky.
+6. **The type must read at 256 px.** The one thing that says `gas` vs `ice` vs
+   `super` has to survive the small overlay (bands, rings, ocean, bulk); the rest
+   is texture for the full-size card.
+7. **No numbers, no UI, no text in the image.** The deck draws kicker and title.
+
 ## the set
 
 Each entry: **type · situation** — file name, then the caption. The style

@@ -44,7 +44,14 @@ getObj().data().action()
 
 findings-pitfalls-skills.md - notes and pitfalls for LLM agents. write here if found good way to do something.
 
-archive/ - for implemented plans and worklogs. root `*-plan*.md` are open plans, `*-draft*.md` are human design notes / reference
+archive/ - for implemented plans and worklogs.
+
+root `*-plan*.md` - open plans.
+
+drafts/ - human design notes, one file per big subject, indexed by `drafts/README.md`. every
+section is the human's own words plus a `→` line saying where it stands in the code, and a note
+still open ends with the one question a plan must answer first. `0.2.0-draft-economy-compare.md`
+is the one draft kept at the root: signed-off decisions, cited by the economy plan.
 
 experiments/ - measurement scripts (node), not loaded by the page.
 experiments/logs/ - without long formatting, keep only useful data that helpful in future to compare and detect improvement vs regression;
@@ -107,10 +114,11 @@ then continue with next: review next step plan, if found good ideas - improve pl
 record development steps and its validation in `archive/*-worklog.md`, end job with a next step suggestion.
 
 example of file structure:
-0.1.x-draft.md - human write thoughts about goals and design
+drafts/<subject>.md - human write thoughts about goals and design
 archive/0.1.0-plan.md
 archive/0.1.0-worklog.md
 0.1.1-plan.md
 gui.1-plan.md
-0.1.3-draft.md - you may also write user prompts as draft files to store reference of global task
+
+a note that lands in the code keeps its line and gains a `→` marker; do not delete the human's words.
 

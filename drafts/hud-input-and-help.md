@@ -1,0 +1,150 @@
+# 6 · HUD, input and help
+
+Panels, drawers, selections, gates and the camera. Text from
+`archive/draft.txt` (§HTML GUI, §ui, §auto helper tools, §flight HUD, §pause,
+§potential view). This is the group with the most lines already shipped — what
+is left is listed at the end of each block, `**open**`.
+
+## 6.1 HTML GUI ← `archive/draft.txt`
+
+remove abort button in career
+
+→ no abort control exists any more.
+
+remove line: seed, rate.
+move seed to url.
+
+→ the footer carries `restart` / `new seed` / `copy replay`; the seed itself is
+only in the URL and in the copy links. The world clock's rate sits with the
+orbital-trade panel, not in the footer.
+
+move "drag from pad to" to help. split help by all and specific to game mode. it is already have some - so deduplicate help.
+
+→ `COMMON_HELP` for every rule plus `RULE_HELP[mode].controls` for the one that
+has its own; the drag instructions live in `COMMON_HELP` only.
+
+1
+in in Help replace "selected mode" with actually name of current mode
+
+→ the drawer title is `RULE_HELP[rule].name`.
+
+## 6.2 landing gates ← `archive/draft.txt`
+
+2
+prevent bot landing on planet where gravity and no enough EMC or no cost to build or no profit or other reason prevent to launch from it.
+
+2b
+also add this to auto-helpers and aim tooltip color as warning. greenish - profit, current - loose, reddish - cant launch from destination
+
+→ `careerLandingFacts` + the shared landing gate: the aim readout, the launch
+list, the helpers and the rivals all price a landing with one factor table, and
+a destination with no affordable departure is red and refused. The helper scans
+name their refusal (`no EMC-buildable landing`).
+
+3
+calibrate gravity max and random. so from 10 free planets 2-4 are not possible to launch until upgrade EMC.
+
+→ `HQ_GRAVITY_MAX`, the `G ≤ 1.5` first-flight validation, and the
+`EMC-1 + BAT-1` blocked-share calibration behind the seeded map. **open**: the
+"2–4 of 10 blocked" number is not asserted anywhere a test reads; a one-line
+histogram over `career_start_probe.js` output would make it a contract instead of
+a memory.
+
+## 6.3 auto helper tools ← `archive/draft.txt`
+
+implement click on non planet to deselect planet.
+
+→ no planet under the pointer clears the selection.
+
+add helper tools available to user: similar as bot use but with buttons. Especially need them in 'route' mode to make longest route.
+
+→ `quick scan`, `scan here`, `tweak best` in every rule; the career panel adds
+`best profit`, `profit + EMC`, `quest scan`.
+
+i think good to have 3 buttons: broad fast search if no planet selected.
+if planet selected - use it as start point.
+if planet selected and some best route already recorded - then improve it by only small angle and force change.
+
+→ exactly the three buttons and their three regimes, including `tweak best`
+nudging the recorded best by a small angle and speed change.
+
+start each adjustments after user click button try with random - so next press will not calculate same attempts again.
+
+→ each press adds fresh random candidates instead of repeating the same grid.
+
+## 6.4 flight HUD panel ← `archive/draft.txt`
+
+refactor auto-helpers panel to flight HUD panel with auto-helpers content
+
+- speed
+- time of fly / launch button (Enter shortcut) (while landed) / burn button (Enter shortcut) when ipm armed
+
+- fuel, refuel button (while landed)
+- engine
+- quest list with arrows when pointer hover.
+
+think where to place auto-helpers content to be logically functionally grouping
+
+→ `0.5.17-plan-flight-hud.md`, shipped: `#flightHud` with head / ship / action /
+work / helpers groups, the refuel row, the quest rows and their guide arrow.
+
+**open (small)**: `0.5.17` is still at the root unverified line by line and the
+`AGENTS.md` file table still says 20 `gui_*.js` with stale line counts (0.5.21
+worklog, "noticed, not touched"). Archive the plan and refresh the table.
+
+## 6.5 impulse engine, pause and pause-in-modes ← `archive/draft.txt`
+
+have IMP, fuel
+
+- pause
+- drag from the flying ship → aim → release to arm
+in fly input event on ship - do not need. we interact only on pause.
+- Enter to burn (this also unpause and continue fly)
+or
+- unpause cause cancel arm
+
+→ the pause-first loop: a press on the *flying* ship does nothing, a drag from
+the paused ship arms, unpausing by any route drops the arm, `Enter` burns and
+resumes.
+
+auto pause and pause in game modes that allow pause. useful to avoid players waste game time
+career/ game time paused if one or more of player has paused state.
+unpause, launch - should unpause after all player unpaused in some way.
+paused buttons has independent state for each player. bots dont use pause button.
+
+→ per-player holds on one shared clock, the hatched scoreboard row marks a hold,
+bots never hold, a landing auto-pauses by default.
+
+## 6.6 map and camera ← `archive/draft.txt`
+
+### gravity potential view map
+
+smooth gradient color map show gravity abs module .
+negative gravity - blue.
+near zero - transparent smooth alpha proportional to mod(-1...1)
+positive green,
+heavy planet - red.
+you can draw in low resolution if this is heavy to calculate all pixels
+
+→ `view · potential` (`?view=potential`): blue wells, green repulsive hills, the
+red wash above `g ≥ +2`, a WebGL shader with a ¼-resolution 2D fallback. The
+legend sits by the view radios.
+
+### ui
+
+add after visit profit line with gravity. make this planet info border same color as player's color if has EMC or neutral (current white-orange looks ok)
+
+→ the profit card carries `g` under the payout, and a claimed planet's border is
+the owner's colour.
+
+make by default random seed new startup unless url has seed
+
+→ a seedless startup draws a fresh world and writes the seed into the URL.
+
+## 6.7 the one still open in this file
+
+**open**: the flight HUD has no `work` row for a *competition that has not been
+accepted* (see `rivals-competitions.md` §5.2), and the help drawer has no
+section for politics: bribe, corruption and the observation device are explained
+in tooltips only — the note's "short help drawer on hover bribe button" is in
+`politics-quests.md` §3.4 and is the next small GUI item.
