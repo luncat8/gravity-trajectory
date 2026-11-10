@@ -370,6 +370,13 @@ add short help drawer on hover bribe button to explain how work bribe, corruptio
 ## bribe button
 it should be visible while ship landed until take bribe, then show again after visit ANOTHER planet
 
+
+## EMC catapult
+limit range of drag ui to actual catapult strength. so player will not drag and then found catapult is too weak. also this change will make launch more precision.
+
+##
+make new experimental settings panel add sliders to adjust system global gravity and catapult force.
+
 ## deferred
 casual mode - refit at any planet else at HQ
 
