@@ -789,3 +789,38 @@ context object — they live in the global lexical environment and only the page
 own code can see them. A test must reach them through what the page exports
 (`GravityScene`, `GravityGame`) or through ordinary state (`career.planetMask`),
 not `context.<name>`.
+
+## a headless career fixture has to start the run the way the page does
+
+Two page-side steps are easy to miss in a node fixture, and both change what a
+career bench measures:
+
+- `startCareerRun` calls `prepareCareerStarts(galaxy, world, trade, mask, count,
+  1 + bot.count, cargoSim)` *before* anybody joins, so the page plays one jointly
+  planned fair HQ set (`galaxy.mapSeats`, taken in join order). Without it every
+  company calls `pickHq` alone — different homes for the same seed, and no
+  fairness pass over the set.
+- the same function then pins `planetBaseStrength[hq] = 1` for *every* career HQ
+  and the special worlds. `openingTraceHome` already assumes it: it saves the
+  candidate's seeded strength, sets it to 1, traces, and restores. So the picker
+  scores a home it will never see, and a fixture that leaves the world seed's
+  gravity on the HQ measures a world the page cannot create — 10 of 60
+  rival-games opened inside wells up to g 3.1 and never flew (their own starter
+  rail could not leave), which is the kind of dead weight that turns a small
+  behaviour change into noise.
+
+`career_gravity_bench` now does both (`SEATS=0 HQWELL=0` reproduces the numbers
+measured before 0.5.22). Any new script that starts careers has to do the same.
+Because the bot's sims share `bot.strength` by reference (`bindSim`), pinning a
+strength is a plain write to that array — no `setField` needed.
+
+## a parity test that flakes under CPU load
+
+`career_bench`'s *career in-flight burn* check compares a **time-budgeted**
+prediction with a full flight: `predictBurnFast` → `traceFromCargo(…,
+FULL_BUDGET_MS, …)` → `routeDrain` → `routeStep`, which breaks out of its loop
+when `performance.now() - started > capMs`. Run it while another core-heavy
+process is starting and the prediction is cut short, so `predSteps`/`predBody`
+parity fails and the bench reports 4 failures instead of its known 3. The failing
+name is `career in-flight burn: predictBurn & predictBurnFast match stepOne`.
+Re-run the bench alone before believing a change caused it.

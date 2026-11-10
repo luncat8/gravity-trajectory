@@ -1,60 +1,72 @@
 0.5.16 rival first shop — career_gravity_bench A/B (13-planet career universe, rate 1)
-measured in the 0.5.21 session; NOT merged — gravity_bot.js is unchanged, decision open
+rewritten in the 0.5.22 session: DECISION TAKEN — plan step 1 is merged, varB/varC are not
 
-base  = main 3a83474 (bot code as shipped)
-varA  = plan step 1 only: `career.at === career.hq &&` dropped from the first HOLD-8 buy
-purse = sum of the rivals' end purses (the career score); the bench TOTAL line does not print it
+base  = gravity_bot.js as shipped before 0.5.22 (first HOLD-8 buy asked for `career.at === career.hq`)
+varA  = plan step 1: `career.at >= 0` instead (the buy happens wherever the ship stands)
+varB  = varA + an opening `careerBetweenFlights` pass in `startCareers`
+varC  = varA + buy only where careerDeparture(purse - price, mass with the hold) is ok
+varD  = varA + the standing medical offer names the Capital as a goal (0.5.23, rejected)
+purse = sum of the rivals' end purses (the career score); PAIRED=1 prints one line per rival-game
 
-baseline drift: no log recorded this bench between 0.5.13 and now, and base is far
-below the 0.5.13 numbers the plan names (2400 s earned 63.03 · medic trips 10 ·
-patients home 32; 1200 s 36.19; 400 s 15.96). Compare against the base lines below.
+fixture: from 0.5.22 the bench starts careers like the page — `prepareCareerStarts`
+(one planned fair HQ set) and every starting HQ pinned at g 1. SEATS=0 HQWELL=0
+reproduces the numbers measured before 0.5.22; they are kept at the bottom.
 
-400 s, seeds 1-12 (24 rival-games)
-base  flights 149 · earned 11.30 · pads 66 · dead pads 5 · reach 3.68 · stuck 4 · rot 14.4 · purse 238.5 (median 9.3, below 5: 1)
-varA  flights 137 · earned 19.51 · pads 69 · dead pads 6 · reach 3.81 · stuck 4 · rot 12.6 · purse 211.1 (median 8.6, below 5: 4)
-      paired purse delta -1.14 ± 1.16 (se) per game · 7 up / 11 down · 18 of 24 games changed
+1200 s, seeds 1-30 (60 rival-games) — the decision sample
+base  flights 1096 · earned 155.14 · purse 1390.77 · pads 171 · dead pads 2 · reach 4.31 · stuck 0 · rebel 116 · seized 117 · patients 928 · rot 41.1 · bribes 7 · medic trips 2 · patients home 8 · purse median 19.80 (below 5: 8)
+varA  flights 1043 · earned 214.08 · purse 1575.06 · pads 198 · dead pads 8 · reach 4.82 · stuck 0 · rebel  95 · seized  96 · patients 748 · rot 37.0 · bribes 14 · medic trips 8 · patients home 20 · purse median 23.75 (below 5: 6)
+varB  flights 1039 · earned 250.71 · purse 1438.33 · pads 194 · dead pads 7 · reach 4.93 · stuck 0 · rebel  93 · seized  96 · patients 740 · rot 37.2 · bribes 13 · medic trips 7 · patients home 28 · purse median 21.92 (below 5: 2)
+varC  flights 1043 · earned 214.08 · purse 1575.06 · pads 198 · dead pads 8 · reach 4.82 · stuck 0 · rebel  95 · seized  96 · patients 748 · rot 37.0 · bribes 14 · medic trips 8 · patients home 20 · purse median 23.75 (below 5: 6)
+varD  flights 1043 · earned 217.21 · purse 1566.06 · pads 198 · dead pads 8 · reach 4.81 · stuck 0 · rebel  95 · seized  96 · patients 748 · rot 37.2 · bribes 14 · medic trips 8 · patients home 20 · purse median 23.75 (below 5: 6)
+      paired purse delta, per rival-game (n = 60)
+      varA - base  +3.07 ± 2.02 (se) · 33 up / 27 down · total +184.29
+      varB - base  +0.79 ± 2.28 (se) · 34 up / 26 down · total +47.56
+      varC - base  +3.07 ± 2.02 (se) · 33 up / 27 down · total +184.29
+      varD - base  +2.92 ± 2.08 (se) · 34 up / 26 down · total +175.29
 
-1200 s, seeds 1-6 (12 rival-games)
-base  flights 214 · earned 19.55 · pads 35 · dead pads 1 · reach 4.32 · stuck 1 · rebel 20 · seized 20 · patients 160 · rot 35.6 · bribes 0 · medic trips 0 · patients home 0 · purse 367.1 (median 24.0, below 5: 0)
-varA  flights 160 · earned 34.61 · pads 38 · dead pads 2 · reach 4.55 · stuck 1 · rebel 16 · seized 16 · patients 128 · rot 38.0 · bribes 0 · medic trips 0 · patients home 0 · purse 295.4 (median 26.9, below 5: 2)
-      paired purse delta -5.98 ± 10.42 (se) per game · 4 up / 6 down · 10 of 12 games changed
+400 s, seeds 1-12 (24 rival-games) — the short horizon, before the hold pays back
+base  flights 159 · earned  9.56 · purse 217.95 · pads 57 · dead pads 2 · reach 4.86 · stuck 0
+varA  flights 154 · earned 15.72 · purse 210.00 · pads 69 · dead pads 0 · reach 4.98 · stuck 0
 
-2400 s, seeds 1-3 (6 rival-games)
-base  flights 175 · earned 25.58 · pads 16 · dead pads 1 · reach 3.97 · stuck 1 · rebel 13 · seized 13 · patients 104 · rot 32.7 · bribes 0 · medic trips 0 · patients home 0 · purse 452.6 (median 60.6, below 5: 1)
-varA  flights 146 · earned 47.75 · pads 13 · dead pads 3 · reach 3.78 · stuck 1 · rebel 19 · seized 19 · patients 152 · rot 48.7 · bribes 3 · medic trips 1 · patients home 0 · purse 371.1 (median 60.6, below 5: 0)
-      paired purse delta -13.57 ± 53.68 (se) per game · 2 up / 2 down · 4 of 6 games changed
+medic_offer_probe (SEEDS=1-12, 1200 s, 24 rival-games; page fixture)
+base  hold 8 on 10 of 24 · rebellions 51 · offer-seconds 3621 · demand without a hold 6060 s · at-capital 505 s (11 visits) · free-at-capital 67 s · offer and free at capital 0 s · accepts 0 · boardings 0 · patients home 0
+varA  hold 8 on 24 of 24 · rebellions 55 · offer-seconds 8478 · demand without a hold    0 s · at-capital 767 s (20 visits) · free-at-capital 218 s · offer and free at capital 0 s · accepts 1 · boardings 1 · patients home 12
+varD  identical to varA in every line (0.5.23: naming the Capital as a goal moves nothing)
 
-medic_offer_probe (SEEDS=1-6, 1200 s, 12 rival-games)
-base  hold 8 on 4 of 12 · rebellions 24 · offer-seconds 934 · demand without a hold 3060 s · free-at-capital 0 s · accepts 0 · boardings 0 · patients home 0
-varA  hold 8 on 12 of 12 · rebellions 15 · offer-seconds 3612 · demand without a hold 0 s · free-at-capital 0 s · accepts 0 · boardings 0 · patients home 0
+known-failure benches (shipped tree = varA)
+career_bench      FAILED 3 — the same names: board pairing, contracts, cheats
+career_bot_bench  FAILED 10 — the same names and the same values as base (differs only in file
+                  paths): fixture shot 46 !== 30, nine "26 pads" 47 !== 48, research-rail
+                  plan speed 84.6455078125 > cap 81.17577757381571
 
-known-failure benches
-base  career_bench FAILED 3 (board pairing, contracts, cheats) · career_bot_bench FAILED 10 (fixture shot + nine "26 pads" cases, 47 !== 48)
-varA  same 3 names · same 10 names, and every career / grind / scaled / research summary line identical to base
+old fixture (SEATS=0 HQWELL=0), 1200 s, seeds 1-30 — what 0.5.21 measured with 12 seeds
+base  flights  905 · earned  88.66 · purse 1337.20 · pads 145 · dead pads 11 · reach 3.40 · stuck 10 · medic 0 · home 0
+varA  flights  850 · earned 191.25 · purse 1302.47 · pads 170 · dead pads 12 · reach 3.71 · stuck 10 · medic 1 · home 4
+varB  flights  761 · earned 170.41 · purse 1234.09 · pads 180 · dead pads 15 · reach 3.69 · stuck 11 · medic 6 · home 20
+varC  flights  858 · earned 188.94 · purse 1319.62 · pads 166 · dead pads  9 · reach 3.78 · stuck 10 · medic 1 · home 4
+      paired purse delta: varA -0.58 ± 2.92 · varB -1.72 ± 2.91 · varC -0.29 ± 2.92 — all inside
+      their error, with 10 of the 60 games dead on arrival. 400 s seeds 1-12 with the
+      shipped tree: flights 137 · earned 19.51 · purse 211.14 · stuck 4 — bit-identical to the
+      0.5.21 varA line, so the old fixture is reproducible.
 
 reading
-- the hold gap closes: every rival ends on HOLD-8, "demand without a hold" 3060 s -> 0,
-  contract income ("earned") +73 % / +77 % / +87 %.
-- the score does not follow: flights -8 % / -25 % / -17 % and the purse total is lower at
-  all three horizons (-11 % / -20 % / -18 %). Every paired purse delta is inside its
-  standard error, so these samples decide nothing: one rival-game swings 10x on a
-  reshuffled opening (seed 1 R1 82.28 -> 8.71, seed 6 R1 11.38 -> 59.89 at 1200 s).
-- the medical quest stays dead in both: accepts 0, free-at-capital 0 s. The hold was a
-  necessary gate, not the binding one; a rival never stands on the Capital with a free
-  contract slot (0.5.15 measured 70 s and 2 accepts).
-- HOLD-8 adds 1.5 t empty mass (10 -> 11.5 t, 19.5 t loaded). The bench counts a pad dead
-  at the ship's end-of-run mass, so the rise (5 -> 6, 1 -> 2, 1 -> 3) is the heavier or
-  loaded ship failing rails that lifted the 10 t one; `stuck` (0 flights) is unchanged.
-- unrelated, present in base: `stuck` rivals never fly at all — seed 2 R1 sits on HQ P7 at
-  g 2.1 with purse 5.24 from 400 s to 2400 s, 4 of 24 rival-games at 400 s. The rule copy
-  promises a shallow HQ (g <= 1). Not checked against the page's own start.
+- step 1 pays: +13 % purse (+3.07 ± 2.02 per game, positive), earned +38 %, pads +16 %,
+  mean reach 4.31 → 4.82, medical trips 2 → 8, patients home 8 → 20, flights −5 %. It is
+  behind at 400 s (purse 210.00 vs 217.95, earned +64 %) — the hold is bought before it
+  has earned anything — and ahead by 1200 s.
+- varB earns the most of the four (250.71) and brings home the most patients (28) but
+  keeps the least of it (+0.79 on purse): the opening pass runs the whole between-flight
+  shop, expansion claim included, so it spends the opening purse on a pad before the
+  first flight.
+- varC is varA on this fixture: the fitted-ship departure gate never refuses a fit once
+  the HQ well is 1, so it is two extra calls per shopping pass for the same numbers.
+- varD (0.5.23, not merged): naming the Capital in careerGoalBodies and accepting it in
+  careerTarget leaves the probe byte-identical. A goal only biases the fan; the shot is
+  chosen by money and a Capital landing pays CAPITAL_VISIT_PAY. The mission's reward
+  belongs to no shot score — see 0.5.23-plan-medic-capital.md.
+- the fixture change is what made the old sample undecidable: 10 of 60 rival-games opened
+  inside wells up to g 3.1 (seed 2 R1 on P7 g 2.1, seed 19 both rivals on g 2.8 / g 3.1)
+  that the page never creates, and never flew. `stuck` is 0 on the page fixture.
 
-not measured yet
-- varB: varA + the opening pass in startCareers (the bot-flown YOU already shops at start
-  through tickCareerPlayer(refresh); rivals do not).
-- varC: varA + buy the hold only where careerDeparture(career, at, purse - price,
-  mass with the hold, sim).ok — the function already takes a mass.
-- a sample that can decide: SEEDS=1-30 at 1200 s (about 8 s per seed), judged on purse.
-
-run times here (2 cores, other tests running): gravity bench 40-60 s per horizon, medic
-probe 45-57 s, career_bench 22 s, career_bot_bench 265 s (947 s under heavier load; re-time alone).
+run times (2 cores, dom_smoke running alongside): gravity bench 30 seeds at 1200 s ~4-7 min,
+medic probe 12 seeds at 1200 s ~2 min, career_bench 20-60 s, career_bot_bench 5-15 min.

@@ -2163,10 +2163,16 @@
 			this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
 				OrbitTech.CATAPULTS[0], 0)) actions += 1;
 
-		if (career.at === career.hq && career.ship.hold === OrbitTech.HOLDS[0]) {
+		/* the hold is fitted wherever the ship stands: a rival is only on its
+		 * HQ before its first launch, and the contract board needs 4 t */
+		if (career.at >= 0 && career.ship.hold === OrbitTech.HOLDS[0]) {
 			const hold = OrbitTech.HOLDS[1];
 			if (career.ledger.purse + 1e-9 >= careerPrice(career, hold) + CAREER_PURSE_RESERVE &&
-				GravityGame.installPart(career, OrbitTech.KIND_HOLD, hold)) actions += 1;
+				GravityGame.installPart(career, OrbitTech.KIND_HOLD, hold)) {
+				this.traceAdd(career.index, 'gear', 'P' + career.at + ' ' + hold.id +
+					' · ' + hold.capacity + ' t', runStep);
+				actions += 1;
+			}
 		}
 		if (this.careerUseResearch && career.at === career.hq) {
 			while (this.careerResearch(career, sim, CAREER_PURSE_RESERVE)) actions += 1;

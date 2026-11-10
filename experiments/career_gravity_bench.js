@@ -8,6 +8,8 @@
  * never buys one by itself), NOBURNPRICE=1 disables launch pricing for the A/B.
  * DEADEND=1 drains every HQ battery under a deep well; NORESCUE=1 is the
  * no-rescue A/B for that fixture.
+ * PAIRED=1 prints one purse line per rival-game, so two runs can be diffed game
+ * by game; SEATS=0 / HQWELL=0 drop the page's two career-start steps.
  * Run: node experiments/career_gravity_bench.js (SEEDS=1-20 SECONDS=400 TRACE=1)
  */
 'use strict';
@@ -40,6 +42,14 @@ GravityGame.setSpecialPlanets(SPECIAL);
  * to reproduce the 0.5.11 totals, with it on it reports rot and rebellions */
 const POLITICS = process.env.POLITICS !== '0';
 GravityGame.setPolitics(POLITICS);
+/* SEATS=0 seats every company with the standalone HQ picker instead of the
+ * page's one planned fair map (`prepareCareerStarts`), HQWELL=0 leaves the
+ * world seed's gravity on the HQ. Both are on because the page does both: an
+ * HQ is traced at g 1 for the seat search and then pinned at g 1
+ * (`startCareerRun`), so a company can never open inside a deep well. The
+ * historical totals were measured with SEATS=0 HQWELL=0. */
+const SEATS = process.env.SEATS !== '0';
+const HQWELL = process.env.HQWELL !== '0';
 /* g=2 is already twice the shallow-HQ limit; stronger wells trap the one-burn
  * rescue as well and measure nothing */
 const DEADEND_WELL = Number(process.env.DEADEND_WELL || 2);
@@ -77,9 +87,6 @@ function makeWorld(seed) {
 	GravityGame.resetGalaxy(galaxy, seed);
 	/* the political clock is run-wide: bind before any career joins */
 	GravityGame.bindRun(market, galaxy, POLITICS ? trade.world : null);
-	const player = GravityGame.createCareer(GravityGame.createLedger());
-	GravityGame.setCareerUniverse(player, mask, UNIVERSE);
-	GravityGame.startCareer(player, gravity, seed, trade, null, galaxy);
 	const bot = GravityBot.prototype && new GravityBot(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
 	const events = { noShots: 0, sits: 0, drops: 0 };
 	const addTrace = bot.traceAdd;
@@ -96,7 +103,21 @@ function makeWorld(seed) {
 		[GravityGame.PLAYER_BOT, GravityGame.PLAYER_BOT]);
 	bot.setPlanetMask(mask, UNIVERSE);
 	for (let p = 0; p < PLANETS; p++) bot.strength[p] = strength[p];
+	if (SEATS) GravityGame.prepareCareerStarts(galaxy, trade.world, trade, mask,
+		UNIVERSE, 1 + bot.count, gravity);
+	const player = GravityGame.createCareer(GravityGame.createLedger());
+	GravityGame.setCareerUniverse(player, mask, UNIVERSE);
+	GravityGame.startCareer(player, gravity, seed, trade, null, galaxy);
 	bot.startCareers(galaxy, seed, trade);
+	/* the home the seat search traced at g 1 is pinned at g 1 for the run */
+	if (HQWELL) {
+		for (let i = 0; i < galaxy.actors.length; i++) {
+			const hq = galaxy.actors[i].hq;
+			if (hq < 0) continue;
+			strength[hq] = 1;
+			bot.strength[hq] = 1;
+		}
+	}
 	/* the drive is a late purchase: a short bench has to fit it explicitly
 	 * before rival launch pricing can be measured at all */
 	if (ENGINE) {
@@ -161,11 +182,15 @@ function padReport(w, career) {
 }
 
 const steps = Math.round(SECONDS / DT);
+/* PAIRED=1 prints one machine-readable purse line per rival-game, so two runs
+ * can be diffed game by game (the purse total alone swings too much to decide) */
+const PAIRED = process.env.PAIRED === '1';
 const totals = { flights: 0, earned: 0, pads: 0, dead: 0, reach: 0, stuck: 0,
-	actors: 0, burns: 0, priced: 0, rescues: 0, noShots: 0, sits: 0,
+	actors: 0, purse: 0, burns: 0, priced: 0, rescues: 0, noShots: 0, sits: 0,
 	drops: 0, evacs: 0, fuelBought: 0, fuelProduced: 0, fuelSpent: 0, fuelTopUps: 0,
 	rebel: 0, seized: 0, patients: 0, rot: 0, bribes: 0, arrests: 0,
 	medicTrips: 0, delivered: 0 };
+const purses = [];
 for (const seed of SEEDS) {
 	const w = makeWorld(seed);
 	const hqRows = ['P' + w.player.hq + ' g' + w.strength[w.player.hq].toFixed(1)];
@@ -184,6 +209,8 @@ for (const seed of SEEDS) {
 		const stuck = r.career.flights === 0;
 		totals.flights += r.career.flights;
 		totals.earned += r.career.earned;
+		totals.purse += r.career.ledger.purse;
+		purses.push('PURSE seed ' + seed + ' R' + (i + 1) + ' ' + r.career.ledger.purse.toFixed(4));
 		totals.pads += pad.pads;
 		totals.dead += pad.dead.length;
 		totals.reach += pad.reach;
@@ -245,7 +272,8 @@ for (const seed of SEEDS) {
 	}
 }
 console.log('TOTAL rivals ' + totals.actors + ' · flights ' + totals.flights +
-	' · earned ' + totals.earned.toFixed(2) + ' · pads ' + totals.pads +
+	' · earned ' + totals.earned.toFixed(2) + ' · purse ' + totals.purse.toFixed(2) +
+	' · pads ' + totals.pads +
 	' · dead pads ' + totals.dead + ' · mean reach ' +
 	(totals.actors > 0 ? (totals.reach / totals.actors).toFixed(2) : '0') +
 	' · stuck ' + totals.stuck +
@@ -261,6 +289,7 @@ console.log('TOTAL rivals ' + totals.actors + ' · flights ' + totals.flights +
 		(totals.rot / SEEDS.length).toFixed(1) + ' · bribes ' + totals.bribes +
 		' · arrests ' + totals.arrests + ' · medic trips ' + totals.medicTrips +
 		' · patients home ' + totals.delivered : ' · POLITICS=0'));
+if (PAIRED) console.log(purses.join('\n'));
 if (GravityGame.FUEL_PRICE * OrbitTech.TANKS[1].fuelCap <= GravityGame.CAREER.commercialFee) {
 	throw new Error('a full FT-1 must cost more than a commercial EMC launch');
 }

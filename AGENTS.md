@@ -51,8 +51,8 @@ experiments/logs/ - without long formatting, keep only useful data that helpful 
 
 ### gravity gui
 
-the gui is split one file per area (0.5, done): 20 `gui_*.js` classic scripts plus
-`gravity_gui.js` (1,025 lines: state, element refs, wiring, boot — not an IIFE, and never
+the gui is split one file per area (0.5, done): 21 `gui_*.js` classic scripts plus
+`gravity_gui.js` (1,074 lines: state, element refs, wiring, boot — not an IIFE, and never
 an empty re-export hub). never read the composer whole.
 the areas still inside it are indexed by a banner comment; one grep gives the table of contents with
 what each holds and the file it is slated to move into:
@@ -66,27 +66,28 @@ every file below is in place. each area file reads the composer's state as ordin
 
 | file | lines | owns |
 |---|---|---|
-| `gui_tables.js` | 239 | constants, gear/tech/science/help tables, speed presets, rule copy |
-| `gui_help.js` | 63 | rule help drawer: open, pin, hold to preview |
-| `gui_share.js` | 198 | url copy, replay/bot links, load from link, bot log |
-| `gui_science.js` | 455 | hull plot geometry, merit and spec text, accept, sliders |
-| `gui_shop.js` | 566 | cost/cap/pad/gear text, purse checks, shop buttons, EMC claims, part and proto rows |
-| `gui_book.js` | 361 | task board, launch book, money trace, ranked launch list, rail lines |
-| `gui_view.js` | 403 | view mode, canvas resize, HUD rects and hit tests, world<->screen, slot accessors, playback |
-| `gui_route.js` | 267 | route plan rows, best-route record/restore, route leader |
-| `gui_helper.js` | 544 | career helpers: goal table over the rule's landing factors, broad/focus/profit/quest scans, candidates, budgeted tick |
-| `gui_replay.js` | 195 | replay lifecycle, per-shot aim replay, verdicts, skip |
-| `gui_hud_game.js` | 222 | scoreboard, score meta, player/rival summaries |
-| `gui_world.js` | 249 | planet universe and strengths, attach to the trade world, mode/bot/score radios, seed url |
-| `gui_career.js` | 460 | career tabs, wait easing and settlement, build/bulk/part/accept/drop, evacuate, act |
-| `gui_predict.js` | 498 | predicted gain/profit/rate readouts, experiment panel, aim trace, rule gating, blocked pad notes |
-| `gui_aim.js` | 693 | grip drag and snap, fine trim, turret queue, burns, launch/fire, pointer + trim input |
-| `gui_hud_text.js` | 553 | paint entry, clock and end text, live HUD, launch state, status |
-| `gui_game.js` | 540 | start/stop game, career run, step loop, bot settle, flight end |
-| `gravity_gui.js` | 1025 | composer: shared sims, element refs, game/replay/helperState/sound objects, boot, root.GravityScene — **plus every piece of mutable state the areas read** |
+| `gui_tables.js` | 279 | constants, gear/tech/science/help tables, speed presets, rule copy |
+| `gui_help.js` | 62 | rule help drawer: open, pin, hold to preview |
+| `gui_share.js` | 197 | url copy, replay/bot links, load from link, bot log |
+| `gui_science.js` | 454 | hull plot geometry, merit and spec text, accept, sliders |
+| `gui_shop.js` | 752 | cost/cap/pad/gear text, purse checks, shop buttons, EMC claims, part and proto rows |
+| `gui_book.js` | 391 | task board, launch book, money trace, ranked launch list, rail lines |
+| `gui_view.js` | 480 | view mode, canvas resize, HUD rects and hit tests, world<->screen, slot accessors, playback |
+| `gui_route.js` | 266 | route plan rows, best-route record/restore, route leader |
+| `gui_helper.js` | 594 | career helpers: goal table over the rule's landing factors, broad/focus/profit/quest scans, candidates, budgeted tick |
+| `gui_replay.js` | 194 | replay lifecycle, per-shot aim replay, verdicts, skip |
+| `gui_hud_game.js` | 220 | scoreboard, score meta, player/rival summaries |
+| `gui_world.js` | 301 | planet universe and strengths, attach to the trade world, mode/bot/score radios, seed url |
+| `gui_career.js` | 523 | career tabs, wait easing and settlement, build/bulk/part/accept/drop, evacuate, act |
+| `gui_predict.js` | 551 | predicted gain/profit/rate readouts, experiment panel, aim trace, rule gating, blocked pad notes |
+| `gui_hud_text.js` | 578 | paint entry, clock and end text, live HUD, launch state, status |
+| `gui_flight.js` | 381 | flight HUD panel: state tag, ship facts and fuel gauge, refuel transaction, work rows and their guide arrow |
+| `gui_aim.js` | 698 | grip drag and snap, fine trim, turret queue, burns, launch/fire, pointer + trim input |
+| `gui_game.js` | 733 | start/stop game, career run, step loop, bot settle, flight end |
+| `gravity_gui.js` | 1074 | composer: shared sims, element refs, game/replay/helperState/sound objects, boot, root.GravityScene — **plus every piece of mutable state the areas read** |
 | `gui_draw_world.js` | 647 | wells, signs, prediction, trail, cargo, aim, markers, labels |
-| `gui_draw_econ.js` | 307 | route pills, rival ships, planet profit pills, EMC rings, career pads |
-| `gui_frame.js` | 216 | HUD throttle, syncField, the frame loop, fps pacing, fold and sound settings |
+| `gui_draw_econ.js` | 369 | route pills, rival ships, planet profit pills, EMC rings, career pads |
+| `gui_frame.js` | 208 | HUD throttle, syncField, the frame loop, fps pacing, fold and sound settings |
 
 **load order matters**: `gui_tables.js` first (it owns `root` and `$`, and nothing else may declare them), then the areas, then `gravity_gui.js` last, because the composer declares the state they read. a moved block that reads composer state *at definition time* (a top-level `const` array of element refs, say) takes that declaration with it; top-level `addEventListener` wiring never moves, because it reads refs the composer declares. state and element refs belong with the area that owns them, and that is the target, not the current fact: the shared mutable state (`game`, `career`, `armed`/`aiming`/`aim*`, `hudAt`, `dirty`, the field refs) stays in `gravity_gui.js`, because an inventory showed each of those has 6–11 writing areas and no single owner — moving it would only spread the coupling. new element refs belong with the code that needs them at load time.
 

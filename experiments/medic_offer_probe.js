@@ -5,6 +5,11 @@
  * four gates a mission has to pass instead: a rebel with patients, a hold big
  * enough to lift a medic (makeMedic refuses the offer outright at hold 0), the
  * rival standing on the Capital with no contract, and the flight itself.
+ * `at-capital` separates the two reasons a rival can miss the offer: it never
+ * lands on the Capital at all, or it is always under contract when it does.
+ * The careers are seated and their HQ wells pinned like the page and like
+ * `career_gravity_bench` (SEATS / HQWELL), so a dead-on-arrival company does
+ * not count as a company that ignored the mission.
  * Run: node experiments/medic_offer_probe.js  (SEEDS=1-6 SECONDS=1200)
  */
 'use strict';
@@ -52,29 +57,39 @@ function makeWorld(seed) {
 	const galaxy = GravityGame.createGalaxy();
 	GravityGame.resetGalaxy(galaxy, seed);
 	GravityGame.bindRun(market, galaxy, trade.world);
-	const player = GravityGame.createCareer(GravityGame.createLedger());
-	GravityGame.setCareerUniverse(player, mask, UNIVERSE);
-	GravityGame.startCareer(player, gravity, seed, trade, null, galaxy);
 	const bot = new GravityBot(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
 	bot.attachWorld(trade);
 	bot.reset(seed, GravityGame.RULE_CAREER, 'normal', GravityGame.PLAYER_USER,
 		[GravityGame.PLAYER_BOT, GravityGame.PLAYER_BOT]);
 	bot.setPlanetMask(mask, UNIVERSE);
 	for (let p = 0; p < PLANETS; p++) bot.strength[p] = strength[p];
+	GravityGame.prepareCareerStarts(galaxy, trade.world, trade, mask, UNIVERSE,
+		1 + bot.count, gravity);
+	const player = GravityGame.createCareer(GravityGame.createLedger());
+	GravityGame.setCareerUniverse(player, mask, UNIVERSE);
+	GravityGame.startCareer(player, gravity, seed, trade, null, galaxy);
 	bot.startCareers(galaxy, seed, trade);
+	for (let i = 0; i < galaxy.actors.length; i++) {
+		const hq = galaxy.actors[i].hq;
+		if (hq < 0) continue;
+		strength[hq] = 1;
+		bot.strength[hq] = 1;
+	}
 	return { trade, market, bot };
 }
 
 const steps = Math.round(SECONDS / DT);
-const totals = { games: 0, rebels: 0, offers: 0, blockedHold: 0, freeAtCapital: 0,
+const totals = { games: 0, rebels: 0, offers: 0, blockedHold: 0, atCapital: 0,
+	capitalVisits: 0, freeAtCapital: 0, offerFreeAtCapital: 0,
 	accepts: 0, boardings: 0, patients: 0, unfinished: 0 };
 for (const seed of SEEDS) {
 	const w = makeWorld(seed);
 	const count = w.bot.count;
 	const rows = [];
 	for (let i = 0; i < count; i++) {
-		rows.push({ offers: 0, blockedHold: 0, freeAtCapital: 0, accepts: 0, boardings: 0,
-			held: 0, kind: GravityGame.TASK_NONE, to: -1 });
+		rows.push({ offers: 0, blockedHold: 0, atCapital: 0, capitalVisits: 0,
+			freeAtCapital: 0, offerFreeAtCapital: 0, accepts: 0, boardings: 0,
+			held: 0, kind: GravityGame.TASK_NONE, to: -1, wasAt: -1 });
 	}
 	let rebels = 0;
 	let wasRebel = new Uint8Array(PLANETS);
@@ -95,7 +110,17 @@ for (const seed of SEEDS) {
 			else if (mostPatients(w.market) && GravityGame.medicLoad(career, mostPatients(w.market)) < 1) {
 				row.blockedHold += DT;
 			}
-			if (career.contract < 0 && career.at === career.capitalPlanet) row.freeAtCapital += DT;
+			const atCapital = career.at >= 0 && career.at === career.capitalPlanet;
+			if (atCapital) {
+				row.atCapital += DT;
+				if (row.wasAt !== career.at) row.capitalVisits += 1;
+			}
+			row.wasAt = career.at;
+			if (atCapital && career.contract < 0) {
+				row.freeAtCapital += DT;
+				/* the only second in which the offer can be taken */
+				if (offer.kind === GravityGame.TASK_MEDIC) row.offerFreeAtCapital += DT;
+			}
 			if (taken && taken.kind === GravityGame.TASK_MEDIC) {
 				if (row.kind !== GravityGame.TASK_MEDIC) {
 					row.kind = GravityGame.TASK_MEDIC;
@@ -116,7 +141,10 @@ for (const seed of SEEDS) {
 		totals.games += 1;
 		totals.offers += row.offers;
 		totals.blockedHold += row.blockedHold;
+		totals.atCapital += row.atCapital;
+		totals.capitalVisits += row.capitalVisits;
 		totals.freeAtCapital += row.freeAtCapital;
+		totals.offerFreeAtCapital += row.offerFreeAtCapital;
 		totals.accepts += row.accepts;
 		totals.boardings += row.boardings;
 		totals.patients += career.patientsDelivered;
@@ -126,6 +154,7 @@ for (const seed of SEEDS) {
 	console.log('seed ' + seed + ' · rebels ' + rebels +
 		' · R ' + rows.map((r, i) => 'hold ' + w.bot.rivals[i].career.ship.hold.capacity +
 			' offer ' + r.offers.toFixed(0) + 's accept ' + r.accepts +
+			' cap ' + r.atCapital.toFixed(0) + 's/' + r.capitalVisits +
 			' board ' + r.boardings).join(' | '));
 }
 
@@ -141,6 +170,8 @@ function mostPatients(market) {
 console.log(SECONDS + ' s · ' + SEEDS.length + ' seeds · ' + totals.games + ' rival-games');
 console.log('rebellions ' + totals.rebels + ' · offer-seconds ' + totals.offers.toFixed(0) +
 	' · demand without a hold ' + totals.blockedHold.toFixed(0) + 's' +
-	' · free-at-capital ' + totals.freeAtCapital.toFixed(0) + 's');
+	' · at-capital ' + totals.atCapital.toFixed(0) + 's (' + totals.capitalVisits + ' visits)' +
+	' · free-at-capital ' + totals.freeAtCapital.toFixed(0) + 's' +
+	' · offer and free at capital ' + totals.offerFreeAtCapital.toFixed(0) + 's');
 console.log('accepts ' + totals.accepts + ' · boardings ' + totals.boardings +
 	' · patients home ' + totals.patients + ' · missions still open at the end ' + totals.unfinished);
