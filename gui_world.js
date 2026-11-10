@@ -211,15 +211,18 @@ function syncBotRadios() {
 }
 
 /* every row is a player: the bot box always flips that player between the
- * keyboard and the bot, and a click always selects it for the page to watch */
-function syncScoreControls(flightLock) {
+ * keyboard and the bot, a click always selects it for the page to watch, and
+ * the hatch marks each human whose pause still holds the shared clock */
+function syncScoreControls() {
 	const active = activeSlotIndex();
+	const pausable = pauseAllowed();
 	for (let s = 0; s < scoreRowEls.length; s++) {
 		const row = scoreRowEls[s];
 		const box = scoreBotEls[s];
 		const isBot = slotTypes[s] === PLAYER_BOT;
 		const isUser = !isBot;
 		const isActive = active === s;
+		const isPaused = pausable && isUser && slotPaused[s];
 		if (box) {
 			box.checked = isBot;
 			box.disabled = false;
@@ -229,12 +232,15 @@ function syncScoreControls(flightLock) {
 		row.classList.toggle('locked', replay.on);
 		row.classList.toggle('isUser', isUser);
 		row.classList.toggle('isActive', isActive);
-		row.tabIndex = !flightLock && !replay.on ? 0 : -1;
-		row.title = isBot
+		row.classList.toggle('isPaused', isPaused);
+		/* a row stays in the tab order whenever a click on it would select */
+		row.tabIndex = replay.on ? -1 : 0;
+		row.title = (isBot
 			? slotName(s) + ' · bot controlled (uncheck bot to play it by hand)'
 			: isActive
 			? slotName(s) + ' · you fly this player'
-			: 'Click to view and fly ' + slotName(s);
+			: 'Click to view and fly ' + slotName(s)) +
+			(isPaused ? ' · paused, holds the clock' : '');
 	}
 }
 

@@ -54,7 +54,7 @@ function refreshGameUi() {
 	if (botEasyEl) botEasyEl.disabled = false;
 	if (botNormalEl) botNormalEl.disabled = false;
 	if (botHardEl) botHardEl.disabled = false;
-	syncScoreControls(flightLock);
+	syncScoreControls();
 	let anyShots = game.shots.length > 0;
 	for (let i = 0; i < bot.count && !anyShots; i++) {
 		if (bot.rivals[i].shots.length > 0) anyShots = true;

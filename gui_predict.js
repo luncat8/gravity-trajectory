@@ -342,6 +342,7 @@ function syncCareerPause() {
 	dirty = true;
 	launchState = -1;
 	refreshCareerClockUi();
+	syncScoreControls();
 	hudAt = -Infinity;
 }
 

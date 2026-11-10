@@ -246,7 +246,7 @@ function setPlayerCount(delta) {
 	game.playerCount = count;
 	if (game.on) startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player, game.cheat);
 	else {
-		syncScoreControls(false);
+		syncScoreControls();
 		refreshPlanetUniverseUi();
 	}
 }
@@ -282,7 +282,7 @@ function setSlotType(slot, next) {
 		return;
 	}
 	if (game.on) startGame(game.seed, game.fixedRate, game.rule, game.bot, slotTypes[0], game.cheat);
-	else syncScoreControls(false);
+	else syncScoreControls();
 }
 
 /* hand one career player over between the keyboard and the bot without a restart */

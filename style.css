@@ -374,19 +374,38 @@ body {
 }
 
 .scoreEntry.isUser:hover {
-	background: rgba(126, 180, 230, 0.09);
+	background-color: rgba(126, 180, 230, 0.09);
 }
 
 .scoreEntry.isActive {
-	background: rgba(142, 240, 192, 0.09);
+	background-color: rgba(142, 240, 192, 0.09);
 	border-color: rgba(142, 240, 192, 0.28);
 	border-left-color: var(--mint);
 }
 
 .scoreRival.isActive {
-	background: var(--rival-active-bg);
+	background-color: var(--rival-active-bg);
 	border-color: var(--rival-active-border);
 	border-left-color: var(--rival-colour);
+}
+
+/* a human whose pause holds the shared clock. Colour and border already say
+ * who and selected (and some rivals are amber), so the hold gets a channel of
+ * its own: a hatch, still because a held clock freezes every animation, plus
+ * the pause bars sharing the value's cell, where its line ends free */
+.scoreEntry.isPaused {
+	background-image: repeating-linear-gradient(-45deg,
+		rgba(255, 207, 110, 0.13) 0 3px, transparent 3px 8px);
+}
+
+.scoreEntry.isPaused::after {
+	content: "";
+	grid-area: 1 / 2;
+	justify-self: end;
+	width: 2px;
+	height: 9px;
+	border: solid var(--accent);
+	border-width: 0 3px;
 }
 
 .scoreEntry:focus-visible {
@@ -414,6 +433,7 @@ body {
 }
 
 .scoreValue {
+	grid-area: 1 / 2;
 	min-width: 0;
 	font: 700 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-variant-numeric: tabular-nums;
@@ -421,6 +441,7 @@ body {
 }
 
 .scoreMeta {
+	grid-area: 2 / 2;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
