@@ -760,6 +760,71 @@
 		}
 	};
 
+	/*
+	 * A live skill switch: the field, purses, pads and clock stay, only the
+	 * controllers change. Every cached or sliced decision was priced at the old
+	 * level, so it is dropped and the next tick plans at the new one — the cost
+	 * of a switch is one replan, not a world rebuild.
+	 */
+	GravityBot.prototype.setLevel = function (level) {
+		const allowed = LEVELS[level] && !(this.ruleSpec().solo && this.ruleSpec().humanOnly);
+		this.level = allowed ? level : GravityGame.BOT_OFF;
+		this.playerLevel = this.playerType === GravityGame.PLAYER_BOT
+			? (this.level === GravityGame.BOT_OFF ? GravityGame.BOT_NORMAL : this.level)
+			: GravityGame.BOT_OFF;
+		this.jobActive = false;
+		this.jobRival = -1;
+		this.routeCandActor = -1;
+		for (let i = 0; i < this.rivals.length; i++) this.forgetPlan(i);
+		this.forgetPlan(PLAYER_INDEX);
+		this.traceAdd(-1, 'level', this.level + ' · plans dropped', this.worldStep);
+	};
+
+	/*
+	 * A live roster size: the level fields this many rivals at start, so a
+	 * difficulty switch outside a career adds or drops one on the spot instead
+	 * of rebuilding the world. Careers keep their companies — a company has a
+	 * history, a purse and pads; only the scoreboard's +/- changes them.
+	 */
+	GravityBot.prototype.setRivals = function (count, step) {
+		const target = Math.max(0, Math.min(MAX_RIVALS, count));
+		while (this.count > target) this.removeRival();
+		while (this.count < target) this.addRival(this.rivalHome(this.count), step);
+	};
+
+	/* a start planet for a new rival: the seeded home rotation, kept inside the
+	 * live universe and off a taken route start */
+	GravityBot.prototype.rivalHome = function (index) {
+		const mask = this.probe.planetMask;
+		const total = Math.min(PLANETS, this.planetUniverseCount || PLANETS);
+		const base = (Math.imul(this.seed, 7) + 5) >>> 0;
+		const home = (base + (index % 2) * 13 + Math.floor(index / 2)) % total;
+		for (let n = 0; n < total; n++) {
+			const planet = (home + n) % total;
+			if (mask && !mask[planet]) continue;
+			if (this.rule === GravityGame.RULE_ROUTE && this.routeOccupiedBy(planet) >= 0) continue;
+			return planet;
+		}
+		return home;
+	};
+
+	/* drop one actor's cached decision so the next tick plans at this skill */
+	GravityBot.prototype.forgetPlan = function (index) {
+		const actor = this.actorAt(index);
+		actor.planReady = false;
+		actor.planStep = -1;
+		actor.planStamp = -1;
+		if (this.rule !== GravityGame.RULE_ROUTE || !this.routeActorActive(index)) return;
+		/* a route entry is a candidate ladder: the new level changes its depth,
+		 * so the actor traces it again from the coarse stage */
+		actor.routeReady = false;
+		actor.routeStage = 0;
+		actor.routeIndex = 0;
+		actor.routeDoneCount = 0;
+		actor.routeDone = false;
+		actor.shots.length = 0;
+	};
+
 	GravityBot.prototype.rivalDone = function (rival) {
 		if (this.rule === GravityGame.RULE_CAREER) return true;
 		if (this.rule === GravityGame.RULE_ROUTE) return rival.routeDone;

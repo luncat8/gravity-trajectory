@@ -20,8 +20,9 @@ function helperUpdateUi() {
 	const canScan = !helperState.active && !replay.on && !playerIsBot() && !gameLocked() || !game.on;
 	const focusOrigin = helperHelperOrigin();
 	const focusOk = focusOrigin >= 0 && (route ? routeOccupiedBy(focusOrigin) < 0 : canAimFrom(focusOrigin));
-	const best = activeRouteBest();
-	const tweakOk = !helperState.active && best.ready && !replay.on && !playerIsBot() && (route ? routeOccupiedBy(best.origin) < 0 : true);
+	const tweakBase = helperTweakBase();
+	const tweakOk = !helperState.active && tweakBase !== null && !replay.on && !playerIsBot() &&
+		(route ? routeOccupiedBy(tweakBase.origin) < 0 : !gameLocked());
 	if (helperScanBtn) {
 		helperScanBtn.disabled = !canScan;
 		helperScanBtn.textContent = route ? 'quick scan' : 'auto scan';
@@ -37,11 +38,16 @@ function helperUpdateUi() {
 			: 'select a free planet first';
 	}
 	if (helperTweakBtn) {
+		const tweakLength = tweakBase ? Math.round(tweakBase.length) : 0;
 		helperTweakBtn.disabled = !tweakOk;
-		helperTweakBtn.textContent = best.ready ? 'tweak ' + Math.round(best.length) + ' px' : 'tweak best';
-		helperTweakBtn.title = best.ready
-			? 'nudge the ' + Math.round(best.length) + ' px best by ± small angle and ±8 % speed · each press tries new jitter'
-			: 'make a best plan first (drag and wait for trace to finish)';
+		helperTweakBtn.textContent = tweakBase
+			? (tweakLength ? 'tweak ' + tweakLength + ' px' : 'tweak shot')
+			: 'tweak best';
+		helperTweakBtn.title = tweakBase
+			? 'nudge ' + (tweakLength ? 'the ' + tweakLength + ' px shot' : 'the armed shot') +
+				' by ± small angle and ±8 % speed · each press tries new jitter'
+			: route ? 'make a best plan first (drag and wait for the trace to finish)'
+			: 'arm a shot first (drag and wait for the trace)';
 	}
 	/* the scans price the selected player's company: its landing, purse and rail */
 	const career = careerRule();
@@ -84,7 +90,7 @@ function helperUpdateUi() {
 	const tag = helperState.active
 		? helperState.mode + ' ' + (helperState.index + 1) + '/' + helperState.candidates.length +
 			(helperProbe.routeActive ? ' · ' + Math.round(helperProbe.routeProgress() * 100) + '%' : '')
-		: best.ready ? 'best ' + Math.round(best.length) + ' px' : 'ready';
+		: tweakBase && tweakBase.length ? 'best ' + Math.round(tweakBase.length) + ' px' : 'ready';
 	if (tag !== helperHudTag) {
 		helperHudTag = tag;
 		if (helperTagEl) helperTagEl.textContent = tag;
@@ -468,14 +474,31 @@ function helperStartQuest() {
 	helperStartCareer('quest', 'quest scan', (origin) => helperMakeQuest(origin, 34));
 }
 
+/*
+ * The shot a tweak starts from: route keeps a best record for the selected
+ * player's start planet, every other rule nudges the shot that player has
+ * armed (a career or a lab aim is not stored anywhere else). Both the button
+ * gate and the press read this one answer, so a lit button always has a base.
+ */
+function helperTweakBase() {
+	if (routeRule()) {
+		const best = activeRouteBest();
+		return best.ready ? best : null;
+	}
+	if (!armed || aimBody < 0) return null;
+	return {
+		origin: aimBody,
+		angleU: GravityGame.angleUnits(aimAngle),
+		speedU: GravityGame.speedUnits(aimSpeed),
+		length: activeSim().predLength
+	};
+}
+
 function helperStartTweak() {
 	if (helperState.active || replay.on || playerIsBot()) return;
 	if (game.on && gameLocked()) return;
-	const best = activeRouteBest();
-	let base = null;
-	if (routeRule() && best.ready) base = { origin: best.origin, angleU: best.angleU, speedU: best.speedU };
-	else if (armed) base = { origin: aimBody, angleU: GravityGame.angleUnits(aimAngle), speedU: GravityGame.speedUnits(aimSpeed) };
-	else return;
+	const base = helperTweakBase();
+	if (!base) return;
 	if (routeRule() && routeOccupiedBy(base.origin) >= 0) return;
 	const cands = helperMakeTweak(base, 16);
 	helperRun(cands, 'tweak');
