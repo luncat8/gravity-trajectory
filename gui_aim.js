@@ -143,10 +143,10 @@ function restoreSaved() {
 
 /* ── turret, burns & launch ── turret queue, burn aim and grip, executeBurn, launch, fire, record shot, clear cargo */
 /* the barrel must line up with the aimed direction before the rail fires */
-function cancelTurret() {
-	if (!turret.pending) return;
-	turret.pending = false;
-	GravityGame.releaseEnergy(turret.pad, turret.energy);
+function cancelTurret(queued = turret) {
+	if (!queued.pending) return;
+	queued.pending = false;
+	GravityGame.releaseEnergy(queued.pad, queued.energy);
 	careerNotice('');
 	launchState = -1;
 	hudAt = -Infinity;
@@ -187,6 +187,25 @@ function queueTurretShot() {
 
 /* the world clock turns the barrel; once it reaches the aligned step the
  * queued shot fires by itself (a paused clock holds the barrel still) */
+function turretReady() {
+	for (let s = 0; s < slotCount(); s++) {
+		if (slotTurrets[s].pending && game.clockSteps >= slotTurrets[s].fireAt) return true;
+	}
+	return false;
+}
+
+function tickTurrets() {
+	if (careerPaused || !turretReady()) return;
+	const selectedSlot = activeSlotIndex();
+	for (let s = 0; s < slotCount(); s++) {
+		const queued = slotTurrets[s];
+		if (!queued.pending || game.clockSteps < queued.fireAt) continue;
+		selectSlot(s);
+		tickTurret();
+	}
+	selectSlot(selectedSlot);
+}
+
 function tickTurret() {
 	if (!turret.pending || game.clockSteps < turret.fireAt) return;
 	if (careerRule() && careerPaused) return;
@@ -335,8 +354,8 @@ function executeBurn() {
 
 /* The game bar and keyboard both control the shared career clock. */
 function toggleFlightPause() {
-	if (!careerRule() || replay.on) return false;
-	setCareerPaused(!careerPaused);
+	if (!pauseAllowed() || playerIsBot()) return false;
+	setCareerPaused(!slotPaused[activeSlotIndex()]);
 	return true;
 }
 

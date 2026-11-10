@@ -53,6 +53,9 @@ assert.ok(armed.text.indexOf('R1 · launch') === 0, 'launch label is not R1: ' +
 assert.ok(/kWh/.test(armed.text) && !/· [0-9]\.[0-9][0-9]$/.test(armed.text),
 	'R1 is quoted a cash fee on its own EMC: ' + armed.text);
 
+/* YOU must release its independent hold before R1 can advance time. */
+scene.setCareerPaused(false, 0);
+
 /* firing spends R1's pad and R1's career, and never YOU's */
 const youFlights = you.flights;
 const youPurse = you.ledger.purse;

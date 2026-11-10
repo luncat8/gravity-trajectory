@@ -10,6 +10,8 @@
 function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	const wasCareer = careerRule();
 	cancelCareerWait();
+	for (let s = 0; s < slotTurrets.length; s++) cancelTurret(slotTurrets[s]);
+	slotPaused.fill(false);
 	stopReplay();
 	linkNote = '';
 	game.on = true;
@@ -63,6 +65,7 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 		game.playerCount > 0 ? game.playerCount - 1 : undefined);
 	applyPlanetUniverse();
 	ensureValidActiveSlot(-1);
+	turret = slotTurrets[activeSlotIndex()];
 	attachWorld();
 	if (careerRule()) startCareerRun(seed);
 	else {
@@ -107,7 +110,8 @@ function startCareerRun(seed) {
 	game.career.forceScale = cargoSim.forceScale;
 	/* the ship starts landed on HQ: the landing pause applies from turn one,
 	 * but a bot-run YOU never needs the clock stopped to aim */
-	careerPaused = pauseOnLanding && !slotIsBot(0);
+	for (let s = 0; s < slotCount(); s++) slotPaused[s] = pauseOnLanding && !slotIsBot(s);
+	careerPaused = otherPlayerPaused(-1);
 	if (careerPaused) careerPauseNow = performance.now();
 	if (scene.setFrozen) scene.setFrozen(careerPaused);
 	refreshCareerClockUi();
@@ -228,12 +232,13 @@ function setPlayerCount(delta) {
 	} else if (game.on) {
 		if (activeSlotIndex() === current - 1) selectSlot(0);
 		if (careerRule()) {
-			const removed = bot.rivals[bot.count - 1].career;
-			if (turret.pending && removed.pads.includes(turret.pad)) cancelTurret();
+			cancelTurret(slotTurrets[current - 1]);
+			slotPaused[current - 1] = false;
 			bot.removeCareerRival();
 		}
 		else bot.removeRival();
 		game.playerCount = count;
+		syncCareerPause();
 		refreshGameUi();
 		refreshPlanetUniverseUi();
 		return;
@@ -282,10 +287,10 @@ function setSlotType(slot, next) {
 
 /* hand one career player over between the keyboard and the bot without a restart */
 function applySlotTypeNow(slot) {
+	cancelTurret(slotTurrets[slot]);
+	setCareerPaused(!slotIsBot(slot) && pauseOnLanding && slotSim(slot).status !== STATUS_FLYING, slot);
 	if (slot === 0) {
 		playerBotSyncNeeded = true;
-		/* a bot-run YOU needs the clock running to plan and fire */
-		if (slotIsBot(0) && careerPaused) setCareerPaused(false);
 		bot.attachCareerPlayer(game.career, cargoSim);
 		return;
 	}
@@ -316,7 +321,9 @@ function selectSlot(slot) {
 	blockedPlanet = -1;
 	blockedKind = 0;
 	blockedBy = -1;
+	clearBurnAim();
 	activeSlot = slot;
+	turret = slotTurrets[slot];
 	const nextAim = slotAim[slot];
 	armed = nextAim.armed;
 	aimBody = nextAim.body;
@@ -340,6 +347,8 @@ function selectSlot(slot) {
 function stopGame() {
 	const wasCareer = careerRule();
 	cancelCareerWait();
+	for (let s = 0; s < slotTurrets.length; s++) cancelTurret(slotTurrets[s]);
+	slotPaused.fill(false);
 	stopReplay();
 	cancelTurret();
 	careerPaused = false;
@@ -348,6 +357,7 @@ function stopGame() {
 	linkNote = '';
 	game.on = false;
 	activeSlot = 0;
+	turret = slotTurrets[0];
 	predGain = 0;
 	if (wasCareer) resetPlayback();
 	else refreshPlaybackUi();
@@ -469,7 +479,7 @@ function stepGame(now, dt) {
 	/* a queued career launch fires once the in-game clock reaches the step
 	 * where the EMC barrel lines up with the aim; the world clock keeps
 	 * running through the wind-up (pausing it would stop the barrel) */
-	if (turret.pending) tickTurret();
+	tickTurrets();
 	/* the eased career wait owns the world clock for its 2 s */
 	if (careerWaitBusy()) {
 		playAcc = 0;
@@ -477,7 +487,7 @@ function stepGame(now, dt) {
 	}
 	/* a paused career clock freezes everyone — rival companies included —
 	 * so the player can aim while nothing on the shared map changes */
-	if (careerRule() && careerPaused && !replay.on) {
+	if (pauseAllowed() && careerPaused) {
 		playAcc = 0;
 		return;
 	}
@@ -522,7 +532,7 @@ function stepGame(now, dt) {
 	let stepsDone = 0;
 	while ((clockDriverFlying() || careerIdle) && playAcc >= DT && stepsDone < MAX_GAME_STEPS) {
 		/* never step past the aligned barrel: the queued shot fires first */
-		if (turret.pending && game.clockSteps >= turret.fireAt) break;
+		if (turretReady()) break;
 		if (!bot.prepareStep(game.clockSteps, game.market, capSteps, BOT_STEP_MS, false)) {
 			playAcc = 0;
 			break;
@@ -535,9 +545,14 @@ function stepGame(now, dt) {
 		advanceGameOneStep();
 		playAcc -= DT;
 		stepsDone += 1;
+		if (pauseAllowed() && pauseOnLanding) {
+			let landed = wasSlot0Flying && !slotIsBot(0) && cargoSim.status !== STATUS_FLYING;
+			for (let i = 0; i < bot.count; i++) {
+				if ((wasUserRivalMask & (1 << i)) && bot.rivals[i].sim.status !== STATUS_FLYING) landed = true;
+			}
+			if (landed) break;
+		}
 	}
-	/* the clock reached the aligned step: the queued shot leaves now */
-	if (turret.pending) tickTurret();
 	let fieldMoved = false;
 	if (wasSlot0Flying || cargoSim.status === STATUS_FLYING) {
 		tradeSim.advanceTo(cargoSim.flightFieldT);
@@ -567,6 +582,8 @@ function stepGame(now, dt) {
 			endUserRivalFlight(i);
 		}
 	}
+	/* Landings acquire their holds before any newly aligned shot fires. */
+	tickTurrets();
 }
 
 /*
@@ -682,7 +699,7 @@ function endGameFlight() {
 		careerFollow = true;
 		/* default: freeze the world clock at flight end (rivals too) so
 		 * the next shot can be aimed in peace; the setting can turn it off */
-		if (pauseOnLanding && !replay.on && !slotIsBot(0)) setCareerPaused(true);
+		if (pauseOnLanding && !replay.on && !slotIsBot(0)) setCareerPaused(true, 0);
 	} else GravityGame.endFlight(game.money);
 	game.steps += cargoSim.liveSteps;
 	game.length += cargoSim.flightLength;
@@ -704,6 +721,7 @@ function endGameFlight() {
 }
 
 function endUserRivalFlight(rIdx) {
+	if (pauseAllowed() && pauseOnLanding) setCareerPaused(true, rIdx + 1);
 	const r = bot.rivals[rIdx];
 	settleBotsWhenUsersDone();
 	moneyToastFor(rIdx + 1, r.sim, r.ledger, r.shots.length);

@@ -302,34 +302,55 @@ function careerOverText() {
 	return 'stranded · build or evacuate';
 }
 
-/* the career clock button mirrors the pause; both career time controls
- * live in the game bar and only show in career runs */
-function refreshCareerClockUi() {
-	const career = careerRule();
-	if (careerClockBtn) {
-		careerClockBtn.hidden = !career;
-		careerClockBtn.textContent = careerPaused ? '▶ time' : '❚❚ time';
-		careerClockBtn.classList.toggle('on', career && careerPaused);
-		careerClockBtn.title = careerPaused
-			? 'career world clock is paused — click or press Space / P to resume; an armed burn is cancelled'
-			: 'career world clock is running — click or press Space / P to pause and aim in peace';
+/* Each human holds its own pause; the shared clock runs only after all release. */
+function pauseAllowed() {
+	return game.on && ruleSpec().pause && !replay.on;
+}
+
+function otherPlayerPaused(slot) {
+	for (let s = 0; s < slotCount(); s++) {
+		if (s !== slot && !slotIsBot(s) && slotPaused[s]) return true;
 	}
-	if (careerPauseLandLabelEl) careerPauseLandLabelEl.hidden = !career;
+	return false;
+}
+
+function refreshCareerClockUi() {
+	const allowed = pauseAllowed();
+	const slot = activeSlotIndex();
+	const held = allowed && slotPaused[slot];
+	if (careerClockBtn) {
+		careerClockBtn.hidden = !allowed;
+		careerClockBtn.disabled = slotIsBot(slot);
+		careerClockBtn.textContent = held ? '▶ time' : '❚❚ time';
+		careerClockBtn.classList.toggle('on', held);
+		careerClockBtn.title = held ? 'Release this player’s pause (Space / P)'
+			: careerPaused ? 'Waiting for other players; click to pause this player too'
+			: 'Pause this player (Space / P)';
+	}
+	if (careerPauseLandLabelEl) careerPauseLandLabelEl.hidden = !allowed;
 	if (careerPauseLandEl) careerPauseLandEl.checked = pauseOnLanding;
 }
 
-function setCareerPaused(next) {
-	if (careerPaused === next) return;
-	careerPaused = next;
-	if (!next) clearBurnAim();
+function syncCareerPause() {
+	const next = pauseAllowed() && otherPlayerPaused(-1);
+	if (careerPaused !== next) {
+		careerPaused = next;
+		playAcc = 0;
+		if (next) careerPauseNow = performance.now();
+		if (scene.setFrozen) scene.setFrozen(next);
+	}
 	dirty = true;
-	refreshAimLabel();
 	launchState = -1;
-	playAcc = 0;
-	if (next) careerPauseNow = performance.now();
-	if (scene.setFrozen) scene.setFrozen(careerRule() && next);
 	refreshCareerClockUi();
 	hudAt = -Infinity;
+}
+
+function setCareerPaused(next, slot = activeSlotIndex()) {
+	if (!pauseAllowed()) return;
+	slotPaused[slot] = Boolean(next) && !slotIsBot(slot);
+	if (!next && slot === activeSlotIndex()) clearBurnAim();
+	syncCareerPause();
+	refreshAimLabel();
 }
 
 /* why the armed shot cannot fire from its pad right now ('' when it can) */
@@ -384,7 +405,7 @@ function showBlocked(planet, now) {
  */
 function aimTraceStale(bodiesMoved) {
 	if (!bodiesMoved) return false;
-	if (!routeRule()) return true;
+	if (!game.on || ruleSpec().horizon === null) return true;
 	const sim = activeSim();
 	return !sim.routeActive &&
 		Math.abs(sim.fieldT - sim.routeT0) > ROUTE_FIELD_DELTA;
@@ -392,7 +413,7 @@ function aimTraceStale(bodiesMoved) {
 
 function startAimTrace(budgetMs) {
 	const sim = activeSim();
-	if (routeRule()) {
+	if (game.on && ruleSpec().horizon !== null) {
 		sim.routeBegin(aimBody, aimAngle, aimSpeed, ruleSpec().horizon);
 		if (!replay.on) sim.routeStep(ROUTE_STEP_MS);
 	} else sim.predict(aimBody, aimAngle, aimSpeed, budgetMs);
@@ -404,7 +425,7 @@ function startAimTrace(budgetMs) {
 /* a launch—and a copied route plan—always sees a finished path */
 function predictShot() {
 	const sim = activeSim();
-	if (routeRule()) {
+	if (game.on && ruleSpec().horizon !== null) {
 		sim.predictFull(aimBody, aimAngle, aimSpeed, ruleSpec().horizon);
 	} else sim.predict(aimBody, aimAngle, aimSpeed);
 	refreshPredGain();

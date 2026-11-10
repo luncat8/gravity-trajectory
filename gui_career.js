@@ -71,6 +71,15 @@ function refreshCareerWaitUi(career, ended) {
 		activeSim().status === STATUS_FLYING;
 	careerWaitBtn.classList.toggle('on', busy);
 	if (!busy) careerWaitBtn.textContent = 'wait · ' + CAREER_WAIT_MIN + ' min';
+	if (!busy) {
+		for (let s = 0; s < slotCount(); s++) {
+			if (s === activeSlotIndex() || slotIsBot(s)) continue;
+			careerWaitBtn.textContent = 'wait · resume time';
+			careerWaitBtn.title = 'Release this player’s pause; all players must resume before time advances';
+			if (careerWaitInfoEl) careerWaitInfoEl.hidden = true;
+			return;
+		}
+	}
 	/* the running fast-forward keeps its own live progress line */
 	if (busy) return;
 	if (ended) {
@@ -322,6 +331,7 @@ function careerWaitFinish() {
 	const anim = careerWaitAnim;
 	careerWaitAnim = null;
 	const career = anim.career;
+	if (pauseOnLanding) setCareerPaused(true, anim.slot);
 	const pad = career.pads[anim.planet];
 	const after = pad.catapult === null ? 0 : pad.chargeKwh;
 	const gain = after - anim.before;
@@ -343,6 +353,10 @@ function careerWaitFinish() {
 function careerWaitTick(now) {
 	const anim = careerWaitAnim;
 	if (anim === null) return;
+	if (careerPaused) {
+		anim.last = now;
+		return;
+	}
 	const dt = now - anim.last;
 	anim.last = now;
 	if (dt > 0) anim.credit += dt < WAIT_FRAME_MS ? dt : WAIT_FRAME_MS;
@@ -376,10 +390,18 @@ function waitCareer() {
 		activeSim().status === STATUS_FLYING) return;
 	const career = activeCareer();
 	if (career.ended !== GravityGame.CAREER_OPEN) return;
+	setCareerPaused(false);
+	/* Multiplayer waits use the shared step loop, preserving other ships and holds. */
+	for (let s = 0; s < slotCount(); s++) {
+		if (s === activeSlotIndex() || slotIsBot(s)) continue;
+		careerNotice(careerPaused ? 'waiting for other players to resume' : 'world clock running');
+		return;
+	}
 	const planet = career.at >= 0 ? career.at : career.hq;
 	const pad = career.pads[planet];
 	const rate = scene.trade.speed;
 	careerWaitAnim = {
+		slot: activeSlotIndex(),
 		career: career,
 		planet: planet,
 		before: pad.catapult === null ? 0 : pad.chargeKwh,

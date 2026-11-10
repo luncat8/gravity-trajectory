@@ -475,13 +475,16 @@ function saveLastMode(rule) {
 /* career world clock: runs while unpaused; by default it pauses when your
  * flight ends so you can aim in peace (launching resumes it) */
 let careerPaused = false;
+const slotPaused = new Array(MAX_PLAYERS).fill(false);
 /* wall-clock instant the career clock was paused; draw ticks freeze on it
  * so nothing animates while the world clock holds still */
 let careerPauseNow = 0;
 let pauseOnLanding = true;
 /* a career launch is queued until the planet's EMC barrel reaches the aim */
-const turret = { pending: false, body: -1, angle: 0, speed: 0, fireAt: 0,
-	pad: null, energy: 0 };
+const slotTurrets = Array.from({ length: MAX_PLAYERS }, () => ({
+	pending: false, body: -1, angle: 0, speed: 0, fireAt: 0, pad: null, energy: 0
+}));
+let turret = slotTurrets[0];
 const slotTypes = new Array(MAX_PLAYERS).fill(PLAYER_BOT);
 slotTypes[0] = PLAYER_USER;
 const rivalTypesArg = new Array(GravityBot.MAX_RIVALS).fill(PLAYER_BOT);
@@ -688,7 +691,7 @@ if (careerPauseLandEl) {
 	careerPauseLandEl.addEventListener('change', () => {
 		pauseOnLanding = careerPauseLandEl.checked;
 		/* apply at once while landed, so the setting is never a surprise */
-		if (careerRule() && cargoSim.status !== STATUS_FLYING) {
+		if (pauseAllowed() && activeSim().status !== STATUS_FLYING) {
 			setCareerPaused(pauseOnLanding);
 		}
 		refreshCareerClockUi();
@@ -969,6 +972,7 @@ root.GravityScene = {
 	careerAct,
 	waitCareer,
 	careerPaused: () => careerPaused,
+	slotPaused: slot => slotPaused[slot],
 	setCareerPaused,
 	pauseOnLanding: () => pauseOnLanding,
 	careerNotice,
