@@ -43,6 +43,58 @@ works without a server. Costs and traps observed with this page:
 - `file://` has no clipboard permission, which conveniently exercises the copy
 	fallback.
 
+### shorter route (0.5.21): no stub libraries, sub-second shots
+
+`@sparticuz/chromium` 153 carries the missing libraries itself:
+`bin/al2023.tar.br` holds real `libnss3`, `libnspr4`, `libnssutil3` and friends.
+The package inflates it only on Lambda, so do it once by hand and point the
+loader at it — no gcc, no version script, no `PR_Now` stub:
+
+	import chromium, { inflate } from '@sparticuz/chromium';
+	await inflate('node_modules/@sparticuz/chromium/bin/al2023.tar.br'); // -> /tmp/al2023/lib
+	puppeteer.launch({ executablePath: await chromium.executablePath(), args: chromium.args,
+		headless: 'shell', env: { ...process.env, LD_LIBRARY_PATH: '/tmp/al2023/lib' } });
+
+Install both packages in `/tmp` (`npm i @sparticuz/chromium puppeteer-core`, 6 s),
+never in the repo. Launch takes 0.3 s; the page loads from `file://` in 6 s.
+
+- the animating canvases are what makes a shot slow: set the state through
+	`GravityScene`, let ~1 s of frames paint the HUD, then stop the loop with
+	`page.evaluate(() => { window.requestAnimationFrame = () => 0; })`. The first
+	clipped shot still drains ~20 s of queued frames, every later one takes
+	under a second (unfrozen, the second shot took two minutes and the third
+	timed out). DOM changes made through `GravityScene` after the freeze still
+	render, since `refreshGameUi` writes classes synchronously;
+- judge pixels at `deviceScaleFactor: 1` and magnify afterwards: open a second
+	page with the PNG as a `data:` URI and `image-rendering: pixelated` at 3×
+	(a `file://` image is refused by a `setContent` page);
+- a component's CSS variants are compared fastest on a static page that links
+	the repo's `style.css` and hand-writes the markup: 2 s per shot.
+
+## state marks on a grid row (scoreboard pause hatch)
+
+- give every meaning its own channel: on the scoreboard, colour and the left bar
+	say *who* (and some rivals are amber/yellow), the border and tint say
+	*selected*, so a paused row is a background **pattern** plus a glyph — a
+	yellow border would read as "R3 selected";
+- state rules must set `background-color`, never the `background` shorthand: a
+	more specific `:hover` / `.isActive` shorthand resets `background-image`
+	and silently erases another state's hatch;
+- a pseudo-element placed explicitly into an occupied grid cell pushes the
+	auto-placed siblings into a new implicit row (the row grew 13 px): give the
+	siblings an explicit `grid-area` and the pseudo-element can share a cell;
+- `* { box-sizing: border-box }` does not match `::before` / `::after`.
+
+## long suites and the page stub
+
+- `experiments/dom_stub.js` reads `index.html` and every script once, at
+	`require` time: a suite already running keeps testing the tree it started
+	with. `dom_smoke.js` takes ~15 min of CPU in a 2-core sandbox, so start it
+	in the background on a snapshot and keep working:
+	`git ls-files -z --cached --others --exclude-standard | xargs -0 -I{} cp --parents {} /tmp/snap/`;
+- never `pkill -f experiments/dom_smoke.js` from the agent shell: the pattern
+	is in that shell's own command line, so it kills itself first.
+
 ## 60 Hz frame-time guards vs VSync timestamp jitter
 
 Browsers coarsen `performance.now()` / `requestAnimationFrame` timestamps for
