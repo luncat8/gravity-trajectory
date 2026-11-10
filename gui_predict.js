@@ -332,18 +332,19 @@ function refreshCareerClockUi() {
 }
 
 function syncCareerPause() {
-	const next = pauseAllowed() && otherPlayerPaused(-1);
-	if (careerPaused !== next) {
-		careerPaused = next;
-		playAcc = 0;
-		if (next) careerPauseNow = performance.now();
-		if (scene.setFrozen) scene.setFrozen(next);
+		const next = pauseAllowed() && otherPlayerPaused(-1);
+		if (careerPaused !== next) {
+			careerPaused = next;
+		 playAcc = 0;
+			if (next) careerPauseNow = performance.now();
+			if (scene.setFrozen) scene.setFrozen(next);
+		}
+		syncScorePaused();
+		dirty = true;
+		launchState = -1;
+		refreshCareerClockUi();
+		hudAt = -Infinity;
 	}
-	dirty = true;
-	launchState = -1;
-	refreshCareerClockUi();
-	hudAt = -Infinity;
-}
 
 function setCareerPaused(next, slot = activeSlotIndex()) {
 	if (!pauseAllowed()) return;

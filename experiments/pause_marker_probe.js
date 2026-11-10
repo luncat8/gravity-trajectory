@@ -1,0 +1,23 @@
+/* Run: node experiments/pause_marker_probe.js */
+'use strict';
+const assert = require('assert');
+const vm = require('vm');
+const { loadPage } = require('./dom_stub.js');
+const env = loadPage({ search: '?mode=career&seed=1' });
+const scene = env.context.GravityScene;
+const run = code => vm.runInContext(code, env.context);
+scene.setSlotType(1, 'user');
+const p0 = env.elements.get('scorePlayer');
+const p1 = env.elements.get('scoreRival1');
+assert(p0.classList.contains('paused') && p1.classList.contains('paused'), 'both paused on landing');
+scene.setCareerPaused(false);
+assert(!p0.classList.contains('paused'), 'player 0 released');
+assert(p1.classList.contains('paused'), 'player 1 still paused');
+scene.setCareerPaused(true);
+scene.selectSlot(1);
+scene.setCareerPaused(false);
+assert(!p1.classList.contains('paused'), 'player 1 released');
+scene.selectSlot(0);
+scene.setCareerPaused(true);
+assert(p0.classList.contains('paused') && !p1.classList.contains('paused'));
+console.log('paused marker toggles on scoreboard rows');

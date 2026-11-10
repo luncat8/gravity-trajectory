@@ -229,12 +229,22 @@ function syncScoreControls(flightLock) {
 		row.classList.toggle('locked', replay.on);
 		row.classList.toggle('isUser', isUser);
 		row.classList.toggle('isActive', isActive);
+		row.classList.toggle('paused', slotPaused[s]);
 		row.tabIndex = !flightLock && !replay.on ? 0 : -1;
 		row.title = isBot
 			? slotName(s) + ' · bot controlled (uncheck bot to play it by hand)'
 			: isActive
 			? slotName(s) + ' · you fly this player'
 			: 'Click to view and fly ' + slotName(s);
+	}
+}
+
+/* the paused marker alone: a full syncScoreControls call would also reset the
+ * tab order, which must stay locked while a flight is in progress */
+function syncScorePaused() {
+	for (let s = 0; s < scoreRowEls.length; s++) {
+		const row = scoreRowEls[s];
+		if (row) row.classList.toggle('paused', slotPaused[s]);
 	}
 }
 

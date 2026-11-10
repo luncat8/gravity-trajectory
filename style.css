@@ -374,19 +374,37 @@ body {
 }
 
 .scoreEntry.isUser:hover {
-	background: rgba(126, 180, 230, 0.09);
+	background-color: rgba(126, 180, 230, 0.09);
 }
 
 .scoreEntry.isActive {
-	background: rgba(142, 240, 192, 0.09);
+	background-color: rgba(142, 240, 192, 0.09);
 	border-color: rgba(142, 240, 192, 0.28);
 	border-left-color: var(--mint);
 }
 
 .scoreRival.isActive {
-	background: var(--rival-active-bg);
+	background-color: var(--rival-active-bg);
 	border-color: var(--rival-active-border);
 	border-left-color: var(--rival-colour);
+}
+
+/* a player holding the world clock paused: amber diagonal stripes read over the
+ * row's own colour, so it cannot be mistaken for a rival's colour tint */
+.scoreEntry.paused {
+	background-image: repeating-linear-gradient(
+		45deg,
+		rgba(255, 207, 110, 0.18) 0 6px,
+		rgba(255, 207, 110, 0.04) 6px 12px);
+	text-shadow: 0 0 3px rgba(0, 0, 0, 0.85), 0 1px 1px rgba(0, 0, 0, 0.6);
+}
+.scoreEntry.paused.isActive,
+.scoreRival.paused.isActive {
+	background-image: repeating-linear-gradient(
+		45deg,
+		rgba(255, 207, 110, 0.26) 0 6px,
+		rgba(255, 207, 110, 0.06) 6px 12px);
+	text-shadow: 0 0 3px rgba(0, 0, 0, 0.85), 0 1px 1px rgba(0, 0, 0, 0.6);
 }
 
 .scoreEntry:focus-visible {
