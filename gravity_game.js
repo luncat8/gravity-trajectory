@@ -40,14 +40,16 @@
 	const RULE_CAREER = 'career';
 	/*
 	 * One table for everything a rule changes: flight cap, preview horizon
-	 * (null = the lab slider), shot ceiling (0 = unlimited), whether the run
-	 * stops when all 26 systems are visited, and whether rivals may join.
+	 * (null = the lab slider; a number is traced to its end as a job sliced
+	 * over frames), shot ceiling (0 = unlimited), whether the run stops when
+	 * all 26 systems are visited, whether rivals may join, and whether the
+	 * players can hold the game clock (the pause button and the landing pause).
 	 */
 	const RULES = {
-		tour: { name: RULE_TOUR, capSteps: CAP_STEPS, horizon: null, maxShots: 0, stopOnTour: true, planner: false, solo: false },
-		route: { name: RULE_ROUTE, capSteps: ROUTE_STEPS, horizon: ROUTE_SECONDS, maxShots: 1, stopOnTour: false, planner: true, solo: false },
-		money: { name: RULE_MONEY, capSteps: CAP_STEPS, horizon: null, maxShots: MONEY_SHOTS, stopOnTour: false, planner: false, solo: false },
-		career: { name: RULE_CAREER, capSteps: CAP_STEPS, horizon: null, maxShots: 0, stopOnTour: false, planner: false, solo: false, humanOnly: true }
+		tour: { name: RULE_TOUR, capSteps: CAP_STEPS, horizon: null, maxShots: 0, stopOnTour: true, planner: false, solo: false, pause: false },
+		route: { name: RULE_ROUTE, capSteps: ROUTE_STEPS, horizon: ROUTE_SECONDS, maxShots: 1, stopOnTour: false, planner: true, solo: false, pause: false },
+		money: { name: RULE_MONEY, capSteps: CAP_STEPS, horizon: null, maxShots: MONEY_SHOTS, stopOnTour: false, planner: false, solo: false, pause: false },
+		career: { name: RULE_CAREER, capSteps: CAP_STEPS, horizon: CAP_SECONDS, maxShots: 0, stopOnTour: false, planner: false, solo: false, humanOnly: true, pause: true }
 	};
 	const CHEAT_COMMUNISM = 'communism';
 	const CHEAT_ENDGAME = 'endgame';
