@@ -135,9 +135,42 @@ function setPlayMode(next) {
 	startGame(game.on ? game.seed : tradeSim.seed, game.on ? game.fixedRate : false, next);
 }
 
+/*
+ * Difficulty is the skill of the controllers, not a world parameter. A live run
+ * keeps its field, purses, pads and clock: only the next bot decision is planned
+ * at the new level, so a switch costs no world rebuild. `off` still restarts,
+ * because its level fields no rivals at all (a roster change, not a skill), and
+ * in the lab the radio only sets the level of the next run instead of starting
+ * one.
+ */
 function setBot(next) {
 	if (next === game.bot) return;
-	startGame(game.seed, game.fixedRate, game.rule, next, game.player, game.cheat);
+	game.bot = next;
+	if (!game.on) {
+		syncBotRadios();
+		refreshGameUi();
+		syncSeedUrl();
+		return;
+	}
+	/* `off` fields no rivals at all, so it is a roster reset, not a skill */
+	if (next === BOT_OFF) {
+		startGame(game.seed, game.fixedRate, game.rule, next, game.player, game.cheat);
+		return;
+	}
+	bot.setLevel(next);
+	/* outside a career the level also fields its rival count; the scoreboard's
+	 * +/- pins the roster, so a level never overrides a count the player set */
+	if (!careerRule() && game.playerCount === 0) {
+		const target = bot.spec().count;
+		if (activeSlot >= 1 + target) selectSlot(0);
+		bot.setRivals(target, game.clockSteps);
+		for (let s = 1; s < slotTypes.length; s++) {
+			slotTypes[s] = s - 1 < bot.count ? bot.rivalTypes[s - 1] : PLAYER_BOT;
+		}
+	}
+	syncBotRadios();
+	refreshGameUi();
+	syncSeedUrl(replay.on);
 }
 
 /* the scoreboard +/- sets how many players share the run; a human-only rule
@@ -235,10 +268,12 @@ function setSlotType(slot, next) {
 	slotTypes[slot] = normalized;
 	if (slot === 0) game.player = normalized;
 	/* a career keeps its map, purses and pads: a ticked box hands the player
-	 * over on the spot instead of wiping the run */
+	 * over on the spot instead of wiping the run. The whole page follows the
+	 * flip, because the helper buttons and the launch gate read who flies the
+	 * active slot, not only which row is selected. */
 	if (game.on && careerRule()) {
 		applySlotTypeNow(slot);
-		syncScoreControls(false);
+		refreshGameUi();
 		return;
 	}
 	if (game.on) startGame(game.seed, game.fixedRate, game.rule, game.bot, slotTypes[0], game.cheat);
@@ -252,7 +287,6 @@ function applySlotTypeNow(slot) {
 		/* a bot-run YOU needs the clock running to plan and fire */
 		if (slotIsBot(0) && careerPaused) setCareerPaused(false);
 		bot.attachCareerPlayer(game.career, cargoSim);
-		refreshGameUi();
 		return;
 	}
 	bot.rivalTypes[slot - 1] = slotTypes[slot];
@@ -267,6 +301,11 @@ function selectSlot(slot) {
 	if (helperState.active) stopHelper();
 	lastAimTrace.origin = -1;
 	const prev = activeSlot;
+	/* A human player's live trace belongs to that player's turn: the canvas
+	 * traces the selected player, never two players at once. The plan and the
+	 * armed aim survive in slotPlans/slotAim, so coming back restores the shot
+	 * (and re-traces it) instead of leaving a second line behind. */
+	if (!slotIsBot(prev)) slotSim(prev).predCount = 0;
 	slotAim[prev].armed = armed;
 	slotAim[prev].body = aimBody;
 	slotAim[prev].angle = aimAngle;

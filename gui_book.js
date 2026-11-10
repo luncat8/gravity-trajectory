@@ -291,14 +291,19 @@ function launchRowsHtml(career) {
 }
 
 /* the list re-renders when the book, the ship, the field, the rail or the
- * purse changed, and every so often so the money follows the market */
+ * purse changed, and every so often so the money follows the market. The book
+ * object is part of the key: two companies can share every number in it (both
+ * books empty, both landed, both purses equal), so the numbers alone would keep
+ * the previous player's rows on screen after a switch. */
 let launchListKey = '';
+let launchListCareer = null;
 function refreshLaunchList(force) {
 	if (!careerLaunchListEl) return;
 	if (!careerRule()) {
-		if (launchListKey !== '') {
+		if (launchListCareer !== null) {
 			careerLaunchListEl.innerHTML = '';
 			launchListKey = '';
+			launchListCareer = null;
 		}
 		return;
 	}
@@ -310,7 +315,8 @@ function refreshLaunchList(force) {
 		(turret.pending ? 1 : 0) + '|' + (careerWaitBusy() ? 1 : 0) + '|' +
 		(pad ? Math.round(pad.chargeKwh * 100) : -1) + '|' +
 		Math.round(career.ledger.purse * 100) + '|' + Math.round(game.clockSteps / 240);
-	if (!force && key === launchListKey) return;
+	if (!force && career === launchListCareer && key === launchListKey) return;
+	launchListCareer = career;
 	launchListKey = key;
 	careerLaunchListEl.innerHTML = launchListHtml(career);
 }
