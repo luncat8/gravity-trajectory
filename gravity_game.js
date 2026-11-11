@@ -973,7 +973,7 @@
 	/* who owns the rail on `planet`, named as the page and the bot log read it */
 	function railOwnerText(career, planet) {
 		const owner = padOwner(career, planet);
-		const tier = padAt(career, planet).catapult ? padAt(career, planet).catapult.tier + 1 : 1;
+		const tier = padAt(career, planet).catapult ? padAt(career, planet).catapult.tier : 1;
 		if (owner === career.index) return 'own EMC-' + tier;
 		if (owner === OWNER_CAPITAL) return 'imperial EMC-3';
 		if (owner === OWNER_REBEL) return 'rebel EMC-' + tier;
