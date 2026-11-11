@@ -77,7 +77,7 @@ start each adjustments after user click button try with random - so next press w
 
 → each press adds fresh random candidates instead of repeating the same grid.
 
-## 6.4 flight HUD panel ← `archive/draft.txt`
+## 6.4 flight HUD panel. ← `archive/draft.txt`
 
 refactor auto-helpers panel to flight HUD panel with auto-helpers content
 

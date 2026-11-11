@@ -44,14 +44,15 @@ that is the improvement, and it is a change to `gravity_voronoi_tones.js` alone.
 
 think how blind people could play and think about trajectory (if we implement such in future)
 
-**deferred, not started.** The honest first step is not new audio: it is a text
+**open** → `../0.6.7-plan-accessibility-readout.md`, deferred by the note
+itself and not started. The honest first step is not new audio: it is a text
 route — the aim line already prints length, time, visits and profit, so the
 missing piece is the same readout reachable without seeing the canvas (a
 live region on the aim line and the HUD's state tag). Design it as a screen-reader
 contract before any sonification change; the Voronoi generator is already the
 distance channel a blind player would need.
 
-**open**: the Voronoi generator does have an aim channel — the same sound object
+**open**, no plan: the Voronoi generator does have an aim channel — the same sound object
 plays the aim bus whether or not `useVoronoi` is on, so the profit chord, length
 ticks and the EMC beacon all sound under `voronoi` (`SOUND_AIM_HINTS.outcome`,
 `updateChord`, `emcBeacon`). What is missing is tuning that knows it: the chord
@@ -61,7 +62,7 @@ Voronoi preset should also bend its aim chord (a timbre per preset), or whether
 one aim mapping for every generator is the intended promise before porting
 anything.
 
-## 7.2 other sound notes ← `archive/draft.txt`
+## 7.2 more images ← `0.4-draft-career.md`
 
 as we extended game concept to electromagnetic catapult launch, delivery and sport competition - need to make new image prompts for such scenes.
 photos/prompts.md
@@ -72,7 +73,7 @@ landed, plus catapult / delivery / sport) written in MOSS-Image caption style wi
 its settings table; the Krea 2 set is preserved in
 `archive/photos-prompts-krea2.md`; the queue script has a `moss` workflow.
 
-**open (small)**: `photos/career/` is empty and only two of the fourteen planet
+**open (small)**, no plan: `photos/career/` is empty and only two of the fourteen planet
 pictures exist (`space/terran.jpg`, `landed/gas.jpg`). The deck falls back to a
 CSS postcard, so nothing is broken — the missing step is generation, not code.
 The one code question left: whether a career scene should show at most once
@@ -92,7 +93,7 @@ overlay on small screens, one card per planet per run. Folders
 `photos/space/`, `photos/landed/`, `photos/career/` and the MOSS captions are in
 `photos/prompts.md` (§7.4). Missing files draw a CSS postcard of the same type.
 
-## 7.4 what `photos/prompts.md` still wants ← `0.4-draft-career.md`
+## 7.4 what `photos/prompts.md` still wants (agent note, no source note)
 
 The draft asks for prompts *optimized* for MOSS, and the file now carries the
 seven rules the set is judged by (`photos/prompts.md`, "rules that hold the set
@@ -100,7 +101,7 @@ together"): one named camera and light, the cargo lander as one recurring
 machine, air above the subject, one style per situation, no ship in a planet
 view, the type legible at 256 px, no text in the image.
 
-**open**: rule 2 is only half held — the five landed captions describe the same
+**open (small)**, no plan: rule 2 is only half held — the five landed captions describe the same
 blunt three-legged pod, but each in its own words and under its own light — so
 the improvement pass is a tightening of those paragraphs, not a code change.
 Then generate: only `photos/space/terran.jpg` and `photos/landed/gas.jpg` exist,

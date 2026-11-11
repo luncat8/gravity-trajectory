@@ -101,14 +101,14 @@ The two specs written from `0.4-draft-career.md` are
 
 | plan | draft sections it answers |
 |---|---|
-| `../0.6.1-plan-observation-device.md` | `politics-quests.md` §3.4 |
+| `../0.6.1-plan-observation-device.md` | `politics-quests.md` §3.4, `hud-input-and-help.md` §6.7 |
 | `../0.6.2-plan-pad-fees.md` | `career-economy.md` §2.1, §2.2, §2.6 |
 | `../0.6.3-plan-fragile-load.md` | `career-economy.md` §2.4 (`fragile load`) |
 | `../0.6.4-plan-competitions.md` | `rivals-competitions.md` §5.2 |
 | `../0.6.5-plan-two-leg-quests.md` | `politics-quests.md` §3.5 |
-| `../0.6.6-plan-rival-characters.md` | `rivals-competitions.md` §5.1, `bots-and-tools.md` §8.1 |
+| `../0.6.6-plan-rival-characters.md` | `rivals-competitions.md` §5.1, `bots-and-tools.md` §8.1, `politics-quests.md` §3.1 (`the bot’s personality`) |
 | `../0.6.7-plan-accessibility-readout.md` | `sound-and-photos.md` §7.1 |
-| `../0.6.8-plan-seeded-map-opening.md` | `flight-lab-and-modes.md` §1.4 |
+| `../0.6.8-plan-seeded-map-opening.md` | `flight-lab-and-modes.md` §1.4, `hud-input-and-help.md` §6.2 (`2-4 of 10`) |
 | `../0.6.9-plan-founding-colony.md` | `career-economy.md` §2.5 |
 | `../0.6.10-plan-map-statistics.md` | `rivals-competitions.md` §5.3 (`map statistics plots`) |
 | `../0.4.27-plan-bot-balancing.md` | `flight-lab-and-modes.md` §1.4 (`hard bots…`), `bots-and-tools.md` §8.1 |
@@ -133,7 +133,7 @@ Open in the drafts and still without a plan of their own, and why:
 - small checks, each one question in its section: the tourist / emissary line in
   the help drawer and the money rule's rate on a small universe
   (`flight-lab-and-modes.md` §1.1, §1.2), the player cap in the help text and 12
-  against 13 planets (§1.3, §1.4), the `2–4 of 10` blocked histogram
-  (`hud-input-and-help.md` §6.2), the economy block of the balance lab and the
+  against 13 planets (§1.3, §1.4), the economy block of the balance lab and the
   seven unreferenced `debug_*.js` (`bots-and-tools.md` §8.2, §8.3), the missing
-  pictures (`sound-and-photos.md` §7.2).
+  pictures and the lander wording of the captions (`sound-and-photos.md` §7.2,
+  §7.4).

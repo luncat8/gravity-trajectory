@@ -1,10 +1,10 @@
 # 4 · science and ship
 
 The research hull and the ship that leaves the pad. Text from
-`0.4-draft-career.md` (§science, §balance, §cheats, §images) and
-`archive/draft.txt` (§science research, §price, §refit).
+`0.4-draft-career.md` (§how science work, §ballance, §cheat test modes and the
+`tech tree:` lines) and `archive/draft.txt` (§science research, §price).
 
-## 4.1 how science works ← `0.4-draft-career.md`
+## 4.1 how science work: ← `0.4-draft-career.md`
 
 user set floating point slider to what parameter he want, calculator show preview cost - user accept and this become available.
 most important mechanics is knowledge volume: N-dimensional space that limited with discovered items - inside this space items are cheap - outside need new scientific work depends on distance.
@@ -56,20 +56,20 @@ the spec's point and multiplies it by a share, so there are no rungs left in the
 price. `tier` survives only as a shop ordinal. The "10…20 %" is the `BUILD_SHARE`
 knob in `balance_lab.html`.
 
-## 4.4 balance ← `0.4-draft-career.md`
+## 4.4 ballance ← `0.4-draft-career.md`
 
 because balance is difficult need some good test and possibility to manual adjust and easy told LLM what need to adjustment - i recommend to have something like button near each tech item to copy t specific name and current parameters that i can paste to LLM chat to tell this item need price up or mass low
 
 → `copy` on every shop row and every prototype, and `copy knobs` for a family's
 frontier line — a paste-ready `tech: KIND ID { … }` block.
 
-## 4.5 cheat test modes ← `0.4-draft-career.md`
+## 4.5 cheat test modes: ← `0.4-draft-career.md`
 
 communism mode (all free), endgame mode (all upgrade installed)
 
 → `&cheat=communism` and `&cheat=endgame` (all pads top tier, purse 99).
 
-## 4.6 the ship before it flies ← `0.4-draft-career.md` + `archive/draft.txt`
+## 4.6 the ship before it flies ← `0.4-draft-career.md`
 
 tech tree:
 start with weak electromagnetic catapult, solar panel, battery on 1 planet. ship has no cargo hold so only visit-observation and competitions can participate but no space for cargo delivery.
@@ -80,10 +80,10 @@ start with weak electromagnetic catapult, solar panel, battery on 1 planet. ship
 
 → `HOLD-0/8/24`, `IMP-1…3`, `FT-0…3`, `HELP-0…2`; every part masses, a free
 `back` refits to any owned tier, and refit works on any planet. The impulse
-engine is the pause-first burn loop (`0.5.17-plan-flight-hud.md`).
+engine is the pause-first burn loop (`../archive/0.5.17-plan-flight-hud.md`).
 
-**open**: the draft's own ladder stops at three tiers of ship part while the pads
-have five. Nothing decides what a `HOLD-48` or an `IMP-4` would be for, and the
+**open**, no plan (balance work, after `../0.6.2-plan-pad-fees.md`): the draft's
+own ladder stops at three tiers of ship part while the pads have five. Nothing decides what a `HOLD-48` or an `IMP-4` would be for, and the
 research hull can already *invent* a four-parameter engine that has no rung. The
 smallest closure is not more tiers: it is letting the research prototype itself
 become the `fit` row it already shows — which it does. So the open question is
