@@ -3,7 +3,9 @@
  * starter rail (EMC-1 + BAT-1, dry 10 t ship) reach another system? Printed as
  * the share of planets that escape, grouped by gravity strength, so the HQ
  * picker can keep its candidates out of the wells where a career is dead on
- * arrival. Run: node experiments/hq_gravity_probe.js (SEEDS=40 STEP=0.25)
+ * arrival. RAIL picks another pad tier (EMC-n + BAT-n) and MASS another ship,
+ * e.g. a loaded HOLD-24 is 38 t.
+ * Run: node experiments/hq_gravity_probe.js (SEEDS=40 STEP=0.25 RAIL=1 MASS=10)
  */
 'use strict';
 
@@ -24,9 +26,11 @@ const mask = new Uint8Array(PLANETS);
 mask.fill(1, 0, UNIVERSE);
 const bot = new GravityBot(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
 
-/* the starter rail's fastest shot for a dry ship */
-const STARTER_CAP = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
-	OrbitTech.SHIP_DRY_MASS, OrbitTech.CATAPULTS[0], 1);
+/* the rail's fastest shot for the ship: the starter rail and a dry ship by default */
+const RAIL = Number(process.env.RAIL || 1);
+const MASS = Number(process.env.MASS || OrbitTech.SHIP_DRY_MASS);
+const STARTER_CAP = OrbitTech.speedLimit(OrbitTech.BATTERIES[RAIL - 1].capacity,
+	MASS, OrbitTech.CATAPULTS[RAIL - 1], 1);
 
 function makeWorld(seed) {
 	const trade = new Sim(seed);
@@ -56,7 +60,7 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	const world = makeWorld(seed);
 	for (let p = 0; p < UNIVERSE; p++) {
 		const real = world.strength[p];
-		for (let g = -1; g <= 3.5 + 1e-9; g += STEP) {
+		for (let g = GravityGame.PLANET_GRAVITY_MIN; g <= GravityGame.PLANET_GRAVITY_MAX + 1e-9; g += STEP) {
 			world.strength[p] = g;
 			bot.prepareCareerExitProbe(world.sim);
 			const speed = bot.careerExitSpeed(p, STARTER_CAP);
@@ -72,10 +76,10 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	}
 }
 const keys = [...buckets.keys()].sort((a, b) => Number(a) - Number(b));
-console.log('starter cap ' + STARTER_CAP.toFixed(1) + ' px/s · ' + SEEDS + ' seeds · ' +
-	UNIVERSE + ' planets · blocked ' + blocked + '/' + total);
+console.log('EMC-' + RAIL + ' + BAT-' + RAIL + ' · ' + MASS + ' t · cap ' +
+	STARTER_CAP.toFixed(1) + ' px/s · ' + SEEDS + ' seeds · ' + UNIVERSE +
+	' planets · blocked ' + blocked + '/' + total + ' (' + (10 * blocked / total).toFixed(1) + ' of 10)');
 for (const key of keys) {
 	const row = buckets.get(key);
-	if (Number(key) < -1 || Number(key) > 2.5) continue;
 	console.log('  g ' + key + '  reach ' + (100 * row.ok / row.n).toFixed(0).padStart(3) + '%  n ' + row.n);
 }

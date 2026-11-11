@@ -1,8 +1,9 @@
 # 1 · flight lab and modes
 
 The trajectory itself. Ballistics, the gravity field the page draws, the seeded
-map, and the rules the mode row picks between. Text from the drafts, grouped and
-ordered; `→` marks what ships, so an open item is what has no arrow under it.
+map, and the rules the mode row picks between. Text from `archive/draft.txt`,
+grouped and ordered; `→` says where a note stands in the code and `**open**`
+marks what is not built.
 
 ## 1.1 the first experiment ← `archive/draft.txt`
 
@@ -34,8 +35,10 @@ press shift cause 20x slow angle and force change to precision change also slide
 
 limit calculated trajectory to some big but reasonable value to not took more then ~10-20ms per calculation. add slider to adjust
 
-→ `route` slices its tracer over frames; the flight cap is `capSteps` per rule. No
-slider for the cap — the slice budget is internal (`routeBegin/routeStep`).
+→ the `trajectory horizon` slider (`len`, 5…60 s) is that slider: it sets how far
+ahead the prediction is traced. `route` hides it, because a plan has no length
+limit there; its tracer is cut into `GravitySim.BUDGET_MS = 10` ms slices over
+frames instead (`routeBegin` / `routeStep`).
 
 canvas
 draw red + and blue - in gravity body centers depends on gravity sign. update when body gravity change
@@ -93,7 +96,12 @@ while fly continue trajectory until landed
 in help drawer GUI add that game goal is random(tourist, emperor’s emissary) want to fly through each system.
 help drawer open on click and pointer over button (in this case hide on out).
 
-→ help drawer: open, pin, press-and-hold preview; `R#` goal copy per rule.
+→ help drawer: open, pin, press-and-hold preview. The random passenger shipped
+with the grand tour in 0.1.3 (`39fd241`) and was dropped two days later
+(`4f328e0`); today every rule has one plain goal sentence
+(`RULE_HELP[rule].goal`, for `tour` «Enter every planet system.»).
+**open (small)**, no plan: put the tourist / emperor’s emissary back as the
+`tour` goal line, or is the plain sentence the decision?
 
 make visited orbits a bit more dim.
 make current predicted visits as more bright green highlight
@@ -133,8 +141,9 @@ show visit profit near planets in this mode and total player's money.
 
 → `money` (10 launches, purse ranking) and the `+0.24 → +3.00` saturating
 payout drawn under every planet. The `0.1 × time` idea became
-`MONEY.k = 0.00625/s` saturating at `cap 3` — **open**: whether the rate should be
-steeper on a small universe (only the count scale is in, `k × 26 / count`).
+`MONEY.k = 0.00625/s` saturating at `cap 3` — **open (small)**, no plan: should
+the rate be steeper on a small universe than the count scale already in
+(`k × 26 / count`)?
 
 ## 1.3 the seed, the roster, the map ← `archive/draft.txt`
 
@@ -164,11 +173,11 @@ decrease - remove random without refund, keep 1st HQ of each player
 players count change: should be without limit and just add new random position planet with player.
 
 → the scoreboard `+` seats one more company on a random free planet, up to the
-16 rivals the roster holds. **open**: "without limit" collides with the 48-planet
-cap — a seat needs a planet. Either the roster cap is raised with a second
-planet tier, or the sentence should read "up to the planets available"; the
-existing `+` behaviour is the second reading and needs only the cap explained in
-the help text.
+16 rivals the roster holds. **open (small)**, no plan: "without limit" collides
+with the 48-planet cap — a seat needs a planet. Either the roster cap is raised
+with a second planet tier, or the sentence should read "up to the planets
+available"; the existing `+` behaviour is the second reading and needs only the
+cap explained in the help text. Which reading?
 
 ## 1.4 balance of the field ← `archive/draft.txt`
 
@@ -179,21 +188,26 @@ i think speed of grow profit of visit should be faster on smaller planets number
 and this probably enough to keep balance.
 
 → `applyMarketUniverse` scales `k` by `26 / count`, so 13 planets regenerate
-twice as fast. **open**: the note says 12, the career default is 13 — confirm the
-count before pricing anything else, and re-check that `k × 2` is enough once the
-pad ladder is priced.
+twice as fast. **open (small)**, no plan: the note says 12, the career default
+is 13 — which count is the balance target? Whether `k × 2` is «enough to keep
+balance» is read from the profit-per-time plot of
+`../0.6.10-plan-map-statistics.md` on both counts.
 
 hard bots need give more search time then easy. probably measure in startup and split available time
 
-→ `0.4.27-plan-bot-balancing.md` — identical seeded fields, a measured
-seed/outcome table, no budget change before the table exists.
+→ today a harder level searches more candidates, not longer: `easy` tries 14
+launch angles and `hard` 32 (in `route`, `easy` stops after search stage 1 and
+`hard` after stage 5), all cut into the same frame slices. Nothing is measured at
+startup. **open** → `../0.4.27-plan-bot-balancing.md` — identical seeded fields,
+a measured seed/outcome table, no budget change before the table exists.
 
 ### random gravity of planets -1...+5
 but 1st HQ is 1
 
-→ field is `−1…+3.5`; HQ, Capital and A.R.F. are pinned to 1. **open**: raise the
-draw ceiling to `+5`? That is a one-constant change (`PLANET_GRAVITY_MAX`) and
-touches every seeded replay, so it needs its own plan and a fresh baseline.
+→ field is `−1…+3.5` in `0.05` steps; HQ, Capital and A.R.F. are pinned to 1.
+**open** → `../0.6.8-plan-seeded-map-opening.md` §2: raising the draw ceiling to
+`+5` is a one-constant change (`PLANET_GRAVITY_MAX`) that moves every seeded
+field, so it ships as a deliberate baseline break.
 
 slider G-field increase max to 9x
 
@@ -204,20 +218,29 @@ slider G-field increase max to 9x
 choose seed and/or adjust player's planet start positions to 1st predicted flight be more or less similar profit. and all has in more or less equal ability to land on not heavy planet to build new EMC in 1st fly.
 because if some player possible to land on only heavy G>~1.5 planets this cause big score impact from start.
 
-→ the HQ set is planned together and validated: every company must have an
-unclaimed first-flight landing at `G ≤ 1.5` that an `EMC-1 + BAT-1` can leave
-(`career_start_probe.js`, `career_start_fairness.js`). **open**: the `stuck` rivals
-noticed in the 0.5.21 worklog (seed 2 R1 sitting on `g 2.1` HQ for a whole bench,
-4 of 24 rival-games at 400 s) contradict this rule. The opening planner itself
-looks correct — `openingTraceHome` forces its own home to `g 1` while it traces —
-so the suspect is either `startCareers` overwriting a strength after the plan or
-the bench's own setup. One probe reproduces seed 2 R1 on the page before any
-generator work.
+→ shipped. The HQ set is planned together for the whole run
+(`prepareCareerStarts`): every company gets its **own** unclaimed first-flight
+landing at `G ≤ 1.5` that an `EMC-1 + BAT-1` can leave again, and the map whose
+weakest opening is closest to its best one wins (at least `0.55` of it). Every
+HQ carries `g 1.00`. `career_start_fairness.js` asserts it on seeds 1–8 (weakest
+opening 64 % of the best) and `career_start_seat_test.js` asserts that the page
+seats companies exactly that way.
+
+The rivals once seen «stuck on a `g 2.1` HQ» were not this rule failing:
+`career_gravity_bench` started careers without the page's seating, and was fixed
+to mirror it (`archive/0.5.22-worklog.md` §3).
+
+**open** → `../0.6.8-plan-seeded-map-opening.md` §1: the promise is asserted for
+the default career only (13 planets, three companies). On 26 planets two of four
+seeds fall under the band (47 % and 51 %), and with five companies on 13 planets
+the same test finds no map where each has its own site.
 
 ## 1.5 what a career ignores on purpose ← `archive/draft.txt` (deferred)
 
 casual mode - refit at any planet else at HQ
 
-→ refit already works on any planet (**done differently**); the `casual mode` that
-would gate it to the HQ is the deferred half. **open**: does anything still need
-that gate — a "hard refit" variant at the HQ only?
+→ the first half is the only behaviour: a refit works on any planet, so every
+career is the note's `casual mode`. The `else at HQ` half — a non-casual career
+where the ship is rebuilt at the HQ only — is not built. **open**, deferred by
+the note itself, no plan: is an HQ-only refit still wanted as a harder career
+setting?

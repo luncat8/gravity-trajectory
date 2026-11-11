@@ -4,7 +4,7 @@ The catapult network: what a launch costs, who owns the pad, what the pads
 grade into, and how the money comes back in. Wording from `0.4-draft-career.md`
 (the career spec) and `archive/draft.txt` (everything added on top of it).
 
-## 2.1 progression ← `0.4-draft-career.md`
+## 2.1 plan career mode : ← `0.4-draft-career.md`
 
 start on random planet with weak electromagnetic catapult.
 
@@ -25,19 +25,20 @@ use available tasks to earn money, build catapult on target planet, be ably to l
 → `career` ships this: the HQ start, the four delivery slots plus the
 competition slot, the commercial EMC-1 fallback on every planet, `evacuate · 6.00`,
 `buy EMC-1`, `all N · …` for a whole network of pads, and `wait · 30 min` to
-recharge. `0.4.0-plan-career-a.md` / `-b.md` are the two specs written from this
-paragraph.
+recharge. `../archive/0.4.0-plan-career-a.md` / `-b.md` are the two specs
+written from this paragraph.
 
-**open**: the note's own gate — «delivery has no profit without building a
-catapult» — is weaker in the shipped build, because a commercial rail is always
-there for `3.00`. The exact figures, so a plan starts from measured numbers: a
-delivery pays `0.5 + 0.06 · t · (1 + scarcity) · (1 + dist/900)` capped at `4.50`,
-a starter purse is `3.00`, an `EMC-1` build is about `3.04` and an evacuation
-`6.00`. So one delivery nets under `3.00` — the player cannot fund a pad from the
-delivery that needed it, and the `3.00` commercial rail is what actually keeps a
-landing alive. Is the commercial rail a starter crutch to keep forever, or should
-its fee scale with ship mass or with the distance to the target, so the early
-gate the note describes comes back? One `career_bench` A/B decides it.
+The note's own gate — «delivery has no profit without build catapult» — in
+today's numbers: the starter purse is `6.00`, an `EMC-1` costs `3.04`, an
+evacuation `6.00`, a commercial launch a flat `3.00`, and a delivery pays
+`0.5 + 0.06 · t · (1 + scarcity) · (1 + dist/900)`, capped at `4.50`: `0.74…2.42`
+for what a `HOLD-8` carries, up to the cap for a `HOLD-24`. So the gate holds
+for a small hold (the commercial way off costs more than the delivery paid) and
+is gone for a big one; and a pad costs one commercial launch, so it is repaid on
+its second departure.
+
+**open** → `../0.6.2-plan-pad-fees.md` §2: should the commercial fee follow the
+energy of the shot, so the gate holds for every hold?
 
 ## 2.2 economy ← `0.4-draft-career.md`
 
@@ -45,11 +46,14 @@ in career mode
 
 usage cost of EMC of other player depends on energy usage, typical i think something like 0.1 to send lightweight ship to space with speed 10. but this is subject to balance.
 
-→ `CAREER.taxPerKwh = 1.00` on the energy a guest rail burns — a flat operating
-fee. **open**: the note wants the fee *to depend on the shot* (energy is already
-the proxy). The shipped `1.00 / kWh` is not `0.1 per light ship`; the ladder of
-`EMC-1…5` changed what a "light ship" costs, so the constant should be re-derived
-from the tables rather than kept as a round number.
+→ shipped as written: a guest pays `CAREER.taxPerKwh = 1.00` × the energy of
+its own shot (`launchEnergy(mass, rail, speed)`), to the pad's owner. The dry
+10 t ship pays `0.11` at the slowest shot and `1.02` at the `EMC-1` cap, so the
+note's «something like 0.1» is the light, slow launch.
+
+**open** → `../0.6.2-plan-pad-fees.md` §1: the same shot costs a guest *less* on
+a better rail (`0.109 / 0.095 / 0.084` on `EMC-1 / 2 / 3`, because energy is
+divided by efficiency), so an upgrade lowers what a pad earns per guest.
 
 draw on map EMC of player as circle around planet with short line (gun) color same as player's color. So players claim whole planet by build EMC and receive usage tax.
 
@@ -57,9 +61,10 @@ draw on map EMC of player as circle around planet with short line (gun) color sa
 
 TODO (deferred): possibility to adjust tax, changes apply after some time and visible current and next price near EMC
 
-**open** — not built. Same shape as the tax deferral above: a per-pad rate the
+**open**, deferred by the note itself, no plan — not built. A per-pad rate the
 owner sets, a delay before it bites, and `now / next` printed on the pad plate.
-Needs the tax question answered first.
+It needs `0.6.2`'s fee first, as the number the slider would move. Still wanted
+after that?
 
 adjust cost on planet : i think these better gameplay (but this is subject of balance)
 
@@ -81,10 +86,7 @@ in career mode EMC rotates with planet, 2...5sec/turn. it launch not when player
 queues the shot and the rail fires itself when it aligns; `gun · N s` on the
 button.
 
-## 2.4 quests and the special worlds ← `archive/draft.txt`
-
-→ the whole board, the Capital and the A.R.F. world ship (`0.5.11`, `0.5.12`).
-The special planets:
+## 2.4 Special planets ← `archive/draft.txt`
 
 **Planet: A.R.F.** — No profit from flybys; no corruption. Tourist-delivery quests to A.R.F. appear more often.
 
@@ -93,7 +95,8 @@ Quests involve delivering “tourists” to or from a special resort base here.
 
 Capital, ARF, all start HQ player's planets should have Gravity=1
 
-→ all three are in, gravity pinned. A.R.F. pays `0` and takes no bribes, the
+→ the whole board, the Capital and the A.R.F. world ship (0.5.11, 0.5.12), and
+all three kinds of planet have their gravity pinned. A.R.F. pays `0` and takes no bribes, the
 Capital pays `−3` on every entry and its fixed imperial EMC-3 makes takeoff free,
 building is refused there, and tourists are offered at `2×` an ordinary endpoint
 — to A.R.F. as well as to and from the Capital resort (`0.5.11`). Nothing in this
@@ -103,48 +106,54 @@ block is open.
 
 fragile load - cant survive >EMC1. available on light planets
 
-**open** — not built (no `fragile` anywhere in the code). It is the one cheap
-quest that gives a light planet a *reason* to be a stop and gives the pad ladder
-an upper bound to fight: a new `TASK_DELIVERY` flag that voids the reward when
-the destination rail is above `EMC-1`, or when the landing impact is above a
-threshold. Pairs with the `EMC-3+` research lock in §2.6.
+→ not built (no `fragile` anywhere in the code).
+
+**open** → `../0.6.3-plan-fragile-load.md`: a `TASK_DELIVERY` flag; the load is
+lost when a rail above `EMC-1` fires it, and it is offered only from planets
+light enough for an `EMC-1` to lift it (`g ≤ 0.75`, measured). The commercial
+`EMC-1` on every planet stays the gentle way off, so an upgraded pad costs its
+owner the commercial fee — the pad ladder gets a price. **One reading to
+confirm**: «cant survive >EMC1» as *the rail's tier*, not the speed of the shot.
 
 ## 2.5 colonies and the trade backdrop ← `0.2.0-draft-economy-compare.md`
 
-The colony economy is not a wish list: `0.2.0-draft-economy-compare.md` is the
-measured comparison, §5 lists the open decisions and §6 the ones taken, and
-`archive/0.2.0-plan-colony-economy.md` is the spec. What is still open from that
-document:
+The colony economy is not a wish list: `../0.2.0-draft-economy-compare.md` is
+the measured comparison, its §5 lists four open decisions, its §6 takes all
+four, and `../archive/0.2.0-plan-colony-economy.md` is the spec:
 
-1. **How deep the economy goes** — three goods + needs/comfort, or + a resource
-   map and colony stages, or + credits and stock-reactive prices.
-2. **Who owns the network** — automatic nearest-four, player commissions, or
-   frontier automation.
-3. **Whether the cargo experiment touches the economy** — a landed container
-   seeding a colony, or a pure physics toy.
+1. **How deep the economy goes** — needs/comfort growth, a deterministic
+   resource map, colony stages, habitat scoring; prices deferred.
+2. **Who owns the network** — automatic nearest-four, no player commissions.
+3. **Whether the cargo experiment touches the economy** — «A landed cargo
+   container seeds a colony on a free planet.»
+4. **How much GUI** — HUD, hover, a panel with the log, the sky overlay.
 
-Taken (§6, for the record): needs/comfort growth, a deterministic resource map,
-colony stages, the automatic network with a log, a budgeted expansion scan,
-habitat scoring. Prices deferred. **open**: item 3 is the only one of the four
-with no decision recorded, and it is the one that decides whether
-`0.3.x`-style cargo can ever carry goods.
+→ 1, 2 and 4 shipped. 3 is decided and half built: `Sim.seedColony` is the whole
+founding law and nothing in the game calls it.
+
+**open** → `../0.6.9-plan-founding-colony.md`: the call site, as a button at the
+pad that spends a loaded delivery. On a 13-planet map 4 to 9 planets never get a
+colony on their own, and a planet without one is never a delivery's origin or
+destination.
 
 ## 2.6 the pad ladder ← `archive/draft.txt`
 
 need balance build catapult cost.
 
 → the price is research-derived (`buildCostOf`); the balance pass lives in
-`balance_lab.html` (§8.2).
+`balance_lab.html` (`bots-and-tools.md` §8.2).
 
 EMC-3, 4, etc - should not be available by default. we have only 2 levels researched by default - next need to be researched in sci
 
 → `EMC-1…2` stock, `3…5` behind the research hull (`catapult` family).
 
-**open**: `EMC-3+` is *researchable* but not *required* by anything. Give the
-ladder a demand: a quest (see `fragile load` above), a heavy planet that only
-`EMC-3` leaves, or a delivery whose cargo only a bigger pad lifts.
+**open** → `../0.6.2-plan-pad-fees.md` §3: the ladder has a demand that nothing
+shows. An `EMC-2 + BAT-2` lifts the dry ship off almost any planet, but a loaded
+`HOLD-24` off 43 % of `g 2.0` planets and 13 % at `g 2.5`, where an
+`EMC-3 + BAT-3` lifts it off 100 % and 87 %. Heavy freight out of a deep well is
+the job for the big rail; the plan tags and pays it.
 
-## 2.7 time and pads ← `archive/draft.txt`
+## 2.7 balance and GUI ← `archive/draft.txt`
 
 game time and background trade time - are different so they need separate panels near and game time should also have slider of speed
 
@@ -185,7 +194,7 @@ i think we (should) have only 2 time
 → done: the game clock, the orbital-trade background clock in its own panel, no
 footer copy.
 
-## 2.10 the EMC drag ← `archive/draft.txt`
+## 2.10 EMC catapult ← `archive/draft.txt`
 
 limit range of drag ui to actual catapult strength. so player will not drag and then found catapult is too weak. also this change will make launch more precision.
 
@@ -196,5 +205,4 @@ limit range of drag ui to actual catapult strength. so player will not drag and 
 make new experimental settings panel add sliders to adjust system global gravity and catapult force.
 
 → `experimental`: `g field ×0…×9`, `catapult ×0.25…×3`, `stay-pay · per tick`.
-The stay-pay arithmetic is the one part still open — see
-`0.4.30-plan-harvest-ticks.md`.
+**open** → `../0.4.30-plan-harvest-ticks.md`: the stay-pay arithmetic.

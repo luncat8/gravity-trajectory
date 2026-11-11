@@ -1,9 +1,10 @@
 # 6 · HUD, input and help
 
 Panels, drawers, selections, gates and the camera. Text from
-`archive/draft.txt` (§HTML GUI, §ui, §auto helper tools, §flight HUD, §pause,
-§potential view). This is the group with the most lines already shipped — what
-is left is listed at the end of each block, `**open**`.
+`archive/draft.txt` (§HTML GUI, §ui, §auto helper tools, §flight HUD panel,
+§impulse engine fly, §auto pause, §gravity potential view map). This is the
+group with the most lines already shipped — what is left is listed at the end of
+each block, `**open**`.
 
 ## 6.1 HTML GUI ← `archive/draft.txt`
 
@@ -44,11 +45,15 @@ name their refusal (`no EMC-buildable landing`).
 3
 calibrate gravity max and random. so from 10 free planets 2-4 are not possible to launch until upgrade EMC.
 
-→ `HQ_GRAVITY_MAX`, the `G ≤ 1.5` first-flight validation, and the
-`EMC-1 + BAT-1` blocked-share calibration behind the seeded map. **open**: the
-"2–4 of 10 blocked" number is not asserted anywhere a test reads; a one-line
-histogram over `career_start_probe.js` output would make it a contract instead of
-a memory.
+→ calibrated: `SEEDS=12 node experiments/hq_gravity_probe.js` finds the dry
+ship on a starter `EMC-1 + BAT-1` blocked on 973 of 2964 planet–gravity samples
+of the `−1…+3.5` field — 3.3 of 10, inside the note's 2–4 — with reach falling
+from 99 % at `g 1.25` to 52 % at `g 2.0` and 18 % at `g 2.5`. HQs sit at `g 1`
+(`HQ_GRAVITY_MAX`) and a first-flight build site at `g ≤ 1.5`.
+
+**open** → `../0.6.8-plan-seeded-map-opening.md` §2: the number is printed by a
+probe, not asserted by a test, and a uniform field up to `+5` would move it to
+about 5 of 10.
 
 ## 6.3 auto helper tools ← `archive/draft.txt`
 
@@ -85,14 +90,12 @@ refactor auto-helpers panel to flight HUD panel with auto-helpers content
 
 think where to place auto-helpers content to be logically functionally grouping
 
-→ `0.5.17-plan-flight-hud.md`, shipped: `#flightHud` with head / ship / action /
-work / helpers groups, the refuel row, the quest rows and their guide arrow.
+→ shipped, `../archive/0.5.17-plan-flight-hud.md`: `#flightHud` with head /
+ship / action / work / helpers groups, the refuel row, the quest rows and their
+guide arrow. The plan was checked line by line against the code before it was
+archived (`../archive/0.5.22-worklog.md` §5).
 
-**open (small)**: `0.5.17` is still at the root unverified line by line and the
-`AGENTS.md` file table still says 20 `gui_*.js` with stale line counts (0.5.21
-worklog, "noticed, not touched"). Archive the plan and refresh the table.
-
-## 6.5 impulse engine, pause and pause-in-modes ← `archive/draft.txt`
+## 6.5 impulse engine fly and flight HUD panel ← `archive/draft.txt`
 
 have IMP, fuel
 
@@ -107,7 +110,8 @@ or
 the paused ship arms, unpausing by any route drops the arm, `Enter` burns and
 resumes.
 
-auto pause and pause in game modes that allow pause. useful to avoid players waste game time
+### auto pause and pause in game modes that allow pause. useful to avoid players waste game time
+
 career/ game time paused if one or more of player has paused state.
 unpause, launch - should unpause after all player unpaused in some way.
 paused buttons has independent state for each player. bots dont use pause button.
@@ -126,9 +130,9 @@ positive green,
 heavy planet - red.
 you can draw in low resolution if this is heavy to calculate all pixels
 
-→ `view · potential` (`?view=potential`): blue wells, green repulsive hills, the
-red wash above `g ≥ +2`, a WebGL shader with a ¼-resolution 2D fallback. The
-legend sits by the view radios.
+→ `view · potential` (`?view=potential`): blue where gravity repels, see-through
+near zero, green where it pulls, red around a heavy planet (`g ≥ +2`); a WebGL
+shader with a ¼-resolution 2D fallback. The legend sits by the view radios.
 
 ### ui
 
@@ -141,10 +145,12 @@ make by default random seed new startup unless url has seed
 
 → a seedless startup draws a fresh world and writes the seed into the URL.
 
-## 6.7 the one still open in this file
+## 6.7 still open in this file (agent index, no source note)
 
-**open**: the flight HUD has no `work` row for a *competition that has not been
-accepted* (see `rivals-competitions.md` §5.2), and the help drawer has no
-section for politics: bribe, corruption and the observation device are explained
-in tooltips only — the note's "short help drawer on hover bribe button" is in
-`politics-quests.md` §3.4 and is the next small GUI item.
+- The flight HUD has no `work` row for a competition that has not been accepted
+  → `../0.6.4-plan-competitions.md` (`rivals-competitions.md` §5.2).
+- The help drawer has no section for politics: bribe, corruption and the
+  observation device are explained in tooltips only. The note's «short help
+  drawer on hover bribe button» is `politics-quests.md` §3.4 →
+  `../0.6.1-plan-observation-device.md`.
+- The blocked share of §6.2 → `../0.6.8-plan-seeded-map-opening.md` §2.

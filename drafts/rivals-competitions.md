@@ -1,8 +1,8 @@
 # 5 · rivals and competitions
 
-Who else flies, what they are like, and the timed events they enter. Text from
-`archive/draft.txt` (§bot competitor, §competitions, §bot character, §map
-statistics, §balance).
+Who else flies, what they are like, the timed events they enter and the numbers
+the map is balanced by. Text from `archive/draft.txt` (§bot competitor,
+§implement bot character, §implement competitions, §map statistics plots).
 
 ## 5.1 a rival with a character ← `archive/draft.txt`
 
@@ -13,11 +13,15 @@ implement bot character that prefer
 - participate competitions and have good ship for it.
 
 → today one controller flies every rival, with two tunable *policies* inside it
-(`CAREER_BRIBE_PRONE`, the pad-gear payback rule) — not four characters. **open**,
-and it is the largest single thing left in the drafts. The four preferences are
-not four toggles: each one changes what the *opening* buys, which is exactly the
-gap `0.5.16-plan-rival-first-shop.md` measured (a rival that never buys a hold
-cannot take a quest, so half the board is invisible to it).
+(`CAREER_BRIBE_PRONE`, the pad-gear payback rule) — not four characters.
+
+**open** → `0.6.6-plan-rival-characters.md`. It is the largest single thing left
+in the drafts. The four preferences are not four toggles: each one changes what
+the *opening* buys. `archive/0.5.16-plan-rival-first-shop.md` measured that gap —
+a rival that never buys a hold cannot take a quest, so half the board is
+invisible to it — and 0.5.22 closed it for every rival at once: the first
+`HOLD-8` no longer waits for the HQ (`+3.07 ± 2.02` purse per rival-game over 30
+seeds at 1200 s). A character may reorder that opening; it must not undo it.
 
 A plan must answer, in this order:
 
@@ -61,9 +65,9 @@ flight launched from a named planet that lands after at least `1500…3000 px`
 pays `2…4` within `180 s` (`makeCompete`, `TASK_COMPETE`, `LEG_COMPETE`). Nobody
 tells anyone it starts, there is no countdown, and a rival never enters.
 
-**open** — the timed event the note describes is not built. The three states it
-needs are already in the code as *shapes*, so the plan should grow the existing
-slot rather than add a second one:
+**open** → `0.6.4-plan-competitions.md` — the timed event the note describes is
+not built. The three states it needs are already in the code as *shapes*, so the
+plan grows the existing slot rather than adding a second one:
 
 1. **a start**: `TASK_OFFERED` → `TASK_ACCEPTED` already exists for contracts;
    a competition gets the same accept step plus a `startsAtStep` the board
@@ -73,12 +77,13 @@ slot rather than add a second one:
    is that exact queue with `startsAtStep` as a floor on `turretAngle` — no new
    launch path.
 3. **a price pool**: one purse per entrant, paid on landing; the note's own
-   §5.3 asks for the per-time profit table to price it against.
+   «see map statistics» is §5.3, the per-time profit table to price it against.
 
 The separate game modes can wait for (1)–(3): each is the career rule with the
 board replaced by one contract, which is a mode-row change and not a new rule.
 Variations (`from the Capital only`, `EMC only`, no impulse) are fields on the
-offer record, not branches in the flight code.
+offer record, not branches in the flight code. **open**, no plan yet: the four
+game modes and the variations — which one becomes a mode-row entry first?
 
 ## 5.3 map statistics plots ← `archive/draft.txt`
 
@@ -89,31 +94,22 @@ offer record, not branches in the flight code.
 - total corruption sum of all planets
 think what is also interesting or useful
 
-**open** — nothing draws these (the benches print some of them per run). Two of
-the five are already tracked per career or per market and only need a readout:
-`purse` over clock and `market.corruption` summed. The other three need a counter
-that does not exist: property cost (sum of pad build costs per owner, derivable
-from the galaxy), science spend (the ledger has no `spent` field today — add one
-on the research accept path), and distance flown (the sim has `flightLength` per
-flight; a career total is a one-field accumulator).
+→ nothing draws these. The benches print a few per run (`earned`, `purse`, mean
+rot), and the career already counts `earned`, `bribeIncome`, `taxEarned`,
+`fuelSpent` and `evacuations`; the shared market holds `corruption`. Not counted
+anywhere: what a flight's visits paid, the money put into property and into
+science, the launch fees, the distance flown.
 
-Placement: the note says *plots*, but the only always-on panel is the scoreboard.
-The smallest useful build is one line per player under the scoreboard row —
-`+0.42/s · 18 pads · 6.1 sci · 14.2 km/s · rot 214` — and the plot itself as a
-collapsible strip under it, re-using the `balance_lab.html` drawing code rather
-than a canvas in the frame loop.
+**open** → `0.6.10-plan-map-statistics.md`: the five statistics by player and
+for all, three more for the note's last line (the visit value left standing on
+the map, income by source, running cost by kind), a history that thins itself so
+a run of any length fits, six small plots in a strip under the scoreboard, and
+the same table from `career_gravity_bench` with `STATS=1`.
 
-## 5.4 the economic balance pass ← `archive/draft.txt`
-
-### bot competitor
+## 5.4 bot competitor ← `archive/draft.txt`
 
 possible set player type user/bot
 
-→ every scoreboard row has a live `bot` checkbox, hand-flight included.
-
-### hard bots
-
-hard bots need give more search time then easy. probably measure in startup and split available time
-
-→ `0.4.27-plan-bot-balancing.md` (see `flight-lab-and-modes.md` §1.4 for the
-field-side half).
+→ every scoreboard row has a live `bot` checkbox, hand-flight included. How well
+that bot plays is `bots-and-tools.md` §8.1; the note on `hard` bots' search time
+sits with the rest of its `balance plan` in `flight-lab-and-modes.md` §1.4.

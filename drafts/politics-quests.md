@@ -2,9 +2,9 @@
 
 Rot, bribes, arrest, rebellion, the commission that reports back to the Capital,
 and the contract board around all of it. Text from `archive/draft.txt`; the
-`0.5.12` plan is the built spec.
+built spec is `archive/0.5.12-plan-corruption-rebellion.md`.
 
-## 3.1 corruption ← `archive/draft.txt`
+## 3.1 Corruption (numbers are subject to balance) ← `archive/draft.txt`
 
 Corruption (disobedience to central laws) reduces population growth.
 
@@ -19,12 +19,17 @@ and A.R.F. exempt.
 → the note's «twice» is met at rot `50`: `bribeValue = visit value × rot/100 × 4`,
 so a half-rotten lord pays twice and a fully rotten one four times — right where
 the arrest roll is at its worst (`BRIBE_VALUE_COEF = 4`, with the same sentence
-in `orbit_econ.js`). No drift; nothing to decide.
+in `orbit_econ.js`). §3.2 is the note that replaced the flat «twice».
 
-Strategy: Take a bribe before an opponent flies by. It’s better not to accept a very small bribe. If it’s your own EMC, it’s probably better to refuse. If it’s someone else’s, decide based on the bot’s personality.
+**Strategy:** Take a bribe before an opponent flies by. It’s better not to accept a very small bribe. If it’s your own EMC, it’s probably better to refuse. If it’s someone else’s, decide based on the bot’s personality.
 
-→ `CAREER_BRIBE_PRONE = 0.5`, `BRIBE_MIN = 1`, `CAREER_BRIBE_PAY`,
-`CAREER_BRIBE_ROT`; see §5.1 for the character work this sentence asks for.
+→ shipped clause by clause (`careerBribe`): a rival never takes a bribe on its
+own rail; it leaves one under `BRIBE_MIN = 1`; it takes one under
+`CAREER_BRIBE_PAY = 2` only where the rot is already `CAREER_BRIBE_ROT = 25` or
+another company's launch is queued on that planet; and «the bot’s personality»
+is one seeded yes/no per rival (`CAREER_BRIBE_PRONE = 0.5`: half of them never
+take one). **open** → `../0.6.6-plan-rival-characters.md` makes that yes/no part
+of a named character (`rivals-competitions.md` §5.1).
 
 When corruption is above 50%, accepting a bribe carries a chance of arrest up to 50% at 100% of corruption. arrested player is sent to the Capital for re-education via slow transport, costing time.
 
@@ -48,11 +53,15 @@ A rebellious planet’s flyby fee increases 4x slowly.
 
 When there are rebellious planets, a mission becomes available: load medics at the Capital, land on a rebellious planet, pick up patients automatically (same numbers as medics, technically half of the cargo hold), and deliver them to the Capital. Once the number of patients reaches zero (typically after 1–2 trips with a standard cargo hold), the planet loses its rebellious status. medics unloaded automatically when quest finished by any reason.
 
-→ `TASK_MEDIC`, `MEDIC_PATIENTS 8`, `MEDIC_REWARD_PER_PATIENT 0.5`, pacified at
-the last patient. **open**: measured dead in the 0.5.16/0.5.21 benches — no rival
-ever accepts a medical mission, because no rival stands on the Capital with a
-free contract slot. The hold fix alone does not revive it
-(`0.5.16-plan-rival-first-shop.md`, "the medical quest is still dead").
+→ `TASK_MEDIC`, `MEDIC_PATIENTS 8`, `MEDIC_REWARD_PER_PATIENT 1`, pacified at the
+last patient. A player can fly it.
+
+**open** → `../0.5.23-plan-medic-capital.md`: a rival takes it once in 24 games.
+Every rival now carries a hold, so the offer stands 29 % of the time, but it is
+the only contract that must be accepted *on a particular planet* — the Capital —
+and a rival stands there 2.7 % of the time, by accident. Naming the Capital as a
+goal was measured and changes nothing (`archive/0.5.22-worklog.md` §4): the
+reward is two legs away and belongs to no shot's score.
 
 ## 3.2 bribe ← `archive/draft.txt`
 
@@ -79,24 +88,31 @@ possibility to uninstall this device on a planet with high corruption level (may
 
 add short help drawer on hover bribe button to explain how work bribe, corruption, observation device
 
-**open** — not built (no `observation` in the code). This is the missing hinge
-between §3.1 and §3.2: a fitted device that (a) is what makes a visit report to
-the Capital — i.e. what pays the visit value and decays the rot — and (b) can be
-pulled off a rotten planet, at which point visits stop clearing the payout and
-bribes become the way to cash it. It gives the corruption numbers a reason to be
-a *choice* rather than a weather report.
+→ not built (no `observation` in the code). This is the missing hinge between
+§3.1 and §3.2: a device that (a) is what makes a visit report to the Capital —
+i.e. what pays the visit value and decays the rot — and (b) can be given up on a
+rotten planet, at which point visits stop clearing the payout and bribes become
+the way to cash it. It gives the corruption numbers a reason to be a *choice*
+rather than a weather report.
 
-Questions a plan must answer first, in this order:
+**open** → `../0.6.1-plan-observation-device.md`. How it answers the three
+questions the note leaves:
 
-1. Is it a part in the same list as `hold`/`engine`/`tank` (mass, a refit slot),
-   or a pad-side device (a fourth gear kind)? A part makes it a per-ship choice;
-   a gear makes it a per-planet one.
-2. Does removing it stop the payout, or only stop the rot decay? The note says
-   the bribe becomes easier, not that visits stop paying — so the smallest build
-   is: visit value still collects, rot decay and the Capital's record stop.
-3. A `>75%` threshold on a `0…100` value that only ever moves by `0.2` a visit
-   and `0.1/s` away from a visit: it will be reachable only after ~6 minutes of
-   neglect, which is the intended "rotten world" state. Keep it.
+1. **Ship part or pad device?** A ship part (`OBS-1`, `0.4 t`, in the refit
+   list), plus one flag per planet: giving the device up on a world above `75 %`
+   marks *that planet* quiet for every company until its rot is quelled.
+2. **Does a quiet visit still pay?** No: it pays nothing and clears nothing —
+   the note's «will not automatically cleared» — so the visit value keeps growing
+   and the bribe, which is proportional to it, grows with it.
+3. **Is `>75%` reachable?** Rot falls by `0.2` a visit and rises by `0.1` per
+   world second once a planet has gone `120 s` unvisited, so 75 is `870` world
+   seconds of neglect — fourteen and a half minutes at `×1`, sooner with bribes
+   (each adds `1 + 0.1 × amount`): the intended «rotten world». Kept.
+
+The help drawer on the bribe button is in the same plan (its GUI section).
+**One reading to confirm before building**: «uninstall this device on a planet»
+is taken as *the ship's device, removed while standing on that planet*, not as a
+device that each planet owns.
 
 ## 3.5 helpers for quests ← `archive/draft.txt`
 
@@ -108,7 +124,8 @@ ranked by cash plus `10 ×` the leg credit, half of the aims pointed at the open
 work (`careerGoalBodies`). The "count taken quests as profit" half is the leg
 credit in `careerLandingFacts`.
 
-**open**: a *specialised* quest helper is more than a re-ranked money scan when a
-contract has two legs. `quest scan` aims at the next body; it does not plan
-`load → fly → deliver` as one shot or price the second leg. Decide whether that
-belongs in the helper (a two-shot lookahead) or in the rival only (§5.1).
+**open** → `../0.6.5-plan-two-leg-quests.md`: a *specialised* quest helper is
+more than a re-ranked money scan when a contract has two legs. `quest scan` aims
+at the next body; it does not plan `load → fly → deliver` or price the second
+leg. The plan prices the second leg once, in the rules layer, so the helper and
+the rival both read it.
