@@ -2433,7 +2433,7 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	/* every shop row carries a copy button, enabled regardless of purse */
 	const shopHtml = sciUi.get('careerShop').innerHTML;
 	const copyTags = shopHtml.match(/data-act="copy"/g) || [];
-	check(copyTags.length === 6, 'one copy button per shop row: ' + copyTags.length);
+	check(copyTags.length === 7, 'one copy button per shop row: ' + copyTags.length);
 	const firstCopy = /<button[^>]*data-act="copy" data-kind="([^"]+)" data-tier="(\d+)"[^>]*>/.exec(shopHtml);
 	check(firstCopy !== null, 'copy button markup: ' + shopHtml.slice(0, 120));
 	const expectedSpec = sciTech.copySpec(firstCopy[1], sciTech.TABLES[firstCopy[1]][Number(firstCopy[2])]);
@@ -3664,6 +3664,103 @@ function protoOf(career, family, id) {
 	check(cg.career.research === resBefore + 1 &&
 		cSim.status === cleanEnv.context.GravitySim.STATUS_FLYING,
 		'mid-flight science research succeeded without landing');
+}
+
+/* 0.6.10 step 4: the career map-statistics strip — visible in career only,
+ * empty while closed, six plots with one line per company when open, and
+ * captions carrying the live careerStats/mapStats numbers */
+{
+	const storage = {};
+	const sEnv = loadPage({ search: '?rule=career&seed=11&rate=1', clipboard: false, storage });
+	sEnv.runFrames(2, 16.0);
+	const sui = sEnv.elements;
+	const sg = sEnv.context.GravityScene;
+	const sGame = sEnv.context.GravityGame;
+	const sSim = sEnv.context.GravitySim;
+	check(sui.get('statsStrip').hidden === false, 'stats strip shows in career');
+	check(!sui.get('statsPlots').innerHTML, 'closed strip builds nothing');
+	sg.setCareerPaused(false);
+	sEnv.runFrames(6, 16.0);
+	check(!sui.get('statsPlots').innerHTML, 'closed strip stays empty while the clock runs');
+	/* the next frame's career tick writes the sample; the suite must not idle
+	 * 240 steps for the first one */
+	sg.game.galaxy.stats.nextStep = sg.game.clockSteps + 1;
+	sEnv.runFrames(2, 16.0);
+	const sampled = sg.game.galaxy.stats;
+	check(sampled.count >= 1, 'career clock sampled the strip: ' + sampled.count);
+	while (sg.game.galaxy.stats.count < 3) {
+		const st = sg.game.galaxy.stats;
+		sGame.sampleStats(sg.game.galaxy, sg.game.market, st.nextStep);
+	}
+	sui.get('statsStrip').open = true;
+	sEnv.fireElement(sui.get('statsStrip'), 'toggle', {});
+	const html = sui.get('statsPlots').innerHTML || '';
+	const n = sg.game.galaxy.actors.length;
+	check((html.match(/<svg/g) || []).length === 6,
+		'open strip stacks six plots: ' + (html.match(/<svg/g) || []).length);
+	check((html.match(/<polyline/g) || []).length === 4 * n + 4,
+		'one line per company plus all/map lines: ' + (html.match(/<polyline/g) || []).length);
+	const row = {};
+	const seconds = sg.game.clockSteps * sSim.DT;
+	let allProfitRate = 0;
+	let allFlownRate = 0;
+	let visits = 0;
+	let contracts = 0;
+	let bribes = 0;
+	let tax = 0;
+	let fees = 0;
+	let fuel = 0;
+	let evac = 0;
+	for (let i = 0; i < n; i++) {
+		const career = sg.game.galaxy.actors[i];
+		sGame.careerStats(row, career);
+		const name = i === 0 ? 'YOU' : 'R' + i;
+		const profitRate = seconds > 0 ? row.profit / seconds : 0;
+		const flownRate = seconds > 0 ? row.flown / seconds : 0;
+		allProfitRate += profitRate;
+		allFlownRate += flownRate;
+		const signed = (profitRate < 0 ? '' : '+') + profitRate.toFixed(2);
+		check(html.includes('>' + name + '</span> ' + signed + '/s'),
+			'profit caption carries ' + name + ' ' + signed + '/s');
+		check(html.includes('>' + name + '</span> ' + row.property.toFixed(2)),
+			'property caption carries ' + name + ' ' + row.property.toFixed(2));
+		check(html.includes('>' + name + '</span> ' + flownRate.toFixed(1) + ' px/s'),
+			'distance caption carries ' + name + ' ' + flownRate.toFixed(1) + ' px/s');
+		visits += career.visitIncome;
+		contracts += career.earned;
+		bribes += career.bribeIncome;
+		tax += career.taxEarned;
+		fees += career.feesPaid;
+		fuel += career.fuelSpent;
+		evac += career.evacuations *
+			(career.cheat === sGame.CHEAT_COMMUNISM ? 0 : sGame.CAREER.evacFee);
+	}
+	const allSigned = (allProfitRate / n < 0 ? '' : '+') + (allProfitRate / n).toFixed(2);
+	check(html.includes('>all</span> ' + allSigned + '/s'), 'profit caption carries all ' + allSigned + '/s');
+	check(html.includes('>all</span> ' + (allFlownRate / n).toFixed(1) + ' px/s'),
+		'distance caption carries the all mean');
+	const mapRow = {};
+	sGame.mapStats(mapRow, sg.game.market, sg.game.clockSteps);
+	check(html.includes('<b>rot</b> ' + Math.round(mapRow.rot)), 'rot caption carries ' + Math.round(mapRow.rot));
+	check(html.includes('<b>standing value</b> ' + mapRow.standing.toFixed(2)),
+		'standing caption carries ' + mapRow.standing.toFixed(2));
+	const title = 'visits ' + visits.toFixed(1) + ' · contracts ' + contracts.toFixed(1) +
+		' · bribes ' + bribes.toFixed(1) + ' · tax ' + tax.toFixed(1) +
+		' · fees ' + fees.toFixed(1) + ' · fuel ' + fuel.toFixed(1) + ' · evac ' + evac.toFixed(1);
+	check(html.includes('title="' + title + '"'), 'profit caption tooltips the income/running splits');
+	check(storage['gravity.statsOpen'] === '1', 'opening the strip stores gravity.statsOpen');
+	sui.get('statsStrip').open = false;
+	sEnv.fireElement(sui.get('statsStrip'), 'toggle', {});
+	check(!sui.get('statsPlots').innerHTML, 'closing the strip clears its plots');
+	check(storage['gravity.statsOpen'] === '0', 'closing the strip stores gravity.statsOpen');
+	sg.setPlayMode('tour');
+	sEnv.runFrames(2, 16.0);
+	check(sui.get('statsStrip').hidden === true, 'stats strip hides outside career');
+	/* a fresh page restores the open state even before any career runs */
+	storage['gravity.statsOpen'] = '1';
+	const qEnv = loadPage({ search: '?mode=lab&seed=11', storage });
+	check(qEnv.elements.get('statsStrip').open === true, 'a fresh page restores the open strip');
+	check(qEnv.elements.get('statsStrip').hidden === true, 'the restored strip still hides outside career');
 }
 
 console.log('paint calls', {

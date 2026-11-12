@@ -99,6 +99,19 @@ const SCI_PLOT = { width: 224, height: 158, left: 36, top: 6, right: 6, bottom: 
 const SCI_PLOT_STOPS = [
 	[17, 39, 62], [27, 82, 108], [158, 104, 52], [204, 78, 46], [230, 54, 48]
 ];
+/* career map-statistics strip (0.6.10 §4): six small game-clock plots under
+ * the score rows; the svg scales to the panel through its viewBox */
+const STATS_PLOT = { width: 224, height: 56, left: 4, top: 4, right: 4, bottom: 4 };
+const STATS_LABELS = {
+	profit: 'profit / time',
+	property: 'property',
+	science: 'science',
+	flown: 'distance / time',
+	rot: 'rot',
+	standing: 'standing value'
+};
+/* the `all` mean and the two map series share one neutral line colour */
+const STATS_NEUTRAL = '#9fb4c8';
 let scienceFamily = OrbitTech.KIND_ENGINE;
 /* the slider draft of every family: a copy of the defaults, editable in place */
 const scienceValues = {};

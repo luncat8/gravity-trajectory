@@ -310,4 +310,68 @@ function bribePlanet(w, preferred, fallback, capital, arf) {
     return preferred !== capital && preferred !== arf ? preferred : fallback;
 }
 
+/* drive the sampler headlessly: one sample per call, company values forced
+ * distinct per step so thinning and determinism compare real data */
+function driveSampler(w, samples) {
+    for (let k = 0; k < samples; k++) {
+        const stats = w.galaxy.stats;
+        w.career.visitIncome = (k + 1) * 1.5;
+        w.career.flownPx = (k + 1) * 120;
+        w.rival.visitIncome = (k + 1) * 0.5;
+        GravityGame.sampleStats(w.galaxy, w.market, stats.nextStep);
+    }
+    return w.galaxy.stats;
+}
+
+function seriesCopy(stats) {
+    return stats.series.map(a => Array.from(a.subarray(0, stats.count)));
+}
+
+check('sampler: identical blocks for two runs of one seed', () => {
+    const a = makeCareer(SEED);
+    const b = makeCareer(SEED);
+    driveSampler(a, 40);
+    driveSampler(b, 40);
+    const sa = a.galaxy.stats;
+    const sb = b.galaxy.stats;
+    assert.strictEqual(sa.count, sb.count);
+    assert.strictEqual(sa.every, sb.every);
+    assert.strictEqual(sa.nextStep, sb.nextStep);
+    assert.deepStrictEqual(seriesCopy(sa), seriesCopy(sb));
+});
+
+check('sampler: a thinned block equals every second sample of the unthinned one', () => {
+    const w = makeCareer(SEED);
+    const block = w.galaxy.stats.series[0].length;
+    driveSampler(w, block);
+    const stats = w.galaxy.stats;
+    assert.strictEqual(stats.count, block);
+    const before = seriesCopy(stats);
+    driveSampler(w, 1);
+    assert.strictEqual(stats.count, block / 2 + 1);
+    for (let s = 0; s < stats.series.length; s++) {
+        for (let i = 0; i < block / 2; i++) {
+            assert.strictEqual(stats.series[s][i], before[s][i * 2],
+                'series ' + s + ' sample ' + i);
+        }
+    }
+});
+
+check('sampler: long runs stay capped at one block', () => {
+    const w = makeCareer(SEED);
+    const block = w.galaxy.stats.series[0].length;
+    driveSampler(w, block * 3 + 10);
+    assert.ok(w.galaxy.stats.count <= block, 'count ' + w.galaxy.stats.count);
+});
+
+check('purse identity holds for a free (communism) evacuation', () => {
+    const w = makeCareer(SEED);
+    w.career.cheat = GravityGame.CHEAT_COMMUNISM;
+    w.career.stranded = true;
+    const purseBefore = w.career.ledger.purse;
+    assert.ok(GravityGame.evacuate(w.career, w.sim), 'evacuate failed');
+    assert.strictEqual(w.career.ledger.purse, purseBefore, 'a communism evacuation is free');
+    checkIdentity(w.career, 'communism evacuation');
+});
+
 finish();

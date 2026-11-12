@@ -226,6 +226,7 @@ body {
 
 #cargoHud.folded #cargoBody,
 #scoreHud.folded .scoreRows,
+#scoreHud.folded .statsStrip,
 #careerHud.folded #careerBox,
 #tradeHud.folded #tradeBody,
 #gameHud.folded #gameBody {
@@ -495,6 +496,80 @@ body {
 
 .scoreRival .scoreBotToggle input {
 	accent-color: var(--rival-colour);
+}
+
+/* career map statistics: six small plots under the score rows, closed by
+ * default; the captions carry the latest values so the strip reads as a
+ * table too, and the income/running splits sit in the profit caption's
+ * tooltip */
+.statsStrip {
+	margin-top: 6px;
+	padding: 3px 6px 5px;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	background: rgba(126, 180, 230, 0.035);
+}
+
+.statsSummary {
+	color: var(--dim);
+	font-size: 10px;
+	letter-spacing: 0.06em;
+	cursor: pointer;
+}
+
+.statsSummary:hover {
+	color: var(--text);
+}
+
+.statsPlots {
+	display: grid;
+	gap: 6px;
+	margin-top: 5px;
+}
+
+.statsCaption {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--dim);
+	font-size: 9.5px;
+	line-height: 1.4;
+}
+
+.statsCaption b {
+	color: var(--text);
+	font-weight: 700;
+}
+
+.statsSvg {
+	display: block;
+	width: 100%;
+	height: auto;
+	min-width: 0;
+	border-radius: 4px;
+	background: rgba(2, 8, 16, 0.5);
+}
+
+.statsFrame {
+	fill: none;
+	stroke: rgba(126, 180, 230, 0.26);
+	stroke-width: 0.7;
+	pointer-events: none;
+}
+
+.statsZero {
+	stroke: rgba(126, 180, 230, 0.3);
+	stroke-width: 0.6;
+	stroke-dasharray: 2.4 2.2;
+	pointer-events: none;
+}
+
+.statsLine {
+	fill: none;
+	stroke-width: 1.1;
+	stroke-linejoin: round;
+	pointer-events: none;
 }
 
 .drawer {

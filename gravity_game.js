@@ -975,8 +975,21 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			career.index = galaxy.actors.length;
 			galaxy.actors.push(career);
 			if (galaxy.stats) {
-				/* four stat series per company — profit, property, science, flown */
-				for (var k = 0; k < 4; k++) galaxy.stats.series.push(new Float32Array(STATS_SAMPLES));
+				/* four stat series per company — profit, property, science, flown.
+				 * a company joining mid-run backfills its past at its starting
+				 * values, so its line starts flat instead of inheriting the
+				 * history a removed company left in a reused series */
+				while (galaxy.stats.series.length < 2 + galaxy.actors.length * 4) {
+					galaxy.stats.series.push(new Float32Array(STATS_SAMPLES));
+				}
+				careerStats(sampleCareerOut, career);
+				const base = 2 + career.index * 4;
+				for (let s = 0; s < galaxy.stats.count; s++) {
+					galaxy.stats.series[base][s] = sampleCareerOut.profit;
+					galaxy.stats.series[base + 1][s] = sampleCareerOut.property;
+					galaxy.stats.series[base + 2][s] = sampleCareerOut.science;
+					galaxy.stats.series[base + 3][s] = sampleCareerOut.flown;
+				}
 			}
 		}
 		refreshNetwork(galaxy);
@@ -2893,7 +2906,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * fills the caller-owned row without allocating */
 	function careerStats(out, career) {
 		out.income = career.visitIncome + career.earned + career.bribeIncome + career.taxEarned;
-		out.running = career.feesPaid + career.fuelSpent + career.evacuations * CAREER.evacFee;
+		/* the evacuation the purse paid for: free under communism, like every fee */
+		out.running = career.feesPaid + career.fuelSpent +
+			career.evacuations * price(career, CAREER.evacFee);
 		out.profit = out.income - out.running;
 		out.property = career.buildSpent;
 		out.science = career.sciSpent;
@@ -2929,27 +2944,31 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		stats.every *= 2;
 	}
 
+	/* sampler scratch: the getters fill a caller-owned row, so one sample
+	 * step costs no allocation even with the full 17-company roster */
+	const sampleMapOut = { rot: 0, standing: 0 };
+	const sampleCareerOut = { income: 0, running: 0, profit: 0, property: 0, science: 0, flown: 0 };
+
 	/* write one stats sample at `step`: rot/standing for the map and
 	 * profit/property/science/flown for every company in the galaxy.
 	 * returns at once on any step that is not a sample step */
 	function sampleStats(galaxy, market, step) {
+		if (!galaxy) return;
 		var stats = galaxy.stats;
 		if (!stats) return;
 		if (step < stats.nextStep) return;
 		if (stats.count >= STATS_SAMPLES) thinStats(stats);
 		var count = stats.count;
-		var map = {};
-		mapStats(map, market, step);
-		stats.series[0][count] = map.rot;
-		stats.series[1][count] = map.standing;
+		mapStats(sampleMapOut, market, step);
+		stats.series[0][count] = sampleMapOut.rot;
+		stats.series[1][count] = sampleMapOut.standing;
 		for (var i = 0; i < galaxy.actors.length; i++) {
-			var out = {};
-			careerStats(out, galaxy.actors[i]);
+			careerStats(sampleCareerOut, galaxy.actors[i]);
 			var base = 2 + i * 4;
-			stats.series[base][count] = out.profit;
-			stats.series[base + 1][count] = out.property;
-			stats.series[base + 2][count] = out.science;
-			stats.series[base + 3][count] = out.flown;
+			stats.series[base][count] = sampleCareerOut.profit;
+			stats.series[base + 1][count] = sampleCareerOut.property;
+			stats.series[base + 2][count] = sampleCareerOut.science;
+			stats.series[base + 3][count] = sampleCareerOut.flown;
 		}
 		stats.count = count + 1;
 		stats.nextStep = step + stats.every;

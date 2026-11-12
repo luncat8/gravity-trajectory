@@ -3023,7 +3023,12 @@
 			if (other.turret && r.career.pads.includes(other.turret.pad)) this.careerDropQueue(other);
 		}
 		const index = galaxy.actors.indexOf(r.career);
-		if (index >= 0) galaxy.actors.splice(index, 1);
+		if (index >= 0) {
+			galaxy.actors.splice(index, 1);
+			/* the company takes its four stat series with it, so a later
+			 * join re-appends at the right slot instead of misaligning */
+			if (galaxy.stats) galaxy.stats.series.splice(2 + index * 4, 4);
+		}
 		for (let i = 0; i < galaxy.actors.length; i++) galaxy.actors[i].index = i;
 		this.count -= 1;
 		r.career = null;
