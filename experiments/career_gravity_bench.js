@@ -15,6 +15,7 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const root = path.join(__dirname, '..');
 const OrbitWorld = require(path.join(root, 'orbit_world.js'));
 const Sim = require(path.join(root, 'orbit_sim.js'));
@@ -185,12 +186,21 @@ const steps = Math.round(SECONDS / DT);
 /* PAIRED=1 prints one machine-readable purse line per rival-game, so two runs
  * can be diffed game by game (the purse total alone swings too much to decide) */
 const PAIRED = process.env.PAIRED === '1';
+/* STATS=1 prints the per-company economy table of plan 0.6.10 §5 and saves it
+ * to experiments/logs/0.6.10-map-statistics.txt; without it the bench output
+ * is byte-identical to before */
+const STATS = process.env.STATS === '1';
 const totals = { flights: 0, earned: 0, pads: 0, dead: 0, reach: 0, stuck: 0,
 	actors: 0, purse: 0, burns: 0, priced: 0, rescues: 0, noShots: 0, sits: 0,
 	drops: 0, evacs: 0, fuelBought: 0, fuelProduced: 0, fuelSpent: 0, fuelTopUps: 0,
 	rebel: 0, seized: 0, patients: 0, rot: 0, bribes: 0, arrests: 0,
 	medicTrips: 0, delivered: 0 };
 const purses = [];
+const statsLines = [];
+/* TOTAL accumulators over every company of every seed */
+let totProfit = 0, totProperty = 0, totScience = 0, totFlown = 0;
+let totRot = 0, totStanding = 0, totVisits = 0, totContracts = 0;
+let totBribes = 0, totTax = 0, nCompanies = 0;
 for (const seed of SEEDS) {
 	const w = makeWorld(seed);
 	const hqRows = ['P' + w.player.hq + ' g' + w.strength[w.player.hq].toFixed(1)];
@@ -216,6 +226,20 @@ for (const seed of SEEDS) {
 		totals.reach += pad.reach;
 		totals.stuck += stuck ? 1 : 0;
 		totals.actors += 1;
+		if (STATS) {
+			const out = {};
+			GravityGame.careerStats(out, r.career);
+			totProfit += out.profit; totProperty += out.property;
+			totScience += out.science; totFlown += out.flown;
+			totVisits += r.career.visitIncome; totContracts += r.career.earned;
+			totBribes += r.career.bribeIncome; totTax += r.career.taxEarned;
+			const rate = out.profit / SECONDS;
+			statsLines.push('STATS seed ' + seed + ' R' + (i + 1) +
+				' · profit ' + rate.toFixed(3) + '/s' +
+				' · property ' + out.property.toFixed(2) +
+				' · science ' + out.science.toFixed(2) +
+				' · flown ' + out.flown.toFixed(1) + ' px/s');
+		}
 		totals.evacs += r.career.evacuations;
 		totals.fuelBought += r.career.fuelBoughtKg;
 		totals.fuelProduced += r.career.fuelProducedKg;
@@ -238,6 +262,24 @@ for (const seed of SEEDS) {
 	}
 	totals.burns += w.bot.careerBurnsPlanned;
 	totals.priced += w.bot.careerBurnPrices;
+	if (STATS) {
+		let allProfit = 0, allProperty = 0, allScience = 0, allFlown = 0;
+		for (let i = 0; i < w.bot.count; i++) {
+			const out = {};
+			GravityGame.careerStats(out, w.bot.rivals[i].career);
+			allProfit += out.profit; allProperty += out.property;
+			allScience += out.science; allFlown += out.flown;
+		}
+		const map = {};
+		GravityGame.mapStats(map, w.market, steps);
+		totRot += map.rot; totStanding += map.standing;
+		statsLines.push('STATS seed ' + seed + ' all · profit ' +
+			(allProfit / w.bot.count / SECONDS).toFixed(3) + '/s' +
+			' · property ' + allProperty.toFixed(2) +
+			' · science ' + allScience.toFixed(2) +
+			' · flown ' + allFlown.toFixed(1) + ' px/s' +
+			' · rot ' + Math.round(map.rot) + ' · standing ' + map.standing.toFixed(2));
+	}
 	totals.rescues += w.bot.careerBurnRescues;
 	totals.fuelTopUps += w.bot.careerFuelTopUps;
 	/* politics readout: how much of the map the rebellion took, and what the
@@ -263,13 +305,31 @@ for (const seed of SEEDS) {
 		totals.medicTrips += w.bot.rivals[i].career.medicTrips;
 	}
 	totals.noShots += w.events.noShots;
-	totals.sits += w.events.sits;
-	totals.drops += w.events.drops;
-	console.log('seed ' + seed + ' · HQ ' + hqRows.join(' ') + (TRACE ? '\n  ' + rows.join('\n  ') : ' · ' + rows.join(' | ')));
-	if (TRACE) {
-		const text = w.bot.decisionLog(steps, 'bench · seed ' + seed).split('\n');
-		console.log(text.slice(process.env.ALL ? 0 : Math.max(0, text.length - 16)).join('\n'));
-	}
+		totals.sits += w.events.sits;
+		totals.drops += w.events.drops;
+		if (STATS) nCompanies += w.bot.count;
+		console.log('seed ' + seed + ' · HQ ' + hqRows.join(' ') + (TRACE ? '\n  ' + rows.join('\n  ') : ' · ' + rows.join(' | ')));
+		if (TRACE) {
+			const text = w.bot.decisionLog(steps, 'bench · seed ' + seed).split('\n');
+			console.log(text.slice(process.env.ALL ? 0 : Math.max(0, text.length - 16)).join('\n'));
+		}
+}
+if (STATS) {
+	const income = totVisits + totContracts + totBribes + totTax;
+	statsLines.push('STATS TOTAL · profit ' +
+		(totProfit / SECONDS / nCompanies).toFixed(3) + '/s' +
+		' · property ' + (totProperty / nCompanies).toFixed(2) +
+		' · science ' + (totScience / nCompanies).toFixed(2) +
+		' · flown ' + (totFlown / nCompanies).toFixed(1) + ' px/s' +
+		' · rot ' + Math.round(totRot / SEEDS.length) +
+		' · standing ' + (totStanding / SEEDS.length).toFixed(2) +
+		' · visits ' + (income > 0 ? (totVisits / income * 100).toFixed(0) : 0) + '%' +
+		' · contracts ' + (income > 0 ? (totContracts / income * 100).toFixed(0) : 0) + '%' +
+		' · bribes ' + (income > 0 ? (totBribes / income * 100).toFixed(0) : 0) + '%' +
+		' · tax ' + (income > 0 ? (totTax / income * 100).toFixed(0) : 0) + '%');
+	console.log(statsLines.join('\n'));
+	fs.writeFileSync(path.join(root, 'experiments/logs/0.6.10-map-statistics.txt'),
+		statsLines.join('\n') + '\n');
 }
 console.log('TOTAL rivals ' + totals.actors + ' · flights ' + totals.flights +
 	' · earned ' + totals.earned.toFixed(2) + ' · purse ' + totals.purse.toFixed(2) +

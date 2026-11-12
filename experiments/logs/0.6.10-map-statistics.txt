@@ -1,0 +1,10 @@
+STATS seed 1 R1 · profit 0.012/s · property 0.76 · science 0.00 · flown 23276.0 px/s
+STATS seed 1 R2 · profit 0.043/s · property 13.53 · science 0.00 · flown 22442.1 px/s
+STATS seed 1 all · profit 0.027/s · property 14.29 · science 0.00 · flown 45718.1 px/s · rot 127 · standing 11.59
+STATS seed 2 R1 · profit -0.005/s · property 0.76 · science 0.00 · flown 13073.8 px/s
+STATS seed 2 R2 · profit 0.010/s · property 0.76 · science 0.00 · flown 10094.8 px/s
+STATS seed 2 all · profit 0.002/s · property 1.52 · science 0.00 · flown 23168.7 px/s · rot 235 · standing 22.16
+STATS seed 3 R1 · profit 0.021/s · property 3.80 · science 0.00 · flown 23364.0 px/s
+STATS seed 3 R2 · profit 0.044/s · property 14.14 · science 0.00 · flown 11560.9 px/s
+STATS seed 3 all · profit 0.032/s · property 17.94 · science 0.00 · flown 34924.9 px/s · rot 117 · standing 11.97
+STATS TOTAL · profit 0.021/s · property 5.63 · science 0.00 · flown 17301.9 px/s · rot 160 · standing 15.24 · visits 82% · contracts 8% · bribes 0% · tax 10%

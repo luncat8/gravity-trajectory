@@ -3049,6 +3049,9 @@
 		this.careerRate = rate;
 		/* one political clock for the whole run, the GUI and the benches */
 		GravityGame.advancePolitics(market, trade, runStep, rate);
+		/* one stats sample every stats.every steps; returns at once on any
+		 * step that is not a sample step, so it never touches the frame loop */
+		GravityGame.sampleStats(market.galaxy, market, runStep);
 		const boardTick = runStep % BOARD_TICK_STEPS === 0;
 		for (let i = 0; i < this.count; i++) {
 			const r = this.rivals[i];
