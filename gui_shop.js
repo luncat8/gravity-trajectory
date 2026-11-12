@@ -308,9 +308,23 @@ function politicsBlockHtml(career) {
 	const bribed = !GravityGame.bribeWindowOpen(market, at);
 	const rot = Math.round(market.corruption[at]);
 	html += '<div class="careerLine dim">corruption ' + rot + '%' +
-		(bribed ? ' · bribed this visit' : '') + '</div>';
+		(bribed ? ' · bribed this visit' : '') +
+		(market.quiet[at] ? ' · quiet' : '') + '</div>';
 	if (bribed || career.ended !== GravityGame.CAREER_OPEN) return html;
 	const amount = GravityGame.bribeAmount(market, at, game.clockSteps);
+	/* go quiet: uninstall the observation device here, silencing the planet
+	 * until its rot is quelled. Only the ship's own device, only on a high-rot
+	 * world, and the device stays owned so it can be refitted anywhere. */
+	const obs = career.ship.obs;
+	const fitted = Boolean(obs && obs.fitted);
+	const obsReady = obs === OrbitTech.OBS[1] && fitted;
+	const goQuietDisabled = !obsReady || market.quiet[at] ||
+		market.corruption[at] <= GravityGame.QUIET_MIN;
+	const goQuietReason = !obsReady ? 'fit the observation device to go quiet here'
+		: market.quiet[at] ? 'this world is already quiet'
+		: market.corruption[at] <= GravityGame.QUIET_MIN
+		? 'corruption ' + Math.round(market.corruption[at]) + '% · needs ' + GravityGame.QUIET_MIN + '% to go quiet'
+		: '';
 	const reason = GravityGame.bribeRefusal(career, market, at);
 	const offered = amount > 0;
 	/* the button shows the rule, not just the price, and it is priced even

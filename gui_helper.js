@@ -175,8 +175,9 @@ function helperScore(probe, cand) {
 	if (careerRule()) {
 		/* the untargeted scan weighs the same factors as the targeted ones,
 		 * so a taken leg is never invisible just because no goal is set */
-		GravityGame.careerLandingFacts(helperLanding, playerCareer(), origin, probe.predBody, 0,
-			probe.predLength, probe.predSteps, game.clockSteps, profit);
+	GravityGame.careerLandingFacts(helperLanding, playerCareer(), origin, probe.predBody, 0,
+		probe.predLength, probe.predSteps, game.clockSteps, profit,
+		GravityGame.speedOf(cand.speedU));
 		score += helperLanding.cash * 30 + helperLanding.credit * 60 + newVisits * 4 -
 			probe.predTime * 0.12;
 	} else if (game.on && ruleSpec().stopOnTour) {

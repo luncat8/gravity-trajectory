@@ -297,6 +297,19 @@
 	 * below any step a run holds, so it can never equal a visit stamp by
 	 * accident and open the window shut, or shut one still open */
 	const BRIBE_OPEN = -0x7fffffff;
+/* the observation device (0.6.1): a planet goes quiet when the ship's device
+ * is uninstalled there; no company reports there until the rot is quelled */
+const QUIET_MIN = 75;
+/* fragile load (0.6.3): the max launch acceleration m/s² the load survives;
+ * accel = speed² / (2 · RAIL_M), so the limit prices force, not the rail tier */
+const FRAGILE_ACCEL = 2.0;
+/* fragile load: offered only from planets this light, and only for loads this
+ * heavy at most; the reward is 1.4× an ordinary delivery of the same tons
+ * and distance, still under CAREER.deliveryMax */
+const FRAGILE_G = 0.75;
+const FRAGILE_TONS = 8;
+const FRAGILE_PAY = 1.4;
+const FRAGILE_CHANCE = 0.25;
 
 	/*
 	 * Shared per-planet state for a game run; player and rivals harvest from
@@ -309,8 +322,9 @@
 	function createMarket() {
 		const market = {
 			lastVisitStep: new Int32Array(OrbitWorld.PLANETS),
-			visitPay: new Float64Array(OrbitWorld.PLANETS),
-			corruption: new Float64Array(OrbitWorld.PLANETS),
+		visitPay: new Float64Array(OrbitWorld.PLANETS),
+		quiet: new Uint8Array(OrbitWorld.PLANETS),
+		corruption: new Float64Array(OrbitWorld.PLANETS),
 			bribeVisitStep: new Int32Array(OrbitWorld.PLANETS),
 			rebel: new Uint8Array(OrbitWorld.PLANETS),
 			seized: new Uint8Array(OrbitWorld.PLANETS),
@@ -336,8 +350,9 @@
 
 	function resetMarket(market) {
 		market.lastVisitStep.fill(-initSteps());
-		market.visitPay.fill(0);
-		market.stamp += 1;
+	market.visitPay.fill(0);
+	market.quiet.fill(0);
+	market.stamp += 1;
 		market.k = MONEY.k;
 		market.arfPlanet = -1;
 		market.capitalPlanet = -1;
@@ -471,23 +486,42 @@
 	 * breathe — a visit is the only thing that clears rot, and it also opens a
 	 * fresh window for one bribe (the rulers only complain once per visit).
 	 */
-	function harvestPlanet(ledger, market, planet, runStep) {
-		const pay = planetProfit(market, planet, runStep);
-		market.lastVisitStep[planet] = runStep;
-		market.visitPay[planet] = pay;
-		market.stamp += 1;
-		if (planet !== market.capitalPlanet && planet !== market.arfPlanet &&
-			market.corruption[planet] > 0) {
-			market.corruption[planet] = OrbitEcon.clampCorruption(
-				market.corruption[planet] - OrbitEcon.CORRUPTION_VISIT_DECAY);
-		}
-		market.bribeVisitStep[planet] = BRIBE_OPEN;
-		ledger.purse += pay;
-		ledger.shotGain += pay;
-		ledger.shotVisits += 1;
-		ledger.lastPlanet = planet;
-		return pay;
+function reporting(career, market, planet) {
+	if (market && market.quiet[planet]) return false;
+	if (!career) return true;
+	return career.index !== 0 || career.ship.obs.fitted;
+}
+
+function goQuiet(career, planet) {
+	const market = career.market;
+	if (!market || planet < 0 || planet === career.capitalPlanet || planet === career.arfPlanet) return false;
+	if (market.quiet[planet]) return false;
+	if (market.corruption[planet] <= QUIET_MIN) return false;
+	if (!career.ship || career.ship.obs !== OrbitTech.OBS[1] || !career.ship.obs.fitted) return false;
+	market.quiet[planet] = 1;
+	career.ship.obs = OrbitTech.OBS[0];
+	refitShip(career);
+	return true;
+}
+
+function harvestPlanet(ledger, market, planet, runStep, career) {
+	const rep = reporting(career, market, planet);
+	const pay = rep ? planetProfit(market, planet, runStep) : 0;
+	market.lastVisitStep[planet] = runStep;
+	market.visitPay[planet] = pay;
+	market.stamp += 1;
+	if (rep && planet !== market.capitalPlanet && planet !== market.arfPlanet &&
+		market.corruption[planet] > 0) {
+		market.corruption[planet] = OrbitEcon.clampCorruption(
+			market.corruption[planet] - OrbitEcon.CORRUPTION_VISIT_DECAY);
 	}
+	market.bribeVisitStep[planet] = BRIBE_OPEN;
+	ledger.purse += pay;
+	ledger.shotGain += pay;
+	ledger.shotVisits += 1;
+	ledger.lastPlanet = planet;
+	return pay;
+}
 
 	/*
 	 * One step of the experimental stay-pay: every system the ship is inside
@@ -520,18 +554,18 @@
 	}
 
 	/* advances one step of system-entry harvesting for either the player or a rival */
-	function stepHarvest(ledger, market, sim, runStep) {
+	function stepHarvest(ledger, market, sim, runStep, career) {
 		const count = sim.stepInsideAt(sim.cargo.x, sim.cargo.y, ledger.inside, ledger.entered);
 		let gained = 0;
 		for (let i = 0; i < count; i++) {
-			gained += harvestPlanet(ledger, market, ledger.entered[i], runStep);
+			gained += harvestPlanet(ledger, market, ledger.entered[i], runStep, career);
 		}
 		if (harvestMode === HARVEST_TICK) gained += harvestStay(ledger, market, sim, runStep);
 		if (sim.status === GravitySim.STATUS_ENDED &&
 			sim.endReason === GravitySim.END_IMPACT &&
 			sim.endBody >= 0 && !ledger.inside[sim.endBody]) {
 			ledger.inside[sim.endBody] = 1;
-			gained += harvestPlanet(ledger, market, sim.endBody, runStep);
+			gained += harvestPlanet(ledger, market, sim.endBody, runStep, career);
 		}
 		return gained;
 	}
@@ -560,7 +594,8 @@
 		for (let i = 0; i < count; i++) {
 			const planet = planets[i];
 			const at = baseStep + steps[i];
-			total += planetProfitAt(market, planet, at, estScratch[planet]);
+			/* a quiet planet reports for nobody: the predicted visit pays 0 */
+			total += market.quiet[planet] ? 0 : planetProfitAt(market, planet, at, estScratch[planet]);
 			estScratch[planet] = at;
 		}
 		return total;
@@ -1005,6 +1040,16 @@
 			(Number.isFinite(exit) ? exit.toFixed(2) : 'impossible');
 	}
 
+	/* fragile load (0.6.3): the load dies on launch acceleration, not on the
+	 * rail's name. A shot fired harder than FRAGILE_ACCEL voids the contract;
+	 * a gentle shot on any rail is safe. '' means the load survives the shot. */
+	function fragileBlock(career, task, planet, speed) {
+		if (!task || !task.fragile) return '';
+		const accel = speed * speed / (2 * OrbitTech.RAIL_M);
+		if (accel > FRAGILE_ACCEL + 1e-9) return 'fragile load lost';
+		return '';
+	}
+
 	/*
 	 * The one reason a shot at `speed` cannot leave `planet` now, in the words
 	 * the launch list prints under a row and the bot log puts on a "no shot"
@@ -1071,10 +1116,11 @@
 			launchPads: launchPads,
 			padCount: 0,
 			light: new Float64Array(OrbitWorld.PLANETS),
-			ship: {
-				hold: OrbitTech.HOLDS[0], engine: null, tank: OrbitTech.TANKS[0],
-				cargoTons: 0, fuelKg: 0, mass: 0
-			},
+		ship: {
+			hold: OrbitTech.HOLDS[0], engine: null, tank: OrbitTech.TANKS[0],
+			obs: OrbitTech.OBS[0],
+			cargoTons: 0, fuelKg: 0, mass: 0
+		},
 			owned: {},
 			science: OrbitScience.createHull(),
 			prototypes: newPrototypes(),
@@ -2833,6 +2879,7 @@
 		career.ship.hold = grant.ship.hold;
 		career.ship.engine = grant.ship.engine;
 		career.ship.tank = grant.ship.tank;
+		career.ship.obs = OrbitTech.OBS[0];
 		career.ship.cargoTons = 0;
 		career.ship.fuelKg = career.cheat === CHEAT_ENDGAME ? career.ship.tank.fuelCap : 0;
 		career.owned = {};
@@ -3179,13 +3226,15 @@
 	/* quelled: no more 4x visits and no more patients, but the rail stays
 	 * commercial and the planet stays unbuildable for good */
 	function pacifyPlanet(market, planet, runStep) {
-		market.rebel[planet] = 0;
-		market.patients[planet] = 0;
+	market.rebel[planet] = 0;
+	market.patients[planet] = 0;
 		market.rebelSinceStep[planet] = 0;
 		market.rebelCooldownStep[planet] =
-			runStep + Math.round(OrbitEcon.REBEL_CHECK_SECONDS * 2 / GravitySim.DT);
+		runStep + Math.round(OrbitEcon.REBEL_CHECK_SECONDS * 2 / GravitySim.DT);
 		market.corruption[planet] = market.corruption[planet] > OrbitEcon.PACIFY_CORRUPTION_MAX
-			? OrbitEcon.PACIFY_CORRUPTION_MAX : market.corruption[planet];
+		? OrbitEcon.PACIFY_CORRUPTION_MAX : market.corruption[planet];
+		/* a quelled world reports again: the quiet state is burnt down with the rot */
+		market.quiet[planet] = 0;
 	}
 
 	/* --- building ------------------------------------------------------ */
@@ -3415,24 +3464,30 @@
 			lowSupply = supply;
 		}
 		if (!dst) return false;
-		const tons = CARGO_TONS[Math.floor(draw01(career, SALT_TASK) * CARGO_TONS.length)];
-		const scarcity = 1 - OrbitEcon.marketSupply(dst, good);
-		const dist = Math.min(planetDistance(trade, src.planet, dst.planet), CAREER.deliveryDistPx);
-		const pay = CAREER.deliveryBase + tons * CAREER.deliveryPerTon * (1 + scarcity) *
-			(1 + dist / CAREER.deliveryDistPx);
-		task.kind = TASK_DELIVERY;
-		task.state = TASK_OFFERED;
-		task.good = good;
-		task.tourist = false;
-		task.tons = tons;
-		task.from = src.planet;
-		task.to = dst.planet;
-		task.planet = -1;
-		task.minLength = 0;
-		task.reward = round2(Math.min(pay, CAREER.deliveryMax));
-		task.deadline = step + Math.round(CAREER.deliverySec / GravitySim.DT);
-		return true;
-	}
+	const tons = CARGO_TONS[Math.floor(draw01(career, SALT_TASK) * CARGO_TONS.length)];
+	/* fragile load (0.6.3): only from a light planet, only a small load, and
+	 * the draw spends no stream on worlds that cannot offer it */
+	const light = planetGravity(career.seed, src.planet) <= FRAGILE_G;
+	task.fragile = light && tons <= FRAGILE_TONS &&
+		draw01(career, SALT_TASK) < FRAGILE_CHANCE;
+	const scarcity = 1 - OrbitEcon.marketSupply(dst, good);
+	const dist = Math.min(planetDistance(trade, src.planet, dst.planet), CAREER.deliveryDistPx);
+	let pay = CAREER.deliveryBase + tons * CAREER.deliveryPerTon * (1 + scarcity) *
+		(1 + dist / CAREER.deliveryDistPx);
+	if (task.fragile) pay *= FRAGILE_PAY;
+	task.kind = TASK_DELIVERY;
+	task.state = TASK_OFFERED;
+	task.good = good;
+	task.tourist = false;
+	task.tons = tons;
+	task.from = src.planet;
+	task.to = dst.planet;
+	task.planet = -1;
+	task.minLength = 0;
+	task.reward = round2(Math.min(pay, CAREER.deliveryMax));
+	task.deadline = step + Math.round(CAREER.deliverySec / GravitySim.DT);
+	return true;
+}
 
 	/* competition: one flight launched from `planet` that lands after at least `minLength` px */
 	function makeCompete(career, step, task) {
@@ -3545,12 +3600,23 @@
 	function canAccept(career, index) {
 		const task = career.tasks[index];
 		if (career.contract >= 0 || career.arrested || task.state !== TASK_OFFERED) return false;
-		if (task.kind === TASK_MEDIC) {
-			return career.capitalPlanet >= 0 && career.at === career.capitalPlanet &&
-				task.medics > 0 && task.patients > 0;
-		}
-		return task.kind === TASK_DELIVERY && career.ship.hold.capacity >= task.tons;
+	if (task.kind === TASK_MEDIC) {
+		return career.capitalPlanet >= 0 && career.at === career.capitalPlanet &&
+			task.medics > 0 && task.patients > 0;
 	}
+	if (task.kind === TASK_DELIVERY && task.fragile) {
+		/* a fragile job is refused when no gentle launch exists from here:
+		 * neither the rail under the ship nor the commercial EMC-1 can lift
+		 * the ship to the minimum shot, so the load is doomed */
+		const mass = career.ship.mass;
+		const pad = padAt(career, career.at);
+		const ownLift = OrbitTech.speedLimit(pad.battery.capacity, mass, pad.catapult, career.forceScale);
+		const comLift = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity, mass,
+			OrbitTech.CATAPULTS[0], career.forceScale);
+		if (ownLift + 1e-9 < GravitySim.SPEED_MIN && comLift + 1e-9 < GravitySim.SPEED_MIN) return false;
+	}
+	return task.kind === TASK_DELIVERY && career.ship.hold.capacity >= task.tons;
+}
 
 	/*
 	 * Where the open work wants the ship next, nearest leg first: the taken
@@ -3607,7 +3673,7 @@
 	 * be worth one thing to the aim line and another to the bot.
 	 * `out` is caller scratch, so nothing is allocated per candidate.
 	 */
-	function careerLandingFacts(out, career, origin, body, flownLen, length, steps, runStep, visitPay) {
+	function careerLandingFacts(out, career, origin, body, flownLen, length, steps, runStep, visitPay, speed) {
 		out.cash = visitPay;
 		out.credit = 0;
 		out.leg = LEG_NONE;
@@ -3625,8 +3691,14 @@
 					out.leg = LEG_MEDICS;
 				}
 			} else if (task.state === TASK_LOADED && body === task.to) {
-				out.cash += task.reward;
-				out.leg = LEG_DELIVER;
+				/* a fragile load voids on a launch harder than it survives:
+				 * the aim line prices the void before the click */
+				if (task.fragile && fragileBlock(career, task, origin, speed) !== '') {
+					/* shot would break the load: no credit, no pay */
+				} else {
+					out.cash += task.reward;
+					out.leg = LEG_DELIVER;
+				}
 			} else if (task.state === TASK_ACCEPTED && body === task.from) {
 				out.credit += task.reward * LEG_CREDIT;
 				out.leg = LEG_LOAD;
@@ -3728,6 +3800,14 @@
 		career.lastFee = fee;
 		career.lastReward = 0;
 		career.lastFuel = 0;
+		/* fragile load (0.6.3): fired harder than the load survives voids the
+		 * contract and drops the cargo; the rail still fires and the fee stands */
+		career.fragileLost = false;
+		const ftask = career.contract >= 0 ? career.tasks[career.contract] : null;
+		if (ftask && ftask.fragile && fragileBlock(career, ftask, planet, sim.speed) !== '') {
+			career.fragileLost = true;
+			dropContract(career);
+		}
 		career.flights += 1;
 		openFlight(career.ledger, sim, 0);
 	}
@@ -3930,8 +4010,9 @@
 		planetGravity, angleUnits, angleOf, speedUnits, speedOf,
 		createBurn, encodeBurn, createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
 		initSteps, createMarket, resetMarket, planetProfit, planetProfitAt, applyMarketSpecials,
-		bindRun, politicsSeconds, rebelRail, setPolitics, politicsOn,
-		advancePolitics, acceptBribe, bribeAmount, bribeWindowOpen, bribeRefusal,
+	bindRun, politicsSeconds, rebelRail, setPolitics, politicsOn,
+	advancePolitics, acceptBribe, bribeAmount, bribeWindowOpen, bribeRefusal,
+	reporting, goQuiet,
 		arrestCareer, pacifyPlanet, seizePlanet, clearMedicalCargo, coveredPlanets, BRIBE,
 		createLedger, resetLedger, beginFlight, stepHarvest, harvestPlanet, endFlight,
 		estimateProfit, estimateProfitLog, compareScores,
@@ -3944,6 +4025,7 @@
 		launchMask, recordLaunch, pruneLaunchBook,
 		CAREER, FUEL_KG_PER_KWH, FUEL_PRICE, FUEL_BUY_STEP, fuelPrice, produceFuel, buyFuel,
 		CAPITAL_VISIT_PAY, TOURIST_CHANCE, TOURIST_WEIGHT,
+	QUIET_MIN, FRAGILE_ACCEL, FRAGILE_PAY,
 		BOARD_SIZE, COMPETE_SLOT, MEDIC_SLOT, CARGO_TONS,
 		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_MEDIC,
 		TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
@@ -3955,7 +4037,7 @@
 		createGalaxy, resetGalaxy, joinGalaxy, rivalSeed,
 		turretPeriod, turretAngle, padAt, padOwner, claimOwner, refreshNetwork, setCommercial,
 		launchFee, exitCost, exitCostAt, careerCanFire, padLift, reserveEnergy, releaseEnergy,
-		railOwnerText, railText, railBlock,
+		railOwnerText, railText, railBlock, fragileBlock,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById, gearKnown, planetBuildable, planetSeized,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart, partRefusal,

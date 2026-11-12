@@ -117,7 +117,7 @@ const shotMoney = {
 function moneyFacts(origin, speed, body, steps, length, visitPay) {
 	const career = activeCareer();
 	GravityGame.careerLandingFacts(shotMoney, career, origin, body, 0, length, steps,
-		game.clockSteps, visitPay);
+		game.clockSteps, visitPay, speed);
 	const fee = GravityGame.launchFee(career, origin, speed);
 	const available = career.ledger.purse + shotMoney.cash - fee;
 	const mass = bot.careerArrivalMass(career, body);
