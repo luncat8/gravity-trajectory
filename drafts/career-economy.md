@@ -106,14 +106,15 @@ block is open.
 
 fragile load - cant survive >EMC1. available on light planets
 
-→ not built (no `fragile` anywhere in the code).
+→ built (0.6.3): `task.fragile`, the `fragile` board row, the aim-line void.
 
-**open** → `../0.6.3-plan-fragile-load.md`: a `TASK_DELIVERY` flag; the load is
-lost when a rail above `EMC-1` fires it, and it is offered only from planets
-light enough for an `EMC-1` to lift it (`g ≤ 0.75`, measured). The commercial
-`EMC-1` on every planet stays the gentle way off, so an upgraded pad costs its
-owner the commercial fee — the pad ladder gets a price. **One reading to
-confirm**: «cant survive >EMC1» as *the rail's tier*, not the speed of the shot.
+→ `../archive/0.6.3-plan-fragile-load.md`: a `TASK_DELIVERY` flag; the loaded
+load is lost when it is launched harder than `2.0 m/s²` (above `105 px/s`),
+which an `EMC-1` at full force never reaches on a loaded ship and a stronger
+rail does, and it is offered only from planets light enough for an `EMC-1` to
+lift it (`g ≤ 0.75`, measured). A stronger rail still carries it when aimed
+softer. The one reading, confirmed: «cant survive >EMC1» as *the force of the
+launch*, not the rail's tier.
 
 ## 2.5 colonies and the trade backdrop ← `0.2.0-draft-economy-compare.md`
 

@@ -88,31 +88,34 @@ possibility to uninstall this device on a planet with high corruption level (may
 
 add short help drawer on hover bribe button to explain how work bribe, corruption, observation device
 
-→ not built (no `observation` in the code). This is the missing hinge between
+→ built (0.6.1): `OBS-1`, the `observer` row of the ship refit, `go quiet` on
+the pad block, `POLITICS_HELP` in the help drawer. This is the hinge between
 §3.1 and §3.2: a device that (a) is what makes a visit report to the Capital —
 i.e. what pays the visit value and decays the rot — and (b) can be given up on a
 rotten planet, at which point visits stop clearing the payout and bribes become
 the way to cash it. It gives the corruption numbers a reason to be a *choice*
 rather than a weather report.
 
-**open** → `../0.6.1-plan-observation-device.md`. How it answers the three
+→ `../archive/0.6.1-plan-observation-device.md`. How it answers the three
 questions the note leaves:
 
 1. **Ship part or pad device?** A ship part (`OBS-1`, `0.4 t`, in the refit
-   list), plus one flag per planet: giving the device up on a world above `75 %`
-   marks *that planet* quiet for every company until its rot is quelled.
+   list, on every ship from the start), plus one flag per planet: giving the
+   device up on a world above `75 %` marks *that planet* quiet for every
+   company until its rot is quelled.
 2. **Does a quiet visit still pay?** No: it pays nothing and clears nothing —
    the note's «will not automatically cleared» — so the visit value keeps growing
-   and the bribe, which is proportional to it, grows with it.
+   and the bribe, which is proportional to it, grows with it; the bribe then
+   cashes that value once.
 3. **Is `>75%` reachable?** Rot falls by `0.2` a visit and rises by `0.1` per
    world second once a planet has gone `120 s` unvisited, so 75 is `870` world
    seconds of neglect — fourteen and a half minutes at `×1`, sooner with bribes
    (each adds `1 + 0.1 × amount`): the intended «rotten world». Kept.
 
 The help drawer on the bribe button is in the same plan (its GUI section).
-**One reading to confirm before building**: «uninstall this device on a planet»
-is taken as *the ship's device, removed while standing on that planet*, not as a
-device that each planet owns.
+The one reading, confirmed: «uninstall this device on a planet» is *the ship's
+device, removed while standing on that planet*, not a device that each planet
+owns.
 
 ## 3.5 helpers for quests ← `archive/draft.txt`
 

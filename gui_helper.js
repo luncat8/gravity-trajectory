@@ -167,7 +167,7 @@ function helperScore(probe, cand) {
 			return careerMoney.net + careerMoney.credit * goal.credit;
 		}
 	}
-	const profit = game.on ? GravityGame.estimateProfit(game.market, game.clockSteps, probe) : 0;
+	const profit = game.on ? GravityGame.estimateProfit(game.market, game.clockSteps, probe, game.money) : 0;
 	const lands = probe.predReason === END_IMPACT && probe.predBody !== origin ? 1 : 0;
 	const samePad = probe.predReason === END_IMPACT && probe.predBody === origin ? 1 : 0;
 	const newVisits = probe.predNewVisits;
@@ -175,9 +175,9 @@ function helperScore(probe, cand) {
 	if (careerRule()) {
 		/* the untargeted scan weighs the same factors as the targeted ones,
 		 * so a taken leg is never invisible just because no goal is set */
-	GravityGame.careerLandingFacts(helperLanding, playerCareer(), origin, probe.predBody, 0,
-		probe.predLength, probe.predSteps, game.clockSteps, profit,
-		GravityGame.speedOf(cand.speedU));
+		GravityGame.careerLandingFacts(helperLanding, playerCareer(), origin, probe.predBody, 0,
+			probe.predLength, probe.predSteps, game.clockSteps, profit,
+			GravityGame.speedOf(cand.speedU));
 		score += helperLanding.cash * 30 + helperLanding.credit * 60 + newVisits * 4 -
 			probe.predTime * 0.12;
 	} else if (game.on && ruleSpec().stopOnTour) {

@@ -16,22 +16,33 @@ function refreshPredGain() {
 		predGain = 0;
 		return;
 	}
-	let gain = GravityGame.estimateProfit(game.market, game.clockSteps, sim);
+	let gain = GravityGame.estimateProfit(game.market, game.clockSteps, sim, game.money);
 	if (careerRule() && sim.predReason === END_IMPACT && sim.predBody >= 0) {
 		/* the same landing table the helper scans and the bots price with:
 		 * a taken delivery or medical quest pays here, not only on the pad */
 		const origin = sim.status === STATUS_FLYING ? sim.origin : aimBody;
 		const flown = sim.status === STATUS_FLYING ? sim.flightLength : 0;
-	GravityGame.careerLandingFacts(predLanding, playerCareer(), origin, sim.predBody,
-		flown, sim.predLength, sim.predSteps, game.clockSteps, gain, aimSpeed);
+		/* a load that is already flying survived its launch */
+		const launchSpeed = sim.status === STATUS_FLYING ? 0 : aimSpeed;
+		GravityGame.careerLandingFacts(predLanding, playerCareer(), origin, sim.predBody,
+			flown, sim.predLength, sim.predSteps, game.clockSteps, gain, launchSpeed);
 		gain = predLanding.cash;
 	}
 	predGain = gain;
 }
 
+/* the shot on the pad would break the fragile load aboard (0.6.3): legal to
+ * fire, but the delivery it carries is void */
+function aimBreaksFragile() {
+	if (!careerRule() || !(aiming || armed)) return false;
+	const career = playerCareer();
+	return career.contract >= 0 &&
+		GravityGame.fragileBreaks(career.tasks[career.contract], aimSpeed);
+}
+
 function predictedCareerEconomics(sim) {
 	const out = aimEconomics;
-	out.state = 0;
+	out.state = aimBreaksFragile() ? 2 : 0;
 	out.launchable = true;
 	out.fee = 0;
 	out.fuel = 0;
@@ -63,7 +74,7 @@ function predictedCareerEconomics(sim) {
 	out.own = career.pads[sim.predBody].catapult !== null;
 	out.launchable = career.ledger.purse + 1e-9 >= fee && departure.ok;
 	out.net = predGain - fee - out.fuel - (departure.ok ? departure.cost : 0);
-	out.state = !out.launchable ? 2 : out.net > 1e-9 ? 1 : 0;
+	out.state = !out.launchable || aimBreaksFragile() ? 2 : out.net > 1e-9 ? 1 : 0;
 	return out;
 }
 
@@ -149,7 +160,8 @@ function refreshAimLabel() {
 	aimLabel = Math.round(aimSpeed) + ' px/s · ' + deg.toFixed(1) + '°' +
 		(fine ? ' · fine' : '') +
 		(ceiling < SPEED_MAX - 1e-9 ? ' · max ' + Math.round(ceiling) : '') + visitNote +
-		(careerRule() ? careerPickupNote(playerCareer(), aimBody) : '');
+		(careerRule() ? careerPickupNote(playerCareer(), aimBody) : '') +
+		(aimBreaksFragile() ? ' · breaks the fragile load · ' + fragileLimitText() : '');
 }
 
 /* the drag maps all of GRIP_MAX onto SPEED_MIN…this planet's real ceiling:

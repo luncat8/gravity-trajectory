@@ -1559,10 +1559,6 @@ careerEnv.runFrames(8, 40.0);
 check(career.at === career.hq && !career.stranded, 'evacuate button did not bring the ship home');
 check(Math.abs(kScene.game.money.purse - (purseBeforeEvac - 6)) < 1e-9,
 	'evacuation fee: ' + kScene.game.money.purse);
-console.log('DEBUG evac', JSON.stringify({ at: career.at, hq: career.hq, stranded: career.stranded,
-	ended: career.ended, status: kCargo.status, capital: career.capitalPlanet,
-	evacHidden: kui.get('launchEvac').hidden, actionsHidden: kui.get('planetActions').hidden,
-	buildHidden: kui.get('launchBuild').hidden, commHidden: kui.get('launchCommercial').hidden }));
 check(kui.get('launchEvac').hidden, 'the inline evacuate hides once home at HQ');
 check(kui.get('careerMsg').textContent.startsWith('evacuated to HQ P' + career.hq),
 	'evacuation note: ' + kui.get('careerMsg').textContent);

@@ -38,7 +38,7 @@ function check(name, fn) {
 }
 
 function dry() {
-	return OrbitTech.shipMass({ hold: HOLD[0], engine: null, tank: OrbitTech.TANKS[0] }, 0);
+	return OrbitTech.shipMass({ hold: HOLD[0], engine: null, tank: OrbitTech.TANKS[0], obs: OrbitTech.OBS[1] }, 0);
 }
 
 /* --- §1 launch model ---------------------------------------------------- */
@@ -52,7 +52,7 @@ check('dry ship launchable by weak EMC-1 from a full BAT-1 in the 85-95 px/s ban
 });
 
 check('24 t cargo + HOLD-24 stalls below 50 on EMC-1 / BAT-1, flies on EMC-5 / BAT-5', () => {
-	const mass = OrbitTech.shipMass({ hold: HOLD[2], engine: null, tank: OrbitTech.TANKS[0] }, 24);
+	const mass = OrbitTech.shipMass({ hold: HOLD[2], engine: null, tank: OrbitTech.TANKS[0], obs: OrbitTech.OBS[1] }, 24);
 	assert.strictEqual(mass, 38);
 	assert.ok(OrbitTech.speedLimit(BAT[0].capacity, mass, EMC[0]) < 50, 'loaded EMC-1 limit');
 	assert.ok(!OrbitTech.canLaunch(BAT[0].capacity, mass, EMC[0], 100));
@@ -577,7 +577,7 @@ check('career contracts: hold required, cargo adds mass, delivery pays on landin
 check('post-pickup EMC-1 cap: cargo mass lowers the starter-rail cap', () => {
 	const dryMass = dry();
 	const tons = 8;
-	const postMass = OrbitTech.shipMass({ hold: HOLD[0], engine: null, tank: OrbitTech.TANKS[0] }, tons);
+	const postMass = OrbitTech.shipMass({ hold: HOLD[0], engine: null, tank: OrbitTech.TANKS[0], obs: OrbitTech.OBS[1] }, tons);
 	assert.strictEqual(postMass, dryMass + tons, 'post-pickup mass = dry + cargo');
 	/* the note's ship.mass + task.tons mirrors the post-pickup mass */
 	assert.strictEqual(dryMass + tons, postMass);
@@ -685,7 +685,7 @@ check('career ship refit: reversible to any owned tier, mass feeds the HQ cap, �
 	assert.strictEqual(career.ledger.purse, purse - HOLD[2].buildCost);
 	assert.strictEqual(career.ship.mass, OrbitTech.refitMass(ship, 'hold', HOLD[2], 0));
 	const heavyCap = OrbitTech.speedLimit(BAT[0].capacity, career.ship.mass, EMC[0]);
-	const dryMass = OrbitTech.shipMass({ hold: HOLD[0], engine: null, tank: OrbitTech.TANKS[0] }, 0);
+	const dryMass = OrbitTech.shipMass({ hold: HOLD[0], engine: null, tank: OrbitTech.TANKS[0], obs: OrbitTech.OBS[1] }, 0);
 	assert.ok(OrbitTech.speedLimit(BAT[0].capacity, dryMass, EMC[0]) > heavyCap, 'a hold costs rail speed');
 	assert.ok(GravityGame.installPart(career, 'hold', HOLD[0]));
 	assert.strictEqual(career.ledger.purse, purse - HOLD[2].buildCost, 'going back is free');
@@ -795,14 +795,14 @@ check('impulse fuel & Δv: inverse, multi-burn telescoping, and thrust vs tank b
 	const imp3 = OrbitTech.ENGINES[2];
 	const ft1 = OrbitTech.TANKS[1];
 	const ft3 = OrbitTech.TANKS[3];
-	const ship13 = { hold: HOLD[0], engine: imp1, tank: ft3, fuelKg: ft3.fuelCap };
+	const ship13 = { hold: HOLD[0], engine: imp1, tank: ft3, obs: OrbitTech.OBS[1], fuelKg: ft3.fuelCap };
 	const mass13 = OrbitTech.shipMass(ship13, 0);
 	const total13 = OrbitTech.shipDeltaV(ship13, 0);
 	const cap13 = OrbitTech.burnLimit(ft3.fuelCap, imp1, mass13);
 	assert.ok(cap13 < total13 - 10, 'IMP-1 on FT-3 is thrust-capped per single burn');
 	assert.ok(Math.abs(cap13 - OrbitTech.burnMaxDeltaV(imp1, mass13, ft3.fuelCap)) < 1e-12);
 
-	const ship31 = { hold: HOLD[0], engine: imp3, tank: ft1, fuelKg: ft1.fuelCap };
+	const ship31 = { hold: HOLD[0], engine: imp3, tank: ft1, obs: OrbitTech.OBS[1], fuelKg: ft1.fuelCap };
 	const mass31 = OrbitTech.shipMass(ship31, 0);
 	assert.ok(Math.abs(OrbitTech.burnLimit(ft1.fuelCap, imp3, mass31) -
 		OrbitTech.shipDeltaV(ship31, 0)) < 1e-12, 'IMP-3 on FT-1 is fuel-capped');

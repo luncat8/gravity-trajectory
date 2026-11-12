@@ -52,7 +52,8 @@ const ENGINE_ROW = { kind: OrbitTech.KIND_ENGINE, label: 'engine', table: OrbitT
 const PART_ROWS = [
 	{ kind: OrbitTech.KIND_HOLD, label: 'hold', table: OrbitTech.HOLDS },
 	TANK_ROW,
-	ENGINE_ROW
+	ENGINE_ROW,
+	{ kind: OrbitTech.KIND_OBS, label: 'observer', table: OrbitTech.OBS }
 ];
 /* one lookup for every shop button: kind → item table */
 const TECH_TABLES = {
@@ -61,7 +62,8 @@ const TECH_TABLES = {
 	battery: OrbitTech.BATTERIES,
 	hold: OrbitTech.HOLDS,
 	tank: OrbitTech.TANKS,
-	engine: OrbitTech.ENGINES
+	engine: OrbitTech.ENGINES,
+	obs: OrbitTech.OBS
 };
 /* §10 science: the researchable 2-D parameter spaces and their slider
  * ranges; axis order matches the hull points seeded in GravityGame */
@@ -145,6 +147,10 @@ const REBEL_TAG = 'REBELLION';
 const CORRUPTION_TAG_MIN = 20;
 const CORRUPTION_STRINGS = new Array(101);
 for (let c = 0; c <= 100; c++) CORRUPTION_STRINGS[c] = 'rot ' + c + '%';
+/* a planet that went quiet (0.6.1): nobody's visit reports there */
+const QUIET_STRINGS = new Array(101);
+for (let c = 0; c <= 100; c++) QUIET_STRINGS[c] = 'quiet · rot ' + c + '%';
+const QUIET_COLOUR = 'rgba(176, 156, 255, 0.85)';
 /* Planet-card gravity lines are cached like profit lines: no strings in draw(). */
 const GRAVITY_STRINGS = new Array(701);
 for (let c = -200; c <= 500; c++) {
@@ -227,6 +233,22 @@ const COMMON_HELP = 'Drag from a planet or pad to aim; hold Shift for 1/20 fine 
 	'negative gravity repels. The seed is in the URL; a seedless startup draws a new one. ' +
 	'f cycles space → gravity field → gravity potential; potential shows gravity zones by size, not direction: blue where gravity repels, see-through near zero, green where it pulls and red around a heavy planet (g ≥ +2). ' +
 	'z switches the camera between the planet field and the whole flight area, where a ship that left the canvas is still visible.';
+/* the politics topic (0.6.1): previewed in the help drawer while the pointer
+ * is on the bribe or go-quiet row; same shape as a rule's entry */
+const POLITICS_HELP = {
+	name: 'corruption · bribes · reports',
+	goal: 'Every visit is a report to the Capital: it pays the planet\u2019s value and cools its corruption by ' +
+		OrbitEcon.CORRUPTION_VISIT_DECAY.toFixed(1) + '. A planet left alone rots.',
+	score: 'Once per landing the rulers pay for silence: visit value \u00d7 corruption \u00d7 ' +
+		OrbitEcon.BRIBE_VALUE_COEF.toFixed(0) + '. A bribe raises the corruption; above ' +
+		OrbitEcon.REBEL_START + '% it can end in arrest (a slow Capital transport) and the planet can rebel.',
+	detailLabel: 'Device',
+	detail: 'The observation device ' + OrbitTech.OBS[1].id + ' (ship refit, observer) is what reports. Without it the ship is ' +
+		OrbitTech.OBS[1].mass.toFixed(1) + ' t lighter, its visits pay nothing and clear nothing. Above ' +
+		GravityGame.QUIET_MIN + '% corruption, go quiet takes the device off on that planet: nobody reports there ' +
+		'until medics quell it, the unreported value keeps growing, and only a bribe cashes it.',
+	controls: ''
+};
 const RULE_HELP = {
 	lab: {
 		name: 'lab',
@@ -273,7 +295,9 @@ const RULE_HELP = {
 			'pays the price back in money per world second, a rail always with the battery that fills it. ' +
 			'The career runs on the world clock; pause on landing holds it still, and each human player holds it ' +
 			'separately — a hatched scoreboard row is still holding time. Evacuation to HQ costs ' +
-			GravityGame.CAREER.evacFee.toFixed(2) + '.',
+			GravityGame.CAREER.evacFee.toFixed(2) + '. Fragile freight (light planets only, pays \u00d7' +
+			GravityGame.FRAGILE_PAY.toFixed(1) + ') breaks when launched above ' +
+			Math.floor(GravityGame.FRAGILE_SPEED) + ' px/s: a full-force EMC-1 is gentle enough, a stronger rail must be aimed softer.',
 		controls: 'Wait charges pads. Fuel is bought or converted from your own pad battery; tanks never refill for free. With an impulse engine and fuel, pause time with Space / P or the game-bar time button, then drag the ship to aim a burn; a bot flying your company burns on its own.'
 	}
 };

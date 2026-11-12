@@ -20,6 +20,8 @@ const flightFuelEl = $('flightFuel');
 const flightFuelBarEl = $('flightFuelBar');
 const flightFuelFillEl = $('flightFuelFill');
 const flightEngineEl = $('flightEngine');
+const flightReportRowEl = $('flightReportRow');
+const flightReportEl = $('flightReport');
 const flightRefuelRowEl = $('flightRefuelRow');
 const flightRefuelBtn = $('flightRefuel');
 const flightQuestGroupEl = $('flightQuestGroup');
@@ -31,7 +33,7 @@ const flightQuestRows = [$('flightQuest0'), $('flightQuest1')];
 /* the panel paints from these scratch values, and only writes a node when the
  * text really changed — the frame loop calls this twice a second */
 const flightHud = {
-	state: '', shipTag: '', speed: '', time: '', fuel: '', engine: '',
+	state: '', shipTag: '', speed: '', time: '', fuel: '', engine: '', report: '',
 	fuelPct: -1, refuel: '', refuelText: '', refuelWhy: '', questTag: '', questKey: '',
 	actionTag: '', refuelKg: 0
 };
@@ -112,6 +114,8 @@ function rebuildFlightQuests(career) {
 	}
 	if (rows === 0) html = '<div class="careerRow dim"><span class="careerNow">no contract open · ' +
 		'accept one in the career drawer</span></div>';
+	const contract = career.contract >= 0 ? career.tasks[career.contract] : null;
+	if (contract && contract.fragile) tag = 'fragile · ' + fragileLimitText();
 	if (flightQuestsEl) flightQuestsEl.innerHTML = html;
 	flightQuestRows[0] = $('flightQuest0');
 	flightQuestRows[1] = $('flightQuest1');
@@ -288,6 +292,13 @@ function updateFlightHud() {
 	if (engineText !== flightHud.engine) {
 		flightHud.engine = engineText;
 		if (flightEngineEl) flightEngineEl.textContent = engineText;
+	}
+	/* why a visit pays or not: the observation device (0.6.1) */
+	const reportText = !ship ? '' : ship.obs.fitted ? ship.obs.id : 'none · visits pay 0';
+	if (reportText !== flightHud.report) {
+		flightHud.report = reportText;
+		if (flightReportRowEl) flightReportRowEl.hidden = reportText === '';
+		if (flightReportEl) flightReportEl.textContent = reportText;
 	}
 	if (flightShipTagEl) {
 		const tag = ship ? ship.mass.toFixed(1) + ' t' : flying ? 'coasting' : 'one ship';

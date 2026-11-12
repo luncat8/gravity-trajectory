@@ -148,7 +148,10 @@ function drawPlanetProfits() {
 		if (!planetMask[i]) continue;
 		const isCapital = i === capital;
 		const isArf = i === arf;
-		const val = GravityGame.planetProfit(game.market, i, step);
+		/* what this ship's visit would pay: nothing on a quiet planet, nothing
+		 * anywhere without the observation device */
+		const val = GravityGame.visitReports(game.money, game.market, i)
+			? GravityGame.planetProfit(game.market, i, step) : 0;
 		let cents = Math.round(val * 100);
 		if (cents < 0) cents = 0;
 		else if (cents > PROFIT_MAX_CENTS) cents = PROFIT_MAX_CENTS;
@@ -171,9 +174,11 @@ function drawPlanetProfits() {
 		const owner = careerRule() ? GravityGame.claimOwner(game.galaxy, i) : -1;
 		const rebel = careerRule() && game.market.rebel[i] === 1;
 		const seized = careerRule() && game.market.seized[i] === 1;
+		const quiet = careerRule() && game.market.quiet[i] === 1;
 		const border = rebel ? REBEL
 			: isCapital ? 'rgba(255, 207, 110, 0.85)'
 			: seized ? 'rgba(255, 148, 120, 0.45)'
+			: quiet ? QUIET_COLOUR
 			: isArf ? 'rgba(142, 240, 192, 0.7)'
 			: owner === 0 ? MINT
 			: owner > 0 ? RIVAL_COLOURS[owner - 1]
@@ -197,9 +202,10 @@ function drawPlanetProfits() {
 			const topY = tradeSim.planetY[i] * view.scale + view.offY -
 				tradeSim.planetR[i] * view.scale;
 			ctx.fillStyle = rebel ? REBEL : seized ? 'rgba(255, 148, 120, 0.8)'
-				: isCapital ? GOLD : MINT;
+				: isCapital ? GOLD : quiet ? QUIET_COLOUR : MINT;
 			ctx.fillText(rebel ? REBEL_TAG : isCapital ? CAPITAL_TAG : isArf ? ARF_TAG
-				: CORRUPTION_STRINGS[Math.round(game.market.corruption[i])], sx, topY - 5);
+				: (quiet ? QUIET_STRINGS : CORRUPTION_STRINGS)[Math.round(game.market.corruption[i])],
+				sx, topY - 5);
 		}
 	}
 }

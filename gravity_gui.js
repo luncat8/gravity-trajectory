@@ -641,6 +641,8 @@ if (careerBoxEl) {
 		const node = event && event.target;
 		if (node && node.dataset && node.dataset.sciAxis) scienceSliderInput(node);
 	});
+	careerBoxEl.addEventListener('pointerover', topicHelpOver);
+	careerBoxEl.addEventListener('pointerleave', topicHelpLeave);
 }
 if (careerWaitBtn) careerWaitBtn.addEventListener('click', () => careerAct({ act: 'wait' }));
 if (launchBuildBtn) {
