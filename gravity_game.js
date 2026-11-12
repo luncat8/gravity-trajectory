@@ -1157,7 +1157,17 @@
 			bribes: 0,
 			bribeIncome: 0,
 			patientsDelivered: 0,
-			medicTrips: 0
+		medicTrips: 0,
+		/* where the run's money came from and where it went:
+		 * visitIncome + earned + bribeIncome + taxEarned is what flying brought in;
+		 * feesPaid + fuelSpent + evacuations is what flying cost;
+		 * buildSpent and sciSpent are where profit was put.
+		 * purse = starter purse + profit − property − science */
+		visitIncome: 0,
+		flownPx: 0,
+		feesPaid: 0,
+		buildSpent: 0,
+		sciSpent: 0
 		};
 	}
 
@@ -2849,11 +2859,40 @@
 		const cost = price(career, p.cost);
 		if (!canPay(career, cost)) return false;
 		career.ledger.purse -= cost;
+		career.sciSpent += cost;
 		OrbitScience.acceptHull(career.science, family, params, label);
 		career.research += 1;
 		career.lastResearch = cost;
 		unlockPrototype(career, family, params, label);
 		return true;
+	}
+
+	/* the career's money, where it came from and where it went:
+	 * income − running = profit; property and science are where profit went.
+	 * purse = starter purse + profit − property − science.
+	 * fills the caller-owned row without allocating */
+	function careerStats(out, career) {
+		out.income = career.visitIncome + career.earned + career.bribeIncome + career.taxEarned;
+		out.running = career.feesPaid + career.fuelSpent + career.evacuations * CAREER.evacFee;
+		out.profit = out.income - out.running;
+		out.property = career.buildSpent;
+		out.science = career.sciSpent;
+		out.flown = career.flownPx;
+	}
+
+	/* map-wide numbers: rot is the corruption visits clear, standing the
+	 * visit value lying unharvested on the in-play planets this step */
+	function mapStats(out, market, step) {
+		var rot = 0;
+		var standing = 0;
+		for (var p = 0; p < OrbitWorld.PLANETS; p++) {
+			if (market.planetMask && market.planetMask[p] !== 1) continue;
+			rot += market.corruption[p];
+			var pay = planetProfit(market, p, step);
+			if (pay > 0) standing += pay;
+		}
+		out.rot = rot;
+		out.standing = standing;
 	}
 
 	function resetCareer(career, seed, trade, cheat, homePlanet, sim) {
@@ -2928,6 +2967,11 @@
 		career.bribeIncome = 0;
 		career.patientsDelivered = 0;
 		career.medicTrips = 0;
+		career.visitIncome = 0;
+		career.flownPx = 0;
+		career.feesPaid = 0;
+		career.buildSpent = 0;
+		career.sciSpent = 0;
 		refreshBoard(career, trade, 0);
 	}
 
@@ -3327,6 +3371,7 @@
 		if (!gearKnown(career, item)) return false;
 		if (!canPay(career, item.buildCost)) return false;
 		career.ledger.purse -= price(career, item.buildCost);
+		career.buildSpent += price(career, item.buildCost);
 		if (fresh) {
 			fitPad(career, planet, item, OrbitTech.PANELS[0], OrbitTech.BATTERIES[0]);
 		} else {
@@ -3363,6 +3408,7 @@
 			if (kind === OrbitTech.KIND_BATTERY) pad.chargeKwh = item.capacity;
 		}
 		career.ledger.purse -= cost;
+		career.buildSpent += cost;
 		syncCareerNetwork(career);
 		return true;
 	}
@@ -3391,6 +3437,7 @@
 		if (partRefusal(career, kind, item) !== '') return false;
 		if (item !== null && !career.owned[item.id]) {
 			career.ledger.purse -= price(career, item.buildCost);
+			career.buildSpent += price(career, item.buildCost);
 			ownPart(career, item);
 		}
 		career.ship[kind] = item;
@@ -3823,6 +3870,7 @@
 		}
 		const fee = launchFee(career, planet, sim.speed);
 		career.ledger.purse -= fee;
+		career.feesPaid += fee;
 		if (!freeRail && owner !== career.index) {
 			const host = career.galaxy.actors[owner];
 			host.ledger.purse += fee;
@@ -3872,7 +3920,8 @@
 	/* a landing settles contracts; a vessel that left the map or timed out is
 	 * lost in space (at = -1) and only an evacuation brings it back */
 	function careerEndFlight(career, sim, trade, step) {
-		endFlight(career.ledger);
+		career.visitIncome += endFlight(career.ledger);
+		career.flownPx += sim.flightLength;
 		const landed = sim.endReason === GravitySim.END_IMPACT && sim.endBody >= 0;
 		if (landed) settleLanding(career, sim, sim.endBody, step);
 		career.at = landed ? sim.endBody : -1;
@@ -4046,6 +4095,7 @@
 		arrestCareer, pacifyPlanet, seizePlanet, clearMedicalCargo, coveredPlanets, BRIBE,
 		createLedger, resetLedger, beginFlight, stepHarvest, harvestPlanet, endFlight,
 		estimateProfit, estimateProfitLog, compareScores,
+		careerStats, mapStats,
 		setSpecialPlanets, specialPlanets: specialPlanetsOn,
 		setCareerUniverse, applyMarketUniverse, planetInPlay, colonyInPlay, activePlanetDraw,
 		openingGroupStats, openingStatsFromTracks, openingTracks, openingPrepare,
