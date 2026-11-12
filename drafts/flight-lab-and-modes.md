@@ -112,9 +112,12 @@ end trajectory out of system warning reddish launch button
 
 → blocked-launch arrow and the red launch state.
 
-## 1.2 deterministic modes ← `archive/draft.txt`
+## 1.2 game modes ← `archive/draft.txt`
 
-new game mode: deterministic seed and time only while ship move. after trajectory end - pause until launch. this allow compare players results. button to copy replay as url: with launch parameters.
+usually Game modes correspond to same sport competition in career mode: player can play specifically this sport.
+if sport has variants - modes combine most variants like m1 & n1 , m2 & n2 (few separate modes) but not m*n modes.
+
+deterministic seed and time only while ship move. after trajectory end - pause until launch. this allow compare players results. button to copy replay as url: with launch parameters.
 
 → `tour` and `money`: the clock runs only while cargo flies, and `copy replay`
 carries the shots.
@@ -144,6 +147,27 @@ payout drawn under every planet. The `0.1 × time` idea became
 `MONEY.k = 0.00625/s` saturating at `cap 3` — **open (small)**, no plan: should
 the rate be steeper on a small universe than the count scale already in
 (`k × 26 / count`)?
+
+### game mode: max distance from start
+
+new game mode and sport competition: max distance from start. in this mode measure not trajectory length but distance from start, same start planet, long map in x direction - add planets until mode end, by default map is periodic in this game mode. land on planet cause finish for this player.  variant of this game mode only EMC | EMC+allow imp1+big  preinstalled fuel tank. variant: need to return back and land on same starting planet so strategy is to reserve at least half of fuel or precalculate all route that probably need to implement planner of imp burn in some future trajectory pos. similar like KSP planner work.
+
+«distance from start» is measured to what point?
+Farthest point on the path. but possible competition varian: land far away in single fly
+The EMC-only / EMC+IMP-1+big-tank pair and the return-to-start variant — how do they enter the mode row?
+in career it is sport rules that randomly generate. in modes - make separate mode. few modes to implement all sport variants without huge modes list:
+- EMS & Farthest path point & return
+- allow IMP & land far
+
+(deferred) add variant of rule for compatible game modes and sport competition: land on planet cause finish for this player | or can land
+
+→ **open** · `../0.7.4-plan-max-distance-mode.md` — two rows,
+`maxdistEmc` (no impulse, farthest path point, must return to the start) and
+`maxdistImp` (IMP-1 + big tank, first landing ends, scores farthest). The map is
+a 3-screen strip (4800×1000, 78 planets, no wrap) fitted to one screen; x-wrap
+belongs to the FFT map and a torus has no farthest point, so this mode refuses
+`&fft=1`. The KSP planner and the relaunch variant stay deferred; career sport
+rules reuse the shape after the timed-competition event.
 
 ## 1.3 the seed, the roster, the map ← `archive/draft.txt`
 

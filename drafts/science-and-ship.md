@@ -32,7 +32,7 @@ the union of the accepted *cells*.
 improve sci cost curves related to mass and
 similar for efficiency, leak and other sci characteristics. think good what is they for and how logical and realistic it should be. i.e. researching bat with leak is cheaper but not more costly.
 
-fabrication probably not need related to this directly because is is overall with tech level, etc factors so main characteristics price dependency looks good for now.
+fabrication probably not need related to this directly because is overall with tech level, etc factors so main characteristics price dependency looks good for now.
 
 → a leak-tight battery is dearer than a leaky one: the spec merit divides the fee
 by `1.5` per doubling of a *waste* (mass, leak, `1 − efficiency`), so making a

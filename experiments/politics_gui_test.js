@@ -24,6 +24,12 @@ const game = scene.game;
 const market = game.market;
 const trade = scene.tradeSim;
 
+/* a button's enabled state, whatever the order of its attributes */
+function bribeDisabled(html) {
+	const tag = /<button[^>]*data-act="bribe"[^>]*>/.exec(html);
+	return !tag || /\bdisabled\b/.test(tag[0]);
+}
+
 function drawerHtml() {
 	return ui.get('careerPad').innerHTML + ui.get('careerShop').innerHTML;
 }
@@ -115,7 +121,7 @@ check(Game.bribeWindowOpen(market, planet), 'a visit does not reopen the bribe w
 market.visitPay[planet] = 2;
 context.refreshCareerPanel();
 html = drawerHtml();
-check(html.includes('data-act="bribe"') && !/data-act="bribe" disabled/.test(html),
+check(html.includes('data-act="bribe"') && !bribeDisabled(html),
 	'a new visit does not reopen the bribe: ' + html);
 /* a clean world keeps the button and simply prices it at nothing */
 const fresh = normalPlanet(planet);
@@ -127,7 +133,7 @@ context.refreshCareerPanel();
 html = drawerHtml();
 check(html.includes('data-act="bribe"'), 'a clean world hides the bribe button: ' + html);
 check(html.includes('+0.00'), 'a clean world does not price the bribe at nothing: ' + html);
-check(/data-act="bribe" disabled/.test(html), 'a clean world offers an enabled bribe');
+check(bribeDisabled(html), 'a clean world offers an enabled bribe');
 check(html.includes('nothing to take yet'), 'a clean world does not explain why: ' + html);
 /* the Capital and the A.R.F. world take no bribes at all */
 Game.placeShip(career, scene.sim, career.capitalPlanet);
@@ -218,5 +224,46 @@ Game.settleMedic(career, career.tasks[Game.MEDIC_SLOT], career.capitalPlanet,
 	game.clockSteps);
 check(market.rebel[rebelPlanet] === 0, 'the second trip did not quell the planet');
 check(career.contract < 0, 'the medical contract survived the quelling');
+
+/* --- the sitting bribe keeps its price (0.7.x) -------------------------- */
+
+/* the law prices the bribe from the live visit value, so a button rebuilt at
+ * touchdown must not keep that price while the clock runs and the pad block is
+ * not re-rendered: the row would send the player away from a bribe that grew */
+const sitting = normalPlanet();
+land(sitting);
+market.lastVisitStep[sitting] = game.clockSteps;
+market.visitPay[sitting] = 1.5;
+market.corruption[sitting] = 60;
+context.refreshCareerPanel();
+/* the stub keeps a panel's markup as a string, so stand in for the node the
+ * real page's parsers would make of it; the per-frame HUD then re-prices it */
+const bribeNode = { id: 'careerBribe', textContent: /bribe rulers · \+[\d.]+/.exec(drawerHtml())[0],
+	disabled: false };
+ui.set('careerBribe', bribeNode);
+const stale = bribeNode.textContent;
+for (let i = 0; i < 600; i++) {
+	Game.careerAdvance(career, 1, 1);
+	game.clockSteps += 1;
+}
+context.refreshFuelHud(career);
+const law = 'bribe rulers · +' + Game.bribeAmount(market, sitting, game.clockSteps).toFixed(2);
+check(stale !== law, 'the fixture did not grow the bribe: ' + stale);
+check(bribeNode.textContent === law,
+	'the bribe button went stale: shows ' + bribeNode.textContent + ', law pays ' + law);
+
+/* --- the pad plate steps aside for the profit pill (0.7.x) -------------- */
+
+/* the plate used to sit under the planet, on the pill that prints the visit
+ * value — the one number a sitting player is watching */
+const view = context.OrbitScene.view;
+const sim = context.OrbitScene.sim;
+const sx = sim.planetX[sitting] * view.scale + view.offX;
+const sy = sim.planetY[sitting] * view.scale + view.offY;
+const radius = sim.planetR[sitting] * view.scale + 8;
+check(context.overPill(sitting, sx - 100, sy - 9 + radius, 200, 18),
+	'the below-slot plate is not over the pill: the fixture no longer covers it');
+check(!context.overPill(sitting, sx - 100, sy - 9 - radius - 18, 200, 18),
+	'the above-slot plate is over the pill too');
 
 console.log('POLITICS GUI OK · bribe, arrest, medical board and pills');

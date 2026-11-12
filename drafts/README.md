@@ -23,6 +23,7 @@ Both originals were removed once their text was placed, and
 | 6 | `hud-input-and-help.md` | panels, drawers, controls, selections, landing gates, camera |
 | 7 | `sound-and-photos.md` | the music of flight, the postcards, the image prompts |
 | 8 | `bots-and-tools.md` | a bot that competes, the balance lab, test harnesses |
+| 9 | `map.md` | periodic FFT gravity, space weather · new notes, not from the split |
 
 What is *not* here:
 
@@ -109,6 +110,11 @@ The two specs written from `0.4-draft-career.md` are
 | `../0.6.8-plan-seeded-map-opening.md` | `flight-lab-and-modes.md` §1.4, `hud-input-and-help.md` §6.2 (`2-4 of 10`) |
 | `../0.6.9-plan-founding-colony.md` | `career-economy.md` §2.5 |
 | `../0.6.10-plan-map-statistics.md` | `rivals-competitions.md` §5.3 (`map statistics plots`) |
+| `../0.7.0-plan-periodic-fft.md` | `map.md` §gravity |
+| `../0.7.1-plan-time-model.md` | `career-economy.md` §2.9 (the clock/unit contract under wear; the `×1 = real time` rename is its next step) |
+| `../0.7.2-plan-ship-wear.md` | `career-economy.md` §ship maintenance cost; `map.md` §add space weather (the wear hook) |
+| `../0.7.3-plan-buy-ships.md` | `career-economy.md` §buy more ships |
+| `../0.7.4-plan-max-distance-mode.md` | `flight-lab-and-modes.md` §1.2 (`max distance from start`); `rivals-competitions.md` §5.2 (the first sport mode) |
 | `../0.4.27-plan-bot-balancing.md` | `flight-lab-and-modes.md` §1.4 (`hard bots…`), `bots-and-tools.md` §8.1 |
 | `../0.4.30-plan-harvest-ticks.md` | `career-economy.md` §2.11 (stay-pay) |
 | `../0.5.23-plan-medic-capital.md` | `politics-quests.md` §3.1 (the medical mission) |
@@ -123,11 +129,24 @@ Open in the drafts and still without a plan of their own, and why:
   features; plan them together after `0.6.2`.
 - **competition game modes and variations** (`rivals-competitions.md` §5.2) —
   deliberately out of `0.6.4`; each is the career rule with the board replaced.
+  The max-distance pair is `0.7.4`; “max visits”, “land on an antigravity
+  planet”, the Capital-only start and the other variations still have no plan.
 - **keyboard aim** (`sound-and-photos.md` §7.1) — the shape is written down in
   `0.6.7` §3 as a deferred step, not a plan.
 - **the Voronoi scale review and its aim chord** (`sound-and-photos.md` §7.1) and
   the **HQ-only refit** outside a casual mode (`flight-lab-and-modes.md` §1.5) —
   both deferred by the notes themselves.
+- **the evacuation trip** (`career-economy.md` §evacuation) — shape, price and
+  time are answered (`../archive/0.7.5-worklog.md`): a visible career-ship ride
+  on the world clock whose wait falls linearly from `12 s` at the full `6.00`
+  to `240 s` free. `0.7.5-plan-evacuation-trip.md` owns the trip state, the two
+  buttons and the bot's use of it.
+- **the landed visit-growth half-rate** (`politics-quests.md` §3.2) — «2x less
+  speed». Needs one decision on whether the half applies to the shared curve or
+  to a landed term the `wait` preview also reads.
+- **space weather** (`map.md`) — no weather plan; the gravity option is
+  `0.7.0`, the wear hook is `0.7.2`, and the zone shape / observation-range /
+  jammer layers still need their own question answered first.
 - small checks, each one question in its section: the tourist / emissary line in
   the help drawer and the money rule's rate on a small universe
   (`flight-lab-and-modes.md` §1.1, §1.2), the player cap in the help text and 12

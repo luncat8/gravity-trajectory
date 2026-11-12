@@ -8,9 +8,14 @@ built spec is `archive/0.5.12-plan-corruption-rebellion.md`.
 
 Corruption (disobedience to central laws) reduces population growth.
 
-Corruption rises if emissaries don’t visit for a long time (balance, decide how quickly). It decreases by 0.2 per visit.
+Corruption rises if emissaries don’t visit for a long time (balance, decide how quickly). Corruption slow decreases by 0.2? per visit.
 
 Corruption also rises when accepting bribes. Suggested formula: `1 + 0.1 × amount of money`. Bribes can be accepted while on a planet (except the Capital and A.R.F.) for twice the flyby fee. You can’t accept multiple bribes on the same planet, so its rulers don’t complain about unfairness.
+
+some minimum level of corruption tradition
+
+special game settings that 10% of corruption increment is permanent until rebellion and cleaning quest.
+
 
 → `CORRUPTION_VISIT_DECAY 0.2`, `CORRUPTION_GRACE 120 s`, rise `0.1/s`,
 growth `× (1 − C/100)`, bribe `1 + 0.1 · money`, one bribe per visit, Capital
@@ -66,13 +71,56 @@ reward is two legs away and belongs to no shot's score.
 ## 3.2 bribe ← `archive/draft.txt`
 
 what is current bribe profit?
-i think it should be limited by visit profit * corruption * some coefficient
+i think it should be limited by visit profit * corruption * some coefficient and be >0 as long as visit profit>0
+
 visit profit is main. i mean if planet already visited and visit profit currently low this mean all info reported to Capital - then there is no interest of the planet lord to pay bribe to Emissary as Emperor already know all what he want.
 but because we have automatic earn money at visit then this mean bribe is useful in case of player sit on the planet long time for example no other profitable tasks and so he can got money without fly to space
+
+need make possible to landed player can actually take bribe after some time in amount proportional to 
+
 
 → that is the shipped formula and the reason for it: `bribeAmount` reads the visit
 value (landing payout plus what regrew since) times the rot fraction times `4`,
 so a long sit on a rotten world is a parking income.
+
+it is actually broken: visit profit should growth while player sit on planet but 2x less speed, otherwise it is not possible to take bribe until unmount observation device.
+
+→ the value **does** grow while the ship sits —
+`planetProfit(market, planet, game.clockSteps)` against `lastVisitStep`, whose
+anchors are the EMC-1 wall-clock period `2…5 s` and the `wait` button — and the
+bribe reads it live. Measured on seed `7`, rot `60`: `0.57` on touchdown, `1.15`
+after `40` flight s of sitting, `2.52` after `120`. What the note calls broken is
+the other half of the same law: the *observation device* pays that growth on the
+next visit (`harvestPlanet` stamps `lastVisitStep` and resets the value), so a
+player who stays put never has to give the device up to park — he only has to
+refuse the visit that reports it.
+
+**Why the button was unusable, confirmed on the page.** Two gates, neither in
+`bribeAmount`:
+
+1. `pauseOnLanding` is on by default and `careerIdle` needs `!careerPaused`, so
+   the career clock *stops on touchdown*: while the ship sits nothing grows —
+   not the visit value, not the rot. Sitting pays only after `wait` (which
+   resumes the clock for its 2 s) or the pause button.
+2. The pad block is `careerPadEl.innerHTML`, rebuilt by `refreshCareerPanel`,
+   which runs on career *events*, not while the clock runs. A wait touches only
+   `#careerPadCharge`, so the bribe button kept the touchdown price: measured
+   `3.60` on the button while the law already owed `3.75`, and it sat there
+   looking inactive.
+
+**Fixed (both).** The button carries `id="careerBribe"` and `refreshFuelHud` —
+already called from the per-frame live HUD — re-prices it in place through
+`syncBribeUi`. The pad plate no longer covers the planet's profit pill:
+`drawPlanetProfits` and the plate share one pill geometry (`PILL_W/H`,
+`pillTopY`) and `overPill` sends the plate to the next slot, so the value the
+bribe is priced from is readable on the planet the ship sits on.
+
+**Open, the note's own half: «2x less speed».** Today the growth is one
+`MONEY.k` curve in flight and on the pad; halving it while landed makes `40 s`
+of sitting worth `20 s` and weakens the bribe by the same amount. The curve is
+shared with the pad's EMC-1 period (`2…5 s`) and with `waitSettlement`, so the
+half-rate has to be a landed term in `planetProfitAt` that the wait preview and
+the bribe both read — not a second curve in the button.
 
 ## 3.3 bribe button ← `archive/draft.txt`
 
