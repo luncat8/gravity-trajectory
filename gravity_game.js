@@ -34,6 +34,13 @@
 	const ROUTE_SECONDS = 1800;
 	const ROUTE_STEPS = Math.round(ROUTE_SECONDS / GravitySim.DT);
 	const MONEY_SHOTS = 10;
+/* stats sampling (0.6.10 plan §3): one sample every STATS_SEC game seconds,
+ * kept in fixed 256-sample blocks that thin themselves (keep every second
+ * sample, double the interval) when they fill, so a whole career stays on
+ * the plot without growing without bound */
+const STATS_SAMPLES = 256;
+const STATS_SEC = 2;
+const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const RULE_TOUR = 'tour';
 	const RULE_ROUTE = 'route';
 	const RULE_MONEY = 'money';
@@ -845,8 +852,17 @@
 		galaxy.seed = seed >>> 0;
 		galaxy.actors.length = 0;
 		galaxy.mapSeats = null;
-		galaxy.openingTargetPay = NaN;
-		for (let p = 0; p < OrbitWorld.PLANETS; p++) {
+	galaxy.openingTargetPay = NaN;
+	galaxy.stats = {
+		every: STATS_EVERY,
+		count: 0,
+		nextStep: STATS_EVERY,
+		series: [
+			new Float32Array(STATS_SAMPLES), /* map rot */
+			new Float32Array(STATS_SAMPLES)  /* map standing */
+		]
+	};
+	for (let p = 0; p < OrbitWorld.PLANETS; p++) {
 			galaxy.period[p] = CAREER.turretMinSec + CAREER.turretSpanSec *
 				(OrbitWorld.hashBits(galaxy.seed, p, SALT_TURRET) / 4294967296);
 			galaxy.phase[p] = TAU * (OrbitWorld.hashBits(galaxy.seed,
@@ -958,6 +974,10 @@
 		if (career.index < 0) {
 			career.index = galaxy.actors.length;
 			galaxy.actors.push(career);
+			if (galaxy.stats) {
+				/* four stat series per company — profit, property, science, flown */
+				for (var k = 0; k < 4; k++) galaxy.stats.series.push(new Float32Array(STATS_SAMPLES));
+			}
 		}
 		refreshNetwork(galaxy);
 	}
@@ -2895,6 +2915,46 @@
 		out.standing = standing;
 	}
 
+	/* thin a stats block in place when it fills: keep every second sample,
+	 * halve the count and double the interval, so the whole run stays on
+	 * the plot at one sample per STATS_SEC … 16 s */
+	function thinStats(stats) {
+		var n = stats.series.length;
+		for (var s = 0; s < n; s++) {
+			var arr = stats.series[s];
+			var w = 0;
+			for (var r = 0; r < stats.count; r += 2) arr[w++] = arr[r];
+		}
+		stats.count = stats.count / 2;
+		stats.every *= 2;
+	}
+
+	/* write one stats sample at `step`: rot/standing for the map and
+	 * profit/property/science/flown for every company in the galaxy.
+	 * returns at once on any step that is not a sample step */
+	function sampleStats(galaxy, market, step) {
+		var stats = galaxy.stats;
+		if (!stats) return;
+		if (step < stats.nextStep) return;
+		if (stats.count >= STATS_SAMPLES) thinStats(stats);
+		var count = stats.count;
+		var map = {};
+		mapStats(map, market, step);
+		stats.series[0][count] = map.rot;
+		stats.series[1][count] = map.standing;
+		for (var i = 0; i < galaxy.actors.length; i++) {
+			var out = {};
+			careerStats(out, galaxy.actors[i]);
+			var base = 2 + i * 4;
+			stats.series[base][count] = out.profit;
+			stats.series[base + 1][count] = out.property;
+			stats.series[base + 2][count] = out.science;
+			stats.series[base + 3][count] = out.flown;
+		}
+		stats.count = count + 1;
+		stats.nextStep = step + stats.every;
+	}
+
 	function resetCareer(career, seed, trade, cheat, homePlanet, sim) {
 		const grant = OrbitTech.starterGrant();
 		career.seed = seed >>> 0;
@@ -4095,7 +4155,7 @@
 		arrestCareer, pacifyPlanet, seizePlanet, clearMedicalCargo, coveredPlanets, BRIBE,
 		createLedger, resetLedger, beginFlight, stepHarvest, harvestPlanet, endFlight,
 		estimateProfit, estimateProfitLog, compareScores,
-		careerStats, mapStats,
+		careerStats, mapStats, sampleStats,
 		setSpecialPlanets, specialPlanets: specialPlanetsOn,
 		setCareerUniverse, applyMarketUniverse, planetInPlay, colonyInPlay, activePlanetDraw,
 		openingGroupStats, openingStatsFromTracks, openingTracks, openingPrepare,
