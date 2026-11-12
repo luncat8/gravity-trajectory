@@ -2486,7 +2486,7 @@
 			return -Infinity;
 		}
 		return this.careerScoreFacts(career, origin, market, runStep, flownLen, fee,
-			probe.predBody, GravityGame.estimateProfit(market, runStep, probe),
+			probe.predBody, GravityGame.estimateProfit(market, runStep, probe, career.ledger),
 			probe.predLength, probe.predSteps, speed);
 	};
 
@@ -2517,7 +2517,7 @@
 		const speed = GravityGame.speedOf(entry.speedU);
 		const fee = GravityGame.launchFee(career, entry.origin, speed);
 		const visitPay = GravityGame.estimateProfitLog(market, runStep,
-			entry.logPlanet, entry.logStep, entry.logCount);
+			entry.logPlanet, entry.logStep, entry.logCount, career.ledger);
 		const base = this.careerScoreFacts(career, entry.origin, market, runStep, 0, fee,
 			entry.body, visitPay, entry.length, entry.steps, speed);
 		if (!Number.isFinite(base)) return -Infinity;

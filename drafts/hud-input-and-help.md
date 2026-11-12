@@ -149,8 +149,8 @@ make by default random seed new startup unless url has seed
 
 - The flight HUD has no `work` row for a competition that has not been accepted
   → `../0.6.4-plan-competitions.md` (`rivals-competitions.md` §5.2).
-- The help drawer has no section for politics: bribe, corruption and the
-  observation device are explained in tooltips only. The note's «short help
-  drawer on hover bribe button» is `politics-quests.md` §3.4 →
-  `../0.6.1-plan-observation-device.md`.
+- → built (0.6.1): the help drawer previews a politics topic (bribe,
+  corruption, the observation device) while the pointer is on the bribe or
+  go-quiet row. The note's «short help drawer on hover bribe button» is
+  `politics-quests.md` §3.4 → `../archive/0.6.1-plan-observation-device.md`.
 - The blocked share of §6.2 → `../0.6.8-plan-seeded-map-opening.md` §2.

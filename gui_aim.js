@@ -406,6 +406,10 @@ function fire(abortStep) {
 	if (game.on) {
 		if (careerRule()) {
 			GravityGame.careerBeginFlight(playerCareer(), sim);
+			if (playerCareer().fragileLost) {
+				careerNotice('fragile load lost · fired at ' + Math.round(aimSpeed) +
+					' px/s · it survives a ' + fragileLimitText() + ' · contract void');
+			}
 			careerPhoto('catapult');
 		} else GravityGame.beginFlight(slotLedger(slot), sim);
 		if (slot > 0) bot.rivals[slot - 1].basePlanet = aimBody;

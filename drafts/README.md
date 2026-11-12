@@ -101,9 +101,7 @@ The two specs written from `0.4-draft-career.md` are
 
 | plan | draft sections it answers |
 |---|---|
-| `../0.6.1-plan-observation-device.md` | `politics-quests.md` §3.4, `hud-input-and-help.md` §6.7 |
 | `../0.6.2-plan-pad-fees.md` | `career-economy.md` §2.1, §2.2, §2.6 |
-| `../0.6.3-plan-fragile-load.md` | `career-economy.md` §2.4 (`fragile load`) |
 | `../0.6.4-plan-competitions.md` | `rivals-competitions.md` §5.2 |
 | `../0.6.5-plan-two-leg-quests.md` | `politics-quests.md` §3.5 |
 | `../0.6.6-plan-rival-characters.md` | `rivals-competitions.md` §5.1, `bots-and-tools.md` §8.1, `politics-quests.md` §3.1 (`the bot’s personality`) |

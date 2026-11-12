@@ -1,6 +1,7 @@
 /*
  * Observation device (0.6.1): the visit law's single reporting test, the
- * quiet planet, and goQuiet uninstall. Run: node experiments/obs_test.js
+ * unreported value a bribe cashes, the quiet planet and the go-quiet action.
+ * Run: node experiments/obs_test.js
  */
 'use strict';
 
@@ -52,159 +53,200 @@ function normalPlanet(w) {
 let checks = 0;
 function check(name, fn) { fn(); checks += 1; console.log('ok - ' + name); }
 
-/* fit OBS-1 on the ship and own it */
-function fitObs(w) {
-	const career = w.career;
-	assert.ok(Game.installPart(career, Tech.KIND_OBS, Tech.OBS[1]),
-		'install OBS-1');
-	assert.strictEqual(career.ship.obs, Tech.OBS[1]);
-	assert.strictEqual(career.ship.obs.fitted, true);
+const AGED = -1e9;
+
+function unfit(w) {
+	assert.ok(Game.installPart(w.career, Tech.KIND_OBS, Tech.OBS[0]), 'unfit to OBS-0');
 }
 
-check('OBS-1 adds mass to the ship, OBS-0 does not', () => {
+check('every career starts with OBS-1 fitted and owned; the starter mass is unchanged', () => {
 	const w = setup(3);
-	const ship = { hold: Tech.HOLDS[0], engine: null, tank: Tech.TANKS[0],
-		obs: Tech.OBS[0], cargoTons: 0 };
-	const withDevice = Tech.shipMass(ship, 0);
-	ship.obs = Tech.OBS[1];
-	assert.ok(Tech.shipMass(ship, 0) > withDevice, 'OBS-1 adds mass');
-	assert.strictEqual(Tech.OBS[1].mass, 0.4);
-	assert.ok(Math.abs(Tech.shipMass(ship, 0) - (withDevice + 0.4)) < 1e-9);
+	const career = w.career;
+	assert.strictEqual(career.ship.obs, Tech.OBS[1]);
+	assert.ok(career.owned[Tech.OBS[1].id] && career.owned[Tech.OBS[0].id], 'both records owned');
+	assert.strictEqual(career.ledger.reports, true);
+	assert.strictEqual(career.ship.mass, Tech.SHIP_DRY_MASS);
+	assert.strictEqual(Tech.SHIP_DRY_MASS, 10);
+	const purse = career.ledger.purse;
+	unfit(w);
+	assert.strictEqual(career.ledger.purse, purse, 'the way back is free');
+	assert.strictEqual(career.ledger.reports, false);
+	assert.ok(Math.abs(career.ship.mass - (Tech.SHIP_DRY_MASS - Tech.OBS[1].mass)) < 1e-9,
+		'the device leaves the ship: ' + career.ship.mass);
+	assert.ok(Math.abs(Tech.refitMass(career.ship, Tech.KIND_OBS, Tech.OBS[1], 0) - Tech.SHIP_DRY_MASS) < 1e-9,
+		'the refit preview prices the device');
+	assert.ok(Math.abs(Tech.refitMass(career.ship, Tech.KIND_HOLD, Tech.HOLDS[1], 0) -
+		(Tech.HULL_MASS + Tech.HOLDS[1].emptyMass)) < 1e-9, 'another refit keeps the empty obs slot');
 });
 
-check('a visit with the device fitted pays and decays rot', () => {
+check('a visit with the device fitted pays, clears the value and decays rot', () => {
 	const w = setup(5);
-	fitObs(w);
 	const planet = normalPlanet(w);
-	const ledger = w.career.ledger;
 	w.market.corruption[planet] = 10;
-	w.market.lastVisitStep[planet] = -1e9;
-	const pay = Game.harvestPlanet(ledger, w.market, planet, 100, w.career);
+	w.market.lastVisitStep[planet] = AGED;
+	const pay = Game.harvestPlanet(w.career.ledger, w.market, planet, 100);
 	assert.ok(pay > 0, 'a reporting visit pays');
-	assert.ok(w.market.corruption[planet] < 10, 'a reporting visit decays rot');
+	assert.strictEqual(w.market.lastVisitStep[planet], 100, 'and stamps the value clock');
 	assert.strictEqual(w.market.visitPay[planet], pay);
+	assert.ok(w.market.corruption[planet] < 10, 'and decays rot');
 });
 
-check('a visit without the device pays 0 and does not decay rot', () => {
+check('a visit without the device pays 0, clears nothing and decays no rot', () => {
 	const w = setup(7);
+	unfit(w);
 	const planet = normalPlanet(w);
 	const ledger = w.career.ledger;
 	w.market.corruption[planet] = 10;
-	w.market.lastVisitStep[planet] = -1e9;
-	const pay = Game.harvestPlanet(ledger, w.market, planet, 100, w.career);
-	assert.strictEqual(pay, 0, 'a non-reporting visit pays 0');
-	assert.strictEqual(w.market.visitPay[planet], 0, 'visitPay is 0');
-	assert.strictEqual(w.market.corruption[planet], 10, 'no rot decay without the device');
+	w.market.lastVisitStep[planet] = AGED;
+	w.market.bribeVisitStep[planet] = AGED;
+	const stamp = w.market.stamp;
+	const purse = ledger.purse;
+	assert.strictEqual(Game.harvestPlanet(ledger, w.market, planet, 100), 0);
+	assert.strictEqual(ledger.purse, purse);
+	assert.strictEqual(ledger.shotVisits, 1, 'it is still an encounter');
+	assert.strictEqual(w.market.visitPay[planet], 0);
+	assert.strictEqual(w.market.lastVisitStep[planet], AGED, 'the value keeps growing');
+	assert.strictEqual(w.market.stamp, stamp, 'no rival plan is invalidated by a non-event');
+	assert.strictEqual(w.market.corruption[planet], 10, 'no rot decay');
+	assert.ok(Game.bribeWindowOpen(w.market, planet), 'the landing still opens the bribe window');
+	/* the next reporting ship collects everything that was left */
+	const rival = Game.createLedger();
+	assert.ok(Game.harvestPlanet(rival, w.market, planet, 101) > 0, 'a rival collects the uncleared value');
 });
 
-check('a quiet planet pays 0 and decays no rot even with the device fitted', () => {
+check('a quiet planet reports for nobody; its neighbours are unaffected', () => {
 	const w = setup(11);
-	fitObs(w);
 	const planet = normalPlanet(w);
 	const ledger = w.career.ledger;
 	w.market.quiet[planet] = 1;
 	w.market.corruption[planet] = 80;
-	w.market.lastVisitStep[planet] = -1e9;
-	const pay = Game.harvestPlanet(ledger, w.market, planet, 100, w.career);
-	assert.strictEqual(pay, 0, 'a quiet planet pays 0');
-	assert.strictEqual(w.market.visitPay[planet], 0, 'visitPay 0 on quiet');
-	assert.strictEqual(w.market.corruption[planet], 80, 'no rot decay on quiet');
-	/* neighbours are unaffected */
-	const other = (planet + 1) % UNIVERSE;
+	w.market.lastVisitStep[planet] = AGED;
+	assert.strictEqual(Game.harvestPlanet(ledger, w.market, planet, 100), 0, 'fitted ship, quiet planet');
+	assert.strictEqual(Game.harvestPlanet(Game.createLedger(), w.market, planet, 100), 0, 'a rival too');
+	assert.strictEqual(w.market.lastVisitStep[planet], AGED);
+	assert.strictEqual(w.market.corruption[planet], 80);
+	const other = (planet + 1) % UNIVERSE === w.market.capitalPlanet ||
+		(planet + 1) % UNIVERSE === w.market.arfPlanet ? (planet + 3) % UNIVERSE : (planet + 1) % UNIVERSE;
 	w.market.corruption[other] = 80;
-	Game.harvestPlanet(ledger, w.market, other, 101, w.career);
+	w.market.lastVisitStep[other] = AGED;
+	assert.ok(Game.harvestPlanet(ledger, w.market, other, 101) > 0);
 	assert.ok(w.market.corruption[other] < 80, 'a neighbour still reports and decays');
 });
 
-check('the bribe on a quiet planet keeps growing (value x rot x 4)', () => {
+check('the Capital and A.R.F. are outside the law: no device does not dodge the Capital', () => {
 	const w = setup(13);
-	fitObs(w);
-	const planet = normalPlanet(w);
-	const career = w.career;
-	career.at = planet;
-	w.market.lastVisitStep[planet] = 100;
-	w.market.visitPay[planet] = 0; /* quiet: nothing collected */
-	w.market.corruption[planet] = 50;
-	/* let value regrow, then bribe = grown x rot x 4 */
-	const grown = Game.planetProfit(w.market, planet, 200);
-	const result = Game.acceptBribe(career, w.market, w.sim, planet, 200);
-	assert.ok(result.ok, 'bribe on quiet world: ' + result.reason);
-	assert.ok(result.amount > 0, 'a quiet world still owes a bribe: ' + result.amount);
-	assert.ok(Math.abs(result.amount - grown * (50 / 100) * 4) < 1e-9,
-		'bribe is grown x rot x 4: ' + result.amount);
+	unfit(w);
+	const ledger = w.career.ledger;
+	const purse = ledger.purse;
+	assert.strictEqual(Game.harvestPlanet(ledger, w.market, w.market.capitalPlanet, 50), Game.CAPITAL_VISIT_PAY);
+	assert.strictEqual(ledger.purse, purse + Game.CAPITAL_VISIT_PAY);
+	assert.strictEqual(Game.harvestPlanet(ledger, w.market, w.market.arfPlanet, 50), 0);
 });
 
-check('goQuiet uninstalls the device and silences a high-rot planet', () => {
+check('the estimate prices exactly what the entry will pay', () => {
 	const w = setup(17);
-	fitObs(w);
-	const planet = normalPlanet(w);
-	const career = w.career;
-	career.at = planet;
-	w.market.corruption[planet] = 80;
-	assert.strictEqual(career.ship.obs, Tech.OBS[1], 'device fitted before');
-	assert.ok(Game.goQuiet(career, planet), 'goQuiet accepted');
-	assert.strictEqual(w.market.quiet[planet], 1, 'planet is quiet');
-	assert.strictEqual(career.ship.obs, Tech.OBS[0], 'device uninstalled onto the ship');
-	assert.strictEqual(career.ship.obs.fitted, false);
-	/* the part stays owned: can be refitted anywhere */
-	assert.ok(career.owned[Tech.OBS[1].id], 'OBS-1 remains owned');
+	const a = normalPlanet(w);
+	let b = a + 1;
+	while (b === w.market.capitalPlanet || b === w.market.arfPlanet) b += 1;
+	const planets = new Int32Array([a, b, a]);
+	const steps = new Int32Array([40, 90, 400]);
+	const fitted = w.career.ledger;
+	const full = Game.estimateProfitLog(w.market, 0, planets, steps, 3, fitted);
+	assert.ok(full > 0);
+	assert.strictEqual(Game.estimateProfitLog(w.market, 0, planets, steps, 3), full, 'no ledger = a reporting ship');
+	w.market.quiet[a] = 1;
+	const onlyB = Game.estimateProfitLog(w.market, 0, planets, steps, 3, fitted);
+	assert.strictEqual(onlyB, Game.planetProfitAt(w.market, b, 90, w.market.lastVisitStep[b]),
+		'a quiet planet adds nothing: ' + onlyB);
+	unfit(w);
+	assert.strictEqual(Game.estimateProfitLog(w.market, 0, planets, steps, 3, fitted), 0, 'no device, no income');
+	const withCapital = new Int32Array([w.market.capitalPlanet, b]);
+	assert.strictEqual(Game.estimateProfitLog(w.market, 0, withCapital, steps, 2, fitted),
+		Game.CAPITAL_VISIT_PAY, 'the Capital still charges');
+	/* live parity on the same log */
+	let live = 0;
+	for (let i = 0; i < 2; i++) live += Game.harvestPlanet(fitted, w.market, withCapital[i], steps[i]);
+	assert.strictEqual(live, Game.CAPITAL_VISIT_PAY);
 });
 
-check('goQuiet is refused below QUIET_MIN, without the device, and on special planets', () => {
+check('on a quiet planet the bribe is the whole unreported value x rot x 4, and it cashes it', () => {
 	const w = setup(19);
 	const planet = normalPlanet(w);
 	const career = w.career;
+	w.market.quiet[planet] = 1;
+	w.market.corruption[planet] = 40;
+	w.market.lastVisitStep[planet] = 0;
+	/* two quiet landings: neither clears, so the base is everything since step 0 */
+	Game.harvestPlanet(career.ledger, w.market, planet, 2000);
+	Game.harvestPlanet(career.ledger, w.market, planet, 6000);
 	career.at = planet;
-	w.market.corruption[planet] = 50;
-	assert.ok(!Game.goQuiet(career, planet), 'below QUIET_MIN refused');
-	fitObs(w);
-	w.market.corruption[planet] = 80;
-	assert.ok(Game.goQuiet(career, planet), 'goQuiet works');
-	assert.ok(!Game.goQuiet(career, planet), 'already quiet refused');
-	/* without the device */
-	const w2 = setup(21);
-	const p2 = normalPlanet(w2);
-	w2.career.at = p2;
-	w2.market.corruption[p2] = 80;
-	assert.ok(!Game.goQuiet(w2.career, p2), 'no device, refused');
-	/* Capital / A.R.F. */
-	assert.ok(!Game.goQuiet(w.career, w.market.capitalPlanet), 'capital refused');
-	assert.ok(!Game.goQuiet(w.career, w.market.arfPlanet), 'arf refused');
+	const value = Game.planetProfit(w.market, planet, 6000);
+	const purse = career.ledger.purse;
+	const result = Game.acceptBribe(career, w.market, w.sim, planet, 6000);
+	assert.ok(result.ok, result.reason);
+	assert.ok(Math.abs(result.amount - value * 0.4 * 4) < 1e-9, 'bribe ' + result.amount + ' for value ' + value);
+	assert.ok(Math.abs(career.ledger.purse - purse - result.amount) < 1e-9);
+	assert.strictEqual(Game.bribeWindowOpen(w.market, planet), false, 'one bribe per visit');
+	assert.strictEqual(Game.planetProfit(w.market, planet, 6000), 0, 'the bribe cashed the value');
+	/* landing again at once owes nothing: no farm */
+	Game.harvestPlanet(career.ledger, w.market, planet, 6001);
+	assert.ok(Game.bribeWindowOpen(w.market, planet));
+	assert.ok(Game.bribeAmount(w.market, planet, 6001) < 0.01, 'a re-landing finds the value spent');
+	/* a reporting planet keeps its law: the bribe does not clear what the visit paid for */
+	const other = planet + 1 === w.market.capitalPlanet || planet + 1 === w.market.arfPlanet ? planet + 3 : planet + 1;
+	w.market.corruption[other] = 40;
+	Game.harvestPlanet(career.ledger, w.market, other, 7000);
+	career.at = other;
+	const stamped = w.market.lastVisitStep[other];
+	assert.ok(Game.acceptBribe(career, w.market, w.sim, other, 7100).ok);
+	assert.strictEqual(w.market.lastVisitStep[other], stamped, 'a reported visit is not re-stamped by its bribe');
 });
 
-check('refitting OBS-1 on a quiet planet changes nothing until the rot is quelled', () => {
+check('go quiet takes the device off, silences the planet and names every refusal', () => {
 	const w = setup(23);
-	fitObs(w);
+	const planet = normalPlanet(w);
+	const career = w.career;
+	const market = w.market;
+	assert.strictEqual(Game.quietRefusal(career, market, planet), 'not landed there');
+	career.at = planet;
+	market.corruption[planet] = Game.QUIET_MIN;
+	assert.ok(Game.quietRefusal(career, market, planet).includes(Game.QUIET_MIN + '%'), 'at the line is not above it');
+	assert.strictEqual(Game.goQuiet(career, market, planet), false);
+	market.corruption[planet] = 80;
+	unfit(w);
+	assert.strictEqual(Game.quietRefusal(career, market, planet), 'no observation device fitted');
+	assert.ok(Game.installPart(career, Tech.KIND_OBS, Tech.OBS[1]));
+	market.rebel[planet] = 1;
+	assert.strictEqual(Game.quietRefusal(career, market, planet), 'rebels hold the planet');
+	market.rebel[planet] = 0;
+	const stamp = market.stamp;
+	assert.strictEqual(Game.goQuiet(career, market, planet), true);
+	assert.strictEqual(market.quiet[planet], 1);
+	assert.ok(market.stamp > stamp, 'rival plans see the planet go dark');
+	assert.strictEqual(career.ship.obs, Tech.OBS[0], 'the device is on the shelf');
+	assert.strictEqual(career.ledger.reports, false);
+	assert.ok(career.owned[Tech.OBS[1].id], 'and stays owned');
+	assert.strictEqual(Game.quietRefusal(career, market, planet), 'already quiet');
+	career.at = market.capitalPlanet;
+	assert.strictEqual(Game.quietRefusal(career, market, market.capitalPlanet), 'nothing to silence here');
+	career.at = market.arfPlanet;
+	assert.strictEqual(Game.quietRefusal(career, market, market.arfPlanet), 'nothing to silence here');
+});
+
+check('refitting the device does not un-silence the planet; quelling the rot does', () => {
+	const w = setup(29);
 	const planet = normalPlanet(w);
 	const career = w.career;
 	career.at = planet;
 	w.market.corruption[planet] = 80;
-	Game.goQuiet(career, planet);
-	assert.strictEqual(w.market.quiet[planet], 1);
-	/* refitting OBS-1 again does not un-quiet */
+	assert.ok(Game.goQuiet(career, w.market, planet));
 	assert.ok(Game.installPart(career, Tech.KIND_OBS, Tech.OBS[1]), 'refit OBS-1');
-	assert.strictEqual(w.market.quiet[planet], 1, 'still quiet after refit');
-	/* pacification clears quiet */
+	assert.strictEqual(career.ledger.reports, true);
+	w.market.lastVisitStep[planet] = AGED;
+	assert.strictEqual(Game.harvestPlanet(career.ledger, w.market, planet, 100), 0, 'still quiet after refit');
 	Game.pacifyPlanet(w.market, planet, 300);
 	assert.strictEqual(w.market.quiet[planet], 0, 'pacification clears quiet');
+	assert.ok(Game.harvestPlanet(career.ledger, w.market, planet, 400) > 0, 'and the planet reports again');
 });
-
-	check('reporting is career-scoped: the player reports only with the device fitted; rivals always report', () => {
-		const w = setup(29);
-		const planet = normalPlanet(w);
-		const career = w.career;
-		/* player without the device: no report (visit pays nothing, clears no rot) */
-		assert.strictEqual(Game.reporting(career, w.market, planet), false, 'no device => no report');
-		w.market.quiet[planet] = 1;
-		assert.strictEqual(Game.reporting(career, w.market, planet), false, 'quiet => no report');
-		w.market.quiet[planet] = 0;
-		/* with OBS-1 fitted: reports again */
-		fitObs(w);
-		assert.strictEqual(Game.reporting(career, w.market, planet), true, 'device fitted => reports');
-		/* a rival (index > 0) reports even without a device */
-		const rival = Game.createCareer(Game.createLedger());
-		rival.index = 1; rival.market = w.market;
-		assert.strictEqual(Game.reporting(rival, w.market, planet), true, 'rival reports');
-	});
 
 console.log('OBS OK · ' + checks + ' groups');

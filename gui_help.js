@@ -14,7 +14,11 @@ function selectedHelpRule() {
 
 function updateHelp(rule) {
 	helpRule = RULE_HELP[rule] ? rule : selectedHelpRule();
-	const help = RULE_HELP[helpRule];
+	fillHelp(RULE_HELP[helpRule]);
+}
+
+/* one record fills the drawer: a rule's entry or a topic's (POLITICS_HELP) */
+function fillHelp(help) {
 	if (helpModeTitleEl) helpModeTitleEl.textContent = help.name;
 	if (helpRuleNameEl) helpRuleNameEl.textContent = help.name;
 	if (helpGoalEl) helpGoalEl.textContent = help.goal;
@@ -24,7 +28,7 @@ function updateHelp(rule) {
 	if (helpDetailEl) helpDetailEl.textContent = help.detail;
 	if (helpControlsEl) helpControlsEl.textContent = COMMON_HELP;
 	if (helpModeControlsEl) {
-		const controls = helpRule === RULE_ROUTE && game.on && game.player === PLAYER_BOT
+		const controls = help === RULE_HELP[RULE_ROUTE] && game.on && game.player === PLAYER_BOT
 			? 'A bot plans your trajectory; the leader updates live.' : help.controls;
 		helpModeControlsEl.textContent = controls;
 		helpModeControlsEl.hidden = controls === '';
@@ -47,6 +51,31 @@ function showRuleHelp(rule, pin) {
 
 function updateRuleHelp(rule) {
 	updateHelp(rule || selectedHelpRule());
+}
+
+/* a topic previews while the pointer rests on its row (`data-help`), and the
+ * drawer falls back to the pinned rule, or shuts, once the pointer is anywhere
+ * else in the box — a re-rendered row never fires its own leave */
+const TOPIC_HELP = { politics: POLITICS_HELP };
+let topicHelpOn = false;
+
+function topicHelpOver(event) {
+	if (event.pointerType === 'touch') return;
+	const row = event.target.closest('[data-help]');
+	if (row) {
+		topicHelpOn = true;
+		fillHelp(TOPIC_HELP[row.dataset.help]);
+		setHelpOpen(true, true);
+		return;
+	}
+	topicHelpLeave();
+}
+
+function topicHelpLeave() {
+	if (!topicHelpOn) return;
+	topicHelpOn = false;
+	updateHelp(selectedHelpRule());
+	if (!helpPinned) setHelpOpen(false, true);
 }
 
 function beginRuleHelpHold(rule) {

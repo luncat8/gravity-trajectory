@@ -309,22 +309,10 @@ function politicsBlockHtml(career) {
 	const rot = Math.round(market.corruption[at]);
 	html += '<div class="careerLine dim">corruption ' + rot + '%' +
 		(bribed ? ' · bribed this visit' : '') +
-		(market.quiet[at] ? ' · quiet' : '') + '</div>';
+		(market.quiet[at] ? ' · quiet · no reports until quelled' : '') + '</div>';
+	html += quietRowHtml(career, market, at);
 	if (bribed || career.ended !== GravityGame.CAREER_OPEN) return html;
 	const amount = GravityGame.bribeAmount(market, at, game.clockSteps);
-	/* go quiet: uninstall the observation device here, silencing the planet
-	 * until its rot is quelled. Only the ship's own device, only on a high-rot
-	 * world, and the device stays owned so it can be refitted anywhere. */
-	const obs = career.ship.obs;
-	const fitted = Boolean(obs && obs.fitted);
-	const obsReady = obs === OrbitTech.OBS[1] && fitted;
-	const goQuietDisabled = !obsReady || market.quiet[at] ||
-		market.corruption[at] <= GravityGame.QUIET_MIN;
-	const goQuietReason = !obsReady ? 'fit the observation device to go quiet here'
-		: market.quiet[at] ? 'this world is already quiet'
-		: market.corruption[at] <= GravityGame.QUIET_MIN
-		? 'corruption ' + Math.round(market.corruption[at]) + '% · needs ' + GravityGame.QUIET_MIN + '% to go quiet'
-		: '';
 	const reason = GravityGame.bribeRefusal(career, market, at);
 	const offered = amount > 0;
 	/* the button shows the rule, not just the price, and it is priced even
@@ -338,13 +326,37 @@ function politicsBlockHtml(career) {
 				OrbitEcon.BRIBE_MIN.toFixed(2) + ' alone') + ' · high rot can end in arrest'
 		: 'nothing to take: the visit value \u00d7 rot pays 0.00 · a clean or poor world ' +
 			'owes nothing, and rot grows while the ship is left alone';
-	html += '<div class="careerRow"><span class="careerBtns">' +
+	html += '<div class="careerRow" data-help="politics"><span class="careerBtns">' +
 		'<button class="miniBtn" data-act="bribe"' + (reason !== '' || !offered ? ' disabled' : '') +
 		' title="' + title + '">bribe rulers · +' + amount.toFixed(2) + '</button></span></div>';
 	if (reason === '' && !offered) {
 		html += '<div class="careerLine dim">nothing to take yet · the bribe is the visit value \u00d7 rot</div>';
 	}
 	return html;
+}
+
+/* go quiet (0.6.1): offered only while the law allows it — a rotten planet
+ * under a ship that still carries its device — so the row is the news */
+function quietRowHtml(career, market, at) {
+	if (GravityGame.quietRefusal(career, market, at) !== '') return '';
+	const device = career.ship.obs;
+	return '<div class="careerRow" data-help="politics"><span class="careerBtns">' +
+		'<button class="miniBtn" data-act="quiet" title="take ' + device.id + ' off here: ' +
+		planetName(at) + ' stops reporting for every company until medics quell it · visits pay ' +
+		'nothing there, the unreported value keeps growing and only a bribe cashes it · the device ' +
+		'goes to the shelf (ship \u2212' + device.mass.toFixed(1) + ' t, no reports anywhere) until ' +
+		'you refit it under ship refit">go quiet · ' + planetName(at) + '</button></span></div>';
+}
+
+/* fragile load aboard (0.6.3): whether the rail under the ship can break it */
+function fragileLineHtml(career, at) {
+	const task = career.contract >= 0 ? career.tasks[career.contract] : null;
+	if (!task || !task.fragile || task.state !== GravityGame.TASK_LOADED) return '';
+	const lift = GravityGame.padLift(career, at);
+	const safe = lift <= GravityGame.FRAGILE_SPEED;
+	return '<div class="careerLine' + (safe ? '' : ' warn') + '">fragile load aboard · ' +
+		fragileLimitText() + ' · this rail reaches ' + Math.round(lift) + ' px/s' +
+		(safe ? ' · safe at any aim' : ' · aim softer or it breaks') + '</div>';
 }
 
 function claimLineHtml() {
@@ -370,7 +382,7 @@ function padBlockHtml(career) {
 	html += '<div class="careerLine dim">ship ' + ship.hold.id + ' · ' +
 		(ship.engine ? ship.engine.id : 'no engine') + ' · ' + ship.tank.id +
 		shipImpulseNote(ship) + '</div>';
-	html += politicsBlockHtml(career);
+	html += politicsBlockHtml(career) + fragileLineHtml(career, at);
 	if (at === career.capitalPlanet) {
 		const lift = GravityGame.padLift(career, at);
 		html += '<div class="careerLine">free imperial EMC-3 · lifts to ' + Math.round(lift) +
@@ -524,11 +536,13 @@ function bulkButtonHtml(career, row, item, ref) {
 		poor);
 }
 
-/* what a part row leads with: hold tons, tank fuel kg, engine thrust kN */
+/* what a part row leads with: hold tons, tank fuel kg, engine thrust kN,
+ * and whether the observation device makes a visit a report */
 function partStatText(kind, item) {
 	if (item === null) return kind === OrbitTech.KIND_ENGINE ? '0 kN' : 'none';
 	if (kind === OrbitTech.KIND_HOLD) return item.capacity + ' t';
 	if (kind === OrbitTech.KIND_TANK) return item.fuelCap + ' kg';
+	if (kind === OrbitTech.KIND_OBS) return item.fitted ? 'visits report' : 'no reports';
 	return item.thrust + ' kN';
 }
 

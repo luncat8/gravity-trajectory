@@ -251,7 +251,8 @@ function careerPart(career, kind, item) {
 	}
 	const dv = OrbitTech.shipDeltaV(career.ship, career.ship.cargoTons);
 	careerNotice('fitted ' + name + ' · ship ' + career.ship.mass.toFixed(1) + ' t' +
-		(dv > 0 ? ' · Δv ' + dv.toFixed(1) + ' px/s' : ''));
+		(dv > 0 ? ' · Δv ' + dv.toFixed(1) + ' px/s' : '') +
+		(career.ship.obs.fitted ? '' : ' · no observation device: visits pay nothing'));
 	careerChanged();
 }
 
@@ -464,6 +465,18 @@ function careerBribe() {
 	careerChanged();
 }
 
+function careerQuiet() {
+	const career = activeCareer();
+	const planet = career.at;
+	if (!GravityGame.goQuiet(career, game.market, planet)) {
+		careerNotice(GravityGame.quietRefusal(career, game.market, planet));
+		return;
+	}
+	careerNotice(planetName(planet) + ' went quiet · no reports there until it is quelled · ' +
+		'the device is on the shelf, refit it to report elsewhere');
+	careerChanged();
+}
+
 /* every shop / board button carries data-act (and its args) */
 function careerAct(data) {
 	if (!careerRule()) return;
@@ -491,6 +504,7 @@ function careerAct(data) {
 		return;
 	}
 	if (act === 'bribe') return careerBribe();
+	if (act === 'quiet') return careerQuiet();
 	if (act === 'evac') return careerEvacuate();
 	if (act === 'book') return useBookEntry(Number(data.entry));
 	if (career.ended !== GravityGame.CAREER_OPEN) {

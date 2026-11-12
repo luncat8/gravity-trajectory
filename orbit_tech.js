@@ -30,7 +30,15 @@
 	const Science = typeof module !== 'undefined' && module.exports
 		? require('./orbit_science.js') : root.OrbitScience;
 
-	const SHIP_DRY_MASS = 10;
+	/* the observation device (0.6.1): the ship part that makes a visit a report
+	 * to the Capital. Unfitted, the ship is lighter and its visits pay nothing. */
+	const OBS = [
+		{ id: 'OBS-0', tier: 0, mass: 0, fitted: false },
+		{ id: 'OBS-1', tier: 1, mass: 0.4, fitted: true }
+	];
+	const HULL_MASS = 9.6;
+	/* the starter ship, dry: the bare hull plus the device every career starts with */
+	const SHIP_DRY_MASS = HULL_MASS + OBS[1].mass;
 	const KWH_PER_T_V2 = 7.5e-6;
 	const RAIL_M = 2800;
 	const BURN_SEC = 12;
@@ -101,17 +109,9 @@
 		{ id: 'HELP-2', tier: 2, candidates: 144, horizon: 240, buildCost: 2 }
 	];
 
-/* the observation device: one ship part, not pad gear. The report travels
- * with the ship, so uninstalling it on a planet leaves the device owned and
- * refittable anywhere; the planet stays quiet until its rot is quelled. */
-const OBS = [
-	{ id: 'OBS-0', tier: 0, mass: 0, fitted: false },
-	{ id: 'OBS-1', tier: 1, mass: 0.4, fitted: true }
-];
-
-/* stock records with a research family: cost = share of the research from the
- * initial point, keyed by the family's spec fields in MERIT order; tier 0 is
- * the bare "none" record and stays free */
+	/* stock records with a research family: cost = share of the research from the
+	 * initial point, keyed by the family's spec fields in MERIT order; tier 0 is
+	 * the bare "none" record and stays free */
 	function priceStock(table, family, keys) {
 		for (let i = 0; i < table.length; i++) {
 			const item = table[i];
@@ -124,16 +124,16 @@ const OBS = [
 	priceStock(HOLDS, 'hold', ['capacity']);
 	priceStock(ENGINES, 'engine', ['thrust', 'mass']);
 	priceStock(TANKS, 'tank', ['fuelCap', 'emptyMass']);
-priceStock(OBS, 'obs', ['mass']);
+	priceStock(OBS, 'obs', ['mass']);
 
-const KIND_CATAPULT = 'catapult';
+	const KIND_CATAPULT = 'catapult';
 	const KIND_PANEL = 'panel';
 	const KIND_BATTERY = 'battery';
 	const KIND_HOLD = 'hold';
 	const KIND_ENGINE = 'engine';
-const KIND_TANK = 'tank';
-const KIND_HELPER = 'helper';
-const KIND_OBS = 'obs';
+	const KIND_TANK = 'tank';
+	const KIND_HELPER = 'helper';
+	const KIND_OBS = 'obs';
 	const TABLES = {
 		catapult: CATAPULTS, panel: PANELS, battery: BATTERIES,
 		hold: HOLDS, engine: ENGINES, tank: TANKS, helper: HELPERS, obs: OBS
@@ -155,25 +155,26 @@ const KIND_OBS = 'obs';
 	/* --- ship ---------------------------------------------------------- */
 
 	/* mass one part record adds to the hull: holds/tanks carry `emptyMass`,
-	 * engines `mass`; the engine slot alone can hold `null` = no engine */
+	 * engines and the device `mass`; the engine slot alone can hold `null` = no engine */
 	function partMass(item) {
 		if (item === null) return 0;
 		return item.emptyMass === undefined ? item.mass : item.emptyMass;
 	}
 
 	/* ship with `item` fitted in `kind`, cargo and every other slot as they are;
-	 * `kind` null leaves the whole fit as it is (the plain ship mass) */
+	 * `kind` null leaves the whole fit as it is (the plain ship mass). The device
+	 * is summed first so the starter ship is exactly SHIP_DRY_MASS. */
 	function refitMass(ship, kind, item, cargoTons) {
-		let m = SHIP_DRY_MASS + cargoTons;
-		if (kind !== KIND_HOLD) m += partMass(ship.hold);
-		if (kind !== KIND_ENGINE) m += partMass(ship.engine);
-		if (kind !== KIND_TANK) m += partMass(ship.tank);
-		return m + partMass(item);
+		let m = HULL_MASS + partMass(kind === KIND_OBS ? item : ship.obs) + cargoTons;
+		m += partMass(kind === KIND_HOLD ? item : ship.hold);
+		m += partMass(kind === KIND_ENGINE ? item : ship.engine);
+		m += partMass(kind === KIND_TANK ? item : ship.tank);
+		return m;
 	}
 
-	/* ship = { hold, engine, tank } records (engine may be null) */
+	/* ship = { hold, engine, tank, obs } records (engine may be null) */
 	function shipMass(ship, cargoTons) {
-		return refitMass(ship, null, null, cargoTons) + partMass(ship.obs);
+		return refitMass(ship, null, null, cargoTons);
 	}
 
 	function launchEnergy(mass, catapult, speed) {
@@ -342,7 +343,7 @@ const KIND_OBS = 'obs';
 	function starterGrant() {
 		return {
 			purse: 6.00,
-			ship: { hold: HOLDS[0], engine: null, tank: TANKS[0] },
+			ship: { hold: HOLDS[0], engine: null, tank: TANKS[0], obs: OBS[1] },
 			pad: { catapult: CATAPULTS[0], panel: PANELS[0], battery: BATTERIES[0] }
 		};
 	}
@@ -361,7 +362,7 @@ const KIND_OBS = 'obs';
 		SHIP_DRY_MASS, KWH_PER_T_V2, RAIL_M, BURN_SEC,
 		CATAPULTS, PANELS, BATTERIES, HOLDS, ENGINES, TANKS, HELPERS, TABLES,
 		KIND_CATAPULT, KIND_PANEL, KIND_BATTERY, KIND_HOLD, KIND_ENGINE, KIND_TANK, KIND_HELPER, KIND_OBS,
-		GEAR_KINDS, PART_KINDS, OBS,
+		GEAR_KINDS, PART_KINDS, OBS, HULL_MASS,
 		find, findKind,
 		shipMass, partMass, refitMass, shipDeltaV, refitDeltaV, refitBurnLimit,
 		launchEnergy, maxSpeed, speedLimit, canLaunch,

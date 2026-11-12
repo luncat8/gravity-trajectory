@@ -24,11 +24,17 @@ function careerCopySpec(data) {
 		() => careerNotice(text));
 }
 
+/* fragile load (0.6.3): the one launch limit, as every row and note prints it */
+function fragileLimitText() {
+	return 'launch ≤ ' + Math.floor(GravityGame.FRAGILE_SPEED) + ' px/s';
+}
+
 function taskRowHtml(career, index) {
 	const task = career.tasks[index];
 	const sport = index === GravityGame.COMPETE_SLOT;
 	const medic = index === GravityGame.MEDIC_SLOT;
-	const kind = sport ? 'sport' : medic ? 'medical' : task.tourist ? 'tourists' : 'delivery';
+	const kind = sport ? 'sport' : medic ? 'medical' : task.tourist ? 'tourists'
+		: task.fragile ? 'fragile' : 'delivery';
 	if (task.kind === GravityGame.TASK_NONE) {
 		return '<div class="careerRow dim"><span class="careerKind">' + kind +
 			'</span><span class="careerNow">no offer</span></div>';
@@ -48,14 +54,17 @@ function taskRowHtml(career, index) {
 		? 'load at ' + planetName(task.from)
 		: planetName(task.from) + ' → ' + planetName(task.to);
 	let html = '<div class="careerRow"><span class="careerKind">' + kind + '</span>' +
-		'<span class="careerNow">' + state + ' · ' + good + ' ' + task.tons + ' t</span>' +
+		'<span class="careerNow">' + state + ' · ' + good + ' ' + task.tons + ' t' +
+		(task.fragile ? ' · ' + fragileLimitText() : '') + '</span>' +
 		'<span class="careerBtns">+' + task.reward.toFixed(2) + ' · ' + left + ' s';
 	if (task.state === GravityGame.TASK_OFFERED) {
 		const hold = career.ship.hold.capacity;
 		const ok = GravityGame.canAccept(career, index);
 		html += '<button class="miniBtn" data-act="accept" data-slot="' + index + '"' +
 			(ok ? '' : ' disabled') +
-			' title="' + (ok ? 'take this delivery' : hold < task.tons
+			' title="' + (ok ? 'take this delivery' + (task.fragile
+				? ' · fragile: once loaded, a harder launch breaks it and voids the contract' : '')
+				: hold < task.tons
 				? 'needs a ' + task.tons + ' t hold (have ' + hold + ' t)'
 				: 'one contract at a time') + '">accept</button>';
 	} else {
@@ -134,7 +143,7 @@ function moneyFacts(origin, speed, body, steps, length, visitPay) {
 
 function traceMoney(probe, origin, speed) {
 	return moneyFacts(origin, speed, probe.predBody, probe.predSteps, probe.predLength,
-		GravityGame.estimateProfit(game.market, game.clockSteps, probe));
+		GravityGame.estimateProfit(game.market, game.clockSteps, probe, game.money));
 }
 
 /* a saved trace priced at the live market: not one trace is spent */
@@ -142,7 +151,7 @@ function storedMoney(entry) {
 	return moneyFacts(entry.origin, GravityGame.speedOf(entry.speedU), entry.body,
 		entry.steps, entry.length,
 		GravityGame.estimateProfitLog(game.market, game.clockSteps,
-			entry.logPlanet, entry.logStep, entry.logCount));
+			entry.logPlanet, entry.logStep, entry.logCount, game.money));
 }
 
 /* the two live gates the launch button applies: the fee is covered and the
