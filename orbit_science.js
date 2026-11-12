@@ -65,10 +65,13 @@
 		panel: [
 			{ par: 4.5, per2: 1.25 }                         // power kW
 		],
-		hold: [
-			{ par: 8, per2: 1.25 }                           // capacity t
-		]
-	};
+	hold: [
+		{ par: 8, per2: 1.25 }                           // capacity t
+	],
+	obs: [
+		{ par: 0.4, lower: true, per2: 1.50 }            // mass t
+	]
+};
 	/* floor keeps the lab from being free for a deliberately poor spec; ceiling
 	 * keeps two compounding curves from pricing a corner out of the game */
 	var MERIT_MIN = 0.35;
@@ -116,11 +119,11 @@
 
 	var BASE_PRICE = {
 		engine: 2.00 * PRICE_SCALE, catapult: 3.00 * PRICE_SCALE, panel: 1.50 * PRICE_SCALE,
-		battery: 1.00 * PRICE_SCALE, hold: 1.00 * PRICE_SCALE, tank: 1.00 * PRICE_SCALE
+		battery: 1.00 * PRICE_SCALE, hold: 1.00 * PRICE_SCALE, tank: 1.00 * PRICE_SCALE, obs: 1.00 * PRICE_SCALE
 	};
 	var TIER_SCALE = {
 		engine: 1.00, catapult: 1.20, panel: 0.90, battery: 1.00,
-		hold: 1.10, tank: 1.00
+		hold: 1.10, tank: 1.00, obs: 1.00
 	};
 
 	/* One normalized research unit is a deliberate invention step, not one
@@ -134,7 +137,8 @@
 		tank: [0.02, 2.0],
 		battery: [0.4, 5000.0],
 		panel: [1.0],
-		hold: [0.125]
+		hold: [0.125],
+	obs: [1.0]
 	};
 
 	/* Directional difficulty per axis: `below` weights stepping toward smaller
@@ -162,10 +166,13 @@
 		panel: [
 			{ below: 0.00, above: 1.00 }   // power kW: weaker easy, stronger hard
 		],
-		hold: [
-			{ below: 0.00, above: 1.00 }   // capacity t: smaller easy, larger hard
-		]
-	};
+hold: [
+		{ below: 0.00, above: 1.00 }   // capacity t: smaller easy, larger hard
+	],
+	obs: [
+		{ below: 3.00, above: 0.00 }   // mass t: lighter hard, heavier easy
+	]
+};
 
 	function normalizedParams(family, params) {
 		var scale = METRIC_SCALE[family];

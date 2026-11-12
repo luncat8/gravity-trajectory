@@ -22,8 +22,8 @@ function refreshPredGain() {
 		 * a taken delivery or medical quest pays here, not only on the pad */
 		const origin = sim.status === STATUS_FLYING ? sim.origin : aimBody;
 		const flown = sim.status === STATUS_FLYING ? sim.flightLength : 0;
-		GravityGame.careerLandingFacts(predLanding, playerCareer(), origin, sim.predBody,
-			flown, sim.predLength, sim.predSteps, game.clockSteps, gain);
+	GravityGame.careerLandingFacts(predLanding, playerCareer(), origin, sim.predBody,
+		flown, sim.predLength, sim.predSteps, game.clockSteps, gain, aimSpeed);
 		gain = predLanding.cash;
 	}
 	predGain = gain;

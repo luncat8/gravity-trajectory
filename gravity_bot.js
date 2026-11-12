@@ -2412,14 +2412,14 @@
 	 * this: `visitPay` is the harvest, `length`/`steps` the path and arrival.
 	 */
 	GravityBot.prototype.careerScoreFacts = function (career, origin, market, runStep,
-		flownLen, fee, body, visitPay, length, steps) {
+		flownLen, fee, body, visitPay, length, steps, speed) {
 		this.careerEval.reject = '';
 		this.careerEval.builds = false;
 		this.careerEval.exitCost = Infinity;
 		this.careerEval.exitSource = '';
 		/* the rule's one landing table: cash for the purse, credit for the leg */
 		GravityGame.careerLandingFacts(this.careerEval, career, origin, body,
-			flownLen, length, steps, runStep, visitPay);
+			flownLen, length, steps, runStep, visitPay, speed);
 		const taskPay = this.careerEval.cash + this.careerEval.credit;
 		const cashPay = this.careerEval.cash;
 
@@ -2479,7 +2479,7 @@
 	};
 
 	/* Landing + harvest + contract + solvency value of the trace in `probe`. */
-	GravityBot.prototype.careerScoreFlight = function (career, origin, market, runStep, flownLen, fee) {
+	GravityBot.prototype.careerScoreFlight = function (career, origin, market, runStep, flownLen, fee, speed) {
 		const probe = this.probe;
 		if (probe.predReason !== END_IMPACT || probe.predBody < 0) {
 			this.careerEval.reject = 'noImpact';
@@ -2487,7 +2487,7 @@
 		}
 		return this.careerScoreFacts(career, origin, market, runStep, flownLen, fee,
 			probe.predBody, GravityGame.estimateProfit(market, runStep, probe),
-			probe.predLength, probe.predSteps);
+			probe.predLength, probe.predSteps, speed);
 	};
 
 	/* pad energy, the recharge wait it costs and the EMC fee of one shot */
@@ -2506,7 +2506,7 @@
 	/* Scores the trace already in `probe`; `careerEval` exposes its money terms. */
 	GravityBot.prototype.careerScoreProbe = function (career, sim, origin, speed, market, runStep) {
 		const fee = GravityGame.launchFee(career, origin, speed);
-		const base = this.careerScoreFlight(career, origin, market, runStep, 0, fee);
+		const base = this.careerScoreFlight(career, origin, market, runStep, 0, fee, speed);
 		if (!Number.isFinite(base)) return -Infinity;
 		return this.careerScoreTail(career, sim, origin, speed, base, fee);
 	};
@@ -2519,7 +2519,7 @@
 		const visitPay = GravityGame.estimateProfitLog(market, runStep,
 			entry.logPlanet, entry.logStep, entry.logCount);
 		const base = this.careerScoreFacts(career, entry.origin, market, runStep, 0, fee,
-			entry.body, visitPay, entry.length, entry.steps);
+			entry.body, visitPay, entry.length, entry.steps, speed);
 		if (!Number.isFinite(base)) return -Infinity;
 		return this.careerScoreTail(career, sim, entry.origin, speed, base, fee);
 	};
