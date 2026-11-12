@@ -99,6 +99,7 @@ function updateGameHud() {
 		replayEl.textContent = replayText;
 	}
 	if (careerRule()) updateGameClockHud();
+	refreshStatsStrip();
 }
 
 function formatGameClock(seconds) {

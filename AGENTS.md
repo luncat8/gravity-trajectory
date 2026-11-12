@@ -73,7 +73,7 @@ every file below is in place. each area file reads the composer's state as ordin
 
 | file | lines | owns |
 |---|---|---|
-| `gui_tables.js` | 279 | constants, gear/tech/science/help tables, speed presets, rule copy |
+| `gui_tables.js` | 279 | constants, gear/tech/science/help tables, speed presets, rule copy, stats plot sizes/labels |
 | `gui_help.js` | 62 | rule help drawer: open, pin, hold to preview |
 | `gui_share.js` | 197 | url copy, replay/bot links, load from link, bot log |
 | `gui_science.js` | 454 | hull plot geometry, merit and spec text, accept, sliders |
@@ -83,7 +83,7 @@ every file below is in place. each area file reads the composer's state as ordin
 | `gui_route.js` | 266 | route plan rows, best-route record/restore, route leader |
 | `gui_helper.js` | 594 | career helpers: goal table over the rule's landing factors, broad/focus/profit/quest scans, candidates, budgeted tick |
 | `gui_replay.js` | 194 | replay lifecycle, per-shot aim replay, verdicts, skip |
-| `gui_hud_game.js` | 220 | scoreboard, score meta, player/rival summaries |
+| `gui_hud_game.js` | 220 | scoreboard, score meta, player/rival summaries, the career map-statistics strip |
 | `gui_world.js` | 301 | planet universe and strengths, attach to the trade world, mode/bot/score radios, seed url |
 | `gui_career.js` | 523 | career tabs, wait easing and settlement, build/bulk/part/accept/drop, evacuate, act |
 | `gui_predict.js` | 551 | predicted gain/profit/rate readouts, experiment panel, aim trace, rule gating, blocked pad notes |

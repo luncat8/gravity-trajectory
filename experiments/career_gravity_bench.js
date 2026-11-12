@@ -238,7 +238,7 @@ for (const seed of SEEDS) {
 				' · profit ' + rate.toFixed(3) + '/s' +
 				' · property ' + out.property.toFixed(2) +
 				' · science ' + out.science.toFixed(2) +
-				' · flown ' + out.flown.toFixed(1) + ' px/s');
+				' · flown ' + (out.flown / SECONDS).toFixed(1) + ' px/s');
 		}
 		totals.evacs += r.career.evacuations;
 		totals.fuelBought += r.career.fuelBoughtKg;
@@ -277,7 +277,7 @@ for (const seed of SEEDS) {
 			(allProfit / w.bot.count / SECONDS).toFixed(3) + '/s' +
 			' · property ' + allProperty.toFixed(2) +
 			' · science ' + allScience.toFixed(2) +
-			' · flown ' + allFlown.toFixed(1) + ' px/s' +
+			' · flown ' + (allFlown / w.bot.count / SECONDS).toFixed(1) + ' px/s' +
 			' · rot ' + Math.round(map.rot) + ' · standing ' + map.standing.toFixed(2));
 	}
 	totals.rescues += w.bot.careerBurnRescues;
@@ -320,7 +320,7 @@ if (STATS) {
 		(totProfit / SECONDS / nCompanies).toFixed(3) + '/s' +
 		' · property ' + (totProperty / nCompanies).toFixed(2) +
 		' · science ' + (totScience / nCompanies).toFixed(2) +
-		' · flown ' + (totFlown / nCompanies).toFixed(1) + ' px/s' +
+		' · flown ' + (totFlown / SECONDS / nCompanies).toFixed(1) + ' px/s' +
 		' · rot ' + Math.round(totRot / SEEDS.length) +
 		' · standing ' + (totStanding / SEEDS.length).toFixed(2) +
 		' · visits ' + (income > 0 ? (totVisits / income * 100).toFixed(0) : 0) + '%' +

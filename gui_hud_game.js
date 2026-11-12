@@ -55,6 +55,7 @@ function refreshGameUi() {
 	if (botNormalEl) botNormalEl.disabled = false;
 	if (botHardEl) botHardEl.disabled = false;
 	syncScoreControls();
+	refreshStatsStrip();
 	let anyShots = game.shots.length > 0;
 	for (let i = 0; i < bot.count && !anyShots; i++) {
 		if (bot.rivals[i].shots.length > 0) anyShots = true;
@@ -217,4 +218,193 @@ function rivalSummaryInfo(player) {
 	if (bestCmp > 0) return { text: 'AHEAD', outcome: 1 };
 	if (bestCmp < 0) return { text: 'BEHIND', outcome: -1 };
 	return { text: 'EVEN', outcome: 0 };
+}
+
+/* career map-statistics strip (0.6.10 §4): six game-clock plots drawn from
+ * galaxy.stats as one svg string each, the way the science tab builds its
+ * cost plot. Rebuilt only when a sample lands or the block thins; closed
+ * or outside career, the refresh is two cheap guards and no per-frame work. */
+let statsStripKey = '';
+let statsStripStats = null;
+
+function statsCompanyColour(slot) {
+	return slot === 0 ? MINT : RIVAL_COLOURS[(slot - 1) % RIVAL_COLOURS.length];
+}
+
+/* samples are near-uniform on the clock, so index spacing is the x axis */
+function statsPlotSvg(label, rows, count) {
+	const left = STATS_PLOT.left;
+	const top = STATS_PLOT.top;
+	const width = STATS_PLOT.width - STATS_PLOT.left - STATS_PLOT.right;
+	const height = STATS_PLOT.height - STATS_PLOT.top - STATS_PLOT.bottom;
+	let lo = 0;
+	let hi = 0;
+	for (let r = 0; r < rows.length; r++) {
+		const values = rows[r].values;
+		for (let i = 0; i < count; i++) {
+			if (values[i] < lo) lo = values[i];
+			if (values[i] > hi) hi = values[i];
+		}
+	}
+	if (hi - lo < 1e-9) hi = lo + 1;
+	const span = count > 1 ? count - 1 : 1;
+	let html = '<svg class="statsSvg" viewBox="0 0 ' + STATS_PLOT.width + ' ' +
+		STATS_PLOT.height + '" role="img" aria-label="' + label + ' over time">';
+	for (let r = 0; r < rows.length; r++) {
+		const values = rows[r].values;
+		let points = '';
+		for (let i = 0; i < count; i++) {
+			if (i > 0) points += ' ';
+			points += (left + i / span * width).toFixed(1) + ',' +
+				(top + (hi - values[i]) / (hi - lo) * height).toFixed(1);
+		}
+		if (points) html += '<polyline class="statsLine" stroke="' + rows[r].colour +
+			'" points="' + points + '"/>';
+	}
+	if (lo < 0) {
+		const y = top + hi / (hi - lo) * height;
+		html += '<line class="statsZero" x1="' + left + '" y1="' + y.toFixed(1) +
+			'" x2="' + (left + width) + '" y2="' + y.toFixed(1) + '"/>';
+	}
+	return html + '<rect class="statsFrame" x="' + left + '" y="' + top +
+		'" width="' + width + '" height="' + height + '"/></svg>';
+}
+
+/* the note's «average per time»: sample i lands at (i+1)/count of the clock */
+function statsRateRow(values, count, seconds) {
+	const out = new Array(count);
+	for (let i = 0; i < count; i++) {
+		const t = seconds * (i + 1) / count;
+		out[i] = t > 0 ? values[i] / t : 0;
+	}
+	return out;
+}
+
+function statsMeanRow(rows, count) {
+	const out = new Array(count);
+	for (let i = 0; i < count; i++) {
+		let sum = 0;
+		for (let r = 0; r < rows.length; r++) sum += rows[r][i];
+		out[i] = rows.length > 0 ? sum / rows.length : 0;
+	}
+	return out;
+}
+
+function statsSigned(value, digits) {
+	return (value < 0 ? '' : '+') + value.toFixed(digits);
+}
+
+function statsPlotHtml(label, parts, title, rows, count) {
+	return '<div class="statsPlot"><div class="statsCaption"' +
+		(title ? ' title="' + title + '"' : '') + '><b>' + label + '</b> ' +
+		parts.join(' · ') + '</div>' + statsPlotSvg(label, rows, count) + '</div>';
+}
+
+/* captions print the live getters, so the strip reads as a table of what
+ * careerStats returns now; the lines behind them are the sampled history */
+function statsStripHtml(galaxy, market, step) {
+	const stats = galaxy.stats;
+	const count = stats.count;
+	const n = galaxy.actors.length;
+	const seconds = step * DT;
+	const careerRow = { income: 0, running: 0, profit: 0, property: 0, science: 0, flown: 0 };
+	const mapRow = { rot: 0, standing: 0 };
+	const profitParts = [];
+	const propertyParts = [];
+	const scienceParts = [];
+	const flownParts = [];
+	const profitData = [];
+	const propertyData = [];
+	const scienceData = [];
+	const flownData = [];
+	let allProfitRate = 0;
+	let allFlownRate = 0;
+	let visits = 0;
+	let contracts = 0;
+	let bribes = 0;
+	let tax = 0;
+	let fees = 0;
+	let fuel = 0;
+	let evac = 0;
+	for (let i = 0; i < n; i++) {
+		const career = galaxy.actors[i];
+		GravityGame.careerStats(careerRow, career);
+		const colour = statsCompanyColour(i);
+		const name = '<span style="color:' + colour + '">' + slotName(i) + '</span>';
+		const profitRate = seconds > 0 ? careerRow.profit / seconds : 0;
+		const flownRate = seconds > 0 ? careerRow.flown / seconds : 0;
+		profitParts.push(name + ' ' + statsSigned(profitRate, 2) + '/s');
+		propertyParts.push(name + ' ' + careerRow.property.toFixed(2));
+		scienceParts.push(name + ' ' + careerRow.science.toFixed(2));
+		flownParts.push(name + ' ' + flownRate.toFixed(1) + ' px/s');
+		allProfitRate += profitRate;
+		allFlownRate += flownRate;
+		visits += career.visitIncome;
+		contracts += career.earned;
+		bribes += career.bribeIncome;
+		tax += career.taxEarned;
+		fees += career.feesPaid;
+		fuel += career.fuelSpent;
+		evac += career.evacuations *
+			(career.cheat === GravityGame.CHEAT_COMMUNISM ? 0 : GravityGame.CAREER.evacFee);
+		const base = 2 + i * 4;
+		profitData.push(statsRateRow(stats.series[base], count, seconds));
+		propertyData.push(stats.series[base + 1]);
+		scienceData.push(stats.series[base + 2]);
+		flownData.push(statsRateRow(stats.series[base + 3], count, seconds));
+	}
+	const allName = '<span style="color:' + STATS_NEUTRAL + '">all</span>';
+	if (n > 0) {
+		profitParts.push(allName + ' ' + statsSigned(allProfitRate / n, 2) + '/s');
+		flownParts.push(allName + ' ' + (allFlownRate / n).toFixed(1) + ' px/s');
+	}
+	GravityGame.mapStats(mapRow, market, step);
+	const profitTitle = 'visits ' + visits.toFixed(1) + ' · contracts ' + contracts.toFixed(1) +
+		' · bribes ' + bribes.toFixed(1) + ' · tax ' + tax.toFixed(1) +
+		' · fees ' + fees.toFixed(1) + ' · fuel ' + fuel.toFixed(1) + ' · evac ' + evac.toFixed(1);
+	const profitRows = profitData.map((values, i) => ({ colour: statsCompanyColour(i), values }));
+	const propertyRows = propertyData.map((values, i) => ({ colour: statsCompanyColour(i), values }));
+	const scienceRows = scienceData.map((values, i) => ({ colour: statsCompanyColour(i), values }));
+	const flownRows = flownData.map((values, i) => ({ colour: statsCompanyColour(i), values }));
+	if (n > 0) {
+		profitRows.push({ colour: STATS_NEUTRAL, values: statsMeanRow(profitData, count) });
+		flownRows.push({ colour: STATS_NEUTRAL, values: statsMeanRow(flownData, count) });
+	}
+	return statsPlotHtml(STATS_LABELS.profit, profitParts, profitTitle, profitRows, count) +
+		statsPlotHtml(STATS_LABELS.property, propertyParts, '', propertyRows, count) +
+		statsPlotHtml(STATS_LABELS.science, scienceParts, '', scienceRows, count) +
+		statsPlotHtml(STATS_LABELS.flown, flownParts, '', flownRows, count) +
+		statsPlotHtml(STATS_LABELS.rot, [String(Math.round(mapRow.rot))], '',
+			[{ colour: STATS_NEUTRAL, values: stats.series[0] }], count) +
+		statsPlotHtml(STATS_LABELS.standing, [mapRow.standing.toFixed(2)], '',
+			[{ colour: STATS_NEUTRAL, values: stats.series[1] }], count);
+}
+
+function refreshStatsStrip() {
+	if (!careerRule()) {
+		if (!statsStripEl.hidden) statsStripEl.hidden = true;
+		if (statsPlotsEl.innerHTML) {
+			statsPlotsEl.innerHTML = '';
+			statsStripKey = '';
+			statsStripStats = null;
+		}
+		return;
+	}
+	if (statsStripEl.hidden) statsStripEl.hidden = false;
+	if (!statsOpen) {
+		if (statsPlotsEl.innerHTML) {
+			statsPlotsEl.innerHTML = '';
+			statsStripKey = '';
+			statsStripStats = null;
+		}
+		return;
+	}
+	const galaxy = game.galaxy;
+	const stats = galaxy.stats;
+	if (!stats) return;
+	const key = stats.count + '/' + stats.every + '/' + galaxy.actors.length;
+	if (stats === statsStripStats && key === statsStripKey) return;
+	statsStripStats = stats;
+	statsStripKey = key;
+	statsPlotsEl.innerHTML = statsStripHtml(galaxy, game.market, game.clockSteps);
 }

@@ -247,6 +247,8 @@ const careerPauseLandLabelEl = $('careerPauseLandLabel');
 const careerMsgEl = $('careerMsg');
 const ruleTagEl = $('ruleTag');
 const scoreHudEl = $('scoreHud');
+const statsStripEl = $('statsStrip');
+const statsPlotsEl = $('statsPlots');
 const scoreRuleTagEl = $('scoreRuleTag');
 const goalRoleEl = $('goalRole');
 const playerScoreMetaEl = $('playerScoreMeta');
@@ -470,6 +472,20 @@ function loadLastMode() {
 function saveLastMode(rule) {
 	try {
 		if (root.localStorage) root.localStorage.setItem(MODE_STORAGE, rule);
+	} catch (e) { /* private mode */ }
+}
+/* map-statistics strip: open state, remembered like the last mode */
+const STATS_STORAGE = 'gravity.statsOpen';
+let statsOpen = false;
+function loadStatsOpen() {
+	try {
+		return Boolean(root.localStorage) && root.localStorage.getItem(STATS_STORAGE) === '1';
+	} catch (e) { /* private mode */ }
+	return false;
+}
+function saveStatsOpen() {
+	try {
+		if (root.localStorage) root.localStorage.setItem(STATS_STORAGE, statsOpen ? '1' : '0');
 	} catch (e) { /* private mode */ }
 }
 /* career world clock: runs while unpaused; by default it pauses when your
@@ -809,6 +825,11 @@ bindFold(careerFoldBtn, careerHudEl);
 bindFold(tradeFoldBtn, $('tradeHud'));
 if (gameFoldBtn && gameHudEl) bindFold(gameFoldBtn, gameHudEl);
 if (helpClose) helpClose.addEventListener('click', () => setHelpOpen(false));
+if (statsStripEl) statsStripEl.addEventListener('toggle', () => {
+	statsOpen = statsStripEl.open === true;
+	saveStatsOpen();
+	refreshStatsStrip();
+});
 refreshSoundToggle();
 if (soundToggle) soundToggle.addEventListener('click', () => {
 	soundEnabled = !soundEnabled;
@@ -1061,6 +1082,8 @@ refreshExperimentUi();
 paintZoneLegend();
 const initialView = new URLSearchParams(location.search).get('view');
 if (VIEW_MODES.includes(initialView)) setViewMode(initialView);
+statsOpen = loadStatsOpen();
+if (statsStripEl) statsStripEl.open = statsOpen;
 if (!loadLink() && !loadSearchParams()) {
 	const last = loadLastMode();
 	if (last) setPlayMode(last);
