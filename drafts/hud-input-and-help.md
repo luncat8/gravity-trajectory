@@ -25,9 +25,14 @@ move "drag from pad to" to help. split help by all and specific to game mode. it
 has its own; the drag instructions live in `COMMON_HELP` only.
 
 1
-in in Help replace "selected mode" with actually name of current mode
+in Help replace "selected mode" with actual name of current mode
 
-→ the drawer title is `RULE_HELP[rule].name`.
+→ the drawer title is `RULE_HELP[rule].name`. Where a literal "selected mode"
+still stood in the copy it is gone: `fillHelp` writes `help.name` into both the
+drawer title and `#helpRuleName`, and the source of the record is
+`selectedHelpRule()` (`game.rule` while a run is on, else `lab`). A politics
+preview swaps in `POLITICS_HELP` and its own name. Nothing left to do unless the
+note means the *mode row* label (`lab`/`visit all tour`/…) instead of the drawer.
 
 ## 6.2 landing gates ← `archive/draft.txt`
 

@@ -134,14 +134,38 @@ function drawRivalsWorld(now) {
  * the ship, so a system being harvested has already left its log, and the
  * pill would go dark exactly when the money arrives. The flags are cleared
  * by the same step that flies the ship out, so the pill drops on exit.
+ *
+ * One geometry for the painter and for the pad plate, so a plate never lands
+ * on the pill: that value is the number a sitting player is watching grow.
  */
+const PILL_W = 52;
+const PILL_H = 28;
+
+function pillTopY(planet) {
+	let y = (tradeSim.planetY[planet] + tradeSim.planetR[planet]) * view.scale +
+		view.offY + 11 - 7;
+	const maxY = window.innerHeight - 18;
+	if (y < 4) y = 4;
+	else if (y > maxY - PILL_H + 14) y = maxY - PILL_H + 14;
+	return y;
+}
+
+/* a plate must stay clear of the pill of the planet it names */
+function overPill(planet, x, y, width, height) {
+	if (planet < 0 || !planetMask[planet]) return false;
+	let x0 = tradeSim.planetX[planet] * view.scale + view.offX - PILL_W * 0.5;
+	if (x0 < 4) x0 = 4;
+	else if (x0 > window.innerWidth - 42 - PILL_W + 38) x0 = window.innerWidth - 42 - PILL_W + 38;
+	const y0 = pillTopY(planet);
+	return x < x0 + PILL_W && x + width > x0 && y < y0 + PILL_H && y + height > y0;
+}
+
 function drawPlanetProfits() {
 	const step = game.clockSteps;
 	ctx.font = '600 10.5px ui-monospace, SFMono-Regular, Menlo, monospace';
 	ctx.textAlign = 'center';
 	ctx.textBaseline = 'middle';
 	const maxX = window.innerWidth - 42;
-	const maxY = window.innerHeight - 18;
 	const capital = careerRule() ? game.career.capitalPlanet : -1;
 	const arf = careerRule() ? game.career.arfPlanet : -1;
 	for (let i = 0; i < PLANETS; i++) {
@@ -160,15 +184,10 @@ function drawPlanetProfits() {
 		if (gi < 0) gi = 0;
 		else if (gi >= GRAVITY_STRINGS.length) gi = GRAVITY_STRINGS.length - 1;
 		const sx = tradeSim.planetX[i] * view.scale + view.offX;
-		const sy = (tradeSim.planetY[i] + tradeSim.planetR[i]) * view.scale + view.offY + 11;
-		const width = 52;
-		const height = 28;
+		const width = PILL_W;
+		const height = PILL_H;
 		let x = sx - width * 0.5;
-		let y = sy - 7;
-		if (x < 4) x = 4;
-		else if (x > maxX - width + 38) x = maxX - width + 38;
-		if (y < 4) y = 4;
-		else if (y > maxY - height + 14) y = maxY - height + 14;
+		let y = pillTopY(i);
 		const inside = liveHarvestMask[i] === 1;
 		const onRoute = inside || predHarvestMask[i] === 1;
 		const owner = careerRule() ? GravityGame.claimOwner(game.galaxy, i) : -1;
@@ -315,7 +334,10 @@ function drawPadPlate(planet, info) {
 	const radius = tradeSim.planetR[planet] * view.scale + 8;
 	const maxX = window.innerWidth - width - 6;
 	const maxY = window.innerHeight - height - 6;
-	/* below, above, right, left of the planet: the first slot clear of both HUD panels */
+	/* below, above, right, left of the planet: the first slot clear of both HUD
+	 * panels and of the profit pill the same planet draws under itself — the
+	 * pill is always below, so drawing the plate there hid the visit profit
+	 * exactly on the planet the player was sitting on and waiting for */
 	let x = 0;
 	let y = 0;
 	for (let slot = 0; slot < 4; slot++) {
@@ -325,7 +347,9 @@ function drawPadPlate(planet, info) {
 		else if (x > maxX) x = maxX;
 		if (y < 4) y = 4;
 		else if (y > maxY) y = maxY;
-		if (!rectUnderHud(x, y, width, height)) break;
+		if (rectUnderHud(x, y, width, height)) continue;
+		if (overPill(planet, x, y, width, height)) continue;
+		break;
 	}
 	plate(x, y, width, height, info.warn ? 'rgba(255, 148, 120, 0.7)' : 'rgba(255, 207, 110, 0.34)');
 	ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';

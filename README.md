@@ -6,6 +6,8 @@ planets' port orbits using gravity assists, land cleanly, and stage the next
 hop from where you landed. The `route` rule instead plans one longest possible
 trajectory without launching it.
 
+Game modes correspond to same sport competition in career mode: player can play specifically this sport.
+
 One flat mode row: **lab** (free clock, editable gravity) and four seeded rules
 — **visit all tour**, **route length**, **money for visit** and **career** (a
 shared-galaxy catapult network). Under `tour` and `money` the clock runs only

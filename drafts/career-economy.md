@@ -15,12 +15,12 @@ collect money for generated tasks:
 
 return to HQ cos money, so player have to build EM-catapult on planets. before player have money for this - he should plan to return to HQ by make proper trajectory so delivery has no profit without build catapult.
 
-player should be able to launch to continue game. he can launch from planet only using EM-catapult. if no catapult built on some planet then player automatically call evacuation and return to HD and evacuation cost a lot of money - this make delivery no profit until build catapult on target planet. player can build any time if has enough money.
+player should be able to launch to continue game. he can launch from planet only using EM-catapult. if no catapult built on some planet then player automatically call evacuation and return to HQ and evacuation cost a lot of money - this make delivery no profit until build catapult on target planet. player can build any time if has enough money.
 
 catapult/solar/battery - is planet equipment. need to GUI to able apply current selected upgrade to all already build facilities. and show how much this cost.
 
 So progression is:
-use available tasks to earn money, build catapult on target planet, be ably to land and launch with profit (if catapult power is enough to return to continue)
+use available tasks to earn money, build catapult on target planet, be able to land and launch with profit (if catapult power is enough to return to continue)
 
 → `career` ships this: the HQ start, the four delivery slots plus the
 competition slot, the commercial EMC-1 fallback on every planet, `evacuate · 6.00`,
@@ -193,7 +193,37 @@ i think we (should) have only 2 time
 - background animation (trade, orbits) - this should be only in settings panel, no need in footer, because it currently not gameplay important.
 
 → done: the game clock, the orbital-trade background clock in its own panel, no
-footer copy.
+footer copy. `0.7.1` removes the leftover hour/year units from the labels and
+the prose; the two clocks stay.
+
+### normalize time to 1x = real time
+
+i think better normalize it to 1x speed be IRL timer.
+
+currently "wain 30 min" button work good but text told player not useful info that is hard to imagine. so better operate real time with proper scale and tell how many real time it wait fast forward.
+
+current default we use x4. this is good speed so we can name it x1
+
+after this refactoring actual speed should remain same, but set visual units more simple.
+
+→ today the career clock is `scene.trade.speed` (background slider, `0.5…12`, default
+`0.5`) times `gameRate` (the `game time` slider ×1) for physics pace, while
+`1 s` of game time is 1 sim second and 60 *world* seconds for pads
+(`WORLD_SEC_PER_MIN`). The `wait · 30 min` button is 30 world minutes = **60
+flight s = 15 s of wall clock at the default ×4**; its label the player must
+divide by 60 and then by 4 to know how long it takes. `0.7.1` keeps the units,
+this note renames them: one unit = one second of wall clock at the career's
+default pace, so the button reads `wait · 15 s`, the pad charges per second, and
+the ×4 default is called ×1. Physics, prices and every balance number stay put;
+only the labels and the rungs of the speed control change.
+
+**answered:** today's ×4 becomes ×1. Physics, prices and the pace the game is
+balanced at do not move; only the labels do, so `wait · 30 min` reads
+`wait · 15 s` (60 flight s at 15 s of wall clock) and the speed control's rungs
+are renumbered `×0.25 … ×8` around the new ×1. The literal `1 flight s = 1 wall
+s` reading is rejected: it would make every flight four times longer to watch
+and invalidate every balance number priced in flight seconds (0.7.2's wear
+included).
 
 ## 2.10 EMC catapult ← `archive/draft.txt`
 
@@ -207,3 +237,79 @@ make new experimental settings panel add sliders to adjust system global gravity
 
 → `experimental`: `g field ×0…×9`, `catapult ×0.25…×3`, `stay-pay · per tick`.
 **open** → `../0.4.30-plan-harvest-ticks.md`: the stay-pay arithmetic.
+
+## buy more ships
+settings checkbox:
+allow buy new automatic ship to earn money; acts like bot, shown under player name, shares player purse and all owned property (science/gear) without repaying research.
+
+→ **open** · `../0.7.3-plan-buy-ships.md` — a bought ship is a ship context
+inside the one company career, not a scoreboard slot: it shares purse, pads,
+science and owned gear, costs 30 cr, wears ×2, and appears under YOU. Unlimited;
+no new planet, no `MAX_RIVALS` change.
+
+## ship maintenance cost
+represent ship condition (storyline: repair, service, oxygen, food, …) as one parameter ~ cost: wear 0.01/s in space + 0.1 per landing + 0.1×EMC acceleration for the starter ship; upgrades/science reduce wear. limits lucky starts (observation device fail, preventing earn huge amount of money in case of very long route occasionally found).
+at 0: observation device fails (visits pay nothing); ship can't launch EMC and use IMP engine.
+repair button near (before) launch btn; 2 cr per 1 condition.
+replace launch button with btn with dropdown:
+- repair & launch (total cost)
+from dropdown triangle available separate:
+- repair
+- launch (as current button)
+numbers subject to balance; space weather affects wear.
+
+→ **open** · `../0.7.2-plan-ship-wear.md` — one `condition` per ship, wear in
+sim seconds, the 0 gates, 2 cr for a full repair, and the split launch control.
+The plan answers the open points: repair anywhere landed; impulse wear ∝ Δv;
+no wear while landed; fleet ships ×2; science cuts wear to a 0.5 floor. Space
+weather itself is still a separate layer (`map.md`).
+
+## evacuation
+
+not instant move but similar as trade ships speed and visible animation of movement.
+
+#### evacuation cost
+
+if player has no full price money then evacuation cost less but took longer.
+
+i think at 1x speed
+
+full price 12sec irl time
+
+...
+
+zero cost 240sec
+
+→ today `evacuate` is one instant: purse −`6.00`, ship placed on HQ, the trade
+background does not move. **Open, and it needs a plan of its own** (`0.7.5`):
+these three points are now answered, the rest below is still the spec's job.
+
+- **`12 … 240 s` is wall clock at the new `×1`** (§2.9: today's ×4). So the
+  full-price trip is 12 s of watching and the free one is 4 minutes — four
+  `wait`s end to end — while the flight clock behind them runs 48 s and 960 s.
+- **the price trades for time linearly** (answered): `wait = 240 − 228 ·
+  paid / 6.00` seconds, so `6.00 → 12 s`, `3.00 → 126 s`, `0 → 240 s`. The fee
+  is *waived*, not deferred: a purse that cannot pay still gets home, slower,
+  and `checkEnded`'s broke test must not fire during the trip. `communism`
+  (`price() = 0`) therefore always takes the 240 s trip, which is the cheat's
+  own bargain.
+- **the career ship flies it** (answered), on the gravity map, at a speed in the
+  trade ships' band (`SHIP_SPEED_MIN/MAX 16…25`) rather than the ballistic
+  solver: the trip is a straight visible ride `at → hq` on the world clock, no
+  aim, no burn, no landing payout, ship `landedBody` = HQ at the end. That keeps
+  the evacuation out of the physics and out of the replay.
+- The wait is career time, so it charges pads, grows visits and lets rivals fly —
+  which is the point of making it long. It also must not strand a *broke* player
+  on the clock: `checkEnded` calls a stranded company broke today, so the
+  evacuation has to be in progress before that test.
+- Today the button exists twice — `#launchEvac` in the flight HUD and the pad
+  block's `evacuate` row — and both call `GravityGame.evacuate`, which returns
+  false unless `career.stranded`. A trip in progress needs its own state
+  (`evacUntilStep`, like `arrestUntilStep`) so a second click cannot buy a
+  second trip, and the clock's existing pause is the only thing that stops it.
+  `GravityBot` calls `evacuate` directly in its broke/stranded paths, so the
+  bot gets the trip for free — but its `fallbacks`/`evacuations` counters and
+  the `career_stats_test` purse identity must hold across the wait.
+- **open** · `../0.7.5-plan-evacuation-trip.md` (to write): the trip state, the
+  price/time line, the two buttons and the bot's use of it. Open points so far
+  are collected in `../archive/0.7.5-worklog.md`.

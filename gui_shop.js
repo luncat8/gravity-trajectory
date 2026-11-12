@@ -213,6 +213,27 @@ function refreshFuelHud() {
 	if (bar) bar.style.width = (ship.tank && ship.tank.fuelCap > 0
 		? Math.round(ship.fuelKg / ship.tank.fuelCap * 100) : 0) + '%';
 	syncPadChargeUi(career);
+	syncBribeUi(career);
+}
+
+/* The bribe is law-priced from the live visit value, which grows while the
+ * clock runs, but the pad block is rebuilt only on career events — so a sitting
+ * ship used to show the price it had at touchdown (0.5.x: 3.60 on the button,
+ * 3.75 owed five flight seconds later). Reprice the one node in place; the
+ * refusal reason is a state the event path already owns. */
+function syncBribeUi(career) {
+	const btn = $('careerBribe');
+	if (!btn) return;
+	const at = career.at;
+	if (at < 0) return;
+	const market = career.market || game.market;
+	/* any refusal is a state the event path rebuilds on; only the price drifts */
+	if (GravityGame.bribeRefusal(career, market, at) !== '') return;
+	const amount = GravityGame.bribeAmount(market, at, game.clockSteps);
+	const text = 'bribe rulers · +' + amount.toFixed(2);
+	if (text === btn.textContent) return;
+	btn.textContent = text;
+	btn.disabled = !(amount > 0);
 }
 
 /* Fuel is a transaction on the planet under the ship, not a property of the
@@ -327,7 +348,8 @@ function politicsBlockHtml(career) {
 		: 'nothing to take: the visit value \u00d7 rot pays 0.00 · a clean or poor world ' +
 			'owes nothing, and rot grows while the ship is left alone';
 	html += '<div class="careerRow" data-help="politics"><span class="careerBtns">' +
-		'<button class="miniBtn" data-act="bribe"' + (reason !== '' || !offered ? ' disabled' : '') +
+		'<button class="miniBtn" data-act="bribe" id="careerBribe"' +
+		(reason !== '' || !offered ? ' disabled' : '') +
 		' title="' + title + '">bribe rulers · +' + amount.toFixed(2) + '</button></span></div>';
 	if (reason === '' && !offered) {
 		html += '<div class="careerLine dim">nothing to take yet · the bribe is the visit value \u00d7 rot</div>';

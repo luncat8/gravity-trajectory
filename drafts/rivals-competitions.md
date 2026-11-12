@@ -42,7 +42,7 @@ A plan must answer, in this order:
 implement competitions:
 1. accept
 2. time to land to Capital (for competitions that start from capital by rule) or any planet (if competitions rules allow). show timer countdown to competition start and task.
-3. at some some before countdown: signal to aim and arm EMC (once armed in this time period then EMC does not run launch until countdown).
+3. at some time before countdown: signal to aim and arm EMC (once armed in this time period then EMC does not run launch until countdown).
 4. one launched ships perform task and get prices. prices balanced to be good profit compared to overall profit on this map per time (see map statistics).
 
 ### competitions
@@ -84,6 +84,13 @@ board replaced by one contract, which is a mode-row change and not a new rule.
 Variations (`from the Capital only`, `EMC only`, no impulse) are fields on the
 offer record, not branches in the flight code. **open**, no plan yet: the four
 game modes and the variations — which one becomes a mode-row entry first?
+
+→ the first one is `0.7.4-plan-max-distance-mode.md`: two rows,
+`maxdistEmc` (EMC only, farthest path point, return to the start) and
+`maxdistImp` (IMP-1 + big tank, first landing, score farthest), on a long
+non-wrapped strip. Career gets the same shape as a generated `SPORT_MAXDIST`
+rule after the timed-competition event; “max visits”, “land on an
+antigravity planet” and the Capital-only variants stay open.
 
 ## 5.3 map statistics plots ← `archive/draft.txt`
 
