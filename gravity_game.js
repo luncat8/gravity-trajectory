@@ -125,7 +125,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const SHOT_FORM = /^([pm])(\d{1,2})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})(?:\.([0-9a-z]{1,4}))?$/;
 	const BURN_FORM = /^b([0-9a-z]{1,4})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})$/;
 	const END_FORM = /^(\d{1,2})\.(\d{1,9})$/;
-		const estScratch = new Int32Array(OrbitWorld.PLANETS);
+		const estScratch = new Float64Array(OrbitWorld.PLANETS);
 	/* launch book: saved career trajectories and the visit log each one keeps */
 	const BOOK_MAX = 10;
 	const BOOK_LOG_MAX = 64;
@@ -331,7 +331,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 */
 	function createMarket() {
 		const market = {
-			lastVisitStep: new Int32Array(OrbitWorld.PLANETS),
+			lastVisitStep: new Float64Array(OrbitWorld.PLANETS),
+			lastReportStep: new Float64Array(OrbitWorld.PLANETS),
+			corruptionFloor: new Float64Array(OrbitWorld.PLANETS),
+			permanentCorruption: false,
 			visitPay: new Float64Array(OrbitWorld.PLANETS),
 			quiet: new Uint8Array(OrbitWorld.PLANETS),
 			corruption: new Float64Array(OrbitWorld.PLANETS),
@@ -360,13 +363,16 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	function resetMarket(market) {
 		market.lastVisitStep.fill(-initSteps());
+		market.lastReportStep.fill(-initSteps());
+		market.corruptionFloor.fill(OrbitEcon.CORRUPTION_TRADITION);
+		market.permanentCorruption = false;
 		market.visitPay.fill(0);
 		market.quiet.fill(0);
 		market.stamp += 1;
 		market.k = MONEY.k;
 		market.arfPlanet = -1;
 		market.capitalPlanet = -1;
-		market.corruption.fill(0);
+		market.corruption.fill(OrbitEcon.CORRUPTION_TRADITION);
 		market.bribeVisitStep.fill(BRIBE_OPEN);
 		market.rebel.fill(0);
 		market.seized.fill(0);
@@ -404,6 +410,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (specialPlanets && world) {
 			market.arfPlanet = world.arfPlanet;
 			market.capitalPlanet = world.capitalPlanet;
+			market.corruption[market.arfPlanet] = 0;
+			market.corruption[market.capitalPlanet] = 0;
 		} else {
 			market.arfPlanet = -1;
 			market.capitalPlanet = -1;
@@ -521,11 +529,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		}
 		const pay = planetProfit(market, planet, runStep);
 		market.lastVisitStep[planet] = runStep;
+		market.lastReportStep[planet] = runStep;
 		market.visitPay[planet] = pay;
 		market.stamp += 1;
 		if (planet !== market.capitalPlanet && planet !== market.arfPlanet &&
 			market.corruption[planet] > 0) {
-			market.corruption[planet] = OrbitEcon.clampCorruption(
+			market.corruption[planet] = Math.max(market.corruptionFloor[planet],
 				market.corruption[planet] - OrbitEcon.CORRUPTION_VISIT_DECAY);
 		}
 		ledger.purse += pay;
@@ -556,6 +565,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			const pay = planetProfit(market, p, runStep);
 			if (pay <= 0) continue;
 			market.lastVisitStep[p] = runStep;
+			market.lastReportStep[p] = runStep;
 			ledger.purse += pay;
 			ledger.shotGain += pay;
 			gained += pay;
@@ -1142,6 +1152,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			planetCount: OrbitWorld.PLANETS,
 			hq: -1,
 			at: -1,
+			flying: false,
 			stranded: false,
 			/* the last launch broke a fragile load (the notice the HUD prints) */
 			fragileLost: false,
@@ -2994,6 +3005,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.hq = homePlanet === undefined ? pickHq(career.seed, trade.world, hqMask(career),
 			career.planetMask, career.planetCount, trade, sim) : homePlanet;
 		career.at = career.hq;
+		career.flying = false;
 		career.stranded = false;
 		career.fragileLost = false;
 		career.commercialPlanet = -1;
@@ -3083,6 +3095,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* places the idle vessel on a planet and syncs the sim's landed base */
 	function placeShip(career, sim, planet) {
 		career.at = planet;
+		career.flying = false;
 		setCommercial(career, -1);
 		career.stranded = career.pads[planet].catapult === null;
 		sim.relocate(planet);
@@ -3146,9 +3159,20 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * lately, copies the rot into the trade colonies, retires finished
 	 * arrests, and rolls one rebellion per planet per epoch — never per step.
 	 */
+	function raiseCorruption(market, planet, amount) {
+		const before = market.corruption[planet];
+		const after = OrbitEcon.clampCorruption(before + amount);
+		market.corruption[planet] = after;
+		if (market.permanentCorruption) {
+			market.corruptionFloor[planet] = Math.min(after,
+				market.corruptionFloor[planet] + (after - before) * 0.1);
+		}
+	}
+
 	function advancePolitics(market, trade, runStep, rate) {
 		const galaxy = market.galaxy;
 		if (!politics || !galaxy || runStep === market.politicsStep) return 0;
+		const previousStep = Math.max(0, market.politicsStep);
 		market.politicsStep = runStep;
 		market.politicsRate = rate > 0 ? rate : 1;
 		const seconds = politicsSeconds(market, runStep);
@@ -3164,10 +3188,25 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		for (let p = 0; p < count; p++) {
 			if (market.planetMask && market.planetMask[p] !== 1) continue;
 			if (p === market.capitalPlanet || p === market.arfPlanet) continue;
-			if (!market.rebel[p] && dtSec > 0 &&
-				(seconds - market.lastVisitStep[p] * secondsPerStep) > OrbitEcon.CORRUPTION_GRACE) {
-				market.corruption[p] = OrbitEcon.clampCorruption(
-					market.corruption[p] + OrbitEcon.CORRUPTION_PASSIVE_RATE * dtSec);
+			let occupied = false;
+			let reporting = false;
+			for (let i = 0; i < galaxy.actors.length; i++) {
+				const actor = galaxy.actors[i];
+				if (actor.at !== p || actor.flying || actor.arrested) continue;
+				occupied = true;
+				if (visitReports(actor.ledger, market, p)) reporting = true;
+			}
+			if (dtSec > 0 && occupied) {
+				market.lastVisitStep[p] += (runStep - previousStep) * 0.5;
+			}
+			if (!market.rebel[p] && dtSec > 0 && reporting) {
+				market.lastReportStep[p] = runStep;
+				market.corruption[p] = Math.max(market.corruptionFloor[p],
+					market.corruption[p] - OrbitEcon.CORRUPTION_REPORT_RATE * dtSec);
+			} else if (!market.rebel[p] && dtSec > 0) {
+				const stale = seconds - market.lastReportStep[p] * secondsPerStep - OrbitEcon.CORRUPTION_GRACE;
+				if (stale > 0) raiseCorruption(market, p,
+					OrbitEcon.CORRUPTION_PASSIVE_RATE * Math.min(dtSec, stale));
 			}
 			if (market.rebel[p] || runStep < market.rebelCooldownStep[p]) continue;
 			if (epoch <= market.lastCheckEpoch[p]) continue;
@@ -3274,20 +3313,16 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 */
 	const BRIBE = { ok: false, amount: 0, corruption: 0, arrested: false, reason: '' };
 
-	/* The once-per-visit window: shut the moment the visit being stamped has
-	 * carried a bribe, opened again by the next landing (`harvestPlanet`) on
-	 * any planet. A world nobody has visited yet carries `BRIBE_OPEN`, so the
-	 * offer stands from the start. The drawer asks this rather than comparing
-	 * the two stamps itself, so the button and the law cannot drift apart. */
+	/* A separate marker keeps the window closed while the value clock moves. */
 	function bribeWindowOpen(market, planet) {
-		return market.bribeVisitStep[planet] !== market.lastVisitStep[planet];
+		return market.bribeVisitStep[planet] === BRIBE_OPEN;
 	}
 
 	function bribeRefusal(career, market, planet) {
 		if (!career || career.ended !== CAREER_OPEN) return 'career over';
 		if (!market || !market.galaxy) return 'no politics here';
 		if (career.arrested) return 'under arrest';
-		if (planet < 0 || career.at !== planet) return 'not landed there';
+		if (planet < 0 || career.at !== planet || career.flying) return 'not landed there';
 		if (planet === market.capitalPlanet) return 'the Empire does not deal';
 		if (planet === market.arfPlanet) return 'A.R.F. takes no bribes';
 		if (market.rebel[planet]) return 'rebels hold the planet';
@@ -3332,9 +3367,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			market.lastVisitStep[planet] = runStep;
 			market.stamp += 1;
 		}
-		market.bribeVisitStep[planet] = market.lastVisitStep[planet];
-		market.corruption[planet] = OrbitEcon.clampCorruption(
-			market.corruption[planet] + OrbitEcon.bribeCorruption(amount));
+		market.bribeVisitStep[planet] = runStep;
+		raiseCorruption(market, planet, OrbitEcon.bribeCorruption(amount));
 		BRIBE.corruption = market.corruption[planet];
 		market.politicsSerial += 1;
 		const roll = OrbitWorld.hashBits(market.politicsSeed, market.politicsSerial, SALT_ARREST) /
@@ -3355,7 +3389,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (!career || career.ended !== CAREER_OPEN) return 'career over';
 		if (!market || !market.galaxy) return 'no politics here';
 		if (career.arrested) return 'under arrest';
-		if (planet < 0 || career.at !== planet) return 'not landed there';
+		if (planet < 0 || career.at !== planet || career.flying) return 'not landed there';
 		if (planet === market.capitalPlanet || planet === market.arfPlanet) return 'nothing to silence here';
 		if (market.rebel[planet]) return 'rebels hold the planet';
 		if (market.quiet[planet]) return 'already quiet';
@@ -3397,6 +3431,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		market.rebelSinceStep[planet] = 0;
 		market.rebelCooldownStep[planet] =
 			runStep + Math.round(OrbitEcon.REBEL_CHECK_SECONDS * 2 / GravitySim.DT);
+		market.corruptionFloor[planet] = OrbitEcon.CORRUPTION_TRADITION;
 		market.corruption[planet] = market.corruption[planet] > OrbitEcon.PACIFY_CORRUPTION_MAX
 			? OrbitEcon.PACIFY_CORRUPTION_MAX : market.corruption[planet];
 		/* a quelled world reports again: the quiet state is burnt down with the rot */
@@ -3966,6 +4001,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			fragileBreaks(career.tasks[career.contract], sim.speed);
 		if (career.fragileLost) dropContract(career);
 		career.flights += 1;
+		career.flying = true;
 		openFlight(career.ledger, sim, 0);
 	}
 
@@ -4004,6 +4040,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const landed = sim.endReason === GravitySim.END_IMPACT && sim.endBody >= 0;
 		if (landed) settleLanding(career, sim, sim.endBody, step);
 		career.at = landed ? sim.endBody : -1;
+		career.flying = false;
 		/* the commercial choice bought one launch; the next planet starts fresh */
 		setCommercial(career, -1);
 		/* the Capital's free imperial rail is a way off, so it never strands */

@@ -231,8 +231,7 @@ function syncBribeUi(career) {
 	if (GravityGame.bribeRefusal(career, market, at) !== '') return;
 	const amount = GravityGame.bribeAmount(market, at, game.clockSteps);
 	const text = 'bribe rulers · +' + amount.toFixed(2);
-	if (text === btn.textContent) return;
-	btn.textContent = text;
+	if (text !== btn.textContent) btn.textContent = text;
 	btn.disabled = !(amount > 0);
 }
 
@@ -325,7 +324,7 @@ function politicsBlockHtml(career) {
 	 * from the landing until this visit has carried one, and the next landing
 	 * (here or anywhere else) opens it again. The once-per-visit test is the
 	 * law's own `bribeWindowOpen`, never a second copy of the stamp
-	 * comparison, so a hidden button and an owed bribe cannot disagree. */
+	 * state, so a hidden button and an owed bribe cannot disagree. */
 	const bribed = !GravityGame.bribeWindowOpen(market, at);
 	const rot = Math.round(market.corruption[at]);
 	html += '<div class="careerLine dim">corruption ' + rot + '%' +
@@ -345,14 +344,13 @@ function politicsBlockHtml(career) {
 			OrbitEcon.bribeCorruption(amount).toFixed(2) +
 			(amount > OrbitEcon.BRIBE_MIN ? '' : ' · a bot leaves anything under ' +
 				OrbitEcon.BRIBE_MIN.toFixed(2) + ' alone') + ' · high rot can end in arrest'
-		: 'nothing to take: the visit value \u00d7 rot pays 0.00 · a clean or poor world ' +
-			'owes nothing, and rot grows while the ship is left alone';
+		: 'nothing to take: the visit value \u00d7 rot pays 0.00 · wait for visit value to grow';
 	html += '<div class="careerRow" data-help="politics"><span class="careerBtns">' +
 		'<button class="miniBtn" data-act="bribe" id="careerBribe"' +
 		(reason !== '' || !offered ? ' disabled' : '') +
 		' title="' + title + '">bribe rulers · +' + amount.toFixed(2) + '</button></span></div>';
 	if (reason === '' && !offered) {
-		html += '<div class="careerLine dim">nothing to take yet · the bribe is the visit value \u00d7 rot</div>';
+		html += '<div class="careerLine dim">nothing to take yet · wait for visit value to grow</div>';
 	}
 	return html;
 }
