@@ -154,6 +154,8 @@ Game.placeShip(career, scene.sim, arrestPlanet);
 let arrested = false;
 for (let i = 0; i < 40 && !arrested; i++) {
 	market.corruption[arrestPlanet] = 100;
+	Game.harvestPlanet(career.ledger, market, arrestPlanet, game.clockSteps + i);
+	market.visitPay[arrestPlanet] = 1;
 	market.lastVisitStep[arrestPlanet] = game.clockSteps + i;
 	Game.placeShip(career, scene.sim, arrestPlanet);
 	const result = Game.acceptBribe(career, market, scene.sim, arrestPlanet, game.clockSteps);

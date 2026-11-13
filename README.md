@@ -168,15 +168,16 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   (`#game=1&seed=…&rate=…[&rule=…][&bot=…]&shots=…&end=…`) re-fly and verify
   every run (`verified ✓ · purse …`). Replays made before seeded gravity was
   introduced may no longer reproduce their old results.
-- **Politics in career**: every planet carries shared `corruption` (`0…100`)
-  that throttles its colony growth (`× 1 − C/100`), rises `0.1/s` once no
-  emissary has called for 120 s and falls `0.2` per fly-visit, so the worlds a
-  company skips rot while its regular stops stay clean. The rulers of a
+- **Politics in career**: normal planets start with a 5% traditional corruption floor. Corruption
+  throttles colony growth (`× 1 − C/100`), rises `0.1/s` after 120 s without
+  reports, falls `0.2` per reporting fly-visit and `0.02/s` while a reporting
+  ship is landed, never below the floor. The optional **entrenched corruption**
+  setting (selected before starting a run) adds 10% of each actual increase to
+  the floor; finishing the medical rebellion quest resets it to 5%. The rulers of a
   non-rebellious planet pay a bribe worth that visit's value — what the
   landing collected plus whatever regrew since — times the planet's rot
-  fraction times `4`, so a clean lord pays nothing and a planet whose visit
-  profit is low has already been reported to the Capital and is worth no
-  bribe; a long sit on a rotten world is a parking income, priced by the
+  fraction times `4`. Visit value regrows at half speed while any ship is
+  landed, even with its observation device fitted; a long sit on a rotten world is a parking income, priced by the
   arrest roll. Once per visit, in exchange for
   `1 + 0.1 · money` corruption and an arrest roll that is `0` at `C ≤ 50` and
   `0.5` at `C = 100`: an arrest ships the company to the Capital for 120 s with
@@ -189,7 +190,7 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   rebellion seeds `8` patients at the Capital's medical slot: half a standard
   hold ferries medics out and patients home for `1.0` each, and the last
   patient pacifies the planet (rot clamped to `40`, its rail commercial for
-  good). The pad block carries the bribe button from the moment the ship lands until this visit has paid one — it stays on the pad block, priced `+0.00` and dim on a clean world, because the offer is a state of the visit rather than a price, and any bribe the rulers actually pay is the player's to take (the `1.00` floor is a bot's policy, told in the tooltip); one landing elsewhere reopens it. The same block shows rot and the arrest countdown;
+  good). The pad block carries the bribe button from the moment the ship lands until this visit has paid one — it stays on the pad block, priced `+0.00` and dim until value accrues, because the offer is a state of the visit rather than a price, and any bribe the rulers actually pay is the player's to take (the `1.00` floor is a bot's policy, told in the tooltip); a new visit to that planet reopens it. The same block shows rot and the arrest countdown;
   a rebellion also draws a `REBELLION` pill and its rail in the rival colour.
 - **Playback**: the flight is watched, not simulated, faster — one multiplier
   scales the wall-clock slice fed to the fixed `DT = 1/120 s` steps, so ×0.25

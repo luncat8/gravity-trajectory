@@ -251,9 +251,9 @@ const COMMON_HELP = 'Drag from a planet or pad to aim; hold Shift for 1/20 fine 
 const POLITICS_HELP = {
 	name: 'corruption · bribes · reports',
 	goal: 'Every visit is a report to the Capital: it pays the planet\u2019s value and cools its corruption by ' +
-		OrbitEcon.CORRUPTION_VISIT_DECAY.toFixed(1) + '. A planet left alone rots.',
+		OrbitEcon.CORRUPTION_VISIT_DECAY.toFixed(1) + '. Reporting while landed slowly cools rot; without reports it grows after a grace period. Tradition sets a 5% floor.',
 	score: 'Once per landing the rulers pay for silence: visit value \u00d7 corruption \u00d7 ' +
-		OrbitEcon.BRIBE_VALUE_COEF.toFixed(0) + '. A bribe raises the corruption; above ' +
+		OrbitEcon.BRIBE_VALUE_COEF.toFixed(0) + '. Visit value grows at half speed while landed. A bribe raises corruption; above ' +
 		OrbitEcon.REBEL_START + '% it can end in arrest (a slow Capital transport) and the planet can rebel.',
 	detailLabel: 'Device',
 	detail: 'The observation device ' + OrbitTech.OBS[1].id + ' (ship refit, observer) is what reports. Without it the ship is ' +

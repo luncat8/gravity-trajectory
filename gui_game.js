@@ -50,6 +50,7 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	playerBotSyncNeeded = true;
 	predGain = 0;
 	GravityGame.resetMarket(game.market);
+	game.market.permanentCorruption = $('permanentCorruption').checked;
 	GravityGame.resetLedger(game.money);
 	/* Select the new rule's universe before the trade world is rebuilt and
 	 * fast-forwarded. Otherwise a career first simulates the previous 26-world

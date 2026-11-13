@@ -142,9 +142,9 @@ check('a visit takes 0.2 rot off and stamps the clock; the A.R.F. and Capital st
 	const w = setup(7);
 	const planet = normalPlanet(w);
 	const ledger = w.career.ledger;
-	w.market.corruption[planet] = 5;
+	w.market.corruption[planet] = 10;
 	Game.harvestPlanet(ledger, w.market, planet, 100);
-	assert.ok(Math.abs(w.market.corruption[planet] - 4.8) < 1e-9, 'visit decay');
+	assert.ok(Math.abs(w.market.corruption[planet] - 9.8) < 1e-9, 'visit decay');
 	assert.strictEqual(w.market.lastVisitStep[planet], 100);
 	assert.ok(Game.bribeWindowOpen(w.market, planet), 'the visit leaves the bribe window shut');
 	w.market.corruption[w.market.capitalPlanet] = 9;
@@ -165,12 +165,15 @@ check('rot rises only after the grace, never past 100, and only on unvisited wor
 	const graceSteps = Math.round(Econ.CORRUPTION_GRACE / DT);
 	w.market.lastVisitStep[planet] = 0;
 	w.market.lastVisitStep[other] = -1e9;
+	w.market.lastReportStep[planet] = 0;
+	w.market.lastReportStep[other] = -1e9;
+	w.career.at = -1;
 	let steps = 0;
 	while (steps < graceSteps - 10) {
 		step(w, ++steps);
 	}
 	assert.ok(w.market.corruption[other] > 0, 'a stale world started rotting');
-	assert.strictEqual(w.market.corruption[planet], 0, 'a fresh world rotted inside the grace');
+	assert.strictEqual(w.market.corruption[planet], Econ.CORRUPTION_TRADITION, 'a fresh world rotted inside the grace');
 	while (steps < graceSteps + 200) step(w, ++steps);
 	assert.ok(w.market.corruption[planet] > 0, 'rot did not start after the grace');
 	w.market.corruption[planet] = 99.9;
@@ -198,6 +201,51 @@ check('the political clock runs once per step number and not at all without a bo
 	step(off, 900);
 	assert.strictEqual(off.market.corruption[planet], before, 'POLITICS=0 still rotted');
 	Game.setPolitics(true);
+});
+
+check('landed profit grows at half speed and a reporting ship can take a bribe', () => {
+	const w = setup(14);
+	const p = normalPlanet(w);
+	const c = w.career;
+	c.at = p;
+	w.market.lastVisitStep[p] = 0;
+	w.market.lastReportStep[p] = 0;
+	w.market.visitPay[p] = 0;
+	step(w, 600);
+	const expected = Game.planetProfitAt(w.market, p, 600, 300);
+	assert.ok(Math.abs(Game.planetProfit(w.market, p, 600) - expected) < 1e-9);
+	assert.ok(Game.bribeAmount(w.market, p, 600) > 0);
+	assert.ok(Game.acceptBribe(c, w.market, w.sim, p, 600).ok);
+	step(w, 700);
+	assert.ok(!Game.bribeWindowOpen(w.market, p), 'clock movement reopened bribe');
+	c.flying = true;
+	step(w, 800);
+	assert.strictEqual(w.market.lastVisitStep[p], 350, 'a flying ship does not occupy its origin');
+});
+
+check('reporting reduces rot to its floor; optional entrenched rot clears on quelling', () => {
+	const w = setup(15);
+	const p = normalPlanet(w);
+	const c = w.career;
+	c.at = p;
+	w.market.permanentCorruption = true;
+	w.market.corruption[p] = 25;
+	w.market.visitPay[p] = 1;
+	const bribe = Game.acceptBribe(c, w.market, w.sim, p, 0);
+	assert.ok(bribe.ok);
+	const floor = w.market.corruptionFloor[p];
+	assert.ok(Math.abs(floor - (Econ.CORRUPTION_TRADITION + Econ.bribeCorruption(bribe.amount) * 0.1)) < 1e-9);
+	step(w, 100);
+	assert.ok(w.market.corruption[p] < bribe.corruption);
+	w.market.corruption[p] = floor + 0.01;
+	step(w, 200);
+	assert.strictEqual(w.market.corruption[p], floor);
+	c.ledger.reports = false;
+	w.market.lastReportStep[p] = -100000;
+	step(w, 300);
+	assert.ok(w.market.corruptionFloor[p] > floor, 'passive growth entrenches rot too');
+	Game.pacifyPlanet(w.market, p, 300);
+	assert.strictEqual(w.market.corruptionFloor[p], Econ.CORRUPTION_TRADITION);
 });
 
 /* --- §3 bribes and arrest ---------------------------------------------- */
@@ -236,7 +284,7 @@ check('a bribe pays the visit value scaled by rot, rots the planet and is refuse
 	const again = Game.acceptBribe(career, w.market, w.sim, planet, 101);
 	assert.ok(!again.ok && again.reason.indexOf('already bribed') >= 0, again.reason);
 	/* a new visit opens a new window */
-	w.market.lastVisitStep[planet] = 105;
+	Game.harvestPlanet(career.ledger, w.market, planet, 105);
 	assert.strictEqual(Game.bribeRefusal(career, w.market, planet), '');
 });
 
@@ -284,6 +332,7 @@ check('high rot can end a bribe in arrest: Capital transport, no planning, medic
 	let trials = 0;
 	for (let i = 0; i < 200 && arrested === 0; i++) {
 		w.market.corruption[planet] = 99.9;
+		Game.harvestPlanet(career.ledger, w.market, planet, 1000 + trials);
 		w.market.lastVisitStep[planet] = 1000 + trials;
 		w.market.visitPay[planet] = 1;
 		const result = Game.acceptBribe(career, w.market, w.sim, planet, 1100 + trials);
@@ -359,7 +408,10 @@ check('rebellion rolls once per epoch and never below the threshold', () => {
 		if (w.market.lastCheckEpoch[planet] === previous) continue;
 		stamps += 1;
 		previous = w.market.lastCheckEpoch[planet];
-		if (w.market.rebel[planet]) Game.pacifyPlanet(w.market, planet, steps);
+		if (w.market.rebel[planet]) {
+			Game.pacifyPlanet(w.market, planet, steps);
+			w.market.corruption[planet] = 100;
+		}
 	}
 	assert.ok(stamps >= epochs && stamps <= epochs + 1,
 		'one roll per epoch: ' + stamps + ' stamps for ' + epochs + ' epochs');
