@@ -60,7 +60,7 @@
 		],
 		battery: [
 			{ par: 6, per2: 1.25 },                           // capacity kWh
-			{ par: 0.0006, lower: true, per2: 1.50 }          // leak /y
+			{ par: 0.0006, lower: true, per2: 1.50 }          // leak /pad min
 		],
 		panel: [
 			{ par: 4.5, per2: 1.25 }                         // power kW
@@ -162,7 +162,7 @@
 		],
 		battery: [
 			{ below: 0.00, above: 1.20 },  // capacity kWh: smaller easy, larger hard
-			{ below: 2.50, above: 0.00 }   // leak /y: tighter hard, leakier easy
+			{ below: 2.50, above: 0.00 }   // leak /pad min: tighter hard, leakier easy
 		],
 		panel: [
 			{ below: 0.00, above: 1.00 }   // power kW: weaker easy, stronger hard

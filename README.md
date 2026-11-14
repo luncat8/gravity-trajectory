@@ -97,7 +97,7 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
 | `copy replay` / `copy rival` | copies your replay link (with `&rule=` and `&bot=` when active) or Rival 1's solo trajectory link |
 | `play ×N` `−` / `reset` / `+` (game bar) | game speed, one ladder in every mode: ×0.25 … ×32 **game seconds per real second**, where ×1 is real time. `career` opens on ×4 — the pace its economy is balanced at — and the lab on ×1; a mode switch lands on that mode's default. A replay adds ×0.25…×16 on top, and the loop caps the product at 32, which is what the top rung already is. Only the watching speed changes, never the physics steps or the recorded shots — this is the one multiplier a player sets, and the `game` slider that used to multiply it a second time is gone |
 | `×1 / ×4 / ×16`, `skip` | replay multiplier / re-simulate the rest of a replay instantly |
-| orbital trade · background → background animation settings | **decoration only**: pause/resume and set how fast the trade sky drifts, `rate ×1…×24` (×1 is the default look = 0.5 trade minutes per real second). Nothing a company earns, charges or serves reads it — pads, politics and profit run on the game clock, so turning the sky down cannot slow a ship's pad or hide a rebellion; in a career the sky follows the game clock and the slider is locked, in a lab that flies shots it is locked too (a shared link must re-fly the same sky). Toggle orbit, moon, link and route layers here as well; the background pause and layer controls are not in the footer |
+| orbital trade · background → background animation settings | pause/resume and set how fast the trade sky and moving gravity field drift, `rate ×1…×24` (×1 is the default look = 0.5 trade minutes per real second). Pads, politics and profit run on the game clock, but the moving gravity field uses this rate and can affect trajectories; in a career the sky follows the game clock and the slider is locked, in a lab that flies shots it is locked too (a shared link must re-fly the same sky). Toggle orbit, moon, link and route layers here as well; the background pause and layer controls are not in the footer |
 
 ## mechanics & visuals
 
@@ -199,8 +199,8 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   player cannot spend. Two multipliers sit *outside* the step and only convert
   game seconds to real ones: the **pace** (`play ×N`, game seconds per real
   second, ×4 in career at the default, ×1 in the lab) says how fast the player
-  watches, and the **background animation** slider (decoration only) says how
-  fast the trade sky drifts. `careerAdvance` and the political clock read
+  watches, and the **background animation** slider sets the trade sky and moving gravity
+  rate; it can affect trajectories. `careerAdvance` and the political clock read
   `GravitySim.gameSeconds(steps)` and nothing else, so the pad and the rot
   accounting cannot be moved by the sky's slider. `GravitySim.gameSeconds` /
   `padSeconds` / `padMinutes` / `tradeMinutes` / `stepsForGameSeconds` /
@@ -211,10 +211,9 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   90-minute panel, and a `1 h` goal is `3600` game s, `360` real s at ×10.
 - **Playback**: the flight is watched, not simulated, faster — one multiplier
   scales the wall-clock slice fed to the fixed `DT = 1/120 s` steps, so ×0.25
-  and ×8 produce the same step sequence and the same replay. The tag reads
-  relative to the pace the mode is balanced at, so career's ×1 is the raw pace 4
-  the economy was priced at. The trade `rate` slider is decoration, so it is
-  locked only where a link must re-fly the same sky.
+  and ×8 produce the same step sequence and the same replay. The tag is game seconds per real second in every mode; career defaults to ×4.
+  The trade `rate` slider also affects moving gravity and is locked in career
+  and where a link must re-fly the same sky.
 - **Planet photos**: entering a system for the first time shows a postcard of
   that world from space (bottom-left, aspect kept, 256 px overlay on a small
   screen); landing shows the surface, and a gas giant gets an air platform.

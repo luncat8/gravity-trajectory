@@ -67,8 +67,6 @@ function refreshGameUi() {
 	if (expForceEl) expForceEl.disabled = experimentLock;
 	/* the stay-pay only exists in career: outside it the box is off and dim */
 	if (expHarvestEl) expHarvestEl.disabled = experimentLock || !career;
-	/* the animation slider only decorates the lab sky: a career moves it with the
-	 * game clock, and a lab run that lands a trace must re-fly the same sky */
 	/* the sky slider is locked wherever the sky is part of the flight — a career
 	 * (the moving field the ships land on), a pinned challenge link, a route or
 	 * saved shots — and free in a lab that flies nothing yet */

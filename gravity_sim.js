@@ -80,7 +80,8 @@
 	 *   pace — the playback rung (`playScale`): game seconds per real second,
 	 *          ×4 in career at the default, ×1 in the lab.
 	 *   trade rate — the background animation (`scene.trade.speed`): how fast
-	 *          the trade sky drifts. Decoration; no gameplay reader sees it.
+	 *          the trade sky and moving gravity drift. It can affect trajectories;
+	 *          pad charging and politics do not read it.
 	 * The conversions, and the only ones a reader may use:
 	 *   game s = steps · DT        real s = game s / pace
 	 *   pad s  = game s · SUN_SEC_PER_GAME_SEC

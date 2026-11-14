@@ -35,8 +35,8 @@
 	const START_MINUTES = 420;
 	/* the background animation's own clock: trade minutes per real second, the
 	 * default look being TRADE_MIN_PER_SEC · TRADE_RATE_DEFAULT; ×1 is what the
-	 * url's `&rate=`/`&speed=` carry as 0.5. Decoration — no gameplay reader
-	 * takes a rate from here (0.7.1). The view loads before gravity_sim.js, so
+	 * url's `&rate=`/`&speed=` carry as 0.5. Moving gravity also reads this rate;
+	 * pad charging and politics do not. The view loads before gravity_sim.js, so
 	 * the two numbers live here and the career sky's drift mirrors them in
 	 * `GravitySim.TRADE_MIN_PER_GAME_SEC`. */
 	const TRADE_MIN_PER_SEC = 0.5;

@@ -2769,7 +2769,7 @@ function protoOf(career, family, id) {
 	check(/battery hull · 5 points/.test(yBlock()), 'battery hull seeded from BAT-1..BAT-5');
 	yClick({ act: 'careerTab', tab: 'science' });
 	yClick({ act: 'sciFamily', family: 'battery' });
-	check(/metric · 1 RU = 2\.5 capacity kWh = 0\.0002 leak \/y/.test(yBlock()) &&
+	check(/metric · 1 RU = 2\.5 capacity kWh = 0\.0002 leak \/pad min/.test(yBlock()) &&
 		/frontier · capacity ↓×0\.00 ↑×1\.20 · leak ↓×2\.50 ↑×0\.00/.test(yBlock()),
 		'battery metric and frontier rates shown');
 	yClick({ act: 'sciCopy', family: 'battery' });
@@ -2918,7 +2918,9 @@ function protoOf(career, family, id) {
 		'career wait did not hide outside career');
 	check(bui.get('playbackGroup').hidden === false && bui.get('playTag').textContent === '×1',
 		'flight playback did not stay in lab');
-	check(bui.get('tradeSpeedLabel').textContent === '×1', 'trade time slider label');
+	check(bui.get('tradeSpeedLabel').textContent === '×2', 'linked rate 1 must show ×2 of the 0.5 default');
+	bar.setValue('tradeSpeed', 0.5);
+	check(bui.get('tradeSpeedLabel').textContent === '×1', 'default trade rate label');
 	console.log('0.4.16 verified: wait + flight playback in the bottom game bar · ' +
 		'2 s eased fast-forward · cost-blocked prices red');
 }
@@ -3140,7 +3142,7 @@ function protoOf(career, family, id) {
 	for (; wui.get('careerWait').textContent.startsWith('waiting') && wGuard < 300; wGuard++) {
 		wEnv.runFrames(1, 16.0);
 	}
-	check(wui.get('careerWait').textContent === 'wait · 2 s' && wGuard > 50,
+	check(wui.get('careerWait').textContent === 'wait · 60 s' && wGuard > 50,
 		'the stretched wait must still finish and settle its preview line: ' +
 		wui.get('careerWait').textContent + ' after ' + wGuard + ' frames');
 	check(wScene.game.clockSteps === wStepsBefore + wPre.steps,
