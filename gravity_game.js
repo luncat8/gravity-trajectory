@@ -743,7 +743,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * one. It is one immutable record — nothing drains or upgrades it.
 	 */
 	const COMMERCIAL_BASE = 2.00;
-	const COMMERCIAL_KWH = 1.50;
+	const COMMERCIAL_KWH = 2.50;
 	const COMMERCIAL_PAD = {
 		catapult: OrbitTech.CATAPULTS[0],
 		panel: OrbitTech.PANELS[0],

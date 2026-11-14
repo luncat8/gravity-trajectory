@@ -1,0 +1,117 @@
+# 0.6.2 — the `COMMERCIAL_KWH` A/B: does a `HOLD-24` commercial hop undercut a pad build?
+
+The one open tuning number of `0.6.2-plan-pad-fees.md` §2 (deferred in
+`archive/0.6.2-worklog.md`). Three arms, each run as:
+`STATS=1 PAIRED=1 SECONDS=1200 SEEDS=1-12 node experiments/career_gravity_bench.js`
+with `COMMERCIAL_KWH` set to `1.50` / `2.00` / `2.50` in `gravity_game.js`
+(2026-11-14, node v22.22.3). Raw stdout per arm:
+`0.6.2-commercial-kwh-150.txt` / `-200.txt` / `-250.txt`.
+`experiments/logs/0.6.10-map-statistics.txt` was restored to HEAD after the runs,
+so the artefact `0.6.4`–`0.6.6` read stays the 0.6.10 table.
+
+## fee arithmetic per arm (commercial pad = `EMC-1 + BAT-1`, force cap 1.0161 kWh any mass)
+
+| arm | slowest dry hop (`commercialMinFee`) | full force / any loaded hop that can leave | vs `HOLD-24` cap `4.50` | vs pad build `EMC-1 3.04` |
+|---|---|---|---|---|
+| `1.50` | `2.16` | `3.52` | fundable (+0.98 profit) | hop dearer |
+| `2.00` | `2.22` | `4.03` | fundable (+0.47 profit) | hop dearer |
+| `2.50` | `2.27` | `4.54` | **gate holds** | hop dearer |
+
+A loaded `HOLD-24` (38 t) caps at 47 px/s on the commercial rail and burns the
+full 1.0161 kWh there, so any loaded hop that can actually reach another system
+pays the full-force fee — the mid-speed fees (0.41–0.93 kWh at 30–45 px/s) cannot
+leave the planet. Bench guard holds at every arm: a full FT-1 (`3.20`) >
+`commercialMinFee()`.
+
+## headline numbers (STATS TOTAL / TOTAL lines)
+
+| line | 0.6.2 baseline after (`1.50`) | `2.00` | `2.50` |
+|---|---|---|---|
+| exit code | 0 | 0 | 0 |
+| `STATS TOTAL · profit` | 0.025/s | 0.024/s | 0.024/s |
+| `STATS TOTAL · property` | 16.30 | 15.73 | 16.48 |
+| `STATS TOTAL · flown` | 32.2 px/s | 34.6 px/s | 34.1 px/s |
+| `STATS TOTAL · rot` | 492 | 509 | 477 |
+| `STATS TOTAL · standing` | 34.40 | 35.78 | 32.26 |
+| `visits/contracts/bribes/tax` | 82% · 7% · 0% · 10% | 78% · 10% · 2% · 10% | 79% · 9% · 1% · 11% |
+| `TOTAL flights` | 396 | 401 | 412 |
+| `TOTAL earned` | 69.41 | 93.84 | 87.72 |
+| `TOTAL purse` | 496.07 | 477.43 | 466.37 |
+| `TOTAL pads` | 66 | 60 | 64 |
+| `TOTAL dead pads` | 2 | 0 | 0 |
+| `TOTAL mean reach` | 4.37 | 4.64 | 4.83 |
+| `TOTAL rebel · seized` | 44 · 44 | 49 · 49 | 43 · 44 |
+| `TOTAL patients · mean rot` | 352 · 37.8 | 392 · 39.2 | 344 · 36.7 |
+| `bribes · arrests · medic trips · patients home` | 1 · 0 · 0 · 0 | 6 · 0 · 1 · 0 | 3 · 0 · 2 · 8 |
+
+The `1.50` arm reproduces the 0.6.2 "after" column of
+`0.6.2-pad-fees-ab.txt` exactly (purse 496.07, property 16.30, standing 34.40,
+flights 396, medic trips 0, per-company purses to the cent) — the bench is
+deterministic on these seeds, so the three arms are directly comparable.
+
+## purse per company, game by game (PAIRED=1), Δ vs the `1.50` arm
+
+| seed | R | 1.50 | 2.00 | Δ | 2.50 | Δ |
+|---|---|---|---|---|---|---|
+| 1 | R1 | 40.99 | 15.05 | −25.93 | 9.10 | −31.88 |
+| 1 | R2 | 11.49 | 66.36 | +54.87 | 46.41 | +34.93 |
+| 2 | R1 | 2.03 | 0.62 | −1.41 | 0.84 | −1.19 |
+| 2 | R2 | 8.75 | 4.14 | −4.61 | 28.50 | +19.75 |
+| 3 | R1 | 9.19 | 9.11 | −0.07 | 12.08 | +2.89 |
+| 3 | R2 | 46.02 | 46.02 | 0.00 | 42.98 | −3.04 |
+| 4 | R1 | 29.83 | 58.28 | +28.45 | 29.83 | 0.00 |
+| 4 | R2 | 50.01 | 3.87 | −46.13 | 50.01 | 0.00 |
+| 5 | R1 | 40.74 | 27.35 | −13.38 | 21.89 | −18.85 |
+| 5 | R2 | 19.52 | 21.80 | +2.28 | 15.73 | −3.79 |
+| 6 | R1 | 3.77 | 4.49 | +0.72 | 5.25 | +1.48 |
+| 6 | R2 | 7.15 | 5.31 | −1.84 | 4.51 | −2.64 |
+| 7 | R1 | 10.88 | 13.89 | +3.02 | 13.89 | +3.02 |
+| 7 | R2 | 16.48 | 2.90 | −13.59 | 2.90 | −13.59 |
+| 8 | R1 | 4.82 | 1.12 | −3.70 | 1.55 | −3.27 |
+| 8 | R2 | 5.79 | 9.99 | +4.20 | 3.54 | −2.25 |
+| 9 | R1 | 20.05 | 19.12 | −0.93 | 18.18 | −1.87 |
+| 9 | R2 | 22.41 | 22.41 | 0.00 | 22.41 | 0.00 |
+| 10 | R1 | 37.07 | 36.56 | −0.51 | 36.06 | −1.02 |
+| 10 | R2 | 13.38 | 13.38 | 0.00 | 13.38 | 0.00 |
+| 11 | R1 | 69.75 | 58.23 | −11.52 | 67.89 | −1.86 |
+| 11 | R2 | 21.04 | 28.14 | +7.10 | 12.49 | −8.55 |
+| 12 | R1 | 0.35 | 3.05 | +2.70 | 2.35 | +2.00 |
+| 12 | R2 | 4.56 | 6.21 | +1.65 | 4.60 | +0.04 |
+
+Σ Δ: `2.00` −18.64 (477.43), `2.50` −29.70 (466.37) over 24 companies. As in the
+0.6.2 A/B, the sign is per-company dispersion, not a directional drain: both
+arms have big winners and big losers, because the pricier fallback changes which
+routes the bots take, not how much money the world makes.
+
+## decision
+
+**`COMMERCIAL_KWH = 2.50` ships.** The question was whether a `HOLD-24` commercial
+hop stays cheaper than a pad build: at `1.50`/`2.00` a max-paying `HOLD-24`
+(`4.50`) still funds a full-force commercial hop (`3.52`/`4.03`), so a company
+profits without ever building a rail — the note's gate fails exactly where the
+plan said it would. At `2.50` the loaded hop costs `4.54`: above the `4.50`
+delivery cap (not fundable) and above the `3.04` `EMC-1` build, so the gate "no
+profit without a built catapult" holds for **every** hold, not only a `HOLD-8`.
+`2.00` satisfied neither criterion and was rejected. The bench bar (exit 0, no
+new failure, fuel/purse invariants) passes at all three arms, so the knob is a
+price decision, and the shape is untouched: the commercial rail never claims the
+planet, never blocks a build, is always charged and always offered — only the
+price moved (`README.md`, `drafts/career-economy.md`, `0.6.2-plan-pad-fees.md`
+and `gui_tables.js`'s dynamic help text updated to `2.00 + 2.50 per kWh`,
+`2.27`–`4.54`).
+
+Cost of the knob at bench level (vs `1.50`): purse −29.70 (−6.0 %), profit
+0.025 → 0.024/s, standing 34.40 → 32.26; in exchange dead pads 2 → 0 (the
+launch reserve `commercialMinFee()` is honestly pricier), property 16.30 →
+16.48, mean reach 4.37 → 4.83, and the medic collapse flagged in the 0.6.2 A/B
+partially recovers (medic trips 0 → 2, patients home 0 → 8). All within the
+bench bar.
+
+## validation after settling on `2.50`
+
+- `node --check` on every touched script; `git diff --check` clean.
+- `career_gravity_bench STATS=1 PAIRED=1 SECONDS=1200 SEEDS=1-12` exit 0 (this
+  log's `250` arm) — plus the `1.50` arm reproducing `0.6.2-pad-fees-ab.txt`.
+- `career_stats_test`, `career_departure_test`, `politics_test`, `dom_smoke`,
+  `career_bench`, `career_bot_bench` re-run at `2.50` — same results as the 0.6.2
+  worklog (see `archive/0.6.2-worklog.md`).
