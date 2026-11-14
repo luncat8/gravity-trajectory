@@ -434,10 +434,13 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return -MONEY.cap * Math.expm1(-age * (k === undefined ? MONEY.k : k) / MONEY.cap);
 	}
 
-	/* career clock seconds of a step: the political formulas are priced in
-	 * the same seconds the HUD prints, scaled by the world speed setting */
+	/* the political clock of a step: world minutes — flight seconds times the
+	 * world rate. Every `OrbitEcon.*_SECONDS` rate is priced in these, so the
+	 * name lies about the unit (`CORRUPTION_GRACE = 120` is two world hours);
+	 * renaming the table would move the balance, so 0.7.1 only writes it down.
+	 * `ARREST_SECONDS` is the exception: it is flight seconds, a step count. */
 	function politicsSeconds(market, step) {
-		return step * GravitySim.DT * market.politicsRate;
+		return GravitySim.worldMinutes(step, market.politicsRate);
 	}
 
 	/* the rail the rebels run on `planet`, or null; a seized rail outlives the
@@ -675,6 +678,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * only an expensive one.
 	 * The run ends broke (purse below zero, or no affordable exit) or complete
 	 * (a catapult on every planet; cheat runs never complete).
+	 * Every `*Sec` below is flight seconds (`steps · DT`) — the clock the board,
+	 * the barrels and the HUD read — never world minutes or real seconds.
 	 */
 	const CAREER = {
 		evacFee: 6,
@@ -733,7 +738,6 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const SALT_POLITICS = 0xce;
 	const SALT_ARREST = 0xcf;
 	const SALT_BRIBE = 0xd0;
-	const WORLD_SEC_PER_MIN = 60;
 	const TAU = Math.PI * 2;
 
 	/*
@@ -896,7 +900,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return galaxy.period[planet];
 	}
 
-	/* barrel direction (radians) of the planet's EMC after `seconds` */
+	/* barrel direction (radians) of the planet's EMC after `seconds` of flight time */
 	function turretAngle(galaxy, planet, seconds) {
 		return galaxy.phase[planet] + seconds / galaxy.period[planet] * TAU;
 	}
@@ -3445,7 +3449,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return true;
 	}
 
-	/* the Capital's slow transport: no fee, no reward, no medics, no planning */
+	/* the Capital's slow transport: no fee, no reward, no medics, no planning.
+	 * ARREST_SECONDS is flight seconds, so the transport lands a fixed number
+	 * of steps later whatever the world rate is set to */
 	function arrestCareer(career, market, sim, runStep) {
 		const capital = career.capitalPlanet;
 		if (capital < 0) return false;
@@ -4075,16 +4081,17 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return true;
 	}
 
-	/* pads charge on the world clock (DT · rate world minutes per step): solar gain
-	 * over those minutes minus the battery's slow leak (one world minute = one leak year) */
+	/* pads charge on the world clock, never on the flight clock: `rate` world
+	 * minutes pass per flight second, so one step buys DT · rate world minutes
+	 * of sunlight (world seconds) against the battery's leak (world minutes) */
 	function careerAdvance(career, rate, steps) {
-		const minutes = steps * GravitySim.DT * rate;
-		const seconds = minutes * WORLD_SEC_PER_MIN;
+		const worldMin = GravitySim.worldMinutes(steps, rate);
+		const worldSec = GravitySim.worldSeconds(steps, rate);
 		for (let i = 0; i < career.pads.length; i++) {
 			const pad = career.pads[i];
 			if (pad.catapult === null) continue;
-			const charge = OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, minutes) +
-				OrbitTech.solarCharge(pad.panel, career.light[i], seconds);
+			const charge = OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, worldMin) +
+				OrbitTech.solarCharge(pad.panel, career.light[i], worldSec);
 			pad.chargeKwh = charge < pad.battery.capacity ? charge : pad.battery.capacity;
 		}
 	}

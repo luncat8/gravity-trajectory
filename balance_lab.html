@@ -1011,8 +1011,8 @@ function createPricing() {
 		catapult: 'CATAPULTS', panel: 'PANELS', battery: 'BATTERIES',
 		hold: 'HOLDS', engine: 'ENGINES', tank: 'TANKS'
 	};
-	/* mirrors gui_tables.js CAREER_WAIT_MIN: the world minutes one wait buys */
-	var LADDER_WAIT_SEC = 30 * 60;
+	/* mirrors GravitySim.WAIT_WORLD_SEC: the world seconds one wait buys */
+	var LADDER_WAIT_SEC = 1800;
 	var ladder = { kind: 'panel', keep: 0, gain: 1 };
 
 	/* the biggest single burn on a dry 10 t hull plus the fitted gear: the

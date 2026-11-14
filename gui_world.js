@@ -286,8 +286,9 @@ function syncSeedUrl(keepReplay = false) {
 		params.delete('speed');
 	} else {
 		params.delete('rate');
-		if (scene.trade.speed !== 0.5) params.set('speed', String(scene.trade.speed));
-		else params.delete('speed');
+		const speed = scene.trade.speed;
+		if (speed === GravitySim.WORLD_RATE_DEFAULT) params.delete('speed');
+		else params.set('speed', String(speed));
 	}
 	if (!keepReplay) {
 		params.delete('shots');

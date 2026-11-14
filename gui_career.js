@@ -7,13 +7,18 @@
 
 'use strict';
 
-/* exact net kWh, board ageing and visit-profit growth one wait will settle */
+/* exact net kWh, board ageing and visit-profit growth one wait will settle, in
+ * the three clocks the player reads: the real seconds the fast-forward takes
+ * (CAREER_WAIT_SEC), the flight seconds the game clock gains and the world
+ * minutes the pads are charged for */
 function waitSettlement(career) {
 	const rate = scene.trade.speed;
-	const steps = Math.max(1, Math.round(CAREER_WAIT_MIN / (DT * rate)));
-	const minutes = steps * DT * rate;
-	const seconds = minutes * 60;
-	const gameSec = Math.round(steps * DT);
+	const steps = GravitySim.stepsForWorldSeconds(GravitySim.WAIT_WORLD_SEC, rate);
+	const worldMin = GravitySim.worldMinutes(steps, rate);
+	const worldSec = GravitySim.worldSeconds(steps, rate);
+	const gameSec = Math.round(GravitySim.flightSeconds(steps));
+	/* what the same span costs to watch instead of fast-forwarding */
+	const watchSec = GravitySim.wallSeconds(steps, playPace());
 	const nextStep = game.clockSteps + steps;
 	const here = career.at >= 0 ? career.at : career.hq;
 	let hereGain = 0;
@@ -23,8 +28,8 @@ function waitSettlement(career) {
 		const pad = career.pads[i];
 		if (pad.catapult === null) continue;
 		const after = Math.min(pad.battery.capacity,
-			OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, minutes) +
-			OrbitTech.solarCharge(pad.panel, career.light[i], seconds));
+			OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, worldMin) +
+			OrbitTech.solarCharge(pad.panel, career.light[i], worldSec));
 		const gain = after > pad.chargeKwh ? after - pad.chargeKwh : 0;
 		if (i === here) hereGain = gain;
 		if (gain > 0.005) {
@@ -53,6 +58,8 @@ function waitSettlement(career) {
 	return {
 		steps,
 		gameSec,
+		worldMin,
+		watchSec,
 		here,
 		hereHasPad: career.pads[here].catapult !== null,
 		hereGain,
@@ -73,12 +80,17 @@ function otherHumanPlays() {
 	return false;
 }
 
+/* real seconds as the player reads them: one decimal below 10 s, whole above */
+function realSecText(sec) {
+	return sec >= 10 ? String(Math.round(sec)) : String(Math.round(sec * 10) / 10);
+}
+
 function refreshCareerWaitUi(career, ended) {
 	const busy = careerWaitBusy();
 	careerWaitBtn.disabled = busy || ended || turret.pending ||
 		activeSim().status === STATUS_FLYING;
 	careerWaitBtn.classList.toggle('on', busy);
-	if (!busy) careerWaitBtn.textContent = 'wait · ' + CAREER_WAIT_MIN + ' min';
+	if (!busy) careerWaitBtn.textContent = 'wait · ' + CAREER_WAIT_SEC + ' s';
 	if (!busy && otherHumanPlays()) {
 		careerWaitBtn.textContent = 'wait · resume time';
 		careerWaitBtn.title = 'Release this player’s pause; all players must resume before time advances';
@@ -124,7 +136,12 @@ function refreshCareerWaitUi(career, ended) {
 	const profitFull = s.profitGain > 0.005
 		? 'planet visits +' + s.profitGain.toFixed(2) + ' (' + s.growingPlanets + ' growing)'
 		: 'planet visits at cap';
-	const title = 'wait ' + CAREER_WAIT_MIN + ' min (' + s.gameSec + ' s): ' +
+	/* the tooltip is the only place all three clocks meet: what the press costs
+	 * in real time, what it moves the game clock, and what watching the same
+	 * span at the current pace would cost instead */
+	const title = 'fast-forward ' + CAREER_WAIT_SEC + ' s of real time · the clock runs ' +
+		s.gameSec + ' s (' + s.worldMin + ' world min, ' + realSecText(s.watchSec) +
+		' s to watch at ' + paceTag() + '): ' +
 		padFull + ' · ' + boardFull + ' · ' + profitFull;
 	careerWaitBtn.title = title;
 	if (careerWaitInfoEl) {
@@ -133,6 +150,17 @@ function refreshCareerWaitUi(career, ended) {
 		careerWaitInfoEl.title = title;
 		careerWaitInfoEl.className = s.dropsContract ? 'careerLine warn' : 'careerLine dim';
 	}
+}
+
+/* the wait preview names the pace and the world rate, so a change of either
+ * repaints just the button and its line — the drawer needs no rebuilding.
+ * Only a preview that is on screen: `startGame` resets the pace before the
+ * career it is starting has any pads. */
+function refreshCareerWaitPreview() {
+	if (!careerRule() || careerWaitBtn.hidden || careerWaitBusy()) return;
+	const career = activeCareer();
+	if (!career) return;
+	refreshCareerWaitUi(career, career.ended !== GravityGame.CAREER_OPEN);
 }
 
 /* one row per career tab: the pad and the shop, the saved shots, research */
@@ -301,7 +329,7 @@ function easeInOut(p) {
 	return p < 0.5 ? q * q * q / 2 : 1 - q * q * q / 2;
 }
 
-function careerWaitProgress(p, eased) {
+function careerWaitProgress(p) {
 	const pct = Math.round(p * 100);
 	if (pct === careerWaitAnim.pct) return;
 	careerWaitAnim.pct = pct;
@@ -323,13 +351,15 @@ function careerWaitProgress(p, eased) {
 	if (!careerWaitInfoEl) return;
 	careerWaitInfoEl.hidden = false;
 	careerWaitInfoEl.className = 'careerLine dim';
-	/* the minutes are the eased world time, the % is wall-clock progress */
+	/* the seconds are the eased real time the press costs, the clock is what it
+	 * buys, and the % on the button is the same progress */
 	const padNote = pad && pad.catapult !== null
 		? ' · ' + planetName(careerWaitAnim.planet) + ' ' + pad.chargeKwh.toFixed(2) +
 			' / ' + pad.battery.capacity.toFixed(2) + ' kWh'
 		: '';
-	careerWaitInfoEl.textContent = 'fast-forward · ' + (CAREER_WAIT_MIN * eased).toFixed(1) +
-		' / ' + CAREER_WAIT_MIN + ' min' + padNote + ' · ' + pct + ' %';
+	careerWaitInfoEl.textContent = 'fast-forward · ' + (CAREER_WAIT_SEC * p).toFixed(1) +
+		' / ' + CAREER_WAIT_SEC + ' s · clock +' +
+		Math.round(GravitySim.flightSeconds(careerWaitAnim.done)) + ' s' + padNote;
 }
 
 /* the whole settled result lands exactly on the old instant wait */
@@ -344,7 +374,8 @@ function careerWaitFinish() {
 	GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
 	GravityGame.checkEnded(career);
 	cargoSim.predCount = 0;
-	careerNotice('waited ' + CAREER_WAIT_MIN + ' min · ' + planetName(anim.planet) + ' pad ' +
+	careerNotice('clock +' + Math.round(GravitySim.flightSeconds(anim.steps)) + ' s · ' +
+		planetName(anim.planet) + ' pad ' +
 		(gain > 0.005 ? '+' + gain.toFixed(2) + ' kWh'
 			: pad.catapult === null ? 'has no catapult' : 'already full'));
 	careerWaitBtn.classList.remove('on');
@@ -354,8 +385,8 @@ function careerWaitFinish() {
 /* the world advances in eased chunks each frame: the trade planets visibly
  * race, pads charge and the board ages exactly as one instant wait did.
  * Each frame credits at most WAIT_FRAME_MS toward the wait, so below
- * ~50 fps the wall-clock run stretches past 2 s and every frame keeps a
- * bounded step chunk — slow machines slow down instead of freezing. */
+ * ~50 fps the real-time run stretches past CAREER_WAIT_SEC and every frame
+ * keeps a bounded step chunk — slow machines slow down instead of freezing. */
 function careerWaitTick(now) {
 	const anim = careerWaitAnim;
 	if (anim === null) return;
@@ -369,7 +400,7 @@ function careerWaitTick(now) {
 	const p = anim.credit < CAREER_WAIT_MS ? anim.credit / CAREER_WAIT_MS : 1;
 	const eased = easeInOut(p);
 	const steps = Math.round(eased * anim.steps);
-	tradeSim.advanceTo(anim.startT + CAREER_WAIT_MIN * eased);
+	tradeSim.advanceTo(anim.startT + CAREER_WAIT_WORLD_MIN * eased);
 	cargoSim.fieldT = tradeSim.t;
 	if (steps > anim.done) {
 		/* recharge from the start snapshot, so the eased chunks land on the
@@ -386,11 +417,11 @@ function careerWaitTick(now) {
 		anim.done = steps;
 		cargoSim.predCount = 0;
 	}
-	if (p < 1) careerWaitProgress(p, eased);
+	if (p < 1) careerWaitProgress(p);
 	else careerWaitFinish();
 }
 
-/* one press starts the 2 s fast-forward; only the end settles the board */
+/* one press starts the real-time fast-forward (CAREER_WAIT_SEC); only the end settles the board */
 function waitCareer() {
 	if (!careerRule() || careerWaitBusy() || turret.pending ||
 		activeSim().status === STATUS_FLYING) return;
@@ -412,7 +443,7 @@ function waitCareer() {
 		before: pad.catapult === null ? 0 : pad.chargeKwh,
 		charges: Float64Array.from(career.pads, p => p.chargeKwh),
 		rate: rate,
-		steps: Math.max(1, Math.round(CAREER_WAIT_MIN / (DT * rate))),
+		steps: GravitySim.stepsForWorldSeconds(GravitySim.WAIT_WORLD_SEC, rate),
 		done: 0,
 		pct: -1,
 		credit: 0,
@@ -422,7 +453,7 @@ function waitCareer() {
 	};
 	careerWaitBtn.disabled = true;
 	careerWaitBtn.classList.add('on');
-	careerWaitProgress(0, 0);
+	careerWaitProgress(0);
 	hudAt = -Infinity;
 }
 
@@ -430,7 +461,7 @@ function cancelCareerWait() {
 	if (careerWaitAnim === null) return;
 	careerWaitAnim = null;
 	careerWaitBtn.classList.remove('on');
-	careerWaitBtn.textContent = 'wait · ' + CAREER_WAIT_MIN + ' min';
+	careerWaitBtn.textContent = 'wait · ' + CAREER_WAIT_SEC + ' s';
 }
 
 function careerEvacuate() {

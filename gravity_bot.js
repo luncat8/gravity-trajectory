@@ -82,7 +82,8 @@
 	const CAREER_SPEED_FRACTIONS = [0.38, 0.55, 0.72, 0.86, 1];
 	const CAREER_TARGET_OFFSETS = 4;
 	const CAREER_TARGET_STEP = 0.035;
-	const CAREER_WAIT_SECONDS = 1800;
+	/* world seconds of sunlight one press of `wait` settles — 30 world minutes */
+	const CAREER_WAIT_SECONDS = GravitySim.WAIT_WORLD_SEC;
 	const CAREER_ENERGY_WAIT_COST = 0.04;
 	const CAREER_BUILT_PAD_VALUE = 2.5;
 	const CAREER_NETWORK_PAD_VALUE = 4;
@@ -2003,11 +2004,13 @@
 		const mass = career.ship.mass;
 		const scale = career.forceScale;
 		const free = pad.chargeKwh - pad.reservedKwh;
-		const flight = record.steps * GravitySim.DT * (this.careerRate || 1) * 60;
+		/* the launch cycle is priced on the world clock: the flight's world
+		 * seconds plus the world seconds the panel needs to replace the shot */
+		const flownSec = GravitySim.worldSeconds(record.steps, this.careerRate || 1);
 		const speed = GravityGame.speedOf(record.speedU);
 		const energy = OrbitTech.launchEnergy(mass, pad.catapult, speed);
 		const missed = energy > free ? energy - free : 0;
-		const cycle = flight + this.careerRefillWait(career, planet, pad.panel, missed);
+		const cycle = flownSec + this.careerRefillWait(career, planet, pad.panel, missed);
 		if (!(cycle > 0)) return false;
 		const money = record.money;
 		const yieldNow = money / cycle;
@@ -2025,7 +2028,7 @@
 		const panel = careerNextItem(career, OrbitTech.KIND_PANEL, OrbitTech.PANELS, pad.panel);
 		if (panel && GravityGame.gearKnown(career, panel)) {
 			const refill = this.careerRefillWait(career, planet, panel, missed);
-			this.careerGearOffer(career, money / (flight + refill) - yieldNow,
+			this.careerGearOffer(career, money / (flownSec + refill) - yieldNow,
 				careerPrice(career, panel), OrbitTech.KIND_PANEL, panel, null, panel.id);
 		}
 
@@ -2038,7 +2041,7 @@
 				energy > battery.capacity ? energy - battery.capacity : 0);
 			this.careerGearOffer(career,
 				(money + Math.max(0, reach - reachNow) * CAREER_REACH_VALUE) /
-				(flight + refill) - yieldNow,
+				(flownSec + refill) - yieldNow,
 				careerPrice(career, battery), OrbitTech.KIND_BATTERY, battery, null, battery.id);
 		}
 
@@ -2063,7 +2066,7 @@
 				shot > mate.capacity ? shot - mate.capacity : 0);
 			this.careerGearOffer(career,
 				(money + Math.max(0, reach - reachNow) * CAREER_REACH_VALUE) /
-				(flight + refill) - yieldNow, careerPrice(career, catapult) + mateCost,
+				(flownSec + refill) - yieldNow, careerPrice(career, catapult) + mateCost,
 				OrbitTech.KIND_CATAPULT, catapult, mate === pad.battery ? null : mate,
 				catapult.id + (mate === pad.battery ? '' : '+' + mate.id));
 		}

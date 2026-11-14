@@ -141,6 +141,38 @@ check('solar charge: kW·s -> kWh, dim world charges slowly, leak decays', () =>
 	assert.ok(OrbitTech.batteryLeak(BAT[4], 1.5, 100) > c1);
 });
 
+/* 0.7.1: one contract for the three clocks. A step is always DT of flight time;
+ * `rate` (the world rate) makes world minutes out of it, and `pace` (playback)
+ * makes real seconds. Every literal below is a pinned HEAD number, so renaming a
+ * unit without re-scaling its table fails here instead of in the shop. */
+check('the clocks: flight s = steps · DT, world s = flight s · rate · 60, real s = flight s / pace', () => {
+	assert.strictEqual(GravitySim.flightSeconds(120), 1);
+	assert.strictEqual(GravitySim.worldMinutes(120, 0.5), 0.5);
+	assert.strictEqual(GravitySim.worldSeconds(120, 0.5), 30);
+	assert.strictEqual(GravitySim.stepsForWorldSeconds(GravitySim.WAIT_WORLD_SEC, 0.5), 7200);
+	assert.strictEqual(GravitySim.flightSecondsForWorld(GravitySim.WAIT_WORLD_SEC, 0.5), 60);
+	assert.strictEqual(GravitySim.flightSeconds(7200), 60);
+	assert.strictEqual(GravitySim.wallSeconds(7200, 4), 15);
+	assert.strictEqual(GravitySim.wallSeconds(7200, 0), 0);
+	assert.strictEqual(GravitySim.WORLD_SEC_PER_MIN, 60);
+	assert.strictEqual(GravitySim.WORLD_RATE_DEFAULT, 0.5);
+	assert.strictEqual(GravitySim.WAIT_WORLD_SEC, 1800);
+});
+
+check('one wait: 1800 world s of sun and 30 world min of leak, pinned to the kWh', () => {
+	const steps = GravitySim.stepsForWorldSeconds(GravitySim.WAIT_WORLD_SEC,
+		GravitySim.WORLD_RATE_DEFAULT);
+	assert.strictEqual(GravitySim.worldMinutes(steps, 0.5), 30);
+	assert.strictEqual(GravitySim.worldSeconds(steps, 0.5), 1800);
+	assert.strictEqual(OrbitTech.solarCharge(SP[0], 1, GravitySim.WAIT_WORLD_SEC), 0.5);
+	assert.ok(Math.abs(OrbitTech.batteryLeak(BAT[0], 1.5, 30) - 1.455668300323) < 1e-9);
+	/* the two spans the shop prices between waits */
+	assert.ok(Math.abs(OrbitTech.solarCharge(SP[0], 1, 10) - 0.002777777778) < 1e-12);
+	assert.ok(Math.abs(OrbitTech.solarCharge(SP[0], 1, 600) - 0.166666666667) < 1e-12);
+	assert.ok(Math.abs(OrbitTech.batteryLeak(BAT[0], 1.5, 10) - 1.485074750624) < 1e-9);
+	assert.ok(Math.abs(OrbitTech.batteryLeak(BAT[2], 6.0, 600) - 4.186057956426) < 1e-9);
+});
+
 /* --- §4 bulk planet-gear upgrade ---------------------------------------- */
 
 check('bulkUpgradeCost sums the tier cost over built facilities only', () => {

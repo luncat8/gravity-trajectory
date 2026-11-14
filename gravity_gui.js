@@ -599,6 +599,8 @@ if (gameSpeedSlider) {
 	gameSpeedSlider.addEventListener('input', () => {
 		gameRate = Number(gameSpeedSlider.value);
 		if (gameSpeedLabel) gameSpeedLabel.textContent = '×' + gameRate;
+		/* the slider multiplies the pace the footer tag and the wait preview name */
+		refreshPlaybackUi();
 	});
 }
 trimSlider.addEventListener('input', onTrimInput);
@@ -1052,13 +1054,14 @@ for (let s = 0; s < scoreBotEls.length; s++) {
 }
 game.player = slotTypes[0];
 
-refreshPlaybackUi();
 if (careerCleanEl) cleanCareerView = careerCleanEl.checked;
 if (careerPauseLandEl) pauseOnLanding = careerPauseLandEl.checked;
 if (gameSpeedSlider) {
 	gameRate = Number(gameSpeedSlider.value);
 	if (gameSpeedLabel) gameSpeedLabel.textContent = '×' + gameRate;
 }
+/* after gameRate: the tag shows the pace the slider multiplies */
+refreshPlaybackUi();
 refreshCareerClockUi();
 cargoSim.horizon = Number(horizonSlider.value);
 horizonLabel.textContent = cargoSim.horizon + ' s';

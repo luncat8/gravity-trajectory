@@ -71,6 +71,54 @@
 	const FULL_BUDGET_MS = 1e9;
 	const PRED_LOG_MAX = 64;
 
+	/* --- the clocks (0.7.1) -------------------------------------------------
+	 * One physics step is always DT of flight time and the sim knows no other
+	 * clock. Two multipliers, both set outside the step, turn flight time into
+	 * the clocks a career reads:
+	 *   rate — the world rate (`scene.trade.speed`): world minutes per flight
+	 *          second, 0.5 by default. Pads, politics and the orbit animation
+	 *          run on it; a flight never does.
+	 *   pace — the playback pace (`playScale`): flight seconds per real second,
+	 *          4 at the career default, which the footer calls ×1.
+	 * The conversions, and the only ones a reader may use:
+	 *   flight s = steps · DT
+	 *   world min = flight s · rate          world s = world min · 60
+	 *   real s = flight s / pace
+	 */
+	const WORLD_SEC_PER_MIN = 60;
+	const WORLD_RATE_DEFAULT = 0.5;
+	/* one press of `wait` settles this much sunlight on every pad: 30 world
+	 * minutes, 60 flight seconds and 2 real seconds at the default pace */
+	const WAIT_WORLD_SEC = 1800;
+
+	function flightSeconds(steps) {
+		return steps * DT;
+	}
+
+	function worldMinutes(steps, rate) {
+		return steps * DT * rate;
+	}
+
+	function worldSeconds(steps, rate) {
+		return steps * DT * rate * WORLD_SEC_PER_MIN;
+	}
+
+	/* the steps that settle `seconds` of world time at `rate` */
+	function stepsForWorldSeconds(seconds, rate) {
+		return Math.max(1, Math.round(seconds / (DT * rate * WORLD_SEC_PER_MIN)));
+	}
+
+	/* flight seconds `worldSec` of world time spans, unrounded: the pad and
+	 * politics readouts price a wait without running its steps */
+	function flightSecondsForWorld(worldSec, rate) {
+		return worldSec / (WORLD_SEC_PER_MIN * rate);
+	}
+
+	/* the real seconds `steps` take to run at `pace`; a paused clock takes none */
+	function wallSeconds(steps, pace) {
+		return pace > 0 ? steps * DT / pace : 0;
+	}
+
 	/* `worldW`/`worldH` frame the planet field; a flight may run out to the
 	 * area, AREA_SCALE times the field and centred on it */
 	function GravitySim(worldW, worldH) {
@@ -978,6 +1026,15 @@
 	};
 
 	GravitySim.DT = DT;
+	GravitySim.WORLD_SEC_PER_MIN = WORLD_SEC_PER_MIN;
+	GravitySim.WORLD_RATE_DEFAULT = WORLD_RATE_DEFAULT;
+	GravitySim.WAIT_WORLD_SEC = WAIT_WORLD_SEC;
+	GravitySim.flightSeconds = flightSeconds;
+	GravitySim.worldMinutes = worldMinutes;
+	GravitySim.worldSeconds = worldSeconds;
+	GravitySim.stepsForWorldSeconds = stepsForWorldSeconds;
+	GravitySim.flightSecondsForWorld = flightSecondsForWorld;
+	GravitySim.wallSeconds = wallSeconds;
 	GravitySim.MU = MU;
 	GravitySim.SOFT = SOFT;
 	GravitySim.SOFT2 = SOFT2;

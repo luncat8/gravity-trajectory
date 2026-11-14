@@ -19,11 +19,9 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	game.fixedRate = fixedRate;
 	if (rule) game.rule = rule;
 	game.cheat = game.rule === RULE_CAREER && GravityGame.CHEATS[cheat] ? cheat : null;
+	/* both ladders share their rungs, but a rung means a different pace in each:
+	 * a mode switch returns to the pace that mode is balanced at */
 	if (careerRule() !== wasCareer) resetPlayback();
-	else if (playIndex > playMaxIndex()) {
-		playIndex = playMaxIndex();
-		refreshPlaybackUi();
-	}
 	if (botLevel) game.bot = botLevel;
 	/* 0 means "follow the difficulty level's rival count" */
 	if (game.playerCount > 0) game.playerCount = Math.max(1, Math.min(MAX_PLAYERS, game.playerCount));

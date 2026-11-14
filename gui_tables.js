@@ -119,12 +119,16 @@ for (const family in SCIENCE_DEFAULTS) {
 	scienceValues[family] = {};
 	for (const key in SCIENCE_DEFAULTS[family]) scienceValues[family][key] = SCIENCE_DEFAULTS[family][key];
 }
-/* one press of wait runs the world clock: 30 world minutes of sunlight,
- * eased over 2 s so the trade sky visibly fast-forwards; each frame may
- * credit at most WAIT_FRAME_MS (a 50 fps budget), so a slow machine
- * stretches the wait past 2 s instead of freezing the view */
-const CAREER_WAIT_MIN = 30;
+/* one press of wait runs the world clock: GravitySim.WAIT_WORLD_SEC of sunlight
+ * — 30 world minutes, 60 flight seconds at the default world rate — eased over
+ * CAREER_WAIT_SEC of real time so the trade sky visibly fast-forwards; each
+ * frame may credit at most WAIT_FRAME_MS (a 50 fps budget), so a slow machine
+ * stretches the wait instead of freezing the view. The button names the real
+ * seconds, the only time the player spends; the orbit animation needs the same
+ * wait in its own world minutes. */
 const CAREER_WAIT_MS = 2000;
+const CAREER_WAIT_SEC = CAREER_WAIT_MS / 1000;
+const CAREER_WAIT_WORLD_MIN = GravitySim.WAIT_WORLD_SEC / GravitySim.WORLD_SEC_PER_MIN;
 const WAIT_FRAME_MS = 20;
 const VIEW_SPACE = 'space';
 const VIEW_FIELD = 'field';
@@ -190,15 +194,17 @@ const REPLAY_GAP_MS = 450;
 const REPLAY_SPEEDS = [0.25, 0.5, 1, 4, 16];
 const REPLAY_DEFAULT = 2;
 /* live playback: how fast the flight is watched; the physics steps never change.
- * Career defaults 4x faster (×4) with 4x higher ceiling (×32 vs ×8). */
-const PLAY_SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16, 32];
+ * The tag reads relative to the pace each mode is balanced at, so both ladders
+ * are the same six rungs and only the raw pace differs: ×1 is real time in the
+ * lab and the career's 4 flight seconds per real second in career (the pace the
+ * career economy was balanced at, which the player used to see as ×4).
+ * CAREER_PACE_UNIT is the one number every career pace label divides by. */
+const PLAY_SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
+const CAREER_SPEEDS = [1, 2, 4, 8, 16, 32];
 const PLAY_DEFAULT = 2;
 const PLAY_MAX_INDEX = 5;
-const PLAY_CAREER_DEFAULT = 4;
-const PLAY_CAREER_MAX_INDEX = 7;
-const PLAY_MAX = 32;
-const GAME_SLICE = 1 / 60;
-const PLAY_GUARD = 128;
+const CAREER_PACE_UNIT = CAREER_SPEEDS[PLAY_DEFAULT];
+const PLAY_MAX = CAREER_SPEEDS[PLAY_MAX_INDEX];
 const PHASE_AIM = 0;
 const PHASE_FLY = 1;
 const PHASE_GAP = 2;

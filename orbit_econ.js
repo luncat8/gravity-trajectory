@@ -102,14 +102,17 @@
 	/* §7: a port never gives away its own two-year need. */
 	const GUARD_YEARS = 2;
 
-	/* --- §8 politics: corruption, bribes, arrest, rebellion ----------------- */
+	/* --- §8 politics: corruption, bribes, arrest, rebellion -----------------
+	 * The `*_SECONDS` below count political seconds — what
+	 * `GravityGame.politicsSeconds` returns: world minutes, flight seconds times
+	 * the world rate. `ARREST_SECONDS` alone is flight seconds (a step count). */
 
 	const CORRUPTION_MAX = 100;
 	const CORRUPTION_TRADITION = 5;
 	const CORRUPTION_REPORT_RATE = 0.02;
 	const CORRUPTION_VISIT_DECAY = 0.2;   // points removed by one fly-visit
-	const CORRUPTION_GRACE = 120;         // world seconds after a visit before rot
-	const CORRUPTION_PASSIVE_RATE = 0.1;  // points per world second after grace
+	const CORRUPTION_GRACE = 120;         // political seconds after a visit before rot
+	const CORRUPTION_PASSIVE_RATE = 0.1;  // points per political second after grace
 	const CORRUPTION_BRIBE_BASE = 1;
 	const CORRUPTION_BRIBE_SCALE = 0.1;   // per money unit handed to the rulers
 	const BRIBE_MIN = 1;                  // bot's smallest worthwhile bribe
@@ -118,7 +121,7 @@
 	 * nothing; at rot 50 the rulers pay twice the visit, at rot 100 four times
 	 * — right where the arrest roll is at its worst. */
 	const BRIBE_VALUE_COEF = 4;
-	const ARREST_SECONDS = 120;           // slow transport to the Capital
+	const ARREST_SECONDS = 120;           // flight seconds of slow transport to the Capital
 	const REBEL_CHECK_SECONDS = 60;       // one roll per planet per epoch
 	const REBEL_START = 50;               // no rebellion at or below this
 	const REBEL_K = 0.0322;

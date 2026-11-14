@@ -130,8 +130,8 @@
 	/* One normalized research unit is a deliberate invention step, not one
 	 * arbitrary engineering unit: 2 kN thrust ≈ 0.2 t engine mass (engines priced
 	 * 5× the older scale), 30 kN rail force ≈ 0.10 efficiency, 50 kg fuel ≈ 0.5 t
-	 * tank mass, 2.5 kWh battery capacity ≈ 0.0002 leak per year (batteries priced
-	 * 2× the older scale), 1 kW panel power, 8 t hold. */
+	 * tank mass, 2.5 kWh battery capacity ≈ 0.0002 leak per world minute
+	 * (batteries priced 2× the older scale), 1 kW panel power, 8 t hold. */
 	var METRIC_SCALE = {
 		engine: [0.5, 5.0],
 		catapult: [1 / 30, 10.0],

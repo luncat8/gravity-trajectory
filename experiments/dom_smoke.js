@@ -1773,28 +1773,32 @@ const waitTrade = shopEnv.context.OrbitScene.sim.t;
 shopEnv.click('careerWait');
 shopEnv.click('careerWait');
 const waitRate = shopEnv.context.OrbitScene.trade.speed;
-/* the wait is a 2 s ease-in-out fast-forward, not an instant clock jump */
-const waitTotal = Math.round(30 / (pageSim.DT * waitRate));
+/* the wait is a 2 s real-time ease-in-out, not an instant clock jump: it buys
+ * WAIT_WORLD_SEC of world sunlight and the same span of orbit animation */
+const waitTotal = pageSim.stepsForWorldSeconds(pageSim.WAIT_WORLD_SEC, waitRate);
+const waitWorldMin = pageSim.WAIT_WORLD_SEC / pageSim.WORLD_SEC_PER_MIN;
 check(sui.get('careerWait').textContent.startsWith('waiting · '),
 	'wait did not start its fast-forward: ' + sui.get('careerWait').textContent);
-check(sui.get('careerWaitInfo').textContent.startsWith('fast-forward · '),
-	'wait progress line missing: ' + sui.get('careerWaitInfo').textContent);
+check(/^fast-forward · \d\.\d \/ 2 s · clock \+\d+ s/.test(sui.get('careerWaitInfo').textContent),
+	'wait progress line must count real seconds and the clock: ' +
+		sui.get('careerWaitInfo').textContent);
 shopEnv.runFrames(60, 16.0);
 check(sScene.game.clockSteps > waitSteps && sScene.game.clockSteps < waitSteps + waitTotal,
 	'wait was not eased across the 2 s: ' + (sScene.game.clockSteps - waitSteps) + ' / ' + waitTotal);
 check(shopEnv.context.OrbitScene.sim.t > waitTrade &&
-	shopEnv.context.OrbitScene.sim.t < waitTrade + 30,
+	shopEnv.context.OrbitScene.sim.t < waitTrade + waitWorldMin,
 	'wait did not move the trade world during the fast-forward');
 shopEnv.runFrames(80, 16.0);
 check(sScene.game.clockSteps === waitSteps + waitTotal,
-	'wait advanced ' + (sScene.game.clockSteps - waitSteps) + ' steps, not 30 world minutes');
-check(Math.abs(shopEnv.context.OrbitScene.sim.t - (waitTrade + 30)) < 1e-6,
+	'wait advanced ' + (sScene.game.clockSteps - waitSteps) + ' steps, not its world seconds');
+check(Math.abs(shopEnv.context.OrbitScene.sim.t - (waitTrade + waitWorldMin)) < 1e-6,
 	'wait moved the world ' + (shopEnv.context.OrbitScene.sim.t - waitTrade) + ' minutes');
-check(sui.get('careerWait').textContent === 'wait · 30 min' &&
+/* the button names the real seconds the fast-forward costs, never world minutes */
+check(sui.get('careerWait').textContent === 'wait · 2 s' &&
 	sui.get('careerWaitInfo').textContent.startsWith('wait → '),
-	'wait did not settle back to its preview line');
+	'wait did not settle back to its preview line: ' + sui.get('careerWait').textContent);
 check(shopCareer.pads[far].chargeKwh > 0.1, 'wait did not charge the far pad: ' + shopCareer.pads[far].chargeKwh);
-check(/^waited 30 min · P\d+ pad (\+\d+\.\d\d kWh|already full|has no catapult)$/.test(
+check(/^clock \+\d+ s · P\d+ pad (\+\d+\.\d\d kWh|already full|has no catapult)$/.test(
 	sui.get('careerMsg').textContent), 'wait note: ' + sui.get('careerMsg').textContent);
 taskClick(shopEnv, sui, { act: 'drop' });
 check(shopCareer.contract === -1 && shopCareer.ship.cargoTons === 0, 'drop kept the contract');
@@ -1997,6 +2001,14 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	check(waitTitle.includes('P' + hq + ' +' + pre.hereGain.toFixed(2) + ' kWh') &&
 		waitTitle.includes('planet visits +' + pre.profitGain.toFixed(2)),
 		'careerWait title states exact settlement: ' + waitTitle);
+	/* 0.7.1: the tooltip is where the three clocks meet — the real seconds the
+	 * press costs, the flight seconds it moves, and what watching it would cost */
+	check(waitTitle.startsWith('fast-forward 2 s of real time · the clock runs ' + pre.gameSec + ' s') &&
+		waitTitle.includes(pre.worldMin + ' world min') &&
+		waitTitle.includes(' s to watch at ×'),
+		'careerWait title must state all three clocks: ' + waitTitle);
+	check(Math.abs(pre.watchSec - pre.gameSec / pScene.playScale()) < 1e-9,
+		'watchSec is the clock span at the live pace: ' + pre.watchSec);
 
 	/* arm a shot on the partially drained pad, then wait: the grip re-clamps to
 	 * whatever the pad affords afterwards (usually wider — unless a rival guest
@@ -2909,7 +2921,8 @@ function protoOf(career, family, id) {
 }
 
 /* 0.4.17: separate #flightHud panel (the flight HUD), inline stranded
- * buy/evacuate buttons, 4x career playback default/max (×4..×32), and
+ * buy/evacuate buttons, career playback (0.7.1: ×1 is the balanced career
+ * pace, 4 flight s per real second, and the ladder reads ×0.25…×8), and
  * predicted profit-3 / rate / TOF */
 {
 	const fs = require('fs');
@@ -2937,19 +2950,20 @@ function protoOf(career, family, id) {
 	const cSim = cScene.sim;
 	const cCareer = cScene.career;
 
-	/* career playback default is ×4 (4x more than ×1) and max is ×32 (4x more than ×8) */
-	check(cScene.playScale() === 4 && cui.get('playTag').textContent === '×4' &&
-		cui.get('playReset').textContent === '4×' && !cui.get('playFaster').disabled,
-		'career default playback speed must be ×4: ' + cui.get('playTag').textContent);
+	/* the career tag reads relative to the pace career is balanced at: the
+	 * default raw pace 4 is ×1 and the ceiling 32 is ×8, physics unchanged */
+	check(cScene.playScale() === 4 && cui.get('playTag').textContent === '×1' &&
+		cui.get('playReset').textContent === '1×' && !cui.get('playFaster').disabled,
+		'career default playback speed must read ×1: ' + cui.get('playTag').textContent);
 	cEnv.click('playFaster');
 	cEnv.click('playFaster');
 	cEnv.click('playFaster');
-	check(cScene.playScale() === 32 && cui.get('playTag').textContent === '×32' &&
+	check(cScene.playScale() === 32 && cui.get('playTag').textContent === '×8' &&
 		cui.get('playFaster').disabled,
-		'career max playback speed must be ×32: ' + cui.get('playTag').textContent);
+		'career max playback speed must read ×8: ' + cui.get('playTag').textContent);
 	cEnv.click('playReset');
-	check(cScene.playScale() === 4 && cui.get('playTag').textContent === '×4',
-		'career playReset must return to ×4: ' + cui.get('playTag').textContent);
+	check(cScene.playScale() === 4 && cui.get('playTag').textContent === '×1',
+		'career playReset must return to ×1: ' + cui.get('playTag').textContent);
 
 	/* predicted route info includes launch fee and a sampled viable departure;
 	 * profit/s and time of flight remain visible beside the net outcome. */
@@ -3101,7 +3115,7 @@ function protoOf(career, family, id) {
 	check(cScene.playScale() === 8 && cui.get('playFaster').disabled,
 		'non-career max playback speed remains ×8');
 	console.log('0.4.17 verified: separate #flightHud panel · inline stranded buy/evacuate · ' +
-		'career ×4..×32 playback · net outcome / rate / TOF route prediction');
+		'career ×1..×8 playback (raw 4..32) · net outcome / rate / TOF route prediction');
 		console.log('0.4.19 verified: commercial rail + EMC claims · ' +
 			'flying rival careers · the commercial fee / 6.00 evacuation');
 	console.log('0.4.20 verified: commercial EMC-1 button on every planet · ' +
@@ -3127,7 +3141,7 @@ function protoOf(career, family, id) {
 	for (; wui.get('careerWait').textContent.startsWith('waiting') && wGuard < 300; wGuard++) {
 		wEnv.runFrames(1, 16.0);
 	}
-	check(wui.get('careerWait').textContent === 'wait · 30 min' && wGuard > 50,
+	check(wui.get('careerWait').textContent === 'wait · 2 s' && wGuard > 50,
 		'the stretched wait must still finish and settle its preview line: ' +
 		wui.get('careerWait').textContent + ' after ' + wGuard + ' frames');
 	check(wScene.game.clockSteps === wStepsBefore + wPre.steps,

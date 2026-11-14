@@ -244,44 +244,61 @@ function tradeRate() {
 	return scene.trade.paused ? 0 : scene.trade.speed;
 }
 
-function playDefaultIndex() {
-	return careerRule() ? PLAY_CAREER_DEFAULT : PLAY_DEFAULT;
+/* the rungs of the mode: a career rung is 4× the lab rung at the same index, so
+ * career's ×1 is the pace its economy is balanced at and the lab's ×1 real time */
+function playLadder() {
+	return careerRule() ? CAREER_SPEEDS : PLAY_SPEEDS;
 }
 
-function playMaxIndex() {
-	return careerRule() ? PLAY_CAREER_MAX_INDEX : PLAY_MAX_INDEX;
+/* what one label unit stands for, in flight seconds per real second */
+function paceUnit() {
+	return careerRule() ? CAREER_PACE_UNIT : 1;
 }
 
 function playScale() {
-	const base = PLAY_SPEEDS[playIndex];
+	const base = playLadder()[playIndex];
 	/* in career the game-time slider multiplies the physics pace,
 	 * so pads charge and rivals fly at the chosen rate */
 	return careerRule() ? base * gameRate : base;
 }
 
+/* the pace the step loop actually runs: the rung times the game slider, capped
+ * (the game slider alone can ask for more than PLAY_MAX steps per real second) */
+function playPace() {
+	const scale = playScale();
+	return scale < PLAY_MAX ? scale : PLAY_MAX;
+}
+
+/* the pace as the player reads it: ×1 is this mode's own balanced pace */
+function paceTag() {
+	return '×' + playPace() / paceUnit();
+}
+
 function refreshPlaybackUi() {
 	if (!playTagEl) return;
-	playTagEl.textContent = '×' + playScale();
+	playTagEl.textContent = paceTag();
 	if (playSlowerBtn) playSlowerBtn.disabled = playIndex === 0;
-	if (playFasterBtn) playFasterBtn.disabled = playIndex >= playMaxIndex();
+	if (playFasterBtn) playFasterBtn.disabled = playIndex >= PLAY_MAX_INDEX;
 	if (playResetBtn) {
-		const def = PLAY_SPEEDS[playDefaultIndex()];
-		playResetBtn.textContent = def + '×';
+		playResetBtn.textContent = playLadder()[PLAY_DEFAULT] / paceUnit() + '×';
 		playResetBtn.title = careerRule()
-			? 'default career pace (×' + def + ')'
-			: 'real time (×' + def + ')';
+			? 'the pace career is balanced at: ×1 = ' + CAREER_PACE_UNIT +
+				' s of flight per real second'
+			: 'real time (×1 = 1 s of flight per real second)';
 	}
+	/* the career wait tells what its span costs at this pace, so it follows */
+	refreshCareerWaitPreview();
 }
 
 function stepPlayback(step) {
 	const next = playIndex + step;
-	if (next < 0 || next > playMaxIndex()) return;
+	if (next < 0 || next > PLAY_MAX_INDEX) return;
 	playIndex = next;
 	refreshPlaybackUi();
 }
 
 function resetPlayback() {
-	playIndex = playDefaultIndex();
+	playIndex = PLAY_DEFAULT;
 	refreshPlaybackUi();
 }
 

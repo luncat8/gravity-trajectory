@@ -199,8 +199,11 @@ i think we (should) have only 2 time
 - background animation (trade, orbits) - this should be only in settings panel, no need in footer, because it currently not gameplay important.
 
 → done: the game clock, the orbital-trade background clock in its own panel, no
-footer copy. `0.7.1` removes the leftover hour/year units from the labels and
-the prose; the two clocks stay.
+footer copy. `0.7.1` wrote the contract down and removed the leftover units from
+the career's labels and prose — no `dtYears`, no `WORLD_SEC_PER_MIN` outside
+`gravity_sim.js` (the colony economy keeps its colony year, which is the same
+orbit minute). The two clocks stay, and the world minutes inside the pad
+accounting are a unit of that accounting, not a third clock on screen.
 
 ### normalize time to 1x = real time
 
@@ -212,24 +215,26 @@ current default we use x4. this is good speed so we can name it x1
 
 after this refactoring actual speed should remain same, but set visual units more simple.
 
-→ today the career clock is `scene.trade.speed` (background slider, `0.5…12`, default
-`0.5`) times `gameRate` (the `game time` slider ×1) for physics pace, while
-`1 s` of game time is 1 sim second and 60 *world* seconds for pads
-(`WORLD_SEC_PER_MIN`). The `wait · 30 min` button is 30 world minutes = **60
-flight s = 15 s of wall clock at the default ×4**; its label the player must
-divide by 60 and then by 4 to know how long it takes. `0.7.1` keeps the units,
-this note renames them: one unit = one second of wall clock at the career's
-default pace, so the button reads `wait · 15 s`, the pad charges per second, and
-the ×4 default is called ×1. Physics, prices and every balance number stay put;
-only the labels and the rungs of the speed control change.
+→ **done** (`../0.7.1-plan-time-model.md`, `../archive/0.7.1-worklog.md`). One
+contract in `gravity_sim.js` names the three clocks: a step is always `DT` of
+**flight** time (the HUD, the board, the contracts, the barrels, the arrests);
+the **world rate** — `scene.trade.speed`, the background slider, world minutes
+per flight second, `0.5` default — makes the world minutes/seconds the pads and
+the politics run on; the **pace** — `playScale`, flight seconds per real second,
+`4` at the career default — makes the real seconds the player waits. One `wait`
+is 1800 world s = 30 world min = **60 flight s**, which is 15 real s to watch at
+×1 but **2 s through the button's fast-forward** (`CAREER_WAIT_MS`); the label
+now carries the press cost, `wait · 2 s`, and the tooltip carries all three. The
+`15 s` this note promised was the watching cost, not the press cost.
 
-**answered:** today's ×4 becomes ×1. Physics, prices and the pace the game is
-balanced at do not move; only the labels do, so `wait · 30 min` reads
-`wait · 15 s` (60 flight s at 15 s of wall clock) and the speed control's rungs
-are renumbered `×0.25 … ×8` around the new ×1. The literal `1 flight s = 1 wall
-s` reading is rejected: it would make every flight four times longer to watch
-and invalidate every balance number priced in flight seconds (0.7.2's wear
-included).
+**answered and implemented:** today's ×4 is called ×1 — the playback tag reads
+relative to the pace the mode is balanced at, so both ladders show `×0.25 … ×8`
+and only the raw pace differs (career rungs 1…32, lab 0.25…8). Physics, prices
+and the balanced pace do not move: `career_bench`, `career_bot_bench` and
+`career_stats_test` report exactly what they reported at HEAD. The literal
+`1 flight s = 1 wall s` reading stays rejected: it would make every flight four
+times longer to watch and invalidate every balance number priced in flight
+seconds (0.7.2's wear included).
 
 ## 2.10 EMC catapult ← `archive/draft.txt`
 

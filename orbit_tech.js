@@ -73,7 +73,8 @@
 		{ id: 'SP-4', tier: 4, power: 14.0 }
 	];
 
-	/* capacity kWh, leak fraction per colony year */
+	/* capacity kWh, leak fraction per world minute (`batteryLeak`) — one colony
+	 * year of the orbit clock, which the pad accounting never names */
 	const BATTERIES = [
 		{ id: 'BAT-1', tier: 1, capacity: 1.5, leak: 0.001 },
 		{ id: 'BAT-2', tier: 2, capacity: 3.0, leak: 0.0008 },
@@ -200,13 +201,17 @@
 		return speed <= speedLimit(chargeKwh, mass, catapult, forceScale) + 1e-9;
 	}
 
-	/* kWh gained over dtSec seconds at relative light (0..1) */
-	function solarCharge(panel, light, dtSec) {
-		return panel.power * light * dtSec / 3600;
+	/* kWh gained over `worldSec` world seconds at relative light (0..1); one
+	 * press of `wait` is GravitySim.WAIT_WORLD_SEC of them */
+	function solarCharge(panel, light, worldSec) {
+		return panel.power * light * worldSec / 3600;
 	}
 
-	function batteryLeak(battery, chargeKwh, dtYears) {
-		return chargeKwh * Math.exp(-battery.leak * dtYears);
+	/* charge left after `worldMin` world minutes of self-discharge: `leak` is a
+	 * fraction per world minute, the same clock the panel charges on — and the
+	 * orbit clock's own colony year (`OrbitSim.ECON_YEARS_PER_MIN = 1`) */
+	function batteryLeak(battery, chargeKwh, worldMin) {
+		return chargeKwh * Math.exp(-battery.leak * worldMin);
 	}
 
 	/* impulse delta-v (px/s, 1:1 with m/s) from burning `fuelKg` out of

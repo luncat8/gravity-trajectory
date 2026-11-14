@@ -111,7 +111,7 @@
 				<div class="stat"><span>flights</span><b id="gameFlights">0</b></div>
 				<div class="stat"><span>pads</span><b id="gamePads">0 / 0</b></div>
 			</div>
-			<label class="ctl" title="game time speed multiplier (pads, rivals, turret)">game
+			<label class="ctl" title="multiplies the playback pace: pads, rivals and the turret all advance faster in real time">game
 				<input id="gameSpeed" type="range" min="0.25" max="8" step="0.25" value="1">
 				<output id="gameSpeedLabel">×1</output>
 			</label>
@@ -334,7 +334,7 @@
 		<div class="backgroundControls">
 			<div class="backgroundTimeControls">
 				<button id="tradePause" class="miniBtn" title="pause or resume lab background animation; a running game follows its game clock">pause</button>
-				<label class="ctl" title="world-time rate: background trade animation in lab, gameplay world clock during a run">rate
+				<label class="ctl" title="world rate in world minutes per flight second: the background trade/orbit animation in the lab, and during a run the clock the pads and the politics live on (0.5 default)">rate
 					<input id="tradeSpeed" type="range" min="0.5" max="12" step="0.5" value="0.5">
 					<output id="tradeSpeedLabel">×0.5</output>
 				</label>
@@ -451,13 +451,13 @@
 </aside>
 
 <footer id="gameControls" aria-label="game controls">
-	<button id="careerWait" class="miniBtn" title="run the world clock so every pad charges" hidden>wait · 30 min</button>
+	<button id="careerWait" class="miniBtn" title="fast-forward the world clock so every pad charges: 2 s of real time for 60 s of game clock" hidden>wait · 2 s</button>
 	<button id="careerClock" class="miniBtn" title="career world clock: click to pause or resume time (pads charge, rivals fly, visit profits grow while it runs)" hidden>❚❚ time</button>
 	<label id="careerPauseLandLabel" class="careerPauseLand" title="pause the career world clock when your flight ends, so you can aim in peace; launching or the time button resumes it" hidden><input id="careerPauseLand" type="checkbox" checked> pause on landing</label>
-	<span id="playbackGroup" class="flightPlayback" title="flight playback · only the wall-clock pace changes">
+	<span id="playbackGroup" class="flightPlayback" title="flight playback · ×1 is the pace this mode is balanced at · only the real-time pace changes, never the physics">
 		<span class="playbackLabel">play <b id="playTag">×1</b></span>
 		<button id="playSlower" class="miniBtn" title="slower · physics unchanged">−</button>
-		<button id="playReset" class="miniBtn" title="back to real time">reset</button>
+		<button id="playReset" class="miniBtn" title="back to ×1">reset</button>
 		<button id="playFaster" class="miniBtn" title="faster · physics unchanged">+</button>
 	</span>
 	<span id="careerWaitInfo" class="careerLine dim" hidden></span>
