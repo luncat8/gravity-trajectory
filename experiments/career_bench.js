@@ -26,6 +26,11 @@ const BAT = OrbitTech.BATTERIES;
 const HOLD = OrbitTech.HOLDS;
 const CAREER = GravityGame.CAREER;
 let failures = 0;
+/* 0.6.2: fees across every shot the bench fires — the A/B log reads this
+ * line. Solo worlds never fly on rival rails, so the guest tax stays 0.00
+ * here; the rival benches (career_bot_bench, career_gravity_bench) exercise
+ * the tax itself. feesPaid is every launch fee (commercial + guest tax) */
+const guestFees = { paid: 0, tax: 0, earned: 0, shots: 0 };
 
 function check(name, fn) {
 	try {
@@ -301,6 +306,9 @@ function findShot(w, from, want) {
  * flies a step: the moment the fee/energy accounting can be read off */
 function fly(w, from, angle, speed, afterBegin) {
 	const { sim, career, ledger, market, trade } = w;
+	const feesPaid = career.feesPaid;
+	const taxPaid = career.taxPaid;
+	const taxEarned = career.taxEarned;
 	assert.ok(sim.canFire(from, speed), 'pad refused the shot at ' + speed);
 	sim.launch(from, angle, speed);
 	GravityGame.careerBeginFlight(career, sim);
@@ -312,7 +320,12 @@ function fly(w, from, angle, speed, afterBegin) {
 		GravityGame.careerAdvance(career, RATE, 1);
 	}
 	trade.advanceTo(sim.flightFieldT);
-	return GravityGame.careerEndFlight(career, sim, trade, w.step);
+	const outcome = GravityGame.careerEndFlight(career, sim, trade, w.step);
+	guestFees.paid += career.feesPaid - feesPaid;
+	guestFees.tax += career.taxPaid - taxPaid;
+	guestFees.earned += career.taxEarned - taxEarned;
+	guestFees.shots += 1;
+	return outcome;
 }
 
 check('career start: HQ pad only, sim gates on the network, link codec carries cheat', () => {
@@ -352,7 +365,8 @@ check('career board: deliveries pair an exporting colony with a short one, pay b
 			offers += 1;
 			assert.ok(t.from !== t.to && t.from >= 0 && t.to >= 0);
 			assert.ok(w.trade.colonyAt(t.from) && w.trade.colonyAt(t.to), 'both ends are colonies');
-			assert.ok(t.reward > 0 && t.reward < CAREER.evacFee, 'reward ' + t.reward);
+			assert.ok(t.reward > 0 && (t.reward < CAREER.evacFee || t.deep),
+				'reward ' + t.reward + (t.deep ? ' (deep origin)' : ''));
 			assert.ok(GravityGame.CARGO_TONS.indexOf(t.tons) >= 0);
 			assert.ok(t.deadline === Math.round(CAREER.deliverySec / DT));
 			assert.ok(!GravityGame.canAccept(w.career, i), 'HOLD-0 cannot accept cargo');
@@ -446,7 +460,9 @@ check('career evacuation: fee, ship back on HQ, broke when the purse cannot cove
 	assert.ok(again, 'HQ pad still has charge for a slow shot: limit ' + sim.speedLimit(career.hq));
 	assert.strictEqual(fly(w, career.hq, again.angle, again.speed), GravityGame.CAREER_OPEN);
 	assert.ok(career.stranded);
-	ledger.purse = CAREER.commercialFee - 0.5;
+	/* a purse short of every way off is broke; price it the way checkEnded does */
+	const exit = GravityGame.exitCostAt(career, career.at, career.ship.mass);
+	ledger.purse = exit - 0.5;
 	assert.strictEqual(GravityGame.checkEnded(career), GravityGame.CAREER_BROKE);
 	assert.strictEqual(career.ended, GravityGame.CAREER_BROKE);
 	/* a negative purse is broke anywhere */
@@ -467,12 +483,13 @@ check('commercial EMC-1: chosen on any planet, never claims or blocks building',
 	GravityGame.setCommercial(career, hq);
 	assert.strictEqual(GravityGame.padAt(career, hq), GravityGame.COMMERCIAL_PAD);
 	assert.strictEqual(GravityGame.padOwner(career, hq), GravityGame.OWNER_COMMERCIAL);
-	assert.strictEqual(GravityGame.launchFee(career, hq, 60), CAREER.commercialFee);
+	assert.strictEqual(GravityGame.launchFee(career, hq, 60),
+		GravityGame.commercialFee(career, hq, 60));
 	assert.strictEqual(sim.pads[hq], GravityGame.COMMERCIAL_PAD);
 	const shot = findShot(w, hq, -1);
 	assert.ok(shot, 'no shot off the commercial rail');
 	fly(w, hq, shot.angle, shot.speed);
-	assert.strictEqual(career.lastFee, CAREER.commercialFee);
+	assert.strictEqual(career.lastFee, GravityGame.commercialFee(career, hq, shot.speed));
 	assert.strictEqual(career.lastEnergy, 0, 'commercial launch spent the own battery');
 	assert.strictEqual(career.taxPaid, 0, 'commercial fee goes to nobody in particular');
 	assert.strictEqual(career.commercialPlanet, -1, 'the choice buys exactly one launch');
@@ -879,7 +896,7 @@ check('career in-flight burn: predictBurn & predictBurnFast match stepOne, fuel 
 });
 
 check('fuel baseline: a full FT-1 costs more than one commercial EMC launch', () => {
-	assert.ok(GravityGame.FUEL_PRICE * OrbitTech.TANKS[1].fuelCap > CAREER.commercialFee);
+	assert.ok(GravityGame.FUEL_PRICE * OrbitTech.TANKS[1].fuelCap > GravityGame.commercialMinFee());
 	assert.strictEqual(GravityGame.FUEL_KG_PER_KWH, 20);
 	assert.strictEqual(GravityGame.FUEL_BUY_STEP, 10);
 });
@@ -1892,7 +1909,8 @@ check('rail facts: the line, the block reasons and careerCanFire agree', () => {
 	GravityGame.setCommercial(w.career, at);
 	w.career.ledger.purse = 0;
 	assert.strictEqual(GravityGame.railBlock(w.career, w.sim, at, GravitySim.SPEED_MIN),
-		'fee ' + GravityGame.CAREER.commercialFee.toFixed(2) + ' > purse 0.00');
+		'fee ' + GravityGame.commercialFee(w.career, at, GravitySim.SPEED_MIN).toFixed(2) +
+			' > purse 0.00');
 	assert.ok(!GravityGame.careerCanFire(w.career, w.sim, at, GravitySim.SPEED_MIN));
 	const paid = GravityGame.railText(w.career, w.sim, at);
 	assert.ok(paid.includes('commercial EMC-1') && paid.includes('purse 0.00'), paid);
@@ -1911,5 +1929,8 @@ check('launch book: every career owns one and a restart clears it', () => {
 	assert.strictEqual(career.launchBook.entries.length, 0, 'a restarted career starts empty');
 });
 
+console.log('fees across ' + guestFees.shots + ' shots: paid ' +
+	guestFees.paid.toFixed(2) + ' · guest tax ' + guestFees.tax.toFixed(2) +
+	' · tax earned ' + guestFees.earned.toFixed(2));
 console.log(failures === 0 ? 'CAREER BENCH OK' : 'CAREER BENCH FAILED ' + failures);
 process.exit(failures === 0 ? 0 : 1);

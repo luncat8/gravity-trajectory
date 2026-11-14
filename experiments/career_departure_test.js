@@ -76,6 +76,8 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	let blocked = 0;
 	for (let planet = 0; planet < UNIVERSE; planet++) {
 		if (hqs.includes(planet)) continue;
+		/* the imperial Capital launches free: never a "blocked but affordable" case */
+		if (planet === player.capitalPlanet) continue;
 		const departure = bot.careerDeparture(player, planet, player.ledger.purse,
 			player.ship.mass, bot.probe);
 		if (departure.starterCanExit) continue;
@@ -145,6 +147,89 @@ const afterBuild = bot.careerDeparture(player, planet, player.ledger.purse,
 	player.ship.mass, f.sims[0]);
 assert.ok(afterBuild.ok && afterBuild.source === 'own' && !afterBuild.builds,
 	'the selected EMC/battery kit did not unlock a safe departure');
+
+/* --- 0.6.2: the guest fee scales with the rail tier; own rail stays free --- */
+{
+	const f2 = makeSeed(42);
+	const guest = f2.careers[0];
+	const host = f2.careers[1];
+	const hqsAll = f2.careers.map(career => career.hq);
+	let planet = -1;
+	for (let p = 0; p < UNIVERSE; p++) {
+		if (hqsAll.includes(p) || p === guest.capitalPlanet) continue;
+		if (host.pads[p].catapult === null && guest.pads[p].catapult === null) { planet = p; break; }
+	}
+	assert.ok(planet >= 0, 'fixture needs an unclaimed planet');
+	guest.at = planet;
+	guest.stranded = true;
+	f2.sims[0].relocate(planet);
+	const speed = GravitySim.SPEED_MIN + 10;
+	/* an EMC-1 host rail, then an EMC-3: the same shot costs a guest more on the stronger rail */
+	host.ledger.purse = 100;
+	assert.ok(GravityGame.buildGear(host, planet, 'catapult', OrbitTech.CATAPULTS[0]));
+	const fee1 = GravityGame.launchFee(guest, planet, speed);
+	host.pads[planet].catapult = OrbitTech.CATAPULTS[2];
+	host.pads[planet].chargeKwh = OrbitTech.BATTERIES[2].capacity;
+	const fee3 = GravityGame.launchFee(guest, planet, speed);
+	assert.ok(fee3 > fee1,
+		'EMC-3 guest tax (' + fee3.toFixed(2) + ') not above EMC-1 (' + fee1.toFixed(2) + ')');
+	/* an owned rail costs the owner nothing at either tier */
+	guest.pads[planet].catapult = OrbitTech.CATAPULTS[0];
+	guest.pads[planet].panel = OrbitTech.PANELS[0];
+	guest.pads[planet].battery = OrbitTech.BATTERIES[0];
+	guest.pads[planet].chargeKwh = OrbitTech.BATTERIES[0].capacity;
+	assert.strictEqual(GravityGame.launchFee(guest, planet, speed), 0,
+		'an own rail must charge nothing');
+	/* and the commercial rail charges its energy fee, not the guest tax */
+	GravityGame.setCommercial(guest, planet);
+	const min = GravityGame.commercialFee(guest, planet, GravitySim.SPEED_MIN);
+	assert.ok(Math.abs(GravityGame.launchFee(guest, planet, GravitySim.SPEED_MIN) - min) < 1e-12,
+		'commercial rail does not quote the commercial fee');
+	GravityGame.setCommercial(guest, -1);
+}
+
+/* --- 0.6.2: the deep-origin offer is tagged by the shared helper only --- */
+{
+	let deepSeen = 0;
+	for (let seed = 1; seed <= 40; seed++) {
+		const f = makeSeed(seed);
+		const career = f.careers[0];
+		for (let i = 0; i < career.tasks.length; i++) {
+			const task = career.tasks[i];
+			if (task.kind !== GravityGame.TASK_DELIVERY) continue;
+			const isDeep = GravityGame.deepOrigin(career, task.from, task.tons);
+			assert.strictEqual(task.deep, isDeep,
+				'seed ' + seed + ' slot ' + i + ': deep=' + task.deep +
+				' vs tons ' + task.tons + ' at g ' + GravityGame.planetGravity(career.seed, task.from));
+			if (!task.deep) continue;
+			deepSeen += 1;
+			assert.ok(task.tons >= GravityGame.DEEP_TONS &&
+				GravityGame.planetGravity(career.seed, task.from) >= GravityGame.DEEP_G);
+			/* the note names the rail that lifts it, and only there */
+			const note = GravityGame.deepText(task);
+			assert.strictEqual(note, 'needs EMC-3+ at P' + task.from);
+			/* the bonus sits on top of the ordinary capped reward */
+			assert.ok(task.reward > 0 && task.reward <=
+				Math.round(GravityGame.CAREER.deliveryMax * (1 + GravityGame.DEEP_BONUS) * 100) / 100);
+		}
+	}
+	assert.ok(deepSeen > 0, 'no deep-origin offer in seeds 1-40 — the tag cannot regress unseen');
+	/* boundary: below either bar the offer is ordinary, and the note is silent */
+	const f3 = makeSeed(1);
+	const career = f3.careers[0];
+	let deepPlanet = -1, shallowPlanet = -1;
+	for (let p = 0; p < UNIVERSE; p++) {
+		const g = GravityGame.planetGravity(career.seed, p);
+		if (g >= GravityGame.DEEP_G && deepPlanet < 0) deepPlanet = p;
+		if (g < GravityGame.DEEP_G && shallowPlanet < 0) shallowPlanet = p;
+	}
+	assert.ok(deepPlanet >= 0 && shallowPlanet >= 0, 'fixture needs both a deep and a shallow planet');
+	assert.ok(GravityGame.deepOrigin(career, deepPlanet, GravityGame.DEEP_TONS));
+	assert.ok(!GravityGame.deepOrigin(career, deepPlanet, GravityGame.DEEP_TONS / 2));
+	assert.ok(!GravityGame.deepOrigin(career, shallowPlanet, GravityGame.DEEP_TONS * 3));
+	assert.strictEqual(GravityGame.deepText({ deep: false, from: deepPlanet }), '');
+	console.log('deep-origin offers in seeds 1-40:', deepSeen);
+}
 
 console.log('career departure calibration:', {
 	universe: UNIVERSE,

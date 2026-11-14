@@ -403,11 +403,14 @@ function setLaunchState(blocked, exitWarning) {
 			if (c.at < 0 || c.at === c.capitalPlanet) {
 				launchCommercialBtn.hidden = true;
 			} else {
-				const fee = careerCost(c, GravityGame.CAREER.commercialFee);
+				const feeMin = careerCost(c, GravityGame.commercialFee(c, c.at, GravitySim.SPEED_MIN));
 				const lift = padCap(c, OrbitTech.CATAPULTS[0], OrbitTech.BATTERIES[0]);
 				const canLift = lift + 1e-9 >= SPEED_MIN;
-				const feePoor = purseTooSmall(c, fee);
 				const armedHere = armed && aimBody === c.at;
+				const fee = armedHere
+					? careerCost(c, GravityGame.launchFee(c, c.at, aimSpeed))
+					: feeMin;
+				const feePoor = purseTooSmall(c, fee);
 				launchCommercialBtn.hidden = false;
 				launchCommercialBtn.disabled = waitBusy || !canLift;
 				launchCommercialBtn.classList.toggle('costly', feePoor);

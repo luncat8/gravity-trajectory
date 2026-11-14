@@ -120,7 +120,9 @@
 	const CAREER_RIVAL_GAP = Math.round(8 / GravitySim.DT);
 	const CAREER_RIVAL_PHASE = Math.round(3 / GravitySim.DT);
 	const CAREER_REBOOT_GAP = Math.round(30 / GravitySim.DT);
-	const CAREER_PURSE_RESERVE = GravityGame.CAREER.commercialFee;
+	/* one way off any planet, priced honestly: the cheapest commercial shot
+	 * (a dry starter ship at the minimum speed on the starter rail) */
+	const CAREER_PURSE_RESERVE = GravityGame.commercialMinFee();
 	const CAREER_LOADED_SPEED = 75;
 	/* Mid-flight impulse policy. The drive's single burn is small (thrust ×
 	 * BURN_SEC / wet mass ≈ 10-30 px/s), so it is worth one early nudge that
@@ -1748,9 +1750,9 @@
 			 * own pad; commercial, rebel and rival rails charge a fee */
 			const fee = owner === career.index || owner === GravityGame.OWNER_CAPITAL ? 0
 				: owner === GravityGame.OWNER_COMMERCIAL || owner === GravityGame.OWNER_REBEL
-				? careerFee(career, GravityGame.CAREER.commercialFee)
+				? careerFee(career, GravityGame.commercialFee(career, planet, currentSpeed, arrivalMass))
 				: careerFee(career, GravityGame.CAREER.taxPerKwh *
-					OrbitTech.launchEnergy(arrivalMass, pad.catapult, currentSpeed));
+					OrbitTech.launchEnergy(arrivalMass, pad.catapult, currentSpeed) * pad.catapult.tier);
 			if (available + 1e-9 >= fee) {
 				bestCost = fee;
 				out.ok = true;
@@ -3338,7 +3340,7 @@
 
 	/* Whole kilograms keep the bot's forecast and transaction identical. The
 	 * current launch fee is always reserved; easy/normal also keep the next fee. */
-	GravityBot.prototype.careerFuelOffer = function (career, planet) {
+	GravityBot.prototype.careerFuelOffer = function (career, planet, sim) {
 		const quote = this.careerFuelQuote;
 		quote.kg = 0;
 		quote.produceKg = 0;
@@ -3350,8 +3352,12 @@
 		const pad = career.pads[planet];
 		if (pad.catapult !== null) {
 			/* Keep a full-cap departure firable after conversion; the shortlist may
-			 * still pick a faster shot than the baseline plan. */
-			const cap = OrbitTech.speedLimit(pad.battery.capacity, ship.mass, pad.catapult, career.forceScale);
+			 * still pick a faster shot than the baseline plan. The world's force
+			 * scale widens the cap but never the energy it stores, so it must
+			 * come from the live sim — career.forceScale is unset for the player
+			 * career and would size the reserve for a weaker rail than fires */
+			const forceScale = sim ? sim.forceScale : career.forceScale;
+			const cap = OrbitTech.speedLimit(pad.battery.capacity, ship.mass, pad.catapult, forceScale);
 			const launchKwh = OrbitTech.launchEnergy(ship.mass, pad.catapult, cap);
 			const free = Math.max(0, pad.chargeKwh - pad.reservedKwh - launchKwh);
 			quote.produceKg = Math.min(room, Math.floor(free * GravityGame.FUEL_KG_PER_KWH + 1e-9));
@@ -3405,7 +3411,7 @@
 	GravityBot.prototype.careerPrepareFuel = function (r, plan, market, runStep) {
 		const career = r.career;
 		const ship = career.ship;
-		const quote = this.careerFuelOffer(career, plan.origin);
+		const quote = this.careerFuelOffer(career, plan.origin, r.sim);
 		if (quote.kg <= 0 || plan.fuelProducedKg + plan.fuelBoughtKg > 0) return false;
 		const saved = this.careerFuelPlan;
 		copyCareerPlan(plan, saved);
@@ -3479,7 +3485,7 @@
 		const src = this.careerBindBurnSim(r);
 		const shot = this.careerBurnShot;
 		const fuel0 = ship.fuelKg;
-		const quote = this.careerFuelOffer(career, origin);
+		const quote = this.careerFuelOffer(career, origin, r.sim);
 		ship.fuelKg = fuel0 + quote.kg;
 		let bestScore = 0;
 		let found = false;

@@ -34,7 +34,7 @@ function taskRowHtml(career, index) {
 	const sport = index === GravityGame.COMPETE_SLOT;
 	const medic = index === GravityGame.MEDIC_SLOT;
 	const kind = sport ? 'sport' : medic ? 'medical' : task.tourist ? 'tourists'
-		: task.fragile ? 'fragile' : 'delivery';
+		: task.deep ? 'deep' : task.fragile ? 'fragile' : 'delivery';
 	if (task.kind === GravityGame.TASK_NONE) {
 		return '<div class="careerRow dim"><span class="careerKind">' + kind +
 			'</span><span class="careerNow">no offer</span></div>';
@@ -55,7 +55,9 @@ function taskRowHtml(career, index) {
 		: planetName(task.from) + ' → ' + planetName(task.to);
 	let html = '<div class="careerRow"><span class="careerKind">' + kind + '</span>' +
 		'<span class="careerNow">' + state + ' · ' + good + ' ' + task.tons + ' t' +
-		(task.fragile ? ' · ' + fragileLimitText() : '') + '</span>' +
+		(task.fragile ? ' · ' + fragileLimitText() : '') +
+		(task.deep ? ' · ' + GravityGame.deepText(task) + ' · pays +' +
+			Math.round(GravityGame.DEEP_BONUS * 100) + '%' : '') + '</span>' +
 		'<span class="careerBtns">+' + task.reward.toFixed(2) + ' · ' + left + ' s';
 	if (task.state === GravityGame.TASK_OFFERED) {
 		const hold = career.ship.hold.capacity;
@@ -64,6 +66,8 @@ function taskRowHtml(career, index) {
 			(ok ? '' : ' disabled') +
 			' title="' + (ok ? 'take this delivery' + (task.fragile
 				? ' · fragile: once loaded, a harder launch breaks it and voids the contract' : '')
+				+ (task.deep ? ' · deep origin: a load this heavy out of a deep well wants an EMC-3+ rail · pays +' +
+					Math.round(GravityGame.DEEP_BONUS * 100) + '%' : '')
 				: hold < task.tons
 				? 'needs a ' + task.tons + ' t hold (have ' + hold + ' t)'
 				: 'one contract at a time') + '">accept</button>';

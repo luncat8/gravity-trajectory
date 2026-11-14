@@ -37,8 +37,9 @@ for a small hold (the commercial way off costs more than the delivery paid) and
 is gone for a big one; and a pad costs one commercial launch, so it is repaid on
 its second departure.
 
-**open** → `../0.6.2-plan-pad-fees.md` §2: should the commercial fee follow the
-energy of the shot, so the gate holds for every hold?
+→ `../0.6.2-plan-pad-fees.md` §2, shipped: the commercial fee follows the
+shot — `2.00` + `1.50` per kWh, from `2.16` for the slowest dry hop to about
+`3.52` at full force — so the gate holds for every hold, not only a `HOLD-8`.
 
 ## 2.2 economy ← `0.4-draft-career.md`
 
@@ -51,9 +52,9 @@ its own shot (`launchEnergy(mass, rail, speed)`), to the pad's owner. The dry
 10 t ship pays `0.11` at the slowest shot and `1.02` at the `EMC-1` cap, so the
 note's «something like 0.1» is the light, slow launch.
 
-**open** → `../0.6.2-plan-pad-fees.md` §1: the same shot costs a guest *less* on
-a better rail (`0.109 / 0.095 / 0.084` on `EMC-1 / 2 / 3`, because energy is
-divided by efficiency), so an upgrade lowers what a pad earns per guest.
+→ `../0.6.2-plan-pad-fees.md` §1, shipped: a guest pays `1.00` × the shot's
+energy × the rail's tier, so the same shot costs `0.11 / 0.19 / 0.25` on
+`EMC-1 / 2 / 3` — upgrading a pad now raises what it earns per guest.
 
 draw on map EMC of player as circle around planet with short line (gun) color same as player's color. So players claim whole planet by build EMC and receive usage tax.
 
@@ -72,8 +73,9 @@ EMC-1 default build 9
 evacuate to HQ 6
 use commercial EMC 3 (available on each planet additional tier-1 EMC)
 
-→ evacuation `6.00` and commercial `3.00` are these numbers. `EMC-1` is no longer
-a flat `9`: build cost comes from the research that invented its spec
+→ evacuation `6.00` is this number; the commercial launch is no longer a flat
+`3.00` — since 0.6.2 it is `2.00` + `1.50` per kWh of the shot. `EMC-1` is no
+longer a flat `9`: build cost comes from the research that invented its spec
 (`OrbitScience.buildCostOf`), so a padded `3.04` is the *result*, not a constant.
 It is the price of the starter rail plus the starter purse rule — see the note
 in `orbit_tech.js` above `CATAPULTS`.
@@ -148,11 +150,12 @@ EMC-3, 4, etc - should not be available by default. we have only 2 levels resear
 
 → `EMC-1…2` stock, `3…5` behind the research hull (`catapult` family).
 
-**open** → `../0.6.2-plan-pad-fees.md` §3: the ladder has a demand that nothing
-shows. An `EMC-2 + BAT-2` lifts the dry ship off almost any planet, but a loaded
-`HOLD-24` off 43 % of `g 2.0` planets and 13 % at `g 2.5`, where an
-`EMC-3 + BAT-3` lifts it off 100 % and 87 %. Heavy freight out of a deep well is
-the job for the big rail; the plan tags and pays it.
+→ `../0.6.2-plan-pad-fees.md` §3, shipped: the ladder's demand is now offered
+on the board. A `deep` delivery (16 t or more out of a well of g ≥ 2.2) carries
+the tag, names the `EMC-3+` rail that lifts it and pays `+60%` on top of the
+ordinary reward — an `EMC-2 + BAT-2` lifts a loaded `HOLD-24` off only 43 % of
+`g 2.0` planets and 13 % at `g 2.5`, where an `EMC-3 + BAT-3` lifts it off
+100 % and 87 %.
 
 ## 2.7 balance and GUI ← `archive/draft.txt`
 

@@ -827,7 +827,7 @@ check('a fitted drive rescues a dead end with a bounded one-burn ring', () => {
 	assert.ok(plan, 'no rescue plan');
 	assert.ok(plan.burnGain > 0.5, 'rescue did not clear the sit margin');
 	assert.ok(plan.fuelKg > 0 && plan.fuelProducedKg + plan.fuelBoughtKg >= 0);
-	assert.ok(GravityGame.FUEL_PRICE * OrbitTech.TANKS[1].fuelCap > GravityGame.CAREER.commercialFee);
+	assert.ok(GravityGame.FUEL_PRICE * OrbitTech.TANKS[1].fuelCap > GravityGame.commercialMinFee());
 	assert.ok(plan.burnBody >= 0 && plan.body === plan.burnBody,
 		'the queued body is not the burn landing');
 	assert.strictEqual(plan.fromBook, false, 'a rescue was written as a book shot');
@@ -1218,8 +1218,8 @@ check('the no-shot reason uses the rail facts the page list prints', () => {
 	GravityGame.setCommercial(w.career, at);
 	w.career.ledger.purse = 0;
 	const poor = w.bot.careerNoPlanWhy(w.career, w.sim);
-	assert.ok(poor.startsWith('P' + at + ' fee ' + GravityGame.CAREER.commercialFee.toFixed(2) +
-		' > purse 0.00'), poor);
+	const feeText = GravityGame.commercialFee(w.career, at, GravitySim.SPEED_MIN).toFixed(2);
+	assert.ok(poor.startsWith('P' + at + ' fee ' + feeText + ' > purse 0.00'), poor);
 	GravityGame.setCommercial(w.career, -1);
 	w.career.ledger.purse = 30;
 	assert.ok(w.bot.careerNoPlanWhy(w.career, w.sim).includes('fan '),
