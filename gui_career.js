@@ -8,15 +8,14 @@
 'use strict';
 
 /* exact net kWh, board ageing and visit-profit growth one wait will settle, in
- * the three clocks the player reads: the real seconds the fast-forward takes
- * (CAREER_WAIT_SEC), the flight seconds the game clock gains and the world
- * minutes the pads are charged for */
+ * the clocks the player reads: the game seconds the clock gains (WAIT_SEC), the
+ * real seconds the fast-forward takes (CAREER_WAIT_SEC) and the pad seconds of
+ * sunlight the panels are charged for */
 function waitSettlement(career) {
-	const rate = scene.trade.speed;
-	const steps = GravitySim.stepsForWorldSeconds(GravitySim.WAIT_WORLD_SEC, rate);
-	const worldMin = GravitySim.worldMinutes(steps, rate);
-	const worldSec = GravitySim.worldSeconds(steps, rate);
-	const gameSec = Math.round(GravitySim.flightSeconds(steps));
+	const steps = GravitySim.stepsForGameSeconds(GravitySim.WAIT_SEC);
+	const gameSec = Math.round(GravitySim.gameSeconds(steps));
+	const padSec = GravitySim.padSeconds(gameSec);
+	const padMin = GravitySim.padMinutes(gameSec);
 	/* what the same span costs to watch instead of fast-forwarding */
 	const watchSec = GravitySim.wallSeconds(steps, playPace());
 	const nextStep = game.clockSteps + steps;
@@ -28,8 +27,8 @@ function waitSettlement(career) {
 		const pad = career.pads[i];
 		if (pad.catapult === null) continue;
 		const after = Math.min(pad.battery.capacity,
-			OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, worldMin) +
-			OrbitTech.solarCharge(pad.panel, career.light[i], worldSec));
+			OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, padMin) +
+			OrbitTech.solarCharge(pad.panel, career.light[i], padSec));
 		const gain = after > pad.chargeKwh ? after - pad.chargeKwh : 0;
 		if (i === here) hereGain = gain;
 		if (gain > 0.005) {
@@ -58,7 +57,7 @@ function waitSettlement(career) {
 	return {
 		steps,
 		gameSec,
-		worldMin,
+		padMin,
 		watchSec,
 		here,
 		hereHasPad: career.pads[here].catapult !== null,
@@ -90,7 +89,7 @@ function refreshCareerWaitUi(career, ended) {
 	careerWaitBtn.disabled = busy || ended || turret.pending ||
 		activeSim().status === STATUS_FLYING;
 	careerWaitBtn.classList.toggle('on', busy);
-	if (!busy) careerWaitBtn.textContent = 'wait · ' + CAREER_WAIT_SEC + ' s';
+	if (!busy) careerWaitBtn.textContent = 'wait · ' + GravitySim.WAIT_SEC + ' s';
 	if (!busy && otherHumanPlays()) {
 		careerWaitBtn.textContent = 'wait · resume time';
 		careerWaitBtn.title = 'Release this player’s pause; all players must resume before time advances';
@@ -136,13 +135,11 @@ function refreshCareerWaitUi(career, ended) {
 	const profitFull = s.profitGain > 0.005
 		? 'planet visits +' + s.profitGain.toFixed(2) + ' (' + s.growingPlanets + ' growing)'
 		: 'planet visits at cap';
-	/* the tooltip is the only place all three clocks meet: what the press costs
-	 * in real time, what it moves the game clock, and what watching the same
-	 * span at the current pace would cost instead */
-	const title = 'fast-forward ' + CAREER_WAIT_SEC + ' s of real time · the clock runs ' +
-		s.gameSec + ' s (' + s.worldMin + ' world min, ' + realSecText(s.watchSec) +
-		' s to watch at ' + paceTag() + '): ' +
-		padFull + ' · ' + boardFull + ' · ' + profitFull;
+	/* the tooltip says what the press costs in real time, what it moves the
+	 * game clock, and what watching the same span at this pace would cost */
+	const title = 'fast-forward ' + CAREER_WAIT_SEC + ' s of real time: the clock runs ' +
+		s.gameSec + ' s (' + realSecText(s.watchSec) + ' s to watch at ' + paceTag() +
+		'): ' + padFull + ' · ' + boardFull + ' · ' + profitFull;
 	careerWaitBtn.title = title;
 	if (careerWaitInfoEl) {
 		careerWaitInfoEl.hidden = false;
@@ -359,7 +356,7 @@ function careerWaitProgress(p) {
 		: '';
 	careerWaitInfoEl.textContent = 'fast-forward · ' + (CAREER_WAIT_SEC * p).toFixed(1) +
 		' / ' + CAREER_WAIT_SEC + ' s · clock +' +
-		Math.round(GravitySim.flightSeconds(careerWaitAnim.done)) + ' s' + padNote;
+		Math.round(GravitySim.gameSeconds(careerWaitAnim.done)) + ' s' + padNote;
 }
 
 /* the whole settled result lands exactly on the old instant wait */
@@ -374,7 +371,7 @@ function careerWaitFinish() {
 	GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
 	GravityGame.checkEnded(career);
 	cargoSim.predCount = 0;
-	careerNotice('clock +' + Math.round(GravitySim.flightSeconds(anim.steps)) + ' s · ' +
+	careerNotice('clock +' + Math.round(GravitySim.gameSeconds(anim.steps)) + ' s · ' +
 		planetName(anim.planet) + ' pad ' +
 		(gain > 0.005 ? '+' + gain.toFixed(2) + ' kWh'
 			: pad.catapult === null ? 'has no catapult' : 'already full'));
@@ -400,18 +397,18 @@ function careerWaitTick(now) {
 	const p = anim.credit < CAREER_WAIT_MS ? anim.credit / CAREER_WAIT_MS : 1;
 	const eased = easeInOut(p);
 	const steps = Math.round(eased * anim.steps);
-	tradeSim.advanceTo(anim.startT + CAREER_WAIT_WORLD_MIN * eased);
+	tradeSim.advanceTo(anim.startT + GravitySim.tradeMinutes(GravitySim.WAIT_SEC) * eased);
 	cargoSim.fieldT = tradeSim.t;
 	if (steps > anim.done) {
 		/* recharge from the start snapshot, so the eased chunks land on the
 		 * exact single-call result (leak is exponential, solar is linear) */
 		const pads = anim.career.pads;
 		for (let i = 0; i < pads.length; i++) pads[i].chargeKwh = anim.charges[i];
-		GravityGame.careerAdvance(anim.career, anim.rate, steps);
+		GravityGame.careerAdvance(anim.career, steps);
 		/* the rival companies live the same fast-forwarded steps: they
 		 * charge, launch, fly and harvest while you wait */
 		for (let s = anim.done + 1; s <= steps; s++) {
-			bot.stepCareer(anim.startClock + s, game.market, tradeSim, anim.rate);
+			bot.stepCareer(anim.startClock + s, game.market, tradeSim, scene.trade.speed);
 		}
 		game.clockSteps = anim.startClock + steps;
 		anim.done = steps;
@@ -435,15 +432,13 @@ function waitCareer() {
 	}
 	const planet = career.at >= 0 ? career.at : career.hq;
 	const pad = career.pads[planet];
-	const rate = scene.trade.speed;
 	careerWaitAnim = {
 		slot: activeSlotIndex(),
 		career: career,
 		planet: planet,
 		before: pad.catapult === null ? 0 : pad.chargeKwh,
 		charges: Float64Array.from(career.pads, p => p.chargeKwh),
-		rate: rate,
-		steps: GravitySim.stepsForWorldSeconds(GravitySim.WAIT_WORLD_SEC, rate),
+		steps: GravitySim.stepsForGameSeconds(GravitySim.WAIT_SEC),
 		done: 0,
 		pct: -1,
 		credit: 0,
@@ -461,7 +456,7 @@ function cancelCareerWait() {
 	if (careerWaitAnim === null) return;
 	careerWaitAnim = null;
 	careerWaitBtn.classList.remove('on');
-	careerWaitBtn.textContent = 'wait · ' + CAREER_WAIT_SEC + ' s';
+	careerWaitBtn.textContent = 'wait · ' + GravitySim.WAIT_SEC + ' s';
 }
 
 function careerEvacuate() {

@@ -428,7 +428,7 @@ function careerPlayerBotLaunch() {
 	 * record still names the pad the ship has already left */
 	if (cargoSim.status === STATUS_FLYING || cargoSim.landedBody !== career.at) return true;
 	const ready = bot.tickCareerPlayer(game.clockSteps, game.market, tradeSim,
-		scene.trade.speed, playerBotSyncNeeded);
+		playerBotSyncNeeded);
 	playerBotSyncNeeded = false;
 	if (!ready) return true;
 	const plan = bot.careerPlayerPlan();
@@ -567,9 +567,12 @@ function stepGame(now, dt) {
 		}
 	}
 	/* career steps without a driving human flight (idle clock, or only
-	 * rival companies airborne) still move the trade world the same span */
+	 * rival companies airborne) still move the background sky the same span:
+	 * the sky drifts on the career's own clock, whatever the animation slider
+	 * says — a wait and a flown flight move it by one and the same amount */
 	if (!fieldMoved && careerRule() && stepsDone > 0) {
-		tradeSim.advanceTo(tradeSim.t + stepsDone * DT * scene.trade.speed);
+		tradeSim.advanceTo(tradeSim.t +
+			GravitySim.tradeMinutes(stepsDone * DT));
 	}
 	if (wasSlot0Flying && cargoSim.status !== STATUS_FLYING) {
 		if (!clockDriverFlying()) playAcc = 0;
@@ -660,7 +663,7 @@ function advanceGameOneStep() {
 		careerBotBurn();
 	}
 	game.clockSteps += 1;
-	if (careerRule()) GravityGame.careerAdvance(game.career, scene.trade.speed, 1);
+	if (careerRule()) GravityGame.careerAdvance(game.career, 1);
 	if (cargoSim.status === STATUS_FLYING) {
 		cargoSim.stepOne();
 		GravityGame.stepHarvest(game.money, game.market, cargoSim, game.clockSteps);

@@ -115,7 +115,7 @@ function fly(w, from, angle, speed) {
         w.step += 1;
         sim.stepOne();
         GravityGame.stepHarvest(career.ledger, w.market, sim, w.step);
-        GravityGame.careerAdvance(career, RATE, 1);
+        GravityGame.careerAdvance(career, 1);
     }
     trade.advanceTo(sim.flightFieldT);
     return GravityGame.careerEndFlight(career, sim, w.trade, w.step);

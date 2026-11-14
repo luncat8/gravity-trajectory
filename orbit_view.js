@@ -33,7 +33,14 @@
 	const HOVER_PX = 17;
 	const NO_DASH = [];
 	const START_MINUTES = 420;
-	const START_SPEED = 0.5;
+	/* the background animation's own clock: trade minutes per real second, the
+	 * default look being TRADE_MIN_PER_SEC · TRADE_RATE_DEFAULT; ×1 is what the
+	 * url's `&rate=`/`&speed=` carry as 0.5. Decoration — no gameplay reader
+	 * takes a rate from here (0.7.1). The view loads before gravity_sim.js, so
+	 * the two numbers live here and the career sky's drift mirrors them in
+	 * `GravitySim.TRADE_MIN_PER_GAME_SEC`. */
+	const TRADE_MIN_PER_SEC = 0.5;
+	const TRADE_RATE_DEFAULT = 0.5;
 	const VIEW_INSET = 14;
 	const VIEW_FOOT_MAX = 120;
 	const VIEW_FOOT_MIN = 76;
@@ -145,12 +152,19 @@
 	initMoonSystems();
 
 	let paused = false;
-	let speed = START_SPEED;
 	/*
 	 * Shared so the cargo layer can extrapolate port positions at the same rate.
 	 * gameClock: the cargo layer advances the world itself, only while it flies.
 	 */
-	const tradeState = { speed: START_SPEED, paused: false, gameClock: false };
+	/* speed is the animation's clock rate (trade minutes per real second), rate
+	 * the player-facing multiplier the slider shows; ×1 is the default look */
+	const tradeState = {
+		speed: TRADE_MIN_PER_SEC * TRADE_RATE_DEFAULT,
+		rate: TRADE_RATE_DEFAULT,
+		rateDefault: TRADE_RATE_DEFAULT,
+		paused: false,
+		gameClock: false
+	};
 	let moonClockT = sim.t;
 	let showOrbits = orbitsBox.checked;
 	let showLinks = linksBox.checked;
@@ -1024,14 +1038,17 @@
 		pauseButton.classList.toggle('on', paused);
 	}
 
+	/* `value` is the animation's clock rate in trade minutes per real second,
+	 * the unit the url carries so old links re-fly unchanged; the slider and
+	 * its label show the multiplier of the default look */
 	function setSpeed(value) {
-		speed = value;
 		tradeState.speed = value;
-		speedLabel.textContent = '×' + value;
+		tradeState.rate = value / TRADE_RATE_DEFAULT;
+		speedLabel.textContent = '×' + tradeState.rate;
+		speedSlider.value = String(value);
 	}
 
 	function setSpeedValue(value) {
-		speedSlider.value = String(value);
 		setSpeed(value);
 	}
 
@@ -1065,7 +1082,7 @@
 		const dt = Math.min(0.1, (now - lastFrame) / 1000);
 		lastFrame = now;
 		const gameClock = tradeState.gameClock;
-		if (!gameClock && !paused && dt > 0) sim.step(dt * speed);
+		if (!gameClock && !paused && dt > 0) sim.step(dt * tradeState.speed);
 		if (showMoons && dt > 0 && (!gameClock || sim.t !== moonClockT)) stepMoons(dt);
 		moonClockT = sim.t;
 		updatePortPositions();

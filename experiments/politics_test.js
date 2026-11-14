@@ -64,10 +64,19 @@ function normalPlanet(w) {
 	throw new Error('no normal planet');
 }
 
-/* one world step of the political clock at the given world speed */
-function step(w, runStep, rate) {
-	w.trade.advanceTo(w.trade.t + DT * (rate || 1));
-	return Game.advancePolitics(w.market, w.trade, runStep, rate || 1);
+/* the per-step half the page and the benches share: `GravityBot.stepCareer`
+ * runs `careerAdvance` for every company and the political clock, and the
+ * market ages its report stamp inside `advancePolitics` — the same call either
+ * way, through the controller, so a fixture cannot drift from the page */
+const GravityBot = require(path.join(root, 'gravity_bot.js'));
+function careerStep(w, runStep) {
+	w.trade.advanceTo(w.trade.t + DT);
+	if (!w.bot) {
+		w.bot = new GravityBot(World.WORLD_W, World.WORLD_H);
+		w.bot.attachWorld(w.trade);
+		w.bot.reset(0, Game.RULE_CAREER, Game.BOT_OFF);
+	}
+	return w.bot.stepCareer(runStep, w.market, w.trade);
 }
 
 let checks = 0;
@@ -170,14 +179,14 @@ check('rot rises only after the grace, never past 100, and only on unvisited wor
 	w.career.at = -1;
 	let steps = 0;
 	while (steps < graceSteps - 10) {
-		step(w, ++steps);
+		careerStep(w, ++steps);
 	}
 	assert.ok(w.market.corruption[other] > 0, 'a stale world started rotting');
 	assert.strictEqual(w.market.corruption[planet], Econ.CORRUPTION_TRADITION, 'a fresh world rotted inside the grace');
-	while (steps < graceSteps + 200) step(w, ++steps);
+	while (steps < graceSteps + 200) careerStep(w, ++steps);
 	assert.ok(w.market.corruption[planet] > 0, 'rot did not start after the grace');
 	w.market.corruption[planet] = 99.9;
-	for (let i = 0; i < 400; i++) step(w, ++steps);
+	for (let i = 0; i < 400; i++) careerStep(w, ++steps);
 	assert.ok(w.market.corruption[planet] <= 100, 'rot passed 100');
 });
 
@@ -186,19 +195,19 @@ check('the political clock runs once per step number and not at all without a bo
 	const planet = normalPlanet(w);
 	w.market.corruption[planet] = 10;
 	w.market.lastVisitStep[planet] = -1e9;
-	step(w, 500);
+	careerStep(w, 500);
 	const once = w.market.corruption[planet];
-	Game.advancePolitics(w.market, w.trade, 500, 1);
+	Game.advancePolitics(w.market, w.trade, 500);
 	assert.strictEqual(w.market.corruption[planet], once, 'a repeated step number rotted twice');
 	const loose = Game.createMarket();
 	Game.resetMarket(loose);
 	loose.corruption[planet] = 10;
-	assert.strictEqual(Game.advancePolitics(loose, w.trade, 600, 1), 0);
+	assert.strictEqual(Game.advancePolitics(loose, w.trade, 600), 0);
 	assert.strictEqual(loose.corruption[planet], 10, 'an unbound market ran politics');
 	const off = setup(13);
 	Game.setPolitics(false);
 	const before = off.market.corruption[planet];
-	step(off, 900);
+	careerStep(off, 900);
 	assert.strictEqual(off.market.corruption[planet], before, 'POLITICS=0 still rotted');
 	Game.setPolitics(true);
 });
@@ -211,15 +220,15 @@ check('landed profit grows at half speed and a reporting ship can take a bribe',
 	w.market.lastVisitStep[p] = 0;
 	w.market.lastReportStep[p] = 0;
 	w.market.visitPay[p] = 0;
-	step(w, 600);
+	careerStep(w, 600);
 	const expected = Game.planetProfitAt(w.market, p, 600, 300);
 	assert.ok(Math.abs(Game.planetProfit(w.market, p, 600) - expected) < 1e-9);
 	assert.ok(Game.bribeAmount(w.market, p, 600) > 0);
 	assert.ok(Game.acceptBribe(c, w.market, w.sim, p, 600).ok);
-	step(w, 700);
+	careerStep(w, 700);
 	assert.ok(!Game.bribeWindowOpen(w.market, p), 'clock movement reopened bribe');
 	c.flying = true;
-	step(w, 800);
+	careerStep(w, 800);
 	assert.strictEqual(w.market.lastVisitStep[p], 350, 'a flying ship does not occupy its origin');
 });
 
@@ -235,14 +244,14 @@ check('reporting reduces rot to its floor; optional entrenched rot clears on que
 	assert.ok(bribe.ok);
 	const floor = w.market.corruptionFloor[p];
 	assert.ok(Math.abs(floor - (Econ.CORRUPTION_TRADITION + Econ.bribeCorruption(bribe.amount) * 0.1)) < 1e-9);
-	step(w, 100);
+	careerStep(w, 100);
 	assert.ok(w.market.corruption[p] < bribe.corruption);
 	w.market.corruption[p] = floor + 0.01;
-	step(w, 200);
+	careerStep(w, 200);
 	assert.strictEqual(w.market.corruption[p], floor);
 	c.ledger.reports = false;
 	w.market.lastReportStep[p] = -100000;
-	step(w, 300);
+	careerStep(w, 300);
 	assert.ok(w.market.corruptionFloor[p] > floor, 'passive growth entrenches rot too');
 	Game.pacifyPlanet(w.market, p, 300);
 	assert.strictEqual(w.market.corruptionFloor[p], Econ.CORRUPTION_TRADITION);
@@ -349,7 +358,7 @@ check('high rot can end a bribe in arrest: Capital transport, no planning, medic
 	assert.strictEqual(arrested, 1, 'no arrest in 200 high-rot bribes');
 	/* the transport retires on the world clock */
 	const until = career.arrestUntilStep;
-	step(w, until);
+	careerStep(w, until);
 	assert.ok(!career.arrested, 'the arrest never retired');
 	assert.strictEqual(Game.railBlock(career, w.sim, career.at, GravitySim.SPEED_MIN), '');
 });
@@ -381,13 +390,13 @@ check('rebellion rolls once per epoch and never below the threshold', () => {
 	w.market.lastVisitStep[planet] = -1e9;
 	w.market.corruption[planet] = 49;
 	let steps = 0;
-	while (steps < 40) step(w, ++steps);
+	while (steps < 40) careerStep(w, ++steps);
 	assert.strictEqual(w.market.rebel[planet], 0, 'a rebellion started below the threshold');
 	assert.ok(w.market.lastCheckEpoch[planet] < 0, 'an ineligible planet consumed an epoch roll');
 	w.market.corruption[planet] = 100;
 	const start = steps;
 	for (; steps < start + Math.round(4000 / DT); steps++) {
-		step(w, steps);
+		careerStep(w, steps);
 		if (w.market.rebel[planet]) break;
 	}
 	assert.strictEqual(w.market.rebel[planet], 1, 'no rebellion in 4000 world seconds at 100 rot');
@@ -404,7 +413,7 @@ check('rebellion rolls once per epoch and never below the threshold', () => {
 	let previous = w.market.lastCheckEpoch[planet];
 	const end = steps + Math.round(Econ.REBEL_CHECK_SECONDS * 3 / DT);
 	for (; steps < end; steps++) {
-		step(w, steps);
+		careerStep(w, steps);
 		if (w.market.lastCheckEpoch[planet] === previous) continue;
 		stamps += 1;
 		previous = w.market.lastCheckEpoch[planet];
@@ -426,8 +435,8 @@ check('a rebellion is deterministic for a seed and its roll rate matches the law
 	first.market.corruption.fill(100);
 	second.market.corruption.fill(100);
 	for (let i = 1; i <= 20000; i++) {
-		step(first, i);
-		step(second, i);
+		careerStep(first, i);
+		careerStep(second, i);
 	}
 	assert.deepStrictEqual(Array.from(first.market.rebel), Array.from(second.market.rebel),
 		'two identical markets rebelled differently');
@@ -623,7 +632,7 @@ check('rot is copied into the trade colonies on the political clock', () => {
 	const planet = normalPlanet(w);
 	const colony = w.trade.seedColony(planet, w.trade.t);
 	w.market.corruption[planet] = 60;
-	step(w, 1000);
+	careerStep(w, 1000);
 	assert.strictEqual(w.trade.corruption, w.market.corruption);
 	w.trade.advanceTo(w.trade.t + 3);
 	assert.strictEqual(colony.corruption, 60);

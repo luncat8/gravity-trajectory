@@ -215,26 +215,26 @@ current default we use x4. this is good speed so we can name it x1
 
 after this refactoring actual speed should remain same, but set visual units more simple.
 
-→ **done** (`../0.7.1-plan-time-model.md`, `../archive/0.7.1-worklog.md`). One
-contract in `gravity_sim.js` names the three clocks: a step is always `DT` of
-**flight** time (the HUD, the board, the contracts, the barrels, the arrests);
-the **world rate** — `scene.trade.speed`, the background slider, world minutes
-per flight second, `0.5` default — makes the world minutes/seconds the pads and
-the politics run on; the **pace** — `playScale`, flight seconds per real second,
-`4` at the career default — makes the real seconds the player waits. One `wait`
-is 1800 world s = 30 world min = **60 flight s**, which is 15 real s to watch at
-×1 but **2 s through the button's fast-forward** (`CAREER_WAIT_MS`); the label
-now carries the press cost, `wait · 2 s`, and the tooltip carries all three. The
-`15 s` this note promised was the watching cost, not the press cost.
+→ **done, second pass** (`../0.7.1-plan-time-model.md`,
+`../archive/0.7.1-worklog.md` §5). One clock in `gravity_sim.js`: a step is
+`DT` of a **game second**, and every table — flights, the board, contracts,
+barrels, arrests, pads, politics — is priced in game seconds. Two multipliers
+convert game seconds to real ones and nothing else: the **pace** (`play ×N`,
+game seconds per real second, ×4 in career at the default, ×1 in the lab) and
+the **background animation** knob (decoration only; it cannot move a pad or a
+rebellion). One `wait` moves the clock **60 game seconds** — `1800` pad seconds
+of sunlight — in `2 s` of real time, which is `15 s` to watch at ×4; the button
+says `wait · 60 s`, the tooltip says both real numbers.
 
-**answered and implemented:** today's ×4 is called ×1 — the playback tag reads
-relative to the pace the mode is balanced at, so both ladders show `×0.25 … ×8`
-and only the raw pace differs (career rungs 1…32, lab 0.25…8). Physics, prices
-and the balanced pace do not move: `career_bench`, `career_bot_bench` and
-`career_stats_test` report exactly what they reported at HEAD. The literal
-`1 flight s = 1 wall s` reading stays rejected: it would make every flight four
-times longer to watch and invalidate every balance number priced in flight
-seconds (0.7.2's wear included).
+**answered and implemented:** no mode hides a multiplier behind its label any
+more. The first pass divided career's label by four so today's pace read ×1 and
+the lab's read ×1 too; that is two meanings for one number. Now a rung means
+game seconds per real second in every mode, so career opens on an honest ×4 and
+the lab on ×1. Nothing the game is balanced at moved: the same steps run at the
+same pace, the pads see the same 30 pad seconds per game second, and the bot
+bench reproduces HEAD's purses and pad counts at the same rate. The literal
+`1 game s = 1 real s` default stays rejected — it would make every flight four
+times longer to watch and invalidate every number priced in game seconds.
 
 ## 2.10 EMC catapult ← `archive/draft.txt`
 

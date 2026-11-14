@@ -71,7 +71,7 @@ function showLink() {
 function botLogHeader() {
 	return game.rule + ' · ' + game.bot + ' · ' + bot.count + ' rivals · seed ' +
 		game.seed + ' · t+ ' + (game.clockSteps * DT).toFixed(1) +
-		' s (step ' + game.clockSteps + ') · ×' + scene.trade.speed +
+		' s (step ' + game.clockSteps + ') · sky ×' + scene.trade.rate +
 		' · g ×' + gravityScale.toFixed(2) + ' · force ×' + forceScale.toFixed(2) +
 		' · ' + (cargoSim.fieldStatic ? 'planets · static · lists on' : 'ports · moving · lists off') +
 		(careerRule() && careerPaused ? ' · world clock paused' : '');

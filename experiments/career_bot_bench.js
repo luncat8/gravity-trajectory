@@ -22,7 +22,9 @@ const GravityGame = require(path.join(root, 'gravity_game.js'));
 const GravityBot = require(path.join(root, 'gravity_bot.js'));
 
 const PLANETS = OrbitWorld.PLANETS;
-const RATE = 1;
+/* the moving-map field rate the bench flies at — a physics knob, not a clock:
+ * every other span in this file is game seconds */
+const FIELD_RATE = 1;
 const DT = GravitySim.DT;
 const PURSE_BASELINE = 6;
 const LATE_PURSE = 30;
@@ -66,7 +68,7 @@ function makeWorld(seed, gravityScale = 1, forceScale = 1) {
 	};
 	sim.setField(PLANETS, trade.planetR, strength, fillPlanets, true);
 	sim.fieldT = trade.t;
-	sim.fieldRate = RATE;
+	sim.fieldRate = FIELD_RATE;
 	sim.stepLimit = GravityGame.CAP_STEPS;
 	const ledger = GravityGame.createLedger();
 	const career = GravityGame.createCareer(ledger);
@@ -116,7 +118,7 @@ function makeSeededWorld(seed) {
 	};
 	sim.setField(PLANETS, trade.planetR, strength, fillPlanets, true);
 	sim.fieldT = trade.t;
-	sim.fieldRate = RATE;
+	sim.fieldRate = FIELD_RATE;
 	sim.stepLimit = GravityGame.CAP_STEPS;
 	const ledger = GravityGame.createLedger();
 	const career = GravityGame.createCareer(ledger);
@@ -131,11 +133,12 @@ function makeSeededWorld(seed) {
 }
 
 function wait(w) {
-	const minutes = GravityBot.CAREER_WAIT_SECONDS / 60;
-	const steps = Math.max(1, Math.round(minutes / (DT * RATE)));
-	GravityGame.careerAdvance(w.career, RATE, steps);
+	/* one press of the wait button: WAIT_SEC game seconds of clock, the pad
+	 * charging and the sky drifting through the same conversions the page uses */
+	const steps = GravitySim.stepsForGameSeconds(GravityBot.CAREER_WAIT_SECONDS);
+	GravityGame.careerAdvance(w.career, steps);
 	w.step += steps;
-	w.trade.advanceTo(w.trade.t + minutes);
+	w.trade.advanceTo(w.trade.t + GravitySim.tradeMinutes(GravitySim.gameSeconds(steps)));
 	GravityGame.refreshBoard(w.career, w.trade, w.step);
 	GravityGame.checkEnded(w.career);
 	w.sim.fieldT = w.trade.t;
@@ -158,7 +161,7 @@ function fly(w, plan) {
 	assert.ok(Math.abs(score - plan.score) < 1e-9, 'score terms do not add up');
 
 	sim.fieldT = trade.t;
-	sim.fieldRate = RATE;
+	sim.fieldRate = FIELD_RATE;
 	sim.stepLimit = GravityGame.CAP_STEPS;
 	sim.limitReason = GravitySim.END_TIME;
 	sim.launch(plan.origin, plan.angle, plan.speed);
@@ -171,7 +174,7 @@ function fly(w, plan) {
 		}
 		sim.stepOne();
 		GravityGame.stepHarvest(ledger, market, sim, w.step);
-		GravityGame.careerAdvance(career, RATE, 1);
+		GravityGame.careerAdvance(career, 1);
 		assert.ok(w.step < 100000000, 'flight step guard');
 	}
 	trade.advanceTo(sim.flightFieldT);
@@ -259,7 +262,7 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = 
 		earned: career.earned,
 		flights: career.flights,
 		steps: w.step,
-		worldMinutes: w.step * DT * RATE,
+		gameSeconds: GravitySim.gameSeconds(w.step),
 		pads: career.padCount,
 		builds: bot.careerBuilds,
 		upgrades: bot.careerUpgrades,
@@ -599,7 +602,7 @@ function flyOpening(w, state, gain) {
 	bot.careerBurnGain = gain;
 	const fuel0 = career.ship.fuelKg;
 	sim.fieldT = trade.t;
-	sim.fieldRate = RATE;
+	sim.fieldRate = FIELD_RATE;
 	sim.stepLimit = GravityGame.CAP_STEPS;
 	sim.launch(plan.origin, plan.angle, plan.speed);
 	GravityGame.careerBeginFlight(career, sim);
@@ -613,7 +616,7 @@ function flyOpening(w, state, gain) {
 		}
 		sim.stepOne();
 		GravityGame.stepHarvest(w.ledger, market, sim, w.step);
-		GravityGame.careerAdvance(career, RATE, 1);
+		GravityGame.careerAdvance(career, 1);
 	}
 	trade.advanceTo(sim.flightFieldT);
 	sim.fieldT = trade.t;
@@ -646,7 +649,7 @@ check('rescueOnly pays one coast trace and leaves a healthy flight alone', () =>
 	const plan = bot.careerPlan(career, sim, market, w.step, false);
 	assert.ok(plan, 'no opening plan');
 	sim.fieldT = w.trade.t;
-	sim.fieldRate = RATE;
+	sim.fieldRate = FIELD_RATE;
 	sim.stepLimit = GravityGame.CAP_STEPS;
 	sim.launch(plan.origin, plan.angle, plan.speed);
 	GravityGame.careerBeginFlight(career, sim);
@@ -893,7 +896,7 @@ for (const seed of SEEDS) {
 			' · upgrades ' + r.upgrades + ' · gear ' + r.gear + ' · waits ' + r.waits +
 			' · fallbacks ' + r.fallbacks + ' · evac ' + r.evacuations + ' · plans ' + r.plans +
 			' · traces ' + r.traces + ' · $/h ' +
-			(r.earned / (r.worldMinutes / 60)).toFixed(2));
+			(r.earned / (r.gameSeconds / 3600)).toFixed(2));
 		assert.strictEqual(r.ended, GravityGame.CAREER_COMPLETE, 'career did not complete');
 		assert.strictEqual(r.pads, PLANETS);
 		assert.ok(r.purse + 1e-9 >= 0, 'purse went negative: ' + r.purse);
@@ -970,7 +973,7 @@ check('career rivals queue on the EMC barrel: the shot fires only once it lines 
 	let step = 0;
 	while (step < 20000 && !r.turret && r.sim.status !== GravitySim.STATUS_FLYING) {
 		step += 1;
-		w.bot.stepCareer(step, w.market, w.trade, RATE);
+		w.bot.stepCareer(step, w.market, w.trade);
 	}
 	assert.ok(r.turret, 'the rival never queued a shot');
 	assert.notStrictEqual(r.sim.status, GravitySim.STATUS_FLYING,
@@ -982,7 +985,7 @@ check('career rivals queue on the EMC barrel: the shot fires only once it lines 
 	const fireAt = r.turret.fireAt;
 	while (step < fireAt + 2 && r.sim.status !== GravitySim.STATUS_FLYING) {
 		step += 1;
-		w.bot.stepCareer(step, w.market, w.trade, RATE);
+		w.bot.stepCareer(step, w.market, w.trade);
 	}
 	assert.strictEqual(r.sim.status, GravitySim.STATUS_FLYING, 'the aligned shot never fired');
 	assert.strictEqual(r.turret, null, 'the fired shot keeps its queue entry');
@@ -1075,17 +1078,17 @@ check('patient company: a losing plan that cannot claim a pad is sat out, never 
 			energy: 0, wait: 0, fee: 0, steps: 10 };
 	};
 	const step = 500;
-	assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, RATE, step), false);
+	assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, FIELD_RATE, step), false);
 	assert.strictEqual(r.turret, null, 'a losing plan must not reserve pad charge');
 	assert.strictEqual(r.waitTries, 1);
 	assert.ok(r.readyStep >= step + GravityBot.CAREER_SIT_GAP, 'the company must sit the gap');
 	assert.ok(r.career.pads[r.career.at].reservedKwh === 0, 'no energy is claimed while sitting');
 	/* after the budget it takes the least bad shot anyway */
 	for (let i = 1; i < GravityBot.CAREER_SIT_TRIES; i++) {
-		assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, RATE, step + i), false);
+		assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, FIELD_RATE, step + i), false);
 	}
 	assert.strictEqual(r.waitTries, GravityBot.CAREER_SIT_TRIES, 'the sit budget must count up');
-	assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, RATE, step + 100), false);
+	assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, FIELD_RATE, step + 100), false);
 	assert.ok(r.turret, 'the company never stopped waiting');
 	assert.strictEqual(r.waitTries, 0, 'a taken shot resets the patience');
 });
@@ -1119,7 +1122,7 @@ check('flat fees are priced as fees: a lost or stranded ship evacuates', () => {
 	w.bot.careerPlan = () => null;
 	w.bot.traceReset();
 	for (let i = 0; i < 3; i++) {
-		assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, RATE, 1000 + i * 600), false);
+		assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, FIELD_RATE, 1000 + i * 600), false);
 	}
 	assert.strictEqual(career.evacuations, 2, 'the stranded ship never evacuated');
 	assert.strictEqual(career.at, career.hq);
@@ -1151,7 +1154,7 @@ check('an unreachable contract is dropped instead of parking a company forever',
 	w.bot.traceReset();
 	const step = 900;
 	for (let i = 0; i < 3; i++) {
-		assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, RATE, step + i * 600), false);
+		assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, FIELD_RATE, step + i * 600), false);
 	}
 	assert.strictEqual(career.contract, -1, 'the stale contract was never dropped');
 	assert.strictEqual(r.idleTries, 0, 'a recovery must reset the idle counter');
@@ -1171,7 +1174,7 @@ check('a finished career gives its queued pad charge back', () => {
 	GravityGame.reserveEnergy(pad, 0.5);
 	r.turret = { pad: pad, energy: 0.5, fireAt: 99999 };
 	r.career.ended = GravityGame.CAREER_COMPLETE;
-	w.bot.stepCareer(100, w.market, w.trade, RATE);
+	w.bot.stepCareer(100, w.market, w.trade);
 	assert.strictEqual(r.turret, null, 'the queue outlived the company');
 	assert.strictEqual(pad.reservedKwh, 0, 'the reserved charge was never released');
 });
@@ -1182,7 +1185,7 @@ check('the decision log shows live state, reasons and stays bounded', () => {
 	const w = makeWorld(42);
 	w.bot.reset(42, GravityGame.RULE_CAREER, GravityGame.BOT_EASY);
 	w.bot.startCareers(galaxy, 42, w.trade);
-	for (let step = 1; step <= 4000; step++) w.bot.stepCareer(step, w.market, w.trade, RATE);
+	for (let step = 1; step <= 4000; step++) w.bot.stepCareer(step, w.market, w.trade);
 	const log = w.bot.decisionLog(4000, 'bench · career');
 	assert.ok(log.startsWith('gravity cargo · bot decisions'), 'missing log title');
 	assert.ok(log.includes('bench · career'), 'missing page header');

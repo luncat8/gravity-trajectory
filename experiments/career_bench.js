@@ -141,30 +141,31 @@ check('solar charge: kW·s -> kWh, dim world charges slowly, leak decays', () =>
 	assert.ok(OrbitTech.batteryLeak(BAT[4], 1.5, 100) > c1);
 });
 
-/* 0.7.1: one contract for the three clocks. A step is always DT of flight time;
- * `rate` (the world rate) makes world minutes out of it, and `pace` (playback)
- * makes real seconds. Every literal below is a pinned HEAD number, so renaming a
- * unit without re-scaling its table fails here instead of in the shop. */
-check('the clocks: flight s = steps · DT, world s = flight s · rate · 60, real s = flight s / pace', () => {
-	assert.strictEqual(GravitySim.flightSeconds(120), 1);
-	assert.strictEqual(GravitySim.worldMinutes(120, 0.5), 0.5);
-	assert.strictEqual(GravitySim.worldSeconds(120, 0.5), 30);
-	assert.strictEqual(GravitySim.stepsForWorldSeconds(GravitySim.WAIT_WORLD_SEC, 0.5), 7200);
-	assert.strictEqual(GravitySim.flightSecondsForWorld(GravitySim.WAIT_WORLD_SEC, 0.5), 60);
-	assert.strictEqual(GravitySim.flightSeconds(7200), 60);
+/* 0.7.1: one clock. A step is DT of a game second; pads see
+ * SUN_SEC_PER_GAME_SEC game seconds of sun per game second, and `pace`
+ * (playback) turns game seconds into real ones. Every literal below is a pinned
+ * HEAD number, so re-scaling a unit fails here instead of in the shop. */
+check('the clock: game s = steps · DT, pad s = game s · sun, real s = game s / pace', () => {
+	assert.strictEqual(GravitySim.gameSeconds(120), 1);
+	assert.strictEqual(GravitySim.padSeconds(1), 30);
+	assert.strictEqual(GravitySim.padMinutes(1), 0.5);
+	assert.strictEqual(GravitySim.stepsForGameSeconds(GravitySim.WAIT_SEC), 7200);
+	assert.strictEqual(GravitySim.gameSeconds(7200), 60);
+	assert.strictEqual(GravitySim.tradeMinutes(GravitySim.WAIT_SEC), 30);
 	assert.strictEqual(GravitySim.wallSeconds(7200, 4), 15);
 	assert.strictEqual(GravitySim.wallSeconds(7200, 0), 0);
-	assert.strictEqual(GravitySim.WORLD_SEC_PER_MIN, 60);
-	assert.strictEqual(GravitySim.WORLD_RATE_DEFAULT, 0.5);
-	assert.strictEqual(GravitySim.WAIT_WORLD_SEC, 1800);
+	assert.strictEqual(GravitySim.SUN_SEC_PER_GAME_SEC, 30);
+	assert.strictEqual(GravitySim.TRADE_MIN_PER_GAME_SEC, 0.5);
+	assert.strictEqual(GravitySim.WAIT_SEC, 60);
+	assert.strictEqual(GravitySim.WAIT_PAD_SEC, 1800);
+	assert.strictEqual(GravitySim.WAIT_PAD_MIN, 30);
 });
 
-check('one wait: 1800 world s of sun and 30 world min of leak, pinned to the kWh', () => {
-	const steps = GravitySim.stepsForWorldSeconds(GravitySim.WAIT_WORLD_SEC,
-		GravitySim.WORLD_RATE_DEFAULT);
-	assert.strictEqual(GravitySim.worldMinutes(steps, 0.5), 30);
-	assert.strictEqual(GravitySim.worldSeconds(steps, 0.5), 1800);
-	assert.strictEqual(OrbitTech.solarCharge(SP[0], 1, GravitySim.WAIT_WORLD_SEC), 0.5);
+check('one wait: 1800 pad s of sun and 30 pad min of leak, pinned to the kWh', () => {
+	const steps = GravitySim.stepsForGameSeconds(GravitySim.WAIT_SEC);
+	assert.strictEqual(GravitySim.padMinutes(GravitySim.gameSeconds(steps)), 30);
+	assert.strictEqual(GravitySim.padSeconds(GravitySim.gameSeconds(steps)), 1800);
+	assert.strictEqual(OrbitTech.solarCharge(SP[0], 1, GravitySim.WAIT_PAD_SEC), 0.5);
 	assert.ok(Math.abs(OrbitTech.batteryLeak(BAT[0], 1.5, 30) - 1.455668300323) < 1e-9);
 	/* the two spans the shop prices between waits */
 	assert.ok(Math.abs(OrbitTech.solarCharge(SP[0], 1, 10) - 0.002777777778) < 1e-12);
@@ -349,7 +350,7 @@ function fly(w, from, angle, speed, afterBegin) {
 		w.step += 1;
 		sim.stepOne();
 		GravityGame.stepHarvest(ledger, market, sim, w.step);
-		GravityGame.careerAdvance(career, RATE, 1);
+		GravityGame.careerAdvance(career, 1);
 	}
 	trade.advanceTo(sim.flightFieldT);
 	const outcome = GravityGame.careerEndFlight(career, sim, trade, w.step);
@@ -551,16 +552,18 @@ check('EMC barrels turn once per 2…5 s and sweep a full circle', () => {
 	}
 });
 
-check('career pads: solar refills on the world clock up to capacity, dim pads slower', () => {
+check('career pads: solar refills on the sun clock up to capacity, dim pads slower', () => {
 	const w = makeWorld(42);
 	startCareer(w, 42);
 	const { career } = w;
 	const hq = career.hq;
 	career.pads[hq].chargeKwh = 0;
-	GravityGame.careerAdvance(career, RATE, Math.round(10 / DT));
+	/* a game second is SUN_SEC_PER_GAME_SEC pad seconds of sun */
+	GravityGame.careerAdvance(career, GravitySim.stepsForGameSeconds(10));
+	/* 10 game s of SP-1 sun at this HQ's light: ~0.06 kWh of the 1.5 kWh BAT-1 */
 	const after10 = career.pads[hq].chargeKwh;
-	assert.ok(after10 > 0.1 && after10 < 0.4, '10 s of sun gave ' + after10);
-	GravityGame.careerAdvance(career, RATE, Math.round(600 / DT));
+	assert.ok(after10 > 0.05 && after10 < 0.08, '10 game s of sun gave ' + after10);
+	GravityGame.careerAdvance(career, GravitySim.stepsForGameSeconds(600));
 	assert.ok(Math.abs(career.pads[hq].chargeKwh - BAT[0].capacity) < 1e-9, 'capped at capacity');
 	/* darkest pad vs HQ */
 	w.ledger.purse = 20;
@@ -569,14 +572,14 @@ check('career pads: solar refills on the world clock up to capacity, dim pads sl
 	assert.ok(GravityGame.buildGear(career, dim, 'catapult', EMC[0]));
 	career.pads[dim].chargeKwh = 0;
 	career.pads[hq].chargeKwh = 0;
-	GravityGame.careerAdvance(career, RATE, Math.round(10 / DT));
+	GravityGame.careerAdvance(career, GravitySim.stepsForGameSeconds(10));
 	assert.ok(career.pads[dim].chargeKwh < career.pads[hq].chargeKwh);
 	assert.ok(career.pads[dim].chargeKwh > 0, 'the light floor keeps every pad alive');
 	assert.ok(career.light[dim] >= CAREER.lightFloor * 0.5);
 	/* with the battery empty no shot fires; after charging a slow one does */
 	career.pads[hq].chargeKwh = 0;
 	assert.ok(!w.sim.canFire(hq, GravitySim.SPEED_MIN) && w.sim.speedLimit(hq) === 0);
-	GravityGame.careerAdvance(career, RATE, Math.round(60 / DT));
+	GravityGame.careerAdvance(career, GravitySim.stepsForGameSeconds(60));
 	assert.ok(w.sim.canFire(hq, GravitySim.SPEED_MIN));
 });
 

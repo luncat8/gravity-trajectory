@@ -548,7 +548,7 @@ function createPricing() {
 		],
 		battery: [
 			{ key: 'capacity', label: 'capacity kWh', min: 1, max: 22, step: 0.5, digits: 1 },
-			{ key: 'leak', label: 'leak /y', min: 0.0001, max: 0.0012, step: 0.0001, digits: 4 }
+			{ key: 'leak', label: 'leak /pad min', min: 0.0001, max: 0.0012, step: 0.0001, digits: 4 }
 		],
 		/* build-only families: no research plot, but the copy blob and the
 	 * build panel need their axis metadata */
@@ -1011,7 +1011,7 @@ function createPricing() {
 		catapult: 'CATAPULTS', panel: 'PANELS', battery: 'BATTERIES',
 		hold: 'HOLDS', engine: 'ENGINES', tank: 'TANKS'
 	};
-	/* mirrors GravitySim.WAIT_WORLD_SEC: the world seconds one wait buys */
+	/* mirrors GravitySim.WAIT_PAD_SEC: the pad seconds of sunlight one wait buys */
 	var LADDER_WAIT_SEC = 1800;
 	var ladder = { kind: 'panel', keep: 0, gain: 1 };
 
@@ -1028,7 +1028,7 @@ function createPricing() {
 	var LADDER_EFFECT = {
 		catapult: { unit: 'px/s rail cap · 10 t ship', of: item =>
 			OrbitTech.maxSpeed(OrbitTech.SHIP_DRY_MASS, item, 1) },
-		panel: { unit: 'kWh per 30 min wait · full sun', of: item =>
+		panel: { unit: 'kWh per 60 s wait · full sun', of: item =>
 			OrbitTech.solarCharge(item, 1, LADDER_WAIT_SEC) },
 		battery: { unit: 'kWh stored', of: item => item.capacity },
 		hold: { unit: 't of cargo', of: item => item.capacity },

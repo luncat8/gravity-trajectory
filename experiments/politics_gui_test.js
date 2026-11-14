@@ -245,7 +245,7 @@ const bribeNode = { id: 'careerBribe', textContent: /bribe rulers · \+[\d.]+/.e
 ui.set('careerBribe', bribeNode);
 const stale = bribeNode.textContent;
 for (let i = 0; i < 600; i++) {
-	Game.careerAdvance(career, 1, 1);
+	Game.careerAdvance(career, 1);
 	game.clockSteps += 1;
 }
 context.refreshFuelHud(career);

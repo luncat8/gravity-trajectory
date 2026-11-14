@@ -71,47 +71,53 @@
 	const FULL_BUDGET_MS = 1e9;
 	const PRED_LOG_MAX = 64;
 
-	/* --- the clocks (0.7.1) -------------------------------------------------
-	 * One physics step is always DT of flight time and the sim knows no other
-	 * clock. Two multipliers, both set outside the step, turn flight time into
-	 * the clocks a career reads:
-	 *   rate — the world rate (`scene.trade.speed`): world minutes per flight
-	 *          second, 0.5 by default. Pads, politics and the orbit animation
-	 *          run on it; a flight never does.
-	 *   pace — the playback pace (`playScale`): flight seconds per real second,
-	 *          4 at the career default, which the footer calls ×1.
+	/* --- the clock (0.7.1) --------------------------------------------------
+	 * A game second is the unit of the whole game. One physics step is DT of a
+	 * game second and the sim knows no other clock: a flight, a board deadline,
+	 * a contract, a barrel turn, an arrest, a pad refill and a political grace
+	 * are all priced in game seconds. Two multipliers sit outside the step and
+	 * only turn game seconds into real ones:
+	 *   pace — the playback rung (`playScale`): game seconds per real second,
+	 *          ×4 in career at the default, ×1 in the lab.
+	 *   trade rate — the background animation (`scene.trade.speed`): how fast
+	 *          the trade sky drifts. Decoration; no gameplay reader sees it.
 	 * The conversions, and the only ones a reader may use:
-	 *   flight s = steps · DT
-	 *   world min = flight s · rate          world s = world min · 60
-	 *   real s = flight s / pace
+	 *   game s = steps · DT        real s = game s / pace
+	 *   pad s  = game s · SUN_SEC_PER_GAME_SEC
+	 * SUN_SEC_PER_GAME_SEC is the career's sun: a panel sees this many pad
+	 * seconds of sunlight per game second, one trade-world minute, which is the
+	 * rate the pad balance was priced at. It is a price, not a clock, and the
+	 * only factor left between two times in the game. The career's sky drifts on
+	 * the same minute (TRADE_MIN_PER_GAME_SEC), so a flown flight and a wait
+	 * move the background by one and the same amount.
 	 */
-	const WORLD_SEC_PER_MIN = 60;
-	const WORLD_RATE_DEFAULT = 0.5;
-	/* one press of `wait` settles this much sunlight on every pad: 30 world
-	 * minutes, 60 flight seconds and 2 real seconds at the default pace */
-	const WAIT_WORLD_SEC = 1800;
+	const SUN_SEC_PER_GAME_SEC = 30;
+	const TRADE_MIN_PER_GAME_SEC = SUN_SEC_PER_GAME_SEC / 60;
+	/* one press of `wait` moves the clock 60 game seconds — 1800 pad seconds
+	 * (30 pad minutes) of sunlight — and costs 2 real seconds of easing */
+	const WAIT_SEC = 60;
+	const WAIT_PAD_SEC = WAIT_SEC * SUN_SEC_PER_GAME_SEC;
+	const WAIT_PAD_MIN = WAIT_PAD_SEC / 60;
 
-	function flightSeconds(steps) {
+	function gameSeconds(steps) {
 		return steps * DT;
 	}
 
-	function worldMinutes(steps, rate) {
-		return steps * DT * rate;
+	function padSeconds(gameSec) {
+		return gameSec * SUN_SEC_PER_GAME_SEC;
 	}
 
-	function worldSeconds(steps, rate) {
-		return steps * DT * rate * WORLD_SEC_PER_MIN;
+	function padMinutes(gameSec) {
+		return gameSec * SUN_SEC_PER_GAME_SEC / 60;
 	}
 
-	/* the steps that settle `seconds` of world time at `rate` */
-	function stepsForWorldSeconds(seconds, rate) {
-		return Math.max(1, Math.round(seconds / (DT * rate * WORLD_SEC_PER_MIN)));
+	/* the trade sky's own clock: game seconds as trade minutes */
+	function tradeMinutes(gameSec) {
+		return gameSec * TRADE_MIN_PER_GAME_SEC;
 	}
 
-	/* flight seconds `worldSec` of world time spans, unrounded: the pad and
-	 * politics readouts price a wait without running its steps */
-	function flightSecondsForWorld(worldSec, rate) {
-		return worldSec / (WORLD_SEC_PER_MIN * rate);
+	function stepsForGameSeconds(seconds) {
+		return Math.max(1, Math.round(seconds / DT));
 	}
 
 	/* the real seconds `steps` take to run at `pace`; a paused clock takes none */
@@ -1026,14 +1032,16 @@
 	};
 
 	GravitySim.DT = DT;
-	GravitySim.WORLD_SEC_PER_MIN = WORLD_SEC_PER_MIN;
-	GravitySim.WORLD_RATE_DEFAULT = WORLD_RATE_DEFAULT;
-	GravitySim.WAIT_WORLD_SEC = WAIT_WORLD_SEC;
-	GravitySim.flightSeconds = flightSeconds;
-	GravitySim.worldMinutes = worldMinutes;
-	GravitySim.worldSeconds = worldSeconds;
-	GravitySim.stepsForWorldSeconds = stepsForWorldSeconds;
-	GravitySim.flightSecondsForWorld = flightSecondsForWorld;
+	GravitySim.SUN_SEC_PER_GAME_SEC = SUN_SEC_PER_GAME_SEC;
+	GravitySim.TRADE_MIN_PER_GAME_SEC = TRADE_MIN_PER_GAME_SEC;
+	GravitySim.WAIT_SEC = WAIT_SEC;
+	GravitySim.WAIT_PAD_SEC = WAIT_PAD_SEC;
+	GravitySim.WAIT_PAD_MIN = WAIT_PAD_MIN;
+	GravitySim.gameSeconds = gameSeconds;
+	GravitySim.padSeconds = padSeconds;
+	GravitySim.padMinutes = padMinutes;
+	GravitySim.tradeMinutes = tradeMinutes;
+	GravitySim.stepsForGameSeconds = stepsForGameSeconds;
 	GravitySim.wallSeconds = wallSeconds;
 	GravitySim.MU = MU;
 	GravitySim.SOFT = SOFT;

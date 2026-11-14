@@ -287,8 +287,6 @@ const botLogTextEl = $('botLogText');
 const botLogCloseBtn = $('botLogClose');
 const gameHudEl = $('gameHud');
 const gameClockEl = $('gameClock');
-const gameSpeedSlider = $('gameSpeed');
-const gameSpeedLabel = $('gameSpeedLabel');
 const gameShotsEl = $('gameShots');
 const gameFlightsEl = $('gameFlights');
 const gamePadsEl = $('gamePads');
@@ -406,11 +404,10 @@ const aimEconomics = { state: 0, launchable: true, fee: 0, fuel: 0, exit: 0, net
 let launchState = -1;
 let launchNote = '';
 let linkNote = '';
-let playIndex = PLAY_DEFAULT;
-/* partial game slice carried between frames, so 0.25x and 32x both stay smooth */
+/* the mode's default rung; `defaultPlayIndex` reads the rule, which boots as lab */
+let playIndex = PLAY_INDEX_LAB;
+/* partial game slice carried between frames, so 0.25 and 32 both stay smooth */
 let playAcc = 0;
-/* game-time speed (pads/rivals/turret); independent from the background trade slider */
-let gameRate = 1;
 /* photo deck: one space view per planet and one surface view per landing, per run */
 const photoSpace = new Uint8Array(PLANETS);
 const photoLanded = new Uint8Array(PLANETS);
@@ -595,14 +592,6 @@ if (careerCleanEl) {
 srcPlanetsEl.addEventListener('change', () => setSource(MODE_PLANETS));
 srcPortsEl.addEventListener('change', () => setSource(MODE_PORTS));
 $('tradeSpeed').addEventListener('input', () => syncSeedUrl(replay.on));
-if (gameSpeedSlider) {
-	gameSpeedSlider.addEventListener('input', () => {
-		gameRate = Number(gameSpeedSlider.value);
-		if (gameSpeedLabel) gameSpeedLabel.textContent = '×' + gameRate;
-		/* the slider multiplies the pace the footer tag and the wait preview name */
-		refreshPlaybackUi();
-	});
-}
 trimSlider.addEventListener('input', onTrimInput);
 trimSlider.addEventListener('change', resetTrim);
 if (expGravityEl) {
@@ -1056,11 +1045,6 @@ game.player = slotTypes[0];
 
 if (careerCleanEl) cleanCareerView = careerCleanEl.checked;
 if (careerPauseLandEl) pauseOnLanding = careerPauseLandEl.checked;
-if (gameSpeedSlider) {
-	gameRate = Number(gameSpeedSlider.value);
-	if (gameSpeedLabel) gameSpeedLabel.textContent = '×' + gameRate;
-}
-/* after gameRate: the tag shows the pace the slider multiplies */
 refreshPlaybackUi();
 refreshCareerClockUi();
 cargoSim.horizon = Number(horizonSlider.value);

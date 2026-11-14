@@ -94,7 +94,7 @@ for (const seed of SEEDS) {
 	let rebels = 0;
 	let wasRebel = new Uint8Array(PLANETS);
 	for (let step = 1; step <= steps; step++) {
-		w.bot.stepCareer(step, w.market, w.trade, 1);
+		w.bot.stepCareer(step, w.market, w.trade);
 		w.trade.advanceTo(w.trade.t + DT);
 		for (let p = 0; p < PLANETS; p++) {
 			if (w.market.rebel[p] && !wasRebel[p]) rebels += 1;

@@ -208,8 +208,8 @@ for (const seed of SEEDS) {
 		hqRows.push('P' + r.career.hq + ' g' + w.strength[r.career.hq].toFixed(1));
 	}
 	for (let step = 1; step <= steps; step++) {
-		GravityGame.careerAdvance(w.player, RATE, 1);
-		w.bot.stepCareer(step, w.market, w.trade, RATE);
+		GravityGame.careerAdvance(w.player, 1);
+		w.bot.stepCareer(step, w.market, w.trade);
 		w.trade.advanceTo(w.trade.t + DT * RATE);
 	}
 	const rows = [];

@@ -53,10 +53,10 @@ function padCap(career, catapult, battery) {
 	return padCapMass(catapult, battery, career.ship.mass);
 }
 
-/* kWh one wait of world sunlight buys on that pad's panel */
+/* kWh one wait of sunlight buys on that pad's panel */
 function panelWaitKwh(career, planet, panel) {
 	return panel
-		? OrbitTech.solarCharge(panel, career.light[planet], GravitySim.WAIT_WORLD_SEC)
+		? OrbitTech.solarCharge(panel, career.light[planet], GravitySim.WAIT_PAD_SEC)
 		: 0;
 }
 
@@ -66,22 +66,15 @@ function waitGain(career, planet, panel) {
 	return panelWaitKwh(career, planet, item).toFixed(2);
 }
 
-/* how many waits a shot needs, as the game-clock seconds they cost: waits times
- * the flight seconds one wait spans at the live world rate */
-function waitClockSec(rate) {
-	return rate > 0 ? GravitySim.flightSecondsForWorld(GravitySim.WAIT_WORLD_SEC, rate) : 0;
-}
-
-/* game-clock seconds of sunlight for `panel` on `planet` to cover one full-cap shot */
+/* game seconds of sunlight for `panel` on `planet` to cover one full-cap shot */
 function panelReadySec(career, planet, pad, panel) {
 	const gain = panelWaitKwh(career, planet, panel);
-	const clockSec = waitClockSec(scene.trade.speed);
-	if (gain <= 0 || clockSec <= 0) return 0;
+	if (gain <= 0) return 0;
 	const cat = pad.catapult || OrbitTech.CATAPULTS[0];
 	const bat = pad.battery || OrbitTech.BATTERIES[0];
 	const cap = padCap(career, cat, bat);
 	const shotKwh = cap > 0 ? OrbitTech.launchEnergy(career.ship.mass, cat, cap) : bat.capacity;
-	return Math.max(1, Math.round(shotKwh / gain * clockSec));
+	return Math.max(1, Math.round(shotKwh / gain * GravitySim.WAIT_SEC));
 }
 
 /* `91 → 132 px/s`: the cap a row's next tier would buy */
@@ -493,9 +486,8 @@ function padBlockHtml(career) {
 	if (limit < SPEED_MIN && full >= SPEED_MIN) {
 		const need = OrbitTech.launchEnergy(ship.mass, pad.catapult, SPEED_MIN) - pad.chargeKwh;
 		const gain = panelWaitKwh(career, at, pad.panel);
-		const clockSec = waitClockSec(scene.trade.speed);
-		if (need > 0 && gain > 0 && clockSec > 0) {
-			const sec = Math.max(1, Math.ceil(need / gain * clockSec));
+		if (need > 0 && gain > 0) {
+			const sec = Math.max(1, Math.ceil(need / gain * GravitySim.WAIT_SEC));
 			html += '<div class="careerLine dim">solar +' + gain.toFixed(2) +
 				' kWh/wait · ready in ' + sec + ' s</div>';
 		}
@@ -715,7 +707,8 @@ function protoGearStatText(kind, proto) {
 
 function protoGearNoteText(kind, proto) {
 	if (kind === OrbitTech.KIND_CATAPULT) return proto.maxForce + ' kN · eff ' + proto.efficiency;
-	if (kind === OrbitTech.KIND_BATTERY) return proto.capacity + ' kWh · leak ' + proto.leak + '/y';
+	if (kind === OrbitTech.KIND_BATTERY) return proto.capacity + ' kWh · leak ' +
+		(100 * (1 - Math.exp(-proto.leak * GravitySim.WAIT_PAD_MIN))).toFixed(1) + ' %/wait';
 	return proto.power + ' kW';
 }
 

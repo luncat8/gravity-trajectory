@@ -361,7 +361,6 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			politicsSeed: 1,
 			politicsSerial: 0,
 			politicsStep: -1,
-			politicsRate: 1,
 			politicsSec: 0,
 			galaxy: null
 		};
@@ -392,7 +391,6 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		market.politicsSeed = 1;
 		market.politicsSerial = 0;
 		market.politicsStep = -1;
-		market.politicsRate = 1;
 		market.politicsSec = 0;
 		market.galaxy = null;
 	}
@@ -434,13 +432,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return -MONEY.cap * Math.expm1(-age * (k === undefined ? MONEY.k : k) / MONEY.cap);
 	}
 
-	/* the political clock of a step: world minutes — flight seconds times the
-	 * world rate. Every `OrbitEcon.*_SECONDS` rate is priced in these, so the
-	 * name lies about the unit (`CORRUPTION_GRACE = 120` is two world hours);
-	 * renaming the table would move the balance, so 0.7.1 only writes it down.
-	 * `ARREST_SECONDS` is the exception: it is flight seconds, a step count. */
+	/* the political clock of a step, in game seconds. Every
+	 * `OrbitEcon.*_SECONDS` rate is priced in these, `ARREST_SECONDS` included,
+	 * so one clock and no rate: the background animation cannot move rot. */
 	function politicsSeconds(market, step) {
-		return GravitySim.worldMinutes(step, market.politicsRate);
+		return GravitySim.gameSeconds(step);
 	}
 
 	/* the rail the rebels run on `planet`, or null; a seized rail outlives the
@@ -3193,8 +3189,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* --- politics: rot, bribes, arrest, rebellion (0.5.12) ---------------- */
 
 	/*
-	 * The career clock every political rate is priced in. `advancePolitics`
-	 * runs once per world step from GravityBot.stepCareer, so the GUI and the
+	 * The career clock every political rate is priced in: game seconds. `advancePolitics`
+	 * runs once per step from GravityBot.stepCareer, so the GUI and the
 	 * benches share one clock. It raises rot on every world nobody visited
 	 * lately, copies the rot into the trade colonies, retires finished
 	 * arrests, and rolls one rebellion per planet per epoch — never per step.
@@ -3209,19 +3205,18 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		}
 	}
 
-	function advancePolitics(market, trade, runStep, rate) {
+	function advancePolitics(market, trade, runStep) {
 		const galaxy = market.galaxy;
 		if (!politics || !galaxy || runStep === market.politicsStep) return 0;
 		const previousStep = Math.max(0, market.politicsStep);
 		market.politicsStep = runStep;
-		market.politicsRate = rate > 0 ? rate : 1;
 		const seconds = politicsSeconds(market, runStep);
 		const dtSec = seconds - market.politicsSec;
 		market.politicsSec = seconds;
 		if (trade && trade.setCorruption && trade.corruption !== market.corruption) {
 			trade.setCorruption(market.corruption);
 		}
-		const secondsPerStep = GravitySim.DT * market.politicsRate;
+		const secondsPerStep = GravitySim.DT;
 		const epoch = Math.floor(seconds / OrbitEcon.REBEL_CHECK_SECONDS);
 		let seized = 0;
 		const count = market.planetCount || OrbitWorld.PLANETS;
@@ -3450,12 +3445,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	}
 
 	/* the Capital's slow transport: no fee, no reward, no medics, no planning.
-	 * ARREST_SECONDS is flight seconds, so the transport lands a fixed number
-	 * of steps later whatever the world rate is set to */
+	 * ARREST_SECONDS is game seconds like every political span */
 	function arrestCareer(career, market, sim, runStep) {
 		const capital = career.capitalPlanet;
 		if (capital < 0) return false;
-		career.arrestUntilStep = runStep + Math.round(OrbitEcon.ARREST_SECONDS / GravitySim.DT);
+		career.arrestUntilStep = runStep +
+			Math.round(OrbitEcon.ARREST_SECONDS / GravitySim.DT);
 		career.arrested = true;
 		career.arrests += 1;
 		clearMedicalCargo(career);
@@ -3471,8 +3466,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		market.rebel[planet] = 0;
 		market.patients[planet] = 0;
 		market.rebelSinceStep[planet] = 0;
-		market.rebelCooldownStep[planet] =
-			runStep + Math.round(OrbitEcon.REBEL_CHECK_SECONDS * 2 / GravitySim.DT);
+		/* a quelled world may not fall again for two epochs, as it always did */
+		market.rebelCooldownStep[planet] = runStep +
+			Math.round(OrbitEcon.REBEL_CHECK_SECONDS * 2 / GravitySim.DT);
 		market.corruptionFloor[planet] = OrbitEcon.CORRUPTION_TRADITION;
 		market.corruption[planet] = market.corruption[planet] > OrbitEcon.PACIFY_CORRUPTION_MAX
 			? OrbitEcon.PACIFY_CORRUPTION_MAX : market.corruption[planet];
@@ -4081,17 +4077,17 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return true;
 	}
 
-	/* pads charge on the world clock, never on the flight clock: `rate` world
-	 * minutes pass per flight second, so one step buys DT · rate world minutes
-	 * of sunlight (world seconds) against the battery's leak (world minutes) */
-	function careerAdvance(career, rate, steps) {
-		const worldMin = GravitySim.worldMinutes(steps, rate);
-		const worldSec = GravitySim.worldSeconds(steps, rate);
+	/* pads charge on the sun clock, never on the flight clock: the career sees
+	 * SUN_SEC_PER_GAME_SEC pad seconds of sunlight per game second, so a step
+	 * buys DT of sunlight against the battery's leak in pad minutes */
+	function careerAdvance(career, steps) {
+		const padSec = GravitySim.padSeconds(GravitySim.gameSeconds(steps));
+		const padMin = GravitySim.padMinutes(GravitySim.gameSeconds(steps));
 		for (let i = 0; i < career.pads.length; i++) {
 			const pad = career.pads[i];
 			if (pad.catapult === null) continue;
-			const charge = OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, worldMin) +
-				OrbitTech.solarCharge(pad.panel, career.light[i], worldSec);
+			const charge = OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, padMin) +
+				OrbitTech.solarCharge(pad.panel, career.light[i], padSec);
 			pad.chargeKwh = charge < pad.battery.capacity ? charge : pad.battery.capacity;
 		}
 	}

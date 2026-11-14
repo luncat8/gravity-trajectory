@@ -64,8 +64,8 @@ for (const seed of SEEDS) {
 		'player HQ P' + w.player.hq + ' str ' + w.strength[w.player.hq].toFixed(2),
 		'rivals', hqStr.join(' '));
 	for (let step = 1; step <= STEPS; step++) {
-		GravityGame.careerAdvance(w.player, RATE, 1);
-		w.bot.stepCareer(step, w.market, w.trade, RATE);
+		GravityGame.careerAdvance(w.player, 1);
+		w.bot.stepCareer(step, w.market, w.trade);
 		w.trade.advanceTo(w.trade.t + DT * RATE);
 	}
 	const rows = w.bot.rivals.slice(0, w.bot.count).map((r, i) => ({

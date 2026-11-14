@@ -82,7 +82,7 @@ const SCIENCE_AXES = {
 	],
 	battery: [
 		{ key: 'capacity', label: 'capacity kWh', min: 1, max: 22, step: 0.5, digits: 1 },
-		{ key: 'leak', label: 'leak /y', min: 0.0001, max: 0.0012, step: 0.0001, digits: 4 }
+		{ key: 'leak', label: 'leak /pad min', min: 0.0001, max: 0.0012, step: 0.0001, digits: 4 }
 	]
 };
 /* near-hull defaults: the first invention costs ~base fee and fits the
@@ -119,16 +119,15 @@ for (const family in SCIENCE_DEFAULTS) {
 	scienceValues[family] = {};
 	for (const key in SCIENCE_DEFAULTS[family]) scienceValues[family][key] = SCIENCE_DEFAULTS[family][key];
 }
-/* one press of wait runs the world clock: GravitySim.WAIT_WORLD_SEC of sunlight
- * — 30 world minutes, 60 flight seconds at the default world rate — eased over
- * CAREER_WAIT_SEC of real time so the trade sky visibly fast-forwards; each
- * frame may credit at most WAIT_FRAME_MS (a 50 fps budget), so a slow machine
- * stretches the wait instead of freezing the view. The button names the real
- * seconds, the only time the player spends; the orbit animation needs the same
- * wait in its own world minutes. */
+/* one press of wait moves the clock GravitySim.WAIT_SEC game seconds — the
+ * sunlight it buys is WAIT_PAD_SEC pad seconds, the trade sky drifts
+ * `WAIT_SEC · TRADE_MIN_PER_GAME_SEC` trade minutes — eased over CAREER_WAIT_SEC
+ * of real time so the sky visibly fast-forwards; each frame may credit at most
+ * WAIT_FRAME_MS (a 50 fps budget), so a slow machine stretches the wait instead
+ * of freezing the view. The button names the game seconds, the tooltip the real
+ * ones. */
 const CAREER_WAIT_MS = 2000;
 const CAREER_WAIT_SEC = CAREER_WAIT_MS / 1000;
-const CAREER_WAIT_WORLD_MIN = GravitySim.WAIT_WORLD_SEC / GravitySim.WORLD_SEC_PER_MIN;
 const WAIT_FRAME_MS = 20;
 const VIEW_SPACE = 'space';
 const VIEW_FIELD = 'field';
@@ -193,18 +192,16 @@ const REPLAY_GAP_MS = 450;
 /* replay multipliers; index 2 is real time */
 const REPLAY_SPEEDS = [0.25, 0.5, 1, 4, 16];
 const REPLAY_DEFAULT = 2;
-/* live playback: how fast the flight is watched; the physics steps never change.
- * The tag reads relative to the pace each mode is balanced at, so both ladders
- * are the same six rungs and only the raw pace differs: ×1 is real time in the
- * lab and the career's 4 flight seconds per real second in career (the pace the
- * career economy was balanced at, which the player used to see as ×4).
- * CAREER_PACE_UNIT is the one number every career pace label divides by. */
-const PLAY_SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
-const CAREER_SPEEDS = [1, 2, 4, 8, 16, 32];
-const PLAY_DEFAULT = 2;
-const PLAY_MAX_INDEX = 5;
-const CAREER_PACE_UNIT = CAREER_SPEEDS[PLAY_DEFAULT];
-const PLAY_MAX = CAREER_SPEEDS[PLAY_MAX_INDEX];
+/* live playback: how fast the game is watched, in game seconds per real second;
+ * the physics steps never change. One ladder in every mode — ×1 is real time —
+ * and each mode opens on the rung it is balanced at: the lab at ×1, career at
+ * ×4, the pace the career economy was priced at. PLAY_MAX caps the loop, so a
+ * replay's ×16 over the top rung is what the cap is for. */
+const PLAY_SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16, 32];
+const PLAY_INDEX_LAB = 2;
+const PLAY_INDEX_CAREER = 4;
+const PLAY_MAX_INDEX = PLAY_SPEEDS.length - 1;
+const PLAY_MAX = PLAY_SPEEDS[PLAY_MAX_INDEX];
 const PHASE_AIM = 0;
 const PHASE_FLY = 1;
 const PHASE_GAP = 2;

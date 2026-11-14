@@ -82,8 +82,9 @@
 	const CAREER_SPEED_FRACTIONS = [0.38, 0.55, 0.72, 0.86, 1];
 	const CAREER_TARGET_OFFSETS = 4;
 	const CAREER_TARGET_STEP = 0.035;
-	/* world seconds of sunlight one press of `wait` settles — 30 world minutes */
-	const CAREER_WAIT_SECONDS = GravitySim.WAIT_WORLD_SEC;
+	/* game seconds one press of `wait` moves the clock; the pads see
+	 * SUN_SEC_PER_GAME_SEC times as much sunlight */
+	const CAREER_WAIT_SECONDS = GravitySim.WAIT_SEC;
 	const CAREER_ENERGY_WAIT_COST = 0.04;
 	const CAREER_BUILT_PAD_VALUE = 2.5;
 	const CAREER_NETWORK_PAD_VALUE = 4;
@@ -1964,7 +1965,7 @@
 		return upgraded;
 	};
 
-	/* world seconds a pad's panel needs to replace the energy a shot spent */
+	/* pad seconds a pad's panel needs to replace the energy a shot spent */
 	GravityBot.prototype.careerRefillWait = function (career, planet, panel, energy) {
 		const power = panel.power * career.light[planet] / 3600;
 		return energy > 0 && power > 0 ? energy / power : 0;
@@ -2004,9 +2005,9 @@
 		const mass = career.ship.mass;
 		const scale = career.forceScale;
 		const free = pad.chargeKwh - pad.reservedKwh;
-		/* the launch cycle is priced on the world clock: the flight's world
-		 * seconds plus the world seconds the panel needs to replace the shot */
-		const flownSec = GravitySim.worldSeconds(record.steps, this.careerRate || 1);
+		/* the launch cycle is priced on the pad clock: the flight's pad
+		 * seconds plus the pad seconds the panel needs to replace the shot */
+		const flownSec = GravitySim.padSeconds(GravitySim.gameSeconds(record.steps));
 		const speed = GravityGame.speedOf(record.speedU);
 		const energy = OrbitTech.launchEnergy(mass, pad.catapult, speed);
 		const missed = energy > free ? energy - free : 0;
@@ -2084,7 +2085,7 @@
 		}
 		this.careerPadGearBought += 1;
 		this.traceAdd(career.index, 'gear', 'P' + planet + ' ' + best.label +
-			' · ' + best.cost.toFixed(2) + ' · yield +' + (best.rate * 3600).toFixed(2) + '/h' +
+			' · ' + best.cost.toFixed(2) + ' · yield +' + (best.rate * 60).toFixed(2) + '/min' +
 			(best.rate > 0 ? ' · payback ' + (best.cost / best.rate).toFixed(0) + ' s' : ''),
 			runStep || 0);
 		return true;
@@ -2407,7 +2408,8 @@
 	GravityBot.prototype.careerEnergyWait = function (career, planet, energy, sourcePad) {
 		if (!(energy > 0)) return 0;
 		const pad = sourcePad || GravityGame.padAt(career, planet);
-		const gain = OrbitTech.solarCharge(pad.panel, career.light[planet], CAREER_WAIT_SECONDS);
+		const gain = OrbitTech.solarCharge(pad.panel, career.light[planet],
+			GravitySim.padSeconds(CAREER_WAIT_SECONDS));
 		return gain > 0 ? energy / gain : Infinity;
 	};
 
@@ -3052,13 +3054,15 @@
 		return false;
 	}
 
-	/* one world step for every rival career: charge pads, fly, plan, launch */
-	GravityBot.prototype.stepCareer = function (runStep, market, trade, rate) {
+	/* one game step for every rival career: charge pads, fly, plan, launch.
+	 * `fieldRate` is the moving-gravity rate (trade minutes per **game** second,
+	 * numerically the sky's `trade.speed`, which counts trade minutes per real
+	 * second — a pace of 1 makes the two the same clock),
+	 * and only a map that flies a shot uses it; no career number reads it. */
+	GravityBot.prototype.stepCareer = function (runStep, market, trade, fieldRate) {
 		this.worldStep = runStep;
-		/* world minutes per physics step: pad cycles are priced in world time */
-		this.careerRate = rate;
 		/* one political clock for the whole run, the GUI and the benches */
-		GravityGame.advancePolitics(market, trade, runStep, rate);
+		GravityGame.advancePolitics(market, trade, runStep);
 		/* one stats sample every stats.every steps; returns at once on any
 		 * step that is not a sample step, so it never touches the frame loop */
 		GravityGame.sampleStats(market.galaxy, market, runStep);
@@ -3068,7 +3072,7 @@
 			const career = r.career;
 			if (!career) continue;
 			career.market = market;
-			GravityGame.careerAdvance(career, rate, 1);
+			GravityGame.careerAdvance(career, 1);
 			if (r.sim.status === STATUS_FLYING) {
 				this.careerFlightBurn(career, r.sim, market, runStep, r);
 				r.sim.stepOne();
@@ -3098,7 +3102,7 @@
 			 * its own shots, but the bot never picks them */
 			if (!this.isRivalBot(i)) continue;
 			if (career.arrested || runStep < r.readyStep) continue;
-			this.careerLaunch(r, market, trade, rate, runStep);
+			this.careerLaunch(r, market, trade, fieldRate, runStep);
 		}
 	};
 
@@ -3133,7 +3137,7 @@
 		return this.careerFlightBurn(p.career, p.sim, market, runStep, p);
 	};
 
-	GravityBot.prototype.tickCareerPlayer = function (runStep, market, trade, rate, refresh) {
+	GravityBot.prototype.tickCareerPlayer = function (runStep, market, trade, refresh) {
 		const p = this.careerPlayer;
 		const career = p.career;
 		if (!career || !p.sim || career.ended !== GravityGame.CAREER_OPEN) return false;
@@ -3697,7 +3701,7 @@
 		return true;
 	};
 
-	GravityBot.prototype.careerLaunch = function (r, market, trade, rate, runStep) {
+	GravityBot.prototype.careerLaunch = function (r, market, trade, fieldRate, runStep) {
 		const career = r.career;
 		const sim = r.sim;
 		const who = r.index;
@@ -3759,7 +3763,7 @@
 		const angle = shot.angle;
 		const speed = shot.speed;
 		sim.fieldT = trade.t;
-		sim.fieldRate = rate;
+		sim.fieldRate = fieldRate;
 		sim.stepLimit = GravityGame.CAP_STEPS;
 		sim.limitReason = END_TIME;
 		r.shots.push(GravityGame.createShot(GravityGame.SRC_PLANETS, origin,
