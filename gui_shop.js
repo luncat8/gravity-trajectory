@@ -53,8 +53,11 @@ function padCap(career, catapult, battery) {
 	return padCapMass(catapult, battery, career.ship.mass);
 }
 
+/* kWh one wait of sunlight buys on that pad's panel */
 function panelWaitKwh(career, planet, panel) {
-	return panel ? OrbitTech.solarCharge(panel, career.light[planet], CAREER_WAIT_MIN * 60) : 0;
+	return panel
+		? OrbitTech.solarCharge(panel, career.light[planet], GravitySim.WAIT_PAD_SEC)
+		: 0;
 }
 
 /* kWh one wait adds to that pad's battery (solar over the wait, before the leak) */
@@ -63,16 +66,15 @@ function waitGain(career, planet, panel) {
 	return panelWaitKwh(career, planet, item).toFixed(2);
 }
 
-/* game-clock seconds of sunlight for `panel` on `planet` to cover one full-cap shot */
+/* game seconds of sunlight for `panel` on `planet` to cover one full-cap shot */
 function panelReadySec(career, planet, pad, panel) {
 	const gain = panelWaitKwh(career, planet, panel);
-	const rate = scene.trade.speed;
-	if (gain <= 0 || rate <= 0) return 0;
+	if (gain <= 0) return 0;
 	const cat = pad.catapult || OrbitTech.CATAPULTS[0];
 	const bat = pad.battery || OrbitTech.BATTERIES[0];
 	const cap = padCap(career, cat, bat);
 	const shotKwh = cap > 0 ? OrbitTech.launchEnergy(career.ship.mass, cat, cap) : bat.capacity;
-	return Math.max(1, Math.round(shotKwh / gain * (CAREER_WAIT_MIN / rate)));
+	return Math.max(1, Math.round(shotKwh / gain * GravitySim.WAIT_SEC));
 }
 
 /* `91 → 132 px/s`: the cap a row's next tier would buy */
@@ -290,7 +292,8 @@ function claimTag(owner) {
 /* how fast a rebellion's fly-by payout is ramping, as the pill shows it */
 function rebelMultiple(planet) {
 	const market = game.market;
-	const age = (game.clockSteps - market.rebelSinceStep[planet]) * DT * market.politicsRate;
+	const age = GravityGame.politicsSeconds(market, game.clockSteps) -
+		GravityGame.politicsSeconds(market, market.rebelSinceStep[planet]);
 	return OrbitEcon.flybyMultiplier(age);
 }
 
@@ -483,9 +486,8 @@ function padBlockHtml(career) {
 	if (limit < SPEED_MIN && full >= SPEED_MIN) {
 		const need = OrbitTech.launchEnergy(ship.mass, pad.catapult, SPEED_MIN) - pad.chargeKwh;
 		const gain = panelWaitKwh(career, at, pad.panel);
-		const rate = scene.trade.speed;
-		if (need > 0 && gain > 0 && rate > 0) {
-			const sec = Math.max(1, Math.ceil(need / gain * (CAREER_WAIT_MIN / rate)));
+		if (need > 0 && gain > 0) {
+			const sec = Math.max(1, Math.ceil(need / gain * GravitySim.WAIT_SEC));
 			html += '<div class="careerLine dim">solar +' + gain.toFixed(2) +
 				' kWh/wait · ready in ' + sec + ' s</div>';
 		}
@@ -705,7 +707,8 @@ function protoGearStatText(kind, proto) {
 
 function protoGearNoteText(kind, proto) {
 	if (kind === OrbitTech.KIND_CATAPULT) return proto.maxForce + ' kN · eff ' + proto.efficiency;
-	if (kind === OrbitTech.KIND_BATTERY) return proto.capacity + ' kWh · leak ' + proto.leak + '/y';
+	if (kind === OrbitTech.KIND_BATTERY) return proto.capacity + ' kWh · leak ' +
+		(100 * (1 - Math.exp(-proto.leak * GravitySim.WAIT_PAD_MIN))).toFixed(1) + ' %/wait';
 	return proto.power + ' kW';
 }
 

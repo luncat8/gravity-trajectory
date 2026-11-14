@@ -76,8 +76,8 @@ for (const seed of SEEDS) {
 	const longest = w.bot.rivals.map(() => 0);
 	const reports = [];
 	for (let step = 1; step <= STEPS; step++) {
-		GravityGame.careerAdvance(w.player, RATE, 1);
-		w.bot.stepCareer(step, w.market, w.trade, RATE);
+		GravityGame.careerAdvance(w.player, 1);
+		w.bot.stepCareer(step, w.market, w.trade);
 		w.trade.advanceTo(w.trade.t + DT * RATE);
 		for (let i = 0; i < w.bot.count; i++) {
 			const r = w.bot.rivals[i];

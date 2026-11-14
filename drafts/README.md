@@ -65,7 +65,7 @@ Search this table for a heading as it was written.
 | 254 | `## Corruption (numbers are subject to balance)` | `politics-quests.md` §3.1 |
 | 277 | `## bribe` | `politics-quests.md` §3.2 |
 | 284 | `## helpers` | `politics-quests.md` §3.5 |
-| 290 | `## map statistics plots` | `rivals-competitions.md` §5.3 → `../0.6.10-plan-map-statistics.md` |
+| 290 | `## map statistics plots` | `rivals-competitions.md` §5.3 → `../archive/0.6.10-plan-map-statistics.md` |
 | 299 | `## implement bot character that prefer` | `rivals-competitions.md` §5.1 |
 | 305 | `## implement competitions:` | `rivals-competitions.md` §5.2 |
 | 311 | `### competitions` | `rivals-competitions.md` §5.2 |
@@ -102,19 +102,17 @@ The two specs written from `0.4-draft-career.md` are
 
 | plan | draft sections it answers |
 |---|---|
-| `../0.6.2-plan-pad-fees.md` | `career-economy.md` §2.1, §2.2, §2.6 |
 | `../0.6.4-plan-competitions.md` | `rivals-competitions.md` §5.2 |
 | `../0.6.5-plan-two-leg-quests.md` | `politics-quests.md` §3.5 |
 | `../0.6.6-plan-rival-characters.md` | `rivals-competitions.md` §5.1, `bots-and-tools.md` §8.1, `politics-quests.md` §3.1 (`the bot’s personality`) |
 | `../0.6.7-plan-accessibility-readout.md` | `sound-and-photos.md` §7.1 |
 | `../0.6.8-plan-seeded-map-opening.md` | `flight-lab-and-modes.md` §1.4, `hud-input-and-help.md` §6.2 (`2-4 of 10`) |
 | `../0.6.9-plan-founding-colony.md` | `career-economy.md` §2.5 |
-| `../0.6.10-plan-map-statistics.md` | `rivals-competitions.md` §5.3 (`map statistics plots`) |
 | `../0.7.0-plan-periodic-fft.md` | `map.md` §gravity |
-| `../0.7.1-plan-time-model.md` | `career-economy.md` §2.9 (the clock/unit contract under wear; the `×1 = real time` rename is its next step) |
 | `../0.7.2-plan-ship-wear.md` | `career-economy.md` §ship maintenance cost; `map.md` §add space weather (the wear hook) |
 | `../0.7.3-plan-buy-ships.md` | `career-economy.md` §buy more ships |
 | `../0.7.4-plan-max-distance-mode.md` | `flight-lab-and-modes.md` §1.2 (`max distance from start`); `rivals-competitions.md` §5.2 (the first sport mode) |
+| `../0.7.6-plan-balance-knobs.md` | `career-economy.md` §2.9 / `time-scale-units.md` (pad, rot, pay and wear multipliers separate from the clock) |
 | `../0.4.27-plan-bot-balancing.md` | `flight-lab-and-modes.md` §1.4 (`hard bots…`), `bots-and-tools.md` §8.1 |
 | `../0.4.30-plan-harvest-ticks.md` | `career-economy.md` §2.11 (stay-pay) |
 | `../0.5.23-plan-medic-capital.md` | `politics-quests.md` §3.1 (the medical mission) |
@@ -126,7 +124,7 @@ Open in the drafts and still without a plan of their own, and why:
 - **the science hull as cells, not a convex hull** (`science-and-ship.md` §4.1),
   the **per-axis merit re-derivation** (§4.2) and the **three ship tiers against
   five pad tiers** (§4.6) — balance work with one home (`balance_lab.html`), not
-  features; plan them together after `0.6.2`.
+  features; plan them together now that `0.6.2` has shipped.
 - **competition game modes and variations** (`rivals-competitions.md` §5.2) —
   deliberately out of `0.6.4`; each is the career rule with the board replaced.
   The max-distance pair is `0.7.4`; “max visits”, “land on an antigravity

@@ -69,9 +69,9 @@ is cheaper and honest; pick one.
 - `bot_bench`, `game_bench`, `gravity_bench`, `player_growth_test`,
   `politics_test`, `politics_gui_test`, `special_planets_test`.
 
-**open** → `0.6.10-plan-map-statistics.md` §5: nothing prints the statistics of
-`rivals-competitions.md` §5.3 per player, so a balance question still needs its
-own probe; `STATS=1` on `career_gravity_bench` is that table.
+→ **shipped** (`../archive/0.6.10-plan-map-statistics.md` §5): `STATS=1` on
+`career_gravity_bench` prints the statistics of `rivals-competitions.md` §5.3 per
+player and writes `experiments/logs/0.6.10-map-statistics.txt`.
 
 **open (small)**, no plan: seven `experiments/debug_*.js` (`debug_evac`,
 `debug_evac2`, `debug_evac3`, `debug_loop`, `debug_reserve`, `debug_scaled`,

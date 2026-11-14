@@ -173,9 +173,12 @@ function drawPlanetProfits() {
 		const isCapital = i === capital;
 		const isArf = i === arf;
 		/* what this ship's visit would pay: nothing on a quiet planet, nothing
-		 * anywhere without the observation device */
-		const val = GravityGame.visitReports(game.money, game.market, i)
-			? GravityGame.planetProfit(game.market, i, step) : 0;
+		 * anywhere without the observation device. In career, passive rot reads
+		 * the planet's uncollected value even when this ship's observer is off,
+		 * so the neglect colour follows the planet's value unless it is quiet. */
+		const rawVal = GravityGame.planetProfit(game.market, i, step);
+		const reports = GravityGame.visitReports(game.money, game.market, i);
+		const val = reports ? rawVal : 0;
 		let cents = Math.round(val * 100);
 		if (cents < 0) cents = 0;
 		else if (cents > PROFIT_MAX_CENTS) cents = PROFIT_MAX_CENTS;
@@ -190,10 +193,15 @@ function drawPlanetProfits() {
 		let y = pillTopY(i);
 		const inside = liveHarvestMask[i] === 1;
 		const onRoute = inside || predHarvestMask[i] === 1;
-		const owner = careerRule() ? GravityGame.claimOwner(game.galaxy, i) : -1;
-		const rebel = careerRule() && game.market.rebel[i] === 1;
-		const seized = careerRule() && game.market.seized[i] === 1;
-		const quiet = careerRule() && game.market.quiet[i] === 1;
+		const career = careerRule();
+		const owner = career ? GravityGame.claimOwner(game.galaxy, i) : -1;
+		const rebel = career && game.market.rebel[i] === 1;
+		const seized = career && game.market.seized[i] === 1;
+		const quiet = career && game.market.quiet[i] === 1;
+		const rotCents = career && !isCapital && !isArf && !rebel
+			? Math.round(rawVal * 100) : cents;
+		const rotHigh = rotCents >= PROFIT_ROT_MID_CENTS;
+		const rotGrowing = rotCents > PROFIT_ROT_START_CENTS;
 		const border = rebel ? REBEL
 			: isCapital ? 'rgba(255, 207, 110, 0.85)'
 			: seized ? 'rgba(255, 148, 120, 0.45)'
@@ -203,13 +211,16 @@ function drawPlanetProfits() {
 			: owner > 0 ? RIVAL_COLOURS[owner - 1]
 			: inside ? 'rgba(158, 255, 190, 0.95)'
 			: onRoute ? 'rgba(92, 255, 139, 0.6)'
-			: cents >= 100 ? 'rgba(255, 207, 110, 0.42)'
+			: rotHigh ? 'rgba(255, 148, 120, 0.52)'
+			: rotGrowing ? 'rgba(255, 207, 110, 0.42)'
 			: cents >= 50 ? 'rgba(142, 240, 192, 0.28)'
 			: null;
 		plate(x, y, width, height, border);
 		ctx.fillStyle = isCapital ? GOLD
 			: inside ? '#ffffff' : onRoute ? '#9effbe'
-			: cents >= 100 ? GOLD
+			: quiet ? QUIET_COLOUR
+			: rotHigh ? WARN
+			: rotGrowing ? GOLD
 			: cents >= 50 ? MINT
 			: cents >= 14 ? 'rgba(210, 230, 246, 0.86)'
 			: 'rgba(128, 156, 184, 0.52)';

@@ -37,7 +37,7 @@ for a small hold (the commercial way off costs more than the delivery paid) and
 is gone for a big one; and a pad costs one commercial launch, so it is repaid on
 its second departure.
 
-→ `../0.6.2-plan-pad-fees.md` §2, shipped: the commercial fee follows the
+→ `../archive/0.6.2-plan-pad-fees.md` §2, shipped: the commercial fee follows the
 shot — `2.00` + `2.50` per kWh, from `2.27` for the slowest dry hop to
 `4.54` at full force — so the gate holds for every hold, not only a `HOLD-8`
 (the A/B in `experiments/logs/0.6.2-commercial-kwh-ab.txt` settled the knob:
@@ -55,7 +55,7 @@ its own shot (`launchEnergy(mass, rail, speed)`), to the pad's owner. The dry
 10 t ship pays `0.11` at the slowest shot and `1.02` at the `EMC-1` cap, so the
 note's «something like 0.1» is the light, slow launch.
 
-→ `../0.6.2-plan-pad-fees.md` §1, shipped: a guest pays `1.00` × the shot's
+→ `../archive/0.6.2-plan-pad-fees.md` §1, shipped: a guest pays `1.00` × the shot's
 energy × the rail's tier, so the same shot costs `0.11 / 0.19 / 0.25` on
 `EMC-1 / 2 / 3` — upgrading a pad now raises what it earns per guest.
 
@@ -153,7 +153,7 @@ EMC-3, 4, etc - should not be available by default. we have only 2 levels resear
 
 → `EMC-1…2` stock, `3…5` behind the research hull (`catapult` family).
 
-→ `../0.6.2-plan-pad-fees.md` §3, shipped: the ladder's demand is now offered
+→ `../archive/0.6.2-plan-pad-fees.md` §3, shipped: the ladder's demand is now offered
 on the board. A `deep` delivery (16 t or more out of a well of g ≥ 2.2) carries
 the tag, names the `EMC-3+` rail that lifts it and pays `+60%` on top of the
 ordinary reward — an `EMC-2 + BAT-2` lifts a loaded `HOLD-24` off only 43 % of
@@ -198,9 +198,11 @@ i think we (should) have only 2 time
 - 'career' - actually not just for career but main time for game, useful for fly and play
 - background animation (trade, orbits) - this should be only in settings panel, no need in footer, because it currently not gameplay important.
 
-→ done: the game clock, the orbital-trade background clock in its own panel, no
-footer copy. `0.7.1` removes the leftover hour/year units from the labels and
-the prose; the two clocks stay.
+→ the game clock and orbital controls are separate panels, with no footer copy.
+The orbit clock is shared with moving-port gravity, so it is gameplay in that
+mode, not just decoration. Career locks its rate; flights, idle time and waits
+advance the same orbit/gravity clock. Pad accounting uses fixed pad seconds per
+game second; the colony economy keeps its own year.
 
 ### normalize time to 1x = real time
 
@@ -212,24 +214,24 @@ current default we use x4. this is good speed so we can name it x1
 
 after this refactoring actual speed should remain same, but set visual units more simple.
 
-→ today the career clock is `scene.trade.speed` (background slider, `0.5…12`, default
-`0.5`) times `gameRate` (the `game time` slider ×1) for physics pace, while
-`1 s` of game time is 1 sim second and 60 *world* seconds for pads
-(`WORLD_SEC_PER_MIN`). The `wait · 30 min` button is 30 world minutes = **60
-flight s = 15 s of wall clock at the default ×4**; its label the player must
-divide by 60 and then by 4 to know how long it takes. `0.7.1` keeps the units,
-this note renames them: one unit = one second of wall clock at the career's
-default pace, so the button reads `wait · 15 s`, the pad charges per second, and
-the ×4 default is called ×1. Physics, prices and every balance number stay put;
-only the labels and the rungs of the speed control change.
+→ **done, units corrected** (`../archive/0.7.1-plan-time-model.md`,
+`../archive/0.7.1-worklog.md`). A step is `DT` of a **game second**; flights,
+the board, contracts, barrels, arrests, pads and politics use game seconds.
+**Pace** (`play ×N`) converts game seconds to real ones, ×4 in career at the
+default and ×1 in the lab. The **orbit rate** is separate: moving ports are
+gravity sources, so it changes trajectories, while pads and politics do not
+read it. One `wait` moves the clock **60 game seconds** — `1800` pad seconds
+of sunlight — in `2 s` of real time, which is `15 s` to watch at ×4; the button
+says `wait · 60 s`, the tooltip says both real numbers.
 
-**answered:** today's ×4 becomes ×1. Physics, prices and the pace the game is
-balanced at do not move; only the labels do, so `wait · 30 min` reads
-`wait · 15 s` (60 flight s at 15 s of wall clock) and the speed control's rungs
-are renumbered `×0.25 … ×8` around the new ×1. The literal `1 flight s = 1 wall
-s` reading is rejected: it would make every flight four times longer to watch
-and invalidate every balance number priced in flight seconds (0.7.2's wear
-included).
+**answered and implemented:** no mode hides a multiplier behind its label any
+more. The first pass divided career's label by four so today's pace read ×1 and
+the lab's read ×1 too; that is two meanings for one number. Now a rung means
+game seconds per real second in every mode, so career opens on an honest ×4 and
+the lab on ×1. Nothing the game is balanced at moved: the same steps run at the
+same pace and the pads see the same 30 pad seconds per game second. The literal
+`1 game s = 1 real s` default stays rejected — it would make every flight four
+times longer to watch and invalidate every number priced in game seconds.
 
 ## 2.10 EMC catapult ← `archive/draft.txt`
 

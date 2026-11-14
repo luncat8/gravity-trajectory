@@ -82,7 +82,7 @@ start with weak electromagnetic catapult, solar panel, battery on 1 planet. ship
 `back` refits to any owned tier, and refit works on any planet. The impulse
 engine is the pause-first burn loop (`../archive/0.5.17-plan-flight-hud.md`).
 
-**open**, no plan (balance work, after `../0.6.2-plan-pad-fees.md`): the draft's
+**open**, no plan (balance work, after `../archive/0.6.2-plan-pad-fees.md`): the draft's
 own ladder stops at three tiers of ship part while the pads have five. Nothing decides what a `HOLD-48` or an `IMP-4` would be for, and the
 research hull can already *invent* a four-parameter engine that has no rung. The
 smallest closure is not more tiers: it is letting the research prototype itself

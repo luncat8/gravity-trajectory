@@ -33,7 +33,13 @@
 	const HOVER_PX = 17;
 	const NO_DASH = [];
 	const START_MINUTES = 420;
-	const START_SPEED = 0.5;
+	/* Raw orbit speed is trade minutes per real second in the idle lab, or per
+	 * game second in a flight (pace then converts to real time). Moving ports
+	 * are gravity sources, so they share this clock. URLs carry the raw speed;
+	 * the slider shows its multiple of the default. Pad charge and politics
+	 * do not read it. */
+	const TRADE_SPEED_DEFAULT = 0.5;
+	const RATE_TITLE = 'Shared orbit clock: moving ports are gravity sources, so rate and pause change trajectories, not gravity strength. ×1 = raw 0.5, range ×1…×24; raw is trade min per game second in flight, per real second in the idle lab. Pad charge and politics use game time.';
 	const VIEW_INSET = 14;
 	const VIEW_FOOT_MAX = 120;
 	const VIEW_FOOT_MIN = 76;
@@ -66,7 +72,9 @@
 	const coloniesEl = $('tradeColonies');
 	const aimEl = $('tradeAim');
 	const speedSlider = $('tradeSpeed');
+	const speedControl = $('tradeRateControl');
 	const speedLabel = $('tradeSpeedLabel');
+	const speedHint = $('tradeRateHint');
 	const pauseButton = $('tradePause');
 	const orbitsBox = $('showOrbits');
 	const linksBox = $('showLinks');
@@ -145,12 +153,17 @@
 	initMoonSystems();
 
 	let paused = false;
-	let speed = START_SPEED;
 	/*
 	 * Shared so the cargo layer can extrapolate port positions at the same rate.
 	 * gameClock: the cargo layer advances the world itself, only while it flies.
 	 */
-	const tradeState = { speed: START_SPEED, paused: false, gameClock: false };
+	const tradeState = {
+		speed: TRADE_SPEED_DEFAULT,
+		rate: 1,
+		speedDefault: TRADE_SPEED_DEFAULT,
+		paused: false,
+		gameClock: false
+	};
 	let moonClockT = sim.t;
 	let showOrbits = orbitsBox.checked;
 	let showLinks = linksBox.checked;
@@ -1017,33 +1030,44 @@
 		updateHoverInfo();
 	}
 
+	function refreshPauseHint() {
+		pauseButton.title = tradeState.gameClock
+			? 'Orbits and moving-port gravity follow the game clock; use its time controls'
+			: (paused ? 'Resume' : 'Pause') + ' the shared orbit clock (Space). Moving-port gravity follows it; ships keep flying on the flight clock';
+	}
+
 	function setPaused(value) {
 		paused = value;
 		tradeState.paused = value;
 		pauseButton.textContent = paused ? 'play' : 'pause';
 		pauseButton.classList.toggle('on', paused);
+		refreshPauseHint();
 	}
 
+	/* URLs and physics use raw speed; only the label is a relative multiplier. */
 	function setSpeed(value) {
-		speed = value;
 		tradeState.speed = value;
-		speedLabel.textContent = '×' + value;
-	}
-
-	function setSpeedValue(value) {
+		tradeState.rate = value / TRADE_SPEED_DEFAULT;
+		speedLabel.textContent = '×' + tradeState.rate;
 		speedSlider.value = String(value);
-		setSpeed(value);
 	}
 
 	function setGameClock(on) {
 		tradeState.gameClock = on;
 		pauseButton.disabled = on;
-		pauseButton.title = on ? 'background animation follows the running game clock' : 'Space pauses or resumes background animation';
+		refreshPauseHint();
 		moonClockT = sim.t;
 	}
 
-	function lockSpeed(locked) {
+	function lockSpeed(locked, reason) {
 		speedSlider.disabled = locked;
+		const title = locked ? reason + '. ' + RATE_TITLE : RATE_TITLE;
+		/* A disabled input may not show its own tooltip; its label still does. */
+		speedControl.title = title;
+		speedSlider.title = title;
+		speedHint.textContent = locked
+			? reason + '. Moving ports share this gravity clock.'
+			: 'Moving ports: rate and pause also affect gravity and trajectories.';
 	}
 
 	/* rebuilds the world in place, so OrbitScene.sim stays the same object */
@@ -1065,7 +1089,7 @@
 		const dt = Math.min(0.1, (now - lastFrame) / 1000);
 		lastFrame = now;
 		const gameClock = tradeState.gameClock;
-		if (!gameClock && !paused && dt > 0) sim.step(dt * speed);
+		if (!gameClock && !paused && dt > 0) sim.step(dt * tradeState.speed);
 		if (showMoons && dt > 0 && (!gameClock || sim.t !== moonClockT)) stepMoons(dt);
 		moonClockT = sim.t;
 		updatePortPositions();
@@ -1123,7 +1147,7 @@
 		planetG: planetG,
 		setPlanetMask: setPlanetMask,
 		reset: resetWorld,
-		setSpeed: setSpeedValue,
+		setSpeed,
 		setGameClock: setGameClock,
 		lockSpeed: lockSpeed,
 		/* freezes the ambient pulse: a paused world clock shows a still world */
@@ -1150,6 +1174,8 @@
 	};
 
 	setSpeed(Number(speedSlider.value));
+	lockSpeed(false);
+	setGameClock(false);
 	resize();
 	updateHud(performance.now());
 	requestAnimationFrame(frame);

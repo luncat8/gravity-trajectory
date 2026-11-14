@@ -71,6 +71,57 @@
 	const FULL_BUDGET_MS = 1e9;
 	const PRED_LOG_MAX = 64;
 
+	/* --- the clock (0.7.1) --------------------------------------------------
+	 * A game second is the unit of the whole game. One physics step is DT of a
+	 * game second and the sim knows no other clock: a flight, a board deadline,
+	 * a contract, a barrel turn, an arrest, a pad refill and a political grace
+	 * are all priced in game seconds. Pace (`playScale`) converts game seconds
+	 * to real seconds: ×4 in career at the default, ×1 in the lab.
+	 * The orbit rate (`scene.trade.speed`) advances the trade sky AND its moving
+	 * ports, which are gravity sources. It changes trajectories, not gravity
+	 * strength; pad charging and politics do not read it. Flights, idle time
+	 * and waits advance that one orbit clock by game seconds × rate.
+	 * The conversions, and the only ones a reader may use:
+	 *   game s = steps · DT        real s = game s / pace
+	 *   pad s  = game s · SUN_SEC_PER_GAME_SEC
+	 *   orbit min = game s · orbit rate
+	 * SUN_SEC_PER_GAME_SEC is the career's sun: a panel sees this many pad
+	 * seconds of sunlight per game second. It is a balance price, not a second
+	 * animation clock, even though it equals the default orbit rate in minutes.
+	 */
+	const SUN_SEC_PER_GAME_SEC = 30;
+	/* one press of `wait` moves the clock 60 game seconds — 1800 pad seconds
+	 * (30 pad minutes) of sunlight — and costs 2 real seconds of easing */
+	const WAIT_SEC = 60;
+	const WAIT_PAD_SEC = WAIT_SEC * SUN_SEC_PER_GAME_SEC;
+	const WAIT_PAD_MIN = WAIT_PAD_SEC / 60;
+
+	function gameSeconds(steps) {
+		return steps * DT;
+	}
+
+	function padSeconds(gameSec) {
+		return gameSec * SUN_SEC_PER_GAME_SEC;
+	}
+
+	function padMinutes(gameSec) {
+		return gameSec * SUN_SEC_PER_GAME_SEC / 60;
+	}
+
+	/* the same orbit clock the moving gravity field reads */
+	function tradeMinutes(gameSec, rate) {
+		return gameSec * rate;
+	}
+
+	function stepsForGameSeconds(seconds) {
+		return Math.max(1, Math.round(seconds / DT));
+	}
+
+	/* the real seconds `steps` take to run at `pace`; a paused clock takes none */
+	function wallSeconds(steps, pace) {
+		return pace > 0 ? steps * DT / pace : 0;
+	}
+
 	/* `worldW`/`worldH` frame the planet field; a flight may run out to the
 	 * area, AREA_SCALE times the field and centred on it */
 	function GravitySim(worldW, worldH) {
@@ -978,6 +1029,17 @@
 	};
 
 	GravitySim.DT = DT;
+	GravitySim.SUN_SEC_PER_GAME_SEC = SUN_SEC_PER_GAME_SEC;
+
+	GravitySim.WAIT_SEC = WAIT_SEC;
+	GravitySim.WAIT_PAD_SEC = WAIT_PAD_SEC;
+	GravitySim.WAIT_PAD_MIN = WAIT_PAD_MIN;
+	GravitySim.gameSeconds = gameSeconds;
+	GravitySim.padSeconds = padSeconds;
+	GravitySim.padMinutes = padMinutes;
+	GravitySim.tradeMinutes = tradeMinutes;
+	GravitySim.stepsForGameSeconds = stepsForGameSeconds;
+	GravitySim.wallSeconds = wallSeconds;
 	GravitySim.MU = MU;
 	GravitySim.SOFT = SOFT;
 	GravitySim.SOFT2 = SOFT2;

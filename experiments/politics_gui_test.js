@@ -245,7 +245,7 @@ const bribeNode = { id: 'careerBribe', textContent: /bribe rulers · \+[\d.]+/.e
 ui.set('careerBribe', bribeNode);
 const stale = bribeNode.textContent;
 for (let i = 0; i < 600; i++) {
-	Game.careerAdvance(career, 1, 1);
+	Game.careerAdvance(career, 1);
 	game.clockSteps += 1;
 }
 context.refreshFuelHud(career);
@@ -267,5 +267,23 @@ check(context.overPill(sitting, sx - 100, sy - 9 + radius, 200, 18),
 	'the below-slot plate is not over the pill: the fixture no longer covers it');
 check(!context.overPill(sitting, sx - 100, sy - 9 - radius - 18, 200, 18),
 	'the above-slot plate is over the pill too');
+
+/* --- visit-profit pill colours track the rot threshold ------------------ */
+
+function pillColourForAge(ageSec) {
+	market.lastVisitStep[sitting] = game.clockSteps - Math.round(ageSec / context.GravitySim.DT);
+	env.calls.texts.length = 0;
+	env.calls.textColors.length = 0;
+	context.drawPlanetProfits();
+	const want = '+' + Game.planetProfit(market, sitting, game.clockSteps).toFixed(2);
+	const idx = env.calls.texts.indexOf(want);
+	check(idx >= 0, 'expected profit pill ' + want + ' in ' + env.calls.texts.join(' '));
+	return env.calls.textColors[idx];
+}
+
+/* <= 1.00 (safe, mint at >= 0.50), (1.00..2.00) growing (gold), >= 2.00 high (coral warn) */
+check(pillColourForAge(60) === '#8ef0c0', 'profit <= 1.00 (>= 0.50) should be mint');
+check(pillColourForAge(150) === '#ffcf6e', 'profit in (1.00..2.00) should be amber/gold');
+check(pillColourForAge(320) === '#ff9478', 'profit >= 2.00 should be coral warn');
 
 console.log('POLITICS GUI OK · bribe, arrest, medical board and pills');

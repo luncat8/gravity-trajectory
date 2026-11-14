@@ -18,7 +18,9 @@ then set slow time 0.5
 
 our new experiment has separate timer and not related to trade so keep it separate.
 
-→ separate clock: gameplay `rate` vs orbital-trade background rate.
+→ the flight clock counts game seconds; the orbit rate advances the trade sky
+and moving-port gravity together. Playback changes watching speed, not the
+physics step. The background panel discloses the moving-gravity effect.
 
 assign all planets gravity force and possible select and change -2...2 , by default 1.
 
@@ -215,7 +217,7 @@ and this probably enough to keep balance.
 twice as fast. **open (small)**, no plan: the note says 12, the career default
 is 13 — which count is the balance target? Whether `k × 2` is «enough to keep
 balance» is read from the profit-per-time plot of
-`../0.6.10-plan-map-statistics.md` on both counts.
+`../archive/0.6.10-plan-map-statistics.md` on both counts.
 
 hard bots need give more search time then easy. probably measure in startup and split available time
 

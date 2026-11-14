@@ -907,7 +907,12 @@ body {
 
 .backgroundControls {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	gap: 8px;
+}
+
+.backgroundControls > * {
+	min-width: 0;
 }
 
 .backgroundTimeControls {
@@ -930,6 +935,13 @@ body {
 #tradePause {
 	flex: none;
 	min-width: 58px;
+}
+
+.settingsHint {
+	margin: 0;
+	color: var(--dim);
+	font-size: 10px;
+	line-height: 1.4;
 }
 
 .backgroundOptions {

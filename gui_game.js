@@ -19,11 +19,9 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	game.fixedRate = fixedRate;
 	if (rule) game.rule = rule;
 	game.cheat = game.rule === RULE_CAREER && GravityGame.CHEATS[cheat] ? cheat : null;
+	/* both ladders share their rungs, but a rung means a different pace in each:
+	 * a mode switch returns to the pace that mode is balanced at */
 	if (careerRule() !== wasCareer) resetPlayback();
-	else if (playIndex > playMaxIndex()) {
-		playIndex = playMaxIndex();
-		refreshPlaybackUi();
-	}
 	if (botLevel) game.bot = botLevel;
 	/* 0 means "follow the difficulty level's rival count" */
 	if (game.playerCount > 0) game.playerCount = Math.max(1, Math.min(MAX_PLAYERS, game.playerCount));
@@ -430,7 +428,7 @@ function careerPlayerBotLaunch() {
 	 * record still names the pad the ship has already left */
 	if (cargoSim.status === STATUS_FLYING || cargoSim.landedBody !== career.at) return true;
 	const ready = bot.tickCareerPlayer(game.clockSteps, game.market, tradeSim,
-		scene.trade.speed, playerBotSyncNeeded);
+		playerBotSyncNeeded);
 	playerBotSyncNeeded = false;
 	if (!ready) return true;
 	const plan = bot.careerPlayerPlan();
@@ -568,10 +566,12 @@ function stepGame(now, dt) {
 			}
 		}
 	}
-	/* career steps without a driving human flight (idle clock, or only
-	 * rival companies airborne) still move the trade world the same span */
+	/* Idle career time advances the same orbit clock as a flight or wait.
+	 * Use the run's locked field rate, not the sun's balance price: a linked
+	 * non-default rate must not make the sky drift slower between flights. */
 	if (!fieldMoved && careerRule() && stepsDone > 0) {
-		tradeSim.advanceTo(tradeSim.t + stepsDone * DT * scene.trade.speed);
+		tradeSim.advanceTo(tradeSim.t +
+			GravitySim.tradeMinutes(stepsDone * DT, scene.trade.speed));
 	}
 	if (wasSlot0Flying && cargoSim.status !== STATUS_FLYING) {
 		if (!clockDriverFlying()) playAcc = 0;
@@ -662,7 +662,7 @@ function advanceGameOneStep() {
 		careerBotBurn();
 	}
 	game.clockSteps += 1;
-	if (careerRule()) GravityGame.careerAdvance(game.career, scene.trade.speed, 1);
+	if (careerRule()) GravityGame.careerAdvance(game.career, 1);
 	if (cargoSim.status === STATUS_FLYING) {
 		cargoSim.stepOne();
 		GravityGame.stepHarvest(game.money, game.market, cargoSim, game.clockSteps);

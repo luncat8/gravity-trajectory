@@ -102,14 +102,20 @@
 	/* §7: a port never gives away its own two-year need. */
 	const GUARD_YEARS = 2;
 
-	/* --- §8 politics: corruption, bribes, arrest, rebellion ----------------- */
+	/* --- §8 politics: corruption, bribes, arrest, rebellion -----------------
+	 * Every span below is game seconds — `GravityGame.politicsSeconds` returns
+	 * exactly that. The political clock used to ride the background slider
+	 * (`steps · DT · rate`), which is why `grace` and one epoch sat at a half
+	 * and a quarter of their named seconds; 0.7.1 pins them to the clock, so
+	 * every constant below means the game seconds it names. */
 
 	const CORRUPTION_MAX = 100;
 	const CORRUPTION_TRADITION = 5;
-	const CORRUPTION_REPORT_RATE = 0.02;
+	const CORRUPTION_REPORT_RATE = 0.02;  // points per game second of reports
 	const CORRUPTION_VISIT_DECAY = 0.2;   // points removed by one fly-visit
-	const CORRUPTION_GRACE = 120;         // world seconds after a visit before rot
-	const CORRUPTION_PASSIVE_RATE = 0.1;  // points per world second after grace
+	const CORRUPTION_PROFIT_START = 1;    // visit profit above which passive rot starts
+	const CORRUPTION_PROFIT_FULL = 3;     // visit profit at which passive rot hits max rate
+	const CORRUPTION_PASSIVE_RATE = 0.1;  // max points per game second at full visit profit
 	const CORRUPTION_BRIBE_BASE = 1;
 	const CORRUPTION_BRIBE_SCALE = 0.1;   // per money unit handed to the rulers
 	const BRIBE_MIN = 1;                  // bot's smallest worthwhile bribe
@@ -118,12 +124,12 @@
 	 * nothing; at rot 50 the rulers pay twice the visit, at rot 100 four times
 	 * — right where the arrest roll is at its worst. */
 	const BRIBE_VALUE_COEF = 4;
-	const ARREST_SECONDS = 120;           // slow transport to the Capital
-	const REBEL_CHECK_SECONDS = 60;       // one roll per planet per epoch
+	const ARREST_SECONDS = 120;           // game seconds of slow transport to the Capital
+	const REBEL_CHECK_SECONDS = 60;       // game seconds of one epoch: one roll per planet
 	const REBEL_START = 50;               // no rebellion at or below this
 	const REBEL_K = 0.0322;
 	const REBEL_CAP = 0.25;
-	const FLYBY_RAMP_SECONDS = 240;
+	const FLYBY_RAMP_SECONDS = 240;       // game seconds for a rebel planet's payout to ramp
 	const FLYBY_MAX = 4;
 	const MEDIC_PATIENTS = 8;
 	/* (0.5.13) the Empire pays to have its frontier back: a full pacification
@@ -145,6 +151,17 @@
 	function corruptionGrowthFactor(c) {
 		const f = 1 - c / CORRUPTION_MAX;
 		return f > 0 ? f : 0;
+	}
+
+	/* Passive rot rate (points / game s) ramps linearly with uncollected visit
+	 * profit from 0 at CORRUPTION_PROFIT_START (1.00) to CORRUPTION_PASSIVE_RATE
+	 * at CORRUPTION_PROFIT_FULL (3.00). What the player sees on the planet pill
+	 * is the exact threshold for neglect. */
+	function passiveCorruptionRate(visitValue) {
+		if (!(visitValue > CORRUPTION_PROFIT_START)) return 0;
+		const span = CORRUPTION_PROFIT_FULL - CORRUPTION_PROFIT_START;
+		const ramp = (visitValue - CORRUPTION_PROFIT_START) / span;
+		return CORRUPTION_PASSIVE_RATE * (ramp < 1 ? ramp : 1);
 	}
 
 	function bribeCorruption(money) {
@@ -410,13 +427,14 @@
 		STAGE_MIN_POP, STAGE_SPONSORS,
 		EVENT_STAGE, EVENT_FAMINE, EVENT_RECOVERY,
 		TAG_SURPLUS, TAG_FAIR, TAG_SCARCE, TAG_NAMES, SURPLUS_SUPPLY, SCARCE_SUPPLY, GUARD_YEARS,
-		CORRUPTION_MAX, CORRUPTION_TRADITION, CORRUPTION_REPORT_RATE, CORRUPTION_VISIT_DECAY, CORRUPTION_GRACE, CORRUPTION_PASSIVE_RATE,
+		CORRUPTION_MAX, CORRUPTION_TRADITION, CORRUPTION_REPORT_RATE, CORRUPTION_VISIT_DECAY,
+		CORRUPTION_PROFIT_START, CORRUPTION_PROFIT_FULL, CORRUPTION_PASSIVE_RATE,
 		CORRUPTION_BRIBE_BASE, CORRUPTION_BRIBE_SCALE, BRIBE_MIN, BRIBE_VALUE_COEF,
 		ARREST_SECONDS,
 		REBEL_CHECK_SECONDS, REBEL_START, REBEL_K, REBEL_CAP,
 		FLYBY_RAMP_SECONDS, FLYBY_MAX, MEDIC_PATIENTS, MEDIC_REWARD_PER_PATIENT,
 		PACIFY_CORRUPTION_MAX,
-		clampCorruption, corruptionGrowthFactor, bribeCorruption, bribeValue, arrestChance,
+		clampCorruption, corruptionGrowthFactor, passiveCorruptionRate, bribeCorruption, bribeValue, arrestChance,
 		rebellionChance, flybyMultiplier,
 		clamp01, createMap, systemFractions, resourceMapFor,
 		createColony, advanceColony, stageFor, warehouseCap, carryingCapacity, isAbandoned,

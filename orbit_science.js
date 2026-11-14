@@ -60,7 +60,7 @@
 		],
 		battery: [
 			{ par: 6, per2: 1.25 },                           // capacity kWh
-			{ par: 0.0006, lower: true, per2: 1.50 }          // leak /y
+			{ par: 0.0006, lower: true, per2: 1.50 }          // leak /pad min
 		],
 		panel: [
 			{ par: 4.5, per2: 1.25 }                         // power kW
@@ -130,8 +130,8 @@
 	/* One normalized research unit is a deliberate invention step, not one
 	 * arbitrary engineering unit: 2 kN thrust ≈ 0.2 t engine mass (engines priced
 	 * 5× the older scale), 30 kN rail force ≈ 0.10 efficiency, 50 kg fuel ≈ 0.5 t
-	 * tank mass, 2.5 kWh battery capacity ≈ 0.0002 leak per year (batteries priced
-	 * 2× the older scale), 1 kW panel power, 8 t hold. */
+	 * tank mass, 2.5 kWh battery capacity ≈ 0.0002 leak per pad minute
+	 * (batteries priced 2× the older scale), 1 kW panel power, 8 t hold. */
 	var METRIC_SCALE = {
 		engine: [0.5, 5.0],
 		catapult: [1 / 30, 10.0],
@@ -162,7 +162,7 @@
 		],
 		battery: [
 			{ below: 0.00, above: 1.20 },  // capacity kWh: smaller easy, larger hard
-			{ below: 2.50, above: 0.00 }   // leak /y: tighter hard, leakier easy
+			{ below: 2.50, above: 0.00 }   // leak /pad min: tighter hard, leakier easy
 		],
 		panel: [
 			{ below: 0.00, above: 1.00 }   // power kW: weaker easy, stronger hard

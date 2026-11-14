@@ -101,17 +101,11 @@ antigravity planet” and the Capital-only variants stay open.
 - total corruption sum of all planets
 think what is also interesting or useful
 
-→ nothing draws these. The benches print a few per run (`earned`, `purse`, mean
-rot), and the career already counts `earned`, `bribeIncome`, `taxEarned`,
-`fuelSpent` and `evacuations`; the shared market holds `corruption`. Not counted
-anywhere: what a flight's visits paid, the money put into property and into
-science, the launch fees, the distance flown.
-
-**open** → `0.6.10-plan-map-statistics.md`: the five statistics by player and
-for all, three more for the note's last line (the visit value left standing on
-the map, income by source, running cost by kind), a history that thins itself so
-a run of any length fits, six small plots in a strip under the scoreboard, and
-the same table from `career_gravity_bench` with `STATS=1`.
+→ **shipped** (`../archive/0.6.10-plan-map-statistics.md`): the five statistics
+by player and for all, three more for the note's last line (the visit value left
+standing on the map, income by source, running cost by kind), a history that
+thins itself so a run of any length fits, six small plots in a strip under the
+scoreboard, and the same table from `career_gravity_bench` with `STATS=1`.
 
 ## 5.4 bot competitor ← `archive/draft.txt`
 

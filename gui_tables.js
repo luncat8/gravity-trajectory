@@ -82,7 +82,7 @@ const SCIENCE_AXES = {
 	],
 	battery: [
 		{ key: 'capacity', label: 'capacity kWh', min: 1, max: 22, step: 0.5, digits: 1 },
-		{ key: 'leak', label: 'leak /y', min: 0.0001, max: 0.0012, step: 0.0001, digits: 4 }
+		{ key: 'leak', label: 'leak /pad min', min: 0.0001, max: 0.0012, step: 0.0001, digits: 4 }
 	]
 };
 /* near-hull defaults: the first invention costs ~base fee and fits the
@@ -119,12 +119,15 @@ for (const family in SCIENCE_DEFAULTS) {
 	scienceValues[family] = {};
 	for (const key in SCIENCE_DEFAULTS[family]) scienceValues[family][key] = SCIENCE_DEFAULTS[family][key];
 }
-/* one press of wait runs the world clock: 30 world minutes of sunlight,
- * eased over 2 s so the trade sky visibly fast-forwards; each frame may
- * credit at most WAIT_FRAME_MS (a 50 fps budget), so a slow machine
- * stretches the wait past 2 s instead of freezing the view */
-const CAREER_WAIT_MIN = 30;
+/* one press of wait moves the clock GravitySim.WAIT_SEC game seconds — the
+ * sunlight it buys is WAIT_PAD_SEC pad seconds, the shared orbit/gravity clock
+ * drifts `WAIT_SEC · scene.trade.speed` minutes — eased over CAREER_WAIT_SEC
+ * of real time so the sky visibly fast-forwards; each frame may credit at most
+ * WAIT_FRAME_MS (a 50 fps budget), so a slow machine stretches the wait instead
+ * of freezing the view. The button names the game seconds, the tooltip the real
+ * ones. */
 const CAREER_WAIT_MS = 2000;
+const CAREER_WAIT_SEC = CAREER_WAIT_MS / 1000;
 const WAIT_FRAME_MS = 20;
 const VIEW_SPACE = 'space';
 const VIEW_FIELD = 'field';
@@ -143,11 +146,16 @@ const ROUTE_FIELD_DELTA = 4;
 /* rival search slice budget per frame so frame work stays well under 16.7 ms */
 const BOT_STEP_MS = 3;
 const MAX_GAME_STEPS = 256;
-const PROFIT_MAX_CENTS = 300;
+/* rebel worlds can ramp to FLYBY_MAX × MONEY.cap (+12.00) */
+const PROFIT_MAX_CENTS = Math.round(GravityGame.MONEY.cap * OrbitEcon.FLYBY_MAX * 100);
 const PROFIT_STRINGS = new Array(PROFIT_MAX_CENTS + 1);
 for (let c = 0; c <= PROFIT_MAX_CENTS; c++) {
 	PROFIT_STRINGS[c] = '+' + (c / 100).toFixed(2);
 }
+/* visit-profit pill thresholds in cents: passive rot starts above 1.00 and
+ * reaches max rate at 3.00, so the pill's colour tells the neglect state */
+const PROFIT_ROT_START_CENTS = Math.round(OrbitEcon.CORRUPTION_PROFIT_START * 100);
+const PROFIT_ROT_MID_CENTS = Math.round((OrbitEcon.CORRUPTION_PROFIT_START + OrbitEcon.CORRUPTION_PROFIT_FULL) * 50);
 /* special-planet pills (0.5.11): the Capital levies a fixed entry fee, A.R.F.
  * pays nothing. Cached so draw() stays 0-alloc. */
 const CAPITAL_PROFIT_TEXT = GravityGame.CAPITAL_VISIT_PAY.toFixed(2);
@@ -189,16 +197,16 @@ const REPLAY_GAP_MS = 450;
 /* replay multipliers; index 2 is real time */
 const REPLAY_SPEEDS = [0.25, 0.5, 1, 4, 16];
 const REPLAY_DEFAULT = 2;
-/* live playback: how fast the flight is watched; the physics steps never change.
- * Career defaults 4x faster (×4) with 4x higher ceiling (×32 vs ×8). */
+/* live playback: how fast the game is watched, in game seconds per real second;
+ * the physics steps never change. One ladder in every mode — ×1 is real time —
+ * and each mode opens on the rung it is balanced at: the lab at ×1, career at
+ * ×4, the pace the career economy was priced at. PLAY_MAX caps the loop, so a
+ * replay's ×16 over the top rung is what the cap is for. */
 const PLAY_SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16, 32];
-const PLAY_DEFAULT = 2;
-const PLAY_MAX_INDEX = 5;
-const PLAY_CAREER_DEFAULT = 4;
-const PLAY_CAREER_MAX_INDEX = 7;
-const PLAY_MAX = 32;
-const GAME_SLICE = 1 / 60;
-const PLAY_GUARD = 128;
+const PLAY_INDEX_LAB = 2;
+const PLAY_INDEX_CAREER = 4;
+const PLAY_MAX_INDEX = PLAY_SPEEDS.length - 1;
+const PLAY_MAX = PLAY_SPEEDS[PLAY_MAX_INDEX];
 const PHASE_AIM = 0;
 const PHASE_FLY = 1;
 const PHASE_GAP = 2;
@@ -251,7 +259,9 @@ const COMMON_HELP = 'Drag from a planet or pad to aim; hold Shift for 1/20 fine 
 const POLITICS_HELP = {
 	name: 'corruption · bribes · reports',
 	goal: 'Every visit is a report to the Capital: it pays the planet\u2019s value and cools its corruption by ' +
-		OrbitEcon.CORRUPTION_VISIT_DECAY.toFixed(1) + '. Reporting while landed slowly cools rot; without reports it grows after a grace period. Tradition sets a 5% floor.',
+		OrbitEcon.CORRUPTION_VISIT_DECAY.toFixed(1) + '. Reporting while landed slowly cools rot; once uncollected visit profit passes +' +
+		OrbitEcon.CORRUPTION_PROFIT_START.toFixed(2) + ', passive corruption grows linearly up to max rate at +' +
+		OrbitEcon.CORRUPTION_PROFIT_FULL.toFixed(2) + ' (the profit pill turns amber, then coral). Tradition sets a 5% floor.',
 	score: 'Once per landing the rulers pay for silence: visit value \u00d7 corruption \u00d7 ' +
 		OrbitEcon.BRIBE_VALUE_COEF.toFixed(0) + '. Visit value grows at half speed while landed. A bribe raises corruption; above ' +
 		OrbitEcon.REBEL_START + '% it can end in arrest (a slow Capital transport) and the planet can rebel.',
@@ -307,7 +317,7 @@ const RULE_HELP = {
 			'). An owned or rival pad spends battery charge; guests also pay the owner a usage tax of the shot\u2019s energy × the rail\u2019s tier. ' +
 			'A queued shot reserves its energy and fires when the barrel aligns (one turn every 2…5 s). ' +
 			'On its own pad a bot buys the next panel, battery or rail only when that pad\'s last launch ' +
-			'pays the price back in money per world second, a rail always with the battery that fills it. ' +
+			'pays the price back in money per pad second, a rail always with the battery that fills it. ' +
 			'The career runs on the world clock; pause on landing holds it still, and each human player holds it ' +
 			'separately — a hatched scoreboard row is still holding time. Evacuation to HQ costs ' +
 			GravityGame.CAREER.evacFee.toFixed(2) + '. Fragile freight (light planets only, pays \u00d7' +

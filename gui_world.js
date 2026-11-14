@@ -285,9 +285,12 @@ function syncSeedUrl(keepReplay = false) {
 		params.set('rate', String(scene.trade.speed));
 		params.delete('speed');
 	} else {
+		/* Both URL keys carry raw speed, never the display multiplier. Writing
+		 * the multiplier here doubled the orbit/gravity rate on every reload. */
 		params.delete('rate');
-		if (scene.trade.speed !== 0.5) params.set('speed', String(scene.trade.speed));
-		else params.delete('speed');
+		const speed = scene.trade.speed;
+		if (speed === scene.trade.speedDefault) params.delete('speed');
+		else params.set('speed', String(speed));
 	}
 	if (!keepReplay) {
 		params.delete('shots');

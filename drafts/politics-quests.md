@@ -16,10 +16,16 @@ some minimum level of corruption tradition
 
 special game settings that 10% of corruption increment is permanent until rebellion and cleaning quest.
 
+Corruption grace threshold by visible visit profit:
+advantage: player already has this number in GUI and will know if value >1 then corruption growth. for now i suggest linear ramp growth rate from visit profit 1 to 3. corruption growth rate from 0 to max.
 
-→ `CORRUPTION_VISIT_DECAY 0.2`, `CORRUPTION_GRACE 120 s`, rise `0.1/s`,
-growth `× (1 − C/100)`, bribe `1 + 0.1 · money`, one bribe per visit, Capital
-and A.R.F. exempt.
+
+→ `CORRUPTION_VISIT_DECAY 0.2`, no hidden grace timer — passive rot starts
+above visit profit `+1.00` (`CORRUPTION_PROFIT_START`) and ramps linearly to
+`0.1/s` (`CORRUPTION_PASSIVE_RATE`) at `+3.00` (`CORRUPTION_PROFIT_FULL`), with
+the planet profit pill's colour showing the same stages (mint `≤ +1.00`,
+amber `+1.01…+1.99`, coral `≥ +2.00`) — growth `× (1 − C/100)`, bribe
+`1 + 0.1 · money`, one bribe per visit, Capital and A.R.F. exempt.
 
 → the note's «twice» is met at rot `50`: `bribeValue = visit value × rot/100 × 4`,
 so a half-rotten lord pays twice and a fully rotten one four times — right where

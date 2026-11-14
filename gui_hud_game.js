@@ -67,7 +67,14 @@ function refreshGameUi() {
 	if (expForceEl) expForceEl.disabled = experimentLock;
 	/* the stay-pay only exists in career: outside it the box is off and dim */
 	if (expHarvestEl) expHarvestEl.disabled = experimentLock || !career;
-	scene.lockSpeed(game.on && (route || game.fixedRate || anyShots || replay.on));
+	/* Moving ports share the orbit clock with gravity. Keep that clock fixed
+	 * for shared runs; the label explains why a disabled slider cannot move. */
+	const rateReason = career ? 'Locked in career: orbits and gravity follow the shared game clock'
+		: replay.on ? 'Locked during replay so the recorded gravity stays unchanged'
+		: route ? 'Locked for the route contest so every plan shares one gravity clock'
+		: game.fixedRate ? 'Locked by the shared link so its gravity stays unchanged'
+		: anyShots ? 'Locked after launch so saved shots re-fly the same gravity' : '';
+	scene.lockSpeed(game.on && rateReason !== '', rateReason);
 	clearButton.hidden = game.on && !route;
 	clearButton.textContent = route ? 'clear plan' : 'clear';
 	clearButton.disabled = route && (replay.on || playerIsBot());

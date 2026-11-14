@@ -244,44 +244,54 @@ function tradeRate() {
 	return scene.trade.paused ? 0 : scene.trade.speed;
 }
 
-function playDefaultIndex() {
-	return careerRule() ? PLAY_CAREER_DEFAULT : PLAY_DEFAULT;
+/* the rung this mode opens on: real time in the lab, the pace the career
+ * economy was priced at in career */
+function defaultPlayIndex() {
+	return careerRule() ? PLAY_INDEX_CAREER : PLAY_INDEX_LAB;
 }
 
-function playMaxIndex() {
-	return careerRule() ? PLAY_CAREER_MAX_INDEX : PLAY_MAX_INDEX;
-}
-
+/* game seconds per real second; a replay multiplies this on top */
 function playScale() {
-	const base = PLAY_SPEEDS[playIndex];
-	/* in career the game-time slider multiplies the physics pace,
-	 * so pads charge and rivals fly at the chosen rate */
-	return careerRule() ? base * gameRate : base;
+	return PLAY_SPEEDS[playIndex];
+}
+
+/* the pace the step loop actually runs, capped exactly as the loop caps it */
+function playPace() {
+	const scale = playScale();
+	return scale < PLAY_MAX ? scale : PLAY_MAX;
+}
+
+/* the pace as the player reads it: ×1 is real time in every mode */
+function paceTag() {
+	return '×' + playPace();
 }
 
 function refreshPlaybackUi() {
 	if (!playTagEl) return;
-	playTagEl.textContent = '×' + playScale();
+	playTagEl.textContent = paceTag();
 	if (playSlowerBtn) playSlowerBtn.disabled = playIndex === 0;
-	if (playFasterBtn) playFasterBtn.disabled = playIndex >= playMaxIndex();
+	if (playFasterBtn) playFasterBtn.disabled = playIndex >= PLAY_MAX_INDEX;
 	if (playResetBtn) {
-		const def = PLAY_SPEEDS[playDefaultIndex()];
+		const def = PLAY_SPEEDS[defaultPlayIndex()];
 		playResetBtn.textContent = def + '×';
 		playResetBtn.title = careerRule()
-			? 'default career pace (×' + def + ')'
-			: 'real time (×' + def + ')';
+			? 'the pace career is balanced at, ×' + def +
+				': ' + def + ' game seconds per real second'
+			: 'real time: 1 game second per real second';
 	}
+	/* the career wait tells what its span costs at this pace, so it follows */
+	refreshCareerWaitPreview();
 }
 
 function stepPlayback(step) {
 	const next = playIndex + step;
-	if (next < 0 || next > playMaxIndex()) return;
+	if (next < 0 || next > PLAY_MAX_INDEX) return;
 	playIndex = next;
 	refreshPlaybackUi();
 }
 
 function resetPlayback() {
-	playIndex = playDefaultIndex();
+	playIndex = defaultPlayIndex();
 	refreshPlaybackUi();
 }
 
