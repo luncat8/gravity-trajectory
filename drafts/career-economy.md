@@ -38,8 +38,11 @@ is gone for a big one; and a pad costs one commercial launch, so it is repaid on
 its second departure.
 
 → `../0.6.2-plan-pad-fees.md` §2, shipped: the commercial fee follows the
-shot — `2.00` + `1.50` per kWh, from `2.16` for the slowest dry hop to about
-`3.52` at full force — so the gate holds for every hold, not only a `HOLD-8`.
+shot — `2.00` + `2.50` per kWh, from `2.27` for the slowest dry hop to
+`4.54` at full force — so the gate holds for every hold, not only a `HOLD-8`
+(the A/B in `experiments/logs/0.6.2-commercial-kwh-ab.txt` settled the knob:
+at `1.50` a full-force hop cost `3.52` and a `HOLD-24`'s `4.50` still funded it;
+at `2.50` the hop costs `4.54` and no delivery pays for it).
 
 ## 2.2 economy ← `0.4-draft-career.md`
 
@@ -74,7 +77,7 @@ evacuate to HQ 6
 use commercial EMC 3 (available on each planet additional tier-1 EMC)
 
 → evacuation `6.00` is this number; the commercial launch is no longer a flat
-`3.00` — since 0.6.2 it is `2.00` + `1.50` per kWh of the shot. `EMC-1` is no
+`3.00` — since 0.6.2 it is `2.00` + `2.50` per kWh of the shot. `EMC-1` is no
 longer a flat `9`: build cost comes from the research that invented its spec
 (`OrbitScience.buildCostOf`), so a padded `3.04` is the *result*, not a constant.
 It is the price of the starter rail plus the starter purse rule — see the note

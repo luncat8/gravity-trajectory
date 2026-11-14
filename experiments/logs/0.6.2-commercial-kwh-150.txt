@@ -1,0 +1,74 @@
+seed 1 · HQ P3 g1.0 P9 g1.0 P11 g1.0 · R1 · P3 · purse 40.99 · earned 0.00 · 12 flights · 6 pads · reach 5.2 | R2 · P12 · purse 11.49 · earned 0.00 · 13 flights · 1 pads · reach 1.0
+seed 2 · HQ P3 g1.0 P9 g1.0 P6 g1.0 · R1 · P6 · purse 2.03 · earned 0.00 · 12 flights · 1 pads · reach 7.0 | R2 · P6 · purse 8.75 · earned 5.65 · 22 flights · 2 pads · reach 5.0
+seed 3 · HQ P11 g1.0 P10 g1.0 P3 g1.0 · R1 · P3 · purse 9.19 · earned 2.01 · 20 flights · 4 pads · reach 4.0 | R2 · P3 · purse 46.02 · earned 18.22 · 26 flights · 4 pads · reach 3.8
+seed 4 · HQ P12 g1.0 P11 g1.0 P2 g1.0 · R1 · P5 · purse 29.83 · earned 2.21 · 16 flights · 5 pads · reach 4.6 | R2 · P12 · purse 50.01 · earned 5.80 · 22 flights · 3 pads · reach 6.7
+seed 5 · HQ P8 g1.0 P9 g1.0 P10 g1.0 · R1 · P9 · purse 40.74 · earned 0.00 · 15 flights · 4 pads · reach 5.8 | R2 · P1 · purse 19.52 · earned 3.34 · 16 flights · 3 pads · reach 0.7 · dead 0(g 1.4),10(g 1.0)
+seed 6 · HQ P12 g1.0 P2 g1.0 P5 g1.0 · R1 · P7 · purse 3.77 · earned 0.00 · 7 flights · 1 pads · reach 6.0 | R2 · P7 · purse 7.15 · earned 0.00 · 13 flights · 2 pads · reach 4.5
+seed 7 · HQ P12 g1.0 P9 g1.0 P2 g1.0 · R1 · P12 · purse 10.88 · earned 1.09 · 12 flights · 2 pads · reach 6.5 | R2 · P12 · purse 16.48 · earned 2.39 · 13 flights · 2 pads · reach 5.5
+seed 8 · HQ P12 g1.0 P4 g1.0 P2 g1.0 · R1 · P0 · purse 4.82 · earned 0.00 · 10 flights · 0 pads · reach 0.0 | R2 · P0 · purse 5.79 · earned 0.00 · 10 flights · 2 pads · reach 1.5
+seed 9 · HQ P4 g1.0 P7 g1.0 P2 g1.0 · R1 · P11 · purse 20.05 · earned 2.98 · 23 flights · 4 pads · reach 5.5 | R2 · P11 · purse 22.41 · earned 2.46 · 15 flights · 1 pads · reach 7.0
+seed 10 · HQ P6 g1.0 P1 g1.0 P10 g1.0 · R1 · P6 · purse 37.07 · earned 12.26 · 25 flights · 3 pads · reach 5.0 | R2 · P10 · purse 13.38 · earned 0.00 · 13 flights · 3 pads · reach 4.3
+seed 11 · HQ P2 g1.0 P7 g1.0 P4 g1.0 · R1 · P11 · purse 69.75 · earned 5.76 · 22 flights · 6 pads · reach 4.5 | R2 · P7 · purse 21.04 · earned 0.00 · 14 flights · 2 pads · reach 2.5
+seed 12 · HQ P9 g1.0 P0 g1.0 P8 g1.0 · R1 · P4 · purse 0.35 · earned 2.30 · 12 flights · 2 pads · reach 5.5 | R2 · P3 · purse 4.56 · earned 2.94 · 33 flights · 3 pads · reach 3.0
+STATS seed 1 R1 · profit 0.054/s · property 30.24 · science 0.00 · flown 49.9 px/s
+STATS seed 1 R2 · profit 0.013/s · property 10.49 · science 0.00 · flown 21.5 px/s
+STATS seed 1 all · profit 0.034/s · property 40.73 · science 0.00 · flown 35.7 px/s · rot 478 · standing 31.46
+STATS seed 2 R1 · profit -0.003/s · property 0.76 · science 0.00 · flown 19.8 px/s
+STATS seed 2 R2 · profit 0.006/s · property 4.41 · science 0.00 · flown 31.3 px/s
+STATS seed 2 all · profit 0.002/s · property 5.17 · science 0.00 · flown 25.5 px/s · rot 713 · standing 53.35
+STATS seed 3 R1 · profit 0.027/s · property 29.19 · science 0.00 · flown 64.8 px/s
+STATS seed 3 R2 · profit 0.067/s · property 42.36 · science 0.00 · flown 47.8 px/s
+STATS seed 3 all · profit 0.047/s · property 71.55 · science 0.00 · flown 56.3 px/s · rot 264 · standing 15.92
+STATS seed 4 R1 · profit 0.043/s · property 38.76 · science 0.00 · flown 38.2 px/s
+STATS seed 4 R2 · profit 0.049/s · property 15.28 · science 0.00 · flown 48.8 px/s
+STATS seed 4 all · profit 0.046/s · property 54.04 · science 0.00 · flown 43.5 px/s · rot 237 · standing 5.69
+STATS seed 5 R1 · profit 0.058/s · property 36.33 · science 0.00 · flown 48.1 px/s
+STATS seed 5 R2 · profit 0.022/s · property 15.28 · science 0.00 · flown 30.2 px/s
+STATS seed 5 all · profit 0.040/s · property 51.61 · science 0.00 · flown 39.1 px/s · rot 364 · standing 23.74
+STATS seed 6 R1 · profit -0.001/s · property 0.76 · science 0.00 · flown 14.0 px/s
+STATS seed 6 R2 · profit 0.009/s · property 9.19 · science 0.00 · flown 28.7 px/s
+STATS seed 6 all · profit 0.004/s · property 9.95 · science 0.00 · flown 21.4 px/s · rot 700 · standing 56.15
+STATS seed 7 R1 · profit 0.009/s · property 6.84 · science 0.00 · flown 22.3 px/s
+STATS seed 7 R2 · profit 0.025/s · property 18.93 · science 0.00 · flown 15.0 px/s
+STATS seed 7 all · profit 0.017/s · property 25.77 · science 0.00 · flown 18.6 px/s · rot 713 · standing 31.91
+STATS seed 8 R1 · profit -0.000/s · property 0.76 · science 0.00 · flown 3.0 px/s
+STATS seed 8 R2 · profit 0.005/s · property 7.45 · science 0.00 · flown 4.0 px/s
+STATS seed 8 all · profit 0.003/s · property 8.21 · science 0.00 · flown 3.5 px/s · rot 764 · standing 69.90
+STATS seed 9 R1 · profit 0.032/s · property 24.40 · science 0.00 · flown 33.7 px/s
+STATS seed 9 R2 · profit 0.017/s · property 3.80 · science 0.00 · flown 23.5 px/s
+STATS seed 9 all · profit 0.024/s · property 28.20 · science 0.00 · flown 28.6 px/s · rot 418 · standing 27.81
+STATS seed 10 R1 · profit 0.044/s · property 21.36 · science 0.00 · flown 63.9 px/s
+STATS seed 10 R2 · profit 0.018/s · property 14.59 · science 0.00 · flown 35.2 px/s
+STATS seed 10 all · profit 0.031/s · property 35.95 · science 0.00 · flown 49.6 px/s · rot 260 · standing 29.23
+STATS seed 11 R1 · profit 0.072/s · property 24.40 · science 0.00 · flown 54.0 px/s
+STATS seed 11 R2 · profit 0.017/s · property 6.84 · science 0.00 · flown 29.8 px/s
+STATS seed 11 all · profit 0.045/s · property 31.24 · science 0.00 · flown 41.9 px/s · rot 372 · standing 12.47
+STATS seed 12 R1 · profit -0.002/s · property 3.80 · science 0.00 · flown 16.6 px/s
+STATS seed 12 R2 · profit 0.019/s · property 25.00 · science 0.00 · flown 27.8 px/s
+STATS seed 12 all · profit 0.009/s · property 28.80 · science 0.00 · flown 22.2 px/s · rot 621 · standing 55.23
+STATS TOTAL · profit 0.025/s · property 16.30 · science 0.00 · flown 32.2 px/s · rot 492 · standing 34.40 · visits 82% · contracts 7% · bribes 0% · tax 10%
+TOTAL rivals 24 · flights 396 · earned 69.41 · purse 496.07 · pads 66 · dead pads 2 · mean reach 4.37 · stuck 0 · rebel 44 · seized 44 · patients 352 · mean rot 37.8 · bribes 1 · arrests 0 · medic trips 0 · patients home 0
+PURSE seed 1 R1 40.9881
+PURSE seed 1 R2 11.4888
+PURSE seed 2 R1 2.0290
+PURSE seed 2 R2 8.7529
+PURSE seed 3 R1 9.1868
+PURSE seed 3 R2 46.0166
+PURSE seed 4 R1 29.8306
+PURSE seed 4 R2 50.0062
+PURSE seed 5 R1 40.7368
+PURSE seed 5 R2 19.5231
+PURSE seed 6 R1 3.7684
+PURSE seed 6 R2 7.1479
+PURSE seed 7 R1 10.8757
+PURSE seed 7 R2 16.4846
+PURSE seed 8 R1 4.8233
+PURSE seed 8 R2 5.7909
+PURSE seed 9 R1 20.0539
+PURSE seed 9 R2 22.4138
+PURSE seed 10 R1 37.0719
+PURSE seed 10 R2 13.3806
+PURSE seed 11 R1 69.7499
+PURSE seed 11 R2 21.0382
+PURSE seed 12 R1 0.3483
+PURSE seed 12 R2 4.5625
