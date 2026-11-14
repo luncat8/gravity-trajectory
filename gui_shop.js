@@ -379,6 +379,19 @@ function fragileLineHtml(career, at) {
 		(safe ? ' · safe at any aim' : ' · aim softer or it breaks') + '</div>';
 }
 
+/* the guest tax a foreign rail on the picked planet would charge before a
+ * shot is fired, beside the EMC rows: the bot's rail order
+ * (own → rival → commercial) made legible */
+function rivalTaxLineHtml(career, planet) {
+	const owner = GravityGame.padOwner(career, planet);
+	if (owner === career.index || owner === GravityGame.OWNER_COMMERCIAL ||
+		owner === GravityGame.OWNER_CAPITAL) return '';
+	const fee = GravityGame.launchFee(career, planet, GravitySim.SPEED_MIN);
+	const tag = owner === GravityGame.OWNER_REBEL ? 'rebel' : claimTag(owner);
+	return '<div class="careerLine dim">' + tag + ' rail · guest tax ' +
+		costText(careerCost(career, fee)) + ' at min speed</div>';
+}
+
 function claimLineHtml() {
 	const counts = claimCounts();
 	let text = 'EMC claims · YOU ' + counts[0];
@@ -386,6 +399,13 @@ function claimLineHtml() {
 		text += ' · ' + RIVAL_TAGS[i - 1] + ' ' + counts[i];
 	}
 	return '<div class="careerLine dim">' + text + '</div>';
+}
+
+/* the two numbers a guest weighs: what this rail charges at the slowest
+ * shot, and the free own-rail launch it stands against */
+function guestFeeClause(career, planet) {
+	const fee = GravityGame.launchFee(career, planet, GravitySim.SPEED_MIN);
+	return 'fee ' + costText(careerCost(career, fee)) + ' · own 0.00';
 }
 
 function padBlockHtml(career) {
@@ -413,8 +433,8 @@ function padBlockHtml(career) {
 	}
 	if (career.commercialPlanet === at) {
 		const lift = GravityGame.padLift(career, at);
-		html += '<div class="careerLine">commercial EMC-1 selected · fee ' +
-			costText(careerCost(career, GravityGame.CAREER.commercialFee)) +
+		html += '<div class="careerLine">commercial EMC-1 selected · ' +
+			guestFeeClause(career, at) +
 			' · lifts to ' + Math.round(lift) + ' px/s</div>';
 	}
 	if (pad.catapult === null) {
@@ -423,13 +443,12 @@ function padBlockHtml(career) {
 		const poor = purseTooSmall(career, cost);
 		const occupied = !GravityGame.planetBuildable(career, at);
 		const fresh = padCap(career, first, OrbitTech.BATTERIES[0]);
-		const fee = careerCost(career, GravityGame.CAREER.commercialFee);
 		const lift = GravityGame.padLift(career, at);
 		const heavy = lift + 1e-9 < GravitySim.SPEED_MIN;
 		const claimOwnerIdx = GravityGame.claimOwner(game.galaxy, at);
 		html += '<div class="careerLine warn">no EMC here · ' +
 			(occupied ? claimTag(claimOwnerIdx) + ' rail' : 'commercial rail') +
-			' · fee ' + costText(fee) + '</div>' +
+			' · ' + guestFeeClause(career, at) + '</div>' +
 			'<div class="careerLine dim">lifts ' + ship.mass.toFixed(1) + ' t to ' +
 			Math.round(lift) + ' px/s' + (heavy
 				? ' · too heavy · evacuate ' + costText(careerCost(career, GravityGame.CAREER.evacFee))
@@ -781,6 +800,7 @@ function shopBlockHtml(career) {
 			if (list[j] !== next) html += protoGearRowHtml(career, row, planet, list[j]);
 		}
 	}
+	html += rivalTaxLineHtml(career, planet);
 	/* the ship is refitted wherever it stands, so the block follows the ship's
 	 * planet, not the planet picked for the pad rows above */
 	html += '<div class="careerHead">ship refit · ' +

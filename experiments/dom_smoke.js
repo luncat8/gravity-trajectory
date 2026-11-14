@@ -1475,7 +1475,8 @@ check(kui.get('cargoStatus').textContent === 'impact P' + career.at + ' · clock
 	'stranded-but-launchable status: ' + kui.get('cargoStatus').textContent);
 check(!kui.get('launch').hidden && !kui.get('planetActions').hidden &&
 	kui.get('launchBuild').textContent === 'buy EMC-1 · 3.04' &&
-	kui.get('launchCommercial').textContent === 'commercial EMC-1 · 3.00' &&
+	kui.get('launchCommercial').textContent ===
+		'commercial EMC-1 · ' + kGame.commercialFee(career, career.at, kSim.SPEED_MIN).toFixed(2) &&
 	kui.get('launchEvac').textContent === 'evacuate · 6.00',
 	'planet action buttons: ' + kui.get('launchBuild').textContent + ' / ' +
 		kui.get('launchCommercial').textContent + ' / ' + kui.get('launchEvac').textContent);
@@ -1500,8 +1501,9 @@ check(career.commercialPlanet === strandedAt && kui.get('launchCommercial').clas
 	'commercial rail not selected on P' + strandedAt);
 careerEnv.dragAim(strandedAt, commercialShot, CAREER_TEST_SPEED);
 careerEnv.runFrames(2, 16.0);
-check(kui.get('launchCommercial').textContent === 'commercial launch · 3.00' &&
-	kui.get('launch').textContent === 'launch, 3.00',
+const firedFee = kGame.commercialFee(career, career.at, CAREER_TEST_SPEED);
+check(kui.get('launchCommercial').textContent === 'commercial launch · ' + firedFee.toFixed(2) &&
+	kui.get('launch').textContent === 'launch, ' + firedFee.toFixed(2),
 	'armed commercial labels: ' + kui.get('launchCommercial').textContent +
 		' / ' + kui.get('launch').textContent);
 const purseStranded = kScene.game.money.purse;
@@ -1515,9 +1517,9 @@ for (; kCargo.status !== kSim.STATUS_FLYING && commFrames < 900; commFrames++) {
 }
 check(kCargo.status === kSim.STATUS_FLYING && commFrames > 0,
 	'commercial flight did not start after the barrel turned');
-check(career.lastFee === 3 &&
-	Math.abs(kScene.game.money.purse - (purseStranded - 3)) < 1e-9,
-	'commercial launch must fire for exactly 3.00: fee ' + career.lastFee +
+check(Math.abs(career.lastFee - firedFee) < 1e-9 &&
+	Math.abs(kScene.game.money.purse - (purseStranded - firedFee)) < 1e-9,
+	'commercial launch must fire for the armed shot: fee ' + career.lastFee +
 		' purse ' + kScene.game.money.purse);
 /* Profit pills: the flying ship lights every system it is inside and drops one
  * the step it leaves. The mask is the live ledger flag, so it must agree with
@@ -1845,7 +1847,7 @@ check(bCargo.status === pageSim.STATUS_ENDED && bCargo.endReason === pageSim.END
 check(bCareer.stranded && bCareer.at === bCargo.endBody, 'build env: did not strand on landing');
 const padBuild = /data-act="build"[^>]*data-kind="catapult"[^>]*data-tier="(\d+)"/.exec(bui.get('careerPad').innerHTML);
 check(padBuild !== null, 'pad block has no first-catapult button: ' + bui.get('careerPad').innerHTML);
-/* the first EMC costs 3.00: fund the bench for it */
+/* the first EMC costs 3.04: fund the bench for it */
 bCareer.ledger.purse = 20;
 bScene.refreshCareerPanel();
 buildEnv.fireElement(bui.get('careerBox'), 'click',
@@ -3101,9 +3103,9 @@ function protoOf(career, family, id) {
 	console.log('0.4.17 verified: separate #flightHud panel · inline stranded buy/evacuate · ' +
 		'career ×4..×32 playback · net outcome / rate / TOF route prediction');
 		console.log('0.4.19 verified: commercial rail + EMC claims · ' +
-			'flying rival careers · 3.00 pads / 6.00 evacuation');
+			'flying rival careers · the commercial fee / 6.00 evacuation');
 	console.log('0.4.20 verified: commercial EMC-1 button on every planet · ' +
-		'asymptotic visit profit →3.00 · continuous career clock with pause on landing');
+		'asymptotic visit profit → the commercial fee · continuous career clock with pause on landing');
 }
 
 /* --- 0.4.21: slow frames stretch the wait; it still settles exactly --- */

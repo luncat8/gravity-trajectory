@@ -824,3 +824,19 @@ process is starting and the prediction is cut short, so `predSteps`/`predBody`
 parity fails and the bench reports 4 failures instead of its known 3. The failing
 name is `career in-flight burn: predictBurn & predictBurnFast match stepOne`.
 Re-run the bench alone before believing a change caused it.
+
+## which forceScale is the world's — the sim's, not the career's
+
+`career.forceScale` is set only for **rival** careers (`gravity_bot.js` `setScales`
+assigns it to `rivals[i].career` but not to the player career); the player's world
+multiplier lives on the sims and on the probe/exitProbe/burnShotSims. Any bot helper
+that prices a physically possible shot must take the scale from the live sim it is
+handed — `sourceSim ? sourceSim.forceScale : career.forceScale` is the house pattern
+(`careerDeparture` does this; `careerFuelOffer` did not, and in a `force ×1.5` world
+its "keep one full-cap shot firable" reserve was sized for the table rail, so the
+fuel conversion drained the pad below the planned speed and `career_bot_bench`'s own
+`plan speed … exceeds cap` assert fired. The bench caught it before the page did:
+there the pumped-out shot would simply have flown on free energy.) When adding a new
+planner/verifier pair, assert against the same sim state the plan was made under, or
+pass the snapshot explicitly — "re-read the live value after the executor runs" is
+not the same invariant.

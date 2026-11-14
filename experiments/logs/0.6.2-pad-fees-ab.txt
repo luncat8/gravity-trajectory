@@ -1,0 +1,137 @@
+# 0.6.2 — pad fees: the A/B log
+
+STATS=1 A/B of `experiments/career_gravity_bench.js` before/after the guest-fee × rail tier,
+commercial fee `2.00 + 1.50 × energy` and deep-origin contract. Run:
+`STATS=1 PAIRED=1 SECONDS=1200 SEEDS=1-12 node experiments/career_gravity_bench.js`.
+
+## headline numbers
+
+| line | before | after |
+|---|---|---|
+| `STATS TOTAL · profit` | 0.024/s | 0.025/s |
+| `STATS TOTAL · property` | 15.45 | 16.30 |
+| `STATS TOTAL · flown` | 32.3 px/s | 32.2 px/s |
+| `STATS TOTAL · rot` | 496 | 492 |
+| `STATS TOTAL · standing` | 32.83 | 34.40 |
+| `STATS TOTAL · visits/contracts/bribes/tax` | 82% · 7% · 0% · 10% | 82% · 7% · 0% · 10% |
+| `TOTAL rivals` | 24 | 24 |
+| `TOTAL flights` | 411 | 396 |
+| `TOTAL earned` | 72.21 | 69.41 |
+| `TOTAL purse` | 490.45 | **496.07** |
+| `TOTAL pads` | 66 | 66 |
+| `TOTAL dead pads` | 3 | 2 |
+| `TOTAL mean reach` | 4.22 | 4.37 |
+| `TOTAL rebel · seized` | 46 · 47 | 44 · 44 |
+| `TOTAL patients · mean rot` | 364 · 38.1 | 352 · 37.8 |
+| `TOTAL bribes · arrests · medic trips · patients home` | 2 · 0 · 4 · 12 | 1 · 0 · 0 · 0 |
+
+Exit code 0 both runs. Both full-run stdout texts were kept in `/tmp` for one session and were
+not copied before the sandbox recycled it — the per-line aggregates above are the surviving
+record. To regenerate verbatim tables: rerun the command above (≈160 s) and diff.
+
+## purse per company, game by game (PAIRED=1)
+
+| seed | R | before | after | Δ |
+|---|---|---|---|---|
+| 1 | R1 | 17.31 | 40.99 | +23.68 |
+| 1 | R2 | 25.28 | 11.49 | −13.79 |
+| 2 | R1 | 1.18 | 2.03 | +0.85 |
+| 2 | R2 | 3.28 | 8.75 | +5.48 |
+| 3 | R1 | 8.16 | 9.19 | +1.03 |
+| 3 | R2 | 26.19 | 46.02 | +19.83 |
+| 4 | R1 | 50.73 | 29.83 | −20.90 |
+| 4 | R2 | 33.64 | 50.01 | +16.37 |
+| 5 | R1 | 18.02 | 40.74 | +22.72 |
+| 5 | R2 | 28.82 | 19.52 | −9.29 |
+| 6 | R1 | 4.04 | 3.77 | −0.27 |
+| 6 | R2 | 8.50 | 7.15 | −1.36 |
+| 7 | R1 | 8.42 | 10.88 | +2.45 |
+| 7 | R2 | 16.87 | 16.48 | −0.39 |
+| 8 | R1 | 9.19 | 4.82 | −4.36 |
+| 8 | R2 | 30.15 | 5.79 | −24.36 |
+| 9 | R1 | 24.34 | 20.05 | −4.29 |
+| 9 | R2 | 20.20 | 22.41 | +2.21 |
+| 10 | R1 | 35.07 | 37.07 | +2.00 |
+| 10 | R2 | 15.21 | 13.38 | −1.83 |
+| 11 | R1 | 67.07 | 69.75 | +2.68 |
+| 11 | R2 | 24.83 | 21.04 | −3.79 |
+| 12 | R1 | 0.55 | 0.35 | −0.20 |
+| 12 | R2 | 13.41 | 4.56 | −8.85 |
+
+Σ Δ = **+5.62** over 24 companies (490.45 → 496.07). Two big movers (seed 8 R2 −24.36,
+seed 4 R1 −20.90) and two big winners (seed 1 R1 +23.68, seed 3 R2 +19.83/22.72) — the sign of
+the change is per-company dispersion, not a directional purse drain: an EMC-1 guest tax is
+unchanged to the cent, so fees paid on starter rails are identical; only rival-on-stronger-rail
+shots pay more, and the commercial rail is cheaper for light hops.
+
+## guest fees paid / earned
+
+`career_bench` now prints the fee roll-up across every shot it fires:
+
+```
+fees across 5 shots: paid 3.50 · guest tax 0.00 · tax earned 0.00
+```
+
+(`guest tax` is the plan's §1 re-derived usage tax — it is 0 here because the bench is a solo
+world: nobody flies on a rival rail. The rival economy's tax share of income is the `tax 10%`
+field in `STATS TOTAL`, unchanged after the fix.) The earning side is exercised by the rival
+benches, whose numbers feed the table above.
+
+## bench verdicts (before → after)
+
+| bench | before | after |
+|---|---|---|
+| `career_bench` | FAILED 3 (board: colonies pair; contracts: hold/cargo mass; cheats: communism/endgame) | FAILED 3, **same names** |
+| `career_bot_bench` | FAILED 11 (idle-repair; own-pad fallback; seeds 7/31/42/913 26-pads; scaled 0.8/1.5 ×2; scaled 1.4/0.6; hostile R&D; friendly-rail R&D — all on `Expected values to be strictly equal`) | FAILED 11, **same names, same messages** (after the `careerFuelOffer` forceScale fix below) |
+| `career_gravity_bench` | exit 0 | exit 0 |
+| `politics_test` | (edited for `commercialFee`; not re-checked at baseline) | OK · 20 groups |
+| `career_stats_test` | OK | OK · all checks passed |
+| `career_departure_test` | exit 1, stale seed-7 P3 capital-yard fixture (aborts at `:83`) | **OK** — fixture fixed (skip the imperial Capital) + new guest-fee and deep-origin checks |
+| `dom_smoke` | OK (before GUI edits) | **SMOKE OK** after the GUI/fee-label edits |
+
+`career_departure_test` new checks:
+- same shot from the same planet costs a guest more from an EMC-3 than from an EMC-1 (same-tier
+  tax ×1 vs ×3); own rail stays `0.00`; the commercial rail quotes `commercialFee` at SPEED_MIN,
+  matching the unarmed button.
+- deep-origin tag: seeds 1–40 scanned, **20 deep offers**, all `tons ≥ 16` and origin g ≥ 2.2,
+  note `needs EMC-3+ at P#`, note is `''` otherwise, boundary cases rejected below the bar
+  (`deepOrigin` is a pure function of the load roll and the origin's gravity; no extra RNG draw).
+
+## deviations and fixes reached during validation
+
+1. **Deep reward is applied after the cap**: `reward = min(pay, deliveryMax) × 1.6`, i.e. a deep
+   offer can reach 7.20 > `evacFee 6`. The plan's words are "on top of the ordinary reward", so
+   the bonus rides the capped ordinary reward, not the raw pay (fragile doubles through
+   `FRAGILE_PAY` *before* the cap — different mechanic, uncapped pay). `career_bench`'s
+   "deliveries pay below the evacuation fee" invariant was relaxed only for `t.deep` offers
+   (`t.reward < evacFee || t.deep`) — the invariant still guards ordinary and fragile offers.
+2. **`career_bot_bench` friendly-rail R&D failed differently after the fee change** — not a fee
+   defect: `careerFuelOffer` computed the keep-a-full-cap shot using `career.forceScale`
+   (undefined for the player career; the world's ×1.5 lives on the sim), sizing the fuel-conversion
+   reserve for a weaker rail than fires, so the conversion drained the pad below the planned
+   speed. Fixed to take the forceScale from the live sim (both call sites pass `r.sim`). The
+   failure is back to the baseline assertion. Pre-existing bug, unrelated to fees, but required
+   for "no new failure name" honestly.
+3. **The armed commercial button printed the SPEED_MIN fee even when a faster shot was armed**
+   while the `launch` button next to it printed the true fee. Now the button prints the armed
+   shot's fee (`launchFee`) when armed, and the highlight tracks it.
+4. Plan's "`3.53` full force" corrected to **`3.52`** (`(2.00 + 1.50 × 1.0161).toFixed(2)`);
+   plan's file table corrected to the files that actually carry the changes
+   (`gui_book.js` for the deep tag, `gui_hud_text.js`, `gui_shop.js`, `gui_tables.js`).
+5. `commercialMinFee()` (reserve, fuel baseline) is the dry 10 t ship at `SPEED_MIN` on the
+   starter rail → `2.16`; the bot reserve rule "one way off any planet" is now priced honestly.
+6. `exitCostAt` quotes the foreign guest tax at `SPEED_MIN` × `rail.tier` (same re-derivation as
+   `launchFee`), and the commercial fallback at its energy fee.
+7. `experiments/logs/0.6.10-map-statistics.txt` restored to HEAD after the STATS run so the
+   artefact the 0.6.4–0.6.6 plans read stays the 0.6.10 run.
+
+## open questions carried into the worklog
+
+- `COMMERCIAL_KWH = 1.50` makes full-force commercial shots cost `3.52`. Against `HOLD-24`
+  deliveries (up to `4.50`) a loaded commercial hop can be cheaper than building a rail; the
+  plan anticipated this and made `COMMERCIAL_KWH` the A/B knob. The bench A/B above used the
+  starting value. Raising the knob so a commercial hop can never fund a `HOLD-24` delivery is
+  an open tuning call (the plan's own fallback: record that the note's gate is a `HOLD-8` rule).
+- Medic trips / patients home collapsed 4 → 0 in seeds 1–12 under the new fees — deterministic
+  consequence of the rival route changes, worth an eye on `POLITICS=1` when 0.6.4–0.6.6 read this
+  table, but within the bench bar (bench unchanged at exit 0).

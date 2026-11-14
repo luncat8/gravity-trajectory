@@ -320,6 +320,14 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const FRAGILE_TONS = 8;
 	const FRAGILE_PAY = 1.4;
 	const FRAGILE_CHANCE = 0.25;
+	/* deep-origin delivery (0.6.2): a heavy load out of a deep well is the
+	 * job an EMC-3 is built for — an EMC-2 + BAT-2 lifts a HOLD-24
+	 * (10 t + 24 t + 4 t hold = 38 t) off 43 % of g 2.0 planets and 13 % at
+	 * g 2.5, an EMC-3 + BAT-3 off 100 % and 87 %. Offered with the note and
+	 * paid DEEP_BONUS more than an ordinary delivery of the same tons. */
+	const DEEP_G = 2.2;
+	const DEEP_TONS = 16;
+	const DEEP_BONUS = 0.6;
 
 	/*
 	 * Shared per-planet state for a game run; player and rivals harvest from
@@ -662,14 +670,14 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * planet is claimed by whoever owns the best rail on it: your own EMC
 	 * launches for its battery energy alone, a rival player's EMC charges a
 	 * usage tax that scales with the energy of the shot and pays that player,
-	 * and the neutral commercial EMC-1 standing on every planet charges a flat
-	 * fee. So a padless planet is no longer a dead end, only an expensive one.
+	 * and the neutral commercial EMC-1 standing on every planet charges a fee
+	 * that scales with the shot. So a padless planet is no longer a dead end,
+	 * only an expensive one.
 	 * The run ends broke (purse below zero, or no affordable exit) or complete
 	 * (a catapult on every planet; cheat runs never complete).
 	 */
 	const CAREER = {
 		evacFee: 6,
-		commercialFee: 3,
 		taxPerKwh: 1,
 		endgamePurse: 99,
 		hqMinLight: 0.5,
@@ -730,9 +738,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	/*
 	 * The commercial EMC-1 is the fallback pad of every planet: a neutral
-	 * operator keeps it fully charged and charges a flat fee per launch. It is
-	 * one immutable record — nothing drains or upgrades it.
+	 * operator keeps it fully charged and charges for the shot by its energy —
+	 * a base fee plus a rate per kWh, so a light hop is cheaper than a loaded
+	 * one. It is one immutable record — nothing drains or upgrades it.
 	 */
+	const COMMERCIAL_BASE = 2.00;
+	const COMMERCIAL_KWH = 1.50;
 	const COMMERCIAL_PAD = {
 		catapult: OrbitTech.CATAPULTS[0],
 		panel: OrbitTech.PANELS[0],
@@ -821,7 +832,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	function createTask() {
 		return { kind: TASK_NONE, state: TASK_OFFERED, good: 0, tons: 0, from: -1, to: -1,
 			planet: -1, minLength: 0, reward: 0, deadline: 0, tourist: false, fragile: false,
-			medics: 0, patients: 0, aboard: 0 };
+			deep: false, medics: 0, patients: 0, aboard: 0 };
 	}
 
 	function clearTask(task) {
@@ -829,6 +840,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		task.state = TASK_OFFERED;
 		task.tourist = false;
 		task.fragile = false;
+		task.deep = false;
 		task.medics = 0;
 		task.patients = 0;
 		task.aboard = 0;
@@ -1005,24 +1017,47 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		refreshNetwork(galaxy);
 	}
 
+	/*
+	 * What the commercial rail charges for a shot of `speed`: a base fee plus
+	 * the energy the shot burns, priced on the rail that stands on the planet
+	 * (a seized rebel rail keeps the ordinary commercial price). 0 under the
+	 * `communism` cheat. `mass` prices an exit for a ship other than the one
+	 * aboard (a delivery's arrival); the live fee prices the ship as loaded.
+	 */
+	function commercialFee(career, planet, speed, mass) {
+		const pad = padAt(career, planet);
+		const shipMass = mass === undefined ? career.ship.mass : mass;
+		const energy = OrbitTech.launchEnergy(shipMass, pad.catapult, speed);
+		return price(career, COMMERCIAL_BASE + COMMERCIAL_KWH * energy);
+	}
+
+	/* the cheapest commercial shot there is — a dry starter ship at the minimum
+	 * speed on the starter rail: the honest "one way off any planet" price.
+	 * Undiscounted; callers apply the cheat wrapper. */
+	function commercialMinFee() {
+		return COMMERCIAL_BASE + COMMERCIAL_KWH *
+			OrbitTech.launchEnergy(OrbitTech.SHIP_DRY_MASS, COMMERCIAL_PAD.catapult, GravitySim.SPEED_MIN);
+	}
+
 	/* money the EMC owner charges for a launch at `speed`; 0 on your own pad
 	 * and on the Capital's free imperial rail */
 	function launchFee(career, planet, speed) {
 		const owner = padOwner(career, planet);
 		if (owner === career.index || owner === OWNER_CAPITAL) return 0;
 		if (owner === OWNER_COMMERCIAL || owner === OWNER_REBEL) {
-			return price(career, CAREER.commercialFee);
+			return commercialFee(career, planet, speed);
 		}
 		const pad = padAt(career, planet);
 		return price(career, CAREER.taxPerKwh *
-			OrbitTech.launchEnergy(career.ship.mass, pad.catapult, speed));
+			OrbitTech.launchEnergy(career.ship.mass, pad.catapult, speed) * pad.catapult.tier);
 	}
 
 	/*
 	 * Cheapest way off `planet` with a ship of `mass`: your own EMC is free, the
-	 * commercial rail charges its fee while it can lift the ship, a rival rail
-	 * its usage tax at the slowest firable shot, and a build or an evacuation
-	 * is the fallback. Infinity when nothing can leave.
+	 * commercial rail charges its fee at the slowest firable shot while it can
+	 * lift the ship, a rival rail its usage tax at the slowest firable shot,
+	 * and a build or an evacuation is the fallback. Infinity when nothing can
+	 * leave.
 	 */
 	function exitCostAt(career, planet, mass) {
 		if (planet < 0) return price(career, CAREER.evacFee);
@@ -1033,7 +1068,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const lift = OrbitTech.speedLimit(rail.battery.capacity,
 			mass, rail.catapult, career.forceScale);
 		const commercial = lift + 1e-9 >= GravitySim.SPEED_MIN
-			? price(career, CAREER.commercialFee) : Infinity;
+			? commercialFee(career, planet, GravitySim.SPEED_MIN, mass) : Infinity;
 		let foreign = Infinity;
 		const owner = padOwner(career, planet);
 		if (owner !== OWNER_COMMERCIAL && owner !== OWNER_REBEL && owner !== career.index) {
@@ -1042,7 +1077,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				mass, pad.catapult, career.forceScale);
 			if (railLift + 1e-9 >= GravitySim.SPEED_MIN) {
 				foreign = price(career, CAREER.taxPerKwh *
-					OrbitTech.launchEnergy(mass, pad.catapult, GravitySim.SPEED_MIN));
+					OrbitTech.launchEnergy(mass, pad.catapult, GravitySim.SPEED_MIN) *
+					pad.catapult.tier);
 			}
 		}
 		const build = price(career, OrbitTech.CATAPULTS[0].buildCost);
@@ -3616,6 +3652,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		 * the freight floor and ceiling */
 		const pay = CAREER.deliveryBase + tons * CAREER.deliveryPerTon * 1.5 *
 			(1 + dist / CAREER.deliveryDistPx);
+		/* the deep-origin bonus rides every delivery kind: the rule is the
+		 * load and the well, not the good */
+		task.deep = deepOrigin(career, from, tons);
 		task.kind = TASK_DELIVERY;
 		task.state = TASK_OFFERED;
 		task.good = OrbitEcon.MIGRANTS;
@@ -3625,9 +3664,21 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		task.to = to;
 		task.planet = -1;
 		task.minLength = 0;
-		task.reward = round2(Math.min(pay, CAREER.deliveryMax));
+		task.reward = round2(Math.min(pay, CAREER.deliveryMax) * (task.deep ? 1 + DEEP_BONUS : 1));
 		task.deadline = step + Math.round(CAREER.deliverySec / GravitySim.DT);
 		return true;
+	}
+
+	/* deep-origin delivery (0.6.2): a load of DEEP_TONS or more out of a well
+	 * at DEEP_G or deeper — the job an EMC-3 is built for */
+	function deepOrigin(career, planet, tons) {
+		return tons >= DEEP_TONS && planetGravity(career.seed, planet) >= DEEP_G;
+	}
+
+	/* the note on a deep-origin row, naming the rail that lifts it; one helper
+	 * so the board, the aim line and the bot price and print the same offer */
+	function deepText(task) {
+		return task.deep ? 'needs EMC-3+ at P' + task.from : '';
 	}
 
 	/* delivery: a colony with a real export to the colony short of that good
@@ -3675,6 +3726,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const light = planetGravity(career.seed, src.planet) <= FRAGILE_G;
 		task.fragile = light && tons <= FRAGILE_TONS &&
 			draw01(career, SALT_TASK) < FRAGILE_CHANCE;
+		/* deep-origin (0.6.2): a heavy load out of a deep well is the one job
+		 * an EMC-3 is built for; no draw — it is a property of the load roll
+		 * and the origin's gravity */
+		task.deep = deepOrigin(career, src.planet, tons);
 		const scarcity = 1 - OrbitEcon.marketSupply(dst, good);
 		const dist = Math.min(planetDistance(trade, src.planet, dst.planet), CAREER.deliveryDistPx);
 		let pay = CAREER.deliveryBase + tons * CAREER.deliveryPerTon * (1 + scarcity) *
@@ -3689,7 +3744,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		task.to = dst.planet;
 		task.planet = -1;
 		task.minLength = 0;
-		task.reward = round2(Math.min(pay, CAREER.deliveryMax));
+		task.reward = round2(Math.min(pay, CAREER.deliveryMax) * (task.deep ? 1 + DEEP_BONUS : 1));
 		task.deadline = step + Math.round(CAREER.deliverySec / GravitySim.DT);
 		return true;
 	}
@@ -3699,6 +3754,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		task.kind = TASK_COMPETE;
 		task.state = TASK_OFFERED;
 		task.planet = activePlanetDraw(career);
+		task.deep = false;
 		task.minLength = Math.round((CAREER.competeMinPx + draw01(career, SALT_TASK) * CAREER.competeSpanPx) / 50) * 50;
 		task.reward = round2(CAREER.competeBase + draw01(career, SALT_TASK) * CAREER.competeSpan);
 		task.from = -1;
@@ -3747,6 +3803,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		task.aboard = 0;
 		task.minLength = 0;
 		task.reward = round2(task.patients * OrbitEcon.MEDIC_REWARD_PER_PATIENT);
+		task.deep = false;
 		/* two trips with the standard hold, one with a big one */
 		task.deadline = step + Math.round(CAREER.deliverySec * 2 / GravitySim.DT);
 		return true;
@@ -4220,6 +4277,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		BOOK_MAX, BOOK_LOG_MAX, createLaunchBook, resetLaunchBook, launchBookTag, bookReady,
 		launchMask, recordLaunch, pruneLaunchBook,
 		CAREER, FUEL_KG_PER_KWH, FUEL_PRICE, FUEL_BUY_STEP, fuelPrice, produceFuel, buyFuel,
+		COMMERCIAL_BASE, COMMERCIAL_KWH, commercialFee, commercialMinFee,
+		DEEP_G, DEEP_TONS, DEEP_BONUS, deepOrigin, deepText,
 		CAPITAL_VISIT_PAY, TOURIST_CHANCE, TOURIST_WEIGHT,
 		QUIET_MIN, FRAGILE_ACCEL, FRAGILE_SPEED, FRAGILE_G, FRAGILE_TONS, FRAGILE_PAY,
 		BOARD_SIZE, COMPETE_SLOT, MEDIC_SLOT, CARGO_TONS,

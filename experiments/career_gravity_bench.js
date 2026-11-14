@@ -350,7 +350,7 @@ console.log('TOTAL rivals ' + totals.actors + ' · flights ' + totals.flights +
 		' · arrests ' + totals.arrests + ' · medic trips ' + totals.medicTrips +
 		' · patients home ' + totals.delivered : ' · POLITICS=0'));
 if (PAIRED) console.log(purses.join('\n'));
-if (GravityGame.FUEL_PRICE * OrbitTech.TANKS[1].fuelCap <= GravityGame.CAREER.commercialFee) {
+if (GravityGame.FUEL_PRICE * OrbitTech.TANKS[1].fuelCap <= GravityGame.commercialMinFee()) {
 	throw new Error('a full FT-1 must cost more than a commercial EMC launch');
 }
 if (ENGINE && DEADEND && !NORESCUE && !NOFUEL && totals.rescues <= 0) {

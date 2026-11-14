@@ -302,7 +302,9 @@ const RULE_HELP = {
 		detailLabel: 'Network',
 		detail: 'Start at your own HQ, a seeded shallow world (g ≤ 1) the starter rail can leave; a deep well is never a home. ' +
 			'Your EMC claims its planet; each planet also offers a commercial EMC-1 for ' +
-			GravityGame.CAREER.commercialFee.toFixed(2) + ' per launch. An owned or rival pad spends battery charge; guests also pay the owner. ' +
+			GravityGame.COMMERCIAL_BASE.toFixed(2) + ' + ' + GravityGame.COMMERCIAL_KWH.toFixed(2) +
+			' per kWh of the shot (from ' + GravityGame.commercialMinFee().toFixed(2) +
+			'). An owned or rival pad spends battery charge; guests also pay the owner a usage tax of the shot\u2019s energy × the rail\u2019s tier. ' +
 			'A queued shot reserves its energy and fires when the barrel aligns (one turn every 2…5 s). ' +
 			'On its own pad a bot buys the next panel, battery or rail only when that pad\'s last launch ' +
 			'pays the price back in money per world second, a rail always with the battery that fills it. ' +
@@ -310,7 +312,10 @@ const RULE_HELP = {
 			'separately — a hatched scoreboard row is still holding time. Evacuation to HQ costs ' +
 			GravityGame.CAREER.evacFee.toFixed(2) + '. Fragile freight (light planets only, pays \u00d7' +
 			GravityGame.FRAGILE_PAY.toFixed(1) + ') breaks when launched above ' +
-			Math.floor(GravityGame.FRAGILE_SPEED) + ' px/s: a full-force EMC-1 is gentle enough, a stronger rail must be aimed softer.',
+			Math.floor(GravityGame.FRAGILE_SPEED) + ' px/s: a full-force EMC-1 is gentle enough, a stronger rail must be aimed softer. ' +
+			'Deep freight (' + GravityGame.DEEP_TONS + ' t or more from a well of g ≥ ' +
+			GravityGame.DEEP_G.toFixed(1) + ', pays \u00d7' + (1 + GravityGame.DEEP_BONUS).toFixed(1) +
+			') needs an EMC-3+ rail at its origin.',
 		controls: 'Wait charges pads. Fuel is bought or converted from your own pad battery; tanks never refill for free. With an impulse engine and fuel, pause time with Space / P or the game-bar time button, then drag the ship to aim a burn; a bot flying your company burns on its own.'
 	}
 };

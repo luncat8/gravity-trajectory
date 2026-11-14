@@ -474,7 +474,7 @@ check('seizure keeps the best tiers, drops every owner pad and stays commercial'
 	assert.strictEqual(Game.padAt(a, planet), rebelPad);
 	assert.strictEqual(Game.padOwner(a, planet), Game.OWNER_REBEL);
 	assert.strictEqual(Game.claimOwner(w.galaxy, planet), Game.OWNER_REBEL);
-	assert.strictEqual(Game.launchFee(a, planet, 100), Game.CAREER.commercialFee);
+	assert.strictEqual(Game.launchFee(a, planet, 100), Game.commercialFee(a, planet, 100));
 	assert.strictEqual(Game.planetBuildable(a, planet), false);
 	assert.strictEqual(Game.buildGear(a, planet, 'catapult', tech.CATAPULTS[0]), false);
 	assert.strictEqual(w.market.patients[planet], Econ.MEDIC_PATIENTS);
@@ -497,7 +497,7 @@ check('seizure keeps the best tiers, drops every owner pad and stays commercial'
 	const exit = bot.careerDeparture(a, planet, 99, a.ship.mass);
 	assert.ok(exit.ok, 'the rebel rail cannot be left: ' + exit.reason);
 	assert.strictEqual(exit.source, 'rebel');
-	assert.strictEqual(exit.cost, Game.CAREER.commercialFee);
+	assert.strictEqual(exit.cost, Game.commercialFee(a, planet, exit.speed, a.ship.mass));
 	assert.strictEqual(exit.canBuildStarter, false);
 });
 
