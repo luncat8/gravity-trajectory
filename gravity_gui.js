@@ -142,6 +142,10 @@ const expForceLabelEl = $('expForceLabel');
 const expHarvestEl = $('expHarvest');
 const expTagEl = $('expTag');
 const launchButton = $('launch');
+const launchMenuBtn = $('launchMenuBtn');
+const launchMenuEl = $('launchMenu');
+const launchRepairBtn = $('launchRepair');
+const launchOnlyBtn = $('launchOnly');
 const planetActionsEl = $('planetActions');
 const launchBuildBtn = $('launchBuild');
 const launchCommercialBtn = $('launchCommercial');
@@ -403,6 +407,8 @@ const aimEconomics = { state: 0, launchable: true, fee: 0, fuel: 0, exit: 0, net
 	source: '', speed: 0, tier: 0, own: false };
 let launchState = -1;
 let launchNote = '';
+/* the menu's repair price in cents: part of the launch control's change key */
+let launchRepairCents = -1;
 let linkNote = '';
 /* the mode's default rung; `defaultPlayIndex` reads the rule, which boots as lab */
 let playIndex = PLAY_INDEX_LAB;
@@ -612,6 +618,15 @@ horizonSlider.addEventListener('input', () => {
 	hudAt = -Infinity;
 });
 launchButton.addEventListener('click', launchShot);
+launchMenuBtn.addEventListener('click', () => setLaunchMenu(launchMenuEl.hidden));
+launchRepairBtn.addEventListener('click', () => {
+	setLaunchMenu(false);
+	careerAct({ act: 'repair' });
+});
+launchOnlyBtn.addEventListener('click', () => {
+	setLaunchMenu(false);
+	launchArmedShot();
+});
 if (flightRefuelBtn) flightRefuelBtn.addEventListener('click', flightRefuel);
 if (flightHudEl) {
 	flightHudEl.addEventListener('pointerover', flightQuestsOver);
@@ -941,6 +956,7 @@ window.addEventListener('keydown', event => {
 	}
 	if (event.code === 'Escape') {
 		if (helpOpen) setHelpOpen(false);
+		else if (!launchMenuEl.hidden) setLaunchMenu(false);
 		else if (burnAiming || burnArmed) {
 			burnAiming = false;
 			burnArmed = false;

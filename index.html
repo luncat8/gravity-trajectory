@@ -376,7 +376,14 @@
 	<div class="group">
 		<div class="caption"><span>action</span><span id="flightActionTag">enter</span></div>
 		<div class="actions flightActions">
-			<button id="launch" class="primary" disabled>launch</button>
+			<div id="launchGroup">
+				<button id="launch" class="primary" disabled>launch</button>
+				<button id="launchMenuBtn" class="primary" type="button" aria-label="launch options" aria-haspopup="true" aria-expanded="false" title="repair and launch separately" hidden>▾</button>
+				<div id="launchMenu" hidden>
+					<button id="launchRepair" type="button">repair</button>
+					<button id="launchOnly" type="button">launch</button>
+				</div>
+			</div>
 			<div id="planetActions" class="planetActions" hidden>
 				<button id="launchBuild" class="primary">buy EMC-1 · 9.00</button>
 				<button id="launchCommercial">commercial EMC-1 · 3.00</button>

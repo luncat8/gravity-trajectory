@@ -471,6 +471,27 @@ function careerEvacuate() {
 	careerChanged();
 }
 
+function conditionText(career) {
+	return Math.round(career.ship.condition * 100) + ' %';
+}
+
+/* full repair of the selected player's ship; true lets a caller chain the launch */
+function careerRepair() {
+	const career = activeCareer();
+	const cost = GravityGame.repairCost(career);
+	if (!GravityGame.repairCareer(career)) {
+		careerNotice(career.ship.condition >= 1 ? 'ship is as new · nothing to repair'
+			: career.at < 0 ? 'no repair in space · evacuate first'
+			: purseTooSmall(career, cost)
+			? 'repair ' + costText(cost) + ' · purse ' + career.ledger.purse.toFixed(2)
+			: 'career over · restart for a new HQ');
+		return false;
+	}
+	careerNotice('repaired · −' + cost.toFixed(2) + ' · condition ' + conditionText(career));
+	careerChanged();
+	return true;
+}
+
 /* (0.5.12) the rulers' bribe: money for the company, rot for the planet and
  * a chance of the Capital transport instead */
 function careerBribe() {
@@ -533,6 +554,7 @@ function careerAct(data) {
 	if (act === 'bribe') return careerBribe();
 	if (act === 'quiet') return careerQuiet();
 	if (act === 'evac') return careerEvacuate();
+	if (act === 'repair') return careerRepair();
 	if (act === 'book') return useBookEntry(Number(data.entry));
 	if (career.ended !== GravityGame.CAREER_OPEN) {
 		careerNotice('career over · restart for a new HQ');

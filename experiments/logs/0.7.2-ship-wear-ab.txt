@@ -1,0 +1,6 @@
+career_gravity_bench STATS=1, 12 seeds x 2 rivals, same code except ship wear (0.7.2)
+before · STATS TOTAL · profit 0.024/s · property 7.68 · science 0.00 · flown 32.7 px/s · rot 133 · standing 16.34 · visits 83% · contracts 8% · bribes 0% · tax 9%
+after  · STATS TOTAL · profit 0.009/s · property 4.52 · science 0.00 · flown 34.0 px/s · rot 134 · standing 16.41 · visits 83% · contracts 7% · bribes 0% · tax 9%
+before · TOTAL rivals 24 · flights 137 · earned 23.52 · purse 196.38 · pads 67 · dead pads 1 · mean reach 5.02 · stuck 0 · rebel 0 · seized 0 · patients 0 · mean rot 10.2 · bribes 0 · arrests 0 · medic trips 0 · patients home 0
+after  · TOTAL rivals 24 · flights 135 · earned 19.80 · purse 132.52 · pads 50 · dead pads 1 · mean reach 4.85 · stuck 0 · rebel 0 · seized 0 · patients 0 · mean rot 10.3 · bribes 0 · arrests 0 · medic trips 0 · patients home 0
+after  · WEAR TOTAL · repaired 4.3 · maintenance 5.46 · share of income 48% · mean cond 81 % · worn out 0 / 24

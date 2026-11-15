@@ -23,7 +23,7 @@ some change like 3d noise z+= change
 what type of zone will be looks better with what type of movement - open question.
 
 → **open**, no weather plan yet. The wear half has a hook:
-`0.7.2-plan-ship-wear.md` exposes `careerWearAt(x, y) → multiplier` (identity
+`archive/0.7.2-plan-ship-wear.md` exposes `careerWearAt(career, x, y) → multiplier` (identity
 today) and prices the ship's condition, so a weather layer can fill it without
 touching the repair/launch code. The zone shape, motion and overlay still need
 their own answer; the observation-range and jammer parts are a different layer

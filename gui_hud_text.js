@@ -314,6 +314,18 @@ function updateLiveHud() {
 
 
 /* ── launch state & status ── launch state and note, ride text and title, status text */
+function setLaunchMenu(open) {
+	launchMenuEl.hidden = !open;
+	launchMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+/* the caret and its menu exist only while a landed ship can be repaired */
+function hideLaunchMenu() {
+	if (launchMenuBtn.hidden) return;
+	launchMenuBtn.hidden = true;
+	setLaunchMenu(false);
+}
+
 function setLaunchState(blocked, exitWarning) {
 	if (canImpulse()) {
 		/* the impulse loop is pause-first: the context button only offers the
@@ -336,6 +348,7 @@ function setLaunchState(blocked, exitWarning) {
 		if (state === launchState && text === launchNote) return;
 		launchState = state;
 		launchNote = text;
+		hideLaunchMenu();
 		launchButton.hidden = false;
 		if (planetActionsEl) planetActionsEl.hidden = true;
 		launchButton.disabled = !burnArmed;
@@ -352,6 +365,7 @@ function setLaunchState(blocked, exitWarning) {
 	}
 	if (turret.pending) {
 		const left = Math.max(0, turret.fireAt - game.clockSteps) * DT;
+		hideLaunchMenu();
 		launchButton.hidden = false;
 		if (planetActionsEl) planetActionsEl.hidden = true;
 		launchButton.disabled = false;
@@ -452,36 +466,79 @@ function setLaunchState(blocked, exitWarning) {
 	}
 	const note = career ? careerOverText() || careerPadNote() : '';
 	const broke = game.on && !route && (career ? note !== '' : ledger.purse < MONEY.cost);
+	const usable = !career || GravityGame.careerShipUsable(c);
+	/* a landed, hand-flown ship below new: the main action services it first */
+	const worn = landed && c.at >= 0 && !botPlayer && !careerWaitBusy() && c.ship.condition < 1;
+	const repair = worn ? GravityGame.repairCost(c) : 0;
+	const repairPoor = worn && purseTooSmall(c, repair);
+	const chained = worn && !blocked && sim.canFire(aimBody, aimSpeed) &&
+		GravityGame.repairLaunchBlock(c, activeCareerSim(), aimBody, aimSpeed) === '';
+	const noImpulse = career && !usable && !botPlayer && sim.burnLimit() > 0;
 	const state = (blocked || broke ? 1 : 0) + (exitWarning ? 2 : 0) +
 		(broke ? 4 : 0) + (route ? 8 : 0) + (botPlayer ? 16 : 0) +
 		(route && plan.ready ? 32 : 0) + (slot * 64) + (showActions ? 8192 : 0) +
-		(commercialOn ? 16384 : 0) + (careerPaused ? 32768 : 0);
+		(commercialOn ? 16384 : 0) + (careerPaused ? 32768 : 0) + (worn ? 65536 : 0) +
+		(chained ? 131072 : 0) + (usable ? 0 : 262144) + (repairPoor ? 524288 : 0) +
+		(noImpulse ? 1048576 : 0);
 	const who = slotName(slot);
 	const prefix = game.on && slot > 0 ? who + ' · ' : '';
 	const text = route
 		? plan.ready ? 'plan counts · no launch' : 'plan only · no launch'
 		: botPlayer ? 'bot controls ' + who
+		: noImpulse ? 'repair needed · no impulse'
+		: chained ? prefix + 'repair & launch · ' + repairLaunchText(c, repair)
+		: worn ? prefix + 'repair · ' + costText(repair)
 		: broke
 		? career ? note : 'purse ' + ledger.purse.toFixed(2) + ' · need ' + MONEY.cost.toFixed(2)
 		: exitWarning ? prefix + 'launch · leaves system'
 		: prefix + 'launch' + launchRideText(career ? c : null);
-	/* the label carries live numbers (pad energy, rail fee), so the text
-	 * itself is the change key, not only the state bits */
-	if (state === launchState && text === launchNote) return;
+	const repairCents = Math.round(repair * 100);
+	/* the label carries live numbers (pad energy, rail fee, repair), so the
+	 * text itself is the change key, not only the state bits */
+	if (state === launchState && text === launchNote && repairCents === launchRepairCents) return;
 	launchState = state;
 	launchNote = text;
-	launchButton.disabled = route || botPlayer || blocked || broke;
-	launchButton.classList.toggle('exitWarning', exitWarning);
-	/* only a missing launch fee is a price; a career pad note is a state gate */
-	launchButton.classList.toggle('costly', broke && !career);
+	launchRepairCents = repairCents;
+	const launchOff = route || botPlayer || blocked || broke || !usable;
+	launchButton.disabled = worn ? !chained && repairPoor : launchOff;
+	launchButton.classList.toggle('exitWarning', exitWarning && (!worn || chained));
+	/* only a missing price is a price; a career pad note is a state gate */
+	launchButton.classList.toggle('costly', worn ? !chained && repairPoor : broke && !career);
 	launchButton.textContent = text;
+	const wear = worn ? 'condition ' + conditionText(c) + ' · repair ' + costText(repair) : '';
 	launchButton.title = route
 		? 'Route is a planner: the finished traced trajectory is the entry'
 		: botPlayer ? 'Clear bot in the ' + who + ' score row to aim and launch manually'
+		: noImpulse ? 'The ship is worn out: no impulse and no visit pay until it lands and is repaired'
+		: chained ? wear + ' · then ' + (exitWarning
+			? 'launch · warning: predicted trajectory ends outside the system'
+			: launchRideTitle(c))
+		: worn ? wear + (usable ? '' : ' · ' + GravityGame.WORN_OUT_BLOCK)
 		: broke
 		? career ? 'The pad cannot fire this shot' : 'The purse cannot cover a launch; this run is over'
 		: exitWarning ? 'Warning: predicted trajectory ends outside the system'
 		: launchRideTitle(career ? c : null);
+	launchMenuBtn.hidden = !worn;
+	if (!worn) {
+		setLaunchMenu(false);
+		return;
+	}
+	launchMenuBtn.title = wear + ' · repair and launch separately';
+	launchRepairBtn.textContent = 'repair · ' + costText(repair);
+	launchRepairBtn.disabled = repairPoor;
+	launchRepairBtn.classList.toggle('costly', repairPoor);
+	launchOnlyBtn.textContent = 'launch' + (launchOff ? '' : launchRideText(c));
+	launchOnlyBtn.disabled = launchOff;
+	launchOnlyBtn.title = !usable ? GravityGame.WORN_OUT_BLOCK
+		: launchOff ? 'Arm a shot this pad can fire' : 'Launch without repair · the ship keeps wearing';
+}
+
+/* repair plus the launch: one credit total, and the pad energy an own EMC draws */
+function repairLaunchText(career, repair) {
+	if (GravityGame.padOwner(career, aimBody) === career.index) {
+		return costText(repair) + launchRideText(career);
+	}
+	return costText(repair + GravityGame.launchFee(career, aimBody, aimSpeed));
 }
 
 /* What the armed shot spends: an own EMC draws its pad battery (kWh), a

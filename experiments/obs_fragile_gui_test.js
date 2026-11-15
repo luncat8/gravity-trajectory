@@ -56,7 +56,7 @@ function hud() {
 check(career.ship.obs === Tech.OBS[1], 'the career does not start with OBS-1');
 hud();
 check(!ui.get('flightReportRow').hidden, 'the flight HUD hides the report row in career');
-check(ui.get('flightReport').textContent === 'OBS-1',
+check(ui.get('flightReport').textContent === 'OBS-1 · cond 100 %',
 	'the report row does not name the device: ' + ui.get('flightReport').textContent);
 let shop = ui.get('careerShop').innerHTML;
 check(shop.includes('observer') && shop.includes('back OBS-0'),

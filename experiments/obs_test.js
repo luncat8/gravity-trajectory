@@ -249,4 +249,24 @@ check('refitting the device does not un-silence the planet; quelling the rot doe
 	assert.ok(Game.harvestPlanet(career.ledger, w.market, planet, 400) > 0, 'and the planet reports again');
 });
 
+check('the report flag follows ship condition as well as the fitted device (0.7.2)', () => {
+	const w = setup(31);
+	const planet = normalPlanet(w);
+	const career = w.career;
+	Game.setShipCondition(career, 0);
+	assert.strictEqual(career.ship.obs, Tech.OBS[1], 'a worn-out ship keeps its device');
+	assert.strictEqual(career.ledger.reports, false, 'but it reports nothing');
+	w.market.lastVisitStep[planet] = AGED;
+	assert.strictEqual(Game.harvestPlanet(career.ledger, w.market, planet, 100), 0);
+	/* a refit must not resurrect the flag: every writer goes through the one setter */
+	assert.ok(Game.installPart(career, Tech.KIND_HOLD, Tech.HOLDS[1]));
+	assert.strictEqual(career.ledger.reports, false, 'a refit at 0 still reports nothing');
+	career.ledger.purse = 10;
+	assert.ok(Game.repairCareer(career));
+	assert.strictEqual(career.ledger.reports, true);
+	assert.ok(Game.harvestPlanet(career.ledger, w.market, planet, 100) > 0, 'repaired: the visit pays');
+	unfit(w);
+	assert.strictEqual(career.ledger.reports, false, 'a new ship without the device is still silent');
+});
+
 console.log('OBS OK · ' + checks + ' groups');

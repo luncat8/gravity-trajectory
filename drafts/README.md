@@ -109,7 +109,7 @@ The two specs written from `0.4-draft-career.md` are
 | `../0.6.8-plan-seeded-map-opening.md` | `flight-lab-and-modes.md` §1.4, `hud-input-and-help.md` §6.2 (`2-4 of 10`) |
 | `../0.6.9-plan-founding-colony.md` | `career-economy.md` §2.5 |
 | `../0.7.0-plan-periodic-fft.md` | `map.md` §gravity |
-| `../0.7.2-plan-ship-wear.md` | `career-economy.md` §ship maintenance cost; `map.md` §add space weather (the wear hook) |
+| `../archive/0.7.2-plan-ship-wear.md` (done) | `career-economy.md` §ship maintenance cost; `map.md` §add space weather (the wear hook) |
 | `../0.7.3-plan-buy-ships.md` | `career-economy.md` §buy more ships |
 | `../0.7.4-plan-max-distance-mode.md` | `flight-lab-and-modes.md` §1.2 (`max distance from start`); `rivals-competitions.md` §5.2 (the first sport mode) |
 | `../0.7.6-plan-balance-knobs.md` | `career-economy.md` §2.9 / `time-scale-units.md` (pad, rot, pay and wear multipliers separate from the clock) |

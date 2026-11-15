@@ -294,7 +294,9 @@ function updateFlightHud() {
 		if (flightEngineEl) flightEngineEl.textContent = engineText;
 	}
 	/* why a visit pays or not: the observation device (0.6.1) */
-	const reportText = !ship ? '' : ship.obs.fitted ? ship.obs.id : 'none · visits pay 0';
+	const reportText = !ship ? '' : !ship.obs.fitted ? 'none · visits pay 0'
+		: ship.obs.id + ' · cond ' + conditionText(career) +
+			(ship.condition > 0 ? '' : ' · visits pay 0');
 	if (reportText !== flightHud.report) {
 		flightHud.report = reportText;
 		if (flightReportRowEl) flightReportRowEl.hidden = reportText === '';

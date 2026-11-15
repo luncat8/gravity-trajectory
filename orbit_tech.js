@@ -189,6 +189,11 @@
 		return Math.sqrt(2 * force * RAIL_M / mass);
 	}
 
+	/* mean acceleration (m/s²) a launch at `speed` puts on the ship along the rail */
+	function launchAccel(speed) {
+		return speed * speed / (2 * RAIL_M);
+	}
+
 	/* fastest launch the pad affords right now: min of the energy and force caps */
 	function speedLimit(chargeKwh, mass, catapult, forceScale) {
 		if (!catapult || chargeKwh <= 0) return 0;
@@ -373,7 +378,7 @@
 		launchEnergy, maxSpeed, speedLimit, canLaunch,
 		solarCharge, batteryLeak, impulseDeltaV, impulseFuel, burnMaxDeltaV, burnLimit,
 		upgrades, bulkUpgradeCost, interpolate,
-		engineRecord, catapultRecord, tankRecord, batteryRecord, starterGrant, copySpec
+		engineRecord, catapultRecord, tankRecord, batteryRecord, starterGrant, copySpec, launchAccel
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = OrbitTech;

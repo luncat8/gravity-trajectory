@@ -239,7 +239,8 @@ function cancelAim() {
 function canImpulse() {
 	if (!careerRule() || replay.on || playerIsBot()) return false;
 	const sim = activeSim();
-	return sim.status === STATUS_FLYING && sim.burnLimit() > 0;
+	return sim.status === STATUS_FLYING && sim.burnLimit() > 0 &&
+		GravityGame.careerShipUsable(playerCareer());
 }
 
 function isBurnPaused() {
@@ -378,9 +379,41 @@ function launchShot() {
 		careerNotice('launch cancelled');
 		return;
 	}
+	/* a worn ship is serviced first; the shot follows only if the repair went
+	 * through, and with no firable shot the click is the repair alone */
+	if (repairOffered()) {
+		const chained = shotFiresRepaired();
+		if (!careerRepair() || !chained) return;
+	}
+	launchArmedShot();
+}
+
+/* the landed, hand-flown career ship is below new */
+function repairOffered() {
+	if (!careerRule() || replay.on || playerIsBot() || careerWaitBusy()) return false;
+	const career = playerCareer();
+	return career.ended === GravityGame.CAREER_OPEN && career.at >= 0 &&
+		activeSim().status !== STATUS_FLYING && career.ship.condition < 1;
+}
+
+/* the armed shot is legal once the ship is repaired and the purse paid for both */
+function shotFiresRepaired() {
+	return armed && canAimFrom(aimBody) && !gameLocked() &&
+		activeSim().canFire(aimBody, aimSpeed) &&
+		GravityGame.repairLaunchBlock(playerCareer(), activeCareerSim(), aimBody, aimSpeed) === '';
+}
+
+/* launch as armed, without servicing the ship */
+function launchArmedShot() {
 	if (!armed || !canAimFrom(aimBody) || gameLocked()) return;
 	if (!activeSim().canFire(aimBody, aimSpeed)) return;
-	if (careerRule() && !GravityGame.careerCanFire(playerCareer(), activeCareerSim(), aimBody, aimSpeed)) return;
+	if (careerRule() && !GravityGame.careerCanFire(playerCareer(), activeCareerSim(), aimBody, aimSpeed)) {
+		if (!GravityGame.careerShipUsable(playerCareer())) {
+			careerNotice('ship worn out · repair ' + costText(GravityGame.repairCost(playerCareer())) +
+				' · visits pay nothing until repaired');
+		}
+		return;
+	}
 	/* in career the click queues the shot: the barrel winds to the aim */
 	if (careerRule() && !replay.on) {
 		queueTurretShot();

@@ -1504,8 +1504,13 @@ check(career.commercialPlanet === strandedAt && kui.get('launchCommercial').clas
 careerEnv.dragAim(strandedAt, commercialShot, CAREER_TEST_SPEED);
 careerEnv.runFrames(2, 16.0);
 const firedFee = kGame.commercialFee(career, career.at, CAREER_TEST_SPEED);
+/* the first flight wore the ship (0.7.2): the main action services it first,
+ * and its one total is the repair plus the rail fee */
+const repairStranded = kGame.repairCost(career);
+check(career.ship.condition < 1 && repairStranded > 0, 'a flown ship is worn: ' + career.ship.condition);
 check(kui.get('launchCommercial').textContent === 'commercial launch · ' + firedFee.toFixed(2) &&
-	kui.get('launch').textContent === 'launch, ' + firedFee.toFixed(2),
+	kui.get('launch').textContent === 'repair & launch · ' + (repairStranded + firedFee).toFixed(2) &&
+	!kui.get('launchMenuBtn').hidden,
 	'armed commercial labels: ' + kui.get('launchCommercial').textContent +
 		' / ' + kui.get('launch').textContent);
 const purseStranded = kScene.game.money.purse;
@@ -1519,10 +1524,11 @@ for (; kCargo.status !== kSim.STATUS_FLYING && commFrames < 900; commFrames++) {
 }
 check(kCargo.status === kSim.STATUS_FLYING && commFrames > 0,
 	'commercial flight did not start after the barrel turned');
-check(Math.abs(career.lastFee - firedFee) < 1e-9 &&
-	Math.abs(kScene.game.money.purse - (purseStranded - firedFee)) < 1e-9,
-	'commercial launch must fire for the armed shot: fee ' + career.lastFee +
-		' purse ' + kScene.game.money.purse);
+check(Math.abs(career.lastFee - firedFee) < 1e-9 && career.repairs === 1 &&
+	Math.abs(career.maintenanceSpent - repairStranded) < 1e-9 &&
+	Math.abs(kScene.game.money.purse - (purseStranded - firedFee - repairStranded)) < 1e-9,
+	'commercial launch must repair, then fire the armed shot: fee ' + career.lastFee +
+		' repair ' + career.maintenanceSpent + ' purse ' + kScene.game.money.purse);
 /* Profit pills: the flying ship lights every system it is inside and drops one
  * the step it leaves. The mask is the live ledger flag, so it must agree with
  * the ship's position step by step — and clear completely once it is down. */
@@ -1861,8 +1867,10 @@ buildEnv.fireElement(bui.get('careerBox'), 'click',
 check(!bCareer.stranded && bCareer.pads[bCareer.at].catapult.id === 'EMC-1' && bCareer.padCount === 2,
 	'pad block build did not unstrand: ' + bCareer.padCount);
 buildEnv.runFrames(2, 16.0);
-check(bui.get('launch').textContent === 'launch, ' + OrbitTech.launchEnergy(bCareer.ship.mass,
-	bCareer.pads[bCareer.at].catapult, bScene.aimState().speed).toFixed(2) + ' kWh',
+/* nothing is armed on the new pad and the flight wore the ship: the main
+ * action is the repair alone */
+check(bui.get('launch').textContent === 'repair · ' + pageGame.repairCost(bCareer).toFixed(2) &&
+	!bui.get('launch').disabled && bui.get('launchOnly').disabled,
 	'new pad launch state: ' + bui.get('launch').textContent);
 let secondAngle = 0;
 let secondTime = 0;
@@ -3069,9 +3077,9 @@ function protoOf(career, family, id) {
 		!cui.get('launch').hidden && !cui.get('planetActions').hidden &&
 		cui.get('launchBuild').hidden && !cui.get('launchCommercial').hidden &&
 		cui.get('launchEvac').hidden &&
-		cui.get('launch').textContent === 'launch, ' + OrbitTech.launchEnergy(cCareer.ship.mass,
-			cCareer.pads[targetPlanet].catapult, cScene.aimState().speed).toFixed(2) + ' kWh',
-		'launchBuild unstrands ship; commercial stays available beside #launch');
+		cui.get('launch').textContent === 'repair · ' + pageGame.repairCost(cCareer).toFixed(2),
+		'launchBuild unstrands ship; commercial stays available beside #launch: ' +
+			cui.get('launch').textContent);
 
 	/* lost in space hides build/commercial and leaves #launchEvac to go home */
 	cCareer.at = -1;
@@ -3778,6 +3786,135 @@ function protoOf(career, family, id) {
 	const qEnv = loadPage({ search: '?mode=lab&seed=11', storage });
 	check(qEnv.elements.get('statsStrip').open === true, 'a fresh page restores the open strip');
 	check(qEnv.elements.get('statsStrip').hidden === true, 'the restored strip still hides outside career');
+}
+
+/* 0.7.2: ship condition on the launch control — repair & launch as the main
+ * action, the caret menu's separate repair and launch, and the gates at 0 */
+{
+	const wEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
+	wEnv.runFrames(2, 16.0);
+	const wui = wEnv.elements;
+	const wScene = wEnv.context.GravityScene;
+	const wGame = wEnv.context.GravityGame;
+	const wCareer = wScene.career;
+	const wSim = wScene.sim;
+	const refresh = () => {
+		wScene.refreshCareerPanel();
+		wEnv.runFrames(2, 16.0);
+	};
+	for (const id of ['launchGroup', 'launch', 'launchMenuBtn', 'launchMenu', 'launchRepair', 'launchOnly']) {
+		check(wui.get(id) !== undefined && wui.get(id) !== null, 'launch control part missing: #' + id);
+	}
+	check(wCareer.ship.condition === 1 && wui.get('launchMenuBtn').hidden && wui.get('launchMenu').hidden,
+		'a new ship has no repair menu');
+	check(wui.get('careerPad').innerHTML.includes('condition 100 %') &&
+		/data-act="repair"[^>]*disabled/.test(wui.get('careerPad').innerHTML),
+		'shop header shows the condition and a disabled repair at 100 %');
+
+	/* worn, nothing armed: the main action is the repair alone */
+	wGame.setShipCondition(wCareer, 0.5);
+	refresh();
+	check(wui.get('launch').textContent === 'repair · 1.00' && !wui.get('launch').disabled &&
+		!wui.get('launchMenuBtn').hidden && wui.get('launchOnly').disabled &&
+		wui.get('launchRepair').textContent === 'repair · 1.00',
+		'worn, unarmed: ' + wui.get('launch').textContent + ' / ' + wui.get('launchRepair').textContent);
+	check(wui.get('launch').title.startsWith('condition 50 % · repair 1.00'),
+		'launch title names the condition: ' + wui.get('launch').title);
+	check(wui.get('careerPad').innerHTML.includes('condition 50 % · repair 1.00') &&
+		!/data-act="repair"[^>]*disabled/.test(wui.get('careerPad').innerHTML),
+		'shop header prices the repair');
+	check(wui.get('flightReport').textContent === 'OBS-1 · cond 50 %',
+		'flight panel device line: ' + wui.get('flightReport').textContent);
+
+	/* worn and armed: repair & launch; the menu offers each alone */
+	const angle = landingAngle(wSim, wCareer.hq, CAREER_TEST_SPEED, wCareer);
+	check(angle !== null, 'wear env: no landing shot from HQ');
+	wEnv.dragAim(wCareer.hq, angle, CAREER_TEST_SPEED);
+	wEnv.runFrames(2, 16.0);
+	const kwh = ', ' + OrbitTech.launchEnergy(wCareer.ship.mass, wCareer.pads[wCareer.hq].catapult,
+		wScene.aimState().speed).toFixed(2) + ' kWh';
+	check(wui.get('launch').textContent === 'repair & launch · 1.00' + kwh && !wui.get('launch').disabled,
+		'worn, armed: ' + wui.get('launch').textContent);
+	check(!wui.get('launchOnly').disabled && wui.get('launchOnly').textContent === 'launch' + kwh,
+		'menu launch: ' + wui.get('launchOnly').textContent);
+	wEnv.click('launchMenuBtn');
+	check(!wui.get('launchMenu').hidden, 'the caret opens the menu');
+	wEnv.click('launchMenuBtn');
+	check(wui.get('launchMenu').hidden, 'the caret closes the menu');
+	wEnv.click('launchMenuBtn');
+	const purse0 = wCareer.ledger.purse;
+	wEnv.click('launchRepair');
+	wEnv.runFrames(2, 16.0);
+	check(wCareer.ship.condition === 1 && Math.abs(purse0 - wCareer.ledger.purse - 1) < 1e-9 &&
+		wCareer.repairs === 1 && wSim.status !== pageSim.STATUS_FLYING,
+		'menu repair: condition ' + wCareer.ship.condition + ' purse ' + wCareer.ledger.purse);
+	check(wui.get('careerMsg').textContent === 'repaired · \u22121.00 · condition 100 %',
+		'repair notice: ' + wui.get('careerMsg').textContent);
+	check(wui.get('launch').textContent === 'launch' + kwh && wui.get('launchMenu').hidden &&
+		wui.get('launchMenuBtn').hidden,
+		'after the repair the control is the plain launch: ' + wui.get('launch').textContent);
+
+	/* the menu's launch flies worn; the main click repairs first, atomically */
+	wGame.setShipCondition(wCareer, 0.5);
+	refresh();
+	wEnv.click('launchOnly');
+	wEnv.runFrames(1, 16.0);
+	check(wui.get('launch').textContent.startsWith('gun · ') && wCareer.ship.condition === 0.5 &&
+		wCareer.repairs === 1, 'menu launch queues without a repair: ' + wui.get('launch').textContent);
+	wEnv.click('launch');
+	wEnv.runFrames(2, 16.0);
+	check(wui.get('launch').textContent === 'repair & launch · 1.00' + kwh,
+		'cancelled queue returns to repair & launch: ' + wui.get('launch').textContent);
+	wCareer.ledger.purse = 0.5;
+	refresh();
+	check(wui.get('launch').textContent === 'repair · 1.00' && wui.get('launch').disabled &&
+		wui.get('launch').classList.contains('costly') && wui.get('launchRepair').disabled &&
+		!wui.get('launchOnly').disabled,
+		'a purse below the repair leaves only the worn launch: ' + wui.get('launch').textContent);
+	wEnv.click('launch');
+	check(wCareer.ship.condition === 0.5 && wSim.status !== pageSim.STATUS_FLYING &&
+		!wui.get('launch').textContent.startsWith('gun'), 'a failed repair queues nothing');
+	wCareer.ledger.purse = 5;
+	refresh();
+	wEnv.click('launch');
+	wEnv.runFrames(1, 16.0);
+	check(wCareer.ship.condition === 1 && wCareer.repairs === 2 &&
+		Math.abs(wCareer.ledger.purse - 4) < 1e-9 && wui.get('launch').textContent.startsWith('gun · '),
+		'repair & launch repairs, then queues: ' + wui.get('launch').textContent);
+	wEnv.click('launch');
+	wEnv.runFrames(2, 16.0);
+
+	/* at 0: no launch without the repair, and the visits pay nothing */
+	wGame.setShipCondition(wCareer, 0);
+	wCareer.ledger.purse = 1.5;
+	refresh();
+	check(wui.get('launch').textContent === 'repair · 2.00' && wui.get('launch').disabled &&
+		wui.get('launchOnly').disabled &&
+		wui.get('launchOnly').title === 'ship worn out — repair before launch' &&
+		wCareer.ledger.reports === false,
+		'worn out, poor: ' + wui.get('launch').textContent + ' / ' + wui.get('launchOnly').title);
+	check(wui.get('flightReport').textContent === 'OBS-1 · cond 0 % · visits pay 0',
+		'worn-out device line: ' + wui.get('flightReport').textContent);
+	wEnv.click('launchOnly');
+	check(wSim.status !== pageSim.STATUS_FLYING && !wui.get('launch').textContent.startsWith('gun'),
+		'a worn-out ship does not launch');
+	wCareer.ledger.purse = 5;
+	refresh();
+	check(wui.get('launch').textContent === 'repair & launch · 2.00' + kwh && !wui.get('launch').disabled &&
+		wui.get('launchOnly').disabled,
+		'worn out, funded: the repair makes the shot legal: ' + wui.get('launch').textContent);
+	check(careerLaunch(wEnv, wSim) && wCareer.repairs === 3 && wCareer.ledger.reports === true,
+		'repair & launch from 0 never fired');
+	const afterEmc = wCareer.ship.condition;
+	check(afterEmc < 1 && afterEmc > 0.8, 'the launch wore the repaired ship: ' + afterEmc);
+	check(wui.get('launchMenuBtn').hidden && wui.get('launchMenu').hidden, 'no repair menu in flight');
+	for (let i = 0; i < 400 && wSim.status === pageSim.STATUS_FLYING; i++) wEnv.runFrames(1, 40.0);
+	check(wSim.status === pageSim.STATUS_ENDED && wCareer.ship.condition < afterEmc - wGame.WEAR_LANDING + 1e-9,
+		'flight and landing wear: ' + afterEmc + ' -> ' + wCareer.ship.condition);
+	check(wui.get('launch').textContent.startsWith('repair · ') && !wui.get('launchMenuBtn').hidden,
+		'landed worn: ' + wui.get('launch').textContent);
+	console.log('0.7.2 verified: repair & launch · menu repair / launch · atomic repair · worn-out gates · cond ' +
+		Math.round(afterEmc * 100) + ' % → ' + Math.round(wCareer.ship.condition * 100) + ' %');
 }
 
 console.log('paint calls', {

@@ -665,6 +665,7 @@ function advanceGameOneStep() {
 	if (careerRule()) GravityGame.careerAdvance(game.career, 1);
 	if (cargoSim.status === STATUS_FLYING) {
 		cargoSim.stepOne();
+		if (careerRule()) GravityGame.careerWeatherWear(game.career, cargoSim);
 		GravityGame.stepHarvest(game.money, game.market, cargoSim, game.clockSteps);
 		if (ruleSpec().stopOnTour && cargoSim.visitedCount === planetCount && game.doneSteps < 0) {
 			game.doneSteps = game.steps + cargoSim.visitStep;

@@ -840,3 +840,21 @@ there the pumped-out shot would simply have flown on free energy.) When adding a
 planner/verifier pair, assert against the same sim state the plan was made under, or
 pass the snapshot explicitly — "re-read the live value after the executor runs" is
 not the same invariant.
+
+## dom_smoke takes ~20 min — collect every failure in one run, test a new block alone
+
+`check()` throws on the first failure, so a rule change that moves several labels costs
+one 20-minute run per label. Copy the file next to itself (it requires `./dom_stub.js`),
+swap `check` for one that logs `CHECKFAIL L<line>` from `new Error().stack` and keeps
+going, run once, fix the whole list, delete the copy. A new `{ … }` block can be run on
+its own in ~90 s: a scratch file with `loadPage`, `check`, the few top-level helpers it
+reads (`CAREER_TEST_SPEED`, `pageSim`, `OrbitTech`, `landingAngle`, `careerLaunch`) and
+the block. 0.7.2 found its 4 changed expectations this way.
+
+## ship condition has one writer
+
+`career.ledger.reports` is `obs.fitted && condition > 0` and only
+`GravityGame.setShipCondition` writes either side (`refitShip` calls it). A test or a
+fixture that assigns `career.ship.condition` directly leaves the report flag stale —
+call the setter. The benches' known failure counts at 0.7.2: `career_bench` 3,
+`career_bot_bench` 11, both present before wear existed.

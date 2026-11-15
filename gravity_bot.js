@@ -126,6 +126,8 @@
 	 * (a dry starter ship at the minimum speed on the starter rail) */
 	const CAREER_PURSE_RESERVE = GravityGame.commercialMinFee();
 	const CAREER_LOADED_SPEED = 75;
+	/* a rival services its ship early, so it rarely flies down to 0 */
+	const CAREER_REPAIR_AT = 0.7;
 	/* Mid-flight impulse policy. The drive's single burn is small (thrust ×
 	 * BURN_SEC / wet mass ≈ 10-30 px/s), so it is worth one early nudge that
 	 * re-targets the whole flight, then only rescues of a coast that would be
@@ -1723,6 +1725,11 @@
 			out.reason = 'planet is not active';
 			return out;
 		}
+		/* a worn-out ship has no exit from where it stands: repair, not a rail */
+		if (planet === career.at && !GravityGame.careerShipUsable(career)) {
+			out.reason = 'ship worn out';
+			return out;
+		}
 		const arrivalMass = Number.isFinite(mass) && mass > 0 ? mass : career.ship.mass;
 		const available = cash === Infinity ? Infinity : Number.isFinite(cash) ? cash : -Infinity;
 		const forceScale = sourceSim ? sourceSim.forceScale : career.forceScale;
@@ -2107,7 +2114,21 @@
 		best.label = label;
 	};
 
-	/* Gear shopping happens while idle: rescue, refit/accept, upgrade, expand,
+	/* service before shopping: early with the launch reserve kept, and at 0
+	 * with the whole purse, because nothing else gets a worn-out ship flying */
+	GravityBot.prototype.careerRepair = function (career, runStep) {
+		const condition = career.ship.condition;
+		if (condition > CAREER_REPAIR_AT) return false;
+		const cost = GravityGame.repairCost(career);
+		const reserve = condition > 0 ? CAREER_PURSE_RESERVE : 0;
+		if (career.ledger.purse + 1e-9 < cost + reserve) return false;
+		if (!GravityGame.repairCareer(career)) return false;
+		this.traceAdd(career.index, 'repair', 'P' + career.at + ' · cond ' +
+			Math.round(condition * 100) + ' % → 100 % · −' + cost.toFixed(2), runStep);
+		return true;
+	};
+
+	/* Gear shopping happens while idle: rescue, repair, refit/accept, upgrade, expand,
 	 * then the pad itself is sized for its earnings. Fuel is priced later, at the
 	 * committed launch, so a sit or a forced rebuild never stocks a tank for free. */
 	GravityBot.prototype.careerBetweenFlights = function (career, sim, runStep) {
@@ -2145,6 +2166,7 @@
 			}
 		}
 		if (career.ended !== GravityGame.CAREER_OPEN) return actions;
+		if (this.careerRepair(career, runStep)) actions += 1;
 
 		/* a pad whose full battery still cannot lift the current ship is a dead
 		 * end (heavy cargo, lowered force scale): repair it before shopping */
@@ -2203,8 +2225,10 @@
 		 * revenue-earning flight (and land, collect profit, possibly upgrade)
 		 * before it buys the next network planet. This stops a rich start
 		 * purse from auto-completing the map with zero flights. */
+		/* a full repair stays in the reserve: the last credits must not buy a
+		 * rail and leave the ship unserviceable after the next flight */
 		const expansionReserve = CAREER_PURSE_RESERVE +
-			GravityGame.CAREER.evacFee +
+			GravityGame.CAREER.evacFee + careerFee(career, GravityGame.WEAR_REPAIR_COST) +
 			(career.ship.hold === OrbitTech.HOLDS[0] ? OrbitTech.HOLDS[1].buildCost : 0);
 		if (career.ended === GravityGame.CAREER_OPEN && career.padCount < PLANETS) {
 			/* never claim another planet until the current rail can actually
@@ -3076,6 +3100,7 @@
 			if (r.sim.status === STATUS_FLYING) {
 				this.careerFlightBurn(career, r.sim, market, runStep, r);
 				r.sim.stepOne();
+				GravityGame.careerWeatherWear(career, r.sim);
 				GravityGame.stepHarvest(r.ledger, market, r.sim, runStep);
 				r.steps += 1;
 				if (r.sim.status === STATUS_FLYING) continue;
@@ -3819,6 +3844,7 @@
 	GravityBot.CAREER_RIVAL_GAP = CAREER_RIVAL_GAP;
 	GravityBot.CAREER_REBOOT_GAP = CAREER_REBOOT_GAP;
 	GravityBot.CAREER_PURSE_RESERVE = CAREER_PURSE_RESERVE;
+	GravityBot.CAREER_REPAIR_AT = CAREER_REPAIR_AT;
 	GravityBot.CAREER_ENERGY_WAIT_COST = CAREER_ENERGY_WAIT_COST;
 	GravityBot.CAREER_BOOK_ENOUGH = CAREER_BOOK_ENOUGH;
 	GravityBot.CAREER_MIN_SCORE = CAREER_MIN_SCORE;

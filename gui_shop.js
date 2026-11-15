@@ -237,6 +237,20 @@ function syncBribeUi(career) {
 	btn.disabled = !(amount > 0);
 }
 
+/* ship condition and its full repair: a service on any planet the ship stands on */
+function repairBlockHtml(career) {
+	const cost = GravityGame.repairCost(career);
+	const worn = career.ship.condition < 1;
+	const poor = purseTooSmall(career, cost);
+	const open = career.ended === GravityGame.CAREER_OPEN;
+	return '<div class="careerRow"><span>condition ' + conditionText(career) +
+		(worn ? ' · repair ' + costText(cost) : '') + '</span><span class="careerBtns">' +
+		shopButtonRef('repair', 'repair', 'ship', '', !worn || poor || !open,
+			!worn ? 'the ship is as new' : poor ? 'purse cannot cover the repair'
+				: 'full repair · wear costs visits and launches at 0 %', worn && poor) +
+		'</span></div>';
+}
+
 /* Fuel is a transaction on the planet under the ship, not a property of the
  * selected shop planet. Conversion reads only the owner's unreserved charge. */
 function fuelBlockHtml(career) {
@@ -252,7 +266,8 @@ function fuelBlockHtml(career) {
 	const produceKg = Math.min(Math.floor(room), Math.floor(free * rate + 1e-9));
 	const buyKg = price > 0 ? Math.min(room, Math.max(0, career.ledger.purse) / price) : room;
 	const pct = cap > 0 ? Math.round(ship.fuelKg / cap * 100) : 0;
-	let html = '<div class="careerLine">fuel <span id="careerFuel">' + fuelGaugeText(ship) +
+	let html = repairBlockHtml(career) +
+		'<div class="careerLine">fuel <span id="careerFuel">' + fuelGaugeText(ship) +
 		'</span>' + (ready ? '' : ' · fit engine + tank') + '</div>' +
 		'<div class="careerBar"><i id="careerFuelBar" style="width:' + pct + '%"></i></div>' +
 		'<div class="careerLine dim">' + step + ' kg = ' + (step / rate).toFixed(2) +

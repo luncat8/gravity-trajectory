@@ -266,11 +266,16 @@ from dropdown triangle available separate:
 - launch (as current button)
 numbers subject to balance; space weather affects wear.
 
-→ **open** · `../0.7.2-plan-ship-wear.md` — one `condition` per ship, wear in
-sim seconds, the 0 gates, 2 cr for a full repair, and the split launch control.
-The plan answers the open points: repair anywhere landed; impulse wear ∝ Δv;
-no wear while landed; fleet ships ×2; science cuts wear to a 0.5 floor. Space
-weather itself is still a separate layer (`map.md`).
+→ **done** · `../archive/0.7.2-plan-ship-wear.md` — one `condition` per ship,
+wear in game seconds, the 0 gates, 2 cr for a full repair, and the split launch
+control (`repair & launch` with a `▾` menu for each alone). Repair anywhere
+landed; impulse wear ∝ Δv; no wear while landed; science cuts wear to a 0.5
+floor; a worn-out ship the purse cannot repair is `broke`. Measured on the
+rival bench the draft numbers make maintenance about half of a company's income
+(`experiments/logs/0.7.2-ship-wear.txt`), so the balance is the open part —
+which constant should give first: `WEAR_SPACE`, the landing, or the 2 cr?
+Space weather itself is still a separate layer (`map.md`); only its identity
+hook exists.
 
 ## evacuation
 

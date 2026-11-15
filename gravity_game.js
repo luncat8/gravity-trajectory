@@ -313,6 +313,24 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * rail must be fired gently. FRAGILE_SPEED is the same limit in px/s. */
 	const FRAGILE_ACCEL = 2.0;
 	const FRAGILE_SPEED = Math.sqrt(2 * FRAGILE_ACCEL * OrbitTech.RAIL_M);
+	/* ship wear (0.7.2): condition 1 = new, 0 = worn out. Space wear is priced
+	 * per game second of flight, never per orbit minute or playback pace. */
+	const WEAR_SPACE = 0.01;
+	const WEAR_LANDING = 0.1;
+	/* EMC wear at WEAR_EMC_REF m/s² of rail acceleration, capped per launch */
+	const WEAR_EMC = 0.1;
+	const WEAR_EMC_REF = 2.0;
+	const WEAR_EMC_MAX = 0.5;
+	/* impulse wear per WEAR_IMP_DV px/s of delivered Δv */
+	const WEAR_IMP = 0.1;
+	const WEAR_IMP_DV = 200;
+	/* a bought (non-flagship) ship wears this much faster */
+	const WEAR_FLEET = 2;
+	const WEAR_SCIENCE_MIN = 0.5;
+	const WEAR_SCIENCE_STEP = 0.02;
+	/* cr for a full 1.0 of condition */
+	const WEAR_REPAIR_COST = 2;
+	const WORN_OUT_BLOCK = 'ship worn out — repair before launch';
 	/* offered only from planets this light and for loads this heavy at most
 	 * (a gentle shot must be able to leave); pays FRAGILE_PAY × an ordinary
 	 * delivery of the same tons and distance, still under CAREER.deliveryMax */
@@ -1132,18 +1150,31 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * the launch list prints under a row and the bot log puts on a "no shot"
 	 * line. '' means firable.
 	 */
-	function railBlock(career, sim, planet, speed) {
+	function launchBlock(career, sim, planet, speed, repaired) {
 		if (career.arrested) return 'under arrest · Capital transport';
 		if (career.at < 0) return 'ship in space';
 		if (career.at !== planet) return 'shot leaves from P' + planet;
+		if (!repaired && !careerShipUsable(career)) return WORN_OUT_BLOCK;
 		if (!sim.canLaunchFrom(planet)) return 'no rail under the ship';
 		const cap = sim.speedLimit(planet);
 		if (speed > cap + 1e-9) return 'cap ' + cap.toFixed(0) + ' < ' + speed.toFixed(0) + ' px/s';
 		const fee = launchFee(career, planet, speed);
-		if (career.ledger.purse + 1e-9 < fee) {
-			return 'fee ' + fee.toFixed(2) + ' > purse ' + career.ledger.purse.toFixed(2);
+		const cost = repaired ? fee + repairCost(career) : fee;
+		if (career.ledger.purse + 1e-9 < cost) {
+			return (repaired ? 'repair + fee ' : 'fee ') + cost.toFixed(2) +
+				' > purse ' + career.ledger.purse.toFixed(2);
 		}
 		return '';
+	}
+
+	function railBlock(career, sim, planet, speed) {
+		return launchBlock(career, sim, planet, speed, false);
+	}
+
+	/* the same gate for a shot fired right after a full repair: the wear gate
+	 * is lifted and the purse must cover the repair as well as the fee */
+	function repairLaunchBlock(career, sim, planet, speed) {
+		return launchBlock(career, sim, planet, speed, true);
 	}
 
 	/* the rail gate plus the purse, spelled by the same facts the list prints */
@@ -1199,8 +1230,13 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			ship: {
 				hold: OrbitTech.HOLDS[0], engine: null, tank: OrbitTech.TANKS[0],
 				obs: OrbitTech.OBS[1],
-				cargoTons: 0, fuelKg: 0, mass: 0
+				cargoTons: 0, fuelKg: 0, mass: 0,
+				condition: 1
 			},
+			/* 1 flagship; a bought ship wears WEAR_FLEET times faster */
+			wearScale: 1,
+			repairs: 0,
+			maintenanceSpent: 0,
 			owned: {},
 			science: OrbitScience.createHull(),
 			prototypes: newPrototypes(),
@@ -1255,9 +1291,60 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return career.ledger.purse + 1e-9 >= price(career, cost);
 	}
 
+	function careerShipUsable(career) {
+		return career.ship.condition > 0;
+	}
+
+	/* the one writer of condition, so the report flag is never stale: a ship
+	 * that wears out between two harvests stops paying at the next visit */
+	function setShipCondition(career, value) {
+		career.ship.condition = value < 0 ? 0 : value > 1 ? 1 : value;
+		career.ledger.reports = career.ship.obs.fitted && career.ship.condition > 0;
+	}
+
 	function refitShip(career) {
 		career.ship.mass = OrbitTech.shipMass(career.ship, career.ship.cargoTons);
-		career.ledger.reports = career.ship.obs.fitted;
+		setShipCondition(career, career.ship.condition);
+	}
+
+	/* accepted research hardens the ship down to WEAR_SCIENCE_MIN of the starter rate */
+	function wearFactor(career) {
+		const science = 1 - WEAR_SCIENCE_STEP * career.research;
+		return career.wearScale * (science > WEAR_SCIENCE_MIN ? science : WEAR_SCIENCE_MIN);
+	}
+
+	/* space-weather hook: the wear multiplier at a world point. No zones yet. */
+	function careerWearAt(career, x, y) {
+		return 1;
+	}
+
+	/* careerAdvance has no position, so it charges the base space wear; the
+	 * flight loop calls this after stepOne for the weather's share of that step */
+	function careerWeatherWear(career, sim) {
+		const extra = careerWearAt(career, sim.cargo.x, sim.cargo.y) - 1;
+		if (extra === 0 || !career.flying) return;
+		setShipCondition(career, career.ship.condition -
+			WEAR_SPACE * GravitySim.gameSeconds(1) * wearFactor(career) * extra);
+	}
+
+	/* what the purse pays for a full repair, to the cent */
+	function repairCost(career) {
+		return price(career,
+			Math.round(WEAR_REPAIR_COST * (1 - career.ship.condition) * 100) / 100);
+	}
+
+	/* full repair only, wherever the ship is landed: a service, not a claim */
+	function repairCareer(career) {
+		if (career.ended !== CAREER_OPEN || career.flying || career.at < 0) return false;
+		if (career.ship.condition >= 1) return false;
+		const cost = repairCost(career);
+		if (career.ledger.purse + 1e-9 < cost) return false;
+		career.ledger.purse -= cost;
+		career.maintenanceSpent += cost;
+		career.repairs += 1;
+		setShipCondition(career, 1);
+		checkEnded(career);
+		return true;
 	}
 
 	function fuelPrice(career) {
@@ -2950,7 +3037,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	function careerStats(out, career) {
 		out.income = career.visitIncome + career.earned + career.bribeIncome + career.taxEarned;
 		/* the evacuation the purse paid for: free under communism, like every fee */
-		out.running = career.feesPaid + career.fuelSpent +
+		out.running = career.feesPaid + career.fuelSpent + career.maintenanceSpent +
 			career.evacuations * price(career, CAREER.evacFee);
 		out.profit = out.income - out.running;
 		out.property = career.buildSpent;
@@ -3050,6 +3137,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.ship.obs = grant.ship.obs;
 		career.ship.cargoTons = 0;
 		career.ship.fuelKg = career.cheat === CHEAT_ENDGAME ? career.ship.tank.fuelCap : 0;
+		career.ship.condition = 1;
+		career.wearScale = 1;
+		career.repairs = 0;
+		career.maintenanceSpent = 0;
 		career.owned = {};
 		career.prototypes = newPrototypes();
 		seedScience(career);
@@ -3169,12 +3260,15 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return covered;
 	}
 
-	/* broke = negative purse, or no affordable way off the planet */
+	/* broke = negative purse, no affordable way off the planet, or a worn-out
+	 * ship the purse cannot repair (it can neither launch nor report) */
 	function checkEnded(career) {
 		if (career.ended !== CAREER_OPEN) return career.ended;
 		const purse = career.ledger.purse;
 		if (purse < -1e-9 ||
-			(career.stranded && purse + 1e-9 < exitCost(career))) career.ended = CAREER_BROKE;
+			(career.stranded && purse + 1e-9 < exitCost(career)) ||
+			(!career.flying && !careerShipUsable(career) &&
+				purse + 1e-9 < repairCost(career))) career.ended = CAREER_BROKE;
 		else if (career.cheat === null &&
 			career.padCount >= career.planetCount - coveredPlanets(career)) {
 			career.ended = CAREER_COMPLETE;
@@ -4052,6 +4146,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.fragileLost = career.contract >= 0 &&
 			fragileBreaks(career.tasks[career.contract], sim.speed);
 		if (career.fragileLost) dropContract(career);
+		const emcWear = WEAR_EMC * (OrbitTech.launchAccel(sim.speed) / WEAR_EMC_REF) *
+			wearFactor(career);
+		setShipCondition(career, career.ship.condition -
+			(emcWear < WEAR_EMC_MAX ? emcWear : WEAR_EMC_MAX));
 		career.flights += 1;
 		career.flying = true;
 		openFlight(career.ledger, sim, 0);
@@ -4059,7 +4157,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	/* spends tank fuel for an in-flight impulse burn at the current step boundary */
 	function careerBurn(career, sim, angle, dv) {
-		if (career.ended !== CAREER_OPEN || !sim.canBurn(dv)) return false;
+		if (career.ended !== CAREER_OPEN || !careerShipUsable(career) ||
+			!sim.canBurn(dv)) return false;
 		const ship = career.ship;
 		const used = OrbitTech.impulseFuel(dv, ship.engine, ship.mass, ship.fuelKg);
 		if (!(used > 0)) return false;
@@ -4067,6 +4166,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		ship.fuelKg = ship.fuelKg > used ? ship.fuelKg - used : 0;
 		career.burns += 1;
 		career.lastFuel += used;
+		/* by delivered Δv, not fuel mass: a heavy tank is not punished twice */
+		setShipCondition(career, career.ship.condition -
+			WEAR_IMP * (dv / WEAR_IMP_DV) * wearFactor(career));
 		return true;
 	}
 
@@ -4083,6 +4185,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				OrbitTech.solarCharge(pad.panel, career.light[i], padSec);
 			pad.chargeKwh = charge < pad.battery.capacity ? charge : pad.battery.capacity;
 		}
+		/* only space wears the ship: a landing, a pad wait or a held clock does not */
+		if (!career.flying) return;
+		setShipCondition(career, career.ship.condition -
+			WEAR_SPACE * GravitySim.gameSeconds(steps) * wearFactor(career));
 	}
 
 	/* a landing settles contracts; a vessel that left the map or timed out is
@@ -4092,6 +4198,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.flownPx += sim.flightLength;
 		const landed = sim.endReason === GravitySim.END_IMPACT && sim.endBody >= 0;
 		if (landed) settleLanding(career, sim, sim.endBody, step);
+		/* after the settlement, so the landing that used the last of the ship
+		 * still reports; an exit, timeout or abort is not a landing */
+		if (landed) {
+			setShipCondition(career, career.ship.condition - WEAR_LANDING *
+				wearFactor(career) * careerWearAt(career, sim.cargo.x, sim.cargo.y));
+		}
 		career.at = landed ? sim.endBody : -1;
 		career.flying = false;
 		/* the commercial choice bought one launch; the next planet starts fresh */
@@ -4288,7 +4400,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		createGalaxy, resetGalaxy, joinGalaxy, rivalSeed,
 		turretPeriod, turretAngle, padAt, padOwner, claimOwner, refreshNetwork, setCommercial,
 		launchFee, exitCost, exitCostAt, careerCanFire, padLift, reserveEnergy, releaseEnergy,
-		railOwnerText, railText, railBlock, fragileBreaks,
+		railOwnerText, railText, railBlock, repairLaunchBlock, fragileBreaks,
+		WEAR_SPACE, WEAR_LANDING, WEAR_EMC, WEAR_EMC_REF, WEAR_EMC_MAX, WEAR_IMP, WEAR_IMP_DV,
+		WEAR_FLEET, WEAR_SCIENCE_MIN, WEAR_SCIENCE_STEP, WEAR_REPAIR_COST, WORN_OUT_BLOCK,
+		wearFactor, careerShipUsable, setShipCondition, careerWearAt, careerWeatherWear,
+		repairCost, repairCareer,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById, gearKnown, planetBuildable, planetSeized,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart, partRefusal,

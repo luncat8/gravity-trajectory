@@ -197,6 +197,9 @@ const totals = { flights: 0, earned: 0, pads: 0, dead: 0, reach: 0, stuck: 0,
 	medicTrips: 0, delivered: 0 };
 const purses = [];
 const statsLines = [];
+/* ship wear (0.7.2): what service cost the companies, and how many ended the run worn out */
+const wearLines = [];
+let totRepairs = 0, totMaintenance = 0, totWornOut = 0, totCondition = 0;
 /* TOTAL accumulators over every company of every seed */
 let totProfit = 0, totProperty = 0, totScience = 0, totFlown = 0;
 let totRot = 0, totStanding = 0, totVisits = 0, totContracts = 0;
@@ -263,6 +266,20 @@ for (const seed of SEEDS) {
 	totals.burns += w.bot.careerBurnsPlanned;
 	totals.priced += w.bot.careerBurnPrices;
 	if (STATS) {
+		let repairs = 0, maintenance = 0, wornOut = 0, condition = 0;
+		for (let i = 0; i < w.bot.count; i++) {
+			const career = w.bot.rivals[i].career;
+			repairs += career.repairs;
+			maintenance += career.maintenanceSpent;
+			condition += career.ship.condition;
+			if (!GravityGame.careerShipUsable(career)) wornOut += 1;
+		}
+		totRepairs += repairs; totMaintenance += maintenance;
+		totWornOut += wornOut; totCondition += condition;
+		wearLines.push('WEAR seed ' + seed + ' · repaired ' + repairs +
+			' · maintenance ' + maintenance.toFixed(2) +
+			' · mean cond ' + Math.round(condition / w.bot.count * 100) + ' %' +
+			' · worn out ' + wornOut);
 		let allProfit = 0, allProperty = 0, allScience = 0, allFlown = 0;
 		for (let i = 0; i < w.bot.count; i++) {
 			const out = {};
@@ -330,6 +347,14 @@ if (STATS) {
 	console.log(statsLines.join('\n'));
 	fs.writeFileSync(path.join(root, 'experiments/logs/0.6.10-map-statistics.txt'),
 		statsLines.join('\n') + '\n');
+	wearLines.push('WEAR TOTAL · repaired ' + (totRepairs / nCompanies).toFixed(1) +
+		' · maintenance ' + (totMaintenance / nCompanies).toFixed(2) +
+		' · share of income ' + (income > 0 ? (totMaintenance / income * 100).toFixed(0) : 0) + '%' +
+		' · mean cond ' + Math.round(totCondition / nCompanies * 100) + ' %' +
+		' · worn out ' + totWornOut + ' / ' + nCompanies);
+	console.log(wearLines.join('\n'));
+	fs.writeFileSync(path.join(root, 'experiments/logs/0.7.2-ship-wear.txt'),
+		wearLines.join('\n') + '\n');
 }
 console.log('TOTAL rivals ' + totals.actors + ' · flights ' + totals.flights +
 	' · earned ' + totals.earned.toFixed(2) + ' · purse ' + totals.purse.toFixed(2) +
