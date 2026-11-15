@@ -101,6 +101,43 @@ every file below is in place. each area file reads the composer's state as ordin
 state and element refs belong with the area that owns them, never in a shared state/utils file.
 root.GravityScene keys are a test contract (experiments/ read them) - keep the names.
 
+## tests
+
+- run the fast checks while working, not the whole `experiments/` folder. a change
+	needs the files whose subject it touches and nothing more (~1-3 min each, see the
+	table below); most edits need none at all.
+- **do not run `dom_smoke.js` per step.** it is ~3 900 lines and 41 page loads and
+	takes ~20 min of CPU. run it once, when the plan (all steps of it) is complete and
+	the code is otherwise final, or when the change is in the page plumbing itself
+	(`index.html`, script load order, the composer, event wiring) where a physics test
+	cannot see the break. never re-run it to "be safe" after a docs or test-only edit.
+- a UI regression in one area does not need the whole file: run just that block in a
+	scratch file (`loadPage` + `check` + the helpers the block reads, ~90 s), fix
+	everything it reports, then one full `dom_smoke` at the end.
+- `check` throws on the first failure, so a broken label costs one full run per label.
+	Copy the file, swap `check` for a logger that prints `CHECKFAIL` and keeps going,
+	run once, fix the whole list.
+- start the slow ones (`career_bot_bench` ~5 min, `game_bench` ~5 min,
+	`gravity_seed_test` ~6 min, `dom_smoke` ~20 min) in the background on a snapshot and
+	keep working; never block a turn on them, and never pipe them through `tail` (the
+	output only appears at the end, so a hang and a long run look identical).
+- a red test you did not cause is not yours to fix in passing unless the plan says
+	so: check it at the base commit first, then write it in the worklog as known.
+
+| touch | run |
+|---|---|
+| `orbit_world`, `orbit_sim`, `orbit_econ` trade laws | `special_planets_test`, `orbit_clock_test`, `politics_test` |
+| `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `bot_gravity_test` |
+| `gravity_game` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
+| `gravity_bot` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
+| `gravity_gui`/`gui_*.js` page state | the one page test for the area (`politics_gui_test`, `obs_fragile_gui_test`, `career_pause_test`, `profit_monotonic_test`, …) |
+| `index.html`, script order, composer | `dom_smoke` once, plus the area test |
+| docs, plans, worklogs, test files only | nothing |
+
+a page test costs one `loadPage` (~40 s) before its first assertion, because the page
+boot plans the career seats. `career_start_probe.js SEEDS=42` asks the same seat
+planner a smaller question in 4 s when that is all you need to know.
+
 ## sandbox
 
 git push returns "Invalid username or token" is ok, no need to investigate or report - i will apply manually

@@ -893,3 +893,70 @@ call the setter. The benches' known failure counts after 0.7.7: `career_bench` 3
 (both ends colonies, a starter cap the delivery needs, the cheat run never
 completes), `career_bot_bench` 10 (nine "26 pads from a funded purse" completion
 runs and "no plan after repair").
+
+## red on this tree that no stage owns
+
+Five files in `experiments/` are red at `312d0ed` and are not caused by 0.7.7 —
+check them at the base commit before blaming a change, and do not "fix" them
+inside another plan: `bot_gravity_test` (asserts `careerNextPad` prefers the
+lower-G pad, but `careerReach` reads the always-on `exitProbe`, which no test
+fixture arms, so every site values `-Infinity` and the pick is −1; needs the
+fixture to arm `exitProbe`, not a law change), `gravity_view_test` (drag-zone
+colours at seed 61, red since 0.7.1), `profit_monotonic_test` (helper profit
+search yields no number at seed 520383), `career_start_fairness` ("weakest
+opening within the fair band" at its own seeds) and `career_gui_bot_probe` ("the
+world clock stopped after the hand-over"). The benches' own known counts are
+separate: `career_bench` 3, `career_bot_bench` 10, `bot_bench` 1.
+
+## every page boot plans the career seats, and the vm makes it 10× worse
+
+`loadPage({ search: '?rule=career…' })` is not a cheap stub boot: the page plans
+its whole fair HQ set at load (`startCareerRun` → `prepareCareerStarts` →
+`planHomeSet` → `rankOpeningSetsByPairs`), which traces each candidate home
+against every other one. Measured on this tree (13-planet universe, 3 seats):
+
+- seat plan in the main realm: **2.6–4.5 s** (seed 42 ~3.0 s, and 0 ms on a
+	repeat call with the same world and trade time in the same process);
+- the same code inside `node:vm`: **20–30 s**, i.e. ~8–13× slower.
+
+The vm penalty is not the sandbox boundary, `performance.now()` or the array
+type: a tight typed-array loop spans the same 2× range, and a context created
+without a sandbox object is just as slow. It is V8's optimising tiers treating
+functions compiled inside a context as second-class — the hot functions
+(`GravitySim.advance` 77 %, `routeStep` 20 %) never reach the same code. So a
+CPU profile of a vm run tells you *which* function is hot, not what it will cost
+a browser; use it for shape, not for absolute time.
+
+Consequences worth knowing before tuning a test:
+
+- `dom_smoke` = 41 `loadPage` calls, 31 of them career pages: the walk itself is
+	a few minutes, the other ~15 are seat planning that the *page* would also do
+	in a browser.
+- any page test pays one seat plan (~40 s in the vm) before its first check. If
+	the check is not about the start map, that is where the time goes.
+- the seat plan is memoised only *within one context* (`seatPlanCache`), so a
+	second `loadPage` of the same URL pays the plan again — measured 0 hits over
+	3 identical loads. Do not plan around a cross-load cache; the page's own
+	double plan on one click is the only hit.
+- measuring the seat plan directly is a 4 s experiment:
+	`node experiments/career_start_probe.js SEEDS=42`, not a page load.
+
+Dead ends measured on this tree, so they are not tried again:
+
+- **the seat-plan cache cannot help tests.** Every `loadPage` runs the scripts
+	in a fresh context (`vm.createContext`), so the cache in `gravity_game.js`
+	never survives a page: measured 0 hits over 3 identical career loads, and a
+	plan cache key without the trade clock changed nothing (185 s vs 184 s for
+	5 loads). A test can only avoid the plan, not reuse it.
+- **no V8 flag speeds the vm up.** `--no-concurrent-recompilation`,
+	`--max-lazy`, `--no-lazy-feedback-allocation` and `--single-threaded` all
+	landed within noise (37–40 s per career boot). The slow tier is not
+	something a flag reaches.
+- **the pair ranker is already lean.** One career boot traces 180 fans
+	(`openingTraceHome`) and 132 of them go through the pair cache
+	(`openingTracks`), i.e. 48 exact re-traces; raising
+	`OPENING_TRACE_CACHE_MAX` from 512 to 2048 buys nothing measurable.
+- what does work: `planCareerSeats` returning early when the universe cannot
+	seat the asked-for companies (it used to crash with `pools[pool].indexOf` on
+	the null dim pool, e.g. 13 seats on a 13-planet universe), and running the one
+	specific test instead of a broad sweep — see the table in `AGENTS.md`.

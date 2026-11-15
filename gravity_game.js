@@ -2761,6 +2761,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	function planCareerSeats(world, trade, mask, count, seatsWanted, sourceSim, resume) {
 		const pools = startCandidatePools(world, mask, seatsWanted);
+		/* a universe that cannot seat this many companies is a refusal, not a
+		 * crash: seats are capped by the planet count, not by the pool */
+		if (pools[0].length < seatsWanted) return null;
 		const forcedHomes = new Uint8Array(OrbitWorld.PLANETS);
 		let homes = null;
 		let openingStats = null;
@@ -2784,7 +2787,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 						count, trade, sourceSim);
 					/* pickFairHq walks every in-play planet, so a home outside the
 					 * pool is only accepted when it is the pool's own last resort */
-					if (home < 0 || pools[pool].indexOf(home) < 0) break;
+					/* the dim pool is null when every in-play planet is sunlit */
+					if (home < 0 || (pools[pool] && pools[pool].indexOf(home) < 0)) break;
 					forcedHomes[home] = 1;
 					attempt.push(home);
 				}
