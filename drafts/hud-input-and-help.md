@@ -82,6 +82,9 @@ start each adjustments after user click button try with random - so next press w
 
 → each press adds fresh random candidates instead of repeating the same grid.
 
+update auto-helpers and bots to calculate profit with wear cost and with limit after what OBServation device may bore by wear and will not collect profit.
+difference that bots may also calculate bribe if they want it, because unless possible uninstall OBServation device, this is only way to get bribe immediately on landing - is wait until OBS break.
+
 ## 6.4 flight HUD panel. ← `archive/draft.txt`
 
 refactor auto-helpers panel to flight HUD panel with auto-helpers content
