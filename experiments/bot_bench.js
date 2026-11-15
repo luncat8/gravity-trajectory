@@ -18,6 +18,7 @@ const path = require('path');
 const { performance } = require('perf_hooks');
 const root = path.join(__dirname, '..');
 const Sim = require(path.join(root, 'orbit_sim.js'));
+const OrbitWorld = require(path.join(root, 'orbit_world.js'));
 const GravitySim = require(path.join(root, 'gravity_sim.js'));
 const GravityGame = require(path.join(root, 'gravity_game.js'));
 const GravityBot = require(path.join(root, 'gravity_bot.js'));
@@ -68,20 +69,20 @@ function buildStaticWorld(seed) {
 function benchEconomy() {
 	const m = GravityGame.createMarket();
 	const p0 = GravityGame.planetProfit(m, 0, 0);
-	check(Math.abs(p0 - 0.23986675611203023) < 1e-12, 'initial planet profit expected ≈0.24, got ' + p0);
+	check(Math.abs(p0 - (-4 * Math.expm1(-40 * 0.00625 / 4))) < 1e-12, 'initial planet profit expected ≈0.24, got ' + p0);
 	m.lastVisitStep[0] = 600;
 	check(GravityGame.planetProfit(m, 0, 600) === 0, 'freshly visited planet must pay 0');
 	const after8s = GravityGame.planetProfit(m, 0, 600 + 8 * 120);
 	const after80s = GravityGame.planetProfit(m, 0, 600 + 80 * 120);
 	const after200s = GravityGame.planetProfit(m, 0, 600 + 200 * 120);
 	const after2000s = GravityGame.planetProfit(m, 0, 600 + 2000 * 120);
-	check(Math.abs(after8s - 0.04958563853514754) < 1e-12, '8s unvisited profit expected ≈0.0496, got ' + after8s);
-	check(Math.abs(after80s - 0.4605548253281578) < 1e-12, '80s unvisited profit expected ≈0.4606, got ' + after80s);
-	/* asymptotic: keeps growing past the old 0.75 cap, easing toward 3.00
+	check(Math.abs(after8s - (-4 * Math.expm1(-8 * 0.00625 / 4))) < 1e-12, '8s unvisited profit expected ≈0.0497, got ' + after8s);
+	check(Math.abs(after80s - (-4 * Math.expm1(-80 * 0.00625 / 4))) < 1e-12, '80s unvisited profit expected ≈0.4700, got ' + after80s);
+	/* asymptotic: keeps growing past the old 0.75 cap, easing toward 4.00
 	 * without reaching it at any finite age that still resolves in float */
 	check(after200s > 1 && after2000s > after200s && after2000s < GravityGame.MONEY.cap &&
-		after2000s > 0.98 * GravityGame.MONEY.cap,
-		'asymptotic profit expected →3.00, got 200s=' + after200s + ' 2000s=' + after2000s);
+		after2000s > 0.95 * GravityGame.MONEY.cap,
+		'asymptotic profit expected →4.00, got 200s=' + after200s + ' 2000s=' + after2000s);
 
 	/* exact parity between estimateProfit (from predictFast) and live stepHarvest */
 	const { sim } = buildStaticWorld(31);
@@ -247,10 +248,10 @@ function benchEconomy() {
 	check(casualBroke >= 3, 'casual short-hop archetype should go broke on >=3/4 seeds: ' + casualBroke);
 	check(blindLostMoney >= 3, 'profit-blind player should lose money mode to normal rival: ' + blindLostMoney);
 	check(smartWonMoney >= 3, 'profit-aware smart player should beat normal rival in money mode: ' + smartWonMoney);
-	check(smartFinishedTour === SEEDS.length, 'smart player should complete 26/26 tour on all seeds: ' + smartFinishedTour);
+	check(smartFinishedTour === SEEDS.length, 'smart player should complete the ' + PLANETS + '-world tour on all seeds: ' + smartFinishedTour);
 	console.log('1b. balance (4 seeds): lazy broke ' + lazyBroke + '/4 · casual broke ' + casualBroke +
 		'/4 · blind lost money ' + blindLostMoney + '/4 · smart won money ' + smartWonMoney +
-		'/4 · smart 26/26 tour ' + smartFinishedTour + '/4');
+		'/4 · smart ' + PLANETS + '/' + PLANETS + ' tour ' + smartFinishedTour + '/4');
 }
 
 
@@ -409,11 +410,19 @@ function benchLadder() {
 		const { trade } = buildStaticWorld(seed);
 		const bot = new GravityBot(Sim.WORLD_W, Sim.WORLD_H);
 		bot.attachWorld(trade);
-		if (seededField) {
-			for (let p = 0; p < PLANETS; p++) bot.strength[p] = GravityGame.planetGravity(seed, p);
-		}
 		bot.reset(seed, ruleName, level);
 		const market = GravityGame.createMarket();
+		if (seededField) {
+			/* A copied link opens the page's default subset, not all generated worlds. */
+			const count = OrbitWorld.DEFAULT_PLANETS;
+			const mask = new Uint8Array(PLANETS);
+			mask.fill(1, 0, count);
+			bot.setPlanetMask(mask, count);
+			GravityGame.applyMarketUniverse(market, mask, count);
+			for (let p = 0; p < PLANETS; p++) {
+				bot.strength[p] = mask[p] ? GravityGame.planetGravity(seed, p) : 0;
+			}
+		}
 		const capSteps = GravityGame.RULES[ruleName].capSteps;
 		bot.settle(0, market, capSteps);
 		/* best rival summary (hard has 2 rivals) */

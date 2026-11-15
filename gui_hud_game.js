@@ -11,6 +11,7 @@
 function refreshGameUi() {
 	const route = routeRule();
 	const career = careerRule();
+	refreshExperimentUi();
 	const anyFlying = clockDriverFlying();
 	const activeFlying = activeSim().status === STATUS_FLYING;
 	const flightLock = game.on && (career
@@ -65,6 +66,7 @@ function refreshGameUi() {
 	const experimentLock = game.on && (career ? replay.on : replay.on || anyShots);
 	if (expGravityEl) expGravityEl.disabled = experimentLock;
 	if (expForceEl) expForceEl.disabled = experimentLock;
+	if (expWearEl) expWearEl.disabled = experimentLock || !career;
 	/* the stay-pay only exists in career: outside it the box is off and dim */
 	if (expHarvestEl) expHarvestEl.disabled = experimentLock || !career;
 	/* Moving ports share the orbit clock with gravity. Keep that clock fixed

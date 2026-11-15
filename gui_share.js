@@ -27,7 +27,7 @@ function copyLink() {
 	const slot = activeSlotIndex();
 	if (slot > 0) {
 		const hash = bot.rivalLink(game.seed, scene.trade.speed, slot - 1,
-			gravityScale, forceScale);
+			gravityScale, forceScale, spaceWearScale, harvestTick);
 		if (!hash) return;
 		copyUrlText(location.href.split('#')[0] + '#' + hash, gameCopyBtn, 'copy replay');
 		return;
@@ -41,6 +41,7 @@ function copyLink() {
 		cheat: game.cheat,
 		gravityScale: gravityScale,
 		forceScale: forceScale,
+		spaceWearScale: spaceWearScale,
 		harvestTick: harvestTick,
 		shots: game.shots,
 		visited: routeRule() ? routePlan.visits : cargoSim.visitedCount,
@@ -54,7 +55,8 @@ function copyBotLink() {
 	if (bot.count === 0) return;
 	const rIdx = activeSlotIndex() === 1 && bot.count > 1 ? 1 : 0;
 	if (bot.rivals[rIdx].shots.length === 0) return;
-	const hash = bot.rivalLink(game.seed, scene.trade.speed, rIdx, gravityScale, forceScale);
+	const hash = bot.rivalLink(game.seed, scene.trade.speed, rIdx, gravityScale, forceScale,
+		spaceWearScale, harvestTick);
 	if (!hash) return;
 	const url = location.href.split('#')[0] + '#' + hash;
 	copyUrlText(url, botCopyBtn, 'copy rival');
@@ -73,6 +75,7 @@ function botLogHeader() {
 		game.seed + ' · t+ ' + (game.clockSteps * DT).toFixed(1) +
 		' s (step ' + game.clockSteps + ') · sky ×' + scene.trade.rate +
 		' · g ×' + gravityScale.toFixed(2) + ' · force ×' + forceScale.toFixed(2) +
+		(careerRule() ? ' · space wear ×' + spaceWearScale.toFixed(2) : '') +
 		' · ' + (cargoSim.fieldStatic ? 'planets · static · lists on' : 'ports · moving · lists off') +
 		(careerRule() && careerPaused ? ' · world clock paused' : '');
 }
@@ -118,7 +121,7 @@ function loadLink() {
 	}
 	loadingUrl = true;
 	scene.setSpeed(link.rate);
-	setExperimentScales(link.gravityScale, link.forceScale, link.harvestTick);
+	setExperimentScales(link.gravityScale, link.forceScale, link.harvestTick, link.spaceWearScale);
 	startGame(link.seed, true, link.rule, link.bot, link.player, link.cheat);
 	if (link.shots.length > 0) startReplay(link.shots, link.end, link.length);
 	loadingUrl = false;

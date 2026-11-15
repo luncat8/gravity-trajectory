@@ -357,12 +357,12 @@ function politicsBlockHtml(career) {
 	 * when the lord owes nothing, so a player never wonders where the bribe
 	 * went; only a bot walks away from a small one — that is advice here */
 	const title = reason !== '' ? reason
-		: offered ? 'the rulers pay for this visit\u2019s silence: its value \u00d7 the rot \u00d7 ' +
+		: offered ? 'the rulers pay for this visit\u2019s silence: its value \u00d7 ' +
 			OrbitEcon.BRIBE_VALUE_COEF.toFixed(0) + ' · corruption +' +
 			OrbitEcon.bribeCorruption(amount).toFixed(2) +
 			(amount > OrbitEcon.BRIBE_MIN ? '' : ' · a bot leaves anything under ' +
 				OrbitEcon.BRIBE_MIN.toFixed(2) + ' alone') + ' · high rot can end in arrest'
-		: 'nothing to take: the visit value \u00d7 rot pays 0.00 · wait for visit value to grow';
+		: 'nothing to take: the visit value is 0.00 · wait for visit value to grow';
 	html += '<div class="careerRow" data-help="politics"><span class="careerBtns">' +
 		'<button class="miniBtn" data-act="bribe" id="careerBribe"' +
 		(reason !== '' || !offered ? ' disabled' : '') +

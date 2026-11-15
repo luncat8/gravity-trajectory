@@ -63,7 +63,7 @@ function helperUpdateUi() {
 		helperProfitBtn.title = landed < 0
 			? 'career · land somewhere to scan for money shots'
 			: 'scan 34 aims from ' + planetName(landed) +
-				' · rank by money (visits + every taken contract leg − EMC fee − exit cost)' +
+				' · rank by money (visits + contract legs − EMC fee − exit − repair and wear)' +
 				' · a saved shot that pays more wins';
 	}
 	if (helperEmcBtn) {
@@ -145,8 +145,6 @@ function helperLegText(leg) {
 /* the money of the last scored candidate, so the notice prints cash and the
  * leg it completes instead of the ranking score */
 const helperLastMoney = { net: -Infinity, leg: 0 };
-/* the landing facts of the candidate being scored, reused every probe */
-const helperLanding = { cash: 0, credit: 0, leg: GravityGame.LEG_NONE };
 
 function helperScore(probe, cand) {
 	const origin = cand.origin;
@@ -167,18 +165,15 @@ function helperScore(probe, cand) {
 			return careerMoney.net + careerMoney.credit * goal.credit;
 		}
 	}
-	const profit = game.on ? GravityGame.estimateProfit(game.market, game.clockSteps, probe, game.money) : 0;
+	const profit = !careerMoney && game.on
+		? GravityGame.estimateProfit(game.market, game.clockSteps, probe, slotLedger(activeSlotIndex())) : 0;
 	const lands = probe.predReason === END_IMPACT && probe.predBody !== origin ? 1 : 0;
 	const samePad = probe.predReason === END_IMPACT && probe.predBody === origin ? 1 : 0;
 	const newVisits = probe.predNewVisits;
 	let score = lands * 12 - samePad * 35 - (probe.predReason === END_EXIT ? 220 : 0);
-	if (careerRule()) {
-		/* the untargeted scan weighs the same factors as the targeted ones,
-		 * so a taken leg is never invisible just because no goal is set */
-		GravityGame.careerLandingFacts(helperLanding, playerCareer(), origin, probe.predBody, 0,
-			probe.predLength, probe.predSteps, game.clockSteps, profit,
-			GravityGame.speedOf(cand.speedU));
-		score += helperLanding.cash * 30 + helperLanding.credit * 60 + newVisits * 4 -
+	if (careerMoney) {
+		/* Untargeted scans price the same costs and contract legs as the others. */
+		score += careerMoney.net * 30 + careerMoney.credit * 60 + newVisits * 4 -
 			probe.predTime * 0.12;
 	} else if (game.on && ruleSpec().stopOnTour) {
 		const wouldComplete = activeSim().visitedCount + newVisits >= planetCount;
@@ -512,6 +507,12 @@ function stopHelper() {
 	if (helperProgressFillEl) helperProgressFillEl.style.width = '0%';
 	helperUpdateUi();
 	hudAt = -Infinity;
+}
+
+function cancelHelperForChange(reason) {
+	if (!helperState.active) return;
+	stopHelper();
+	if (careerRule()) careerNotice(reason + ' changed · scan again');
 }
 
 function helperTick(budgetMs) {

@@ -82,7 +82,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/*
 	 * Per-planet growing visit profit: each launch costs 1.00 from a tight
 	 * starting purse of 3.00; every planet starts with 40 s of accrued age
-	 * (≈ +0.24) and grows toward the 3.00 cap along a saturation curve whose
+	 * (≈ +0.24) and grows toward the 4.00 cap along a saturation curve whose
 	 * slope starts at +0.00625 per flight-second (+0.25 per 40 s) and eases
 	 * off as the value nears the cap, reaching it only at infinite age.
 	 * Entering a planet's port orbit collects its value and resets it to 0.00.
@@ -91,7 +91,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		cost: 1,
 		k: 0.00625,
 		initSec: 40,
-		cap: 3,
+		cap: 4,
 		purse0: 3
 	};
 	const PURSE_PRESETS = { tight: 2, standard: 3, relaxed: 6 };
@@ -108,10 +108,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const HARVEST_ENTRY = 0;
 	const HARVEST_TICK = 1;
 	let harvestMode = HARVEST_ENTRY;
-	/* experimental settings panel bounds; links carry the two multipliers */
+	/* experimental settings panel bounds; links carry non-default multipliers */
 	const EXPERIMENT = {
 		gravityMin: 0, gravityMax: 9,
-		forceMin: 0.25, forceMax: 3
+		forceMin: 0.25, forceMax: 3,
+		spaceWearMin: 0, spaceWearMax: 3
 	};
 	const SRC_PLANETS = 0;
 	const SRC_PORTS = 1;
@@ -122,6 +123,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const PLANET_GRAVITY_MAX = 3.5;
 	const PLANET_GRAVITY_STEPS = 20;
 	const PLANET_GRAVITY_CHOICES = (PLANET_GRAVITY_MAX - PLANET_GRAVITY_MIN) * PLANET_GRAVITY_STEPS + 1;
+	const GRAVITY_BIAS_START = 0.6;
+	const GRAVITY_BIAS_END = 2.8;
+	const GRAVITY_BIAS_STRENGTH = 0.3;
 	const SHOT_FORM = /^([pm])(\d{1,2})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})(?:\.([0-9a-z]{1,4}))?$/;
 	const BURN_FORM = /^b([0-9a-z]{1,4})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})$/;
 	const END_FORM = /^(\d{1,2})\.(\d{1,9})$/;
@@ -130,10 +134,17 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const BOOK_MAX = 10;
 	const BOOK_LOG_MAX = 64;
 
-	/* A separate seed stream keeps gravity stable when planets are added or removed. */
+	/* Smoothly lighten the middle of the seeded range; the tails are unchanged
+	 * before rounding. The half-step edges retain the 0.05 grid. */
 	function planetGravity(seed, planet) {
-		const step = Math.floor(OrbitWorld.hash01(seed, planet, SALT_GRAVITY) * PLANET_GRAVITY_CHOICES);
-		return (step + PLANET_GRAVITY_MIN * PLANET_GRAVITY_STEPS) / PLANET_GRAVITY_STEPS;
+		const u = OrbitWorld.hash01(seed, planet, SALT_GRAVITY);
+		let g = PLANET_GRAVITY_MIN + (u * PLANET_GRAVITY_CHOICES - 0.5) / PLANET_GRAVITY_STEPS;
+		if (g > GRAVITY_BIAS_START && g < GRAVITY_BIAS_END) {
+			const wave = Math.sin(Math.PI * (g - GRAVITY_BIAS_START) / (GRAVITY_BIAS_END - GRAVITY_BIAS_START));
+			g -= GRAVITY_BIAS_STRENGTH * wave * wave;
+		}
+		g = Math.round(g * PLANET_GRAVITY_STEPS) / PLANET_GRAVITY_STEPS;
+		return g === 0 ? 0 : Math.max(PLANET_GRAVITY_MIN, Math.min(PLANET_GRAVITY_MAX, g));
 	}
 
 	function angleUnits(angle) {
@@ -184,7 +195,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	}
 
 	/* `game` = { seed, rate, rule, bot, player, cheat, gravityScale, forceScale,
-	 * shots, visited, steps, length }; default rule/bot/player/scales stay
+	 * spaceWearScale, harvestTick, shots, visited, steps, length }; default rule/bot/player/scales stay
 	 * omitted; `length` verifies a route plan. A career link starts the same
 	 * career (seed, rate, cheat, scales) — its builds and contracts are not
 	 * replayed, so it never carries shots. */
@@ -196,6 +207,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const head = 'game=' + FORMAT + '&seed=' + game.seed + '&rate=' + game.rate +
 			rulePart + botPart + playerPart + cheatPart +
 			scalePart('gs', game.gravityScale) + scalePart('fs', game.forceScale) +
+			(game.rule === RULE_CAREER ? scalePart('ws', game.spaceWearScale) : '') +
 			(game.harvestTick ? '&ht=1' : '');
 		if (game.shots.length === 0 || game.rule === RULE_CAREER) return head;
 		const lengthPart = game.rule === RULE_ROUTE && Number.isFinite(game.length)
@@ -243,7 +255,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	}
 
 	/* Returns { seed, rate, rule, bot, player, cheat, gravityScale, forceScale,
-	 * harvestTick, shots, end, length } or null. */
+	 * spaceWearScale, harvestTick, shots, end, length } or null. */
 	function decodeLink(text) {
 		const params = new URLSearchParams(String(text).replace(/^#/, ''));
 		if (params.get('game') !== String(FORMAT)) return null;
@@ -265,7 +277,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (cheat === undefined || (cheat !== null && rule.name !== RULE_CAREER)) return null;
 		const gravityScale = decodeScale(params.get('gs'), EXPERIMENT.gravityMin, EXPERIMENT.gravityMax);
 		const forceScale = decodeScale(params.get('fs'), EXPERIMENT.forceMin, EXPERIMENT.forceMax);
-		if (gravityScale === null || forceScale === null) return null;
+		const spaceWearScale = decodeScale(params.get('ws'), EXPERIMENT.spaceWearMin, EXPERIMENT.spaceWearMax);
+		if (gravityScale === null || forceScale === null || spaceWearScale === null) return null;
 		const harvestText = params.get('ht');
 		if (harvestText !== null && harvestText !== '1' && harvestText !== '0') return null;
 		const harvestTick = harvestText === '1';
@@ -288,7 +301,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const endMatch = END_FORM.exec(params.get('end') || '');
 		const end = endMatch ? { visited: Number(endMatch[1]), steps: Number(endMatch[2]) } : null;
 		return { seed: seed, rate: rate, rule: rule.name, bot: bot, player: player, cheat: cheat,
-			gravityScale: gravityScale, forceScale: forceScale, harvestTick: harvestTick,
+			gravityScale: gravityScale, forceScale: forceScale, spaceWearScale: spaceWearScale, harvestTick: harvestTick,
 			shots: shots, end: end, length: length };
 	}
 
@@ -330,6 +343,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const WEAR_SCIENCE_STEP = 0.02;
 	/* cr for a full 1.0 of condition */
 	const WEAR_REPAIR_COST = 2;
+	/* Repeated fixed-step subtraction must exhaust at the mathematical boundary. */
+	const WEAR_EPS = 1e-10;
+	let spaceWearScale = 1;
 	const WORN_OUT_BLOCK = 'ship worn out — repair before launch';
 	/* offered only from planets this light and for loads this heavy at most
 	 * (a gentle shot must be able to leave); pays FRAGILE_PAY × an ordinary
@@ -626,28 +642,29 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return harvestMode;
 	}
 
-	/* exact predicted harvest of one visit log without mutating the live market;
-	 * it prices specials exactly like the live harvest, not the raw growth curve.
-	 * `ledger` is the company flying it: a ship without the device, or a visit
-	 * to a quiet planet, pays 0 here exactly as it will on entry. */
-	function estimateProfitLog(market, baseStep, planets, steps, count, ledger) {
+	/* reportUntil is the exclusive flight step when the device wears out.
+	 * Specials remain payable without reports; omitted means the live ledger. */
+	function estimateProfitLog(market, baseStep, planets, steps, count, ledger, reportUntil) {
 		if (count === 0) return 0;
 		estScratch.set(market.lastVisitStep);
 		let total = 0;
 		for (let i = 0; i < count; i++) {
 			const planet = planets[i];
+			const special = planet === market.capitalPlanet || planet === market.arfPlanet;
+			if (reportUntil === undefined) {
+				if (!visitReports(ledger, market, planet)) continue;
+			} else if (!special && (market.quiet[planet] || steps[i] >= reportUntil)) continue;
 			const at = baseStep + steps[i];
-			if (!visitReports(ledger, market, planet)) continue;
 			total += planetProfitAt(market, planet, at, estScratch[planet]);
 			estScratch[planet] = at;
 		}
 		return total;
 	}
 
-	/* exact predicted harvest along a traced probe */
-	function estimateProfit(market, baseStep, sim, ledger) {
+	/* exact predicted harvest along a traced probe, assuming the entry rule */
+	function estimateProfit(market, baseStep, sim, ledger, reportUntil) {
 		return estimateProfitLog(market, baseStep, sim.predLogPlanet, sim.predLogStep,
-			sim.predLogCount, ledger);
+			sim.predLogCount, ledger, reportUntil);
 	}
 
 	/* the generated universe is always PLANET_MAX planets; a run plays a subset.
@@ -1298,7 +1315,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* the one writer of condition, so the report flag is never stale: a ship
 	 * that wears out between two harvests stops paying at the next visit */
 	function setShipCondition(career, value) {
-		career.ship.condition = value < 0 ? 0 : value > 1 ? 1 : value;
+		career.ship.condition = value <= WEAR_EPS ? 0 : value > 1 ? 1 : value;
 		career.ledger.reports = career.ship.obs.fitted && career.ship.condition > 0;
 	}
 
@@ -1313,6 +1330,62 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return career.wearScale * (science > WEAR_SCIENCE_MIN ? science : WEAR_SCIENCE_MIN);
 	}
 
+	/* The experimental knob changes space ageing, not launch, landing or burns. */
+	function setSpaceWearScale(value) {
+		if (!Number.isFinite(value)) return spaceWearScale;
+		spaceWearScale = Math.max(EXPERIMENT.spaceWearMin, Math.min(EXPERIMENT.spaceWearMax, value));
+		return spaceWearScale;
+	}
+
+	function spaceWearScaleOf() {
+		return spaceWearScale;
+	}
+
+	function launchWear(career, speed) {
+		return Math.min(WEAR_EMC_MAX, WEAR_EMC * OrbitTech.launchAccel(speed) /
+			WEAR_EMC_REF * wearFactor(career));
+	}
+
+	function spaceWear(career, steps) {
+		return WEAR_SPACE * spaceWearScale * GravitySim.gameSeconds(steps) * wearFactor(career);
+	}
+
+	function impulseWear(career, dv) {
+		return WEAR_IMP * (dv / WEAR_IMP_DV) * wearFactor(career);
+	}
+
+	function landingWear(career) {
+		return WEAR_LANDING * wearFactor(career);
+	}
+
+	/* The forecast starts at the current condition (or a planned full repair).
+	 * Landing wear follows the final visit, so it does not shorten reporting. */
+	function forecastCondition(career, condition, steps, speed, dv, landed) {
+		const wear = launchWear(career, speed || 0) + impulseWear(career, dv || 0) +
+			spaceWear(career, steps) + (landed ? landingWear(career) : 0);
+		const remaining = condition - wear;
+		return remaining <= WEAR_EPS ? 0 : remaining;
+	}
+
+	function forecastReportUntil(career, condition, speed, dv) {
+		if (!career.ship.obs.fitted) return 0;
+		const remaining = condition - launchWear(career, speed || 0) - impulseWear(career, dv || 0);
+		if (remaining <= WEAR_EPS) return 0;
+		const perStep = spaceWear(career, 1);
+		return perStep > 0 ? (remaining - WEAR_EPS) / perStep : Infinity;
+	}
+
+	/* A fully worn ship must be repaired before it can take any exit. */
+	function forecastRepairReserve(career, arrivalCondition) {
+		return arrivalCondition === 0 ? price(career, WEAR_REPAIR_COST) : 0;
+	}
+
+	/* Incremental eventual service cost, not the cost of pre-existing wear. */
+	function forecastWearCost(career, condition, steps, speed, dv, landed) {
+		const end = forecastCondition(career, condition, steps, speed, dv, landed);
+		return price(career, (condition - end) * WEAR_REPAIR_COST);
+	}
+
 	/* space-weather hook: the wear multiplier at a world point. No zones yet. */
 	function careerWearAt(career, x, y) {
 		return 1;
@@ -1324,7 +1397,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const extra = careerWearAt(career, sim.cargo.x, sim.cargo.y) - 1;
 		if (extra === 0 || !career.flying) return;
 		setShipCondition(career, career.ship.condition -
-			WEAR_SPACE * GravitySim.gameSeconds(1) * wearFactor(career) * extra);
+			spaceWear(career, 1) * extra);
 	}
 
 	/* what the purse pays for a full repair, to the cent */
@@ -3425,10 +3498,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	/*
 	 * The bribe (0.5.12, repriced 0.5.13): the local rulers pay for the visit's
-	 * silence — the visit value (what the landing collected plus what regrew
-	 * while the ship sits) scaled by the planet's rot. A clean lord pays
-	 * nothing, a freshly reported planet is worth nothing, and a rot-rich
-	 * planet pays well right where the arrest roll is at its worst. The purse
+	 * silence — twice the visit value (what the landing collected plus what
+	 * regrew while the ship sits). Corruption governs the arrest risk rather
+	 * than reducing the offer on lightly corrupted worlds. The purse
 	 * and the bribe stats grow, and the rot grows with the money. One bribe per
 	 * visit, and a rot-rich planet may arrest the briber and ship them to the
 	 * Capital instead of paying.
@@ -3453,18 +3525,14 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	}
 
 	/*
-	 * What the rulers pay (0.5.13): the visit value — the payout the landing
-	 * collected plus the value that regrew while the ship sits — times the rot
-	 * fraction times BRIBE_VALUE_COEF. The visit value is the base: a planet
-	 * whose profit is low has already been reported to the Capital, so its lord
-	 * has nothing to buy. The rot is the lord's appetite: clean worlds pay
-	 * nothing, and a long sit on a rotten world is a parking income the player
-	 * collects without flying — at the price of the arrest roll.
+	 * The visit value is what the landing collected plus what regrew while the
+	 * ship sits. The bribe is twice that value; corruption still rises and can
+	 * trigger an arrest, regardless of how the offer is priced.
 	 */
 	function bribeAmount(market, planet, runStep) {
 		const grown = planetProfit(market, planet, runStep);
 		const collected = market.visitPay[planet] > 0 ? market.visitPay[planet] : 0;
-		return OrbitEcon.bribeValue(collected + grown, market.corruption[planet]);
+		return OrbitEcon.bribeValue(collected + grown);
 	}
 
 	function acceptBribe(career, market, sim, planet, runStep) {
@@ -4146,10 +4214,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.fragileLost = career.contract >= 0 &&
 			fragileBreaks(career.tasks[career.contract], sim.speed);
 		if (career.fragileLost) dropContract(career);
-		const emcWear = WEAR_EMC * (OrbitTech.launchAccel(sim.speed) / WEAR_EMC_REF) *
-			wearFactor(career);
-		setShipCondition(career, career.ship.condition -
-			(emcWear < WEAR_EMC_MAX ? emcWear : WEAR_EMC_MAX));
+		setShipCondition(career, career.ship.condition - launchWear(career, sim.speed));
 		career.flights += 1;
 		career.flying = true;
 		openFlight(career.ledger, sim, 0);
@@ -4168,14 +4233,14 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.lastFuel += used;
 		/* by delivered Δv, not fuel mass: a heavy tank is not punished twice */
 		setShipCondition(career, career.ship.condition -
-			WEAR_IMP * (dv / WEAR_IMP_DV) * wearFactor(career));
+			impulseWear(career, dv));
 		return true;
 	}
 
 	/* pads charge on the sun clock, never on the flight clock: the career sees
 	 * SUN_SEC_PER_GAME_SEC pad seconds of sunlight per game second, so a step
 	 * buys DT of sunlight against the battery's leak in pad minutes */
-	function careerAdvance(career, steps) {
+	function careerAdvance(career, steps, flightStep) {
 		const padSec = GravitySim.padSeconds(GravitySim.gameSeconds(steps));
 		const padMin = GravitySim.padMinutes(GravitySim.gameSeconds(steps));
 		for (let i = 0; i < career.pads.length; i++) {
@@ -4186,9 +4251,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			pad.chargeKwh = charge < pad.battery.capacity ? charge : pad.battery.capacity;
 		}
 		/* only space wears the ship: a landing, a pad wait or a held clock does not */
-		if (!career.flying) return;
+		if (!career.flying || flightStep === false) return;
 		setShipCondition(career, career.ship.condition -
-			WEAR_SPACE * GravitySim.gameSeconds(steps) * wearFactor(career));
+			spaceWear(career, steps));
 	}
 
 	/* a landing settles contracts; a vessel that left the map or timed out is
@@ -4201,8 +4266,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		/* after the settlement, so the landing that used the last of the ship
 		 * still reports; an exit, timeout or abort is not a landing */
 		if (landed) {
-			setShipCondition(career, career.ship.condition - WEAR_LANDING *
-				wearFactor(career) * careerWearAt(career, sim.cargo.x, sim.cargo.y));
+			setShipCondition(career, career.ship.condition - landingWear(career) *
+				careerWearAt(career, sim.cargo.x, sim.cargo.y));
 		}
 		career.at = landed ? sim.endBody : -1;
 		career.flying = false;
@@ -4403,7 +4468,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		railOwnerText, railText, railBlock, repairLaunchBlock, fragileBreaks,
 		WEAR_SPACE, WEAR_LANDING, WEAR_EMC, WEAR_EMC_REF, WEAR_EMC_MAX, WEAR_IMP, WEAR_IMP_DV,
 		WEAR_FLEET, WEAR_SCIENCE_MIN, WEAR_SCIENCE_STEP, WEAR_REPAIR_COST, WORN_OUT_BLOCK,
-		wearFactor, careerShipUsable, setShipCondition, careerWearAt, careerWeatherWear,
+		wearFactor, setSpaceWearScale, spaceWearScaleOf, launchWear, spaceWear, impulseWear, landingWear,
+		forecastCondition, forecastReportUntil, forecastRepairReserve, forecastWearCost,
+		careerShipUsable, setShipCondition, careerWearAt, careerWeatherWear,
 		repairCost, repairCareer,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById, gearKnown, planetBuildable, planetSeized,

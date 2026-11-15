@@ -98,13 +98,13 @@ context.refreshCareerPanel();
 let html = drawerHtml();
 check(html.includes('corruption 25%'), 'the pad block hides corruption: ' + html);
 check(html.includes('data-act="bribe"'), 'the pad block has no bribe button');
-check(html.includes('+2.00'), 'the bribe button does not price the visit: ' + html);
+check(html.includes('+4.00'), 'the bribe button does not price the visit: ' + html);
 const purse = career.ledger.purse;
 act({ act: 'bribe' });
 check(career.bribes === 1, 'the bribe click did nothing');
-check(Math.abs(career.ledger.purse - (purse + 2)) < 1e-9,
-	'the bribe did not pay the rot-scaled visit: ' + career.ledger.purse);
-check(Math.abs(market.corruption[planet] - (25 + context.OrbitEcon.bribeCorruption(2))) < 1e-9,
+check(Math.abs(career.ledger.purse - (purse + 4)) < 1e-9,
+	'the bribe did not pay twice the visit: ' + career.ledger.purse);
+check(Math.abs(market.corruption[planet] - (25 + context.OrbitEcon.bribeCorruption(4))) < 1e-9,
 	'the bribe did not rot the planet: ' + market.corruption[planet]);
 html = drawerHtml();
 check(html.includes('bribed this visit'), 'the drawer does not mark the visit as bribed: ' + html);
@@ -123,18 +123,25 @@ context.refreshCareerPanel();
 html = drawerHtml();
 check(html.includes('data-act="bribe"') && !bribeDisabled(html),
 	'a new visit does not reopen the bribe: ' + html);
-/* a clean world keeps the button and simply prices it at nothing */
+/* A visit with no value keeps the button and prices it at nothing. */
 const fresh = normalPlanet(planet);
 market.corruption[fresh] = 0;
 land(fresh);
 market.lastVisitStep[fresh] = game.clockSteps;
-market.visitPay[fresh] = 2;
+market.visitPay[fresh] = 0;
 context.refreshCareerPanel();
 html = drawerHtml();
 check(html.includes('data-act="bribe"'), 'a clean world hides the bribe button: ' + html);
-check(html.includes('+0.00'), 'a clean world does not price the bribe at nothing: ' + html);
-check(bribeDisabled(html), 'a clean world offers an enabled bribe');
-check(html.includes('nothing to take yet'), 'a clean world does not explain why: ' + html);
+check(html.includes('+0.00'), 'an empty visit does not price the bribe at nothing: ' + html);
+check(bribeDisabled(html), 'an empty visit offers an enabled bribe');
+check(html.includes('nothing to take yet'), 'an empty visit does not explain why: ' + html);
+market.visitPay[fresh] = 2;
+context.refreshCareerPanel();
+html = drawerHtml();
+check(html.includes('+4.00') && !bribeDisabled(html), 'a clean world must offer twice its visit value');
+const cleanPurse = career.ledger.purse;
+act({ act: 'bribe' });
+check(Math.abs(career.ledger.purse - cleanPurse - 4) < 1e-9, 'clean-world bribe did not pay');
 /* the Capital and the A.R.F. world take no bribes at all */
 Game.placeShip(career, scene.sim, career.capitalPlanet);
 context.refreshCareerPanel();

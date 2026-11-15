@@ -410,6 +410,12 @@
 		this.careerLogPlanet = new Int32Array(PRED_LOG_MAX);
 		this.careerLogStep = new Int32Array(PRED_LOG_MAX);
 		this.careerLogCount = 0;
+		/* Pre-launch burn pricing includes visits made before the impulse. */
+		this.careerBurnPrefix = {
+			sim: null, count: 0,
+			planet: new Int32Array(PRED_LOG_MAX), step: new Int32Array(PRED_LOG_MAX),
+			joinedPlanet: new Int32Array(PRED_LOG_MAX * 2), joinedStep: new Int32Array(PRED_LOG_MAX * 2)
+		};
 		this.careerBuilds = 0;
 		this.careerUpgrades = 0;
 		this.careerResearches = 0;
@@ -1537,7 +1543,7 @@
 		};
 	};
 
-	GravityBot.prototype.rivalLink = function (seed, rate, index, gravityScale, forceScale) {
+	GravityBot.prototype.rivalLink = function (seed, rate, index, gravityScale, forceScale, spaceWearScale, harvestTick) {
 		const idx = index || 0;
 		const r = this.actorAt(idx);
 		const route = this.rule === GravityGame.RULE_ROUTE;
@@ -1549,6 +1555,8 @@
 			player: GravityGame.PLAYER_USER,
 			gravityScale: gravityScale,
 			forceScale: forceScale,
+			spaceWearScale: spaceWearScale,
+			harvestTick: harvestTick,
 			shots: r.shots,
 			visited: route ? r.routeVisits : r.sim.visitedCount,
 			steps: this.scoreSteps(idx),
@@ -1705,8 +1713,8 @@
 		return mass;
 	};
 
-	/* One physical-and-cash gate for bots, helper scans and aim guidance. */
-	GravityBot.prototype.careerDeparture = function (career, planet, cash, mass, sourceSim) {
+	/* A forecast can pass the post-repair condition instead of today's ship. */
+	GravityBot.prototype.careerDeparture = function (career, planet, cash, mass, sourceSim, condition) {
 		const out = this.careerExit;
 		out.ok = false;
 		out.physical = false;
@@ -1726,7 +1734,8 @@
 			return out;
 		}
 		/* a worn-out ship has no exit from where it stands: repair, not a rail */
-		if (planet === career.at && !GravityGame.careerShipUsable(career)) {
+		const usable = condition === undefined ? GravityGame.careerShipUsable(career) : condition > 0;
+		if (planet === career.at && !usable) {
 			out.reason = 'ship worn out';
 			return out;
 		}
@@ -2253,9 +2262,8 @@
 
 	/*
 	 * Bribes (0.5.12, repriced 0.5.13). Rulers pay the visit value — what the
-	 * landing collected plus what regrew while the ship sat — scaled by the
-	 * planet's rot, so the trade only exists on rotten worlds, and the rot the
-	 * bribe adds is what can end in the Capital transport; a seed-derived
+	 * landing collected plus what regrew while the ship sat — multiplied by 2.
+	 * The rot the bribe adds is what can end in the Capital transport; a seed-derived
 	 * persona decides whether a company takes it. Never on its own rail (rot on
 	 * the company's own pad hurts its colony), never below the small-bribe
 	 * floor, never on the Capital, A.R.F. or a rebellious planet — the rule
@@ -2443,7 +2451,7 @@
 	 * this: `visitPay` is the harvest, `length`/`steps` the path and arrival.
 	 */
 	GravityBot.prototype.careerScoreFacts = function (career, origin, market, runStep,
-		flownLen, fee, body, visitPay, length, steps, speed) {
+		flownLen, fee, body, visitPay, length, steps, speed, wearCost, arrivalCondition) {
 		this.careerEval.reject = '';
 		this.careerEval.builds = false;
 		this.careerEval.exitCost = Infinity;
@@ -2465,9 +2473,12 @@
 			this.careerEval.reject = 'fee';
 			return -Infinity;
 		}
-		const exitCash = career.ledger.purse + cashPay - launchFee;
+		/* A dead ship must be repaired before it can take any departure. */
+		const mandatoryRepair = GravityGame.forecastRepairReserve(career, arrivalCondition);
+		const exitCash = career.ledger.purse + cashPay - launchFee - mandatoryRepair;
 		const arrivalMass = this.careerArrivalMass(career, body);
-		const departure = this.careerDeparture(career, body, exitCash, arrivalMass, this.probe);
+		const departure = this.careerDeparture(career, body, exitCash, arrivalMass, this.probe,
+			arrivalCondition === 0 ? 1 : arrivalCondition);
 		if (!departure.ok) {
 			this.careerEval.reject = departure.physical ? 'exit' : 'unlaunchable';
 			return -Infinity;
@@ -2492,7 +2503,7 @@
 			const site = this.careerSiteValue(career, body, -1);
 			padValue += Number.isFinite(site) ? site : -CAREER_DEAD_SITE;
 		}
-		padValue -= departure.cost;
+		padValue -= departure.cost + (wearCost || 0);
 		if (body === career.hq && career.at !== career.hq &&
 			career.ship.hold === OrbitTech.HOLDS[0] &&
 			exitCash + 1e-9 >= careerPrice(career, OrbitTech.HOLDS[1]) + CAREER_PURSE_RESERVE) {
@@ -2509,16 +2520,49 @@
 		return taskPay + padValue;
 	};
 
-	/* Landing + harvest + contract + solvency value of the trace in `probe`. */
-	GravityBot.prototype.careerScoreFlight = function (career, origin, market, runStep, flownLen, fee, speed) {
+	/* Price a scratch launch and its continuation against one market history.
+	 * The burn follows the prefix's last harvest, even if it exhausts the ship. */
+	GravityBot.prototype.careerBurnVisitPay = function (career, market, runStep, sim, reportUntil) {
+		const prefix = this.careerBurnPrefix;
+		const probe = this.probe;
+		const offset = sim.liveSteps;
+		let count = 0;
+		if (prefix.sim === sim) {
+			for (let i = 0; i < prefix.count; i++) {
+				prefix.joinedPlanet[count] = prefix.planet[i];
+				prefix.joinedStep[count++] = prefix.step[i];
+			}
+		}
+		for (let i = 0; i < probe.predLogCount; i++) {
+			prefix.joinedPlanet[count] = probe.predLogPlanet[i];
+			prefix.joinedStep[count++] = offset + probe.predLogStep[i];
+		}
+		const until = career.ship.obs.fitted
+			? offset + Math.max(1, Math.ceil(reportUntil)) : 0;
+		return GravityGame.estimateProfitLog(market, runStep,
+			prefix.joinedPlanet, prefix.joinedStep, count, career.ledger, until);
+	};
+
+	/* Score reports before failure and the eventual service. A scratch launch
+	 * has a prefix; a live ship has already paid and harvested that prefix. */
+	GravityBot.prototype.careerScoreFlight = function (career, origin, market, runStep,
+		flownLen, fee, speed, priorWear, burnDv, prefixSim) {
 		const probe = this.probe;
 		if (probe.predReason !== END_IMPACT || probe.predBody < 0) {
 			this.careerEval.reject = 'noImpact';
 			return -Infinity;
 		}
-		return this.careerScoreFacts(career, origin, market, runStep, flownLen, fee,
-			probe.predBody, GravityGame.estimateProfit(market, runStep, probe, career.ledger),
-			probe.predLength, probe.predSteps, speed);
+		const condition = Math.max(0, career.ship.condition - (priorWear || 0));
+		const reportUntil = GravityGame.forecastReportUntil(career, condition, speed, burnDv);
+		const arrival = GravityGame.forecastCondition(career, condition, probe.predSteps, speed, burnDv, true);
+		const wear = careerFee(career, (career.ship.condition - arrival) * GravityGame.WEAR_REPAIR_COST);
+		const visitPay = prefixSim
+			? this.careerBurnVisitPay(career, market, runStep, prefixSim, reportUntil)
+			: GravityGame.estimateProfit(market, runStep, probe, career.ledger, reportUntil);
+		const continuationStep = runStep + (prefixSim ? prefixSim.liveSteps : 0);
+		const launchSpeed = prefixSim ? prefixSim.speed : speed;
+		return this.careerScoreFacts(career, origin, market, continuationStep, flownLen, fee,
+			probe.predBody, visitPay, probe.predLength, probe.predSteps, launchSpeed, wear, arrival);
 	};
 
 	/* pad energy, the recharge wait it costs and the EMC fee of one shot */
@@ -2547,10 +2591,14 @@
 	GravityBot.prototype.careerScoreStored = function (career, sim, market, runStep, entry) {
 		const speed = GravityGame.speedOf(entry.speedU);
 		const fee = GravityGame.launchFee(career, entry.origin, speed);
+		const condition = career.ship.condition;
+		const reportUntil = GravityGame.forecastReportUntil(career, condition, speed, 0);
 		const visitPay = GravityGame.estimateProfitLog(market, runStep,
-			entry.logPlanet, entry.logStep, entry.logCount, career.ledger);
+			entry.logPlanet, entry.logStep, entry.logCount, career.ledger, reportUntil);
+		const arrival = GravityGame.forecastCondition(career, condition, entry.steps, speed, 0, true);
+		const wear = GravityGame.forecastWearCost(career, condition, entry.steps, speed, 0, true);
 		const base = this.careerScoreFacts(career, entry.origin, market, runStep, 0, fee,
-			entry.body, visitPay, entry.length, entry.steps, speed);
+			entry.body, visitPay, entry.length, entry.steps, speed, wear, arrival);
 		if (!Number.isFinite(base)) return -Infinity;
 		return this.careerScoreTail(career, sim, entry.origin, speed, base, fee);
 	};
@@ -2798,12 +2846,13 @@
 	 * `probe`.
 	 */
 	GravityBot.prototype.careerBurnScore = function (career, sim, market, runStep,
-		angleU, dvU, requiredBody, coastScore, fee) {
+		angleU, dvU, requiredBody, coastScore, fee, priorWear, prefixSim) {
 		const dv = GravityGame.speedOf(dvU);
 		const ship = career.ship;
 		this.probe.predictBurnFast(sim, GravityGame.angleOf(angleU), dv);
 		if (requiredBody >= 0 && this.probe.predBody !== requiredBody) return -Infinity;
-		const raw = this.careerScoreFlight(career, sim.origin, market, runStep, sim.flightLength, fee);
+		const raw = this.careerScoreFlight(career, sim.origin, market, runStep,
+			sim.flightLength, fee, 0, priorWear, dv, prefixSim);
 		if (!Number.isFinite(raw)) return -Infinity;
 		const fuelKg = OrbitTech.impulseFuel(dv, ship.engine, ship.mass, ship.fuelKg);
 		const score = raw - fuelKg * GravityGame.fuelPrice(career);
@@ -2830,6 +2879,13 @@
 		if (career.ended !== GravityGame.CAREER_OPEN || sim.status !== GravitySim.STATUS_FLYING) {
 			return null;
 		}
+		/* A live ship has already paid its prefix; a scratch launch has not. */
+		const prefixSim = career.flying ? null : sim;
+		const condition = prefixSim
+			? GravityGame.forecastCondition(career, career.ship.condition, sim.liveSteps, sim.speed, 0, false)
+			: career.ship.condition;
+		if (condition <= 0) return null;
+		const priorWear = career.ship.condition - condition;
 		const limit = sim.burnLimit();
 		const capU = Math.floor(limit * GravityGame.SPEED_STEPS + 1e-9);
 		if (capU < 1) return null;
@@ -2846,7 +2902,7 @@
 		let coastScore = -Infinity;
 		if (onTarget) {
 			coastScore = this.careerScoreFlight(career, sim.origin, market, runStep,
-				sim.flightLength, fee);
+				sim.flightLength, fee, 0, priorWear, 0, prefixSim);
 		}
 		best.coastScore = coastScore;
 
@@ -2874,7 +2930,7 @@
 					: targetAngle + (a - CAREER_BURN_ANGLES) * Math.PI;
 				const angleU = GravityGame.angleUnits(rawAngle);
 				const score = this.careerBurnScore(career, sim, market, runStep,
-					angleU, dvU[r], requiredBody, coastScore, fee);
+					angleU, dvU[r], requiredBody, coastScore, fee, priorWear, prefixSim);
 				if (!(score > bestScore + 1e-12)) continue;
 				bestScore = score;
 				bestAngleU = angleU;
@@ -2895,7 +2951,7 @@
 				const angleU = GravityGame.angleUnits(
 					GravityGame.angleOf(bestAngleU) + k * refineStep);
 				const score = this.careerBurnScore(career, sim, market, runStep,
-					angleU, dvU[r], requiredBody, coastScore, fee);
+					angleU, dvU[r], requiredBody, coastScore, fee, priorWear, prefixSim);
 				if (!(score > best.score + 1e-12)) continue;
 				best.body = this.probe.predBody;
 				best.score = score;
@@ -3096,13 +3152,17 @@
 			const career = r.career;
 			if (!career) continue;
 			career.market = market;
-			GravityGame.careerAdvance(career, 1);
+			const flightStep = r.sim.status === STATUS_FLYING && r.sim.liveSteps < r.sim.stepLimit;
+			/* Bot burns precede this step's wear; hand-flown rivals choose their own. */
+			if (flightStep && this.isRivalBot(i)) this.careerFlightBurn(career, r.sim, market, runStep - 1, r);
+			GravityGame.careerAdvance(career, 1, flightStep);
 			if (r.sim.status === STATUS_FLYING) {
-				this.careerFlightBurn(career, r.sim, market, runStep, r);
 				r.sim.stepOne();
-				GravityGame.careerWeatherWear(career, r.sim);
-				GravityGame.stepHarvest(r.ledger, market, r.sim, runStep);
-				r.steps += 1;
+				if (flightStep) {
+					GravityGame.careerWeatherWear(career, r.sim);
+					GravityGame.stepHarvest(r.ledger, market, r.sim, runStep);
+					r.steps += 1;
+				}
 				if (r.sim.status === STATUS_FLYING) continue;
 				this.careerLand(r, trade, runStep);
 				continue;
@@ -3245,8 +3305,18 @@
 		src.stepLimit = GravityGame.CAP_STEPS;
 		src.limitReason = GravitySim.END_TIME;
 		src.launch(origin, GravityGame.angleOf(angleU), GravityGame.speedOf(speedU));
+		const prefix = this.careerBurnPrefix;
+		prefix.sim = src;
+		prefix.count = 0;
+		src.predInside.fill(0);
+		src.markSystemsAt(src.cargo.x, src.cargo.y, src.predInside);
 		for (let s = 0; s < CAREER_BURN_AT && src.status === GravitySim.STATUS_FLYING; s++) {
 			src.stepOne();
+			const entered = src.stepInsideAt(src.cargo.x, src.cargo.y, src.predInside, src.predEntered);
+			for (let i = 0; i < entered && prefix.count < PRED_LOG_MAX; i++) {
+				prefix.planet[prefix.count] = src.predEntered[i];
+				prefix.step[prefix.count++] = src.liveSteps;
+			}
 		}
 	};
 
@@ -3743,7 +3813,7 @@
 			if (!plan) return false;
 			this.traceAdd(who, 'plan', 'P' + plan.origin + '→P' + plan.body +
 				' v' + plan.speed.toFixed(0) + ' score ' + signed(plan.score) +
-				' pay ' + signed(plan.taskPay) + ' pad ' + signed(plan.padValue) +
+				' pay ' + signed(plan.taskPay) + ' pad after wear ' + signed(plan.padValue) +
 				' fee ' + plan.fee.toFixed(2) + ' exit ' + (plan.exitCost || 0).toFixed(2) +
 				' (' + (plan.exitSource || 'own') + ') · ' +
 				(plan.fromBook ? 'book reuse' : 'fan ' + this.careerScan.tried + ' traces') +

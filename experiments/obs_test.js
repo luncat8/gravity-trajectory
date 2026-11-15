@@ -169,7 +169,7 @@ check('the estimate prices exactly what the entry will pay', () => {
 	assert.strictEqual(live, Game.CAPITAL_VISIT_PAY);
 });
 
-check('on a quiet planet the bribe is the whole unreported value x rot x 4, and it cashes it', () => {
+check('on a quiet planet the bribe is twice the unreported value, and it cashes it', () => {
 	const w = setup(19);
 	const planet = normalPlanet(w);
 	const career = w.career;
@@ -184,7 +184,7 @@ check('on a quiet planet the bribe is the whole unreported value x rot x 4, and 
 	const purse = career.ledger.purse;
 	const result = Game.acceptBribe(career, w.market, w.sim, planet, 6000);
 	assert.ok(result.ok, result.reason);
-	assert.ok(Math.abs(result.amount - value * 0.4 * 4) < 1e-9, 'bribe ' + result.amount + ' for value ' + value);
+	assert.ok(Math.abs(result.amount - value * 2) < 1e-9, 'bribe ' + result.amount + ' for value ' + value);
 	assert.ok(Math.abs(career.ledger.purse - purse - result.amount) < 1e-9);
 	assert.strictEqual(Game.bribeWindowOpen(w.market, planet), false, 'one bribe per visit');
 	assert.strictEqual(Game.planetProfit(w.market, planet, 6000), 0, 'the bribe cashed the value');

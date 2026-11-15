@@ -271,11 +271,11 @@ wear in game seconds, the 0 gates, 2 cr for a full repair, and the split launch
 control (`repair & launch` with a `▾` menu for each alone). Repair anywhere
 landed; impulse wear ∝ Δv; no wear while landed; science cuts wear to a 0.5
 floor; a worn-out ship the purse cannot repair is `broke`. Measured on the
-rival bench the draft numbers make maintenance about half of a company's income
-(`experiments/logs/0.7.2-ship-wear.txt`), so the balance is the open part —
-which constant should give first: `WEAR_SPACE`, the landing, or the 2 cr?
-Space weather itself is still a separate layer (`map.md`); only its identity
-hook exists.
+rival bench the draft numbers made maintenance about half of a company's income
+(`experiments/logs/0.7.2-ship-wear.txt`). The experimental `space wear ×0…×3`
+slider now scales space ageing only, and previews and bots price condition loss;
+the default balance remains open. Space weather is still a separate layer
+(`map.md`); only its identity hook exists.
 
 ## evacuation
 

@@ -172,7 +172,7 @@ function reserveGameFooter() {
 	if (rootEl && rootEl.style) rootEl.style.setProperty('--footReserve', reserve);
 	let cargoBottomY = bottomY;
 	const footRect = flightHudEl ? flightHudEl.getBoundingClientRect() : null;
-	if (footRect && footRect.height > 0 && footRect.height < vh * 0.6) {
+	if (footRect && footRect.height > 0) {
 		cargoBottomY = Math.min(cargoBottomY, footRect.top - 8);
 	}
 	const cargoMaxH = Math.max(140, Math.floor(cargoBottomY - hudTop)) + 'px';
@@ -353,6 +353,7 @@ function applyMode() {
 
 function setBodyStrength(body, value) {
 	if (!cargoSim.setStrength(body, value)) return false;
+	cancelHelperForChange('gravity');
 	if (mode === MODE_PORTS && body >= 0 && body < cargoSim.bodyCount) {
 		portPlanetStrength[fieldPortPlanet[body]] = cargoSim.strength[body];
 	} else if (mode === MODE_PLANETS) {

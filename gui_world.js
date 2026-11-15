@@ -149,6 +149,7 @@ function setPlanetUniverseSize(next, preferredPlanet) {
 	}
 	planetCount = count;
 	game.planetUniverse = count;
+	cancelHelperForChange('planet count');
 	applyPlanetUniverse();
 	return true;
 }

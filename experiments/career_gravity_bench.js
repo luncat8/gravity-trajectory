@@ -10,6 +10,7 @@
  * no-rescue A/B for that fixture.
  * PAIRED=1 prints one purse line per rival-game, so two runs can be diffed game
  * by game; SEATS=0 / HQWELL=0 drop the page's two career-start steps.
+ * WEAR=0…3 sets the space-ageing knob; LOG=0 leaves historical logs untouched.
  * Run: node experiments/career_gravity_bench.js (SEEDS=1-20 SECONDS=400 TRACE=1)
  */
 'use strict';
@@ -24,6 +25,9 @@ const OrbitTech = require(path.join(root, 'orbit_tech.js'));
 const GravityGame = require(path.join(root, 'gravity_game.js'));
 const GravityBot = require(path.join(root, 'gravity_bot.js'));
 
+const SPACE_WEAR = process.env.WEAR === undefined ? 1 : Number(process.env.WEAR);
+if (!Number.isFinite(SPACE_WEAR) || SPACE_WEAR < 0 || SPACE_WEAR > 3) throw new Error('WEAR must be 0…3');
+GravityGame.setSpaceWearScale(SPACE_WEAR);
 const DT = GravitySim.DT;
 const RATE = 1;
 const PLANETS = OrbitWorld.PLANETS;
@@ -345,7 +349,7 @@ if (STATS) {
 		' · bribes ' + (income > 0 ? (totBribes / income * 100).toFixed(0) : 0) + '%' +
 		' · tax ' + (income > 0 ? (totTax / income * 100).toFixed(0) : 0) + '%');
 	console.log(statsLines.join('\n'));
-	fs.writeFileSync(path.join(root, 'experiments/logs/0.6.10-map-statistics.txt'),
+	if (process.env.LOG !== '0') fs.writeFileSync(path.join(root, 'experiments/logs/0.6.10-map-statistics.txt'),
 		statsLines.join('\n') + '\n');
 	wearLines.push('WEAR TOTAL · repaired ' + (totRepairs / nCompanies).toFixed(1) +
 		' · maintenance ' + (totMaintenance / nCompanies).toFixed(2) +
@@ -353,7 +357,7 @@ if (STATS) {
 		' · mean cond ' + Math.round(totCondition / nCompanies * 100) + ' %' +
 		' · worn out ' + totWornOut + ' / ' + nCompanies);
 	console.log(wearLines.join('\n'));
-	fs.writeFileSync(path.join(root, 'experiments/logs/0.7.2-ship-wear.txt'),
+	if (process.env.LOG !== '0') fs.writeFileSync(path.join(root, 'experiments/logs/0.7.2-ship-wear.txt'),
 		wearLines.join('\n') + '\n');
 }
 console.log('TOTAL rivals ' + totals.actors + ' · flights ' + totals.flights +

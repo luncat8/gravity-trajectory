@@ -16,6 +16,7 @@ const sim = env.context.GravitySim;
 const gameApi = env.context.GravityGame;
 const bot = scene.bot;
 const origin = scene.career.hq;
+const blockedSpeed = 60;
 const safeSpeed = 90;
 const TAU = Math.PI * 2;
 
@@ -34,7 +35,7 @@ function seek(speed, want) {
 	}
 	return null;
 }
-const blocked = seek(35, 2);
+const blocked = seek(blockedSpeed, 2);
 assert.ok(blocked, 'seed 1 has no starter-blocked landing for the aim-state fixture');
 const blockedPlanet = blocked.body;
 const blockedAngle = blocked.angle;
@@ -56,7 +57,7 @@ function assertCanvasColour(expected) {
 
 /* A real incoming trajectory reaches a gravity-locked free planet, but the
  * starter purse cannot fund the EMC-2 rescue rail needed there. */
-env.dragAim(origin, blockedAngle, 35);
+env.dragAim(origin, blockedAngle, blockedSpeed);
 env.runFrames(3, 16);
 assert.strictEqual(scene.sim.predReason, sim.END_IMPACT);
 assert.strictEqual(scene.sim.predBody, blockedPlanet);
@@ -74,6 +75,8 @@ env.runFrames(3, 16);
 assert.ok(scene.sim.predBody !== blockedPlanet);
 assert.strictEqual(scene.aimGuidance(), 1, 'normal opening profit shot should be green');
 
+/* Keep the exit affordable even when the reduced harvest cannot fund it. */
+scene.career.ledger.purse = 100;
 scene.game.market.k = 0.0001;
 env.dragAim(origin, safeAngle, safeSpeed);
 env.runFrames(3, 16);

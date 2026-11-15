@@ -29,7 +29,7 @@ function loadPuppeteer() {
 
 const puppeteer = loadPuppeteer();
 const PAGE_URL = 'file://' + path.resolve(__dirname, '..', 'index.html');
-const SIZES = [[1440, 900], [1280, 800], [1280, 600], [1024, 700], [900, 640], [800, 560], [520, 760], [390, 700]];
+const SIZES = [[1440, 900], [1280, 800], [1280, 600], [1024, 700], [900, 640], [800, 560], [520, 760], [390, 700], [320, 568]];
 const failures = [];
 
 function check(ok, message) {
@@ -62,7 +62,7 @@ async function measure(page) {
 			best: [best.top, best.width, document.getElementById('routeBest').hidden,
 				best.bottom, best.height, bestHit ? bestHit.id : ''],
 			sound: [sound.left, sound.right, sound.top, sound.bottom, role.right,
-				soundHit ? soundHit.id : '', hudRect.left, hudRect.right],
+				soundHit ? soundHit.id : '', hudRect.left, hudRect.right, role.top, role.bottom],
 			clearTop: clear.top,
 			scrollable: body.scrollHeight > body.clientHeight + 1,
 			hudBottom: hudRect.bottom
@@ -187,7 +187,8 @@ async function scoreboardStable(page) {
 			if (planned) check(layout.best[1] > 80, label + ': use best collapsed to ' + Math.round(layout.best[1]) + 'px');
 			check(layout.launch[1] > 20, label + ': launch row collapsed');
 			check(layout.sound[0] >= layout.sound[6] && layout.sound[1] <= layout.sound[7] &&
-				layout.sound[0] >= layout.sound[4] - 1 && layout.sound[2] >= 0 &&
+				(layout.sound[0] >= layout.sound[4] - 1 || layout.sound[2] >= layout.sound[9] - 1 ||
+					layout.sound[3] <= layout.sound[8] + 1) && layout.sound[2] >= 0 &&
 				layout.sound[3] <= height && layout.sound[5] === 'soundToggle',
 				label + ': sound control clipped or overlaps the title ' + JSON.stringify(layout.sound));
 			check(errors.length === 0, label + ': page error ' + errors.join(' / '));
@@ -233,6 +234,48 @@ async function scoreboardStable(page) {
 			await page.waitForSelector('#careerBox');
 			const label = width + 'x' + height + ' career';
 			const layout = await measure(page);
+			const wearControl = await page.evaluate(() => {
+				const slider = document.getElementById('expWear');
+				slider.scrollIntoView({ block: 'center', inline: 'nearest' });
+				const row = slider.closest('label').getBoundingClientRect();
+				const caption = slider.closest('label').querySelector('span').getBoundingClientRect();
+				const range = slider.getBoundingClientRect();
+				const output = document.getElementById('expWearLabel').getBoundingClientRect();
+				const body = document.getElementById('cargoBody').getBoundingClientRect();
+				const hit = document.elementFromPoint(range.left + range.width / 2, range.top + range.height / 2);
+				return {
+					enabled: !slider.disabled,
+					value: slider.value,
+					label: document.getElementById('expWearLabel').textContent,
+					rangeWidth: range.width,
+					ordered: (caption.right <= range.left || caption.bottom <= range.top) && range.right <= output.left,
+					within: row.left >= 0 && row.right <= innerWidth && row.top >= body.top - 1 &&
+						row.bottom <= body.bottom + 1 && row.top >= 0 && row.bottom <= innerHeight,
+					height: row.height,
+					hit: hit && hit.id
+				};
+			});
+			check(wearControl.enabled && wearControl.value === '1' && wearControl.label === '×1.00' &&
+				wearControl.rangeWidth >= 50 && wearControl.ordered && wearControl.within &&
+				wearControl.height <= (width <= 360 ? 45 : 24) && wearControl.hit === 'expWear',
+				label + ': space-wear control clipped or blocked ' + JSON.stringify(wearControl));
+			await page.click('#expWear', { offset: { x: 1, y: 8 } });
+			const wearClicked = await page.evaluate(() => [GravityGame.spaceWearScaleOf(),
+				Number(document.getElementById('expWear').value), document.getElementById('expWearLabel').textContent]);
+			check(wearClicked[0] < 1 && wearClicked[0] === wearClicked[1] &&
+				wearClicked[2] === '×' + wearClicked[0].toFixed(2),
+				label + ': space-wear pointer input did not apply ' + JSON.stringify(wearClicked));
+			await page.focus('#expWear');
+			await page.keyboard.press('End');
+			const wearChanged = await page.evaluate(() => [GravityGame.spaceWearScaleOf(),
+				document.getElementById('expWearLabel').textContent]);
+			check(wearChanged[0] === 3 && wearChanged[1] === '×3.00',
+				label + ': space-wear control did not apply ' + JSON.stringify(wearChanged));
+			await page.evaluate(() => {
+				const slider = document.getElementById('expWear');
+				slider.value = '1';
+				slider.dispatchEvent(new Event('input', { bubbles: true }));
+			});
 			const drawer = await page.evaluate(() => {
 				const box = document.getElementById('careerBox');
 				const panel = document.getElementById('careerHud');
@@ -336,29 +379,44 @@ async function scoreboardStable(page) {
 			await page.click('#careerFoldBtn');
 			const strandedLayout = await page.evaluate(() => {
 				const career = GravityScene.career;
-				const other = (career.hq + 1) % 26;
+				const other = Array.from(career.planetMask).findIndex((active, p) => active &&
+					p !== career.hq && p !== career.capitalPlanet &&
+					career.pads[p].catapult === null && GravityGame.planetBuildable(career, p));
+				if (other < 0) throw new Error('no buildable planet for stranded layout');
 				career.at = other;
 				career.stranded = true;
 				GravityScene.refreshCareerPanel();
 				const foot = document.getElementById('flightHud').getBoundingClientRect();
-				const helper = document.getElementById('helperGroup').getBoundingClientRect();
+				const helperEl = document.getElementById('helperGroup');
+				helperEl.scrollIntoView({ block: 'end' });
+				const helper = helperEl.getBoundingClientRect();
 				const launch = document.getElementById('launch');
 				const actions = document.getElementById('planetActions');
 				const launchShown = !launch.hidden;
 				const actionsShown = !actions.hidden;
-				const build = document.getElementById('launchBuild').getBoundingClientRect();
-				const commercial = document.getElementById('launchCommercial').getBoundingClientRect();
-				const evac = document.getElementById('launchEvac').getBoundingClientRect();
+				const reachable = id => {
+					const el = document.getElementById(id);
+					el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+					const rect = el.getBoundingClientRect();
+					const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+					return { width: rect.width, height: rect.height,
+						inside: rect.left >= foot.left && rect.right <= foot.right &&
+							rect.top >= foot.top && rect.bottom <= foot.bottom && hit === el };
+				};
+				const helperButton = reachable('helperProfit');
+				const build = reachable('launchBuild');
+				const commercial = reachable('launchCommercial');
+				const evac = reachable('launchEvac');
 				career.at = -1;
 				GravityScene.refreshCareerPanel();
 				const lostBuildHidden = document.getElementById('launchBuild').hidden &&
 					document.getElementById('launchCommercial').hidden;
-				const lostEvac = document.getElementById('launchEvac').getBoundingClientRect();
+				const lostEvac = reachable('launchEvac');
 				career.at = career.hq;
 				career.stranded = false;
 				GravityScene.refreshCareerPanel();
 				return {
-					helperInFoot: helper.top >= foot.top && helper.bottom <= foot.bottom,
+					helperInFoot: helper.top >= foot.top && helper.bottom <= foot.bottom && helperButton.inside,
 					launchShown,
 					actionsShown,
 					buildW: build.width,
@@ -367,14 +425,39 @@ async function scoreboardStable(page) {
 					commercialH: commercial.height,
 					evacW: evac.width,
 					evacH: evac.height,
-					insideFoot: build.right <= foot.right + 1 && commercial.right <= foot.right + 1 &&
-						evac.right <= foot.right + 1,
+					insideFoot: build.inside && commercial.inside && evac.inside,
 					lostBuildHidden,
 					lostEvacW: lostEvac.width,
+					lostEvacReachable: lostEvac.inside,
 					restoredLaunch: !launch.hidden &&
 						!document.getElementById('launchCommercial').hidden
 				};
 			});
+			/* A scrolled panel must reveal both repair-menu choices when opened. */
+			await page.evaluate(() => {
+				GravityGame.setShipCondition(GravityScene.career, 0.5);
+				GravityScene.refreshCareerPanel();
+				document.getElementById('launchMenuBtn').scrollIntoView({ block: 'end' });
+			});
+			await page.click('#launchMenuBtn');
+			const menuLayout = await page.evaluate(() => {
+				const foot = document.getElementById('flightHud').getBoundingClientRect();
+				const visible = id => {
+					const el = document.getElementById(id);
+					const r = el.getBoundingClientRect();
+					return r.width >= 60 && r.height >= 24 && r.top >= foot.top && r.bottom <= foot.bottom &&
+						document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === el;
+				};
+				return { open: !document.getElementById('launchMenu').hidden,
+					repair: visible('launchRepair'), launch: visible('launchOnly') };
+			});
+			await page.evaluate(() => {
+				setLaunchMenu(false);
+				GravityGame.setShipCondition(GravityScene.career, 1);
+				GravityScene.refreshCareerPanel();
+			});
+			check(menuLayout.open && menuLayout.repair && menuLayout.launch,
+				label + ': repair menu clipped or blocked ' + JSON.stringify(menuLayout));
 			check(errors.length === 0, label + ': page error ' + errors.join(' / '));
 			check(layout.footBottom <= layout.gameBarTop, label + ': foot row overlaps the game footer');
 			check(layout.hudBottom <= layout.footTop + 1,
@@ -384,7 +467,7 @@ async function scoreboardStable(page) {
 				strandedLayout.commercialW >= 60 && strandedLayout.evacW >= 60 &&
 				strandedLayout.buildH >= 24 && strandedLayout.commercialH >= 24 &&
 				strandedLayout.insideFoot && strandedLayout.lostBuildHidden &&
-				strandedLayout.lostEvacW >= 120 && strandedLayout.restoredLaunch,
+				strandedLayout.lostEvacW >= 120 && strandedLayout.lostEvacReachable && strandedLayout.restoredLaunch,
 				label + ': stranded flightHud layout invalid ' + JSON.stringify(strandedLayout));
 			check(drawer.leftBottom <= layout.gameBarTop + 1, label + ': leftHud overlaps the game footer');
 			check(drawer.visible && drawer.run && drawer.rivals, label + ': boxes ' + JSON.stringify(drawer));

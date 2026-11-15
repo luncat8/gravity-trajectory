@@ -230,7 +230,8 @@ a measured seed/outcome table, no budget change before the table exists.
 ### random gravity of planets -1...+5
 but 1st HQ is 1
 
-→ field is `−1…+3.5` in `0.05` steps; HQ, Capital and A.R.F. are pinned to 1.
+→ field is `−1…+3.5` in `0.05` steps, with a smooth bias toward moderate
+positive gravity; HQ, Capital and A.R.F. are pinned to 1.
 **open** → `../0.6.8-plan-seeded-map-opening.md` §2: raising the draw ceiling to
 `+5` is a one-constant change (`PLANET_GRAVITY_MAX`) that moves every seeded
 field, so it ships as a deliberate baseline break.

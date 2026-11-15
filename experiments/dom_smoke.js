@@ -1834,7 +1834,7 @@ const bScene = buildEnv.context.GravityScene;
 const bCargo = bScene.sim;
 const bCareer = bScene.career;
 /* the quickest landing shot: a short flight keeps the smoke test fast */
-function landingAngle(sim, from, speed, career) {
+function landingAngle(sim, from, speed, career, accept) {
 	let best = null;
 	let bestTime = Infinity;
 	for (let a = 0; a < 72; a++) {
@@ -1842,7 +1842,7 @@ function landingAngle(sim, from, speed, career) {
 		sim.predict(from, angle, speed);
 		if (sim.predReason !== pageSim.END_IMPACT || sim.predBody === from) continue;
 		if (career && sim.predBody === career.capitalPlanet) continue;
-		if (sim.predTime >= bestTime) continue;
+		if (sim.predTime >= bestTime || (accept && !accept(sim.predBody))) continue;
 		best = angle;
 		bestTime = sim.predTime;
 	}
@@ -2976,10 +2976,18 @@ function protoOf(career, family, id) {
 	check(cScene.playScale() === 4 && cui.get('playTag').textContent === '×4',
 		'career playReset must return to ×4: ' + cui.get('playTag').textContent);
 
-	/* predicted route info includes launch fee and a sampled viable departure;
+	/* Predicted route info includes wear, launch fee and a viable departure;
 	 * profit/s and time of flight remain visible beside the net outcome. */
-	const shotAngle = landingAngle(cSim, cCareer.hq, CAREER_TEST_SPEED, cCareer);
-	check(shotAngle !== null, '0.4.17: no landing shot from HQ');
+	const exits = new Map();
+	const shotAngle = landingAngle(cSim, cCareer.hq, CAREER_TEST_SPEED, cCareer, planet => {
+		if (!exits.has(planet)) {
+			const departure = cScene.bot.careerDeparture(cCareer, planet,
+				cCareer.ledger.purse + 3.25, cCareer.ship.mass, cSim);
+			exits.set(planet, departure.ok && departure.source === 'commercial');
+		}
+		return exits.get(planet);
+	});
+	check(shotAngle !== null, '0.4.17: no landing with a commercial exit from HQ');
 	/* age planets so predicted visit + task profit is 3.25 on landing at a padless planet */
 	cScene.game.clockSteps = 20000;
 	cCareer.contract = 0;
@@ -3007,10 +3015,11 @@ function protoOf(career, family, id) {
 	const arrivalMass = cScene.bot.careerArrivalMass(cCareer, targetPlanet);
 	const departure = cScene.bot.careerDeparture(cCareer, targetPlanet,
 		cCareer.ledger.purse + actualGain - fee, arrivalMass, cSim);
-	if (!(departure.ok && departure.source === 'commercial')) console.log('DBG', targetPlanet, JSON.stringify({ok:departure.ok,src:departure.source,reason:departure.reason,cost:departure.cost,speed:departure.speed}), 'purse', cCareer.ledger.purse, 'gain', actualGain, 'fee', fee, 'owner', cEnv.context.GravityGame.padOwner(cCareer, targetPlanet), 'mass', arrivalMass, 'tons', cCareer.tasks[0].tons, 'cargo', cCareer.ship.cargoTons);
 	check(departure.ok && departure.source === 'commercial',
-		'padless destination must use its affordable commercial departure');
-	const net = actualGain - fee - departure.cost;
+		'padless destination must use its affordable commercial departure: ' + departure.source);
+	const wear = cEnv.context.GravityGame.forecastWearCost(cCareer, cCareer.ship.condition,
+		cSim.predSteps, cScene.aimState().speed, 0, true);
+	const net = actualGain - fee - departure.cost - wear;
 	const netText = (net >= 0 ? '+' : '−') + Math.abs(net).toFixed(2);
 	check(cui.get('predVisitReadout').textContent.endsWith('· ' + netText),
 		'predVisitReadout must show net outcome ' + netText + ': ' +
@@ -3026,7 +3035,7 @@ function protoOf(career, family, id) {
 		'positive net outcome must use profitable guidance');
 
 	/* A built high-tier destination pad is physically launchable and has no
-	 * departure fee; the readout then reports the full projected payout. */
+	 * departure fee; flight wear is still deducted. */
 	const targetPad = cCareer.pads[targetPlanet];
 	const savedCatapult = targetPad.catapult;
 	const savedBattery = targetPad.battery;
@@ -3038,7 +3047,7 @@ function protoOf(career, family, id) {
 	cEnv.runFrames(2, 16.0);
 	const ownDeparture = cScene.bot.careerDeparture(cCareer, targetPlanet,
 		cCareer.ledger.purse + actualGain - fee, arrivalMass, cSim);
-	const ownNet = actualGain - fee - ownDeparture.cost;
+	const ownNet = actualGain - fee - ownDeparture.cost - wear;
 	const ownNetText = (ownNet >= 0 ? '+' : '−') + Math.abs(ownNet).toFixed(2);
 	check(ownDeparture.ok && ownDeparture.source === 'own' && ownDeparture.cost === 0 &&
 		cui.get('predVisitReadout').textContent.endsWith('· ' + ownNetText) &&
@@ -3458,8 +3467,9 @@ function protoOf(career, family, id) {
 		Math.abs(tAim.speed - tGame.speedOf(tSeedAim.speedU)) < 1e-9,
 		'the helper must arm the saved aim: ' + tAim.angle + '/' + tAim.speed);
 
-	/* an empty book leaves the scan to find and report a fresh shot */
+	/* With no saved or armed shot to seed it, the scan must find a fresh one. */
 	tGame.resetLaunchBook(tCareer.launchBook);
+	tEnv.context.cancelAim();
 	tEnv.click('helperProfit');
 	tGuard = 0;
 	for (; tui.get('helperStop').hidden !== true && tGuard < 600; tGuard++) tEnv.runFrames(1, 16.0);

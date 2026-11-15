@@ -118,7 +118,7 @@ function pageBookTag() {
 
 /* one scratch result: callers read it before the next pricing call */
 const shotMoney = {
-	cash: 0, credit: 0, leg: GravityGame.LEG_NONE,
+	cash: 0, credit: 0, leg: GravityGame.LEG_NONE, visit: 0,
 	fee: 0, exit: Infinity, net: -Infinity,
 	builds: false, launchable: false, source: ''
 };
@@ -132,30 +132,43 @@ function moneyFacts(origin, speed, body, steps, length, visitPay) {
 	GravityGame.careerLandingFacts(shotMoney, career, origin, body, 0, length, steps,
 		game.clockSteps, visitPay, speed);
 	const fee = GravityGame.launchFee(career, origin, speed);
-	const available = career.ledger.purse + shotMoney.cash - fee;
+	const condition = previewStartCondition(career, activeCareerSim(), origin, speed);
+	const repair = condition > career.ship.condition ? GravityGame.repairCost(career) : 0;
+	const arrival = GravityGame.forecastCondition(career, condition, steps, speed, 0, true);
+	const wear = GravityGame.forecastWearCost(career, condition, steps, speed, 0, true);
+	const mandatoryRepair = GravityGame.forecastRepairReserve(career, arrival);
+	const available = career.ledger.purse + shotMoney.cash - fee - repair - mandatoryRepair;
 	const mass = bot.careerArrivalMass(career, body);
-	const departure = bot.careerDeparture(career, body, available, mass, activeCareerSim());
+	const departure = bot.careerDeparture(career, body, available, mass, activeCareerSim(),
+		arrival === 0 ? 1 : arrival);
 	const padless = career.pads[body].catapult === null;
+	shotMoney.visit = visitPay;
 	shotMoney.fee = fee;
 	shotMoney.exit = departure.ok ? departure.cost : Infinity;
-	shotMoney.net = departure.ok ? shotMoney.cash - fee - departure.cost : -Infinity;
+	shotMoney.net = departure.ok ? shotMoney.cash - fee - departure.cost - repair - wear : -Infinity;
 	shotMoney.builds = padless && (departure.builds || departure.canBuildStarter);
-	shotMoney.launchable = career.ledger.purse + 1e-9 >= fee && departure.ok;
+	shotMoney.launchable = career.ledger.purse + 1e-9 >= fee + repair && available >= -1e-9 && departure.ok;
 	shotMoney.source = departure.source;
 	return shotMoney;
 }
 
 function traceMoney(probe, origin, speed) {
+	const career = activeCareer();
+	const condition = previewStartCondition(career, activeCareerSim(), origin, speed);
+	const reportUntil = GravityGame.forecastReportUntil(career, condition, speed, 0);
 	return moneyFacts(origin, speed, probe.predBody, probe.predSteps, probe.predLength,
-		GravityGame.estimateProfit(game.market, game.clockSteps, probe, game.money));
+		GravityGame.estimateProfit(game.market, game.clockSteps, probe, career.ledger, reportUntil));
 }
 
 /* a saved trace priced at the live market: not one trace is spent */
 function storedMoney(entry) {
-	return moneyFacts(entry.origin, GravityGame.speedOf(entry.speedU), entry.body,
-		entry.steps, entry.length,
+	const career = activeCareer();
+	const speed = GravityGame.speedOf(entry.speedU);
+	const condition = previewStartCondition(career, activeCareerSim(), entry.origin, speed);
+	const reportUntil = GravityGame.forecastReportUntil(career, condition, speed, 0);
+	return moneyFacts(entry.origin, speed, entry.body, entry.steps, entry.length,
 		GravityGame.estimateProfitLog(game.market, game.clockSteps,
-			entry.logPlanet, entry.logStep, entry.logCount, game.money));
+			entry.logPlanet, entry.logStep, entry.logCount, career.ledger, reportUntil));
 }
 
 /* the two live gates the launch button applies: the fee is covered and the
@@ -183,21 +196,32 @@ function saveTrace(probe, origin, angleU, speedU) {
 	});
 }
 
-/* the armed preview is saved once per aim, so a good find is never lost */
-const lastAimTrace = { origin: -1, angleU: 0, speedU: 0, body: -1 };
+/* A reset book needs the aim again; an explicit clear suppresses the old aim. */
+const lastAimTrace = { origin: -1, angleU: 0, speedU: 0, body: -1,
+	book: null, version: -1, tag: 0, cleared: false };
 function recordArmedTrace() {
 	const sim = activeSim();
 	const origin = aimBody;
 	if (origin < 0 || sim.predReason !== END_IMPACT || sim.predBody < 0) return;
 	const angleU = GravityGame.angleUnits(aimAngle);
 	const speedU = GravityGame.speedUnits(aimSpeed);
-	if (lastAimTrace.origin === origin && lastAimTrace.angleU === angleU &&
-		lastAimTrace.speedU === speedU && lastAimTrace.body === sim.predBody) return;
+	const book = activeCareer().launchBook;
+	const tag = pageBookTag();
+	const sameControls = lastAimTrace.book === book && lastAimTrace.origin === origin &&
+		lastAimTrace.angleU === angleU && lastAimTrace.speedU === speedU;
+	if (sameControls && lastAimTrace.cleared && lastAimTrace.tag === tag) return;
+	const sameAim = sameControls && lastAimTrace.body === sim.predBody;
+	const stale = book.entries.length > 0 && !GravityGame.bookReady(book, tag);
+	if (sameAim && lastAimTrace.version === book.version && (lastAimTrace.tag === tag || stale)) return;
+	saveTrace(sim, origin, angleU, speedU);
 	lastAimTrace.origin = origin;
 	lastAimTrace.angleU = angleU;
 	lastAimTrace.speedU = speedU;
 	lastAimTrace.body = sim.predBody;
-	saveTrace(sim, origin, angleU, speedU);
+	lastAimTrace.book = book;
+	lastAimTrace.version = book.version;
+	lastAimTrace.tag = tag;
+	lastAimTrace.cleared = false;
 }
 
 const bookOrder = new Int32Array(GravityGame.BOOK_MAX);
@@ -209,9 +233,13 @@ const bookFire = new Uint8Array(GravityGame.BOOK_MAX);
 function launchBlock(career, entry, speed) {
 	if (!activeCareerSim().fieldStatic) return 'moving field';
 	if (playerIsBot()) return 'bot controls the ship';
-	return GravityGame.railBlock(career, activeCareerSim(), entry.origin, speed) ||
-		(turret.pending ? 'a shot is already queued'
-			: careerWaitBusy() ? 'the clock is settling a wait' : '');
+	const sim = activeCareerSim();
+	let block = GravityGame.railBlock(career, sim, entry.origin, speed);
+	if (block === GravityGame.WORN_OUT_BLOCK && career.ended === GravityGame.CAREER_OPEN) {
+		block = GravityGame.repairLaunchBlock(career, sim, entry.origin, speed);
+	}
+	return block || (turret.pending ? 'a shot is already queued'
+		: careerWaitBusy() ? 'the clock is settling a wait' : '');
 }
 
 /* the whole book, fireable rows first, best live money first (insertion
@@ -298,7 +326,7 @@ function launchRowsHtml(career) {
 	let fire = 0;
 	for (let i = 0; i < count; i++) fire += bookFire[i];
 	let html = '<div class="careerLine dim">' + count + ' saved · ' +
-		fire + ' fireable here · best money first</div>';
+		fire + ' fireable here · best money first' + (harvestTick ? ' · ≥ticks' : '') + '</div>';
 	for (let i = 0; i < count; i++) html += launchRowHtml(career, bookOrder[i], bookNet[i]);
 	return html;
 }
@@ -341,6 +369,13 @@ function dropStaleBook() {
 	if (book.entries.length === 0) return;
 	const count = book.entries.length;
 	GravityGame.resetLaunchBook(book);
+	lastAimTrace.origin = aimBody;
+	lastAimTrace.angleU = GravityGame.angleUnits(aimAngle);
+	lastAimTrace.speedU = GravityGame.speedUnits(aimSpeed);
+	lastAimTrace.book = book;
+	lastAimTrace.version = book.version;
+	lastAimTrace.tag = pageBookTag();
+	lastAimTrace.cleared = true;
 	careerNotice('cleared ' + count + ' stale saved shots');
 	refreshLaunchList(true);
 }

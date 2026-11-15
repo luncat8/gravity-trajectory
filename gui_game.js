@@ -662,7 +662,8 @@ function advanceGameOneStep() {
 		careerBotBurn();
 	}
 	game.clockSteps += 1;
-	if (careerRule()) GravityGame.careerAdvance(game.career, 1);
+	if (careerRule()) GravityGame.careerAdvance(game.career, 1,
+		cargoSim.status === STATUS_FLYING && cargoSim.liveSteps < cargoSim.stepLimit);
 	if (cargoSim.status === STATUS_FLYING) {
 		cargoSim.stepOne();
 		if (careerRule()) GravityGame.careerWeatherWear(game.career, cargoSim);

@@ -317,6 +317,9 @@ function updateLiveHud() {
 function setLaunchMenu(open) {
 	launchMenuEl.hidden = !open;
 	launchMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+	if (open && launchMenuEl.scrollIntoView) {
+		launchMenuEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+	}
 }
 
 /* the caret and its menu exist only while a landed ship can be repaired */

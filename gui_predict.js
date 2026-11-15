@@ -10,21 +10,62 @@
 /* the rule's landing facts for the aim preview, read by the readouts */
 const predLanding = { cash: 0, credit: 0, leg: GravityGame.LEG_NONE };
 
+/* The primary launch repairs first when that combined action is affordable.
+ * The dropdown can still fly the current condition without repair. */
+function previewStartCondition(career, sim, origin, speed) {
+	if (sim.status === STATUS_FLYING || career.ship.condition >= 1 ||
+		playerIsBot() || replay.on || careerWaitBusy() || career.ended !== GravityGame.CAREER_OPEN) {
+		return career.ship.condition;
+	}
+	return sim.canFire(origin, speed) && GravityGame.repairLaunchBlock(career, sim, origin, speed) === ''
+		? 1 : career.ship.condition;
+}
+
+function previewWearNote(sim) {
+	if (!careerRule() || sim.predCount < 2 || sim.routeActive ||
+		sim.predReason === GravitySim.END_OPEN || sim.predReason === END_TRUNCATED) return '';
+	const career = playerCareer();
+	const flying = sim.status === STATUS_FLYING;
+	const speed = flying ? 0 : aimSpeed;
+	const dv = flying && (burnAiming || burnArmed) ? burnDv : 0;
+	const condition = previewStartCondition(career, sim, aimBody, speed);
+	const landed = sim.predReason === END_IMPACT && sim.predBody >= 0;
+	const end = GravityGame.forecastCondition(career, condition, sim.predSteps, speed, dv, landed);
+	if (end <= 0) {
+		const reportUntil = GravityGame.forecastReportUntil(career, condition, speed, dv);
+		return reportUntil <= sim.predSteps && career.ship.obs.fitted
+			? ' · ⚠ worn out in flight · reports stop'
+			: ' · ⚠ 0% condition · repair needed';
+	}
+	if (!flying && condition > career.ship.condition &&
+		GravityGame.forecastCondition(career, career.ship.condition, sim.predSteps, speed, 0, landed) <= 0) {
+		return ' · ⚠ launch-only: 0% condition';
+	}
+	return '';
+}
+
 function refreshPredGain() {
 	const sim = activeSim();
 	if (!game.on || routeRule() || sim.predCount < 2) {
 		predGain = 0;
 		return;
 	}
-	let gain = GravityGame.estimateProfit(game.market, game.clockSteps, sim, game.money);
-	if (careerRule() && sim.predReason === END_IMPACT && sim.predBody >= 0) {
+	const career = careerRule() ? playerCareer() : null;
+	const flying = sim.status === STATUS_FLYING;
+	const origin = flying ? sim.origin : aimBody;
+	const speed = flying ? 0 : aimSpeed;
+	const dv = flying && (burnAiming || burnArmed) ? burnDv : 0;
+	const condition = career ? previewStartCondition(career, sim, origin, speed) : 0;
+	const reportUntil = career ? GravityGame.forecastReportUntil(career, condition, speed, dv) : undefined;
+	let gain = GravityGame.estimateProfit(game.market, game.clockSteps, sim,
+		career ? career.ledger : slotLedger(activeSlotIndex()), reportUntil);
+	if (career && sim.predReason === END_IMPACT && sim.predBody >= 0) {
 		/* the same landing table the helper scans and the bots price with:
 		 * a taken delivery or medical quest pays here, not only on the pad */
-		const origin = sim.status === STATUS_FLYING ? sim.origin : aimBody;
-		const flown = sim.status === STATUS_FLYING ? sim.flightLength : 0;
+		const flown = flying ? sim.flightLength : 0;
 		/* a load that is already flying survived its launch */
 		const launchSpeed = sim.status === STATUS_FLYING ? 0 : aimSpeed;
-		GravityGame.careerLandingFacts(predLanding, playerCareer(), origin, sim.predBody,
+		GravityGame.careerLandingFacts(predLanding, career, origin, sim.predBody,
 			flown, sim.predLength, sim.predSteps, game.clockSteps, gain, launchSpeed);
 		gain = predLanding.cash;
 	}
@@ -46,6 +87,8 @@ function predictedCareerEconomics(sim) {
 	out.launchable = true;
 	out.fee = 0;
 	out.fuel = 0;
+	out.repair = 0;
+	out.wear = 0;
 	out.exit = 0;
 	out.net = predGain;
 	out.gain = predGain;
@@ -61,10 +104,19 @@ function predictedCareerEconomics(sim) {
 	const fee = sim.status === STATUS_FLYING ? 0
 		: GravityGame.launchFee(career, origin, aimSpeed);
 	const ship = career.ship;
-	out.fuel = burnArmed ? OrbitTech.impulseFuel(burnDv, ship.engine, ship.mass, ship.fuelKg) * GravityGame.fuelPrice(career) : 0;
-	const cash = career.ledger.purse + predGain - fee;
+	const flying = sim.status === STATUS_FLYING;
+	const speed = flying ? 0 : aimSpeed;
+	const dv = flying && (burnAiming || burnArmed) ? burnDv : 0;
+	const condition = previewStartCondition(career, sim, origin, speed);
+	const arrival = GravityGame.forecastCondition(career, condition, sim.predSteps, speed, dv, true);
+	out.repair = condition > ship.condition ? GravityGame.repairCost(career) : 0;
+	out.wear = GravityGame.forecastWearCost(career, condition, sim.predSteps, speed, dv, true);
+	out.fuel = dv > 0 ? OrbitTech.impulseFuel(dv, ship.engine, ship.mass, ship.fuelKg) * GravityGame.fuelPrice(career) : 0;
+	const mandatoryRepair = GravityGame.forecastRepairReserve(career, arrival);
+	const cash = career.ledger.purse + predGain - fee - out.repair - mandatoryRepair;
 	const mass = bot.careerArrivalMass(career, sim.predBody);
-	const departure = bot.careerDeparture(career, sim.predBody, cash, mass, activeCareerSim());
+	const departure = bot.careerDeparture(career, sim.predBody, cash, mass, activeCareerSim(),
+		arrival === 0 ? 1 : arrival);
 	out.fee = fee;
 	out.exit = departure.cost;
 	out.source = departure.source;
@@ -72,8 +124,8 @@ function predictedCareerEconomics(sim) {
 	const destinationPad = GravityGame.padAt(career, sim.predBody);
 	out.tier = destinationPad.catapult.tier + 1;
 	out.own = career.pads[sim.predBody].catapult !== null;
-	out.launchable = career.ledger.purse + 1e-9 >= fee && departure.ok;
-	out.net = predGain - fee - out.fuel - (departure.ok ? departure.cost : 0);
+	out.launchable = career.ledger.purse + 1e-9 >= fee + out.repair && cash >= -1e-9 && departure.ok;
+	out.net = predGain - fee - out.fuel - out.repair - out.wear - (departure.ok ? departure.cost : 0);
 	out.state = !out.launchable || aimBreaksFragile() ? 2 : out.net > 1e-9 ? 1 : 0;
 	return out;
 }
@@ -136,7 +188,7 @@ function refreshAimLabel() {
 			: '';
 		aimLabel = 'Δv ' + burnDv.toFixed(1) + ' px/s · ' + deg.toFixed(1) + '° · −' +
 			usedKg.toFixed(1) + ' kg / ' + costText(usedKg * GravityGame.fuelPrice(playerCareer())) +
-			(fine ? ' · fine' : '') + visitNote;
+			(fine ? ' · fine' : '') + visitNote + previewWearNote(sim);
 		return;
 	}
 	if (!aiming && !armed) {
@@ -161,7 +213,8 @@ function refreshAimLabel() {
 		(fine ? ' · fine' : '') +
 		(ceiling < SPEED_MAX - 1e-9 ? ' · max ' + Math.round(ceiling) : '') + visitNote +
 		(careerRule() ? careerPickupNote(playerCareer(), aimBody) : '') +
-		(aimBreaksFragile() ? ' · breaks the fragile load · ' + fragileLimitText() : '');
+		(aimBreaksFragile() ? ' · breaks the fragile load · ' + fragileLimitText() : '') +
+		previewWearNote(sim);
 }
 
 /* the drag maps all of GRIP_MAX onto SPEED_MIN…this planet's real ceiling:
@@ -173,9 +226,7 @@ function speedCeiling(planet) {
 	return limit > SPEED_MAX ? SPEED_MAX : limit;
 }
 
-/* experimental panel: one world, so the player sim, the auto helpers and
- * every rival bot must predict and fly with the same two multipliers; the
- * stay-pay is a career rule, so it is off for the other three */
+/* One world: all ships and predictions use the same experimental settings. */
 function applyExperiment() {
 	cargoSim.setScales(gravityScale, forceScale);
 	helperProbe.setScales(gravityScale, forceScale);
@@ -185,6 +236,7 @@ function applyExperiment() {
 		const career = slotCareer(s);
 		if (career) career.forceScale = forceScale;
 	}
+	GravityGame.setSpaceWearScale(spaceWearScale);
 	GravityGame.setHarvestMode(harvestTick && careerRule()
 		? GravityGame.HARVEST_TICK : GravityGame.HARVEST_ENTRY);
 }
@@ -194,20 +246,24 @@ function refreshExperimentUi() {
 	const forceText = '×' + forceScale.toFixed(2);
 	if (expGravityLabelEl) expGravityLabelEl.textContent = gravityText;
 	if (expForceLabelEl) expForceLabelEl.textContent = forceText;
+	if (expWearLabelEl) expWearLabelEl.textContent = '×' + spaceWearScale.toFixed(2);
 	if (expHarvestEl) expHarvestEl.checked = harvestTick;
 	if (expTagEl) {
 		expTagEl.textContent = 'g ' + gravityText + ' · force ' + forceText +
+			(careerRule() ? ' · wear ×' + spaceWearScale.toFixed(2) : '') +
 			(harvestTick ? ' · ticks' : '');
 	}
 }
 
 /* one entry point for the sliders and for a link that carries the scales */
-function setExperimentScales(nextGravity, nextForce, nextHarvest) {
+function setExperimentScales(nextGravity, nextForce, nextHarvest, nextWear) {
 	gravityScale = Math.round(nextGravity * 100) / 100;
 	forceScale = Math.round(nextForce * 100) / 100;
+	if (nextWear !== undefined) spaceWearScale = Math.round(nextWear * 100) / 100;
 	harvestTick = nextHarvest === true;
 	if (expGravityEl) expGravityEl.value = String(gravityScale);
 	if (expForceEl) expForceEl.value = String(forceScale);
+	if (expWearEl) expWearEl.value = String(spaceWearScale);
 	applyExperiment();
 	refreshExperimentUi();
 }
@@ -216,9 +272,26 @@ function setExperimentScales(nextGravity, nextForce, nextHarvest) {
  * scales: flipping it mid-career only changes the steps still to fly. The
  * box is dark outside career, where it springs back if anything ticks it. */
 function onHarvestChange() {
-	harvestTick = Boolean(expHarvestEl && expHarvestEl.checked) && careerRule();
+	const next = Boolean(expHarvestEl && expHarvestEl.checked) && careerRule();
+	if (next !== harvestTick) cancelHelperForChange('stay-pay');
+	harvestTick = next;
 	applyExperiment();
 	refreshExperimentUi();
+	if (careerRule()) refreshLaunchList(true);
+	dirty = true;
+	hudAt = -Infinity;
+}
+
+/* Ageing affects every company and any active preview, not the field itself. */
+function onWearInput() {
+	if (!careerRule()) return;
+	const next = Math.round(Number(expWearEl.value) * 100) / 100;
+	if (next === spaceWearScale) return;
+	spaceWearScale = next;
+	cancelHelperForChange('space wear');
+	GravityGame.setSpaceWearScale(spaceWearScale);
+	refreshExperimentUi();
+	refreshLaunchList(true);
 	dirty = true;
 	hudAt = -Infinity;
 }
@@ -238,7 +311,10 @@ function clampArmedToPad() {
 function onExperimentInput() {
 	const nextGravity = Math.round(Number(expGravityEl.value) * 100) / 100;
 	const nextForce = Math.round(Number(expForceEl.value) * 100) / 100;
-	if (nextGravity !== gravityScale || nextForce !== forceScale) experimentTouched = true;
+	if (nextGravity !== gravityScale || nextForce !== forceScale) {
+		experimentTouched = true;
+		cancelHelperForChange('gravity or force');
+	}
 	setExperimentScales(nextGravity, nextForce, harvestTick);
 	clampArmedToPad();
 	/* the drawer prints the pad's cap: re-render it or the number goes stale */

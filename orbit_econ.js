@@ -119,11 +119,8 @@
 	const CORRUPTION_BRIBE_BASE = 1;
 	const CORRUPTION_BRIBE_SCALE = 0.1;   // per money unit handed to the rulers
 	const BRIBE_MIN = 1;                  // bot's smallest worthwhile bribe
-	/* (0.5.13) the bribe is priced by what the visit is worth to the Empire:
-	 * value * rot fraction * this. A clean lord has nothing to hide and pays
-	 * nothing; at rot 50 the rulers pay twice the visit, at rot 100 four times
-	 * — right where the arrest roll is at its worst. */
-	const BRIBE_VALUE_COEF = 4;
+	/* The rulers pay 200% of the visit value; rot determines the risk. */
+	const BRIBE_VALUE_COEF = 2;
 	const ARREST_SECONDS = 120;           // game seconds of slow transport to the Capital
 	const REBEL_CHECK_SECONDS = 60;       // game seconds of one epoch: one roll per planet
 	const REBEL_START = 50;               // no rebellion at or below this
@@ -168,12 +165,9 @@
 		return CORRUPTION_BRIBE_BASE + CORRUPTION_BRIBE_SCALE * money;
 	}
 
-	/* what the rulers pay for the visit's silence (0.5.13): the visit value is
-	 * the base — a planet already reported to the Capital is worth no bribe —
-	 * scaled by how corrupt the lord is */
-	function bribeValue(value, c) {
-		if (!(value > 0)) return 0;
-		return value * (clampCorruption(c) / CORRUPTION_MAX) * BRIBE_VALUE_COEF;
+	/* What the rulers pay for the visit's silence. */
+	function bribeValue(value) {
+		return value > 0 ? value * BRIBE_VALUE_COEF : 0;
 	}
 
 	function arrestChance(c) {

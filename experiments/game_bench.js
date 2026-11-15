@@ -111,7 +111,8 @@ function benchCodec() {
 		if (count > 0) longest = Math.max(longest, text.length / count);
 	}
 	const rejects = ['game=2&seed=5&rate=1', 'game=1&seed=0&rate=1', 'game=1&seed=5&rate=0.7',
-		'game=1&seed=5&rate=13', 'game=1&seed=5&rate=1&shots=x0.0.p00', 'game=1&seed=5&rate=1&shots=p26.0.p00',
+		'game=1&seed=5&rate=13', 'game=1&seed=5&rate=1&shots=x0.0.p00',
+		'game=1&seed=5&rate=1&shots=p' + PLANETS + '.0.p00',
 		'game=1&seed=5&rate=1&shots=p0.0.10', 'game=1&seed=5&rate=1&shots=p0.mzzz.p00',
 		'game=1&seed=5&rate=1&shots=p0.0.p00.ba0', 'game=1&seed=5&rate=1&shots=p0.0.p00_',
 		'game=1&seed=5&rate=1&rule=bogus', 'game=1&seed=5&rate=1&bot=impossible',
@@ -124,6 +125,8 @@ function benchCodec() {
 		'game=1&seed=5&rate=1&fs=3.01', 'game=1&seed=5&rate=1&gs=abc',
 		'game=1&seed=5&rate=1&fs='];
 	for (const text of rejects) check(GravityGame.decodeLink(text) === null, 'accepted bad link ' + text);
+	check(GravityGame.decodeLink('game=1&seed=5&rate=1&shots=p' + (PLANETS - 1) + '.0.p00') !== null,
+		'the last valid planet was rejected');
 	/* route is a one-plan link: its traced length is part of the verdict */
 	check(GravityGame.decodeShot('p0.0.3aio.ba0', GravityGame.CAP_STEPS) === null,
 		'a tour link accepted an abort past its 120 s cap');
@@ -390,14 +393,13 @@ function benchRoute() {
 /*
  * Two greedy tours on seed 31 rate 3 under the per-planet growing profit
  * market (purse0 = 3.00, cost = 1.00, initial slope k = 0.00625/s easing
- * asymptotically to the 3.00 cap), played at x8. Shot counts and purses are
- * the deterministic baseline of the current seeded gravity range (−1…3.5) and
- * play area (1.5× the field: the 60 s tour now reaches planets the old
- * 12 px edge cut off, so it flies seven shorter hops instead of four).
+ * asymptotically to the 4.00 cap), played at x8. Shot counts and purses are
+ * the deterministic baseline of the current biased seeded gravity range and
+ * 1.5× play area. The longer-horizon heuristic goes broke on this map.
  */
 const MONEY_TOURS = [
-	{ horizon: 12, shots: 9, purse: 5.2025 },
-	{ horizon: 60, shots: 7, purse: 9.0622 }
+	{ horizon: 12, shots: 8, purse: 4.7926, complete: true },
+	{ horizon: 60, shots: 14, purse: 0.0817, complete: false }
 ];
 
 function playMoneyTour(horizon) {
@@ -407,11 +409,13 @@ function playMoneyTour(horizon) {
 	page.runFrames(2, 16.7);
 	for (let i = 0; i < 3; i++) page.click('playFaster');
 	const rows = [];
-	while (cargo.visitedCount < PLANETS && scene.game.money.purse >= 1 && rows.length < 30) {
+	while (scene.game.doneSteps < 0 && scene.game.money.purse >= 1 && rows.length < 30) {
 		const shot = chooseShot(page, horizon);
 		page.dragAim(shot.p, shot.angle, shot.speed);
 		page.runFrames(1, 16.7);
+		const before = scene.game.shots.length;
 		page.click('launch');
+		if (scene.game.shots.length === before) throw new Error('money tour shot was refused');
 		let frames = 0;
 		while (cargo.status === STATUS_FLYING && frames < 200000) {
 			page.runFrames(1, 16.7);
@@ -421,7 +425,7 @@ function playMoneyTour(horizon) {
 	}
 	page.runFrames(2, 16.7);
 	page.click('gameCopy');
-	return { page, link: page.clipboardText, rows,
+	return { page, link: page.clipboardText, rows, complete: scene.game.doneSteps >= 0,
 		purse: scene.game.money.purse, shots: scene.game.shots.length };
 }
 
@@ -429,6 +433,7 @@ function benchMoney() {
 	const started = Date.now();
 	for (const row of MONEY_TOURS) {
 		const tour = playMoneyTour(row.horizon);
+		check(tour.complete === row.complete, 'greedy ' + row.horizon + ' s tour completion changed');
 		check(tour.shots === row.shots, 'greedy ' + row.horizon + ' s tour took ' +
 			tour.shots + ' shots, expected ' + row.shots);
 		check(Math.abs(tour.purse - row.purse) <= 0.05, 'greedy ' + row.horizon +

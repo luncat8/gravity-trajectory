@@ -146,7 +146,7 @@ const ROUTE_FIELD_DELTA = 4;
 /* rival search slice budget per frame so frame work stays well under 16.7 ms */
 const BOT_STEP_MS = 3;
 const MAX_GAME_STEPS = 256;
-/* rebel worlds can ramp to FLYBY_MAX × MONEY.cap (+12.00) */
+/* rebel worlds can ramp to FLYBY_MAX × MONEY.cap (+16.00) */
 const PROFIT_MAX_CENTS = Math.round(GravityGame.MONEY.cap * OrbitEcon.FLYBY_MAX * 100);
 const PROFIT_STRINGS = new Array(PROFIT_MAX_CENTS + 1);
 for (let c = 0; c <= PROFIT_MAX_CENTS; c++) {
@@ -262,7 +262,7 @@ const POLITICS_HELP = {
 		OrbitEcon.CORRUPTION_VISIT_DECAY.toFixed(1) + '. Reporting while landed slowly cools rot; once uncollected visit profit passes +' +
 		OrbitEcon.CORRUPTION_PROFIT_START.toFixed(2) + ', passive corruption grows linearly up to max rate at +' +
 		OrbitEcon.CORRUPTION_PROFIT_FULL.toFixed(2) + ' (the profit pill turns amber, then coral). Tradition sets a 5% floor.',
-	score: 'Once per landing the rulers pay for silence: visit value \u00d7 corruption \u00d7 ' +
+	score: 'Once per landing the rulers pay for silence: visit value \u00d7 ' +
 		OrbitEcon.BRIBE_VALUE_COEF.toFixed(0) + '. Visit value grows at half speed while landed. A bribe raises corruption; above ' +
 		OrbitEcon.REBEL_START + '% it can end in arrest (a slow Capital transport) and the planet can rebel.',
 	detailLabel: 'Device',
@@ -302,7 +302,7 @@ const RULE_HELP = {
 		goal: 'Finish the 10-launch contract.',
 		score: 'Highest purse. Ties: more systems, fewer launches, less flight time.',
 		detailLabel: 'Money',
-		detail: 'Launch costs 1.00. Entering a system collects its shown profit; profit grows while unvisited, easing toward +3.00 the longer it waits.',
+		detail: 'Launch costs 1.00. Entering a system collects its shown profit; profit grows while unvisited, easing toward +4.00 the longer it waits.',
 		controls: ''
 	},
 	career: {

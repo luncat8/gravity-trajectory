@@ -139,6 +139,8 @@ const expGravityEl = $('expGravity');
 const expGravityLabelEl = $('expGravityLabel');
 const expForceEl = $('expForce');
 const expForceLabelEl = $('expForceLabel');
+const expWearEl = $('expWear');
+const expWearLabelEl = $('expWearLabel');
 const expHarvestEl = $('expHarvest');
 const expTagEl = $('expTag');
 const launchButton = $('launch');
@@ -366,10 +368,10 @@ let hudFolded = false;
 let fine = false;
 let dirty = false;
 let trimLast = 0;
-/* experimental settings: system-wide gravity, catapult rail force and the
- * career-only stay-pay (every step inside a system collects what regrew) */
+/* experimental gravity, rail force, career space ageing and stay-pay */
 let gravityScale = 1;
 let forceScale = 1;
+let spaceWearScale = 1;
 let harvestTick = false;
 let experimentTouched = false;
 let hudAt = -Infinity;
@@ -403,7 +405,7 @@ let hudRouteBestText = '';
 let hudRivalText = '';
 let hudReplayText = '';
 let predGain = 0;
-const aimEconomics = { state: 0, launchable: true, fee: 0, fuel: 0, exit: 0, net: 0, gain: 0,
+const aimEconomics = { state: 0, launchable: true, fee: 0, fuel: 0, repair: 0, wear: 0, exit: 0, net: 0, gain: 0,
 	source: '', speed: 0, tier: 0, own: false };
 let launchState = -1;
 let launchNote = '';
@@ -608,6 +610,7 @@ if (expForceEl) {
 	expForceEl.addEventListener('input', onExperimentInput);
 	expForceEl.addEventListener('change', onExperimentChange);
 }
+if (expWearEl) expWearEl.addEventListener('input', onWearInput);
 if (expHarvestEl) expHarvestEl.addEventListener('change', onHarvestChange);
 horizonSlider.addEventListener('input', () => {
 	cargoSim.horizon = Number(horizonSlider.value);
@@ -1025,7 +1028,7 @@ root.GravityScene = {
 	aimGuidance: () => aimGuidance,
 	predTime: () => activeSim().predTime,
 	speedCeiling,
-	experimentScales: () => ({ gravity: gravityScale, force: forceScale }),
+	experimentScales: () => ({ gravity: gravityScale, force: forceScale, spaceWear: spaceWearScale }),
 	/* the profit-pill highlight: systems a flying ship is inside vs the ones
 	 * the traced path ahead will enter */
 	harvestMarks: () => ({ inside: liveHarvestMask, route: predHarvestMask }),

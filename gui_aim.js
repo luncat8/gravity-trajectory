@@ -110,6 +110,7 @@ function takeOverAim(now) {
 	}
 	/* re-aiming rewrites the queued shot, so the pending one is cancelled */
 	cancelTurret();
+	if (careerRule()) lastAimTrace.cleared = false;
 	blockedPlanet = -1;
 	blockedKind = 0;
 	blockedBy = -1;
@@ -497,6 +498,7 @@ function clearCargo() {
 /* gravity source: static planets or their moving ports */
 function setSource(next) {
 	if (next === mode && cargoSim.fillField) return;
+	cancelHelperForChange('gravity source');
 	mode = next;
 	srcPlanetsEl.checked = mode === MODE_PLANETS;
 	srcPortsEl.checked = mode === MODE_PORTS;
