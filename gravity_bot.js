@@ -378,7 +378,7 @@
 		this.careerBurnBest = {
 			body: -1, angle: 0, dv: 0, angleU: 0, dvU: 0,
 			score: -Infinity, coastScore: -Infinity, fuelKg: 0, steps: 0,
-			taskPay: 0, padValue: 0, builds: false,
+			taskPay: 0, padValue: 0, builds: false, bribe: 0,
 			exitCost: Infinity, exitSource: ''
 		};
 		/* the fan's best few shots, kept for the one-burn re-price */
@@ -392,7 +392,7 @@
 		/* the winning burn-priced shot, copied out of careerBurnBest */
 		this.careerBurnShot = {
 			body: -1, angleU: 0, speedU: 0, score: -Infinity, burnGain: 0,
-			taskPay: 0, padValue: 0, fee: 0, energy: 0, wait: 0,
+			taskPay: 0, padValue: 0, fee: 0, energy: 0, wait: 0, bribe: 0,
 			exitCost: Infinity, exitSource: '', builds: false, fromBook: false,
 			fuelKg: 0, steps: 0
 		};
@@ -404,8 +404,10 @@
 		this.careerEval = {
 			taskPay: 0, padValue: 0, builds: false, energy: 0, wait: 0,
 			fee: 0, exitCost: Infinity, exitSource: '', reject: '',
-			cash: 0, credit: 0, leg: GravityGame.LEG_NONE
+			cash: 0, credit: 0, leg: GravityGame.LEG_NONE, bribe: 0
 		};
+		/* the landing a visit-log walk prices the rulers' offer from */
+		this.careerLanding = { body: -1, value: 0 };
 		/* the winning trace's visit log, copied before the fan moves on */
 		this.careerLogPlanet = new Int32Array(PRED_LOG_MAX);
 		this.careerLogStep = new Int32Array(PRED_LOG_MAX);
@@ -2446,12 +2448,35 @@
 	};
 
 	/*
+	 * What the rulers would pay for this landing's silence, or 0. The offer is
+	 * twice the visit value — the value the landing reports, or, with a dead
+	 * device or a quiet planet, what accrued unreported — so a worn-out
+	 * observation device costs the visit but not the bribe. Only a company with
+	 * the bribe-taking persona prices it, and never on the Capital, A.R.F., a
+	 * rebel planet or its own rail: the same gates `careerBribe` applies when
+	 * the ship actually stands there, so the score cannot promise money the
+	 * landing will refuse.
+	 */
+	GravityBot.prototype.careerBribeOffer = function (career, market, body, value) {
+		if (!career.bribeProne || body < 0 || !(value > 0)) return 0;
+		if (body === market.capitalPlanet || body === market.arfPlanet) return 0;
+		if (market.rebel[body]) return 0;
+		if (GravityGame.padOwner(career, body) === career.index) return 0;
+		const amount = OrbitEcon.bribeValue(value);
+		if (amount < OrbitEcon.BRIBE_MIN) return 0;
+		return amount >= CAREER_BRIBE_PAY || market.corruption[body] >= CAREER_BRIBE_ROT
+			? amount : 0;
+	};
+
+	/*
 	 * Landing + harvest + contract + solvency value of one trace. Only the
 	 * facts differ between a fresh probe and a stored trajectory, so both feed
-	 * this: `visitPay` is the harvest, `length`/`steps` the path and arrival.
+	 * this: `visitPay` is the harvest, `length`/`steps` the path and arrival,
+	 * `landingValue` is what the landing's own visit is worth before the bribe.
 	 */
 	GravityBot.prototype.careerScoreFacts = function (career, origin, market, runStep,
-		flownLen, fee, body, visitPay, length, steps, speed, wearCost, arrivalCondition) {
+		flownLen, fee, body, visitPay, length, steps, speed, wearCost, arrivalCondition,
+		landingValue) {
 		this.careerEval.reject = '';
 		this.careerEval.builds = false;
 		this.careerEval.exitCost = Infinity;
@@ -2459,6 +2484,11 @@
 		/* the rule's one landing table: cash for the purse, credit for the leg */
 		GravityGame.careerLandingFacts(this.careerEval, career, origin, body,
 			flownLen, length, steps, runStep, visitPay, speed);
+		/* a bribe is cash in the purse before the next launch, so it also
+		 * widens what the exit can afford */
+		const bribe = this.careerBribeOffer(career, market, body, landingValue || 0);
+		this.careerEval.cash += bribe;
+		this.careerEval.bribe = bribe;
 		const taskPay = this.careerEval.cash + this.careerEval.credit;
 		const cashPay = this.careerEval.cash;
 
@@ -2540,7 +2570,8 @@
 		const until = career.ship.obs.fitted
 			? offset + Math.max(1, Math.ceil(reportUntil)) : 0;
 		return GravityGame.estimateProfitLog(market, runStep,
-			prefix.joinedPlanet, prefix.joinedStep, count, career.ledger, until);
+			prefix.joinedPlanet, prefix.joinedStep, count, career.ledger, until,
+			this.careerLanding);
 	};
 
 	/* Score reports before failure and the eventual service. A scratch launch
@@ -2556,13 +2587,18 @@
 		const reportUntil = GravityGame.forecastReportUntil(career, condition, speed, burnDv);
 		const arrival = GravityGame.forecastCondition(career, condition, probe.predSteps, speed, burnDv, true);
 		const wear = careerFee(career, (career.ship.condition - arrival) * GravityGame.WEAR_REPAIR_COST);
+		/* the landing's own visit value, reported or not: the bribe cashes it */
+		const landing = this.careerLanding;
+		landing.body = probe.predBody;
+		landing.value = 0;
 		const visitPay = prefixSim
 			? this.careerBurnVisitPay(career, market, runStep, prefixSim, reportUntil)
-			: GravityGame.estimateProfit(market, runStep, probe, career.ledger, reportUntil);
+			: GravityGame.estimateProfit(market, runStep, probe, career.ledger, reportUntil, landing);
 		const continuationStep = runStep + (prefixSim ? prefixSim.liveSteps : 0);
 		const launchSpeed = prefixSim ? prefixSim.speed : speed;
 		return this.careerScoreFacts(career, origin, market, continuationStep, flownLen, fee,
-			probe.predBody, visitPay, probe.predLength, probe.predSteps, launchSpeed, wear, arrival);
+			probe.predBody, visitPay, probe.predLength, probe.predSteps, launchSpeed, wear,
+			arrival, landing.value);
 	};
 
 	/* pad energy, the recharge wait it costs and the EMC fee of one shot */
@@ -2593,12 +2629,15 @@
 		const fee = GravityGame.launchFee(career, entry.origin, speed);
 		const condition = career.ship.condition;
 		const reportUntil = GravityGame.forecastReportUntil(career, condition, speed, 0);
+		const landing = this.careerLanding;
+		landing.body = entry.body;
+		landing.value = 0;
 		const visitPay = GravityGame.estimateProfitLog(market, runStep,
-			entry.logPlanet, entry.logStep, entry.logCount, career.ledger, reportUntil);
+			entry.logPlanet, entry.logStep, entry.logCount, career.ledger, reportUntil, landing);
 		const arrival = GravityGame.forecastCondition(career, condition, entry.steps, speed, 0, true);
 		const wear = GravityGame.forecastWearCost(career, condition, entry.steps, speed, 0, true);
 		const base = this.careerScoreFacts(career, entry.origin, market, runStep, 0, fee,
-			entry.body, visitPay, entry.length, entry.steps, speed, wear, arrival);
+			entry.body, visitPay, entry.length, entry.steps, speed, wear, arrival, landing.value);
 		if (!Number.isFinite(base)) return -Infinity;
 		return this.careerScoreTail(career, sim, entry.origin, speed, base, fee);
 	};
@@ -2648,6 +2687,7 @@
 		best.speed = GravityGame.speedOf(speedU);
 		best.score = score;
 		best.taskPay = this.careerEval.taskPay;
+		best.bribe = this.careerEval.bribe;
 		best.padValue = this.careerEval.padValue;
 		best.energy = this.careerEval.energy;
 		best.wait = this.careerEval.wait;
@@ -2736,6 +2776,7 @@
 		best.fuelKg = 0;
 		best.fuelProducedKg = 0;
 		best.fuelBoughtKg = 0;
+		best.bribe = 0;
 		if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
 			!sim.canLaunchFrom(career.at)) return null;
 		const origin = career.at;
@@ -2833,6 +2874,7 @@
 		const best = this.careerBurnBest;
 		const ev = this.careerEval;
 		best.taskPay = ev.taskPay;
+		best.bribe = ev.bribe;
 		best.padValue = ev.padValue;
 		best.builds = ev.builds;
 		best.exitCost = ev.exitCost;
@@ -2872,6 +2914,7 @@
 		best.body = -1;
 		best.score = -Infinity;
 		best.taskPay = 0;
+		best.bribe = 0;
 		best.padValue = 0;
 		best.builds = false;
 		best.exitCost = Infinity;
@@ -3374,6 +3417,7 @@
 			shot.score = score;
 			shot.burnGain = score - ballistic;
 			shot.taskPay = burn.taskPay;
+			shot.bribe = burn.bribe;
 			shot.padValue = burn.padValue;
 			shot.fee = fee;
 			shot.energy = energy;
@@ -3396,6 +3440,7 @@
 		plan.score = shot.score;
 		/* the tank fuel is a money term, so the plan's score identity holds */
 		plan.taskPay = shot.taskPay - shot.fuelKg * GravityGame.fuelPrice(career);
+		plan.bribe = shot.bribe;
 		plan.fuelKg = shot.fuelKg;
 		plan.padValue = shot.padValue;
 		plan.fee = shot.fee;
@@ -3423,6 +3468,7 @@
 		to.speed = from.speed;
 		to.score = from.score;
 		to.taskPay = from.taskPay;
+		to.bribe = from.bribe;
 		to.padValue = from.padValue;
 		to.energy = from.energy;
 		to.wait = from.wait;
@@ -3813,7 +3859,9 @@
 			if (!plan) return false;
 			this.traceAdd(who, 'plan', 'P' + plan.origin + '→P' + plan.body +
 				' v' + plan.speed.toFixed(0) + ' score ' + signed(plan.score) +
-				' pay ' + signed(plan.taskPay) + ' pad after wear ' + signed(plan.padValue) +
+				' pay ' + signed(plan.taskPay) +
+				(plan.bribe > 0 ? ' (bribe ' + plan.bribe.toFixed(2) + ')' : '') +
+				' pad after wear ' + signed(plan.padValue) +
 				' fee ' + plan.fee.toFixed(2) + ' exit ' + (plan.exitCost || 0).toFixed(2) +
 				' (' + (plan.exitSource || 'own') + ') · ' +
 				(plan.fromBook ? 'book reuse' : 'fan ' + this.careerScan.tried + ' traces') +

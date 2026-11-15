@@ -1,0 +1,55 @@
+career_gravity_bench STATS=1, 12 seeds x 2 rivals, 400 s, rate 1, WEAR=1 (0.7.7)
+visit cap 4.00, flat 2x bribe, smoothed planet gravity, bot prices wear + the report limit + the bribe
+
+STATS seed 1 R1 · profit 0.040/s · property 17.02 · science 0.00 · flown 38.4 px/s
+STATS seed 1 R2 · profit -0.002/s · property 3.80 · science 0.00 · flown 31.9 px/s
+STATS seed 1 all · profit 0.019/s · property 20.82 · science 0.00 · flown 35.2 px/s · rot 135 · standing 16.21
+STATS seed 2 R1 · profit -0.010/s · property 0.76 · science 0.00 · flown 10.2 px/s
+STATS seed 2 R2 · profit -0.001/s · property 3.80 · science 0.00 · flown 10.2 px/s
+STATS seed 2 all · profit -0.006/s · property 4.56 · science 0.00 · flown 10.2 px/s · rot 227 · standing 28.12
+STATS seed 3 R1 · profit 0.029/s · property 6.84 · science 0.00 · flown 51.4 px/s
+STATS seed 3 R2 · profit -0.002/s · property 3.80 · science 0.00 · flown 16.7 px/s
+STATS seed 3 all · profit 0.014/s · property 10.64 · science 0.00 · flown 34.0 px/s · rot 82 · standing 9.66
+STATS seed 4 R1 · profit 0.037/s · property 11.63 · science 0.00 · flown 51.8 px/s
+STATS seed 4 R2 · profit 0.026/s · property 6.84 · science 0.00 · flown 30.7 px/s
+STATS seed 4 all · profit 0.031/s · property 18.47 · science 0.00 · flown 41.2 px/s · rot 110 · standing 11.66
+STATS seed 5 R1 · profit 0.026/s · property 10.33 · science 0.00 · flown 30.7 px/s
+STATS seed 5 R2 · profit 0.034/s · property 13.98 · science 0.00 · flown 44.1 px/s
+STATS seed 5 all · profit 0.030/s · property 24.31 · science 0.00 · flown 37.4 px/s · rot 97 · standing 11.89
+STATS seed 6 R1 · profit 0.007/s · property 5.02 · science 0.00 · flown 50.4 px/s
+STATS seed 6 R2 · profit 0.002/s · property 4.41 · science 0.00 · flown 13.8 px/s
+STATS seed 6 all · profit 0.005/s · property 9.43 · science 0.00 · flown 32.1 px/s · rot 192 · standing 23.64
+STATS seed 7 R1 · profit 0.003/s · property 5.02 · science 0.00 · flown 29.5 px/s
+STATS seed 7 R2 · profit 0.017/s · property 3.80 · science 0.00 · flown 39.4 px/s
+STATS seed 7 all · profit 0.010/s · property 8.82 · science 0.00 · flown 34.4 px/s · rot 174 · standing 18.78
+STATS seed 8 R1 · profit 0.013/s · property 3.80 · science 0.00 · flown 47.6 px/s
+STATS seed 8 R2 · profit -0.011/s · property 0.76 · science 0.00 · flown 30.5 px/s
+STATS seed 8 all · profit 0.001/s · property 4.56 · science 0.00 · flown 39.1 px/s · rot 132 · standing 14.63
+STATS seed 9 R1 · profit 0.005/s · property 4.41 · science 0.00 · flown 2.6 px/s
+STATS seed 9 R2 · profit 0.040/s · property 15.28 · science 0.00 · flown 40.7 px/s
+STATS seed 9 all · profit 0.022/s · property 19.69 · science 0.00 · flown 21.7 px/s · rot 130 · standing 16.88
+STATS seed 10 R1 · profit 0.011/s · property 3.80 · science 0.00 · flown 27.2 px/s
+STATS seed 10 R2 · profit 0.009/s · property 0.76 · science 0.00 · flown 22.2 px/s
+STATS seed 10 all · profit 0.010/s · property 4.56 · science 0.00 · flown 24.7 px/s · rot 169 · standing 23.61
+STATS seed 11 R1 · profit 0.006/s · property 4.41 · science 0.00 · flown 40.4 px/s
+STATS seed 11 R2 · profit 0.002/s · property 3.80 · science 0.00 · flown 37.8 px/s
+STATS seed 11 all · profit 0.004/s · property 8.21 · science 0.00 · flown 39.1 px/s · rot 187 · standing 23.06
+STATS seed 12 R1 · profit 0.003/s · property 3.80 · science 0.00 · flown 37.8 px/s
+STATS seed 12 R2 · profit 0.010/s · property 7.45 · science 0.00 · flown 28.1 px/s
+STATS seed 12 all · profit 0.007/s · property 11.25 · science 0.00 · flown 33.0 px/s · rot 153 · standing 20.19
+STATS TOTAL · profit 0.012/s · property 6.05 · science 0.00 · flown 31.8 px/s · rot 149 · standing 18.19 · visits 79% · contracts 7% · bribes 7% · tax 7%
+WEAR seed 1 · repaired 10 · maintenance 11.24 · mean cond 92 % · worn out 0
+WEAR seed 2 · repaired 5 · maintenance 5.08 · mean cond 40 % · worn out 0
+WEAR seed 3 · repaired 8 · maintenance 11.83 · mean cond 56 % · worn out 0
+WEAR seed 4 · repaired 7 · maintenance 11.11 · mean cond 91 % · worn out 0
+WEAR seed 5 · repaired 9 · maintenance 11.58 · mean cond 67 % · worn out 0
+WEAR seed 6 · repaired 7 · maintenance 9.59 · mean cond 51 % · worn out 0
+WEAR seed 7 · repaired 11 · maintenance 13.54 · mean cond 82 % · worn out 0
+WEAR seed 8 · repaired 7 · maintenance 10.64 · mean cond 73 % · worn out 0
+WEAR seed 9 · repaired 8 · maintenance 9.09 · mean cond 89 % · worn out 0
+WEAR seed 10 · repaired 7 · maintenance 6.99 · mean cond 100 % · worn out 0
+WEAR seed 11 · repaired 9 · maintenance 12.08 · mean cond 78 % · worn out 0
+WEAR seed 12 · repaired 13 · maintenance 13.86 · mean cond 67 % · worn out 0
+WEAR TOTAL · repaired 4.2 · maintenance 5.28 · share of income 40% · mean cond 74 % · worn out 0 / 24
+
+TOTAL rivals 24 · flights 157 · earned 22.65 · purse 130.09 · pads 52 · dead pads 0 · mean reach 4.91 · stuck 0 · rebel 0 · seized 0 · patients 0 · mean rot 11.5 · bribes 7 · arrests 0 · medic trips 0 · patients home 0

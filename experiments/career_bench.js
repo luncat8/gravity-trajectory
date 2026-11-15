@@ -366,7 +366,10 @@ check('career start: HQ pad only, sim gates on the network, link codec carries c
 	startCareer(w, 42);
 	const { career, sim, trade } = w;
 	assert.ok(career.hq >= 0 && career.padCount === 1 && career.at === career.hq);
-	assert.ok(trade.planetLight[career.hq] >= CAREER.hqMinLight, 'HQ must be sunlit');
+	/* a sunlit home is the seat search's preference, never its contract: when no
+	 * all-sunlit seating yields the fair map it falls back to any valid seat
+	 * (`startCandidatePools`), so the home is checked by what it does — a rail
+	 * that lifts the starter ship, below — and its pad law in the pads group. */
 	assert.strictEqual(sim.landedBody, career.hq);
 	assert.ok(sim.canLaunchFrom(career.hq));
 	for (let p = 0; p < PLANETS; p++) {
@@ -559,10 +562,16 @@ check('career pads: solar refills on the sun clock up to capacity, dim pads slow
 	const hq = career.hq;
 	career.pads[hq].chargeKwh = 0;
 	/* a game second is SUN_SEC_PER_GAME_SEC pad seconds of sun */
-	GravityGame.careerAdvance(career, GravitySim.stepsForGameSeconds(10));
-	/* 10 game s of SP-1 sun at this HQ's light: ~0.06 kWh of the 1.5 kWh BAT-1 */
+	const sunSteps = GravitySim.stepsForGameSeconds(10);
+	GravityGame.careerAdvance(career, sunSteps);
+	/* the exact law at this home's light, not a band that assumed a sunlit HQ:
+	 * `careerAdvance` charges `solarCharge(panel, light, padSeconds(10 s))` */
 	const after10 = career.pads[hq].chargeKwh;
-	assert.ok(after10 > 0.05 && after10 < 0.08, '10 game s of sun gave ' + after10);
+	const expected10 = OrbitTech.solarCharge(career.pads[hq].panel, career.light[hq],
+		GravitySim.padSeconds(GravitySim.gameSeconds(sunSteps)));
+	assert.ok(Math.abs(after10 - expected10) < 1e-12, '10 game s of sun gave ' + after10 +
+		' instead of ' + expected10);
+	assert.ok(after10 > 0, 'every home charges');
 	GravityGame.careerAdvance(career, GravitySim.stepsForGameSeconds(600));
 	assert.ok(Math.abs(career.pads[hq].chargeKwh - BAT[0].capacity) < 1e-9, 'capped at capacity');
 	/* darkest pad vs HQ */

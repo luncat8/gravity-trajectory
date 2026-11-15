@@ -92,6 +92,18 @@ it is actually broken: visit profit should growth while player sit on planet but
 The default landing pause stops that clock until wait or resume. `syncBribeUi`
 re-prices the button as it grows, and the pad plate leaves the profit pill clear.
 
+→ the offer is `2 ×` the visit value at **every** rot level (0.7.7): rot prices
+the arrest risk and the rot the bribe adds, never the multiplier, because the old
+`rot/100 × 4` paid ~0.44 × on the clean worlds the map mostly has, so nobody
+pressed it. A wear-dead observation device silences the visit and leaves the same
+value for the bribe to cash — the only way to take one on landing without an
+uninstall action the game does not have.
+
+→ a rival with the bribe-taking persona prices that offer into the landing it
+plans (`careerBribeOffer` in `gravity_bot.js`, 0.7.7); the human's helpers, aim
+line and launch list never do, because the offer is the player's to take or
+leave.
+
 ## 3.3 bribe button ← `archive/draft.txt`
 
 it should be visible while ship landed until take bribe, then show again after visit ANOTHER planet

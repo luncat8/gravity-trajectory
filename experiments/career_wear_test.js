@@ -6,6 +6,15 @@
  */
 'use strict';
 
+/* the no-per-step-garbage check needs a forced collection before it samples the
+ * heap; without one V8's own timing decides the verdict (measured 0.6-1.0 MB of
+ * unswept garbage on unchanged code), so re-run this file with --expose-gc */
+if (!global.gc) {
+	const child = require('child_process').spawnSync(process.execPath,
+		['--expose-gc', __filename], { stdio: 'inherit' });
+	process.exit(child.status === null ? 1 : child.status);
+}
+
 const assert = require('assert');
 const path = require('path');
 const root = path.join(__dirname, '..');
@@ -418,10 +427,14 @@ check('the frame path allocates nothing: careerAdvance and the weather hook are 
 			if (career.ship.condition < 0.5) Game.setShipCondition(career, 1);
 		}
 	};
+	/* warm the JIT on the same loop, then sample only retained memory: an
+	 * uncollected step costs nothing and a compiled one is not garbage */
 	run(20000);
-	if (global.gc) global.gc();
+	run(200000);
+	global.gc();
 	const before = process.memoryUsage().heapUsed;
 	run(200000);
+	global.gc();
 	const grown = process.memoryUsage().heapUsed - before;
 	console.log('   200000 flight steps · heap ' + (grown / 1024).toFixed(0) + ' kB');
 	assert.ok(grown < 512 * 1024, 'no per-step garbage: ' + grown + ' bytes');

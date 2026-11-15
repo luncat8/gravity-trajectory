@@ -642,29 +642,38 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return harvestMode;
 	}
 
-	/* reportUntil is the exclusive flight step when the device wears out.
-	 * Specials remain payable without reports; omitted means the live ledger. */
-	function estimateProfitLog(market, baseStep, planets, steps, count, ledger, reportUntil) {
+	/*
+	 * reportUntil is the exclusive flight step when the device wears out.
+	 * Specials remain payable without reports; omitted means the live ledger.
+	 * An optional `{ body, value }` landing scratch receives the last value the
+	 * walk accrues on that body whether or not the visit reported it: the
+	 * rulers' bribe cashes exactly that value, so a dead device makes the visit
+	 * pay nothing while the bribe still prices it.
+	 */
+	function estimateProfitLog(market, baseStep, planets, steps, count, ledger, reportUntil, landing) {
 		if (count === 0) return 0;
 		estScratch.set(market.lastVisitStep);
 		let total = 0;
 		for (let i = 0; i < count; i++) {
 			const planet = planets[i];
 			const special = planet === market.capitalPlanet || planet === market.arfPlanet;
-			if (reportUntil === undefined) {
-				if (!visitReports(ledger, market, planet)) continue;
-			} else if (!special && (market.quiet[planet] || steps[i] >= reportUntil)) continue;
 			const at = baseStep + steps[i];
-			total += planetProfitAt(market, planet, at, estScratch[planet]);
+			const value = planetProfitAt(market, planet, at, estScratch[planet]);
+			if (landing !== undefined && planet === landing.body) landing.value = value;
+			const reports = special ? true : reportUntil === undefined
+				? visitReports(ledger, market, planet)
+				: !(market.quiet[planet] || steps[i] >= reportUntil);
+			if (!reports) continue;
+			total += value;
 			estScratch[planet] = at;
 		}
 		return total;
 	}
 
 	/* exact predicted harvest along a traced probe, assuming the entry rule */
-	function estimateProfit(market, baseStep, sim, ledger, reportUntil) {
+	function estimateProfit(market, baseStep, sim, ledger, reportUntil, landing) {
 		return estimateProfitLog(market, baseStep, sim.predLogPlanet, sim.predLogStep,
-			sim.predLogCount, ledger, reportUntil);
+			sim.predLogCount, ledger, reportUntil, landing);
 	}
 
 	/* the generated universe is always PLANET_MAX planets; a run plays a subset.

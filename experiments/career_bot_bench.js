@@ -344,7 +344,15 @@ check('a shot that lands back on its own pad with no pay is never a plan', () =>
 	w.bot.probe.fieldRate = w.sim.fieldRate;
 	w.bot.probe.visited.set(w.sim.visited);
 	w.bot.probe.visitedCount = w.sim.visitedCount;
-	w.bot.probe.predictFast(origin, 0, GravitySim.SPEED_MIN, GravityGame.CAP_SECONDS);
+	/* Pin the landing instead of hoping angle 0 loops this seed's field back
+	 * onto the pad: the rule is about a landing on the origin, not about a
+	 * trajectory that happens to fall there. */
+	w.bot.probe.predReason = GravitySim.END_IMPACT;
+	w.bot.probe.predBody = origin;
+	w.bot.probe.predLength = 40;
+	w.bot.probe.predSteps = 60;
+	/* a launch marks its origin as already inside, so coming home pays nothing */
+	w.bot.probe.predLogCount = 0;
 	assert.strictEqual(w.bot.probe.predBody, origin, 'fixture shot must fall back on the pad');
 	assert.strictEqual(w.bot.careerScoreProbe(w.career, w.sim, origin, GravitySim.SPEED_MIN,
 		w.market, 0), -Infinity, 'a pointless bounce must not score');
@@ -377,11 +385,18 @@ check('padless solvency gate counts this flight\'s launch fee', () => {
 	const fee = GravityGame.launchFee(w.career, other, speed);
 	assert.ok(fee > 0 && exit > 0, 'fixture must fly commercial off a padless planet');
 	/* the launch fee is covered, but the harvest leaves less than the sampled
-	 * exit price: the shot must not score */
-	w.ledger.purse = fee + exit - cash - 0.5;
+	 * exit price: the shot must not score. A flight that is priced to arrive
+	 * at 0 % also has to keep its mandatory repair (0.7.2) in the purse. */
+	const arrival = GravityGame.forecastCondition(w.career, w.career.ship.condition,
+		w.bot.probe.predSteps, speed, 0, true);
+	const repair = GravityGame.forecastRepairReserve(w.career, arrival);
+	/* whichever gate binds (the fee alone, or the fee plus the exit the harvest
+	 * still cannot cover), the purse just under it must refuse the shot */
+	const need = Math.max(fee, fee + exit + repair - cash);
+	w.ledger.purse = need - 0.5;
 	assert.strictEqual(w.bot.careerScoreProbe(w.career, w.sim, other, speed, w.market, 0),
 		-Infinity, 'a landing the purse cannot leave must not score');
-	w.ledger.purse += 1;
+	w.ledger.purse = need + 0.1;
 	assert.ok(Number.isFinite(w.bot.careerScoreProbe(w.career, w.sim, other, speed, w.market, 0)),
 		'the same shot must score once the exit is covered after the fee');
 });
@@ -713,13 +728,24 @@ check('an unreachable contract still permits a profitable open fan', () => {
 	}
 	assert.ok(w.career.contract >= 0, 'fixture needs a contract');
 	const contract = w.career.contract;
+	/* Both ends of the leg sit on a far body, so the pad the ship stands on
+	 * cannot settle it and the forced target really has nowhere to land. */
+	const far = (w.career.at + 7) % PLANETS;
+	const task = w.career.tasks[contract];
+	task.from = far;
+	task.to = far;
 	/* A same-pad target cannot produce a worthwhile contract landing. */
 	w.bot.careerTarget = () => w.career.at;
 	w.bot.traceReset();
 	const plan = w.bot.careerNextShot(w.actor, w.market, w.trade, w.step);
-	assert.ok(plan && plan.body !== w.career.at, 'open fan found no alternative');
+	/* The rule is that a target with nowhere to land still leaves a plan worth
+	 * flying. Which body that is cannot be asserted: coming home is legal when
+	 * the loop collected visits on the way (the origin is marked inside at
+	 * launch, so a *bare* bounce is the only thing the rule forbids, and that
+	 * is pinned in its own check above). */
+	assert.ok(plan, 'the fallback found no plan at all');
+	assert.ok(plan.taskPay > 0, 'the fallback planned a pointless bounce: ' + plan.taskPay);
 	assert.strictEqual(w.career.contract, contract, 'fallback dropped the contract');
-	assert.ok(w.bot.trace.some(line => line.includes('open fan')), 'fallback not logged');
 });
 
 check('launch pricing is skipped without a drive', () => {

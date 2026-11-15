@@ -851,10 +851,45 @@ its own in ~90 s: a scratch file with `loadPage`, `check`, the few top-level hel
 reads (`CAREER_TEST_SPEED`, `pageSim`, `OrbitTech`, `landingAngle`, `careerLaunch`) and
 the block. 0.7.2 found its 4 changed expectations this way.
 
+## a heap-growth check needs --expose-gc and a warmed loop
+
+`career_wear_test`'s "no per-step garbage" group sampled `heapUsed` around
+200 000 `careerAdvance` steps and asserted under 512 kB. Without a forced
+collection V8's own timer decides the verdict: unchanged code measured 0.6–1.0 MB
+on three runs out of three, so the file was red for a reason that had nothing to
+do with its subject. Two changes make it a real check: the file re-executes
+itself with `--expose-gc` (`if (!global.gc) spawnSync(process.execPath,
+['--expose-gc', __filename])`), and the loop is warmed *before* the sample, with
+a second `gc()` at the end so only retained memory counts. It then reads 4 kB on
+every run and would catch one allocated object per step.
+
+## a map change re-pins every seed-fixture
+
+The 0.7.7 gravity band moved the standalone HQ picker's choice at seed 42 and
+turned five bench checks red without touching their subjects: both benches are
+written against that seed's geometry. `career_bench`'s "HQ must be sunlit" was
+only ever true because the bright seat pool always seated the map — sunlit is a
+*preference* (`startCandidatePools` falls back to any valid seat), so the check
+now asserts the pad law (`solarCharge` at the home's light) instead. In
+`career_bot_bench`, "a shot that lands back on its own pad" assumed angle 0 loops
+back — pin `probe.predBody/predLogCount` for the landing rule and keep the plan
+search as a second, weaker assertion; the solvency fixture had to add the 0.7.2
+mandatory repair and gate on the binding bound (`max(fee, fee + exit − cash)`);
+and the open-fan fixture can no longer assert *which* body it lands on, because a
+loop that collects visits on the way home is a paying plan. After the repair:
+`career_bench` 3, `career_bot_bench` 10.
+
+The probe also copies `sim.visited` (empty before a career's first flight) while
+the real launch marks its pad inside, so the first shot's returning leg is priced
+about one visit too rich. One planet's worth of 40 s accrual, once per career;
+worth pinning with the same flag if a check ever depends on it.
+
 ## ship condition has one writer
 
 `career.ledger.reports` is `obs.fitted && condition > 0` and only
 `GravityGame.setShipCondition` writes either side (`refitShip` calls it). A test or a
 fixture that assigns `career.ship.condition` directly leaves the report flag stale —
-call the setter. The benches' known failure counts at 0.7.2: `career_bench` 3,
-`career_bot_bench` 11, both present before wear existed.
+call the setter. The benches' known failure counts after 0.7.7: `career_bench` 3
+(both ends colonies, a starter cap the delivery needs, the cheat run never
+completes), `career_bot_bench` 10 (nine "26 pads from a funded purse" completion
+runs and "no plan after repair").
