@@ -896,17 +896,23 @@ runs and "no plan after repair").
 
 ## red on this tree that no stage owns
 
-Five files in `experiments/` are red at `312d0ed` and are not caused by 0.7.7 —
+Four files in `experiments/` are red at `312d0ed` and are not caused by 0.7.7 —
 check them at the base commit before blaming a change, and do not "fix" them
 inside another plan: `bot_gravity_test` (asserts `careerNextPad` prefers the
 lower-G pad, but `careerReach` reads the always-on `exitProbe`, which no test
 fixture arms, so every site values `-Infinity` and the pick is −1; needs the
 fixture to arm `exitProbe`, not a law change), `gravity_view_test` (drag-zone
-colours at seed 61, red since 0.7.1), `profit_monotonic_test` (helper profit
-search yields no number at seed 520383), `career_start_fairness` ("weakest
+colours at seed 61, red since 0.7.1), `career_start_fairness` ("weakest
 opening within the fair band" at its own seeds) and `career_gui_bot_probe` ("the
 world clock stopped after the hand-over"). The benches' own known counts are
 separate: `career_bench` 3, `career_bot_bench` 10, `bot_bench` 1.
+
+`profit_monotonic_test` left that list in 0.7.8 and was not a law at all: at seed
+520383 the search's first winner is negative and the page prints a typographic
+minus (`gui_game.js` signed money: `−0.25`), which the test's `[+-]\d+\.\d+`
+never matched, so the failure read "missing profit". The test now folds `−` to
+`-` before `Number()`. `experiments/README.md` holds the current list of files
+that are red on a clean main and `run_fast.js` carries it in `KNOWN_RED`.
 
 ## every page boot plans the career seats, and the vm makes it 10× worse
 

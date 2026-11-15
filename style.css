@@ -1650,6 +1650,14 @@ polyline.sciKnownHull {
 	margin-top: 7px;
 }
 
+.mapNote {
+	margin-top: 6px;
+	min-height: 13px;
+	color: var(--mint);
+	font-size: 10.5px;
+	line-height: 1.35;
+}
+
 #gameLink {
 	width: 100%;
 	margin-top: 6px;

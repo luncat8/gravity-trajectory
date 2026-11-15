@@ -64,15 +64,23 @@
 		0.08, 0.10, 0.20, 0.23, 0.38, 0.72, 1.00    // outer
 	]);
 
+	/*
+	 * A 32-bit PRNG as a plain function. `getState`/`setState` exist for saved
+	 * runs: an exact state must resume the same stream, and the trade sim's
+	 * event times are drawn from it.
+	 */
 	function seedRandom(seed) {
 		let a = seed >>> 0;
-		return function () {
+		const rand = function () {
 			a = (a + 0x6d2b79f5) >>> 0;
 			let t = a;
 			t = Math.imul(t ^ (t >>> 15), t | 1);
 			t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
 			return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 		};
+		rand.getState = () => a;
+		rand.setState = value => { a = value >>> 0; };
+		return rand;
 	}
 
 	/* A 32-bit avalanche: the economy's stable jitter draws (§3). */

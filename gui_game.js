@@ -54,7 +54,9 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	 * fast-forwarded. Otherwise a career first simulates the previous 26-world
 	 * map, then retires half its ports at t+07:00; ships already in flight keep
 	 * route coordinates from that discarded map. */
-	initPlanetUniverse(game.planetUniverse > 0 ? game.planetUniverse : planetUniverseDefault(game.rule));
+	if (!pendingUniverse()) {
+		initPlanetUniverse(game.planetUniverse > 0 ? game.planetUniverse : planetUniverseDefault(game.rule));
+	}
 	scene.reset(seed);
 	scene.setGameClock(true);
 	clearCargo();
@@ -82,16 +84,9 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	syncSeedUrl();
 }
 
-/* one galaxy per career run: YOU join first, then every rival career, so pads
- * and usage tax are shared ground from the first launch */
-function startCareerRun(seed) {
-	cancelTurret();
-	GravityGame.resetGalaxy(game.galaxy, seed);
-	GravityGame.prepareCareerStarts(game.galaxy, tradeSim.world, tradeSim,
-		planetMask, planetCount, 1 + bot.count, cargoSim);
-	GravityGame.startCareer(game.career, cargoSim, seed, tradeSim, game.cheat, game.galaxy);
-	bot.startCareers(game.galaxy, seed, tradeSim);
-	/* Special worlds and every starting HQ have a standard gravity well. */
+/* Special worlds and every starting (or restored) HQ have a standard well: the
+ * seat plan traces homes at g 1, so the field has to match what it planned. */
+function pinCareerStrengths() {
 	const fixed = [game.career.capitalPlanet, game.career.arfPlanet];
 	for (let i = 0; i < game.galaxy.actors.length; i++) fixed.push(game.galaxy.actors[i].hq);
 	for (let i = 0; i < fixed.length; i++) {
@@ -103,6 +98,21 @@ function startCareerRun(seed) {
 	syncPlanetStrengths();
 	if (mode === MODE_PORTS) cargoSim.refreshField();
 	syncPlanetGravity();
+}
+
+/* one galaxy per career run: YOU join first, then every rival career, so pads
+ * and usage tax are shared ground from the first launch */
+function startCareerRun(seed) {
+	cancelTurret();
+	GravityGame.resetGalaxy(game.galaxy, seed);
+	/* a saved map seats this run from its record and skips the opening search */
+	GravityMaps.applySeats(game.galaxy, tradeSim.world, tradeSim,
+		planetMask, planetCount, 1 + bot.count, cargoSim);
+	GravityGame.prepareCareerStarts(game.galaxy, tradeSim.world, tradeSim,
+		planetMask, planetCount, 1 + bot.count, cargoSim);
+	GravityGame.startCareer(game.career, cargoSim, seed, tradeSim, game.cheat, game.galaxy);
+	bot.startCareers(game.galaxy, seed, tradeSim);
+	pinCareerStrengths();
 	bot.setPlanetMask(planetMask, planetCount);
 	/* YOU as a bot: the page keeps the ship, the bot plans and shops for it */
 	bot.attachCareerPlayer(game.career, cargoSim);

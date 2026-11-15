@@ -14,9 +14,11 @@ for (let n = 0; n < 8; n++) {
 	while (!env.elements.get('helperStop').hidden && frames++ < 1800) env.runFrames(1, 16);
 	assert.ok(frames < 1800, 'scan timed out');
 	const notice = env.elements.get('careerMsg').textContent;
-	const match = notice.match(/([+-]\d+\.\d+)/);
+	/* money prints a typographic minus (`−`), not a hyphen: folding it first
+	 * keeps a negative winner readable instead of "missing profit" */
+	const match = notice.match(/([+\u2212-]\d+\.\d+)/);
 	assert.ok(match, 'missing profit in ' + notice);
-	const value = Number(match[1]);
+	const value = Number(match[1].replace('\u2212', '-'));
 	assert.ok(value >= best - 0.001, 'profit decreased: ' + best + ' to ' + value);
 	assert.strictEqual(scene.game.clockSteps, clock, 'world moved during scan');
 	best = value;

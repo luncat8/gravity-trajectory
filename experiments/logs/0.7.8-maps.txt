@@ -1,0 +1,8 @@
+keep seed 1 · 13 planets · 3 seats · seats 2,3,9 · ratio 0.88 · sites 2 · 3471 ms
+keep seed 2 · 13 planets · 3 seats · seats 0,7,6 · ratio 0.87 · sites 2 · 2744 ms
+keep seed 1 · 13 planets · 2 seats · seats 9,5 · ratio 1.00 · sites 1 · 608 ms
+keep seed 1 · 26 planets · 3 seats · seats 0,5,6 · ratio 0.82 · sites 5 · 2206 ms
+keep seed 1 · 8 planets · 2 seats · seats 6,5 · ratio 0.90 · sites 1 · 762 ms
+keep seed 1 · 26 planets · 4 seats · seats 5,20,19,9 · ratio 0.73 · sites 2 · 2132 ms
+6 maps
+wrote saved_maps.js (2675 bytes)

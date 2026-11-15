@@ -57,6 +57,22 @@ if (!pagePhoto.needsCompact(880, 800) || pagePhoto.needsCompact(1280, 800)) {
 }
 console.log('photo deck:', pagePhoto.LABELS.join(', '), '· candidates', pagePhoto.candidates('space', 1, 4).join(' '));
 
+/* saved maps: the registry is a committed file and the group is wired in the
+ * page, so a start map or an exact run can come back without a seat search */
+const pageMaps = env.context.GravityMaps;
+const mapList = env.context.savedMapList();
+if (!pageMaps || !mapList || !mapList.length) throw new Error('saved maps not loaded by index.html');
+for (const rec of mapList) {
+	if (rec.v !== 1 || rec.kind !== 'start' || !rec.seats || !rec.seats.length) {
+		throw new Error('saved map record shape: ' + rec.name);
+	}
+}
+for (const id of ['mapGroup', 'mapSave', 'mapSaveRun', 'mapLoad', 'mapLoadRun', 'mapNote']) {
+	if (!ui.get(id)) throw new Error('maps UI element missing: ' + id);
+}
+console.log('saved maps:', mapList.length, '· first', mapList[0].name,
+	'· file', pageMaps.fileText(mapList).length, 'bytes');
+
 /* colonies are wired into the sim and advanced to t+07:00 (step 2) */
 if (sim.colonies.length !== sim.portCount || sim.portCount < pageWorld.INITIAL_PORTS) {
 	throw new Error('colonies not wired to ports: ' + sim.colonies.length + ' vs ' + sim.portCount);

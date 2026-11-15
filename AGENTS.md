@@ -123,6 +123,15 @@ root.GravityScene keys are a test contract (experiments/ read them) - keep the n
 	output only appears at the end, so a hang and a long run look identical).
 - a red test you did not cause is not yours to fix in passing unless the plan says
 	so: check it at the base commit first, then write it in the worklog as known.
+- one command per tier: `node experiments/run_fast.js` (fast, ~1.5 min),
+	`--slow` (page boots), `--bench` (numbers), `--smoke` (dom_smoke), `--list` for
+	the costs and the files. the tiers, the areas they cover and the handful of files
+	that are red on a clean main live in `experiments/README.md`.
+- say what happened: passed, failed, deferred, interrupted or timed out — a
+	deferred smoke is never a pass, and an earlier pass does not validate later
+	changes. compare bench failures by name, not by count; isolate a fixture in a
+	scratch script before rerunning a whole bench, and never weaken an assertion to
+	make a tier green.
 
 | touch | run |
 |---|---|
@@ -136,7 +145,10 @@ root.GravityScene keys are a test contract (experiments/ read them) - keep the n
 
 a page test costs one `loadPage` (~40 s) before its first assertion, because the page
 boot plans the career seats. `career_start_probe.js SEEDS=42` asks the same seat
-planner a smaller question in 4 s when that is all you need to know.
+planner a smaller question in 4 s when that is all you need to know. a test or a
+probe that only needs a world can boot a saved map instead (`?map=<index|name>`,
+about half a second, `saved_maps.js`); keep the seed when the seat search is the
+subject.
 
 ## sandbox
 

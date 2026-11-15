@@ -2759,6 +2759,26 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (plan.targetPay > OPENING_COMPARE_EPS) galaxy.openingTargetPay = plan.targetPay;
 	}
 
+	/*
+	 * A saved map carries a seat plan the search already accepted, so loading it
+	 * must not fly the same fan again: this fills the cache under the key
+	 * `prepareCareerStarts` would look up and seats the galaxy at once. The
+	 * caller must hand in a plan proven on the same world, universe and field
+	 * (a record keyed by seed, universe and scales), which is what
+	 * `GravityMaps.applySeats` does.
+	 */
+	function rememberSeatPlan(galaxy, world, trade, mask, count, seatsWanted, sourceSim,
+		homes, targetPay) {
+		if (!galaxy || !world || !trade || !homes || homes.length < seatsWanted) return null;
+		const plan = {
+			homes: homes.slice(0, seatsWanted),
+			targetPay: Number.isFinite(targetPay) ? targetPay : 0
+		};
+		seatPlanRemember(seatPlanKey(world, trade, mask, count, seatsWanted, sourceSim), plan);
+		seatPlanApply(galaxy, plan);
+		return plan.homes.slice();
+	}
+
 	function planCareerSeats(world, trade, mask, count, seatsWanted, sourceSim, resume) {
 		const pools = startCandidatePools(world, mask, seatsWanted);
 		/* a universe that cannot seat this many companies is a refusal, not a
@@ -4459,7 +4479,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		setCareerUniverse, applyMarketUniverse, planetInPlay, colonyInPlay, activePlanetDraw,
 		openingGroupStats, openingStatsFromTracks, openingTracks, openingPrepare,
 		openingGroupStatsFromRows, compareOpeningGroups, seatAssignment,
-		careerOpenings, prepareCareerStarts, planCareerExpansion, OPENING_BANDS,
+		careerOpenings, prepareCareerStarts, rememberSeatPlan, planCareerExpansion, OPENING_BANDS,
 		BOOK_MAX, BOOK_LOG_MAX, createLaunchBook, resetLaunchBook, launchBookTag, bookReady,
 		launchMask, recordLaunch, pruneLaunchBook,
 		CAREER, FUEL_KG_PER_KWH, FUEL_PRICE, FUEL_BUY_STEP, fuelPrice, produceFuel, buyFuel,

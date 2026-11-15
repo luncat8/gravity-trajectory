@@ -210,6 +210,17 @@
 		</div>
 	</div>
 
+	<div id="mapGroup" class="group">
+		<div class="caption"><span>saved maps</span><span id="mapTag">saved_maps.js</span></div>
+		<div class="actions gameActions">
+			<button id="mapSave" class="miniBtn" title="append this career opening to saved_maps.js and download it">save map</button>
+			<button id="mapSaveRun" class="miniBtn" title="append an exact snapshot of this run to saved_maps.js and download it">save run</button>
+			<button id="mapLoad" class="miniBtn" title="start a career on a random saved map">load map</button>
+			<button id="mapLoadRun" class="miniBtn" title="continue a random saved run">load run</button>
+		</div>
+		<div id="mapNote" class="mapNote"></div>
+	</div>
+
 	<div id="viewGroup" class="group">
 		<div class="caption"><span>view</span><span id="viewTag">space</span></div>
 		<div class="radioRow" role="radiogroup" aria-label="view mode">
@@ -481,6 +492,8 @@
 <script src="gravity_sim.js"></script>
 <script src="gravity_game.js"></script>
 <script src="gravity_bot.js"></script>
+<script src="saved_maps.js"></script>
+<script src="saved_map.js"></script>
 <script src="photo_deck.js"></script>
 <script src="gravity_field.js"></script>
 <script src="sounds/selected/pack.js"></script>
@@ -491,6 +504,7 @@
 <script src="gui_tables.js"></script>
 <script src="gui_help.js"></script>
 <script src="gui_share.js"></script>
+<script src="gui_maps.js"></script>
 <script src="gui_science.js"></script>
 <script src="gui_shop.js"></script>
 <script src="gui_book.js"></script>

@@ -135,6 +135,9 @@ function loadSearchParams() {
 	const params = new URLSearchParams(search);
 	const viewParam = params.get('view');
 	if (VIEW_MODES.includes(viewParam)) setViewMode(viewParam);
+	/* a saved map is a local file, not a shareable seed: it wins over the rest */
+	const mapParam = params.get('map');
+	if (mapParam !== null) return loadSavedMapParam(mapParam);
 	const hasGameHint = params.has('mode') || params.has('game') || params.has('rule') ||
 		params.has('seed') || params.has('rate') || params.has('bot') || params.has('src') ||
 		params.has('source') || params.has('player') || params.has('you') || params.has('shots');

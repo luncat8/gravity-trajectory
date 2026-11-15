@@ -276,6 +276,7 @@ function syncSeedUrl(keepReplay = false) {
 	if (mode === MODE_PORTS) params.set('src', 'ports');
 	else params.delete('src');
 	params.delete('player');
+	params.delete('map');
 	if (game.on && game.player === PLAYER_BOT) params.set('you', PLAYER_BOT);
 	else params.delete('you');
 	if (game.on && game.bot !== BOT_NORMAL) params.set('bot', game.bot);
