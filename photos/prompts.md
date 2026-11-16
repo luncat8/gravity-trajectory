@@ -1,11 +1,11 @@
 # photo prompts — MOSS-Image (optimized)
 
-Seventeen captions: seven planet types × (from space, landed), plus three
-career scenes (catapult launch, cargo delivery, sport competition). Each
-caption is written as a **finished-image description** for MOSS-Image, which
-was trained on captions — not instructions. The model reads a caption as “this
-is what the finished picture shows.” The same paragraph works for MOSS Base or
-SFT.
+Eighteen captions: seven planet types × (from space, landed), three career
+scenes (catapult launch, cargo delivery, sport competition), and one two-variant
+circus launch card. Each caption is written as a **finished-image description**
+for MOSS-Image, which was trained on captions — not instructions. The model
+reads a caption as “this is what the finished picture shows.” The same paragraph
+works for MOSS Base or SFT.
 
 MOSS-Image is the recommended renderer for this project (superior texture and
 lighting vs Krea 2). The Krea-prompted set is preserved in
@@ -35,7 +35,7 @@ Shared notes:
 
 ## rules that hold the set together
 
-Seven rules the seventeen captions are judged by. They are the *prompt* work the
+Seven rules the eighteen captions are judged by. They are the *prompt* work the
 draft asked for — the paragraphs below are already MOSS-shaped and are not
 rewritten; a caption that breaks a rule is fixed against it.
 
@@ -155,7 +155,9 @@ column is varied so a tour through many systems does not look like one filter.
 Three optional cards for the career rule. The deck looks for one plain file per
 scene (`photos/career/<scene>.jpg` or `.png`) and shows a CSS postcard when it
 is missing, so these can be generated in any order. The generator writes them
-with `--situation career` and never makes variants of a career card.
+with `--situation career`; a career caption with one paragraph is one card, and
+the circus caption below carries two quoted paragraphs, so it writes two files
+(`circus.jpg`, `circus-2.jpg`).
 
 ### 15 · catapult · career → `photos/career/catapult.jpg`
 
@@ -174,6 +176,20 @@ with `--situation career` and never makes variants of a career card.
 *Style: retro-futurist race poster.*
 
 > Retro-futurist race poster painting of a timing gate in orbit at the finish of a long gravity-assisted flight. A slim silver cargo racer crosses the centre of the frame from left to right, nose toward the right edge, trailing a thin pale-blue arc of its curved trajectory behind it. A ring-shaped timing gate of weathered white struts and amber lamps frames the right third, with a checkered band painted across its inner rim. Below the gate, the dark blue limb of a planet curves along the bottom edge, a thin atmospheric glow separating it from black space. Small pennant flags and two tiny observer craft float near the upper left; a bright white star sits at the top right. Flat colour fields, subtle screen-print grain, crisp geometric shapes, teal, cream, amber and deep navy palette, generous black space above the racer, celebratory but calm, no lettering.
+
+### 18 · circus · career → `photos/career/circus.jpg`
+
+*Style: 2D anime film still, muted palette.*
+
+Extra art, not one of the deck's three career slots. The two quoted paragraphs
+are two variants: the generator writes `circus.jpg` and `circus-2.jpg`. Add the
+era words to the negative field, never to the prompt: `victorian, 19th century,
+steampunk, fantasy, medieval, old european town, timber-framed houses,
+cobblestone, gas lamp, brass, sepia, dark, gloomy, oversaturated, vivid colors`.
+
+> Anime film still of a bright near-future spaceport, 2D clean line art with flat cel shading and a hand-painted background, muted chalky palette of bone white, pale grey-blue and slate with one warm orange accent. A space-circus acrobat in a white and teal performance suit hangs at the top of a high launch arc, body horizontal, arms spread wide, a flat orange-and-white signal panel streaming from each hand. Below her, an oversized electromagnetic catapult: twin white-composite launch rails with segmented copper coils and a thin cyan charge glow, mounted on a massive armoured carriage, coolant vapour curling from its vents, and a miniature skyline of small white towers with lit window slits and tiny dish antennas built along its spine. The ground is a pale concrete apron with painted white guide lines and low crash barriers. Beyond the rail, a dense skyline of white cylindrical habitat towers with horizontal lit window bands, ribbed concrete service cores, elevated maglev guideways and satellite dishes fades into pale haze, and a thin white contrail crosses the sky. Hard midday sun from the upper right, soft shadows, clear pale sky filling the top third, wide low-angle composition with the acrobat small against the machine, crisp mechanical detail, desaturated colour, hard-surface science-fiction design.
+>
+> Anime film still of a bright near-future spaceport, 2D clean line art with flat cel shading and a hand-painted background, muted chalky palette of bone white, pale grey-blue and slate with one warm orange accent. A space-circus acrobat in a white and teal performance suit hangs at the top of a high launch arc, body horizontal, arms spread wide: a flat orange-and-white signal panel streams from her left hand, and a compact collapsible aluminium spyglass, matte anodised grey with a knurled focus ring, is held to her right eye, catching a bright glint of sun. Below her, an oversized electromagnetic catapult: twin white-composite launch rails with segmented copper coils and a thin cyan charge glow, mounted on a massive armoured carriage, coolant vapour curling from its vents, and a miniature skyline of small white towers with lit window slits and tiny dish antennas built along its spine. The ground is a pale concrete apron with painted white guide lines and low crash barriers. Beyond the rail, a dense skyline of white cylindrical habitat towers with horizontal lit window bands, ribbed concrete service cores, elevated maglev guideways and satellite dishes fades into pale haze, and a thin white contrail crosses the sky. Hard midday sun from the upper right, soft shadows, clear pale sky filling the top third, wide low-angle composition with the acrobat small against the machine, crisp mechanical detail, desaturated colour, hard-surface science-fiction design.
 
 ## what the deck does with them
 

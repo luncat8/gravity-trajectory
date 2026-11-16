@@ -42,9 +42,11 @@ image, not on it.
 
 ## prompts
 
-`prompts.md` holds 17 ready captions — 14 planet views and 3 career scenes —
-for **Krea 2** and **MOSS-Image**, plus the settings each model expects and a
-negative prompt.
+`prompts.md` holds 18 ready captions — 14 planet views, 3 career scenes and a
+two-variant circus card — for **Krea 2** and **MOSS-Image**, plus the settings
+each model expects and a negative prompt. A caption with several blank-separated
+quoted paragraphs is a variant set: each paragraph is queued as its own file
+(`<stem>.jpg`, `<stem>-2.jpg`, …).
 
 ## generator
 
@@ -72,8 +74,10 @@ python3 photos/generator/comfy_queue.py --situation career --wait
   file stem (`image_moss_image_t2i`), any unique part of one (`moss`), or `all`;
   without it the only template present is used, else the krea one.
 - `--types gas,ice` and `--situation landed|space|career` narrow the set,
-  `--variants 2` also writes `-2` files for planet views. Career scenes always
-  get one file each (`photo_deck.js` reads no `-N` variants for them).
+  `--variants 2` also writes `-2` files for planet views. A caption with several
+  quoted paragraphs cycles them under `--variants`; a career caption writes one
+  file per paragraph (`circus.jpg`, `circus-2.jpg`), because `photo_deck.js`
+  reads no `-N` variants for career scenes.
 - The exported graphs are **templates**: the script only patches the caption,
   the seed, the size (`3:2 (Photo)` · 1.5 MP = exactly 1536 × 1024) and the Save
   Image prefix. Nodes are found by `class_type`, so a re-export does not break
@@ -110,3 +114,4 @@ python3 photos/generator/comfy_queue.py --situation career --wait
 - [ ] gas · space / landed
 - [ ] ice · space / landed
 - [ ] career · catapult / delivery / sport
+- [ ] career · circus (extra art, two variants)

@@ -8,7 +8,7 @@ and the Save Image prefix are patched per caption, everything else (models,
 sampler, prompt-refiner chain) stays exactly as exported, so a better graph can
 be dropped in without touching this script.
 
-    python3 photos/generator/comfy_queue.py --list             # 17 captions
+    python3 photos/generator/comfy_queue.py --list             # caption pack
     python3 photos/generator/comfy_queue.py                    # queue missing ones
     python3 photos/generator/comfy_queue.py --collect          # download them
     python3 photos/generator/comfy_queue.py --workflow moss --wait
@@ -111,8 +111,28 @@ class ComfyError(RuntimeError):
 
 # ---------------------------------------------------------------- prompts.md
 
+def paragraphs(parts):
+	"""Quoted lines -> paragraphs; a blank quoted line starts a new variant."""
+	texts = []
+	for part in parts:
+		if not part:
+			if texts and texts[-1]:
+				texts.append('')
+			continue
+		if texts and texts[-1]:
+			texts[-1] += ' ' + part
+		else:
+			texts.append(part)
+	return [text for text in texts if text]
+
+
 def read_prompts(path):
-	"""Parse the caption pack: type, situation, target file, style, caption."""
+	"""Parse the caption pack: type, situation, target, style, text variants.
+
+	A caption is one or more `>` paragraphs. A blank quoted line (`>`) starts
+	the next variant, so one row can carry several finished-image prompts; the
+	generator writes each as its own file (`<stem>.jpg`, `<stem>-2.jpg`, ...).
+	"""
 	items = []
 	current = None
 	for raw in path.read_text(encoding='utf-8').splitlines():
@@ -122,7 +142,7 @@ def read_prompts(path):
 			type_, where, target = match.groups()
 			current = {'type': type_,
 				'situation': 'space' if where == 'from space' else where,
-				'target': target, 'style': '', 'text': ''}
+				'target': target, 'style': '', 'parts': []}
 			items.append(current)
 			continue
 		if current is None:
@@ -132,12 +152,16 @@ def read_prompts(path):
 		elif line.startswith('*Style:'):
 			current['style'] = line[7:].strip().rstrip('*').strip().rstrip('.')
 		elif line.startswith('>'):
-			current['text'] = (current['text'] + ' ' + line[1:].strip()).strip()
+			current['parts'].append(line[1:].strip())
+	for item in items:
+		item['texts'] = paragraphs(item.pop('parts'))
 	if not items:
 		raise SystemExit(f'no captions found in {path}')
-	empty = [i['target'] for i in items if not i['text']]
+	empty = [i['target'] for i in items if not i['texts']]
 	if empty:
 		raise SystemExit(f'empty caption for {", ".join(empty)}')
+	for item in items:
+		item['text'] = item['texts'][0]
 	return items
 
 
@@ -381,10 +405,14 @@ def make_jobs(items, args, workflows):
 	jobs = []
 	for workflow in workflows:
 		for item in items:
-			# career cards have one scene key each; photo_deck.js reads no variants
-			pictures = 1 if item['situation'] == 'career' else args.variants
+			# A career caption writes one card per quoted paragraph; the deck
+			# reads no career variants, so extra texts are separate files, not
+			# seed repeats. A planet caption is one text repeated by --variants.
+			pictures = (len(item['texts']) if item['situation'] == 'career'
+				else args.variants)
 			for variant in range(pictures):
 				job = dict(item)
+				job['text'] = item['texts'][variant % len(item['texts'])]
 				job['workflow'] = workflow
 				job['variant'] = variant
 				job['target'] = display(target_path(job, args.out))
@@ -409,9 +437,10 @@ def write_manifest(manifest):
 
 
 def print_table(items):
-	print(f'{"type":8} {"situation":10} {"style":34} target')
+	print(f'{"type":8} {"situation":10} {"texts":5} {"style":34} target')
 	for item in items:
-		print(f'{item["type"]:8} {item["situation"]:10} {item["style"][:34]:34} {item["target"]}')
+		print(f'{item["type"]:8} {item["situation"]:10} {len(item["texts"]):<5} '
+			f'{item["style"][:34]:34} {item["target"]}')
 	print(f'{len(items)} captions')
 
 
@@ -525,10 +554,13 @@ def main(argv=None):
 		help='template to use: its json file stem, a unique part of one, or all '
 			'(default: the only template, else the krea one)')
 	parser.add_argument('--types', default='all',
-		help='comma list of rock,terran,super,dwarf,mini,gas,ice or catapult,delivery,sport (default all)')
+		help='comma list of rock,terran,super,dwarf,mini,gas,ice,circus or '
+			'catapult,delivery,sport (default all)')
 	parser.add_argument('--situation', choices=['space', 'landed', 'career', 'both'], default='both')
 	parser.add_argument('--variants', type=int, default=1,
-		help='pictures per caption; extra ones are saved as <type>-2, <type>-3')
+		help='pictures per caption; planet texts repeat with a new seed, a caption '
+			'with several quoted paragraphs cycles them; career captions write '
+			'one file per paragraph (extra files are <type>-2, -3)')
 	parser.add_argument('--seed', type=int, default=None,
 		help='base seed; without it the seed stored in the template is reused')
 	parser.add_argument('--steps', type=int, default=None, help='override KSampler steps')

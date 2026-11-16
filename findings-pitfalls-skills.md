@@ -240,6 +240,25 @@ prediction buffers round away exactly the differences being measured.
 	(`.photoArt.gas`), so the card's height and the layout maths do not depend on
 	whether art exists yet.
 
+### prompt variants and era anchors
+
+- A caption pack can carry several paragraphs per caption; a blank quoted line
+	separates variants. The queue writes one file per paragraph (`circus.jpg`,
+	`circus-2.jpg`) instead of reseeding one text, and a planet caption still
+	cycles its texts under `--variants`.
+- Era-loaded nouns ("circus", "cannon", "town", "spyglass", "maritime flags")
+	drag image models to the 19th century. Lead with the era ("bright near-future
+	spaceport"), describe architecture as materials and geometry ("white
+	composite, brushed aluminium, ribbed concrete, lit window bands"), and keep
+	the period word only as a modifier ("space-circus"). Put the excluded era in
+	the negative field, never in the prompt: a negation inside the prompt still
+	activates the tokens it names.
+- Make the subject small and the machine large: a big figure makes the model
+	spend its capacity on the person and fill the background with a stock town.
+- `anime` alone pulls a fantasy-European background; pair it with a hard-surface
+	anchor ("2D anime film still, hard-surface science-fiction design") and one
+	named light ("hard midday sun from the upper right").
+
 ## derived run state that must survive across flights
 
 - When a per-flight log is derived from a run-cumulative mask (the purse from
