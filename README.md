@@ -282,9 +282,11 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   (`gravity_seed_test.js`), the shared orbit/gravity clock regression
   (`orbit_clock_test.js` — moving-port trajectories, pause, URL units, locks
   and independent game-time economy),
-  potential-view/card tests (`gravity_view_test.js`), the standalone career
-  start-fairness probe (`career_start_probe.js`), the page-side start-seat and
-  standard-HQ-well check (`career_start_seat_test.js`), actual first-flight/EMC-1
+  potential-view/card tests (`gravity_view_test.js`), the independent career
+  opening fairness check (`career_start_fairness.js` — exit-safe profit-window
+  matching in the pinned field) and first-flight probe (`career_start_probe.js`),
+  the page-side start-seat and standard-HQ-well check
+  (`career_start_seat_test.js`), actual first-flight/EMC-1
   affordability regression (`career_start_affordability.js`), career
   departure/guidance regressions (`career_departure_test.js`, `career_guidance_test.js`) and
   the two-player helper/level switch (`multiplayer_career_test.js`,

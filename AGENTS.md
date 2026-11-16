@@ -118,14 +118,14 @@ root.GravityScene keys are a test contract (experiments/ read them) - keep the n
 - `check` throws on the first failure, so a broken label costs one full run per label.
 	Copy the file, swap `check` for a logger that prints `CHECKFAIL` and keeps going,
 	run once, fix the whole list.
-- start the slow ones (`career_bot_bench` ~5 min, the slow tier ~5 min,
+- start the slow ones (`career_bot_bench` ~5 min, the slow tier ~6 min,
 	`dom_smoke` ~2 min) in the background on a snapshot and
 	keep working; never block a turn on them, and never pipe them through `tail` (the
 	output only appears at the end, so a hang and a long run look identical).
 - a red test you did not cause is not yours to fix in passing unless the plan says
 	so: check it at the base commit first, then write it in the worklog as known.
 - one command per tier: `node experiments/run_fast.js` (fast, ~1 min),
-	`--slow` (seed sweeps and page tests, ~5 min more), `--bench` (numbers),
+	`--slow` (seed sweeps and page tests, ~6 min more), `--bench` (numbers),
 	`--smoke` (dom_smoke), `--list` for the costs and the files. the tiers, the areas
 	they cover and the handful of files that are red on a clean main live in
 	`experiments/README.md`.
@@ -142,7 +142,7 @@ root.GravityScene keys are a test contract (experiments/ read them) - keep the n
 | `gravity_field` CPU raster and palette | `gravity_bench` (color + budget), `gravity_view_test` |
 | `gravity_game` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
 | `gravity_bot` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
-| the career seat search (`prepareCareerStarts` and below) | `career_start_seat_test`, then `make_saved_maps.js --check`: a stale saved map needs the generator rerun |
+| the career seat search (`prepareCareerStarts` and below) | `career_start_fairness` (independent exit-safe pay band), `career_start_seat_test`, then `make_saved_maps.js --check`: a stale saved map needs the generator rerun |
 | `gravity_gui`/`gui_*.js` page state | the one page test for the area (`politics_gui_test`, `obs_fragile_gui_test`, `career_pause_test`, `profit_monotonic_test`, …) |
 | `index.html`, script order, composer | `dom_smoke` once, plus the area test |
 | docs, plans, worklogs, test files only | nothing |
