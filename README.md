@@ -29,6 +29,14 @@ takes priority over the query; starting a new run removes the old replay hash.
 Per-body lab edits, experimental multipliers and roster-size changes are not saved
 in the seed URL; copied replays include their experimental multipliers.
 
+The **saved maps** group keeps career openings in `saved_maps.js`, next to the
+page. `save map` appends the current opening and `save run` the exact run (while
+every ship is on the ground); either downloads the regenerated file, and dropping
+it over the page's copy makes the map permanent. `load map` and `load run` start
+a random saved one. `?map=<index|name>` boots a saved map directly: a start map
+is the run its seed link plans, without the seconds of opening search; `you=` and
+`rate=` still apply, and the address then shows that seed link.
+
 Sound has four selectable generators in the cargo panel's collapsible **sound**
 settings. The default **voronoi** combines trajectory aim cues with a polyphonic
 flight sound adapted from [experiment-sound-voronoi](https://github.com/luncat8/experiment-sound-voronoi).
@@ -249,6 +257,7 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
 - `gravity_sim.js` — gravity field bounded by the play area (`OrbitWorld.AREA_SCALE`), planet-system visits, per-pass prediction log, headless `predictFast`/`predictBurnFast`, live `stepOne` flight & continuation (`predictFlight`/`predictBurn`, `burn`), career launch & burn gates (`setLaunchNetwork`, `canFire`, `speedLimit`, `canBurn`, `burnLimit`, `relocate`), the `speedAt`/`gripLength` drag map with optional ceiling and floor, the experimental `setScales` multipliers, and the clock contract every reader converts through (`gameSeconds`, `padSeconds`, `padMinutes`, `tradeMinutes`, `stepsForGameSeconds`, `wallSeconds`, `WAIT_SEC`, `WAIT_PAD_SEC`, `SUN_SEC_PER_GAME_SEC`; `tradeMinutes` takes the orbit rate explicitly)
 - `gravity_game.js` — game rules (`tour`, `route`, `money`, `career`), seeded planet gravity, aim grid, the EMC network (`createGalaxy`, seeded turret periods & phases, `turretPeriod`/`turretAngle`, `padAt`/`padOwner`/`claimOwner`, `setCommercial`, `launchFee`, `exitCostAt`, `padLift`, `railText`/`railBlock`/`railOwnerText` — the live rail line and the one reason a shot cannot leave, shared by the page list and the bot decision log —, commercial pad, rival seeds), replay link codec (`rule`, `bot`, `cheat`, `gs`, `fs`, career `ws`, and `-b<step>.<angle>.<dv>` mid-flight burn suffixes), shared planet-profit market (`MONEY`, `createMarket`, `planetProfit`, `stepHarvest`, the experimental stay-pay `harvestStay`/`setHarvestMode`, `estimateProfit`, `compareScores`), career state (pads, finite ship fuel with `produceFuel`/`buyFuel`, `careerBurn`, ship condition — the `WEAR_*` law in `careerAdvance`/`careerBeginFlight`/`careerEndFlight`/`careerBurn`, the one writer `setShipCondition` that keeps the report flag in step, `careerShipUsable`, `repairCost`/`repairCareer`, `repairLaunchBlock`, the space-wear multiplier and the condition/report/repair-cost forecasts, and the identity space-weather hook `careerWearAt`/`careerWeatherWear` —, task board from the colony economy, one landing factor table (`careerLandingFacts`: cash the purse takes plus the credit of a contract leg, and `careerGoalBodies`: the planets any open contract or competition wants next — read by the aim readout, the launch list, the helper scans and the rivals), hull + directional frontier science research, evacuation, end condition), and the launch book (`createLaunchBook`, `recordLaunch`, `launchBookTag`/`bookReady`, `estimateProfitLog` — saved career trajectories with their visit logs, deduped by start planet + landing + visited systems on score, then faster arrival)
 - `gravity_bot.js` — deterministic shared-market rivals for all game rules (`off`, `easy`, `normal`, `hard` with 2 rivals + 1-ply lookahead, sliced search, `rivalLink`), the flying career rivals (`startCareers`/`stepCareer`: each runs a whole career with its own purse, pads, EMC claims and tax income, and is refinanced at its HQ after going broke), plus the synchronous headless career controller (`careerPlan`, the contract-preserving mid-flight impulse policy — `careerBurnPlan` two-stage search, `careerFlightBurn` one early nudge plus rescues, `careerBurnGain`, `careerPriceBurn` shortlist re-pricing and `careerRescueBurn` dead-end ring, committed-launch fuel forecasting (`careerPrepareFuel`/`careerCommitFuel`) with own-battery conversion first and purchase second, cached physical departure checks, dead-end pad repair, task/pad/energy-wait scoring with predicted wear and report failure, between-flight shopping and `careerPadGear` — panel/battery/rail buys priced as money per pad second against the pad's own launch book, a rail always with the battery that fills it), with `setScales` fanning the experimental multipliers into every rival and probe sim
+- `saved_maps.js` — the saved-map registry: generated, a plain script on the page and a `require` under node; `saved_map.js` — `GravityMaps`: start-map records, seat-plan injection in place of the opening search, exact run state capture and restore, the registry file text; `gui_maps.js` — the saved-maps buttons and the `?map=` boot
 - `photo_deck.js` — postcard popup: planet type and career scene → file candidates, captions, CSS fallback art, compact layout, purse toast
 - `gravity_sound.js` — sound controller plus the classic gesture-unlocked launch stages, procedural fallbacks and optional local selected audio
 - `gravity_voronoi_sound.js` — polyphonic Voronoi presets and neighborhood selection; `gravity_voronoi_tones.js` — experiment point-tuning algorithm
@@ -290,7 +299,10 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   the balance lab checks (`balance_lab_test.js` — the page's pricing mirror
   against `orbit_science.js`, `balance_lab_smoke.js` — the page's UI in a
   minimal DOM stub), the science fee probes (`sci_merit_probe.js`,
-  `build_cost_probe.js`) and career rival probes (`career_rival_probe.js`)
+  `build_cost_probe.js`) and career rival probes (`career_rival_probe.js`); the
+  saved-map contract (`saved_map_test.js`) with the registry generator and its
+  staleness check (`make_saved_maps.js`, `--check`); `run_fast.js` runs the tiers
+  and `experiments/README.md` says which file covers what
 - `photos/` — user art (`space/`, `landed/`, `career/`), `README.md` (file
   spec), `prompts.md` (17 captions for Krea 2 / MOSS-Image: 14 planet views and
   3 career scenes) and `generator/` (`comfy_queue.py` queues the captions into

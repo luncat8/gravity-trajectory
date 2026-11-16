@@ -7,13 +7,13 @@
  */
 'use strict';
 
-const { loadPage } = require('./dom_stub.js');
+const { loadPage, mapSearch } = require('./dom_stub.js');
 
 function check(ok, message) {
 	if (!ok) throw new Error(message);
 }
 
-const env = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
+const env = loadPage({ search: mapSearch(42), clipboard: false });
 env.runFrames(2, 16.0);
 const ui = env.elements;
 const context = env.context;

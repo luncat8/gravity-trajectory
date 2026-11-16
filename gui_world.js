@@ -250,13 +250,17 @@ function randomSeed() {
 }
 
 /* A fresh page gets a new world unless the address pins one. Replay hashes
- * keep their recorded seed; an ordinary query seed wins over a stale mode. */
+ * keep their recorded seed, a saved map brings its own, and an ordinary query
+ * seed wins over a stale mode. */
 function startupSeed() {
 	if (GravityGame.isGameLink(location.hash)) {
 		const link = GravityGame.decodeLink(location.hash);
 		if (link) return link.seed;
 	}
-	const value = new URLSearchParams(location.search).get('seed');
+	const params = new URLSearchParams(location.search);
+	const record = savedMapParam(params.get('map'));
+	if (record) return record.seed;
+	const value = params.get('seed');
 	if (value !== null) {
 		const seed = Number(value);
 		if (Number.isInteger(seed) && seed >= 1 && seed <= 0xffffffff) return seed;

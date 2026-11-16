@@ -12,3 +12,6 @@ i recommend move noise from plans to corresponding worklogs
 ## archive-plans
 
 move finished plans to archive
+→ **open**, started: `0.7.8-plan-saved-maps.md` moved to `archive/` in 0.7.9, once it
+read as a final spec without its own history. The other root plans are not yet
+sorted into finished and open.

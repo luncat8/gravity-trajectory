@@ -1,0 +1,75 @@
+0.7.9 test tiers · wall seconds · 2-core sandbox, node v22.22.3
+base  = a2319c4 (0.7.8): contextified vm stub, career page tests boot seed links
+stub  = base + the stub fix only (DONT_CONTEXTIFY, 5 lines), still seed links
+0.7.9 = stub fix + page tests on saved maps, one `run_fast.js --slow` pass
+"-" = not measured in that column; "=" = no page stub in the file
+the stub slow total is its 15 measured files plus the other 4 at their 0.7.9 time
+
+file                                 base    stub   0.7.9
+fast
+balance_changes_test                  0.1       =     0.1
+bribe_score_test                      0.1       =     0.1
+wear_flight_test                      0.1       =     0.1
+trade_route_mask_test                 0.3       =     0.5
+balance_lab_test                      0.2       =     0.3
+career_stats_test                     2.6       =     3.2
+career_wear_test                      4.8       =     5.0
+obs_test                              6.4       =     6.6
+career_expansion_start_test           7.6       =     8.2
+fragile_test                         10.2       =    10.7
+politics_test                        12.3       =    12.6
+saved_map_test                       21.1       -     8.8
+fast total                           65.8       -    56.2
+slow
+orbit_clock_test                      4.0     1.1     1.1
+special_planets_test                118.9       =   119.9
+sound_test                           27.6     2.9     3.0
+trajectory_sound_test                 0.2       -     0.2
+voronoi_sound_test                    0.9       -     0.6
+multiplayer_career_test              31.0     4.2     1.0
+multiplayer_pause_preview_test       27.0     3.9     0.5
+multiplayer_impulse_test             30.9     3.8     0.5
+wear_forecast_gui_test               27.6     4.0     1.1
+obs_fragile_gui_test                 31.4     4.2     0.6
+gravity_view_test (known red)       146.9    14.9    11.4
+helper_multiplayer_test             119.5    13.3     2.5
+career_guidance_test                 30.5     3.7     0.6
+politics_gui_test                    31.9     3.9     0.4
+profit_monotonic_test                31.7     3.3     0.4
+career_pause_test                    79.3     7.2     0.7
+career_departure_test                85.2       =    86.2
+career_start_seat_test               80.1     8.7     8.3
+player_growth_test                  485.6    51.5    42.3
+make_saved_maps --check (new)           -       -    21.4
+slow total                         1390.2   ~338    302.7
+fast + slow, runner total            1456       -     359
+  the same pass on the committed tree, after a sandbox restart (a slower box): 400
+  (fast 62.0 · slow 337.5: special_planets 133.2 · career_departure 92.9 ·
+  player_growth 49.2 · --check 25.3 · saved_map_test 10.7)
+
+the 12 converted files              1073.3   117.9    62.0
+  the 10 with map boots only         440.8    51.5     8.3
+
+bench, smoke and probe files that boot the stub (measured with a second job running)
+gravity_seed_test                   358.4       -    40.4
+game_bench                          258.3       -    37.5
+bot_bench                            69.5       -    53.8
+career_level_probe                   39.2       -     3.9
+career_gui_bot_probe (red, both)     59.7       -     6.5
+dom_smoke (base: the ~25 min 0.7.8 lists, not re-measured)   -   107.2
+  on the committed tree, the slower box: dom_smoke 119 · gravity_seed_test 40 · game_bench 34 · bot_bench 53
+
+one career page boot, 13 planets, 3 seats   base   0.7.9
+seed link, seed 1                    27.9     3.0
+seed link, seed 42                   40.8     3.2
+seed link, seed 10 (no fair opening)    -    14.6
+seed link, seed 61 (no fair opening)    -    13.4
+?map= of seed 1                       0.4     0.2
+?map= of seed 42                        -     0.2
+
+why: 3e7 x (Math.sqrt + Math.sin + Math.hypot + Number.isFinite + Float64Array write), ms
+main realm                           1104
+vm.createContext({ console })       25969
+  same, the three names aliased      1486
+vm.createContext()                  29114
+vm.createContext(DONT_CONTEXTIFY)    1349

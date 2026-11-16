@@ -2,7 +2,7 @@
 'use strict';
 const assert = require('assert');
 const vm = require('vm');
-const { loadPage } = require('./dom_stub.js');
+const { loadPage, mapSearch } = require('./dom_stub.js');
 
 const env = loadPage({ search: '?mode=career&seed=3&bot=off' });
 const ctx = env.context;
@@ -220,7 +220,7 @@ assert.strictEqual(reopened.context.GravityGame.spaceWearScaleOf(), 1, 'old link
 assert.strictEqual(reopened.elements.get('expWear').value, '1');
 
 /* Both selected-rival and copy-rival links carry the same shared settings. */
-const rivals = loadPage({ search: '?mode=career&seed=3' });
+const rivals = loadPage({ search: mapSearch(3) + '&rate=0.5' });
 rivals.setValue('expWear', 1.5);
 rivals.toggle('expHarvest');
 const rivalsScene = rivals.context.GravityScene;

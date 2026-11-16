@@ -3,18 +3,20 @@
  * run state.
  *
  * 1. `saved_maps.js` is well-formed and its records are unique.
- * 2. A record seats a career headlessly without the opening search, and the
- *    plan is the one the page would have found (checked on the fairness rule).
+ * 2. A record seats a career headlessly, and its plan still passes the
+ *    fairness rule. (That it is still the plan the search returns is
+ *    `make_saved_maps.js --check`, slow tier.)
  * 3. `fileText` writes a file that loads back to the same records in a fresh
- *    JS context — the save action's only format.
- * 4. A page booted on `?map=` reports the saved seats, fast (the search is the
- *    ~33 s part of a career boot).
+ *    JS context — the save action's only format — and the committed registry
+ *    is exactly that text.
+ * 4. A page booted on `?map=` is the page its seed link boots, minus the
+ *    search: seated from the record, and the same run frame for frame, at the
+ *    record's orbit rate or the one the address asks for.
  * 5. An exact state captured at rest and restored into a second page continues
  *    identically: both pages are driven with the same frames and their captured
  *    states must still be equal.
  *
- * Run: node experiments/saved_map_test.js            (PLANNED=1 adds the 40 s
- *      planned-boot comparison per record)
+ * Run: node experiments/saved_map_test.js
  */
 'use strict';
 
@@ -31,7 +33,6 @@ const GravityMaps = require(path.join(root, 'saved_map.js'));
 const MAPS = require(path.join(root, 'saved_maps.js'));
 const { loadPage } = require('./dom_stub.js');
 
-const PLANNED = process.env.PLANNED === '1';
 const PLANETS = OrbitWorld.PLANETS;
 
 /* --- 1. the registry ---------------------------------------------------- */
@@ -63,7 +64,7 @@ for (const record of MAPS) {
 }
 console.log('registry: ' + MAPS.length + ' maps');
 
-/* --- 2. the plan is injected, not searched ------------------------------ */
+/* --- 2. a record seats a career, and its plan is fair -------------------- */
 
 function maskedTrade(seed, universe) {
 	const mask = new Uint8Array(PLANETS);
@@ -91,17 +92,12 @@ for (const record of MAPS) {
 	GravityGame.applyMarketUniverse(market, world.mask, record.universe);
 	GravityGame.applyMarketSpecials(market, world.trade.world);
 	const sourceSim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
-	const started = Date.now();
 	GravityMaps.arm(record);
 	const seats = GravityMaps.applySeats(galaxy, world.trade.world, world.trade,
 		world.mask, record.universe, record.seats.length, sourceSim);
-	const ms = Date.now() - started;
 	assert.ok(seats, record.name + ': the record was accepted');
 	assert.deepStrictEqual(seats, record.seats, record.name + ': saved seats are used');
 	assert.deepStrictEqual(galaxy.mapSeats, record.seats, record.name + ': galaxy seats');
-	/* a seat search is ~35 s on this world; a loose cap keeps the check
-	 * meaningful on a loaded machine and still proves the fan did not run */
-	assert.ok(ms < 10000, record.name + ': injection took ' + ms + ' ms, not a search');
 	const stats = planCheck(world.trade.world, world.trade, world.mask, record.universe,
 		galaxy.mapSeats);
 	assert.strictEqual(stats.missing, 0, record.name + ': every company has a site');
@@ -110,7 +106,8 @@ for (const record of MAPS) {
 	const ratio = stats.minPay / stats.maxPay;
 	assert.ok(ratio >= 0.55, record.name + ': weakest/best ' + ratio.toFixed(2));
 }
-console.log('plan injection: ' + MAPS.filter(r => r.kind === 'start').length + ' records, no search');
+console.log('seat plans: ' + MAPS.filter(r => r.kind === 'start').length +
+	' records seat a career, each fair');
 
 /* --- 3. the file round-trips -------------------------------------------- */
 
@@ -119,10 +116,24 @@ const sandbox = vm.createContext({});
 vm.runInContext(text, sandbox, { filename: 'saved_maps.js' });
 assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.SAVED_MAPS)),
 	JSON.parse(JSON.stringify(MAPS)), 'fileText reloads to the same records');
-fs.writeFileSync(path.join(root, 'saved_maps.js'), text);
-console.log('file text: ' + text.length + ' bytes');
+assert.strictEqual(fs.readFileSync(path.join(root, 'saved_maps.js'), 'utf8'), text,
+	'saved_maps.js is the text a save writes: regenerate it, never edit it by hand');
+console.log('file text: ' + Buffer.byteLength(text) + ' bytes');
 
 /* --- 4. a page booted on a saved map ------------------------------------ */
+
+/* one frame at a time until the run has real progress and every company is on
+ * the ground with no barrel waiting: the only moment an exact state can be
+ * saved, and a full flight into the run. Returns the frames it took. */
+function stepToRest(env, maxFrames, minStep, minFlights) {
+	for (let i = 0; i < maxFrames; i++) {
+		env.runFrames(1, 16.0);
+		const game = env.context.GravityScene.game;
+		if (game.clockSteps < minStep || game.career.flights < minFlights) continue;
+		if (env.context.careerAtRest() === '') return i + 1;
+	}
+	return -1;
+}
 
 const start = MAPS[0];
 const bootStart = Date.now();
@@ -140,36 +151,53 @@ for (let i = 0; i < start.seats.length; i++) {
 	assert.strictEqual(career.hq, start.seats[i], 'company ' + i + ' on its saved seat');
 	assert.strictEqual(scene.sim.strength[career.hq], 1, 'company ' + i + ' HQ well g 1');
 }
-assert.ok(bootMs < 15000, 'saved-map boot took ' + bootMs + ' ms');
-console.log('page boot: ?map=0 in ' + bootMs + ' ms (a planned career boot is ~33 s here)');
 
-if (PLANNED) {
-	const planned = loadPage({ search: '?rule=career&seed=' + start.seed + '&rate=1' });
-	assert.deepStrictEqual(plain(planned.context.GravityScene.game.galaxy.mapSeats), start.seats,
-		'the saved plan is the plan the page computes for that seed');
-	console.log('planned boot: same seats as the record');
-}
+/* the seats come from the record, not from a search that agrees with it: a
+ * record with its seat order reversed seats the run reversed. On a page that
+ * has not planned this world yet, because the planner keeps its first answer. */
+const reversed = Object.assign({}, start, { seats: start.seats.slice().reverse() });
+const lab = loadPage({ search: '?mode=lab&seed=' + start.seed });
+assert.ok(lab.context.startMapRecord(reversed), 'a record starts a career from the lab');
+assert.deepStrictEqual(plain(lab.context.GravityScene.game.galaxy.mapSeats), reversed.seats,
+	'the run is seated from the record, not searched');
+
+/* the seed link plans the same run: the captured state at boot, the same after
+ * a bot has flown both through a flight, and the page's random stream the
+ * helpers draw from */
+const runState = env => JSON.stringify(
+	env.context.GravityMaps.captureState(env.context.mapRunInfo()));
+const mapRun = loadPage({ search: '?map=0&you=bot' });
+const seedStart = Date.now();
+const seedRun = loadPage({
+	search: '?rule=career&seed=' + start.seed + '&rate=' + start.rate + '&you=bot'
+});
+const seedMs = Date.now() - seedStart;
+const bootState = runState(mapRun);
+assert.strictEqual(bootState, runState(seedRun), '?map=0 boots the run its seed link plans');
+const flown = stepToRest(seedRun, 6000, 400, 1);
+assert.ok(flown > 0, 'the seed-link run flew a flight and came to rest');
+mapRun.runFrames(flown, 16.0);
+assert.strictEqual(runState(mapRun), runState(seedRun),
+	'both boots fly the same run for ' + flown + ' frames');
+assert.strictEqual(mapRun.context.Math.random(), seedRun.context.Math.random(),
+	'both boots leave the page the same random stream');
+
+/* the address still sets the orbit rate, as on a seed link: `&rate=0.5` is the
+ * clock a seed link without `rate=` runs, and the form most page tests boot.
+ * At boot the rate is the only thing in the run state that it changes. */
+const slow = loadPage({ search: '?map=0&rate=0.5&you=bot' });
+assert.strictEqual(slow.context.OrbitScene.trade.speed, 0.5, 'rate= sets the orbit rate of a map boot');
+const slowState = JSON.parse(runState(slow));
+assert.strictEqual(slowState.ships[0].fieldRate, 0.5, 'rate= reaches the ship');
+slowState.ships[0].fieldRate = start.rate;
+assert.strictEqual(JSON.stringify(slowState), bootState, 'rate= changes the rate and nothing else');
+console.log('page boot: ?map=0 in ' + bootMs + ' ms · its seed link in ' + seedMs +
+	' ms · same run after ' + flown + ' frames · rate= honoured');
 
 /* --- 5. exact run state ------------------------------------------------- */
 
-/* one frame at a time until the run has real progress and every company is on
- * the ground with no barrel waiting: the save action refuses a flight in the
- * air, so the test saves where it can */
-function stepToRest(env, maxFrames, minStep, minFlights) {
-	for (let i = 0; i < maxFrames; i++) {
-		env.runFrames(1, 16.0);
-		const game = env.context.GravityScene.game;
-		if (game.clockSteps < minStep || game.career.flights < minFlights) continue;
-		if (env.context.careerAtRest() === '') return i + 1;
-	}
-	return -1;
-}
-
-/* playback ×8 keeps the frames (and the test) short; the saved state does not
- * care how fast the wall clock fed the fixed steps */
-const search = '?map=0&you=bot&rate=1';
+const search = '?map=0&you=bot';
 const pageA = loadPage({ search: search, random: () => 0.5 });
-pageA.context.OrbitScene.setSpeed(8);
 const frames = stepToRest(pageA, 6000, 400, 1);
 assert.ok(frames > 0, 'page A reached a rest point to save from');
 const save = pageA.context.GravityMaps.runRecord(pageA.context.mapRunInfo());
@@ -180,7 +208,6 @@ const savedPurse = pageA.context.GravityScene.game.career.ledger.purse;
 const savedStep = pageA.context.GravityScene.game.clockSteps;
 
 const pageB = loadPage({ search: search, random: () => 0.5 });
-pageB.context.OrbitScene.setSpeed(8);
 pageB.context.GravityMaps.arm(save);
 assert.ok(pageB.context.applyRunRecord(save), 'the run state is restored');
 assert.strictEqual(pageB.context.GravityScene.game.career.ledger.purse, savedPurse,

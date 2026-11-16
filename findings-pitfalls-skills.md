@@ -89,8 +89,8 @@ never in the repo. Launch takes 0.3 s; the page loads from `file://` in 6 s.
 
 - `experiments/dom_stub.js` reads `index.html` and every script once, at
 	`require` time: a suite already running keeps testing the tree it started
-	with. `dom_smoke.js` takes ~15 min of CPU in a 2-core sandbox, so start it
-	in the background on a snapshot and keep working:
+	with. `dom_smoke.js` takes ~2 min of CPU in a 2-core sandbox (~15–25 before
+	0.7.9), so start it in the background on a snapshot and keep working:
 	`git ls-files -z --cached --others --exclude-standard | xargs -0 -I{} cp --parents {} /tmp/snap/`;
 - never `pkill -f experiments/dom_smoke.js` from the agent shell: the pattern
 	is in that shell's own command line, so it kills itself first.
@@ -841,13 +841,14 @@ planner/verifier pair, assert against the same sim state the plan was made under
 pass the snapshot explicitly — "re-read the live value after the executor runs" is
 not the same invariant.
 
-## dom_smoke takes ~20 min — collect every failure in one run, test a new block alone
+## dom_smoke — collect every failure in one run, test a new block alone
 
 `check()` throws on the first failure, so a rule change that moves several labels costs
-one 20-minute run per label. Copy the file next to itself (it requires `./dom_stub.js`),
+one full run per label (~2 min each since 0.7.9, ~20 min before). Copy the file next to
+itself (it requires `./dom_stub.js`),
 swap `check` for one that logs `CHECKFAIL L<line>` from `new Error().stack` and keeps
 going, run once, fix the whole list, delete the copy. A new `{ … }` block can be run on
-its own in ~90 s: a scratch file with `loadPage`, `check`, the few top-level helpers it
+its own in seconds: a scratch file with `loadPage`, `check`, the few top-level helpers it
 reads (`CAREER_TEST_SPEED`, `pageSim`, `OrbitTech`, `landingAngle`, `careerLaunch`) and
 the block. 0.7.2 found its 4 changed expectations this way.
 
@@ -902,10 +903,17 @@ inside another plan: `bot_gravity_test` (asserts `careerNextPad` prefers the
 lower-G pad, but `careerReach` reads the always-on `exitProbe`, which no test
 fixture arms, so every site values `-Infinity` and the pick is −1; needs the
 fixture to arm `exitProbe`, not a law change), `gravity_view_test` (drag-zone
-colours at seed 61, red since 0.7.1), `career_start_fairness` ("weakest
+colours at seed 61, red since 0.7.1 — and behind that assertion a second one:
+the visit-profit card is asserted as `+0.46` where the seed-42 page draws
+`+0.47`; a file that stops at its first red assertion says nothing about the
+ones after it, so log the known one in a scratch copy before trusting the
+rest), `career_start_fairness` ("weakest
 opening within the fair band" at its own seeds) and `career_gui_bot_probe` ("the
 world clock stopped after the hand-over"). The benches' own known counts are
-separate: `career_bench` 3, `career_bot_bench` 10, `bot_bench` 1.
+separate: `career_bench` 3, `career_bot_bench` 10. `bot_bench` was carried here
+with "1" and no name; it prints `BOT BENCH OK` at the 0.7.8 commit and left the
+list in 0.7.9 — a known failure without a name cannot be compared, so it hides
+any new one.
 
 `profit_monotonic_test` left that list in 0.7.8 and was not a law at all: at seed
 520383 the search's first winner is negative and the page prints a typographic
@@ -914,55 +922,80 @@ never matched, so the failure read "missing profit". The test now folds `−` to
 `-` before `Number()`. `experiments/README.md` holds the current list of files
 that are red on a clean main and `run_fast.js` carries it in `KNOWN_RED`.
 
-## every page boot plans the career seats, and the vm makes it 10× worse
+## every page boot plans the career seats, and a contextified vm global made it 10× worse
 
-`loadPage({ search: '?rule=career…' })` is not a cheap stub boot: the page plans
+`loadPage({ search: '?rule=career…' })` is not a free stub boot: the page plans
 its whole fair HQ set at load (`startCareerRun` → `prepareCareerStarts` →
 `planHomeSet` → `rankOpeningSetsByPairs`), which traces each candidate home
-against every other one. Measured on this tree (13-planet universe, 3 seats):
+against every other one. Measured on a 13-planet universe with 3 seats:
 
-- seat plan in the main realm: **2.6–4.5 s** (seed 42 ~3.0 s, and 0 ms on a
-	repeat call with the same world and trade time in the same process);
-- the same code inside `node:vm`: **20–30 s**, i.e. ~8–13× slower.
+- seat plan in the main realm: **2.4–3.5 s** on a seed with a fair opening
+	(seed 42 ~2.9 s) and 0 ms on a repeat call with the same world and trade
+	time in the same process. A seed where no opening passes the fairness rule
+	searches far longer: a career page boot on seed 10 or 61 is **13–15 s**;
+- the same code in a page stub built on `vm.createContext(sandbox)`:
+	**28–41 s** for one career boot. That was `dom_stub.js` until 0.7.9, and it
+	is what made every page test half a minute and `dom_smoke` a 25-minute run.
 
-The vm penalty is not the sandbox boundary, `performance.now()` or the array
-type: a tight typed-array loop spans the same 2× range, and a context created
-without a sandbox object is just as slow. It is V8's optimising tiers treating
-functions compiled inside a context as second-class — the hot functions
-(`GravitySim.advance` 77 %, `routeStep` 20 %) never reach the same code. So a
-CPU profile of a vm run tells you *which* function is hot, not what it will cost
-a browser; use it for shape, not for absolute time.
+The whole penalty is the sandbox object. `vm.createContext(sandbox)`
+*contextifies* it: node wraps the realm's global object around `sandbox`, so
+every global name the code reads — `Math`, `Float64Array`, `Number`, each
+top-level `function` of the page's classic scripts — is answered through that
+wrapper's interceptors, which the optimiser can neither cache nor inline. One
+loop of `Math.sqrt/sin/hypot`, `Number.isFinite` and a `Float64Array` write,
+3e7 times:
 
-Consequences worth knowing before tuning a test:
+| realm | ms |
+|---|---|
+| main | 1 104 |
+| `vm.createContext({ console })` | 25 969 |
+| the same, with the three names aliased to `const`s first | 1 486 |
+| `vm.createContext()` — it contextifies a fresh empty object | 29 114 |
+| `vm.createContext(vm.constants.DONT_CONTEXTIFY)` | 1 349 |
 
-- `dom_smoke` = 41 `loadPage` calls, 31 of them career pages: the walk itself is
-	a few minutes, the other ~15 are seat planning that the *page* would also do
-	in a browser.
-- any page test pays one seat plan (~40 s in the vm) before its first check. If
-	the check is not about the start map, that is where the time goes.
-- the seat plan is memoised only *within one context* (`seatPlanCache`), so a
-	second `loadPage` of the same URL pays the plan again — measured 0 hits over
-	3 identical loads. Do not plan around a cross-load cache; the page's own
-	double plan on one click is the only hit.
+`vm.constants.DONT_CONTEXTIFY` (node ≥ 22.8 or 20.18) gives the realm an
+ordinary global object — node's own docs name "emulating a web browser … run
+all `<script>` tags together" as the use — and the stub assigns its `document`,
+`performance`, … onto it. On an older node the constant is `undefined`, and
+`createContext(undefined)` contextifies a fresh object: the old speed, the same
+page. It is the same page either way: a career run is equal under both stubs in
+captured state, page scalars, the random stream and every element after 900
+frames, and `dom_smoke` prints the 67 lines it printed before (one moved with
+the registry: 6 → 10 maps). A career boot is ~3 s, `dom_smoke` ~2 min.
+
+This note used to blame "V8's optimising tiers treating functions compiled
+inside a context as second-class" and filed the vm under dead ends. The flags it
+tried (`--no-concurrent-recompilation`, `--max-lazy`,
+`--no-lazy-feedback-allocation`, `--single-threaded`) really do nothing, and
+that was the clue, not the verdict: a slowdown no compiler flag moves is not in
+the compiler. The experiment that finds this kind of cause takes a minute — one
+tight loop in both realms, then the same loop with its globals aliased.
+
+Still true, and worth knowing before tuning a test:
+
+- the seat plan is memoised only *within one context* (`seatPlanCache`) and
+	every `loadPage` is a fresh one, so a second load of the same URL plans
+	again (0 hits over 3 identical loads, and a cache key without the trade
+	clock changed nothing). A test can avoid the plan, not reuse it — which is
+	what a saved map is: `loadPage({ search: mapSearch(42) })` boots in 0.2 s the
+	run `?rule=career&seed=42&rate=1` plans, and `saved_map_test.js` holds the
+	two equal. Keep the seed link when the opening search or the address is the
+	subject, and for seeds 10 and 61, which have no fair opening to save.
+- a saved map outlives the search that proved it. After any change to the seat
+	search, `node experiments/make_saved_maps.js --check` (slow tier) names the
+	records the search no longer returns; regenerate with the same script.
+- `OrbitScene.setSpeed(n)` in a page test is the orbit rate (the link's
+	`rate=`): the sky and its moving gravity sources, so it changes the
+	trajectories a run flies. It is not playback (`playFaster`, `playScale()`,
+	which feeds more of the same fixed steps per frame) and it shortens nothing:
+	`saved_map_test` set it to 8 behind a rate-locked career "to keep the frames
+	short", and the bot comes to rest after the same 530 frames without it.
 - measuring the seat plan directly is a 4 s experiment:
 	`node experiments/career_start_probe.js SEEDS=42`, not a page load.
-
-Dead ends measured on this tree, so they are not tried again:
-
-- **the seat-plan cache cannot help tests.** Every `loadPage` runs the scripts
-	in a fresh context (`vm.createContext`), so the cache in `gravity_game.js`
-	never survives a page: measured 0 hits over 3 identical career loads, and a
-	plan cache key without the trade clock changed nothing (185 s vs 184 s for
-	5 loads). A test can only avoid the plan, not reuse it.
-- **no V8 flag speeds the vm up.** `--no-concurrent-recompilation`,
-	`--max-lazy`, `--no-lazy-feedback-allocation` and `--single-threaded` all
-	landed within noise (37–40 s per career boot). The slow tier is not
-	something a flag reaches.
-- **the pair ranker is already lean.** One career boot traces 180 fans
+- the pair ranker is already lean. One career boot traces 180 fans
 	(`openingTraceHome`) and 132 of them go through the pair cache
 	(`openingTracks`), i.e. 48 exact re-traces; raising
 	`OPENING_TRACE_CACHE_MAX` from 512 to 2048 buys nothing measurable.
-- what does work: `planCareerSeats` returning early when the universe cannot
-	seat the asked-for companies (it used to crash with `pools[pool].indexOf` on
-	the null dim pool, e.g. 13 seats on a 13-planet universe), and running the one
-	specific test instead of a broad sweep — see the table in `AGENTS.md`.
+- `planCareerSeats` returns early when the universe cannot seat the asked-for
+	companies (it used to crash with `pools[pool].indexOf` on the null dim pool,
+	e.g. 13 seats on a 13-planet universe).

@@ -2,8 +2,8 @@
 'use strict';
 const assert = require('assert');
 const vm = require('vm');
-const { loadPage } = require('./dom_stub.js');
-const env = loadPage({ search: '?mode=career&seed=1' });
+const { loadPage, mapSearch } = require('./dom_stub.js');
+const env = loadPage({ search: mapSearch(1) + '&rate=0.5' });
 const scene = env.context.GravityScene;
 const run = code => vm.runInContext(code, env.context);
 /* the scoreboard rows (YOU, R1, R2) that carry the pause hatch, as '110' */

@@ -230,26 +230,32 @@ function loadSavedMap(kind) {
 	return startMapRecord(record);
 }
 
-/* `?map=<index>` or `?map=<name>`: the boot path page tests and players use */
-function loadSavedMapParam(text) {
+/* the record `?map=<index>` or `?map=<name>` names */
+function savedMapParam(text) {
+	if (text === null) return null;
 	const records = savedMapList();
 	const index = Number(text);
+	if (Number.isInteger(index) && index >= 0 && index < records.length) return records[index];
 	let record = null;
-	if (Number.isInteger(index) && index >= 0 && index < records.length) record = records[index];
-	if (!record) {
-		for (let i = 0; i < records.length; i++) {
-			if (records[i].name === text) record = records[i];
-		}
+	for (let i = 0; i < records.length; i++) {
+		if (records[i].name === text) record = records[i];
 	}
+	return record;
+}
+
+/* `?map=`: the boot path page tests and players use */
+function loadSavedMapParam(params) {
+	const record = savedMapParam(params.get('map'));
 	if (!record) return false;
 	/* the map decides the world and the seats; the url may still say who flies
-	 * YOU, so a bot can run a saved map and a page test can watch it */
-	const params = new URLSearchParams(location.search);
+	 * YOU and how fast the orbit clock runs, as a seed link does — neither
+	 * touches the seat plan */
+	const options = {};
 	const player = params.get('you') || params.get('player');
-	if (player && GravityGame.PLAYER_TYPES[player]) {
-		record = Object.assign({}, record, { player: player });
-	}
-	return startMapRecord(record);
+	if (player && GravityGame.PLAYER_TYPES[player]) options.player = player;
+	const rate = Number(params.get('rate'));
+	if (rate >= GravityGame.RATE_MIN && rate <= GravityGame.RATE_MAX) options.rate = rate;
+	return startMapRecord(Object.assign({}, record, options));
 }
 
 if (mapSaveBtn) mapSaveBtn.addEventListener('click', saveStartMap);

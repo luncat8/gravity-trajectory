@@ -6,9 +6,9 @@
 'use strict';
 const assert = require('assert');
 const vm = require('vm');
-const { loadPage } = require('./dom_stub.js');
+const { loadPage, mapSearch } = require('./dom_stub.js');
 
-const env = loadPage({ search: '?mode=career&seed=42&rate=1' });
+const env = loadPage({ search: mapSearch(42) });
 const scene = env.context.GravityScene;
 const ui = env.elements;
 const game = env.context.GravityGame;

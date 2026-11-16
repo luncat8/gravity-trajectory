@@ -58,7 +58,7 @@ experiments/logs/ - without long formatting, keep only useful data that helpful 
 
 ### gravity gui
 
-the gui is split one file per area (0.5, done): 21 `gui_*.js` classic scripts plus
+the gui is split one file per area (0.5, done): 22 `gui_*.js` classic scripts plus
 `gravity_gui.js` (1,074 lines: state, element refs, wiring, boot — not an IIFE, and never
 an empty re-export hub). never read the composer whole.
 the areas still inside it are indexed by a banner comment; one grep gives the table of contents with
@@ -76,6 +76,7 @@ every file below is in place. each area file reads the composer's state as ordin
 | `gui_tables.js` | 279 | constants, gear/tech/science/help tables, speed presets, rule copy, stats plot sizes/labels |
 | `gui_help.js` | 62 | rule help drawer: open, pin, hold to preview |
 | `gui_share.js` | 197 | url copy, replay/bot links, load from link, bot log |
+| `gui_maps.js` | 265 | saved maps: the four buttons, the `?map=` boot, run capture and restore, status line |
 | `gui_science.js` | 454 | hull plot geometry, merit and spec text, accept, sliders |
 | `gui_shop.js` | 752 | cost/cap/pad/gear text, purse checks, shop buttons, EMC claims, part and proto rows |
 | `gui_book.js` | 391 | task board, launch book, money trace, ranked launch list, rail lines |
@@ -104,29 +105,30 @@ root.GravityScene keys are a test contract (experiments/ read them) - keep the n
 ## tests
 
 - run the fast checks while working, not the whole `experiments/` folder. a change
-	needs the files whose subject it touches and nothing more (~1-3 min each, see the
-	table below); most edits need none at all.
+	needs the files whose subject it touches and nothing more (seconds for a page test,
+	1-2 min for a seed sweep, see the table below); most edits need none at all.
 - **do not run `dom_smoke.js` per step.** it is ~3 900 lines and 41 page loads and
-	takes ~20 min of CPU. run it once, when the plan (all steps of it) is complete and
+	takes ~2 min of CPU. run it once, when the plan (all steps of it) is complete and
 	the code is otherwise final, or when the change is in the page plumbing itself
 	(`index.html`, script load order, the composer, event wiring) where a physics test
 	cannot see the break. never re-run it to "be safe" after a docs or test-only edit.
 - a UI regression in one area does not need the whole file: run just that block in a
-	scratch file (`loadPage` + `check` + the helpers the block reads, ~90 s), fix
+	scratch file (`loadPage` + `check` + the helpers the block reads, seconds), fix
 	everything it reports, then one full `dom_smoke` at the end.
 - `check` throws on the first failure, so a broken label costs one full run per label.
 	Copy the file, swap `check` for a logger that prints `CHECKFAIL` and keeps going,
 	run once, fix the whole list.
-- start the slow ones (`career_bot_bench` ~5 min, `game_bench` ~5 min,
-	`gravity_seed_test` ~6 min, `dom_smoke` ~20 min) in the background on a snapshot and
+- start the slow ones (`career_bot_bench` ~5 min, the slow tier ~5 min,
+	`dom_smoke` ~2 min) in the background on a snapshot and
 	keep working; never block a turn on them, and never pipe them through `tail` (the
 	output only appears at the end, so a hang and a long run look identical).
 - a red test you did not cause is not yours to fix in passing unless the plan says
 	so: check it at the base commit first, then write it in the worklog as known.
-- one command per tier: `node experiments/run_fast.js` (fast, ~1.5 min),
-	`--slow` (page boots), `--bench` (numbers), `--smoke` (dom_smoke), `--list` for
-	the costs and the files. the tiers, the areas they cover and the handful of files
-	that are red on a clean main live in `experiments/README.md`.
+- one command per tier: `node experiments/run_fast.js` (fast, ~1 min),
+	`--slow` (seed sweeps and page tests, ~5 min more), `--bench` (numbers),
+	`--smoke` (dom_smoke), `--list` for the costs and the files. the tiers, the areas
+	they cover and the handful of files that are red on a clean main live in
+	`experiments/README.md`.
 - say what happened: passed, failed, deferred, interrupted or timed out — a
 	deferred smoke is never a pass, and an earlier pass does not validate later
 	changes. compare bench failures by name, not by count; isolate a fixture in a
@@ -139,16 +141,18 @@ root.GravityScene keys are a test contract (experiments/ read them) - keep the n
 | `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `bot_gravity_test` |
 | `gravity_game` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
 | `gravity_bot` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
+| the career seat search (`prepareCareerStarts` and below) | `career_start_seat_test`, then `make_saved_maps.js --check`: a stale saved map needs the generator rerun |
 | `gravity_gui`/`gui_*.js` page state | the one page test for the area (`politics_gui_test`, `obs_fragile_gui_test`, `career_pause_test`, `profit_monotonic_test`, …) |
 | `index.html`, script order, composer | `dom_smoke` once, plus the area test |
 | docs, plans, worklogs, test files only | nothing |
 
-a page test costs one `loadPage` (~40 s) before its first assertion, because the page
-boot plans the career seats. `career_start_probe.js SEEDS=42` asks the same seat
-planner a smaller question in 4 s when that is all you need to know. a test or a
-probe that only needs a world can boot a saved map instead (`?map=<index|name>`,
-about half a second, `saved_maps.js`); keep the seed when the seat search is the
-subject.
+a career page boot plans the seats before a test's first assertion: ~3 s on a seed
+link, ~0.2 s on the saved map of that seed, which is the same run without the search
+(`loadPage({ search: mapSearch(42) })` for `?rule=career&seed=42&rate=1`; add
+`&rate=0.5` where the seed link carried no `rate=`). keep the seed link when the seat
+search, the address or the seed itself is the subject. `saved_maps.js` is generated
+(`experiments/make_saved_maps.js`), never edited by hand.
+`career_start_probe.js SEEDS=42` asks the seat planner directly.
 
 ## sandbox
 

@@ -10,9 +10,14 @@
  * distinct first-landing site, every site can launch again, and the weakest
  * opening pays at least OPENING_FAIR_RATIO of the best.
  *
+ * `--check` re-plans every start map already in `saved_maps.js` and fails when
+ * the search no longer returns it: a record that outlived a change to the search
+ * seats a run no seed link starts, and the page tests on `?map=` would keep
+ * passing on it.
+ *
  * Run: node experiments/make_saved_maps.js            (writes saved_maps.js)
  *      SEEDS=1-16 node experiments/make_saved_maps.js  (how far to sample)
- *      node experiments/make_saved_maps.js --check     (validate, do not write)
+ *      node experiments/make_saved_maps.js --check     (the registry against the search)
  */
 'use strict';
 
@@ -28,7 +33,7 @@ const GravityMaps = require(path.join(root, 'saved_map.js'));
 
 const PLANETS = OrbitWorld.PLANETS;
 const START_MINUTES = 420;
-const WRITE = process.argv.indexOf('--check') < 0;
+const CHECK = process.argv.includes('--check');
 
 const parseSeeds = value => {
 	const [from, to] = value.split('-');
@@ -39,15 +44,18 @@ const parseSeeds = value => {
 };
 const SEEDS = parseSeeds(process.env.SEEDS || '1-12');
 
-/* One entry per record wanted; `from` spreads the configs over different seeds
- * so "load a random map" really is different worlds, and the career default
- * (13 worlds, YOU + two rivals) gets two. */
+/* One entry per record wanted; `from` spreads the sampled configs over different
+ * seeds so "load a random map" really is different worlds, and the career
+ * default (13 worlds, YOU + two rivals) gets two. `seeds` names its worlds
+ * instead of sampling them. `?map=<index>` counts from the top, so a new entry
+ * goes last. */
 const CONFIGS = [
 	{ universe: 13, seats: 3, want: 2, from: 1, note: 'career default' },
 	{ universe: 13, seats: 2, want: 1, from: 3, note: 'YOU + one rival' },
 	{ universe: 26, seats: 3, want: 1, from: 4, note: 'the old 26-world subset' },
 	{ universe: 8, seats: 2, want: 1, from: 2, note: 'the small universe' },
-	{ universe: 26, seats: 4, want: 1, from: 5, note: 'four companies on 26' }
+	{ universe: 26, seats: 4, want: 1, from: 5, note: 'four companies on 26' },
+	{ universe: 13, seats: 3, seeds: [42, 7, 3, 520383], note: 'career default · a page-test world' }
 ];
 
 function tradeWorld(seed, universe) {
@@ -72,7 +80,7 @@ function accepted(world, trade, mask, universe, homes, sourceSim) {
 		distinct: stats.distinct, exitOk: stats.exitOk };
 }
 
-function planFor(seed, universe, seats) {
+function planFor(seed, universe, seats, gravityScale, forceScale) {
 	const world = tradeWorld(seed, universe);
 	const market = GravityGame.createMarket();
 	GravityGame.resetMarket(market);
@@ -83,6 +91,7 @@ function planFor(seed, universe, seats) {
 	/* the page hands in its cargo sim, whose scales are 1 unless an experiment
 	 * changed them; a plan is only valid for the field it was proven on */
 	const sourceSim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	sourceSim.setScales(gravityScale, forceScale);
 	const t0 = Date.now();
 	const homes = GravityGame.prepareCareerStarts(galaxy, world.trade.world, world.trade,
 		world.mask, universe, seats, sourceSim);
@@ -121,15 +130,23 @@ function recordFor(plan, note) {
 	return record;
 }
 
-const records = [];
-for (const config of CONFIGS) {
-	let found = 0;
-	const order = SEEDS.filter(seed => seed >= config.from).concat(
-		SEEDS.filter(seed => seed < config.from));
+/* the seeds a config tries in order, and how many of them it keeps */
+function seedPlan(config) {
+	if (config.seeds) return { order: config.seeds, want: config.seeds.length };
+	return {
+		order: SEEDS.filter(seed => seed >= config.from).concat(
+			SEEDS.filter(seed => seed < config.from)),
+		want: config.want
+	};
+}
+
+function recordsFor(config) {
+	const { order, want } = seedPlan(config);
+	const label = config.universe + ' planets · ' + config.seats + ' seats';
+	const records = [];
 	for (const seed of order) {
-		if (found >= config.want) break;
-		const plan = planFor(seed, config.universe, config.seats);
-		const label = config.universe + ' planets · ' + config.seats + ' seats';
+		if (records.length >= want) break;
+		const plan = planFor(seed, config.universe, config.seats, 1, 1);
 		if (!plan || !plan.check.ok) {
 			console.log('skip seed ' + seed + ' · ' + label + ' · ' +
 				(plan ? 'ratio ' + plan.check.ratio.toFixed(2) +
@@ -137,21 +154,52 @@ for (const config of CONFIGS) {
 			continue;
 		}
 		records.push(recordFor(plan, config.note));
-		found += 1;
 		console.log('keep seed ' + seed + ' · ' + label + ' · seats ' +
 			plan.seats.join(',') + ' · ratio ' + plan.check.ratio.toFixed(2) +
 			' · sites ' + plan.check.sites + ' · ' + plan.ms + ' ms');
 	}
-	if (found < config.want) {
-		console.error('only ' + found + '/' + config.want + ' maps for ' + config.universe +
-			' planets · ' + config.seats + ' seats in seeds ' + SEEDS[0] + '-' +
-			SEEDS[SEEDS.length - 1]);
-		if (WRITE) process.exitCode = 1;
+	if (records.length < want) {
+		console.error('only ' + records.length + '/' + want + ' maps for ' + label +
+			' in seeds ' + order.join(','));
 	}
+	return records;
 }
 
-console.log(records.length + ' maps');
-if (!WRITE) process.exit(process.exitCode || 0);
-const file = path.join(root, 'saved_maps.js');
-fs.writeFileSync(file, GravityMaps.fileText(records));
-console.log('wrote ' + path.relative(root, file) + ' (' + fs.statSync(file).size + ' bytes)');
+function generate() {
+	const records = CONFIGS.flatMap(config => recordsFor(config));
+	const wanted = CONFIGS.reduce((sum, config) => sum + seedPlan(config).want, 0);
+	console.log(records.length + ' maps');
+	/* a short registry would move every later `?map=<index>`: the file stays as it is */
+	if (records.length < wanted) return 1;
+	const file = path.join(root, 'saved_maps.js');
+	fs.writeFileSync(file, GravityMaps.fileText(records));
+	console.log('wrote ' + path.relative(root, file) + ' (' + fs.statSync(file).size + ' bytes)');
+	return 0;
+}
+
+/* what a record stores, and what the search returns now when that differs */
+function checkLine(record, plan, same) {
+	const stored = record.name + ' · seats ' + record.seats.join(',') + ' · pay ' + record.targetPay;
+	if (same) return 'ok    ' + stored + ' · ' + plan.ms + ' ms';
+	const now = plan ? 'seats ' + plan.seats.join(',') + ' · pay ' + plan.targetPay : 'no plan';
+	return 'FAIL  ' + stored + ' · stale, the search now returns ' + now;
+}
+
+function check() {
+	let stale = 0;
+	for (const record of require(path.join(root, 'saved_maps.js'))) {
+		if (record.kind !== 'start') continue;
+		const plan = planFor(record.seed, record.universe, record.seats.length, record.gs, record.fs);
+		const same = plan !== null && plan.seats.join() === record.seats.join() &&
+			plan.targetPay === record.targetPay;
+		if (!same) stale += 1;
+		console.log(checkLine(record, plan, same));
+	}
+	if (stale > 0) {
+		console.error('SAVED MAPS CHECK FAILED (' + stale + ' stale): regenerate with ' +
+			'node experiments/make_saved_maps.js, then rerun the page tests that boot on ?map=');
+	}
+	return stale > 0 ? 1 : 0;
+}
+
+process.exitCode = CHECK ? check() : generate();

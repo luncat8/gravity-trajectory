@@ -6,9 +6,9 @@
 
 const assert = require('assert');
 const vm = require('vm');
-const { loadPage } = require('./dom_stub.js');
+const { loadPage, mapSearch } = require('./dom_stub.js');
 
-const env = loadPage({ search: '?mode=career&seed=1' });
+const env = loadPage({ search: mapSearch(1) + '&rate=0.5' });
 env.runFrames(2, 16);
 const scene = env.context.GravityScene;
 const ui = env.elements;

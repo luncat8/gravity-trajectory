@@ -2,7 +2,7 @@
 'use strict';
 
 const assert = require('assert');
-const { loadPage } = require('./dom_stub.js');
+const { loadPage, mapSearch } = require('./dom_stub.js');
 
 function key(env, code, target, repeat) {
 	let prevented = false;
@@ -24,7 +24,7 @@ function launch(env) {
 	assert.strictEqual(scene.sim.status, env.context.GravitySim.STATUS_FLYING);
 }
 
-const env = loadPage({ search: '?mode=career&seed=42&rate=1' });
+const env = loadPage({ search: mapSearch(42) });
 const scene = env.context.GravityScene;
 const ui = env.elements;
 env.runFrames(2, 16);
@@ -84,7 +84,7 @@ assert.strictEqual(sim.liveSteps, emptySteps);
 env.click('careerClock');
 assert(!scene.careerPaused());
 
-const noDrive = loadPage({ search: '?mode=career&seed=42&rate=1' });
+const noDrive = loadPage({ search: mapSearch(42) });
 noDrive.runFrames(2, 16);
 launch(noDrive);
 const noDriveScene = noDrive.context.GravityScene;

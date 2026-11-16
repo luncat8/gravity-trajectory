@@ -71,7 +71,7 @@ for (const id of ['mapGroup', 'mapSave', 'mapSaveRun', 'mapLoad', 'mapLoadRun', 
 	if (!ui.get(id)) throw new Error('maps UI element missing: ' + id);
 }
 console.log('saved maps:', mapList.length, '· first', mapList[0].name,
-	'· file', pageMaps.fileText(mapList).length, 'bytes');
+	'· file', Buffer.byteLength(pageMaps.fileText(mapList)), 'bytes');
 
 /* colonies are wired into the sim and advanced to t+07:00 (step 2) */
 if (sim.colonies.length !== sim.portCount || sim.portCount < pageWorld.INITIAL_PORTS) {

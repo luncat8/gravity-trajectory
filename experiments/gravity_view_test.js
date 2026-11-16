@@ -7,7 +7,7 @@ const assert = require('assert');
 const vm = require('vm');
 const GravitySim = require('../gravity_sim.js');
 const GravityField = require('../gravity_field.js');
-const { loadPage } = require('./dom_stub.js');
+const { loadPage, mapSearch } = require('./dom_stub.js');
 
 /* Z sums each body's signed g spread over a bump: a lone body reads its own g. */
 const sim = new GravitySim(1000, 1000);
@@ -90,7 +90,7 @@ GravityField.renderBuffer(pixels, w, hgt, sim, view, 640, 400, 'field');
 assert.ok(pixels.every((v, i) => i % 4 !== 3 || v === 255), 'the direction field stays opaque');
 
 /* GUI: URL, radio, legend, f cycle, and renderer mode stay in sync. */
-const env = loadPage({ search: '?mode=career&seed=42&view=potential' });
+const env = loadPage({ search: mapSearch(42) + '&rate=0.5&view=potential' });
 env.runFrames(2, 16);
 const scene = env.context.GravityScene;
 const ui = env.elements;

@@ -3,7 +3,7 @@
  * DOM/canvas that records text paints, and drives frames, events, the URL hash
  * and the clipboard. Script order, element tags and initial attributes are read
  * from index.html, so the stub follows the page without a hand-kept list.
- * Used by dom_smoke.js and game_bench.js.
+ * Used by dom_smoke.js, game_bench.js and every page test.
  */
 'use strict';
 
@@ -16,6 +16,28 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const SCRIPTS = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(match => match[1]);
 const SOURCES = SCRIPTS.map(file => fs.readFileSync(path.join(root, file), 'utf8'));
 const PAGE_URL = 'file:///gravity-trajectory/index.html';
+const SAVED_MAPS = require(path.join(root, 'saved_maps.js'));
+/* what `?rule=career&seed=<seed>&rate=1` starts: the record fields of that run */
+const CAREER_DEFAULT = { kind: 'start', rule: 'career', bot: 'normal', player: 'user', cheat: null,
+	universe: 13, rate: 1, gs: 1, fs: 1, ws: 1, ht: false };
+const CAREER_SEATS = 3;
+
+/*
+ * The `?map=` address of the saved opening for a default career on `seed`: the
+ * run `?rule=career&seed=<seed>&rate=1` starts, seated from the registry instead
+ * of the opening search. For a test that is not about that search. Append
+ * `&rate=0.5` for the orbit clock of a seed link that carries no `rate=`.
+ */
+function mapSearch(seed) {
+	const index = SAVED_MAPS.findIndex(record => record.seed === seed &&
+		record.seats.length === CAREER_SEATS &&
+		Object.keys(CAREER_DEFAULT).every(key => record[key] === CAREER_DEFAULT[key]));
+	if (index < 0) {
+		throw new Error('saved_maps.js has no default career map for seed ' + seed +
+			': add the seed to CONFIGS in experiments/make_saved_maps.js');
+	}
+	return '?map=' + index;
+}
 
 function parseElements() {
 	const list = [];
@@ -194,7 +216,7 @@ function loadPage(options = {}) {
 			return Promise.resolve();
 		}
 	};
-	const context = {
+	const globals = {
 		console: console,
 		performance: { now: () => now },
 		requestAnimationFrame(fn) { rafQueue.push(fn); },
@@ -231,13 +253,17 @@ function loadPage(options = {}) {
 	};
 	if (options.storage) {
 		const data = options.storage;
-		context.localStorage = {
+		globals.localStorage = {
 			getItem(key) { return Object.hasOwn(data, key) ? data[key] : null; },
 			setItem(key, value) { data[key] = String(value); }
 		};
 	}
+	/* an ordinary global object, as in a browser: a contextified sandbox answers
+	 * every global read (Math, the page's own top-level functions) through an
+	 * interceptor, which ran a career boot in 27 s instead of 3 s */
+	const context = vm.createContext(vm.constants.DONT_CONTEXTIFY);
+	Object.assign(context, globals);
 	context.window = context;
-	vm.createContext(context);
 	if (typeof options.random === 'function') {
 		context.__testRandom = options.random;
 		vm.runInContext('Math.random = __testRandom; delete __testRandom;', context);
@@ -337,4 +363,4 @@ function loadPage(options = {}) {
 	});
 }
 
-module.exports = { loadPage, SCRIPTS, PAGE_URL };
+module.exports = { loadPage, mapSearch, SCRIPTS, PAGE_URL };

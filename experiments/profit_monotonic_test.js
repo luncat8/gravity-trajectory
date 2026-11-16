@@ -1,8 +1,8 @@
 /* Repeated paused profit searches must not discard their current winner. */
 'use strict';
 const assert = require('assert');
-const { loadPage } = require('./dom_stub.js');
-const env = loadPage({ search: '?mode=career&seed=520383' });
+const { loadPage, mapSearch } = require('./dom_stub.js');
+const env = loadPage({ search: mapSearch(520383) + '&rate=0.5' });
 env.runFrames(4, 16);
 const scene = env.context.GravityScene;
 scene.setCareerPaused(true);

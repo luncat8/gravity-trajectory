@@ -3,9 +3,9 @@ const assert = require('assert');
 const vm = require('vm');
 const fs = require('fs');
 const path = require('path');
-const { loadPage } = require('./dom_stub.js');
+const { loadPage, mapSearch } = require('./dom_stub.js');
 const Game = require('../gravity_game.js');
-const page = loadPage({ search: '?rule=career&seed=42&rate=1' });
+const page = loadPage({ search: mapSearch(42) });
 const scene = page.context.GravityScene;
 const career = scene.career;
 const old = scene.game.galaxy.actors.slice();
@@ -101,6 +101,7 @@ for (const rule of ['tour', 'money', 'route']) {
 	g.setPlayerCount(-1);
 	assert.strictEqual(g.bot.count, initialCount, rule);
 }
+/* stays on its seed: the fairness rule accepts no opening of seed 10, so no saved map carries one */
 const full = loadPage({ search: '?rule=career&seed=10&rate=1' });
 const fg = full.context.GravityScene;
 assert.ok(fg.setPlanetUniverseSize(48));
@@ -110,7 +111,7 @@ assert.ok(full.elements.get('playerCountUp').disabled);
 fg.sim.predict(47, 0, 100);
 assert.ok(Number.isFinite(fg.sim.predX[0]));
 console.log('MULTI-MODE AND 48-PLANET FIELD OK');
-const restarted = loadPage({ search: '?rule=career&seed=42&rate=1' });
+const restarted = loadPage({ search: mapSearch(42) });
 const rg = restarted.context.GravityScene;
 for (let i = 0; i < 5; i++) rg.setPlayerCount(1);
 restarted.click('gameRestart');

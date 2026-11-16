@@ -3,7 +3,9 @@
  * standalone node script that exits non-zero on failure, so the runner only
  * keeps the order, the totals and the handful of files that are red on a
  * clean main (KNOWN_RED: they run, they do not sink the tier, and a green
- * result means the note below is stale).
+ * result means the note below is stale). A red file prints why it failed,
+ * known or not, and a file that runs ten times its listed cost is stopped and
+ * reported as timed out, not left to look like a long run.
  *
  * Run: node experiments/run_fast.js              fast tier (the per-edit loop)
  *      node experiments/run_fast.js --slow      + slow logic and page boots
@@ -22,10 +24,9 @@ const path = require('path');
  * a fixture that never arms the bot's exit probe, colours pinned to a seed */
 const KNOWN_RED = {
 	'bot_gravity_test.js': 'careerNextPad fixture never arms exitProbe (pick −1)',
-	'gravity_view_test.js': 'drag-zone colours at seed 61, red since 0.7.1',
+	'gravity_view_test.js': 'zone colours pinned to seed 61 (red since 0.7.1), then a +0.46 card',
 	'career_bench.js': '3 known failures, findings-pitfalls-skills.md',
-	'career_bot_bench.js': '10 known failures, findings-pitfalls-skills.md',
-	'bot_bench.js': '1 known failure, findings-pitfalls-skills.md'
+	'career_bot_bench.js': '10 known failures, findings-pitfalls-skills.md'
 };
 
 /* logic only, no page boot: the tier you can afford after every edit */
@@ -41,51 +42,54 @@ const FAST = [
 	['career_expansion_start_test.js', 10],
 	['fragile_test.js', 10],
 	['politics_test.js', 15],
-	['saved_map_test.js', 30]
+	['saved_map_test.js', 10]
 ];
 
-/* a page test pays one career boot before its first assertion (~35 s here) */
+/* 100-seed sweeps, the seat search itself, and the page tests: those boot a
+ * saved map (`mapSearch`, ~0.2 s) unless the opening search is their subject.
+ * An entry may carry arguments for its script. */
 const SLOW = [
-	['orbit_clock_test.js', 5],
-	['special_planets_test.js', 128],
-	['sound_test.js', 34],
+	['orbit_clock_test.js', 2],
+	['special_planets_test.js', 120],
+	['sound_test.js', 4],
 	['trajectory_sound_test.js', 0.2],
-	['voronoi_sound_test.js', 1.2],
-	['multiplayer_career_test.js', 38],
-	['multiplayer_pause_preview_test.js', 38],
-	['multiplayer_impulse_test.js', 41],
-	['wear_forecast_gui_test.js', 39],
-	['obs_fragile_gui_test.js', 44],
-	['gravity_view_test.js', 189],
-	['helper_multiplayer_test.js', 157],
-	['career_guidance_test.js', 40],
-	['politics_gui_test.js', 45],
-	['profit_monotonic_test.js', 55],
-	['career_pause_test.js', 80],
-	['career_departure_test.js', 95],
-	['career_start_seat_test.js', 105],
-	['player_growth_test.js', 900]
+	['voronoi_sound_test.js', 1],
+	['multiplayer_career_test.js', 1],
+	['multiplayer_pause_preview_test.js', 1],
+	['multiplayer_impulse_test.js', 1],
+	['wear_forecast_gui_test.js', 2],
+	['obs_fragile_gui_test.js', 1],
+	['gravity_view_test.js', 12],
+	['helper_multiplayer_test.js', 3],
+	['career_guidance_test.js', 1],
+	['politics_gui_test.js', 1],
+	['profit_monotonic_test.js', 1],
+	['career_pause_test.js', 1],
+	['career_departure_test.js', 85],
+	['career_start_seat_test.js', 8],
+	['player_growth_test.js', 45],
+	['make_saved_maps.js', 22, ['--check']]
 ];
 
 /* measurement, not regression: run when a law, a budget or a bot changed */
 const BENCH = [
-	['gravity_seed_test.js', 360],
+	['gravity_seed_test.js', 40],
 	['gravity_bench.js', 120],
 	['colony_bench.js', 120],
 	['route_bench.js', 180],
-	['bot_bench.js', 180],
-	['game_bench.js', 300],
+	['bot_bench.js', 60],
+	['game_bench.js', 40],
 	['career_bench.js', 240],
 	['career_bot_bench.js', 330],
 	['career_gravity_bench.js', 240]
 ];
 
 /* the whole page wiring in a stub DOM: once per plan, not per step */
-const SMOKE = [['dom_smoke.js', 1500]];
+const SMOKE = [['dom_smoke.js', 110]];
 
 const TIERS = [
 	['fast', 'per-edit logic checks', FAST],
-	['slow', 'slow logic and one page boot each', SLOW],
+	['slow', 'seed sweeps, the seat search and the page tests', SLOW],
 	['bench', 'measurement benches', BENCH],
 	['smoke', 'page integration in a stub DOM', SMOKE]
 ];
@@ -96,6 +100,28 @@ const keepGoing = has('keep-going');
 
 function minutes(seconds) {
 	return '~' + Math.max(1, Math.round(seconds / 60)) + ' min';
+}
+
+const scriptArgs = entry => entry[2] || [];
+const label = entry => [entry[0]].concat(scriptArgs(entry)).join(' ');
+
+/* a hang ends as a named failure: ten times the listed cost, never under a minute */
+const limitSeconds = entry => Math.max(60, entry[1] * 10);
+
+/* why a file failed, without a rerun: the failures it names, else its error
+ * message and the two frames under it (a check helper, then its caller), else
+ * its last words */
+function reasonLines(lines) {
+	const named = lines.filter(line => line.includes('FAIL'));
+	if (named.length) return named;
+	const at = lines.findIndex(line => /^\w*Error\b/.test(line));
+	return at >= 0 ? lines.slice(at, at + 3) : lines.slice(-3);
+}
+
+function failureLines(run) {
+	const lines = (String(run.stdout) + String(run.stderr)).split('\n')
+		.map(line => line.trim()).filter(line => line !== '');
+	return reasonLines(lines).map(line => '\n\t' + line).join('');
 }
 
 function selected() {
@@ -118,7 +144,7 @@ if (has('list')) {
 		console.log('\n' + tier[0] + ' — ' + tier[1] + ' (' + minutes(total) + ')');
 		for (const entry of tier[2]) {
 			const mark = KNOWN_RED[entry[0]] ? '  (known red)' : '';
-			console.log('\t' + entry[0] + '\t~' + entry[1] + ' s' + mark);
+			console.log('\t' + label(entry) + '\t~' + entry[1] + ' s' + mark);
 		}
 	}
 	console.log('\nbrowser only (needs CHROME_PATH), never in a tier:');
@@ -141,23 +167,31 @@ const t0 = Date.now();
 for (const tier of selected()) {
 	console.log('\n== ' + tier[0] + ' — ' + tier[1]);
 	for (const entry of tier[2]) {
-		const file = entry[0];
-		const note = KNOWN_RED[file];
+		const file = label(entry);
+		const note = KNOWN_RED[entry[0]];
 		const started = Date.now();
-		const run = spawnSync(process.execPath, [path.join(__dirname, file)], { cwd: path.join(__dirname, '..') });
+		/* the buffer holds an assertion that prints two captured run states */
+		const run = spawnSync(process.execPath,
+			[path.join(__dirname, entry[0])].concat(scriptArgs(entry)),
+			{ cwd: path.join(__dirname, '..'), timeout: limitSeconds(entry) * 1000,
+				maxBuffer: 1 << 26 });
 		const seconds = Math.round((Date.now() - started) / 100) / 10;
+		const timedOut = run.error !== undefined && run.error.code === 'ETIMEDOUT';
 		if (run.status === 0) {
 			if (note) staleKnown.push(file);
 			console.log('ok   ' + file + ' (' + seconds + ' s)');
 			continue;
 		}
-		if (note) {
+		/* a known red still says why it failed: a new reason must not hide behind the old note */
+		if (note && !timedOut) {
 			knownRed.push(file);
-			console.log('red  ' + file + ' (' + seconds + ' s) known: ' + note);
+			console.log('red  ' + file + ' (' + seconds + ' s) known: ' + note + failureLines(run));
 			continue;
 		}
 		failures.push(file);
-		console.log('FAIL ' + file + ' (' + seconds + ' s, exit ' + run.status + ')');
+		console.log(timedOut
+			? 'TIME ' + file + ' (stopped at ' + limitSeconds(entry) + ' s, listed ~' + entry[1] + ' s)'
+			: 'FAIL ' + file + ' (' + seconds + ' s, exit ' + run.status + ')' + failureLines(run));
 		if (!keepGoing) break;
 	}
 	if (failures.length && !keepGoing) break;

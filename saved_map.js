@@ -166,7 +166,8 @@
 			seed: info.seed >>> 0,
 			universe: info.universe,
 			seats: seats,
-			targetPay: round(finite(galaxy && galaxy.openingTargetPay, 0)),
+			/* unrounded: an injected plan must be the plan the search returns */
+			targetPay: finite(galaxy && galaxy.openingTargetPay, 0),
 			rule: info.rule,
 			bot: info.bot,
 			player: info.player,
@@ -224,11 +225,8 @@
 			rivals.push(packData(info.rivals[i], RIVAL_SKIP));
 		}
 		const trade = info.trade;
-		const mask = info.mask || null;
-		let bits = '';
-		for (let i = 0; i < 48; i++) bits += mask && mask[i] ? '1' : '0';
 		return {
-			mask: bits,
+			mask: maskBits(info.mask),
 			clock: {
 				tradeT: round(trade.t),
 				clockSteps: info.clockSteps,
@@ -372,7 +370,7 @@
 		armed = null;
 	}
 
-	/* the next record of `kind` ('start', 'run', or any) starting at `from` */
+	/* a random record of `kind` ('start', 'run', or any) */
 	function pick(records, kind, random) {
 		const pool = [];
 		for (let i = 0; i < records.length; i++) {

@@ -9,7 +9,7 @@
 'use strict';
 
 const assert = require('assert');
-const { loadPage } = require('./dom_stub.js');
+const { loadPage, mapSearch } = require('./dom_stub.js');
 
 function helperState(ui) {
 	const read = id => ui.get(id).hidden ? 'hidden' : ui.get(id).disabled ? 'off' : 'on';
@@ -21,7 +21,7 @@ function helperState(ui) {
 
 /* --- 1. a bot box flip enables the helpers on the spot -------------------- */
 {
-	const env = loadPage({ search: '?mode=career&seed=1' });
+	const env = loadPage({ search: mapSearch(1) + '&rate=0.5' });
 	env.runFrames(6, 16);
 	const ui = env.elements;
 	const scene = env.context.GravityScene;
@@ -51,7 +51,7 @@ function helperState(ui) {
 
 /* --- 2. the tweak works wherever a shot is armed -------------------------- */
 {
-	const env = loadPage({ search: '?mode=career&seed=1' });
+	const env = loadPage({ search: mapSearch(1) + '&rate=0.5' });
 	env.runFrames(6, 16);
 	const ui = env.elements;
 	const scene = env.context.GravityScene;
@@ -135,7 +135,7 @@ function helperState(ui) {
 
 /* --- 5. a career keeps its companies on a level switch -------------------- */
 {
-	const env = loadPage({ search: '?mode=career&seed=7' });
+	const env = loadPage({ search: mapSearch(7) + '&rate=0.5' });
 	env.runFrames(8, 16);
 	const scene = env.context.GravityScene;
 	const hqs = [0, 1, 2].map(s => scene.slotCareer(s) ? scene.slotCareer(s).hq : -1);
@@ -151,7 +151,7 @@ function helperState(ui) {
 
 /* --- 6. best profit never pays less on a second press --------------------- */
 {
-	const env = loadPage({ search: '?mode=career&seed=520383' });
+	const env = loadPage({ search: mapSearch(520383) + '&rate=0.5' });
 	env.runFrames(6, 16);
 	const ui = env.elements;
 	const page = env.context;

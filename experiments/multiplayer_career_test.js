@@ -8,9 +8,9 @@
 'use strict';
 
 const assert = require('assert');
-const { loadPage } = require('./dom_stub.js');
+const { loadPage, mapSearch } = require('./dom_stub.js');
 
-const env = loadPage({ search: '?mode=career&seed=1' });
+const env = loadPage({ search: mapSearch(1) + '&rate=0.5' });
 env.runFrames(4, 16);
 const ui = env.elements;
 const scene = env.context.GravityScene;
@@ -84,6 +84,7 @@ const title = ui.get('helperProfit').title;
 assert.ok(title.indexOf('scan 34 aims from P' + landing) >= 0,
 	'the profit scan names another company planet: ' + title);
 
+const noticeBefore = ui.get('careerMsg').textContent;
 env.click('helperProfit');
 let scanFrames = 0;
 while (ui.get('helperStop').hidden !== true && scanFrames < 1800) {
@@ -97,7 +98,8 @@ assert.strictEqual(found.body, landing, 'the scan armed a shot from another comp
 assert.ok(rivalCareer.launchBook.entries.length > 0,
 	'the scan did not save its traces to R1 launch book');
 assert.strictEqual(you.launchBook.entries.length, 0, 'R1 scan wrote into YOU launch book');
-assert.ok(ui.get('careerMsg').textContent.length > 0, 'the scan did not report a find');
+const report = ui.get('careerMsg').textContent;
+assert.ok(report.length > 0 && report !== noticeBefore, 'the scan did not report a find');
 
 /* Switching during a scan must not apply R1's candidates to YOU. */
 env.click('helperProfit');

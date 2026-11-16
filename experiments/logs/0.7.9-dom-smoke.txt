@@ -1,0 +1,67 @@
+trade start t+ 07:00 ports 15 / 48 colonies 7 / 40
+world traits: rock 10, terran 6, super 9, dwarf 9, mini 7, gas 2, ice giant 5 | Z 0.0122 L 0.77 belts 1
+photo deck: rock world, terran world, super-Earth, dwarf world, mini world, gas giant, ice giant · candidates photos/space/terran-2.jpg photos/space/terran-2.png photos/space/terran.jpg photos/space/terran.png
+saved maps: 10 · first seed 1 · 13 planets · 3 seats · file 4310 bytes
+colonies at t+07:00: 15 stages outpost 0, settlement 0, town 7, city 8 log entries 40
+after drag: status armed · P0 aim 320 px/s · 16.7° · 3.9 s · +5 (5 sys) path 3.9 s · impact P11 calc 466 steps · 0.00 ms launch disabled false
+trajectory length 1124 px time to end 3.9 s · impact P11
+after click (no drag): status armed · P0 path 3.9 s · impact P11 launch disabled false
+after launch: status in flight flight 0.08 s · 26 px
+fine aim: — -> 173 px/s · 0.0° · fine · 2.5 s · +1 (3 sys)
+gravity edit: P0 · g -1.50 repel slider -1.50
+trim +5% / -5%: 237 px/s · 9.5° · 1.9 s · +2 (4 sys) -> 249 px/s · 9.5° · 1.9 s · +2 (4 sys) -> 224 px/s · 9.5° · 2.0 s · +2 (4 sys) target aim speed thumb after release 0
+experimental panel: g ×0.50 · force ×1.50
+paused trade: t+ 07:00 -> t+ 07:00 | exp: exp + 00:00.4 -> exp + 00:01.2
+after clear: ready
+gravity source ports · moving
+ports drag: status armed · P21 selected port 0 · g +1.40 launch disabled false
+ports trajectory while centres move: 2.0 s · left field|587 px -> 2.0 s · left field|582 px
+gravity source back to planets
+after resize scale 0.710 offX 72.0 canvas 1280x800 · photo compact fold OK
+moons & belts: 512 points, 69 tracks · Kepler OK
+help: lab by default; hovered/held mode radios preview their own goal + score
+adaptive trajectory updates: 60fps 30/30, 33fps 11/24 (interval 4)
+photo cards: space P14 -> landed P23 · rock world
+grand tour verified: 5.0 s · time cap -> 6.7 s · impact P23 | visited 7 / 26 | next base P23
+game idle: trade t+ 07:00 · clock game + 00:00.0 · seed in URL 7 · rival EVEN
+money after flight: purse 3.27 · toast 6 visits +1.27 · cost −1.00 · purse 3.27
+game flight: finished at step 2261 · trade t+ 37.683 min · clock game + 00:18.8
+game score: 6 / 26 · R1 10 / 26 · impact P2 · clock paused · watched at ×4 then reset
+replay link: #game=1&seed=7&rate=2&bot=normal&shots=p0.chhq.4e0w_p0.0.4e0w&end=6.2788
+replay verdict: verified ✓ · purse 2.51 · cargo end identical, trade t identical
+broke run: launch refused, purse 0.40 · need 1.00
+route best: 557 px restored after 120 px/s weaker adjustment
+route planner: 557 px · rival 6292 px · leader · R1 · 6292 px · traced 9.3 s in 1117 points · occupied P2 refused
+route replay: verified ✓ · 557 px · 78 char link · world stayed at t+07:00
+YOU=bot: route planned 407 px · tour auto-launched from P2
+money & rivals UI: money · 10 shots · hard R1/R2 + solo verified
+challenge link: seed 42 ×1 locked · fallback field =1#game=1&seed=42&rate=1 · invalid link noted
+solo money: 3 shots · broke flight landed · purse 0.59
+visit pills: 14 frames lit · 0 left lit after landing
+experimental link: #game=1&seed=42&rate=1&rule=career&bot=normal&gs=0.8&fs=1.5 -> g ×0.80 · force ×1.50 · wear ×1.00
+stay-pay link: #game=1&seed=42&rate=1&rule=career&bot=normal&gs=0.8&fs=1.5&ht=1
+career drawer: built P4 · bulk EMC-2 · hold HOLD-24 · wait contract dropped
+career gate: stranded P4 -> built EMC-1 · relaunched from P4 · pads 2
+career: HQ P1 · limit 92 px/s · stranded P9 → evacuated · shop · wait · endgame cheat link ok
+0.4.7 verified: field view 1/4 (63889 lit px), panel +0.63 kWh · ready in 97 s, wait settlement & armed clamp ok
+0.4.8 verified: 8 t → 24 t · 111 → 101 px/s · free back refit · engine strip (data-tier -1) · cargo-blocked down-refit
+0.4.9 verified: stepped engine refit · WebGL auto-restore · helper pad cap · fly-time impulse burn (step 64, fuel 35.9/90 kg) & burn replay (verified ✓ · purse 3.02)
+career bot burn: step 24 · Δv 9.1 px/s · bot burn Δv 9.1 px/s → P2 · fuel 44.9 kg
+0.4.10 verified: 6 copy-spec rows (clipboard + file:// fallback) · hull research (seed 3/5, fee 1.28, R1/R2 accept, slider, family switch, HQ gate, endgame max-tier copy, communism free)
+0.4.11 verified: research unlocks R1 engine / R2 catapult prototypes · fit free at HQ · build on pad · prototype copy
+0.4.12 verified: researched-range outline · frontier rates + copy knobs · light-vs-heavy fee · live surcharge readout · efficiency direction · range expands on research
+0.4.13 verified: 4 collapsible HUD panels · tank science family & frontier · R1 tank prototype refit & same-rung back-refit
+0.4.14 verified: battery science family & frontier · R1 pad battery prototype · network-wide bulk build · no ship mass
+0.4.15 verified: 36x24 directional cost surface · hard-edge SVG lines · bot R&D · grouped shop prototype stats
+0.4.16 verified: wait + flight playback in the bottom game bar · 2 s eased fast-forward · cost-blocked prices red
+0.4.17 verified: separate #flightHud panel · inline stranded buy/evacuate · career ×4..×32 playback (game seconds per real second) · net outcome / rate / TOF route prediction
+0.4.19 verified: commercial rail + EMC claims · flying rival careers · the commercial fee / 6.00 evacuation
+0.4.20 verified: commercial EMC-1 button on every planet · asymptotic visit profit → the commercial fee · continuous career clock with pause on landing
+0.4.21 verified: queued barrel launch · wait credits 20 ms/frame so slow machines stretch the 2 s · landed flights leave no trail
+0.4.22 verified: launch label shows pad energy or fallback price · career turret and scene pulse run on in-game time and hold still when paused
+0.4.23 verified: launch list saves found shots (loops and other-owner EMC landings), best profit / profit + EMC helpers, kWh launch label
+0.4.24 verified: copy bot log (clipboard + file:// panel), live rival state in the scoreboard, reasons for queues and waits
+0.4.25 verified: upgrades / shots / science tabs · rail line and row reasons (cap, fee) · stale book with a clear button · book-seeded money helper
+0.7.2 verified: repair & launch · menu repair / launch · atomic repair · worn-out gates · cond 93 % → 81 %
+paint calls { fillText: 33930, stroke: 481216, fill: 190556 }
+SMOKE OK

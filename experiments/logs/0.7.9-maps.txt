@@ -1,0 +1,27 @@
+$ node experiments/make_saved_maps.js
+keep seed 1 · 13 planets · 3 seats · seats 2,3,9 · ratio 0.88 · sites 2 · 3460 ms
+keep seed 2 · 13 planets · 3 seats · seats 0,7,6 · ratio 0.87 · sites 2 · 2876 ms
+keep seed 3 · 13 planets · 2 seats · seats 8,1 · ratio 0.97 · sites 1 · 2213 ms
+keep seed 4 · 26 planets · 3 seats · seats 23,12,6 · ratio 0.89 · sites 6 · 2962 ms
+keep seed 2 · 8 planets · 2 seats · seats 6,0 · ratio 0.92 · sites 2 · 914 ms
+keep seed 5 · 26 planets · 4 seats · seats 18,23,12,13 · ratio 0.92 · sites 1 · 3146 ms
+keep seed 42 · 13 planets · 3 seats · seats 1,3,12 · ratio 0.77 · sites 3 · 3485 ms
+keep seed 7 · 13 planets · 3 seats · seats 6,5,0 · ratio 0.90 · sites 1 · 2884 ms
+keep seed 3 · 13 planets · 3 seats · seats 9,8,3 · ratio 0.65 · sites 1 · 749 ms
+keep seed 520383 · 13 planets · 3 seats · seats 4,10,11 · ratio 0.78 · sites 1 · 2946 ms
+10 maps
+wrote saved_maps.js (4310 bytes)
+exit 0
+
+$ node experiments/make_saved_maps.js --check
+ok    seed 1 · 13 planets · 3 seats · seats 2,3,9 · pay 3.7605317875542883 · 2895 ms
+ok    seed 2 · 13 planets · 3 seats · seats 0,7,6 · pay 2.1737928300215765 · 2985 ms
+ok    seed 3 · 13 planets · 2 seats · seats 8,1 · pay 1.4313670372268554 · 2097 ms
+ok    seed 4 · 26 planets · 3 seats · seats 23,12,6 · pay 3.129151785436959 · 2688 ms
+ok    seed 2 · 8 planets · 2 seats · seats 6,0 · pay 1.7929402467265765 · 654 ms
+ok    seed 5 · 26 planets · 4 seats · seats 18,23,12,13 · pay 1.86154819755008 · 2679 ms
+ok    seed 42 · 13 planets · 3 seats · seats 1,3,12 · pay 1.0558258977968071 · 3020 ms
+ok    seed 7 · 13 planets · 3 seats · seats 6,5,0 · pay 2.564252636946226 · 2849 ms
+ok    seed 3 · 13 planets · 3 seats · seats 9,8,3 · pay 1.3227332571102466 · 691 ms
+ok    seed 520383 · 13 planets · 3 seats · seats 4,10,11 · pay 2.0082260696753766 · 2905 ms
+exit 0
