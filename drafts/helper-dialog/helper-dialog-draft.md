@@ -25,3 +25,10 @@ P:
 
 
 На первом этапе разработки достаточно концепции. потом мы сравним с другими предложениями перед написанием of the implementation plan
+
+→ **open** — three proposals and one merge live in this folder;
+`concept-helper-dialog-merged.md` §3 drops everything that is still a plan and
+not a mechanic, so H only ever explains what has a button. Nothing is in the
+code. The plan must answer first: *is H's headline one cause or a ranked list,
+and does that order come from `launchReason` or from a second opinion of its
+own?* (`concept-helper-dialog-merged.md` §8)

@@ -152,3 +152,13 @@ Open in the drafts and still without a plan of their own, and why:
   seven unreferenced `debug_*.js` (`bots-and-tools.md` §8.2, §8.3), the missing
   pictures and the lander wording of the captions (`sound-and-photos.md` §7.2,
   §7.4).
+
+## review folders
+
+Some subjects are first a **review**: several proposals answering one human note,
+then a merge, then a plan. The human's note stays untouched and carries the `→`
+status line; the folder holds the proposals as written.
+
+| folder | note | merged concept |
+|---|---|---|
+| `helper-dialog/` | `helper-dialog-draft.md` — the captain's-base assistant H | `concept-helper-dialog-merged.md` (over `concept-helper-dialog-by-arena.md`, `suggestion-by-ERNIE55f.md`, `concept-helper-dialog-by-GLM53f-en.md`) |
