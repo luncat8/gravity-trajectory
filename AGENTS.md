@@ -147,7 +147,8 @@ root.GravityScene keys are a test contract (experiments/ read them) - keep the n
 | docs, plans, worklogs, test files only | nothing |
 
 a career page boot plans the seats before a test's first assertion: ~3 s on a seed
-link, ~0.2 s on the saved map of that seed, which is the same run without the search
+link, ~5 s on a seed with no fair opening (`OPENING_EXACT_MISS`), ~0.2 s on the
+saved map of that seed, which is the same run without the search
 (`loadPage({ search: mapSearch(42) })` for `?rule=career&seed=42&rate=1`; add
 `&rate=0.5` where the seed link carried no `rate=`). keep the seed link when the seat
 search, the address or the seed itself is the subject. `saved_maps.js` is generated

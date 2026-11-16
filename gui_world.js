@@ -268,12 +268,28 @@ function startupSeed() {
 	return randomSeed();
 }
 
-/* Keep the address shareable without navigating or overwriting a replay hash. */
+/* the universe a url should carry: the run's live subset, or the scoreboard
+ * number a run that is about to start will keep */
+function universeParam() {
+	if (game.on) return planetCount;
+	return game.planetUniverse > 0 ? game.planetUniverse : PLANET_DEFAULT;
+}
+
+/* Keep the address shareable without navigating or overwriting a replay hash.
+ *
+ * Every param the address names is one the boot already reads, and each is
+ * written from the live state: a url that says `universe=8` boots the 8-world
+ * map, and one that says `bot=off` boots without rivals. A param the page
+ * does not read is dropped instead of kept, so a stale `you=bot` from a link
+ * or `map=` from a saved map never outlives the state it described. `view`
+ * is the one exception: it is read at boot and this editor does not know the
+ * live view mode, so it is left alone. */
 function syncSeedUrl(keepReplay = false) {
 	if (loadingUrl) return;
 	const params = new URLSearchParams(location.search);
 	params.set('seed', String(game.on ? game.seed : tradeSim.seed));
 	params.set('mode', game.on ? game.rule : PLAY_LAB);
+	params.set('universe', String(universeParam()));
 	params.delete('game');
 	params.delete('rule');
 	params.delete('source');
@@ -287,6 +303,10 @@ function syncSeedUrl(keepReplay = false) {
 	else params.delete('bot');
 	if (game.on && game.cheat) params.set('cheat', game.cheat);
 	else params.delete('cheat');
+	/* a career's roster is a game.playerCount the boot honors; other rules
+	 * field their rivals from the level, so they carry no roster param */
+	if (game.on && careerRule() && game.playerCount > 0) params.set('players', String(game.playerCount));
+	else params.delete('players');
 	if (game.on && game.fixedRate) {
 		params.set('rate', String(scene.trade.speed));
 		params.delete('speed');

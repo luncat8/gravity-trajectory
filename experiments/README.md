@@ -23,9 +23,10 @@ reports it as timed out; a red file prints why — the `FAIL` lines it names, or
 its error message and where it was thrown.
 
 A career page boot plans the opening seats, and that search is the one slow part
-of a page load: ~3 s on a seed link, ~14 s on a seed with no fair opening
-(seeds 10 and 61). A page test whose subject is not that search boots the saved
-map of its seed instead:
+of a page load: ~3 s on a seed link, ~5 s on a seed with no fair opening
+(seeds 10, 61, 73, 98 -- the walk stops at `OPENING_EXACT_MISS`; it was 13 s
+before 0.7.10, see `logs/0.7.10-seat-search.txt`). A page test whose subject is
+not that search boots the saved map of its seed instead:
 
 ```js
 const { loadPage, mapSearch } = require('./dom_stub.js');
@@ -40,9 +41,19 @@ seats, opening pay, captured state and `Math.random` stream, which
 `saved_map_test.js` asserts. `you=` and `rate=` are read from the address as on
 a seed link; a seed link without `rate=` runs the career's default clock, hence
 the `&rate=0.5`. Three things differ, and a test that reads them keeps its seed
-link: the roster size and the universe are pinned to the record
-(`game.playerCount`, `game.planetUniverse`), the address always carries `rate=`
-afterwards, and the notice line says `loaded <name>`.
+link: the universe and the roster come from the record (see below), the address
+always carries `universe=`, `players=` and `rate=` afterwards, and the notice
+line says `loaded <name>`.
+
+A boot writes back what it started: `syncSeedUrl` names the universe
+(`universe=`), the career roster (`players=`, only for a career, where
+`game.playerCount` is real) and the seed, rule, bot, player, cheat and rate from
+the live state, and drops `map=` and every param it does not read. So `?map=3`
+becomes `?seed=4&mode=career&universe=26&players=3&rate=1` a moment after it
+boots, and reloading that address runs the same map with no search (the plan is
+cached per seed/universe/seats). `view=` is the one param left as found. A
+record seats its own roster and universe: `?map=` does not take `players=` or
+`universe=` from the address, and the next address says what it did use.
 
 Keep `?rule=career&seed=…` when the seat search, the address or the seed itself
 is the subject (`career_start_seat_test`, `gravity_seed_test`), and for a seed

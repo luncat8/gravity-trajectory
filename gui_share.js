@@ -129,6 +129,29 @@ function loadLink() {
 	return true;
 }
 
+/* `universe=` and `players=` are the two numbers the scoreboard edits, and a
+ * url that carries them boots the map it describes (`syncSeedUrl` writes both
+ * from the live state). Each is refused when out of range, like a bad seed. */
+function readUniverseParam(params) {
+	if (!params.has('universe')) return true;
+	const count = Number(params.get('universe'));
+	if (!Number.isInteger(count) || count < PLANET_UNIVERSE_MIN || count > PLANET_UNIVERSE_MAX) {
+		return false;
+	}
+	/* the scoreboard's number, which `startGame` keeps across a restart */
+	game.planetUniverse = count;
+	initPlanetUniverse(count);
+	return true;
+}
+
+function readPlayersParam(params, rule) {
+	if (!params.has('players') || rule !== RULE_CAREER) return true;
+	const count = Number(params.get('players'));
+	if (!Number.isInteger(count) || count < 1 || count > MAX_PLAYERS) return false;
+	game.playerCount = count;
+	return true;
+}
+
 function loadSearchParams() {
 	const search = location.search || '';
 	if (!search || search === '?') return false;
@@ -139,7 +162,8 @@ function loadSearchParams() {
 	if (params.has('map')) return loadSavedMapParam(params);
 	const hasGameHint = params.has('mode') || params.has('game') || params.has('rule') ||
 		params.has('seed') || params.has('rate') || params.has('bot') || params.has('src') ||
-		params.has('source') || params.has('player') || params.has('you') || params.has('shots');
+		params.has('source') || params.has('player') || params.has('you') || params.has('shots') ||
+		params.has('universe') || params.has('players');
 	if (!hasGameHint) return false;
 	const modeParam = params.get('mode');
 	const gameParam = params.get('game');
@@ -154,6 +178,7 @@ function loadSearchParams() {
 	const rateNum = speedStr !== null ? Number(speedStr) : scene.trade.speed;
 	if (speedStr !== null && (!Number.isFinite(rateNum) || rateNum < 0.5 || rateNum > 12)) return false;
 	const sourceStr = params.get('src') || params.get('source');
+	if (!readUniverseParam(params)) return false;
 	if (modeParam === PLAY_LAB) {
 		loadingUrl = true;
 		stopGame();
@@ -180,6 +205,9 @@ function loadSearchParams() {
 	if (playerStr !== null && !(playerStr in GravityGame.PLAYER_TYPES)) return false;
 	const cheatStr = params.get('cheat');
 	if (cheatStr !== null && !(ruleStr === RULE_CAREER && GravityGame.CHEATS[cheatStr])) return false;
+	/* a roster the url names replaces whatever the previous run left set */
+	if (params.has('players')) game.playerCount = 0;
+	if (!readPlayersParam(params, ruleStr)) return false;
 	loadingUrl = true;
 	if (speedStr !== null) scene.setSpeed(rateNum);
 	startGame(seedNum, rateStr !== null, ruleStr, botStr || undefined, playerStr || undefined,

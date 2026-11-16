@@ -2438,6 +2438,19 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* A larger custom universe remains bounded; the default 12-home pool has
 	 * only 220 triples and therefore still falls back to a complete search. */
 	const OPENING_EXACT_SETS = 400;
+	/*
+	 * How far the walk goes when no set is accepted, in sets. A world whose
+	 * fair opening exists finds it in the first batch: over seeds 1-120 the
+	 * accept came at index 0-14 for 24 worlds and at 17, 18, 19, 27, 28 or 34
+	 * for the rest, never past the third batch. What the walk still buys
+	 * after that is not fairness — the fairness law can no longer be met —
+	 * but a slightly better *unfair* plan for a world that has none, and it
+	 * costs 204 exact sets (10 s of blocked main thread on the 13-world
+	 * career: seeds 10, 61, 73, 98 boot in 12-13 s against 3 s). Three
+	 * batches is the tail of the measured accept distribution with room to
+	 * spare: past it the plan is the best set the ranking put in front of
+	 * the walk, not the best of all 220. */
+	const OPENING_EXACT_MISS = 48;
 	const OPENING_ORDERS = [
 		/* the map's own objective */
 		(a, b) => compareOpeningGroups(a, b),
@@ -2619,7 +2632,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 		/* Proxy order first, exact final-field authority second. Complete each
 		 * batch before accepting it so all ranking families get an equal chance;
-		 * a default map with no fair set still evaluates every proposal.
+		 * a world with no fair set walks the head of the ranking, not all of it
+		 * (see `OPENING_EXACT_MISS`).
 		 *
 		 * `resume` is the caller's own place in that walk. The page asks for the
 		 * same map twice on one click (the scoreboard plans it, then the run
@@ -2649,7 +2663,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				bestTie = proposal.tie;
 			}
 			const batchDone = (i + 1) % OPENING_EXACT_BATCH === 0 || i + 1 === exactLimit;
-			if (batchDone && openingGroupAccepted(bestStats)) break;
+			/* an accepted batch ends the walk; a world that has not produced one
+			 * by the miss bound keeps the best set found so far */
+			if (batchDone && (openingGroupAccepted(bestStats) || i + 1 >= OPENING_EXACT_MISS)) break;
 		}
 		if (!bestHomes) return null;
 		if (resume) {

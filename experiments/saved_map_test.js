@@ -194,6 +194,41 @@ assert.strictEqual(JSON.stringify(slowState), bootState, 'rate= changes the rate
 console.log('page boot: ?map=0 in ' + bootMs + ' ms · its seed link in ' + seedMs +
 	' ms · same run after ' + flown + ' frames · rate= honoured');
 
+/* the address after any boot says what the page is: `?map=` is a way in, not a
+ * state, so it is gone by the time the page has started and every param it
+ * leaves behind is one that boots the same run. `?map=0` sat on a page whose
+ * universe and roster the record had changed and the address never said so. */
+const runOf = page => {
+	const scene = page.context.GravityScene;
+	const seats = scene.game.galaxy.mapSeats;
+	return [scene.game.seed, scene.game.rule, scene.game.bot, scene.game.player,
+		scene.game.cheat, scene.planetCount(), scene.bot.count + 1,
+		seats ? seats.join(',') : '-', scene.career.hq,
+		page.context.OrbitScene.trade.speed].join('|');
+};
+function theAddressIsTheRun(search, label) {
+	const page = loadPage({ search: search });
+	const url = new URL(page.context.location.href);
+	assert.strictEqual(url.searchParams.get('map'), null, label + ': the address keeps no map');
+	assert.strictEqual(url.searchParams.get('universe'), String(page.context.GravityScene.planetCount()),
+		label + ': the address names the universe the run has');
+	assert.strictEqual(url.searchParams.get('players'), String(page.context.GravityScene.bot.count + 1),
+		label + ': the address names the roster the run has');
+	/* a reload runs the same world, seats and clock: no second search, so the
+	 * same plan, and no `map=` to carry a local file into the next address */
+	assert.strictEqual(runOf(loadPage({ search: url.search })), runOf(page),
+		label + ': the address it wrote boots the same run');
+	return page;
+}
+theAddressIsTheRun('?map=0', 'default map');
+theAddressIsTheRun('?map=0&rate=0.5&you=bot', 'map at another clock');
+/* a 26-world record and a 2-seat one: both are worlds no level default reaches */
+theAddressIsTheRun('?map=' + MAPS.findIndex(r => r.kind === 'start' && r.universe === 26 &&
+	r.seats.length === 3), '26-world map');
+theAddressIsTheRun('?map=' + MAPS.findIndex(r => r.kind === 'start' &&
+	r.seats.length === 2), '2-seat map');
+console.log('address: map, universe and roster of the run, reloaded the same');
+
 /* --- 5. exact run state ------------------------------------------------- */
 
 const search = '?map=0&you=bot';

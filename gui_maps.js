@@ -243,18 +243,31 @@ function savedMapParam(text) {
 	return record;
 }
 
-/* `?map=`: the boot path page tests and players use */
+/* `?map=`: the boot path page tests and players use.
+ *
+ * The record proves the seats, not the run: what the url names wins over the
+ * record the way it wins over a seed link's level. `syncSeedUrl` writes every
+ * one of these from the live state, so `?map=3` becomes `?seed=4&mode=career
+ * …&universe=26` a moment after it boots, and a reload of that address is the
+ * run the record seated (no map, no search — the plan is cached per key).
+ * Only `rule` cannot move: the plan was proven on the career's opening rule. */
 function loadSavedMapParam(params) {
 	const record = savedMapParam(params.get('map'));
 	if (!record) return false;
-	/* the map decides the world and the seats; the url may still say who flies
-	 * YOU and how fast the orbit clock runs, as a seed link does — neither
-	 * touches the seat plan */
 	const options = {};
+	/* who flies YOU and how fast the orbit clock runs, as on a seed link */
 	const player = params.get('you') || params.get('player');
 	if (player && GravityGame.PLAYER_TYPES[player]) options.player = player;
 	const rate = Number(params.get('rate'));
 	if (rate >= GravityGame.RATE_MIN && rate <= GravityGame.RATE_MAX) options.rate = rate;
+	const bot = params.get('bot');
+	if (bot && bot in GravityGame.BOTS) options.bot = bot;
+	const cheat = params.get('cheat');
+	if (cheat && GravityGame.CHEATS[cheat]) options.cheat = cheat;
+	/* a roster or a universe in the url is the record's, not the address's: the
+	 * seats were proven on that world for that many companies. `syncSeedUrl`
+	 * writes the two back into the address at boot, so the url says what the run
+	 * is instead of keeping a number nothing read. */
 	return startMapRecord(Object.assign({}, record, options));
 }
 

@@ -1,0 +1,55 @@
+0.7.10 · the career opening search: where the 13 s went, and what the bound is
+node v22.22.3, 2-core sandbox; one process, main realm (no vm), seed link path
+"plan" = one GravityGame.prepareCareerStarts() on a 13-world career, 3 seats
+
+A. where a boot goes (probe: per-function timers inside gravity_game.js)
+seed   whole   table1  pairrank  exact(16)  walk    accepted  seats
+42      3.4s    0.3s     2.1s      1.1s      stop     yes    1,3,12
+10     13.3s    0.2s     2.1s     11.0s(220)  full     no     7,4,8
+61     12.1s    0.2s     1.9s     10.0s(220)  full     no     9,10,7
+
+  table1 = careerOpenings() over the 12 candidate homes (exit probe + 32-shot fan)
+  pairrank = rankOpeningSetsByPairs(): 2 traces per candidate pair, ~2 s always
+  exact = openingGroupStats() on the ranked list, ~50 ms a set
+  So a fair world pays pairrank + one batch (3 s); a refused world paid
+  pairrank + all 220 sets (12 s). Even one exact set re-flown is only 66 ms:
+  there is no slow function to find, only a longer walk.
+
+B. where the accepted set sits in the ranking (seeds 1-40, 220 sets, 286 k)
+  accepted at index 0-14 for 24 seeds; 17,18,19,27,28,34 for the rest.
+  never past index 34 (batch 3 of 14). Seeds 10, 73, 133, 188, 246, 260, 300,
+  320, 355, 382, 395: no set is accepted at any index (nothing to find).
+  A fair world's answer is in the first three batches with room to spare.
+
+C. tried and rejected (each with the measurement that rejected it)
+  - an unpinned site ceiling (top N site pays): 0.50-0.95 on refused worlds,
+    above the 0.55 band, so it cannot refuse any of them (seeds 1-8, 10, 61...)
+  - "3 sites exitable from another home": true on refused worlds too (the
+    pinning of the other two HQs is what kills them, and only the exact set
+    trace sees that)
+  - all 286 sets scored from the single-home table: accepts nothing on any of
+    8 worlds (the table was traced with no other HQ pinned)
+  - a starter-exitable-site count (2, 3, 2, 1 on seeds 10/61/73/98 against 2
+    on fair seed 1): catches seeds 10 and 73, not 61 or 98 -- 2.8% of the
+    13-world seeds at 3 seats
+  - a short walk with the best plan returned anyway: the 16-set plan was
+    0.70-0.80 on refused worlds (accepted by compareOpeningGroups' early exit).
+
+D. the change: OPENING_EXACT_MISS = 48 (three batches)
+  a refused world now stops at set 48 of 220; a fair world is untouched
+  seed  plan before  plan after   seats before -> after
+  10      13.3 s        5.0 s     7,4,8  ->  5,4,9   (both unfair; no fair set exists)
+  61      12.1 s        4.2 s     9,10,7 ->  9,10,7  (same plan)
+  73      12.8 s        4.7 s     12,4,9 ->  11,4,7
+  98      11.2 s        4.0 s     9,6,4  ->  12,8,7
+  1        2.6 s        2.7 s     2,3,9  ->  2,3,9   (accepted at index 16-17, batch 2)
+  42       3.0 s        3.1 s     1,3,12 ->  1,3,12
+  every seed 1-60 gives the same answer (fair or refused) before and after.
+  26 worlds / 3 seats, 13 / 2, 8 / 2: same seats as before.
+
+E. what is left
+  a refused world still costs ~4-5 s, of which ~2 s is the pair ranking: a
+  set that no batch accepts cannot skip the ranking that orders the walk.
+  The floor for a refused boot is therefore ~2.5 s (table + ranking), against
+  2.7 s for a fair one -- the two cases are now the same cost, which is what
+  0.7.9 asked for.

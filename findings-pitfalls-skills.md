@@ -908,8 +908,12 @@ the visit-profit card is asserted as `+0.46` where the seed-42 page draws
 `+0.47`; a file that stops at its first red assertion says nothing about the
 ones after it, so log the known one in a scratch copy before trusting the
 rest), `career_start_fairness` ("weakest
-opening within the fair band" at its own seeds) and `career_gui_bot_probe` ("the
-world clock stopped after the hand-over"). The benches' own known counts are
+opening within the fair band" at its own seeds — seeds 4 and 6 plan at 52 % and
+25 % on this tree and on the base commit, which is the probe's own
+`assignDistinct` disagreeing with the search: the same seat 6 reads 25 % there
+and 79 % through `openingGroupStats`. Its columns are not a second opinion on
+the search, and it is not in a tier) and `career_gui_bot_probe` ("the world clock stopped after
+the hand-over"). The benches' own known counts are
 separate: `career_bench` 3, `career_bot_bench` 10. `bot_bench` was carried here
 with "1" and no name; it prints `BOT BENCH OK` at the 0.7.8 commit and left the
 list in 0.7.9 — a known failure without a name cannot be compared, so it hides
@@ -932,7 +936,9 @@ against every other one. Measured on a 13-planet universe with 3 seats:
 - seat plan in the main realm: **2.4–3.5 s** on a seed with a fair opening
 	(seed 42 ~2.9 s) and 0 ms on a repeat call with the same world and trade
 	time in the same process. A seed where no opening passes the fairness rule
-	searches far longer: a career page boot on seed 10 or 61 is **13–15 s**;
+	used to search far longer (a career page boot on seed 10 or 61 was
+	**13–15 s**); since 0.7.10 the walk stops at `OPENING_EXACT_MISS` and the
+	cost is the same ~5 s (`experiments/logs/0.7.10-seat-search.txt`);
 - the same code in a page stub built on `vm.createContext(sandbox)`:
 	**28–41 s** for one career boot. That was `dom_stub.js` until 0.7.9, and it
 	is what made every page test half a minute and `dom_smoke` a 25-minute run.

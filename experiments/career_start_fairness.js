@@ -168,6 +168,28 @@ for (const seed of SEEDS) {
 		(exitable ? '' : ' · DEAD END') + ' · ' + ms + 'ms');
 }
 
+/*
+ * A world where the fairness law cannot be met used to walk all 220 sets and
+ * block a career boot for 13 s: a fair world answers in the first batch, so
+ * only the refusal paid the whole search (see `OPENING_EXACT_MISS` in
+ * gravity_game.js). Seed 10 is such a world. It still seats a run, with the
+ * two batches of ranking the walk reaches before it stops, and that is what a
+ * player gets — so the seats must be distinct and the cost bounded.
+ */
+if (process.env.REFUSED_SEED) {
+	const seed = Number(process.env.REFUSED_SEED);
+	const world = makeWorld(seed);
+	const t0 = Date.now();
+	const homes = GravityGame.prepareCareerStarts(world.galaxy, world.trade.world,
+		world.trade, world.mask, COUNT, SEATS, world.sim);
+	const ms = Date.now() - t0;
+	assert.ok(homes && homes.length === SEATS, 'seed ' + seed + ': a refused world still seats');
+	assert.strictEqual(new Set(homes).size, SEATS, 'seed ' + seed + ': distinct seats');
+	assert.ok(ms < 12000, 'seed ' + seed + ': a refused walk must stop before all 220 sets (' +
+		ms + ' ms)');
+	console.log('refused world: seed ' + seed + ' · seats ' + homes.join(',') + ' · ' + ms + ' ms');
+}
+
 const buildable = rows.filter(row => row.built).length;
 const exitable = rows.filter(row => row.exitable).length;
 const fair = rows.filter(row => row.fair).length;
