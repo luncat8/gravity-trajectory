@@ -269,6 +269,9 @@ check('purse identity and per-transaction isolation over a scripted career', () 
     /* a bribe on the planet the ship sits on */
     const bribePlanetIdx = bribePlanet(w, rivalHQ, P2, capital, arf);
     market.corruption[bribePlanetIdx] = 90;
+    /* the bribe takes its landing's report back (0.7.16): the fixture stands
+     * the report where the value clock is, so the rot math below is the law's */
+    market.reportStep[bribePlanetIdx] = market.lastVisitStep[bribePlanetIdx];
     const bribeAmountBefore = GravityGame.bribeAmount(market, bribePlanetIdx, w.step);
     const bribed = GravityGame.acceptBribe(career, market, sim, bribePlanetIdx, w.step);
     const afterBribe = snapshot(career);

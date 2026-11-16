@@ -1054,3 +1054,21 @@ Still true, and worth knowing before tuning a test:
 - `planCareerSeats` returns early when the universe cannot seat the asked-for
 	companies (it used to crash with `pools[pool].indexOf` on the null dim pool,
 	e.g. 13 seats on a 13-planet universe).
+
+## a paid action must not leave the world in a better state than inaction
+
+The bribe is bought on a landing (the window only opens there), and that same
+landing both restarts the planet's value clock and cools its rot by `0.2`. The
+passive rot read that clock, so the bribe's own `1 + 0.1 · money` had to outrun
+`0.2` **plus** the whole restarted window — measured `−19.67` rot against
+simply never flying there on a `240 s`-aged world, and still `−1.29` at
+`480 s`. A rule that is paid for must move the state it prices: one clock for
+the value (what the next visitor collects, what the bribe pays for) and one for
+the rot (`reportStep`), with a bribe restoring the rot clock to the report it
+bought back, and a base + one-time increment (`2 + 0.1 · money`) that is at
+least the calm a visit gives (`CORRUPTION_VISIT_DECAY = 0.2`). That makes
+`rot(bribe) > rot(never)` hold at every horizon and `rot(visit) < rot(never)`
+for the plain visit, which is the whole contract; a fixture that hand-stamps a
+landing must stamp both clocks, and an unreported landing must set
+`reportPrev = reportStep` so a bribe on it does not take back a report nobody
+made.

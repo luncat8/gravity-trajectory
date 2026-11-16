@@ -114,8 +114,13 @@ check('growth factor throttles positive growth only, halved at 50 and 0 at 100',
 });
 
 check('bribe formula, arrest endpoints and the saturating rebellion chance', () => {
-	assert.strictEqual(Econ.bribeCorruption(0), 1);
-	assert.ok(Math.abs(Econ.bribeCorruption(10) - 2) < 1e-12);
+	/* the money term, plus the rulers' own one-time increment (0.7.16): a
+	 * bribe must always leave the world more rotten than leaving it alone */
+	assert.strictEqual(Econ.CORRUPTION_BRIBE_SURCHARGE, 1);
+	assert.strictEqual(Econ.bribeCorruption(0), 2);
+	assert.ok(Math.abs(Econ.bribeCorruption(10) - 3) < 1e-12);
+	assert.ok(Math.abs(Econ.bribeCorruption(10) - Econ.bribeCorruption(0) - 1) < 1e-12,
+		'the money handed over is still priced at 0.1 per unit');
 	/* The offer is 200% of the visit value; rot still affects arrest. */
 	assert.strictEqual(Econ.BRIBE_VALUE_COEF, 2);
 	assert.strictEqual(Econ.bribeValue(2), 4);
@@ -178,8 +183,12 @@ check('rot rises only above visit profit 1.00, ramps linearly to 3.00, and caps 
 	const startAgeSec = -Game.MONEY.cap / w.market.k *
 		Math.log(1 - Econ.CORRUPTION_PROFIT_START / Game.MONEY.cap);
 	const thresholdSteps = Math.floor(startAgeSec / DT);
+	/* the rot reads the report clock; a bribe is the only thing that parts the
+	 * two, so these fixtures stamp both by hand */
 	w.market.lastVisitStep[planet] = 0;
+	w.market.reportStep[planet] = 0;
 	w.market.lastVisitStep[other] = -1e9;
+	w.market.reportStep[other] = -1e9;
 	w.career.at = -1;
 	let steps = 0;
 	while (steps < thresholdSteps - 2) {
@@ -201,6 +210,7 @@ check('rot rises only above visit profit 1.00, ramps linearly to 3.00, and caps 
 		'linear ramp: near-4.00 world must rot much faster than near-1.00 world');
 	w.market.corruption[planet] = 99.9;
 	w.market.lastVisitStep[planet] = -1e9;
+	w.market.reportStep[planet] = -1e9;
 	for (let i = 0; i < 400; i++) careerStep(w, ++steps);
 	assert.ok(w.market.corruption[planet] <= 100, 'rot passed 100');
 });
@@ -233,6 +243,7 @@ check('landed profit grows at half speed and a reporting ship can take a bribe',
 	const c = w.career;
 	c.at = p;
 	w.market.lastVisitStep[p] = 0;
+	w.market.reportStep[p] = 0;
 	w.market.visitPay[p] = 0;
 	careerStep(w, 600);
 	const expected = Game.planetProfitAt(w.market, p, 600, 300);
@@ -265,6 +276,7 @@ check('reporting reduces rot to its floor; optional entrenched rot clears on que
 	assert.strictEqual(w.market.corruption[p], floor);
 	c.ledger.reports = false;
 	w.market.lastVisitStep[p] = -100000;
+	w.market.reportStep[p] = -100000;
 	careerStep(w, 300);
 	assert.ok(w.market.corruptionFloor[p] > floor, 'passive growth entrenches rot too');
 	Game.pacifyPlanet(w.market, p, 300);
@@ -280,6 +292,7 @@ check('a bribe pays twice the visit value, rots the planet and is refused twice 
 	career.at = planet;
 	career.ledger.purse = 3;
 	w.market.lastVisitStep[planet] = 100;   // the landing that collected 2.00
+	w.market.reportStep[planet] = 100;
 	w.market.visitPay[planet] = 2;
 	w.market.corruption[planet] = 25;
 	const expect = Econ.bribeValue(2);
@@ -299,6 +312,7 @@ check('a bribe pays twice the visit value, rots the planet and is refused twice 
 	assert.ok(clean >= 0, 'no second normal planet');
 	career.at = clean;
 	w.market.lastVisitStep[clean] = 100;
+	w.market.reportStep[clean] = 100;
 	w.market.visitPay[clean] = 0;
 	w.market.corruption[clean] = 0;
 	const refused = Game.acceptBribe(career, w.market, w.sim, clean, 100);
@@ -311,6 +325,95 @@ check('a bribe pays twice the visit value, rots the planet and is refused twice 
 	assert.strictEqual(Game.bribeRefusal(career, w.market, planet), '');
 });
 
+/*
+ * The bribe's contract (0.7.16): taking one must leave the world more rotten
+ * than never flying there at all, and the plain visit it silences must leave
+ * it less rotten. Otherwise the button is a trap: a bribe buys the silence of
+ * a report, so it must undo that report — the world's rot clock returns to the
+ * step standing before the landing — and the rulers add their own increment on
+ * top of the money they were handed.
+ */
+check('a bribe leaves the world more rotten than never visiting, and the visit it silences less', () => {
+	const a0 = Math.round(240 / DT);          // a ripe world: visit value ~ +1.4
+	const horizon = Math.round(300 / DT);     // inside the first rebellion epoch
+	const seeds = [1, 2, 3, 5, 7, 11];
+	let sawValueGrowth = false;
+	for (const seed of seeds) {
+		/* rebuild each arm: the fixture runs the political clock, so the three
+		 * arms must start from the same state */
+		const arm = (mode) => {
+			const w = setup(seed);
+			const c = w.career;
+			let planet = -1;
+			for (let p = 0; p < UNIVERSE; p++) {
+				if (p !== w.market.capitalPlanet && p !== w.market.arfPlanet && p !== c.hq) {
+					planet = p;
+					break;
+				}
+			}
+			c.flying = true;
+			c.at = -1;
+			w.market.lastVisitStep[planet] = -a0;
+			w.market.reportStep[planet] = -a0;
+			for (let s = 1; s <= a0; s++) {
+				w.market.rebelCooldownStep[planet] = s + 1;
+				careerStep(w, s);
+			}
+			if (mode !== 'never') {
+				c.at = planet;
+				c.flying = false;
+				Game.harvestPlanet(c.ledger, w.market, planet, a0);
+				if (mode === 'bribe') {
+					const result = Game.acceptBribe(c, w.market, w.sim, planet, a0);
+					assert.ok(result.ok, result.reason);
+				}
+				c.at = -1;
+				c.flying = true;
+			}
+			for (let s = a0 + 1; s <= a0 + horizon; s++) {
+				w.market.rebelCooldownStep[planet] = s + 1;
+				careerStep(w, s);
+			}
+			return w.market.corruption[planet];
+		};
+		const never = arm('never');
+		const visit = arm('visit');
+		const bribe = arm('bribe');
+		assert.ok(visit < never, 'seed ' + seed + ': the visit did not calm the world (' +
+			visit.toFixed(2) + ' vs ' + never.toFixed(2) + ')');
+		assert.ok(bribe > never, 'seed ' + seed + ': the bribe was cleaner than staying away (' +
+			bribe.toFixed(2) + ' vs ' + never.toFixed(2) + ')');
+		/* the surcharge: the bribe adds 1 + 0.1 · money + 1, so it always clears
+		 * the plain visit by more than the money term alone */
+		const gap = bribe - never;
+		assert.ok(gap > Econ.CORRUPTION_BRIBE_BASE, 'seed ' + seed +
+			': the bribe left no one-time increment (' + gap.toFixed(2) + ')');
+		if (gap > 2.1) sawValueGrowth = true;
+	}
+	assert.ok(sawValueGrowth, 'no seed priced the money term of the surcharge');
+	/* an unreported landing stamps no report, so a bribe taken on it leaves the
+	 * rot clock on the last report that did reach the Capital */
+	const probe = setup(1);
+	const c = probe.career;
+	const silent = normalPlanet(probe);
+	c.at = silent;
+	c.flying = false;
+	Game.harvestPlanet(c.ledger, probe.market, silent, 400);
+	const reported = probe.market.reportStep[silent];
+	c.ledger.reports = false;
+	Game.harvestPlanet(c.ledger, probe.market, silent, 700);
+	assert.strictEqual(probe.market.reportStep[silent], reported,
+		'an unreported landing moved the rot clock');
+	assert.ok(Game.acceptBribe(c, probe.market, probe.sim, silent, 900).ok);
+	assert.strictEqual(probe.market.reportStep[silent], reported,
+		'the bribe restored a report that never existed');
+	assert.strictEqual(probe.market.lastVisitStep[silent], 900,
+		'the bribe cashed the unreported value once');
+	c.ledger.reports = true;
+	Game.harvestPlanet(c.ledger, probe.market, silent, 1000);
+	assert.strictEqual(probe.market.reportStep[silent], 1000);
+});
+
 /* the window is a state of the visit, not of the price: a company sitting on
  * its start pad (no landing ever stamped it) can be bribed, once, and even a
  * bribe below the bot's floor closes it until the next landing */
@@ -321,6 +424,7 @@ check('the bribe window opens on any visit, including an unstamped start pad', (
 	career.at = planet;
 	w.market.visitPay[planet] = 0.2;
 	w.market.lastVisitStep[planet] = 0;
+	w.market.reportStep[planet] = 0;
 	w.market.corruption[planet] = 1;
 	assert.ok(Game.bribeWindowOpen(w.market, planet), 'a never-visited world starts shut');
 	const purse = career.ledger.purse;
@@ -358,6 +462,7 @@ check('high rot can end a bribe in arrest: Capital transport, no planning, medic
 		w.market.corruption[planet] = 99.9;
 		Game.harvestPlanet(career.ledger, w.market, planet, 1000 + trials);
 		w.market.lastVisitStep[planet] = 1000 + trials;
+		w.market.reportStep[planet] = 1000 + trials;
 		w.market.visitPay[planet] = 1;
 		const result = Game.acceptBribe(career, w.market, w.sim, planet, 1100 + trials);
 		trials += 1;

@@ -374,6 +374,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	function createMarket() {
 		const market = {
 			lastVisitStep: new Float64Array(OrbitWorld.PLANETS),
+			/* the rot clock, separate from the value clock: it is stamped by a
+			 * *report*, never by a bribe, and a bribe restores it (0.7.16) */
+			reportStep: new Float64Array(OrbitWorld.PLANETS),
+			/* the report step standing before the current landing, kept so a
+			 * bribe can take the landing's report back */
+			reportPrev: new Float64Array(OrbitWorld.PLANETS),
 			corruptionFloor: new Float64Array(OrbitWorld.PLANETS),
 			permanentCorruption: false,
 			visitPay: new Float64Array(OrbitWorld.PLANETS),
@@ -403,6 +409,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	function resetMarket(market) {
 		market.lastVisitStep.fill(-initSteps());
+		market.reportStep.fill(-initSteps());
+		market.reportPrev.fill(-initSteps());
 		market.corruptionFloor.fill(OrbitEcon.CORRUPTION_TRADITION);
 		market.permanentCorruption = false;
 		market.visitPay.fill(0);
@@ -495,8 +503,17 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return pay * OrbitEcon.flybyMultiplier(age);
 	}
 
+	/* the planet's value: what the next visitor collects. The rot reads
+	 * `reportStep` instead — a bribe moves this clock and not that one. */
 	function planetProfit(market, planet, runStep) {
 		return planetProfitAt(market, planet, runStep, market.lastVisitStep[planet]);
+	}
+
+	/* a reported visit stamps the rot clock; the previous report is kept one
+	 * landing deep, so the bribe that buys this report back can restore it */
+	function stampReport(market, planet, runStep) {
+		market.reportPrev[planet] = market.reportStep[planet];
+		market.reportStep[planet] = runStep;
 	}
 
 	/* `fee` is what the current flight's launch cost, so `last` nets it out */
@@ -562,12 +579,16 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		ledger.lastPlanet = planet;
 		if (!visitReports(ledger, market, planet)) {
 			/* nothing reported: the value is neither paid nor cleared, so it
-			 * keeps growing until a report or the lord's bribe cashes it */
+			 * keeps growing until a report or the lord's bribe cashes it. This
+			 * landing leaves no report to take back, so a bribe taken on it
+			 * keeps the rot clock on the last report that did reach the Capital */
+			market.reportPrev[planet] = market.reportStep[planet];
 			market.visitPay[planet] = 0;
 			return 0;
 		}
 		const pay = planetProfit(market, planet, runStep);
 		market.lastVisitStep[planet] = runStep;
+		stampReport(market, planet, runStep);
 		market.visitPay[planet] = pay;
 		market.stamp += 1;
 		if (planet !== market.capitalPlanet && planet !== market.arfPlanet &&
@@ -603,6 +624,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			const pay = planetProfit(market, p, runStep);
 			if (pay <= 0) continue;
 			market.lastVisitStep[p] = runStep;
+			stampReport(market, p, runStep);
 			ledger.purse += pay;
 			ledger.shotGain += pay;
 			gained += pay;
@@ -3442,14 +3464,20 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				occupied = true;
 				if (visitReports(actor.ledger, market, p)) reporting = true;
 			}
+			/* a ship sitting on the world ages both clocks: its report grows
+			 * stale at half speed and the neglect clock catches up with it */
 			if (dtSec > 0 && occupied) {
-				market.lastVisitStep[p] += (runStep - previousStep) * 0.5;
+				const aged = (runStep - previousStep) * 0.5;
+				market.lastVisitStep[p] += aged;
+				market.reportStep[p] += aged;
+				market.reportPrev[p] += aged;
 			}
 			if (!market.rebel[p] && dtSec > 0 && reporting) {
 				market.corruption[p] = Math.max(market.corruptionFloor[p],
 					market.corruption[p] - OrbitEcon.CORRUPTION_REPORT_RATE * dtSec);
 			} else if (!market.rebel[p] && dtSec > 0) {
-				const rate = OrbitEcon.passiveCorruptionRate(planetProfit(market, p, runStep));
+				const rate = OrbitEcon.passiveCorruptionRate(
+					planetProfitAt(market, p, runStep, market.reportStep[p]));
 				if (rate > 0) raiseCorruption(market, p, rate * dtSec);
 			}
 			if (market.rebel[p] || runStep < market.rebelCooldownStep[p]) continue;
@@ -3553,6 +3581,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * and the bribe stats grow, and the rot grows with the money. One bribe per
 	 * visit, and a rot-rich planet may arrest the briber and ship them to the
 	 * Capital instead of paying.
+	 *
+	 * A bribe buys the silence of a report, so it takes that report back: the
+	 * rot clock returns to the step standing before the landing (0.7.16). A
+	 * bribed world therefore rots exactly like the same world left alone —
+	 * plus the bribe's own increment — never like the world the ship reported
+	 * to and calmed.
 	 */
 	const BRIBE = { ok: false, amount: 0, corruption: 0, arrested: false, reason: '' };
 
@@ -3606,6 +3640,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			market.lastVisitStep[planet] = runStep;
 			market.stamp += 1;
 		}
+		/* the rulers bought this visit's silence: the Capital never hears the
+		 * report, so the world keeps rotting from where it stood before the
+		 * landing. An unreported visit stamped no report, so this is a no-op
+		 * there — the bribe then stands on the rot clock as the last report. */
+		market.reportStep[planet] = market.reportPrev[planet];
 		market.bribeVisitStep[planet] = runStep;
 		raiseCorruption(market, planet, OrbitEcon.bribeCorruption(amount));
 		BRIBE.corruption = market.corruption[planet];
@@ -4486,6 +4525,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		initSteps, createMarket, resetMarket, planetProfit, planetProfitAt, applyMarketSpecials,
 		bindRun, politicsSeconds, rebelRail, setPolitics, politicsOn,
 		advancePolitics, acceptBribe, bribeAmount, bribeWindowOpen, bribeRefusal,
+		stampReport,
 		visitReports, quietRefusal, goQuiet,
 		arrestCareer, pacifyPlanet, seizePlanet, clearMedicalCargo, coveredPlanets, BRIBE,
 		createLedger, resetLedger, beginFlight, stepHarvest, harvestPlanet, endFlight,

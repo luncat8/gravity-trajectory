@@ -263,8 +263,10 @@ const POLITICS_HELP = {
 		OrbitEcon.CORRUPTION_PROFIT_START.toFixed(2) + ', passive corruption grows linearly up to max rate at +' +
 		OrbitEcon.CORRUPTION_PROFIT_FULL.toFixed(2) + ' (the profit pill turns amber, then coral). Tradition sets a 5% floor.',
 	score: 'Once per landing the rulers pay for silence: visit value \u00d7 ' +
-		OrbitEcon.BRIBE_VALUE_COEF.toFixed(0) + '. Visit value grows at half speed while landed. A bribe raises corruption; above ' +
-		OrbitEcon.REBEL_START + '% it can end in arrest (a slow Capital transport) and the planet can rebel.',
+		OrbitEcon.BRIBE_VALUE_COEF.toFixed(0) + '. Visit value grows at half speed while landed. A bribe takes back the report ' +
+		'that landing made \u2014 the world keeps rotting as if the ship never came, which is why a bribed world ends up ' +
+		'more rotten than one left alone. Above ' + OrbitEcon.REBEL_START + '% it can end in arrest (a slow Capital ' +
+		'transport) and the planet can rebel.',
 	detailLabel: 'Device',
 	detail: 'The observation device ' + OrbitTech.OBS[1].id + ' (ship refit, observer) is what reports. Without it the ship is ' +
 		OrbitTech.OBS[1].mass.toFixed(1) + ' t lighter, its visits pay nothing and clear nothing. Above ' +

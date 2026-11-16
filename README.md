@@ -193,11 +193,16 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   landing collected plus whatever regrew since. Rot determines the arrest risk,
   not the offer's multiplier. Visit value regrows at half speed while any ship is
   landed, even with its observation device fitted; a long sit on a rotten world is a parking income, priced by the
-  arrest roll. Once per visit, in exchange for
-  `1 + 0.1 · money` corruption and an arrest roll that is `0` at `C ≤ 50` and
-  `0.5` at `C = 100`: an arrest ships the company to the Capital for 120 s with
-  no fee, no reward and its medical cargo dropped. Past `50` rot a planet can
-  rebel once per 60 s epoch (deterministic from the run seed); the rebellion
+  arrest roll. A bribe buys that visit's silence, so it takes the report back:
+  the landing's stamp is removed from the rot clock (a separate `reportStep`
+  the passive growth reads, so the value clock and the bribe price keep moving)
+  and the world rots on as if the ship had never come, plus `2 + 0.1 · money`
+  corruption — the rulers' own one-time increment on top of the money they were
+  handed. A bribed world therefore always ends up more rotten than the same
+  world never visited, never cleaner; an arrest roll that is `0` at `C ≤ 50`
+  and `0.5` at `C = 100` follows, and an arrest ships the company to the
+  Capital for 120 s with no fee, no reward and its medical cargo dropped.
+  Past `50` rot a planet can rebel once per 60 s epoch (deterministic from the run seed); the rebellion
   seizes every pad there into one shared commercial rail, keeps its tiers and
   charge, forbids any further building, counts as covered for the catapult win
   and raises that planet's fly-visit payout towards `4×` over 240 s. The

@@ -118,6 +118,12 @@
 	const CORRUPTION_PASSIVE_RATE = 0.1;  // max points per game second at full visit profit
 	const CORRUPTION_BRIBE_BASE = 1;
 	const CORRUPTION_BRIBE_SCALE = 0.1;   // per money unit handed to the rulers
+	/* the bribe's own surcharge on top of the money rot: a world that took a
+	 * bribe must end up more rotten than the same world left alone, even when
+	 * the visit it silenced was worth nothing (a buy-out of the first flight
+	 * that would have restarted the world's clock) — otherwise refusing to fly
+	 * there at all is the cleaner political act and the button is a trap */
+	const CORRUPTION_BRIBE_SURCHARGE = 1;
 	const BRIBE_MIN = 1;                  // bot's smallest worthwhile bribe
 	/* The rulers pay 200% of the visit value; rot determines the risk. */
 	const BRIBE_VALUE_COEF = 2;
@@ -161,8 +167,12 @@
 		return CORRUPTION_PASSIVE_RATE * (ramp < 1 ? ramp : 1);
 	}
 
+	/* the rulers' own increment, bought or not: a bribe always adds this on top
+	 * of the money it hands over, so a bribed world ends up more rotten than
+	 * the same world left alone */
 	function bribeCorruption(money) {
-		return CORRUPTION_BRIBE_BASE + CORRUPTION_BRIBE_SCALE * money;
+		return CORRUPTION_BRIBE_BASE + CORRUPTION_BRIBE_SCALE * money +
+			CORRUPTION_BRIBE_SURCHARGE;
 	}
 
 	/* What the rulers pay for the visit's silence. */
@@ -423,7 +433,7 @@
 		TAG_SURPLUS, TAG_FAIR, TAG_SCARCE, TAG_NAMES, SURPLUS_SUPPLY, SCARCE_SUPPLY, GUARD_YEARS,
 		CORRUPTION_MAX, CORRUPTION_TRADITION, CORRUPTION_REPORT_RATE, CORRUPTION_VISIT_DECAY,
 		CORRUPTION_PROFIT_START, CORRUPTION_PROFIT_FULL, CORRUPTION_PASSIVE_RATE,
-		CORRUPTION_BRIBE_BASE, CORRUPTION_BRIBE_SCALE, BRIBE_MIN, BRIBE_VALUE_COEF,
+		CORRUPTION_BRIBE_BASE, CORRUPTION_BRIBE_SCALE, CORRUPTION_BRIBE_SURCHARGE, BRIBE_MIN, BRIBE_VALUE_COEF,
 		ARREST_SECONDS,
 		REBEL_CHECK_SECONDS, REBEL_START, REBEL_K, REBEL_CAP,
 		FLYBY_RAMP_SECONDS, FLYBY_MAX, MEDIC_PATIENTS, MEDIC_REWARD_PER_PATIENT,

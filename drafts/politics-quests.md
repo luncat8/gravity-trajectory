@@ -24,13 +24,29 @@ advantage: player already has this number in GUI and will know if value >1 then 
 above visit profit `+1.00` (`CORRUPTION_PROFIT_START`) and ramps linearly to
 `0.1/s` (`CORRUPTION_PASSIVE_RATE`) at `+3.00` (`CORRUPTION_PROFIT_FULL`), with
 the planet profit pill's colour showing the same stages (mint `≤ +1.00`,
-amber `+1.01…+1.99`, coral `≥ +2.00`) — growth `× (1 − C/100)`, bribe
-`1 + 0.1 · money`, one bribe per visit, Capital and A.R.F. exempt.
+amber `+1.01…+1.99`, coral `≥ +2.00`) — growth `× (1 − C/100)`, one bribe per
+visit, Capital and A.R.F. exempt.
+
+→ the rot a bribe adds is `2 + 0.1 · money` (0.7.16): `1` of the rulers' own
+one-time increment on top of the `1 + 0.1 · money` the money itself prices, and
+a bribe takes its landing's report back — the rot reads its own `reportStep`
+clock, which the bribe restores to the step standing before the landing. So the
+total corruption of a bribed world is **more** than the same world never
+visited, while the plain visit the bribe silences is **less**: the button is a
+political act with a price, not a way to calm a world by paying it.
 
 → `bribeValue = visit value × 2` at every rot level. Rot changes arrest risk,
 not the amount; visit value includes the landing payout and what regrew since.
 
 **Strategy:** Take a bribe before an opponent flies by. It’s better not to accept a very small bribe. If it’s your own EMC, it’s probably better to refuse. If it’s someone else’s, decide based on the bot’s personality.
+
+→ with the report taken back, «before an opponent flies by» is the whole point:
+any rival visit reports that value and calms the rot by `0.2`, so a bribe pays
+for a window the next ship can close. The small-bribe floor is a bot policy
+(`BRIBE_MIN`), not a law; the human may always take one, and it always costs
+the same increment. The rivals' own pricing reads the offer as cash only
+(`careerBribeOffer`), and that stays right: no competitor can report *for* the
+briber, so a bribe never cleans a world the briber works.
 
 → shipped clause by clause (`careerBribe`): a rival never takes a bribe on its
 own rail; it leaves one under `BRIBE_MIN = 1`; it takes one under

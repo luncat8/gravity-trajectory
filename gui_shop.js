@@ -360,6 +360,7 @@ function politicsBlockHtml(career) {
 		: offered ? 'the rulers pay for this visit\u2019s silence: its value \u00d7 ' +
 			OrbitEcon.BRIBE_VALUE_COEF.toFixed(0) + ' · corruption +' +
 			OrbitEcon.bribeCorruption(amount).toFixed(2) +
+			' · the report is taken back, so the world rots on as if never visited' +
 			(amount > OrbitEcon.BRIBE_MIN ? '' : ' · a bot leaves anything under ' +
 				OrbitEcon.BRIBE_MIN.toFixed(2) + ' alone') + ' · high rot can end in arrest'
 		: 'nothing to take: the visit value is 0.00 · wait for visit value to grow';
