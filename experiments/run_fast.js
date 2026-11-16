@@ -66,6 +66,7 @@ const SLOW = [
 	['career_pause_test.js', 1],
 	['career_departure_test.js', 85],
 	['career_start_seat_test.js', 8],
+	['career_start_fairness.js', 20],
 	['player_growth_test.js', 45],
 	['make_saved_maps.js', 22, ['--check']]
 ];

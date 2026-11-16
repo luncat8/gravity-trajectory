@@ -895,9 +895,9 @@ call the setter. The benches' known failure counts after 0.7.7: `career_bench` 3
 completes), `career_bot_bench` 10 (nine "26 pads from a funded purse" completion
 runs and "no plan after repair").
 
-## red on this tree that no stage owns
+## known red tests and their diagnoses
 
-Four files in `experiments/` are red at `312d0ed` and are not caused by 0.7.7 —
+Four files in `experiments/` were red at `312d0ed` and were not caused by 0.7.7 —
 check them at the base commit before blaming a change, and do not "fix" them
 inside another plan: `bot_gravity_test` (asserts `careerNextPad` prefers the
 lower-G pad, but `careerReach` reads the always-on `exitProbe`, which no test
@@ -906,13 +906,13 @@ fixture to arm `exitProbe`, not a law change), `gravity_view_test` (fixed in 0.7
 assertions were stale — the seed-61 blue count predates HQ pinning, the `+0.46`
 card predates the cap 3→4 change in 0.7.7; a file that stops at its first red
 assertion hides the ones after it, so check the whole file once a stale one is
-fixed), `career_start_fairness` ("weakest
-opening within the fair band" at its own seeds — seeds 4 and 6 plan at 52 % and
-25 % on this tree and on the base commit, which is the probe's own
-`assignDistinct` disagreeing with the search: the same seat 6 reads 25 % there
-and 79 % through `openingGroupStats`. Its columns are not a second opinion on
-the search, and it is not in a tier) and `career_gui_bot_probe` ("the world clock stopped after
-the hand-over"). The benches' own known counts are
+fixed), `career_start_fairness` (fixed in 0.7.13; the old probe already pinned
+the HQs, contrary to the 0.7.10 diagnosis, but its max-min matcher did not
+lower the richest seat: seeds 4 and 6 read 52 % and 25 % instead of 82 % and
+79 % with an exit-safe pay-window assignment; the new independent matcher and
+the game's chosen witness agree that all eight default seeds are fair, and the
+probe is in the slow tier), and `career_gui_bot_probe` ("the world clock stopped
+after the hand-over"). The benches' own known counts are
 separate: `career_bench` 3, `career_bot_bench` 10. `bot_bench` was carried here
 with "1" and no name; it prints `BOT BENCH OK` at the 0.7.8 commit and left the
 list in 0.7.9 — a known failure without a name cannot be compared, so it hides
@@ -924,6 +924,16 @@ minus (`gui_game.js` signed money: `−0.25`), which the test's `[+-]\d+\.\d+`
 never matched, so the failure read "missing profit". The test now folds `−` to
 `-` before `Number()`. `experiments/README.md` holds the current list of files
 that are red on a clean main and `run_fast.js` carries it in `KNOWN_RED`.
+
+The career fairness probe must check a *window* of exit-safe profits, not only
+maximize the weakest payout. Seed 4's pinned field offers `P10 → P5` for 10.89
+or `P10 → P9` for 6.20; with the other seats at 5.62 and 6.89, the former
+looks unfair (52 %), the latter is fair (82 %). Seed 6's analogous pair is
+6.03 vs 1.92 (25 % vs 79 %). The independent test enumerates possible
+positive lower bounds and binary-searches the smallest upper bound that admits
+a distinct-site matching, then checks the game's chosen sites in the same
+pinned rows. Match with `exitOk` **inside** the search: checking only the final
+highest-minimum match can call an otherwise valid map a dead end.
 
 ## time budgets: compare the same workload on the same box
 

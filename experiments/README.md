@@ -12,7 +12,7 @@ except the two files at the bottom.
 | tier | flag | cost | when |
 |---|---|---|---|
 | fast | (default) | ~1 min | after every edit: logic only, plus the saved-map contract |
-| slow | `--slow` | ~5 min | after a coherent feature: seed sweeps, the seat search, the page tests |
+| slow | `--slow` | ~6 min | after a coherent feature: seed sweeps, the seat search, the page tests |
 | bench | `--bench` | ~23 min | when a law, a budget or a bot changed: numbers, not pass/fail |
 | smoke | `--smoke` | ~2 min | once per plan, or when page boot, script order or wiring changed |
 
@@ -70,7 +70,7 @@ with no fair opening: the registry is also the pool `load map` draws from, so
 | `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `route_bench` (long trace), `bot_gravity_test` (known red fixture) |
 | `gravity_field` CPU raster and palette | `gravity_bench` (color + budget), `gravity_view_test` |
 | `gravity_game` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
-| career opening and the seat search | `career_start_seat_test`, `make_saved_maps.js --check` (stale records), `career_start_probe.js` |
+| career opening and the seat search | `career_start_fairness` (independent exit-safe pay band), `career_start_seat_test`, `make_saved_maps.js --check` (stale records) |
 | `gravity_bot` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
 | `gravity_gui`/`gui_*.js` page state | the one page test for the area (`politics_gui_test`, `obs_fragile_gui_test`, `career_pause_test`, `profit_monotonic_test`, …) |
 | saved maps: `saved_map.js`, `gui_maps.js`, the `?map=` boot | `saved_map_test` |
@@ -114,6 +114,14 @@ green one means the note is stale.
   expectations were the pre-pinning blue count (seed 61 career now shows 112
   blue px; bar lowered to > 50 with the reason in the test) and the `+0.46`
   card from the cap-3 era (cap 4 since 0.7.7 gives `+0.47`).
+- `career_start_fairness` — fixed in 0.7.13 and now in the slow tier. The
+  old max-min matcher called seed 4 and 6 unfair because it never lowered the
+  best-paid seat; the pinned field was already correct. The independent
+  exit-safe pay-window matcher finds a fair distinct assignment on all eight
+  default seeds. `REFUSED_SEED=10` also checks the bounded refused walk. The
+  gate covers the default roster only: `COUNT=13 SEATS=5 SEEDS=1-4` still
+  reports no distinct buildable site for all four *chosen HQ sets* (see the
+  open 0.6.8 plan).
 - `career_bench` (3), `career_bot_bench` (10) — known failures, listed with
   their names in `findings-pitfalls-skills.md`.
 
@@ -138,7 +146,7 @@ Left this list:
 ## probes
 
 Ad-hoc scripts, not gates: `career_start_probe.js` (asks the seat planner a
-smaller question in seconds), `career_start_fairness.js`, `career_start_affordability.js`,
+smaller question in seconds), `career_start_affordability.js`,
 `career_level_probe.js`, `career_rival_probe.js`, `career_gui_bot_probe.js`,
 `career_gui_repro.js`, `hq_gravity_probe.js`, `medic_offer_probe.js`,
 `sci_merit_probe.js`, `build_cost_probe.js`, `layout_check.js`,
