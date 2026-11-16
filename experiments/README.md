@@ -118,10 +118,12 @@ green one means the note is stale.
   old max-min matcher called seed 4 and 6 unfair because it never lowered the
   best-paid seat; the pinned field was already correct. The independent
   exit-safe pay-window matcher finds a fair distinct assignment on all eight
-  default seeds. `REFUSED_SEED=10` also checks the bounded refused walk. The
-  gate covers the default roster only: `COUNT=13 SEATS=5 SEEDS=1-4` still
-  reports no distinct buildable site for all four *chosen HQ sets* (see the
-  open 0.6.8 plan).
+  default seeds. `REFUSED_SEED=10` also checks the bounded refused walk, and
+  `MATRIX=1` measures all `8, 13, 20, 26, 48 × 2..6` rosters on seeds `1-12`
+  (`logs/0.6.8-roster-matrix.txt`). The gate covers the default roster only:
+  `COUNT=13 SEATS=5 SEEDS=1-4` still reports no distinct buildable site for all
+  four *chosen HQ sets* (see the open 0.6.8 plan, which traces the failures to
+  max-floor `seatAssignment` and the `seatsWanted <= 4 && count <= 26` cutoff).
 - `career_bench` (3), `career_bot_bench` (10) — known failures, listed with
   their names in `findings-pitfalls-skills.md`.
 

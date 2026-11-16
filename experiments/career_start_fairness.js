@@ -5,7 +5,8 @@
  * matcher checks the seats; it must not maximize only the weakest payout,
  * because an unnecessarily rich winner can make a fair map look unfair.
  *
- * Run: node experiments/career_start_fairness.js (SEEDS=1-8 COUNT=13 SEATS=3)
+ * Run: node experiments/career_start_fairness.js        (SEEDS=1-8 COUNT=13 SEATS=3)
+ *      MATRIX=1 node experiments/career_start_fairness.js  (roster matrix, SEEDS=1-12)
  */
 'use strict';
 
@@ -26,14 +27,24 @@ function parseRange(value) {
 	return out;
 }
 
-const SEEDS = parseRange(process.env.SEEDS || '1-8');
+function parseList(value) {
+	return String(value).split(',').flatMap(part => parseRange(part.trim()));
+}
+
+const MATRIX = process.env.MATRIX === '1';
+const SEEDS = parseRange(process.env.SEEDS || (MATRIX ? '1-12' : '1-8'));
 const COUNT = Number(process.env.COUNT || 13);
 const SEATS = Number(process.env.SEATS || 3);
 const FAIR_RATIO = Number(process.env.RATIO || 0.55);
+const COUNTS = process.env.COUNTS ? parseList(process.env.COUNTS)
+	: (process.env.COUNT ? [COUNT] : [8, 13, 20, 26, 48]);
+const SEATS_LIST = process.env.SEATS ? parseList(process.env.SEATS) : [2, 3, 4, 5, 6];
+const ALT = MATRIX && process.env.ALT !== '0';
+const ALT_LIMIT = Number(process.env.ALT_LIMIT || 1000);
 
-function makeWorld(seed) {
+function makeWorld(seed, count) {
 	const mask = new Uint8Array(P);
-	mask.fill(1, 0, COUNT);
+	mask.fill(1, 0, count);
 	const trade = new OrbitSim(seed);
 	trade.advanceTo(420);
 	const sim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
@@ -60,6 +71,14 @@ function buildableSite(world, site) {
 	const strength = GravityGame.specialPlanets() && site === world.trade.world.arfPlanet
 		? 1 : GravityGame.planetGravity(world.seed, site);
 	return strength <= 1.5;
+}
+
+function lightBeforeCount(world, count) {
+	let total = 0;
+	for (let site = 0; site < count; site++) {
+		if (buildableSite(world, site)) total += 1;
+	}
+	return total;
 }
 
 /* Kuhn matching inside a pay window. The site's holder is the only state;
@@ -222,22 +241,30 @@ function checkGameWitness(world, homes, rows, stats) {
 	return actual;
 }
 
-function planWorld(seed) {
-	const world = makeWorld(seed);
+function planWorld(seed, count, seats, allowMissing) {
+	const world = makeWorld(seed, count);
 	const started = Date.now();
 	const homes = GravityGame.prepareCareerStarts(world.galaxy, world.trade.world,
-		world.trade, world.mask, COUNT, SEATS, world.sim);
+		world.trade, world.mask, count, seats, world.sim);
 	const ms = Date.now() - started;
-	assert.ok(homes && homes.length === SEATS, 'seed ' + seed + ': no planned seats');
-	assert.strictEqual(new Set(homes).size, SEATS, 'seed ' + seed + ': duplicate HQ');
+	if (!allowMissing) {
+		assert.ok(homes && homes.length === seats, 'seed ' + seed + ': no planned seats');
+		assert.strictEqual(new Set(homes).size, seats, 'seed ' + seed + ': duplicate HQ');
+	}
 	return { world, homes, ms };
 }
 
-function checkOpening(world, homes, ms) {
+function checkOpening(world, homes, ms, count) {
+	const lightBefore = lightBeforeCount(world, count);
+	if (!homes || homes.length === 0) {
+		return { seed: world.seed, homes: [], witness: null, ratio: 0, game: null,
+			built: false, exitable: false, fair: false, ms, lightBefore, lightAfter: 0,
+			noPlan: true };
+	}
 	const occupied = new Uint8Array(P);
 	for (const home of homes) occupied[home] = 1;
 	const rows = GravityGame.careerOpenings(world.trade.world, world.trade,
-		world.mask, COUNT, occupied, world.sim);
+		world.mask, count, occupied, world.sim);
 	const sites = freeSites(world.mask, homes);
 	/* targetPay is every reachable non-HQ site; sitePay has already filtered out
 	 * heavy/Capital sites and landings from which an EMC-1 cannot leave. Use
@@ -250,7 +277,7 @@ function checkOpening(world, homes, ms) {
 	const witness = best || (safe ? describe(rows, homes, safe) : null);
 	const ratio = best ? best.ratio : 0;
 	const exact = GravityGame.openingGroupStats(world.trade.world, world.trade,
-		world.mask, COUNT, occupied, homes, world.sim);
+		world.mask, count, occupied, homes, world.sim);
 	const game = checkGameWitness(world, homes, rows, exact);
 	if (game) {
 		assert.ok(ratio + 1e-9 >= game.ratio,
@@ -259,59 +286,273 @@ function checkOpening(world, homes, ms) {
 	const exitable = safe !== null;
 	const fair = exitable && ratio >= FAIR_RATIO && exact.distinct && exact.exitOk &&
 		exact.missing === 0 && game && game.ratio >= FAIR_RATIO;
-	return { seed: world.seed, homes, witness, ratio, game, built, exitable, fair: !!fair, ms };
+	return { seed: world.seed, homes, witness, ratio, game, built, exitable, fair: !!fair, ms,
+		lightBefore, lightAfter: buildable.length, noPlan: false };
+}
+
+/* Evaluate one candidate HQ set with cached per-home tracks: check distinct
+ * buildable landings first (no exit probes) before paying for exit checks. */
+function evaluateOracleSet(world, count, homes) {
+	const occupied = new Uint8Array(P);
+	for (const home of homes) occupied[home] = 1;
+	const sites = freeSites(world.mask, homes);
+	const buildable = sites.filter(site => buildableSite(world, site));
+	if (buildable.length < homes.length) return { built: false, exitable: false, ratio: 0 };
+	GravityGame.openingPrepare(world.trade.world, world.trade, world.mask, count,
+		occupied, world.sim);
+	const landPay = new Float64Array(P * P).fill(-Infinity);
+	for (const home of homes) {
+		const track = GravityGame.openingTracks(world.trade.world, world.mask,
+			occupied, home, 8, 4, false);
+		landPay.set(track.sitePay.subarray(home * P, (home + 1) * P), home * P);
+	}
+	if (!matchSites({ sitePay: landPay }, homes, buildable, -Infinity, Infinity, false)) {
+		return { built: false, exitable: false, ratio: 0 };
+	}
+	const sitePay = new Float64Array(P * P).fill(-Infinity);
+	const exitOk = new Uint8Array(P * P);
+	for (const home of homes) {
+		const track = GravityGame.openingTracks(world.trade.world, world.mask,
+			occupied, home, 8, 4, true);
+		sitePay.set(track.sitePay.subarray(home * P, (home + 1) * P), home * P);
+		exitOk.set(track.exitOk.subarray(home * P, (home + 1) * P), home * P);
+	}
+	const rows = { sitePay, exitOk };
+	const safe = matchSites(rows, homes, sites, -Infinity, Infinity, true);
+	if (!safe) return { built: true, exitable: false, ratio: 0 };
+	const best = bestRatioAssignment(rows, homes, sites);
+	return { built: true, exitable: true, ratio: best ? best.ratio : 0 };
+}
+
+/* Search whether an alternative HQ set exists before changing the opening
+ * contract. Exhaustive for count <= 13 (pruning sets that consume too many
+ * light sites); heavy-preferring ranked sample for larger universes. */
+function findBetterHqSet(world, count, seats) {
+	const candidates = [];
+	const lightFlags = new Uint8Array(P);
+	let lightBefore = 0;
+	for (let i = 0; i < count; i++) {
+		if (GravityGame.specialPlanets() && i === world.trade.world.capitalPlanet) continue;
+		candidates.push(i);
+		if (buildableSite(world, i)) {
+			lightFlags[i] = 1;
+			lightBefore += 1;
+		}
+	}
+	if (candidates.length < 2 * seats || lightBefore < seats) {
+		return { built: false, exitable: false, ratio: 0, set: null, exhaustive: true,
+			note: lightBefore < seats ? 'light ' + lightBefore + '<' + seats
+				: 'nonCap ' + candidates.length + '<' + (2 * seats) };
+	}
+	const unpinned = GravityGame.careerOpenings(world.trade.world, world.trade,
+		world.mask, count, null, world.sim);
+	const heavy = candidates.filter(c => !lightFlags[c])
+		.sort((a, b) => unpinned.buildPay[b] - unpinned.buildPay[a]);
+	const light = candidates.filter(c => lightFlags[c])
+		.sort((a, b) => unpinned.buildPay[b] - unpinned.buildPay[a]);
+	const exhaustive = count <= 13;
+	let pool;
+	if (exhaustive) {
+		pool = heavy.concat(light);
+	} else {
+		/* Pinning heavy worlds creates g 1.00 HQs without removing light build
+		 * sites, so mix top heavy planets with top light ones. */
+		const keepHeavy = heavy.slice(0, Math.min(heavy.length, Math.max(seats + 2, 9)));
+		const keepLight = light.slice(0, Math.max(0, 18 - keepHeavy.length));
+		pool = keepHeavy.concat(keepLight);
+	}
+	const maxLightHQs = lightBefore - seats;
+	const sets = [];
+	const cur = [];
+	function generate(start, lightUsed) {
+		if (!exhaustive && sets.length >= 20000) return;
+		if (cur.length === seats) {
+			const occupied = new Uint8Array(P);
+			for (const home of cur) occupied[home] = 1;
+			const stats = GravityGame.openingGroupStatsFromRows(world.mask, unpinned, cur, occupied);
+			const ratio = stats.distinct && stats.maxPay > 0.01 ? stats.minPay / stats.maxPay : -1;
+			sets.push({ homes: cur.slice(), distinct: stats.distinct, minPay: stats.minPay, ratio });
+			return;
+		}
+		const need = seats - cur.length;
+		for (let i = start; i <= pool.length - need; i++) {
+			const candidate = pool[i];
+			const nextLight = lightUsed + (lightFlags[candidate] ? 1 : 0);
+			if (nextLight > maxLightHQs) continue;
+			cur.push(candidate);
+			generate(i + 1, nextLight);
+			cur.pop();
+		}
+	}
+	generate(0, 0);
+	sets.sort((a, b) => {
+		if (a.distinct !== b.distinct) return a.distinct ? -1 : 1;
+		const aFair = a.ratio >= FAIR_RATIO;
+		const bFair = b.ratio >= FAIR_RATIO;
+		if (aFair !== bFair) return aFair ? -1 : 1;
+		return b.ratio - a.ratio || b.minPay - a.minPay;
+	});
+	let best = { built: false, exitable: false, ratio: 0, set: null, exhaustive };
+	const limit = exhaustive ? sets.length : Math.min(sets.length, ALT_LIMIT);
+	for (let i = 0; i < limit; i++) {
+		const res = evaluateOracleSet(world, count, sets[i].homes);
+		if (res.ratio > best.ratio || (!best.set && res.exitable) || (!best.built && res.built)) {
+			best = { ...res, set: sets[i].homes, exhaustive };
+			if (best.exitable && best.ratio >= FAIR_RATIO) break;
+		}
+	}
+	return best;
+}
+
+function failReason(sample, alt) {
+	let base;
+	if (sample.noPlan) base = 'seed ' + sample.seed + ': no plan (light ' + sample.lightBefore + ')';
+	else if (!sample.built) base = 'seed ' + sample.seed + ': no distinct site (light ' + sample.lightBefore + '->' + sample.lightAfter + ')';
+	else if (!sample.exitable) base = 'seed ' + sample.seed + ': dead end';
+	else if (!sample.game) base = 'seed ' + sample.seed + ': no verified game assignment';
+	else base = 'seed ' + sample.seed + ': ratio ' + sample.game.ratio.toFixed(2);
+	if (!ALT || !alt) return base;
+	if (alt.sameHq) return base + ' [same HQ oracle ' + sample.ratio.toFixed(2) + ']';
+	if (alt.exitable && alt.ratio >= FAIR_RATIO) {
+		return base + ' [alt HQ ' + alt.set.join(',') + ' oracle ' + alt.ratio.toFixed(2) + ']';
+	}
+	if (alt.note) return base + ' [' + alt.note + ']';
+	if (alt.exitable) return base + ' [best alt exit ' + alt.ratio.toFixed(2) + ']';
+	if (alt.built) return base + ' [alt built, dead end]';
+	return base + (alt.exhaustive ? ' [0 built in all sets]' : ' [none in probe]');
+}
+
+function runCell(count, seats, seeds) {
+	let builtN = 0, exitN = 0, fairN = 0, sameHqN = 0, altFairN = 0, altExitN = 0;
+	let worst = Infinity, sumMs = 0, maxMs = 0;
+	let minBefore = Infinity, maxBefore = -Infinity;
+	let minAfter = Infinity, maxAfter = -Infinity;
+	let firstFail = '';
+	for (const seed of seeds) {
+		const plan = planWorld(seed, count, seats, true);
+		const missingPlan = !plan.homes || plan.homes.length !== seats;
+		const sample = checkOpening(plan.world, missingPlan ? null : plan.homes, plan.ms, count);
+		sumMs += sample.ms;
+		if (sample.ms > maxMs) maxMs = sample.ms;
+		if (sample.lightBefore < minBefore) minBefore = sample.lightBefore;
+		if (sample.lightBefore > maxBefore) maxBefore = sample.lightBefore;
+		if (sample.lightAfter < minAfter) minAfter = sample.lightAfter;
+		if (sample.lightAfter > maxAfter) maxAfter = sample.lightAfter;
+		if (sample.built) builtN += 1;
+		if (sample.exitable) exitN += 1;
+		if (sample.fair) fairN += 1;
+		const chosenRatio = sample.game ? sample.game.ratio : 0;
+		if (chosenRatio < worst) worst = chosenRatio;
+
+		const sameHqFair = sample.exitable && sample.ratio >= FAIR_RATIO;
+		if (sameHqFair) sameHqN += 1;
+		let alt = null;
+		if (ALT) {
+			if (sameHqFair) {
+				altFairN += 1;
+				altExitN += 1;
+				alt = { sameHq: true };
+			} else {
+				alt = findBetterHqSet(plan.world, count, seats);
+				if (alt.exitable || sample.exitable) altExitN += 1;
+				if (alt.exitable && alt.ratio >= FAIR_RATIO) altFairN += 1;
+			}
+		}
+		if (!sample.fair && !firstFail) firstFail = failReason(sample, alt);
+	}
+	const n = seeds.length;
+	const col = (k) => (k + '/' + n).padStart(5);
+	const line =
+		('C=' + count).padEnd(5) + ' ' + ('S=' + seats).padEnd(4) +
+		' | built ' + col(builtN) +
+		' · exit ' + col(exitN) +
+		' · fair ' + col(fairN) +
+		' · worst ' + (Number.isFinite(worst) ? (worst * 100).toFixed(0) + '%' : '-').padStart(4) +
+		' · light ' + (minBefore + '..' + maxBefore + '->' + minAfter + '..' + maxAfter).padEnd(13) +
+		' · ms ' + (Math.round(sumMs / n) + '/' + maxMs).padEnd(9) +
+		(ALT ? ' | sameHQ ' + col(sameHqN) + ' · altExit ' + col(altExitN) + ' · altFair ' + col(altFairN) : '') +
+		(firstFail ? ' | ' + firstFail : '');
+	console.log(line);
+	return { count, seats, builtN, exitN, fairN, sameHqN, altExitN, altFairN, worst, n };
+}
+
+function runMatrix() {
+	console.log('career opening matrix · seeds ' + SEEDS[0] + '-' + SEEDS[SEEDS.length - 1] +
+		' · ratio >= ' + FAIR_RATIO + (ALT ? ' · alt HQ check (limit ' + ALT_LIMIT + ', exhaustive <=13)' : ''));
+	const t0 = Date.now();
+	const cells = [];
+	for (const count of COUNTS) {
+		for (const seats of SEATS_LIST) cells.push(runCell(count, seats, SEEDS));
+	}
+	const fullGame = cells.filter(c => c.fairN === c.n).length;
+	const fullSameHq = cells.filter(c => c.sameHqN === c.n).length;
+	const fullAltFair = cells.filter(c => c.altFairN === c.n).length;
+	const fullAltExit = cells.filter(c => c.altExitN === c.n).length;
+	console.log('\n' + cells.length + ' cells · game fair ' + fullGame + '/' + cells.length +
+		(ALT ? ' · sameHQ oracle fair ' + fullSameHq + '/' + cells.length +
+			' · alt HQ exitable ' + fullAltExit + '/' + cells.length +
+			' · alt HQ fair ' + fullAltFair + '/' + cells.length : '') +
+		' · ' + Math.round((Date.now() - t0) / 1000) + ' s');
+	if (process.env.ASSERT === '1') {
+		assert.strictEqual(fullGame, cells.length, 'every matrix cell must pass fairness');
+	}
+}
+
+function runDefault() {
+	const samples = [];
+	for (const seed of SEEDS) {
+		const plan = planWorld(seed, COUNT, SEATS, false);
+		const sample = checkOpening(plan.world, plan.homes, plan.ms, COUNT);
+		samples.push(sample);
+		const shown = sample.game || sample.witness;
+		const shownRatio = sample.game ? sample.game.ratio : sample.ratio;
+		console.log('seed ' + seed + ' · HQs ' + sample.homes.join(',') +
+			(shown
+				? ' → ' + (sample.game ? 'chosen' : 'oracle') + ' sites ' +
+					Array.from(shown.sites).join(',') +
+					' · pay ' + shown.min.toFixed(2) + '…' + shown.max.toFixed(2) +
+					' (weakest ' + (shownRatio * 100).toFixed(0) + '% of best' +
+					(sample.game && sample.ratio > shownRatio + 0.005
+						? ', oracle ' + (sample.ratio * 100).toFixed(0) + '%' : '') + ')'
+				: ' → NO distinct exit-safe site for every seat') +
+			(sample.built && !sample.exitable ? ' · DEAD END' : '') +
+			(sample.exitable && !sample.game ? ' · NO VERIFIED GAME ASSIGNMENT' : '') +
+			(sample.game && !sample.fair ? ' · FAIR BAND MISSED' : '') +
+			' · ' + sample.ms + 'ms');
+	}
+
+	/* Seed 10 has no fair opening. A refused map still seats distinct HQs, and
+	 * the bounded exact walk must not hold up a career for all 220 sets. */
+	if (process.env.REFUSED_SEED) {
+		const seed = Number(process.env.REFUSED_SEED);
+		const plan = planWorld(seed, COUNT, SEATS, false);
+		const sample = checkOpening(plan.world, plan.homes, plan.ms, COUNT);
+		assert.ok(!sample.fair, 'seed ' + seed + ': the supposedly refused plan is fair');
+		assert.ok(plan.ms < 12000, 'seed ' + seed + ': a refused walk must stop before all 220 sets (' +
+			plan.ms + ' ms)');
+		console.log('refused world: seed ' + seed + ' · seats ' + plan.homes.join(',') +
+			' · ' + (sample.exitable ? 'best safe ratio ' + sample.ratio.toFixed(2)
+				: sample.built ? 'buildable but no exit-safe assignment' : 'no distinct buildable site') +
+			' · ' + plan.ms + ' ms');
+	}
+
+	const buildable = samples.filter(row => row.built).length;
+	const exitable = samples.filter(row => row.exitable).length;
+	const fair = samples.filter(row => row.fair).length;
+	const worst = samples.reduce((low, row) => row.ratio < low ? row.ratio : low, Infinity);
+	console.log('\n' + samples.length + ' seeds · every seat buildable ' + buildable + '/' + samples.length +
+		' · every site exitable ' + exitable + '/' + samples.length +
+		' · within ' + FAIR_RATIO + ' band ' + fair + '/' + samples.length +
+		' · weakest ' + (Number.isFinite(worst) ? (worst * 100).toFixed(0) + '%' : '-'));
+
+	assert.strictEqual(buildable, samples.length,
+		'every planned map must give each company its own buildable site');
+	assert.strictEqual(exitable, samples.length,
+		'every planned first landing must be able to launch again');
+	assert.strictEqual(fair, samples.length,
+		'every planned map must keep the weakest opening within the fair band');
 }
 
 checkMatcherFixtures();
-const samples = [];
-for (const seed of SEEDS) {
-	const plan = planWorld(seed);
-	const sample = checkOpening(plan.world, plan.homes, plan.ms);
-	samples.push(sample);
-	const shown = sample.game || sample.witness;
-	const shownRatio = sample.game ? sample.game.ratio : sample.ratio;
-	console.log('seed ' + seed + ' · HQs ' + sample.homes.join(',') +
-		(shown
-			? ' → ' + (sample.game ? 'chosen' : 'oracle') + ' sites ' +
-				Array.from(shown.sites).join(',') +
-				' · pay ' + shown.min.toFixed(2) + '…' + shown.max.toFixed(2) +
-				' (weakest ' + (shownRatio * 100).toFixed(0) + '% of best' +
-				(sample.game && sample.ratio > shownRatio + 0.005
-					? ', oracle ' + (sample.ratio * 100).toFixed(0) + '%' : '') + ')'
-			: ' → NO distinct exit-safe site for every seat') +
-		(sample.built && !sample.exitable ? ' · DEAD END' : '') +
-		(sample.exitable && !sample.game ? ' · NO VERIFIED GAME ASSIGNMENT' : '') +
-		(sample.game && !sample.fair ? ' · FAIR BAND MISSED' : '') +
-		' · ' + sample.ms + 'ms');
-}
-
-/* Seed 10 has no fair opening. A refused map still seats distinct HQs, and
- * the bounded exact walk must not hold up a career for all 220 sets. */
-if (process.env.REFUSED_SEED) {
-	const seed = Number(process.env.REFUSED_SEED);
-	const plan = planWorld(seed);
-	const sample = checkOpening(plan.world, plan.homes, plan.ms);
-	assert.ok(!sample.fair, 'seed ' + seed + ': the supposedly refused plan is fair');
-	assert.ok(plan.ms < 12000, 'seed ' + seed + ': a refused walk must stop before all 220 sets (' +
-		plan.ms + ' ms)');
-	console.log('refused world: seed ' + seed + ' · seats ' + plan.homes.join(',') +
-		' · ' + (sample.exitable ? 'best safe ratio ' + sample.ratio.toFixed(2)
-			: sample.built ? 'buildable but no exit-safe assignment' : 'no distinct buildable site') +
-		' · ' + plan.ms + ' ms');
-}
-
-const buildable = samples.filter(row => row.built).length;
-const exitable = samples.filter(row => row.exitable).length;
-const fair = samples.filter(row => row.fair).length;
-const worst = samples.reduce((low, row) => row.ratio < low ? row.ratio : low, Infinity);
-console.log('\n' + samples.length + ' seeds · every seat buildable ' + buildable + '/' + samples.length +
-	' · every site exitable ' + exitable + '/' + samples.length +
-	' · within ' + FAIR_RATIO + ' band ' + fair + '/' + samples.length +
-	' · weakest ' + (Number.isFinite(worst) ? (worst * 100).toFixed(0) + '%' : '-'));
-
-assert.strictEqual(buildable, samples.length,
-	'every planned map must give each company its own buildable site');
-assert.strictEqual(exitable, samples.length,
-	'every planned first landing must be able to launch again');
-assert.strictEqual(fair, samples.length,
-	'every planned map must keep the weakest opening within the fair band');
+if (MATRIX) runMatrix();
+else runDefault();

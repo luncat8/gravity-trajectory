@@ -1,0 +1,28 @@
+career opening matrix · seeds 1-12 · ratio >= 0.55 · alt HQ check (limit 1000, exhaustive <=13)
+C=8   S=2  | built 11/12 · exit 11/12 · fair 10/12 · worst   0% · light 2..7->1..5    · ms 572/778   | sameHQ 10/12 · altExit 11/12 · altFair 10/12 | seed 8: ratio 0.00 [best alt exit 0.00]
+C=8   S=3  | built  7/12 · exit  7/12 · fair  4/12 · worst   0% · light 2..7->1..4    · ms 880/1315  | sameHQ  4/12 · altExit  7/12 · altFair  4/12 | seed 1: no distinct site (light 4->2) [0 built in all sets]
+C=8   S=4  | built  0/12 · exit  0/12 · fair  0/12 · worst   0% · light 2..7->1..3    · ms 1283/1529 | sameHQ  0/12 · altExit  0/12 · altFair  0/12 | seed 1: no distinct site (light 4->2) [nonCap 7<8]
+C=8   S=5  | built  0/12 · exit  0/12 · fair  0/12 · worst   0% · light 2..7->0..2    · ms 294/365   | sameHQ  0/12 · altExit  0/12 · altFair  0/12 | seed 1: no distinct site (light 4->1) [light 4<5]
+C=8   S=6  | built  0/12 · exit  0/12 · fair  0/12 · worst   0% · light 2..7->0..1    · ms 306/363   | sameHQ  0/12 · altExit  0/12 · altFair  0/12 | seed 1: no distinct site (light 4->1) [light 4<6]
+C=13  S=2  | built 12/12 · exit 12/12 · fair 12/12 · worst  96% · light 4..11->3..10  · ms 1881/2323 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=13  S=3  | built 11/12 · exit 11/12 · fair 11/12 · worst   0% · light 4..11->3..8   · ms 2231/4211 | sameHQ 11/12 · altExit 11/12 · altFair 11/12 | seed 10: no distinct site (light 4->3) [0 built in all sets]
+C=13  S=4  | built  9/12 · exit  9/12 · fair  9/12 · worst   0% · light 4..11->2..7   · ms 3061/4731 | sameHQ  9/12 · altExit 10/12 · altFair  9/12 | seed 1: no distinct site (light 7->3) [best alt exit 0.19]
+C=13  S=5  | built  2/12 · exit  2/12 · fair  0/12 · worst   0% · light 4..11->2..6   · ms 788/1007  | sameHQ  0/12 · altExit  9/12 · altFair  6/12 | seed 1: no distinct site (light 7->3) [0 built in all sets]
+C=13  S=6  | built  0/12 · exit  0/12 · fair  0/12 · worst   0% · light 4..11->2..5   · ms 995/1193  | sameHQ  0/12 · altExit  5/12 · altFair  0/12 | seed 1: no distinct site (light 7->2) [0 built in all sets]
+C=20  S=2  | built 12/12 · exit 12/12 · fair 12/12 · worst  96% · light 9..16->8..16  · ms 1039/1289 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=20  S=3  | built 12/12 · exit 12/12 · fair 12/12 · worst  59% · light 9..16->7..14  · ms 1295/1632 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=20  S=4  | built 12/12 · exit 12/12 · fair 12/12 · worst  59% · light 9..16->6..12  · ms 2116/3805 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=20  S=5  | built 10/12 · exit 10/12 · fair  1/12 · worst   0% · light 9..16->5..11  · ms 1857/2347 | sameHQ  3/12 · altExit 12/12 · altFair 12/12 | seed 1: ratio 0.35 [alt HQ 6,12,2,11,9 oracle 0.60]
+C=20  S=6  | built  6/12 · exit  6/12 · fair  2/12 · worst   0% · light 9..16->5..11  · ms 2225/2711 | sameHQ  4/12 · altExit 12/12 · altFair 12/12 | seed 1: no distinct site (light 12->7) [alt HQ 6,16,2,0,9,19 oracle 0.57]
+C=26  S=2  | built 12/12 · exit 12/12 · fair 12/12 · worst  94% · light 12..19->12..18 · ms 1403/1672 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=26  S=3  | built 12/12 · exit 12/12 · fair 12/12 · worst  81% · light 12..19->10..17 · ms 1829/2292 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=26  S=4  | built 12/12 · exit 12/12 · fair 12/12 · worst  73% · light 12..19->9..17 · ms 2498/3080 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=26  S=5  | built 12/12 · exit 12/12 · fair  3/12 · worst  -5% · light 12..19->9..15 · ms 2810/3601 | sameHQ  6/12 · altExit 12/12 · altFair 12/12 | seed 1: ratio 0.26 [alt HQ 16,5,9,11,19 oracle 0.66]
+C=26  S=6  | built 11/12 · exit 11/12 · fair  3/12 · worst -10% · light 12..19->8..14 · ms 3460/4386 | sameHQ  4/12 · altExit 12/12 · altFair 12/12 | seed 1: ratio 0.44 [alt HQ 0,5,20,9,11,19 oracle 0.57]
+C=48  S=2  | built 12/12 · exit 12/12 · fair 10/12 · worst  48% · light 25..35->24..33 · ms 2219/2532 | sameHQ 12/12 · altExit 12/12 · altFair 12/12 | seed 2: ratio 0.53 [same HQ oracle 1.00]
+C=48  S=3  | built 12/12 · exit 12/12 · fair 10/12 · worst  30% · light 25..35->23..32 · ms 3482/3862 | sameHQ 12/12 · altExit 12/12 · altFair 12/12 | seed 2: ratio 0.30 [same HQ oracle 0.97]
+C=48  S=4  | built 12/12 · exit 12/12 · fair  9/12 · worst  27% · light 25..35->22..31 · ms 4495/5220 | sameHQ 12/12 · altExit 12/12 · altFair 12/12 | seed 2: ratio 0.30 [same HQ oracle 0.94]
+C=48  S=5  | built 12/12 · exit 12/12 · fair  8/12 · worst  51% · light 25..35->21..30 · ms 5623/6945 | sameHQ 12/12 · altExit 12/12 · altFair 12/12 | seed 3: ratio 0.53 [same HQ oracle 0.66]
+C=48  S=6  | built 12/12 · exit 12/12 · fair  3/12 · worst  27% · light 25..35->20..29 · ms 6705/8000 | sameHQ  9/12 · altExit 12/12 · altFair 12/12 | seed 1: ratio 0.54 [same HQ oracle 0.73]
+
+25 cells · game fair 7/25 · sameHQ oracle fair 11/25 · alt HQ exitable 16/25 · alt HQ fair 16/25 · 1276 s
