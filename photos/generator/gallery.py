@@ -11,6 +11,10 @@ blinks the whole list and drops the checkbox focus. A card therefore learns its
 files through set_images() and rewrites only the widgets whose text changed; the
 cards are rebuilt only when the card set itself changes (filter, prompt file,
 workflow, resize, view mode).
+
+The list and the sidebar are one ScrollArea: the body follows the viewport width,
+one wheel handler routes by the widget under the pointer, and a canvas scroll unit
+is a fixed 20 px instead of a fraction of the window.
 """
 
 import json
@@ -44,9 +48,13 @@ except Exception:
 OUTPUT_DIR = launch.OUTPUT_DIR
 TRASH_DIR = OUTPUT_DIR / ".trash"
 THUMB_W, THUMB_H = 170, 120
+THUMB_GAP = 10     # between two thumbnails of one row
+LIST_PAD = 10      # gutter between a card and the list viewport edge
+CARD_PADX = 12     # card inner horizontal padding
+SCROLL_STEP = 20   # one wheel unit, px - not Tk's 1/10 of the viewport
+WHEEL_UNITS = 3    # wheel units per notch
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
 VIDEO_EXTS = (".mp4", ".webm")
-CARD_PAD = 30  # card inner width minus its horizontal padding, for columns
 # a file younger than this may still be filling: the scan skips it
 SETTLE_S = 2.0
 
@@ -90,6 +98,34 @@ seed_of = launch.seed_of
 
 def short_seed(seed):
 	return f"...{seed % 10_000_000:07d}"
+
+
+def wheel_notches(event):
+	"""A wheel event as signed notches: -1 up, +1 down, 0 for anything else.
+
+	X11 sends Button-4/5, Windows and macOS send <MouseWheel> with a signed
+	`delta`. tkinter fills the fields an event does not carry with the string
+	`??`, which is truthy: testing `event.num` for truth instead of for 4 or 5
+	made every <MouseWheel> turn read as a scroll down.
+	"""
+	if event.num == 4:
+		return -1
+	if event.num == 5:
+		return 1
+	delta = event.delta            # 120 per notch on Windows, tiny on macOS
+	if not delta:
+		return 0
+	notches = 1 if abs(delta) < 120 else min(3, abs(delta) // 120)
+	return -notches if delta > 0 else notches
+
+
+def weight_columns(frame, count, was=0):
+	"""Give `count` grid columns an equal share of the leftover width, and take
+	it back from the columns a wider layout left behind (an empty weighted
+	column still eats space)."""
+	for column in range(max(count, was)):
+		frame.columnconfigure(column, weight=1 if column < count else 0)
+	return count
 
 
 class Tooltip:
@@ -148,12 +184,16 @@ class PromptCard(tk.Frame):
 		self.files = ()       # painted by set_images
 		self.cells = {}       # path -> (cell frame, photo widget)
 		self.pending = -1     # -1: counts not painted yet
+		self._weighted = 0    # thumbnail grid columns that share the leftover
+		self.wrap = 0         # caption wraplength written last
 		self.enabled = app.job_enabled(key) and app.md_enabled(app.job_md[key])
 		bg = self.bg = CARD if self.enabled else CARD_OFF
 		super().__init__(parent, bg=bg, highlightthickness=1,
 						 highlightbackground=EDGE, highlightcolor=EDGE,
-						 padx=12, pady=8)
-		self.pack(fill="x", padx=10, pady=(0, 10))
+						 padx=CARD_PADX, pady=8)
+		# the card spans the viewport: one gutter on each side, no magic inset,
+		# so its right edge lands where the pane does
+		self.pack(fill="x", padx=LIST_PAD, pady=(0, LIST_PAD))
 		F = app.F
 
 		# ---- header: checkbox (carries the slug) · category chip · counts
@@ -182,9 +222,9 @@ class PromptCard(tk.Frame):
 
 		# ---- caption
 		self.caption_lbl = tk.Label(self, text=job["caption"], justify="left", bg=bg,
-									fg=FG if self.enabled else DIM,
-									wraplength=max(240, app.card_w - 64), font=F(9))
+									fg=FG if self.enabled else DIM, font=F(9))
 		self.caption_lbl.pack(fill="x", pady=(4, 2))
+		self.set_wrap()
 
 		# ---- meta line
 		self.meta_lbl = tk.Label(
@@ -224,6 +264,14 @@ class PromptCard(tk.Frame):
 		self.app.clipboard_clear()
 		self.app.clipboard_append(str(path))
 		self.app.status(f"copied {path}")
+
+	def set_wrap(self):
+		"""A resized card re-wraps its caption: a Label clips instead of
+		re-wrapping when its text is wider than the wraplength."""
+		wrap = max(240, self.app.card_width() - 16)
+		if wrap != self.wrap:
+			self.wrap = wrap
+			self.caption_lbl.configure(wraplength=wrap)
 
 	# ------------------------------------------------------------ enable paint
 	def _paint_enable(self):
@@ -276,13 +324,17 @@ class PromptCard(tk.Frame):
 				cell[0].destroy()
 		self.files = files
 		cols = self.app.columns()
+		if cols != self._weighted:
+			# equal weights spread the pixels a whole column count cannot use,
+			# instead of leaving them all in one gap at the right edge
+			self._weighted = weight_columns(self.thumb_box, cols, self._weighted)
 		for index, path in enumerate(files):
 			cell = self.cells.get(path)
 			if cell is None:
 				cell = self._add_thumb(path)
 				self.cells[path] = cell
 			cell[0].grid_configure(row=index // cols, column=index % cols,
-								   padx=5, pady=5, sticky="w")
+								   padx=THUMB_GAP // 2, pady=5, sticky="w")
 		if files:
 			self.empty_lbl.pack_forget()
 		elif not self.empty_lbl.winfo_ismapped():
@@ -414,9 +466,10 @@ class Viewer(tk.Toplevel):
 		key("<KP_Add>", lambda: self.zoom_by(1))
 		key("<minus>", lambda: self.zoom_by(-1))
 		key("<KP_Subtract>", lambda: self.zoom_by(-1))
-		for seq in ("<Button-4>", "<MouseWheel>"):
-			self.bind(seq, lambda e: (self.zoom_by(1 if _up(e) else -1), "break")[1])
-		self.bind("<Button-5>", lambda e: (self.zoom_by(-1), "break")[1])
+		# a notch up zooms in: wheel_notches() is -1 up, and zoom_by() counts
+		# steps in, so the sign flips once here
+		for seq in ("<Button-4>", "<Button-5>", "<MouseWheel>"):
+			self.bind(seq, lambda e: (self.zoom_by(-wheel_notches(e)), "break")[1])
 		self.bind("<Configure>", self._on_resize)
 
 	# ------------------------------------------------------------ navigation
@@ -537,12 +590,6 @@ class Viewer(tk.Toplevel):
 			return
 		self.app.enqueue_variations(self.key, count=1, seed=seed)
 		self.destroy()
-
-
-def _up(event):
-	if getattr(event, "num", None):
-		return event.num == 4
-	return getattr(event, "delta", 0) > 0
 
 
 class SettingsDialog(tk.Toplevel):
@@ -671,23 +718,87 @@ class BatchWindow(tk.Toplevel):
 		self.destroy()
 
 
-class ScrollFrame(tk.Frame):
-	"""A frame with its own wheel-scrolled viewport (the sidebar can outgrow a
-	short window once several prompt files and workflows are listed)."""
+class ScrollArea(tk.Frame):
+	"""A viewport with a scrollbar, a body frame and the handful of things a Tk
+	scrolled frame always needs done by hand.
 
-	def __init__(self, parent, bg):
+	The body is kept exactly as wide as the viewport: a canvas window keeps its
+	own requested width otherwise, so the content ends where the widest child
+	does and the rest of the pane stays empty. The scrollregion is recomputed
+	whenever the body changes size, and a wheel event is routed by asking
+	`owns()` whether the widget under the pointer is inside this area.
+	"""
+
+	def __init__(self, parent, bg, on_width=None):
 		super().__init__(parent, bg=bg)
+		self.on_width = on_width
 		self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, bd=0)
 		self.vsb = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
 		self.canvas.configure(yscrollcommand=self.vsb.set)
 		self.vsb.pack(side="right", fill="y")
 		self.canvas.pack(side="left", fill="both", expand=True)
-		self.body = body = tk.Frame(self.canvas, bg=bg)
-		self.win = self.canvas.create_window((0, 0), window=body, anchor="nw")
-		body.bind("<Configure>", lambda _e: self.canvas.configure(
-			scrollregion=self.canvas.bbox("all")))
-		self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(
-			self.win, width=e.width))
+		self.body = tk.Frame(self.canvas, bg=bg)
+		self.win = self.canvas.create_window((0, 0), window=self.body, anchor="nw")
+		self.body.bind("<Configure>", lambda _e: self.refresh())
+		self.canvas.bind("<Configure>", self._viewport_changed)
+
+	def _viewport_changed(self, event):
+		self.canvas.itemconfigure(self.win, width=event.width)
+		self.refresh()
+		if self.on_width is not None:
+			self.on_width(event.width)
+
+	def refresh(self):
+		region = self.canvas.bbox("all")
+		self.canvas.configure(scrollregion=region or (0, 0, 0, 0))
+
+	def owns(self, widget):
+		"""Is `widget` inside this area? The body's children count: the wheel
+		handler walks up from the widget under the pointer."""
+		while widget is not None:
+			if widget is self:
+				return True
+			widget = getattr(widget, "master", None)
+		return False
+
+	def content_height(self):
+		region = self.canvas.bbox("all")
+		return max(1, (region[3] - region[1]) if region else 1)
+
+	def can_scroll(self):
+		return self.content_height() > self.canvas.winfo_height()
+
+	def step(self, units):
+		"""Scroll by wheel units. Tk's own unit is 1/10 of the viewport, which
+		makes a notch move twice as far in a maximised window; this is
+		SCROLL_STEP px, and the drag and the reveal stay unsnapped."""
+		if units:
+			self.move_to(self.top() + units * SCROLL_STEP / self.content_height())
+
+	def page(self, direction):
+		self.canvas.yview_scroll(direction, "pages")
+
+	def top(self):
+		return self.canvas.yview()[0]
+
+	def move_to(self, fraction):
+		self.canvas.yview_moveto(max(0.0, min(1.0, fraction)))
+
+	def reveal(self, widget):
+		"""Scroll a child of the body into view, and not one pixel past its
+		edge."""
+		region = self.canvas.bbox("all")
+		if not region:
+			return
+		top = widget.winfo_y()
+		end = top + widget.winfo_height()
+		view_top = self.canvas.canvasy(0)
+		view_h = self.canvas.winfo_height()
+		span = max(1, region[3] - region[1])
+		if top < view_top:
+			self.move_to(top / span)
+		elif end > view_top + view_h:
+			self.move_to((end - view_h) / span)
 
 
 class App(tk.Tk):
@@ -735,7 +846,7 @@ class App(tk.Tk):
 		self.trash_stack = []
 		self.batch_proc = None
 		self.batch_win = None
-		self.card_w = 760
+		self.view_w = 0          # list viewport width, from the canvas Configure
 		self._stop = False
 		self._thumb_cache = {}
 		self._thumb_order = []
@@ -747,6 +858,7 @@ class App(tk.Tk):
 		self.server_ok = None
 		self.mode = self.LIST
 		self._columns_drawn = 0
+		self._grid_weighted = 0
 		self.cards = {}          # key -> PromptCard on screen
 		self.grid_cells = {}     # path -> cell (grid mode)
 		self.visible_keys = []
@@ -828,7 +940,7 @@ class App(tk.Tk):
 		side_wrap = tk.Frame(self, bg=PANEL, width=300)
 		side_wrap.pack(side="left", fill="y")
 		side_wrap.pack_propagate(False)
-		side = self.side = ScrollFrame(side_wrap, bg=PANEL)
+		side = self.side = ScrollArea(side_wrap, bg=PANEL)
 		side.pack(fill="both", expand=True)
 		F9 = self.F(9)
 		box = side.body
@@ -874,19 +986,6 @@ class App(tk.Tk):
 			st.pack(anchor="w", padx=(20, 0))
 			self.md_stats[p.name] = (var, st)
 
-		srv_box = tk.LabelFrame(box, text=" ComfyUI ", bg=PANEL, fg=FG,
-								bd=0, highlightthickness=1,
-								highlightbackground=EDGE, padx=8, pady=6)
-		srv_box.pack(fill="x", padx=10, pady=(10, 0))
-		self.server_lbl = tk.Label(srv_box, text="", bg=PANEL, fg=DIM,
-								   font=self.F(8), wraplength=240, justify="left")
-		self.server_lbl.pack(anchor="w")
-		self.queue_lbl = tk.Label(srv_box, text="queue -", bg=PANEL, fg=DIM, font=F9)
-		self.queue_lbl.pack(anchor="w")
-		self.pend_lbl = tk.Label(srv_box, text="downloads -", bg=PANEL, fg=DIM, font=F9)
-		self.pend_lbl.pack(anchor="w")
-		self.update_server_label()
-
 		self.mkbtn(box, "Switch project…", self.switch_project).pack(
 			fill="x", padx=10, pady=(12, 0))
 		self.side_note = tk.Label(box, text="", bg=PANEL, fg=FAINT,
@@ -896,19 +995,8 @@ class App(tk.Tk):
 		# ---------------------------------------------------------- photos
 		right = tk.Frame(self, bg=BG)
 		right.pack(side="left", fill="both", expand=True)
-		self.vsb = tk.Scrollbar(right, orient="vertical")
-		self.canvas = tk.Canvas(right, bg=BG, highlightthickness=0)
-		self.vsb.configure(command=self.canvas.yview)
-		self.canvas.configure(yscrollcommand=self.vsb.set)
-		self.vsb.pack(side="right", fill="y")
-		self.canvas.pack(side="left", fill="both", expand=True)
-		self.cards_frame = tk.Frame(self.canvas, bg=BG)
-		self.cards_win = self.canvas.create_window((0, 0), window=self.cards_frame,
-												  anchor="nw")
-		# the scrollregion follows both the canvas width (a window resize keeps
-		# the fitted card width, so no widget configure fires) and the frame
-		self.canvas.bind("<Configure>", self._on_geometry_change)
-		self.cards_frame.bind("<Configure>", self._on_geometry_change)
+		self.list_area = ScrollArea(right, BG, on_width=self._on_list_width)
+		self.list_area.pack(fill="both", expand=True)
 		self._bind_wheel()
 		self._bind_drag()
 		self.list_hint = tk.Label(right, bg=PANEL, fg=FAINT, anchor="w",
@@ -924,83 +1012,94 @@ class App(tk.Tk):
 				"↑↓ [ ]: select, Enter: open · /: filter · G: grid")
 
 	def _build_statusbar(self):
+		"""The status line plus the ComfyUI readout, in one row: the sidebar
+		used to carry a second copy of the server URL, the queue depth and the
+		download count, which is the same information twice."""
 		sb = tk.Frame(self, bg=PANEL, padx=10, pady=4)
 		sb.pack(fill="x", side="bottom")
 		self.status_lbl = tk.Label(sb, text="ready", bg=PANEL, fg=DIM,
 								   anchor="w", font=self.F(9))
 		self.status_lbl.pack(side="left", fill="x", expand=True)
-		self.server_dot = tk.Label(sb, text="\u25cf ?  server unchecked",
-									bg=PANEL, fg=FAINT, font=self.F(9))
+		self.server_dot = tk.Label(sb, text="", bg=PANEL,
+								   fg=FAINT, font=self.F(9), cursor="hand2")
 		self.server_dot.pack(side="right")
+		self.server_dot.bind("<Button-1>", lambda _e: self.open_settings())
+		Tooltip(self.server_dot, "ComfyUI: click to change the URL in Settings")
+		self.pend_lbl = tk.Label(sb, text="", bg=PANEL, fg=DIM, font=self.F(9))
+		self.pend_lbl.pack(side="right", padx=(0, 14))
+		self.queue_lbl = tk.Label(sb, text="queue -", bg=PANEL, fg=DIM,
+								  font=self.F(9))
+		self.queue_lbl.pack(side="right", padx=(0, 14))
+		self.update_server_label()
 
 	# ========================================================== wheel and pan
-	def _wheel_target(self, event):
-		"""Which scrolled pane the pointer is over, if any.
+	def _pointer_area(self, event):
+		"""The scrolled pane under the pointer, if any.
 
-		One containment walk from the widget under the pointer: a per-widget
-		binding would miss the labels inside a card, and an ungated bind_all
-		would scroll the list while the batch log is being read.
+		A containment walk from the widget under the pointer decides it: a
+		per-widget binding would miss the labels inside a card, an ungated
+		`bind_all` would scroll the list while the batch log is being read, and
+		on Windows a <MouseWheel> goes to the focused widget rather than to the
+		one under the pointer, so `event.widget` cannot answer this.
 		"""
-		w = self.winfo_containing(event.x_root, event.y_root)
-		while w is not None:
-			if w is self.canvas:
-				return self.canvas
-			side = getattr(self, "side", None)
-			if side is not None and w is side.canvas:
-				return side.canvas
-			w = getattr(w, "master", None)
+		widget = self.winfo_containing(event.x_root, event.y_root)
+		if widget is self.list_hint:      # the strip under the list is the list's
+			return self.list_area
+		for area in (self.list_area, self.side):
+			if area.owns(widget):
+				return area
 		return None
 
 	def wheel(self, event):
-		target = self._wheel_target(event)
-		if target is None:
+		area = self._pointer_area(event)
+		if area is None:
 			return None
-		# three units per notch is the browser convention; Windows/macOS send
-		# one event per notch with a signed delta, X11 sends Button-4/5
-		target.yview_scroll(-3 if _up(event) else 3, "units")
+		area.step(wheel_notches(event) * WHEEL_UNITS)
 		return "break"
 
 	def _bind_wheel(self):
-		# bind_all plus the containment walk of _wheel_target: the prompt list
-		# and the sidebar each scroll under the pointer, everything else (the
-		# batch log's Text, the viewer) keeps its wheel
-		for seq in ("<Button-4>", "<Button-5>", "<MouseWheel>"):
-			try:
-				self.bind_all(seq, self.wheel, add="+")
-			except tk.TclError:
-				pass  # not a valid event on this platform
+		# bind_all: the prompt list and the sidebar each scroll under the
+		# pointer, everything else (the batch log's Text, the viewer) keeps its
+		# own wheel
+		for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+			self.bind_all(seq, self.wheel, add="+")
 
 	def _bind_drag(self):
-		# right / middle drag anywhere over the cards, left drag on the canvas
-		# itself; a left click on a thumbnail stays a click and opens the viewer
-		for seq in ("<ButtonPress-3>", "<ButtonPress-2>"):
-			self.canvas.bind(seq, self._drag_start, add="+")
-			self.cards_frame.bind(seq, self._drag_start, add="+")
-		for seq in ("<B3-Motion>", "<B2-Motion>"):
-			self.canvas.bind(seq, self._drag_move, add="+")
-			self.cards_frame.bind(seq, self._drag_move, add="+")
-		for seq in ("<ButtonRelease-3>", "<ButtonRelease-2>"):
-			self.canvas.bind(seq, self._drag_end, add="+")
-			self.cards_frame.bind(seq, self._drag_end, add="+")
-		self.canvas.bind("<ButtonPress-1>", self._drag_start, add="+")
-		self.canvas.bind("<B1-Motion>", self._drag_move, add="+")
-		self.canvas.bind("<ButtonRelease-1>", self._drag_end, add="+")
+		# right / middle drag pans whichever pane the pointer is over; a left
+		# drag pans the list from its own background, so a left click on a
+		# thumbnail stays a click and opens the viewer
+		for seq in ("<ButtonPress-2>", "<ButtonPress-3>"):
+			self.bind_all(seq, self._drag_start, add="+")
+		for seq in ("<B2-Motion>", "<B3-Motion>"):
+			self.bind_all(seq, self._drag_move, add="+")
+		for seq in ("<ButtonRelease-2>", "<ButtonRelease-3>"):
+			self.bind_all(seq, self._drag_end, add="+")
+		self.list_area.canvas.bind("<ButtonPress-1>", self._drag_start, add="+")
+		self.list_area.canvas.bind("<B1-Motion>", self._drag_move, add="+")
+		self.list_area.canvas.bind("<ButtonRelease-1>", self._drag_end, add="+")
 
 	def _drag_start(self, event):
-		self._drag = (event.y_root, self.canvas.yview()[0])
-		self.canvas.configure(cursor="fleur")
+		area = self._pointer_area(event)
+		if area is None or not area.can_scroll():
+			return None
+		self._drag = (area, event.y_root, area.top())
+		area.canvas.configure(cursor="fleur")
+		return "break"
 
 	def _drag_move(self, event):
-		if not self._drag:
-			return
-		y0, frac = self._drag
-		region = self.canvas.bbox("all")
-		height = max(1, (region[3] - region[1]) if region else 1)
-		self.canvas.yview_moveto(max(0.0, min(1.0, frac - (event.y_root - y0) / height)))
+		if self._drag is None:
+			return None
+		area, y0, frac = self._drag
+		area.move_to(frac - (event.y_root - y0) / area.content_height())
+		return "break"
 
 	def _drag_end(self, _event):
+		if self._drag is None:
+			return None
+		area = self._drag[0]
 		self._drag = None
-		self.canvas.configure(cursor="")
+		area.canvas.configure(cursor="")
+		return "break"
 
 	# ================================================================ keys
 	def _typing(self, event):
@@ -1050,7 +1149,7 @@ class App(tk.Tk):
 			self._paint_selection()
 
 	def page(self, direction):
-		self.canvas.yview_scroll(direction * 4, "units")
+		self.list_area.page(direction)
 
 	# ================================================================ state
 	def cfg(self, key):
@@ -1158,8 +1257,22 @@ class App(tk.Tk):
 		seeded = [p for p in files if seed_of(p) is not None]
 		return (seeded or files)[-1]
 
+	def card_width(self):
+		"""The inner width a card paints its thumbnails in, px."""
+		return max(THUMB_W, self.view_w - 2 * LIST_PAD - 2 * CARD_PADX - 2)
+
 	def columns(self):
-		return max(1, (self.card_w - CARD_PAD) // (THUMB_W + 10))
+		"""Columns per row at the current viewport width, for the active mode.
+		The reflow watches this one number, so a grid whose cells re-fit while
+		no card row would rebuilds too."""
+		if self.mode == self.GRID:
+			return self.grid_columns()
+		return max(1, (self.card_width() + THUMB_GAP) // (THUMB_W + THUMB_GAP))
+
+	def grid_columns(self):
+		"""A grid cell is a thumbnail plus its padding, so fewer fit than in a
+		card."""
+		return max(2, (self.view_w - 2 * LIST_PAD) // (THUMB_W + 30))
 
 	def thumb_photo(self, path):
 		try:
@@ -1317,6 +1430,7 @@ class App(tk.Tk):
 			self.status(f"queued {queued} job{'s' if queued != 1 else ''} - "
 						f"{job['slug']}" + (f" (seed {seed})" if seed else ""))
 			self.sync_cards()
+			self.update_pending_label()
 		elif first_err and not quiet:
 			messagebox.showerror("queue failed", first_err)
 		elif first_err:
@@ -1436,22 +1550,25 @@ class App(tk.Tk):
 			self.after_cancel(self._filter_job)
 		self._filter_job = self.after(250, self.rebuild_cards)
 
-	def _on_geometry_change(self, event):
-		if event.widget is self.canvas:
-			self.card_w = event.width - 8
-			self.canvas.itemconfigure(self.cards_win, width=self.card_w)
-		self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-		if event.widget is self.cards_frame:
-			self._maybe_reflow()
-
-	def _maybe_reflow(self):
-		"""Thumbnails are packed in columns of a fixed thumb width: rebuild only
-		when the column count changes, never on a pixel of resize."""
-		if self.columns() == self._columns_drawn:
+	def _on_list_width(self, width):
+		"""The list viewport changed width: reflow once the drag settles."""
+		if width == self.view_w:
 			return
+		self.view_w = width
 		if self._resize_job:
 			self.after_cancel(self._resize_job)
-		self._resize_job = self.after(250, self.rebuild_cards)
+		self._resize_job = self.after(120, self._reflow)
+
+	def _reflow(self):
+		"""Thumbnails sit in columns of a fixed thumb width, so a resize that
+		changes the column count rebuilds the cards and one that does not still
+		re-wraps the captions."""
+		self._resize_job = None
+		if self.columns() != self._columns_drawn:
+			self.rebuild_cards()
+			return
+		for card in self.cards.values():
+			card.set_wrap()
 
 	def matches(self, key):
 		flt = self.filter_var.get().strip().lower() if hasattr(self, "filter_var") else ""
@@ -1465,8 +1582,8 @@ class App(tk.Tk):
 		if self._resize_job:
 			self.after_cancel(self._resize_job)
 			self._resize_job = None
-		top = self.canvas.yview()[0]
-		for widget in self.cards_frame.winfo_children():
+		top = self.list_area.top()
+		for widget in self.list_area.body.winfo_children():
 			widget.destroy()
 		self.cards, self.grid_cells, self._grid_photo = {}, {}, {}
 		keys = [k for k in self.job_order if self.matches(k)]
@@ -1479,15 +1596,15 @@ class App(tk.Tk):
 		else:
 			counts = self.pending_counts()
 			for key in keys:
-				card = PromptCard(self.cards_frame, self, key)
+				card = PromptCard(self.list_area.body, self, key)
 				card.set_images(self.images_for(key), counts.get(key, 0))
 				card.set_counts()
 				self.cards[key] = card
 			self._paint_selection()
 		self._columns_drawn = self.columns()
-		self.cards_frame.update_idletasks()
-		self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-		self.canvas.yview_moveto(top)
+		self.list_area.body.update_idletasks()
+		self.list_area.refresh()
+		self.list_area.move_to(top)
 		self.update_sidebar_stats()
 		return len(keys)
 
@@ -1530,12 +1647,16 @@ class App(tk.Tk):
 
 	def _build_grid(self, keys):
 		"""Every image as a thumbnail: the fastest way to find a winner."""
-		cols = max(2, (self.card_w - 20) // (THUMB_W + 24))
-		self.grid_cols = cols
+		cols = self.grid_columns()
+		# equal weights: the cells spread over the full viewport instead of
+		# leaving the leftover width in one strip on the right
+		self._grid_weighted = weight_columns(self.list_area.body, cols,
+										 self._grid_weighted)
+		body = self.list_area.body
 		row = count = 0
 		for key in keys:
 			for path in self.images_for(key):
-				cell = tk.Frame(self.cards_frame, bg=CARD, padx=6, pady=6,
+				cell = tk.Frame(body, bg=CARD, padx=6, pady=6,
 								highlightthickness=1, highlightbackground=EDGE)
 				cell.grid(row=row, column=count % cols, padx=6, pady=6, sticky="nw")
 				count += 1
@@ -1544,7 +1665,7 @@ class App(tk.Tk):
 				self.grid_cells[path] = cell
 				self._fill_grid_cell(cell, key, path)
 		if not count:
-			tk.Label(self.cards_frame, text="no images yet - queue a prompt card first",
+			tk.Label(body, text="no images yet - queue a prompt card first",
 					 bg=BG, fg=FAINT, font=self.F(10)).grid(row=0, column=0,
 															padx=14, pady=14)
 
@@ -1560,7 +1681,8 @@ class App(tk.Tk):
 		slug = self.jobs[key]["slug"].split("__", 2)[-1]
 		tk.Label(cell, text=slug, bg=CARD, fg=FG, font=self.F(8)).pack(anchor="w")
 		tk.Label(cell, text=f"{self.jobs[key]['category']} · {path.name}",
-				 bg=CARD, fg=FAINT, font=self.F(7)).pack(anchor="w")
+				 bg=CARD, fg=FAINT, font=self.F(7), wraplength=THUMB_W,
+				 justify="left").pack(anchor="w")
 		lbl.bind("<Button-1>", lambda e, k=key, p=path: self.open_viewer(k, p))
 
 	def _paint_grid(self):
@@ -1592,19 +1714,7 @@ class App(tk.Tk):
 			card.paint_bg(self.card_bg(card))
 			card.set_edge(ACCENT if card is target else EDGE)
 		if target is not None and scroll:
-			self._scroll_into_view(target)
-
-	def _scroll_into_view(self, widget):
-		region = self.canvas.bbox("all")
-		if not region:
-			return
-		top, end = widget.winfo_y(), widget.winfo_y() + widget.winfo_height()
-		view_top, view_h = self.canvas.canvasy(0), self.canvas.winfo_height()
-		span = max(1, region[3] - region[1])
-		if top < view_top:
-			self.canvas.yview_moveto(max(0.0, top / span))
-		elif end > view_top + view_h:
-			self.canvas.yview_moveto(max(0.0, (end - view_h) / span))
+			self.list_area.reveal(target)
 
 	def open_selected(self):
 		if self.selected < 0 or self.selected >= len(self.visible_keys):
@@ -1643,8 +1753,22 @@ class App(tk.Tk):
 		if self.side_note.cget("text") != note:
 			self.side_note.configure(text=note)
 
-	def update_server_label(self):
-		self.server_lbl.configure(text=str(self.cfg("server")))
+	def update_pending_label(self):
+		count = len(self.pending)
+		text = f"downloading {count}" if count else ""
+		if self.pend_lbl.cget("text") != text:
+			self.pend_lbl.configure(text=text)
+
+	def server_host(self):
+		return str(self.cfg("server")).split("://")[-1].rstrip("/")
+
+	def update_server_label(self, ok=None):
+		"""The status bar holds the only copy: one chip with the URL and the
+		state the worker found on its last ping."""
+		state = "unchecked" if ok is None else ("online" if ok else "offline")
+		self.server_dot.configure(
+			text=f"\u25cf {state}  ·  {self.server_host()}",
+			fg=FAINT if ok is None else (GOOD if ok else BAD))
 
 	# ================================================================ worker
 	def _worker(self):
@@ -1747,21 +1871,18 @@ class App(tk.Tk):
 			_, jkey, names = item
 			slug = self.jobs.get(jkey, {}).get("slug", jkey)
 			self.status(f"saved {', '.join(names)} - new image in {slug}'s card")
+			self.update_pending_label()
 		elif kind == "job_failed":
 			_, _pid, jkey, msg = item
 			slug = self.jobs.get(jkey, {}).get("slug", jkey)
 			self.status(f"job failed for '{slug}': {msg}")
 		elif kind == "server":
 			_, ok, run, pend = item
-			was = self.server_ok
-			self.server_ok = ok
-			self.server_dot.configure(
-				text=f"\u25cf {'online' if ok else 'offline'}  ·  "
-					 f"{str(self.cfg('server')).replace('http://', '')}",
-				fg=GOOD if ok else BAD)
-			self.queue_lbl.configure(text="queue ?" if pend < 0
-									 else f"queue: {run} running · {pend} pending")
-			self.pend_lbl.configure(text=f"downloading: {len(self.pending)} job(s)")
+			was, self.server_ok = self.server_ok, ok
+			self.update_server_label(ok)
+			self.queue_lbl.configure(text="queue -" if pend < 0
+									 else f"queue {run} running · {pend} pending")
+			self.update_pending_label()
 			if was is None and not ok:
 				self.status("ComfyUI is not reachable - start it, then "
 							"check the URL in Settings")

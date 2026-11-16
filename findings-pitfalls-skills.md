@@ -1116,3 +1116,34 @@ Two more, learned the hard way in the same file:
 Rebuilding is not the only transparency trap: a disabled card's caption in
 `FAINT` on `CARD_OFF` is about `2.9:1`, so read the contrast as well as the
 layout — `DIM` on `CARD_OFF` is `5:1`.
+
+## Tk: `'??'` is truthy, and a scroll pane lies in four more ways
+
+All five found in `photos/generator/gallery.py`:
+
+- **an event field the event does not carry is the string `'??'`, not `None`.**
+  `Event._substitute` sets `e.num = getint_event('%b')` and `'%b'` is `'??'` for
+  `<MouseWheel>`; `e.delta` is `0` for Button-4/5. So `if getattr(event, "num", None):`
+  is true for a wheel event and `event.num == 4` is false - every Windows/macOS
+  wheel turn reads as "down", while X11 (which sends real Button-4/5) works. Test
+  `num` against 4 and 5 explicitly, then fall back to the sign of `delta`.
+- **a canvas window item keeps its own requested width.** `create_window` embeds
+  the frame at whatever width its children ask for unless `itemconfigure(win,
+  width=…)` forces it, so the content stops at the widest child and the rest of
+  the pane is empty. Force the body to `event.width` on the canvas `<Configure>`.
+  A `fill="x"` child then spans the pane, and the only insets left are the ones
+  written down - a `- 8` fudge next to a `padx=10` is an asymmetric gutter, not a
+  margin.
+- **a canvas scroll unit defaults to 1/10 of the viewport**, so "scroll 3 units"
+  moves twice as far in a maximised window as in a small one. `yscrollincrement`
+  pins the unit to pixels but also snaps `yview_moveto`, which makes a drag pan
+  steppy; computing the fraction instead (`yview_moveto(top + px / content)`)
+  keeps a notch constant and the pan smooth.
+- **an empty weighted grid column still eats space.** `columnconfigure(weight=1)`
+  on columns a wider layout used is how a grid shrinks into a strip on the left;
+  reset the weight on the columns past the new count.
+- **`bind` on a parent does not catch a child's events.** A right-drag bound on
+  the canvas and the cards frame never fired over a card, because Tk dispatches
+  through bindtags, not through the widget tree. `bind_all` plus one containment
+  walk (`winfo_containing` up the `master` chain) is the pane-scoped version of
+  the same thing, and it keeps a `Text` or a `Toplevel` in the same app free.

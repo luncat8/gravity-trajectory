@@ -92,20 +92,27 @@ Run `comfy_queue.py --help` for the full options.
 
 The gallery retains the imported pack's cards, copy-caption/copy-path,
 per-file/per-card/per-workflow checkboxes, seed variations and reruns, settings,
-server/queue status, batch log window, image viewer, delete-to-trash and Ctrl+Z
-undo. State is saved to `<gallery_output>/state.toml`, separately for each
-project. One workflow is enabled by default; enable the video graph to render the
-video cards. Variations from different workflows include the workflow name in
-their filenames.
+the batch log window, image viewer, delete-to-trash and Ctrl+Z undo. The status
+bar carries the ComfyUI readout - server state and URL, queue depth, downloads in
+flight - and the server chip opens Settings when clicked. State is saved to
+`<gallery_output>/state.toml`, separately for each project. One workflow is
+enabled by default; enable the video graph to render the video cards. Variations
+from different workflows include the workflow name in their filenames.
 
-The card list is painted rather than rebuilt: a finished render, a delete, an undo
-and a checkbox toggle repaint one card and keep the scroll position, the hover and
-the keyboard focus. A rebuild happens only when the card set itself changes
-(filter text, prompt file, a column count change, the grid view). Files are indexed
-by prompt in one directory pass, so a project with hundreds of renders costs the
-same as one with ten; a render younger than two seconds is not read yet, because it
-may still be filling. `N file(s) match no prompt` in the sidebar counts renders
-whose name no prompt of this project produces.
+The card list is painted rather than rebuilt: a finished render, a delete, an
+undo and a checkbox toggle repaint one card and keep the scroll position, the
+hover and the keyboard focus. A rebuild happens only when the card set itself
+changes (filter text, prompt file, a column count change, the grid view). Files
+are indexed by prompt in one directory pass, so a project with hundreds of
+renders costs the same as one with ten; a render younger than two seconds is not
+read yet, because it may still be filling. `N file(s) match no prompt` in the
+sidebar counts renders whose name no prompt of this project produces.
+
+The list and the sidebar are the same `ScrollArea`: its body tracks the viewport
+width, so a card spans the pane with one gutter a side and nothing is left over
+on the right, and one wheel handler picks the pane from the widget under the
+pointer. A wheel notch is a fixed 60 px, so it moves the same distance at any
+window size, and a drag pan stays smooth.
 
 | key | where | does |
 |---|---|---|
