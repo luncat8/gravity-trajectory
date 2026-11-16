@@ -143,6 +143,10 @@
 		this.sysInvRX = new Float64Array(MAX_BODIES);
 		this.sysInvRY = new Float64Array(MAX_BODIES);
 		this.sysBoundR2 = new Float64Array(MAX_BODIES);
+		this.planetMinX = Infinity;
+		this.planetMaxX = -Infinity;
+		this.planetMinY = Infinity;
+		this.planetMaxY = -Infinity;
 
 		this.bodyCount = 0;
 		this.bodyR = null;
@@ -249,6 +253,8 @@
 		this.planetX = px;
 		this.planetY = py;
 		this.planetR = pr;
+		let minX = Infinity, maxX = -Infinity;
+		let minY = Infinity, maxY = -Infinity;
 		for (let i = 0; i < count; i++) {
 			const rx = orbitRX[i];
 			const ry = orbitRY[i];
@@ -258,7 +264,17 @@
 			this.sysInvRX[i] = 1 / rx;
 			this.sysInvRY[i] = 1 / ry;
 			this.sysBoundR2[i] = major * major;
+			/* One conservative box covers both the port ellipse and the impact disc. */
+			const reach = Math.max(major, pr[i] + CARGO_R);
+			if (px[i] - reach < minX) minX = px[i] - reach;
+			if (px[i] + reach > maxX) maxX = px[i] + reach;
+			if (py[i] - reach < minY) minY = py[i] - reach;
+			if (py[i] + reach > maxY) maxY = py[i] + reach;
 		}
+		this.planetMinX = minX;
+		this.planetMaxX = maxX;
+		this.planetMinY = minY;
+		this.planetMaxY = maxY;
 	};
 
 	/* the run's active planet subset; `null` keeps every planet in play */
@@ -272,6 +288,11 @@
 	GravitySim.prototype.planetActive = function (planet) {
 		return planet >= 0 && planet < this.planetCount &&
 			(!this.planetMask || this.planetMask[planet] === 1);
+	};
+
+	GravitySim.prototype.beyondPlanets = function (x, y) {
+		return x < this.planetMinX || x > this.planetMaxX ||
+			y < this.planetMinY || y > this.planetMaxY;
 	};
 
 	/* fillField(t, outX, outY, count) writes gravity body positions at field time t */
@@ -424,7 +445,7 @@
 
 	GravitySim.prototype.markSystemsAt = function (x, y, mask) {
 		const count = this.planetCount;
-		if (count === 0) return 0;
+		if (count === 0 || this.beyondPlanets(x, y)) return 0;
 		const px = this.planetX;
 		const py = this.planetY;
 		const bound = this.sysBoundR2;
@@ -456,6 +477,10 @@
 	GravitySim.prototype.stepInsideAt = function (x, y, prevInside, enteredOut) {
 		const count = this.planetCount;
 		if (count === 0) return 0;
+		if (this.beyondPlanets(x, y)) {
+			prevInside.fill(0, 0, count);
+			return 0;
+		}
 		const px = this.planetX;
 		const py = this.planetY;
 		const bound = this.sysBoundR2;
@@ -548,6 +573,7 @@
 
 	GravitySim.prototype.impact = function (x, y) {
 		const usePlanets = this.planetCount > 0;
+		if (usePlanets && this.beyondPlanets(x, y)) return NO_BODY;
 		const px = usePlanets ? this.planetX : this.stepX;
 		const py = usePlanets ? this.planetY : this.stepY;
 		const pr = usePlanets ? this.planetR : this.bodyR;

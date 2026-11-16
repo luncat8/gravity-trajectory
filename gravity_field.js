@@ -397,10 +397,20 @@
 				const dy2 = dy * dy;
 				const dym = dy * ms;
 				const base = i * w;
+				/* The in-frame row fits the LUT; keep the rare zoomed-out fallback
+				 * out of its per-pixel loop. Squared distance peaks at an endpoint. */
+				if (Math.max(dx2Tab[base], dx2Tab[base + w - 1]) + dy2 < KERN_N * KERN_STEP) {
+					for (let x = 0; x < w; x++) {
+						const inv3 = kern[(dx2Tab[base + x] + dy2) >> KERN_SHIFT];
+						axRow[x] += dxTab[base + x] * (ms * inv3);
+						ayRow[x] += dym * inv3;
+					}
+					continue;
+				}
 				for (let x = 0; x < w; x++) {
 					const r2 = dx2Tab[base + x] + dy2;
-					const k = r2 >> KERN_SHIFT;
-					const inv3 = k < KERN_N ? kern[k] : 1 / ((r2 + SOFT2) * Math.sqrt(r2 + SOFT2));
+					const inv3 = r2 < KERN_N * KERN_STEP
+						? kern[r2 >> KERN_SHIFT] : 1 / ((r2 + SOFT2) * Math.sqrt(r2 + SOFT2));
 					axRow[x] += dxTab[base + x] * (ms * inv3);
 					ayRow[x] += dym * inv3;
 				}
@@ -500,12 +510,12 @@
 	function makeScratch(w) {
 		return {
 			cap: w,
-			axRow: new Float32Array(w),
-			ayRow: new Float32Array(w),
+			axRow: new Float64Array(w),
+			ayRow: new Float64Array(w),
 			zoneRow: new Float64Array(w),
 			zoneColour: { zone: 0, alpha: 0, a: 0, r: 0, g: 0, b: 0 },
-			dxTab: new Float32Array(MAX_BODIES * w),
-			dx2Tab: new Float32Array(MAX_BODIES * w)
+			dxTab: new Float64Array(MAX_BODIES * w),
+			dx2Tab: new Float64Array(MAX_BODIES * w)
 		};
 	}
 

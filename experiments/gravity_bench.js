@@ -321,6 +321,29 @@ function repelSweep(world) {
 	return { count, minX, maxX, minY, maxY };
 }
 
+function rasterDiff(g, pixels, w, h, view, cssW, cssH) {
+	const out = { ax: 0, ay: 0 };
+	const ref = { hue: 0, light: 0, r: 0, g: 0, b: 0 };
+	const sx = (cssW / w) / view.scale;
+	const sy = (cssH / h) / view.scale;
+	const ox = (0.5 * (cssW / w) - view.offX) / view.scale;
+	const oy = (0.5 * (cssH / h) - view.offY) / view.scale;
+	let maxDiff = 0;
+	let sumDiff = 0;
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			g.fieldAt(ox + x * sx, oy + y * sy, out);
+			GravityField.sampleColor(out.ax, out.ay, ref);
+			const p = (y * w + x) * 4;
+			const d = Math.max(Math.abs(pixels[p] - ref.r),
+				Math.abs(pixels[p + 1] - ref.g), Math.abs(pixels[p + 2] - ref.b));
+			if (d > maxDiff) maxDiff = d;
+			sumDiff += d;
+		}
+	}
+	return { maxDiff, meanDiff: sumDiff / (w * h) };
+}
+
 function fieldBench(world) {
 	const g = world.gravity;
 	usePlanets(world);
@@ -367,20 +390,18 @@ function fieldBench(world) {
 	const view = { dpr: 1, scale: 0.8, offX: 0, offY: 0 };
 	const pixels = new Uint8ClampedArray(w * h * 4);
 	GravityField.renderBuffer(pixels, w, h, g, view, 1280, 800);
-	const ref = { hue: 0, light: 0, r: 0, g: 0, b: 0 };
-	let maxDiff = 0;
-	let sumDiff = 0;
-	for (let y = 0; y < h; y++) {
-		for (let x = 0; x < w; x++) {
-			const wx = (0.5 * 4 - view.offX) / view.scale + x * (4 / view.scale);
-			const wy = (0.5 * 4 - view.offY) / view.scale + y * (4 / view.scale);
-			g.fieldAt(wx, wy, out);
-			GravityField.sampleColor(out.ax, out.ay, ref);
-			const p = (y * w + x) * 4;
-			const d = Math.max(Math.abs(pixels[p] - ref.r),
-				Math.abs(pixels[p + 1] - ref.g), Math.abs(pixels[p + 2] - ref.b));
-			if (d > maxDiff) maxDiff = d;
-			sumDiff += d;
+	const diff = rasterDiff(g, pixels, w, h, view, 1280, 800);
+	/* Zoom far enough for some rows and then all rows to leave the LUT, even
+	 * beyond the signed-32-bit range of the lookup index. */
+	const zoomW = 64, zoomH = 40;
+	const zoomPixels = new Uint8ClampedArray(zoomW * zoomH * 4);
+	for (const scale of [0.2, 0.01]) {
+		const zoom = { dpr: 1, scale, offX: 0, offY: 0 };
+		GravityField.renderBuffer(zoomPixels, zoomW, zoomH, g, zoom, 1280, 800);
+		const zoomDiff = rasterDiff(g, zoomPixels, zoomW, zoomH, zoom, 1280, 800);
+		if (zoomDiff.maxDiff > 5 || zoomDiff.meanDiff > 1) {
+			throw new Error('zoomed-out field raster drift at scale ' + scale +
+				': max ' + zoomDiff.maxDiff + ', mean ' + zoomDiff.meanDiff.toFixed(3));
 		}
 	}
 	const t0 = process.hrtime.bigint();
@@ -480,7 +501,7 @@ function fieldBench(world) {
 		throw new Error('no-WebGL canvas did not use the 1/4 2D raster');
 	}
 
-	return { w, h, maxDiff, meanDiff: sumDiff / (w * h), avgMs, zoneAvgMs };
+	return { w, h, maxDiff: diff.maxDiff, meanDiff: diff.meanDiff, avgMs, zoneAvgMs };
 }
 
 const started = process.hrtime.bigint();

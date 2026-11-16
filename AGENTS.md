@@ -138,7 +138,8 @@ root.GravityScene keys are a test contract (experiments/ read them) - keep the n
 | touch | run |
 |---|---|
 | `orbit_world`, `orbit_sim`, `orbit_econ` trade laws | `special_planets_test`, `orbit_clock_test`, `politics_test` |
-| `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `bot_gravity_test` |
+| `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `route_bench` (long trace), `bot_gravity_test` (known red fixture) |
+| `gravity_field` CPU raster and palette | `gravity_bench` (color + budget), `gravity_view_test` |
 | `gravity_game` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
 | `gravity_bot` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
 | the career seat search (`prepareCareerStarts` and below) | `career_start_seat_test`, then `make_saved_maps.js --check`: a stale saved map needs the generator rerun |
