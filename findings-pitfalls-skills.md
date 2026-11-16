@@ -925,6 +925,27 @@ never matched, so the failure read "missing profit". The test now folds `−` to
 `-` before `Number()`. `experiments/README.md` holds the current list of files
 that are red on a clean main and `run_fast.js` carries it in `KNOWN_RED`.
 
+## time budgets: compare the same workload on the same box
+
+The `route_bench` 60 ms wall and `gravity_bench` 16 ms field raster were red on
+this sandbox even at 0.7.10's base, so an absolute number by itself could not
+identify a regression. 0.7.12 keeps those real targets and speeds up the work:
+`setPlanets` caches one conservative box for both system ellipses and impact
+discs, skipping 26 checks per step in empty space; the raster's in-range LUT
+row avoids a fallback branch per pixel, and Float64 scratch avoids repeated
+Float32 rounding. A same-process, warmed A/B against `git show HEAD:<file>`
+in `/tmp` measured 216,000-step wall traces at 62–78 → 16–20 ms and field
+rasters at 13–15 → 8–11 ms on the same geometry; route steps/length/points
+match and pixel delta is at most 1. This is more meaningful than comparing
+one pass on a busy VM against a number written on a different machine.
+
+For raster LUTs, compare a zoomed-out view as well as the normal frame: `r2 >> 6`
+wraps to a negative signed-32-bit index above 2³¹, and the old `k < tableSize`
+check then read `undefined`, painting false black pixels. Compare the squared
+distance to the table's range *before* shifting. For flight broadphases, clearing
+`prevInside` when the ship leaves the whole box is essential: otherwise a later
+return to the same system never records the entry again.
+
 ## every page boot plans the career seats, and a contextified vm global made it 10× worse
 
 `loadPage({ search: '?rule=career…' })` is not a free stub boot: the page plans

@@ -8,7 +8,7 @@
  *    or the 1 800 s wall (the wall is a safety net, the buffer policy follows)
  * 3. the point buffer stays flat: a wall trace compacts to ≤ PATH_MAX points,
  *    stride 8, while a real 120 s shot keeps stride 1 and every step
- * 4. slice cost: a 4 ms slice stays inside a frame, a whole trace ≤ 45 ms
+ * 4. slice cost: a 4 ms slice stays inside a frame, a whole trace ≤ 60 ms
  * 5. routeBegin/routeStep allocate nothing: buffers and the probe keep identity
  *
  * Run: node experiments/route_bench.js
@@ -116,6 +116,43 @@ function makeWallWorld() {
 			}
 		}, true);
 	return gravity;
+}
+
+/* Far from every system there is no landing or visit, but leaving and
+ * re-entering the overall reach must still count as a fresh system entry. */
+function benchPlanetBounds() {
+	const gravity = new GravitySim(1000, 1000);
+	const px = new Float64Array([100, 500]);
+	const py = new Float64Array([100, 100]);
+	const radius = new Float64Array([30, 10]);
+	const rx = new Float64Array([20, 25]);
+	const ry = new Float64Array([10, 15]);
+	const cos = new Float64Array([1, 1]);
+	const sin = new Float64Array(2);
+	gravity.setPlanets(2, px, py, radius, rx, ry, cos, sin);
+	const visits = new Uint8Array(2);
+	const inside = new Uint8Array(2);
+	const entered = new Int32Array(2);
+	check(gravity.impact(132, 100) === 0,
+		'an impact outside the orbit ellipse but inside the planet disc was skipped');
+	check(gravity.stepInsideAt(100, 100, inside, entered) === 1 && inside[0] === 1,
+		'first system entry was missed');
+	check(gravity.stepInsideAt(300, 300, inside, entered) === 0 && inside[0] === 0,
+		'leaving the whole system reach did not clear inside state');
+	check(gravity.markSystemsAt(300, 300, visits) === 0 && gravity.impact(300, 300) === -1,
+		'empty space produced a visit or an impact');
+	check(gravity.stepInsideAt(100, 100, inside, entered) === 1 && entered[0] === 0,
+		're-entering the system after empty space was not recorded');
+	gravity.setPlanetMask(new Uint8Array([0, 1]));
+	check(gravity.impact(100, 100) === -1 && gravity.impact(500, 100) === 1 &&
+		gravity.markSystemsAt(100, 100, visits) === 0 &&
+		gravity.markSystemsAt(500, 100, visits) === 1,
+		'a masked planet caused a visit or the remaining planet was missed');
+	px[1] = 900;
+	gravity.setPlanets(2, px, py, radius, rx, ry, cos, sin);
+	check(gravity.impact(900, 100) === 1 && gravity.markSystemsAt(900, 100, new Uint8Array(2)) === 1,
+		'world replacement left stale reach bounds');
+	console.log('  empty-space bounds: impact, system re-entry, mask and world replacement agree');
 }
 
 /* the whole job in one call, deliberately ignoring the frame budget */
@@ -287,7 +324,7 @@ function benchSliceCost(rand) {
 		const avg = work / row.runs;
 		check(worst <= SLICE_MS, row.label + ': slice ' + worst.toFixed(2) + ' ms exceeds ' +
 			SLICE_MS.toFixed(1) + ' ms');
-		/* 60 ms covers the pathological wall trace (~13 slices); real shots are one or two */
+		/* 60 ms covers the pathological wall trace; real shots are one or two slices */
 		check(avg <= 60, row.label + ': whole trace ' + avg.toFixed(1) + ' ms exceeds 60 ms');
 		console.log('  ' + row.label + ': ' + avg.toFixed(1) + ' ms of work in ' +
 			(slices / row.runs).toFixed(1) + ' slices, worst slice ' + worst.toFixed(2) +
@@ -317,6 +354,7 @@ function benchAllocation(world) {
 console.log('route bench — ' + ROUTE_STEPS + ' steps of wall (' + ROUTE_SECONDS + ' s)');
 const world = makeWorld(31);
 const rand = seededRandom(2024);
+benchPlanetBounds();
 console.log('1. sliced tracer equals a one-shot tracer');
 benchEquality(world, rand, false);
 benchEquality(world, rand, true);

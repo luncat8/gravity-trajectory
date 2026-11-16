@@ -67,7 +67,8 @@ with no fair opening: the registry is also the pool `load map` draws from, so
 |---|---|
 | `orbit_world`, `orbit_sim`, `orbit_econ` trade laws | `special_planets_test`, `orbit_clock_test`, `politics_test` |
 | the seeded PRNG (`seedRandom`) and world geometry | `gravity_seed_test` (bench tier), `orbit_clock_test` |
-| `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `gravity_view_test` |
+| `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `route_bench` (long trace), `bot_gravity_test` (known red fixture) |
+| `gravity_field` CPU raster and palette | `gravity_bench` (color + budget), `gravity_view_test` |
 | `gravity_game` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
 | career opening and the seat search | `career_start_seat_test`, `make_saved_maps.js --check` (stale records), `career_start_probe.js` |
 | `gravity_bot` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
@@ -91,6 +92,14 @@ one side of a change only, and the header of each file says what it asks.
   never weaken an assertion to make a tier green; a diagnostic that skips
   assertions is not a passing test.
 - Compare failures by name, not by count.
+
+The `route_bench` 60 ms wall-trace and `gravity_bench` 16 ms fallback-raster
+limits are actual work/frame targets, not scale factors inferred from the CPU.
+0.7.12 kept both limits and reduced the work instead (a 216,000-step empty-space
+trace and the field's common LUT path). A slower host can still report a timing
+failure; compare old and new code on the *same* host before treating it as a
+physics regression. Parity, pixel accuracy and the absolute timings are separate
+checks.
 
 ## red on a clean main
 
