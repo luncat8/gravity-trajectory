@@ -101,11 +101,10 @@ green one means the note is stale.
 - `bot_gravity_test` — the `careerNextPad` fixture never arms the bot's
   `exitProbe`, so every site values `-Infinity` and the pick is −1 (fixture,
   not law).
-- `gravity_view_test` — two assertions. The drag-zone colours at seed 61
-  (`blue` 112, wanted > 200; red since 0.7.1) stop the file, and behind them
-  the visit-profit card is asserted as `+0.46` where the seed-42 page draws
-  `+0.47`. With both logged instead of asserted the file reaches
-  `GRAVITY VIEW OK`.
+- `gravity_view_test` — fixed in 0.7.11, no longer red. Its two stale
+  expectations were the pre-pinning blue count (seed 61 career now shows 112
+  blue px; bar lowered to > 50 with the reason in the test) and the `+0.46`
+  card from the cap-3 era (cap 4 since 0.7.7 gives `+0.47`).
 - `career_bench` (3), `career_bot_bench` (10) — known failures, listed with
   their names in `findings-pitfalls-skills.md`.
 

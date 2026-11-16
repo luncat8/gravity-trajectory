@@ -24,7 +24,6 @@ const path = require('path');
  * a fixture that never arms the bot's exit probe, colours pinned to a seed */
 const KNOWN_RED = {
 	'bot_gravity_test.js': 'careerNextPad fixture never arms exitProbe (pick −1)',
-	'gravity_view_test.js': 'zone colours pinned to seed 61 (red since 0.7.1), then a +0.46 card',
 	'career_bench.js': '3 known failures, findings-pitfalls-skills.md',
 	'career_bot_bench.js': '10 known failures, findings-pitfalls-skills.md'
 };

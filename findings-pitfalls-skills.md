@@ -902,12 +902,11 @@ check them at the base commit before blaming a change, and do not "fix" them
 inside another plan: `bot_gravity_test` (asserts `careerNextPad` prefers the
 lower-G pad, but `careerReach` reads the always-on `exitProbe`, which no test
 fixture arms, so every site values `-Infinity` and the pick is −1; needs the
-fixture to arm `exitProbe`, not a law change), `gravity_view_test` (drag-zone
-colours at seed 61, red since 0.7.1 — and behind that assertion a second one:
-the visit-profit card is asserted as `+0.46` where the seed-42 page draws
-`+0.47`; a file that stops at its first red assertion says nothing about the
-ones after it, so log the known one in a scratch copy before trusting the
-rest), `career_start_fairness` ("weakest
+fixture to arm `exitProbe`, not a law change), `gravity_view_test` (fixed in 0.7.11: both red
+assertions were stale — the seed-61 blue count predates HQ pinning, the `+0.46`
+card predates the cap 3→4 change in 0.7.7; a file that stops at its first red
+assertion hides the ones after it, so check the whole file once a stale one is
+fixed), `career_start_fairness` ("weakest
 opening within the fair band" at its own seeds — seeds 4 and 6 plan at 52 % and
 25 % on this tree and on the base commit, which is the probe's own
 `assignDistinct` disagreeing with the search: the same seat 6 reads 25 % there

@@ -130,7 +130,11 @@ for (let i = 0; i < zonePix.length; i += 4) {
 	else if (r > g + 60 && r > b + 60) seen.red += 1;
 }
 const zoneTotal = zonePix.length / 4;
-assert.ok(seen.blue > 200 && seen.green > 2000 && seen.red > 500,
+/* seed 61's career keeps three repelling planets in play (-0.1, -0.55, -0.8):
+ * HQ pinning (0.6.8) lifted the two stronger ones to +1, and a body near 0
+ * can never reach alpha 0.5. The raster measures 112 blue here, against 984
+ * on the unpinned lab world, so the bar is the three-zone check, not the old 200. */
+assert.ok(seen.blue > 50 && seen.green > 2000 && seen.red > 500,
 	'blue, green and red zones all show: ' + JSON.stringify(seen));
 assert.ok(seen.red < zoneTotal / 4, 'red marks heavy planets, it does not wash the screen: ' + seen.red);
 assert.ok(seen.clear > zoneTotal / 3, 'most of the map stays clear: ' + seen.clear);
@@ -162,7 +166,8 @@ env.calls.texts.length = 0;
 env.calls.textColors.length = 0;
 env.calls.gStrokeStyles.length = 0;
 vm.runInContext('drawPlanetProfits()', env.context);
-assert.ok(env.calls.texts.includes('+0.46'), 'visit profit line drawn');
+/* 13-planet career: k = 0.0125, cap 4 (since 0.7.7), 40 s of accrual -> +0.47 */
+assert.ok(env.calls.texts.includes('+0.47'), 'visit profit line drawn');
 assert.ok(env.calls.texts.some(t => /^g [+-]/.test(t)), 'gravity line drawn after profit');
 const hq = scene.career.hq;
 assert.strictEqual(env.context.GravityGame.claimOwner(scene.game.galaxy, hq), 0);
