@@ -1147,3 +1147,38 @@ All five found in `photos/generator/gallery.py`:
   through bindtags, not through the widget tree. `bind_all` plus one containment
   walk (`winfo_containing` up the `master` chain) is the pane-scoped version of
   the same thing, and it keeps a `Text` or a `Toplevel` in the same app free.
+
+## an in-process switch beats a second process — if the module globals are the only state
+
+The gallery's "Switch project…" started a second `gallery.py` process and closed
+the first. On Windows that is a new window: it lands where the window manager
+decides, without the size, the position and the focus the user had. Nothing about
+a project needed a process — a project is a JSON that moves a handful of module
+globals — so the window now reloads its own lists instead. Three rules make that
+switch honest:
+
+- **one writer for the switch.** `launch.use_project(path)` loads and validates
+  the file, and only then assigns `PROJECT_PATH`/`CONFIG`/`BASE`/`OUTPUT_DIR`/
+  `STATE_PATH`. A bad file raises before any of them move, so the open project
+  survives a failed switch. Every function that reads those globals at call time
+  follows for free; anything that *copied* one into a module constant (the
+  gallery's `OUTPUT_DIR`, its `.trash`) has to become per-instance state.
+- **a default argument is a snapshot.** `load_state(path=STATE_PATH)` bound the
+  first project's state file at import, so after a switch the gallery still read
+  and wrote it. Defaults that name a mutable global must be `None` and resolved
+  inside the call.
+- **save before you switch, not after.** The state write belongs to the project
+  being left; calling it after the globals moved writes the old checkboxes into
+  the new project's file.
+- **a worker event can arrive from the project that is already gone.** A background
+  scan queued a tick before the switch repaints the new list from the old
+  directory. Put the project path in the event and drop the mismatches; capture
+  the output directory at the start of a download rather than reading it at the
+  moment the file is written.
+
+For the UI, give a one-of-N choice radios even when its neighbours are checkbox
+lists: the workflow and prompt-file lists are checkboxes because any number can
+be on, and a project list that looks the same but behaves differently is the
+thing that confuses. Discovery also belongs to a property of the file (a JSON
+with `name`, `prompts`, `workflows`, `output` at the top level) rather than to a
+filename pattern — the same directory holds ComfyUI graphs.

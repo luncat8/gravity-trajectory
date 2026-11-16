@@ -118,6 +118,41 @@ class GeneratorTests(unittest.TestCase):
 			self.assertEqual(launch.load_state(path), state)
 			self.assertEqual(launch._mini_toml(path.read_text()), state)
 
+	def test_project_discovery_skips_workflow_graphs(self):
+		self.assertTrue(launch.is_project_file(HERE / 'gravity.json'))
+		self.assertTrue(launch.is_project_file(HERE / 'arc-steam.json'))
+		graphs = [p for p in HERE.glob('*.json') if not launch.is_project_file(p)]
+		self.assertTrue(graphs, 'the bundled graphs must not read as projects')
+		for path in graphs:
+			self.assertFalse(launch.is_project_file(path), path.name)
+		found = launch.discover_projects()
+		self.assertIn(HERE / 'gravity.json', found)
+		self.assertIn(HERE / 'arc-steam.json', found)
+		self.assertNotIn(HERE / 'image_moss_image_t2i.json', found)
+
+	def test_use_project_moves_output_state_and_workflows(self):
+		before = (launch.PROJECT_PATH, launch.CONFIG, launch.BASE,
+			launch.OUTPUT_DIR, launch.STATE_PATH)
+		try:
+			config, base = launch.use_project(HERE / 'arc-steam.json')
+			self.assertEqual(config['name'], 'arc-steam')
+			self.assertEqual(launch.PROJECT_PATH, (HERE / 'arc-steam.json').resolve())
+			self.assertEqual(launch.OUTPUT_DIR, base / config['gallery_output'])
+			self.assertEqual(launch.STATE_PATH, launch.OUTPUT_DIR / 'state.toml')
+			self.assertEqual([p.name for p in launch.find_prompt_mds()],
+				['arc-steam-moss-prompts.md'])
+			self.assertEqual(len(launch.parse_prompts(launch.find_prompt_mds()[0])), 18)
+			# a broken project must leave the current one in place
+			with self.assertRaises(Exception):
+				launch.use_project(HERE / 'image_moss_image_t2i.json')
+			self.assertEqual(launch.CONFIG['name'], 'arc-steam')
+		finally:
+			launch.use_project(before[0])
+		self.assertEqual(launch.CONFIG, before[1])
+		self.assertEqual(launch.BASE, before[2])
+		self.assertEqual(launch.OUTPUT_DIR, before[3])
+		self.assertEqual(launch.STATE_PATH, before[4])
+
 	def test_external_project_and_workflow_directory(self):
 		with tempfile.TemporaryDirectory() as directory:
 			root = Path(directory)

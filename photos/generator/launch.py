@@ -22,6 +22,28 @@ PROJECT_PATH = Path(selection.project).resolve()
 CONFIG, BASE = core.load_project(PROJECT_PATH)
 OUTPUT_DIR = BASE / CONFIG.get('gallery_output', CONFIG['output'])
 STATE_PATH = OUTPUT_DIR / 'state.toml'
+
+
+def use_project(path):
+	"""Point the module at another project JSON and return its config.
+
+	Every function below reads these globals when it is called, which is what
+	lets an open gallery switch projects without a second process. The globals
+	are assigned only after the file loads, so a bad project leaves the current
+	one in place.
+	"""
+	global PROJECT_PATH, CONFIG, BASE, OUTPUT_DIR, STATE_PATH
+	path = Path(path).resolve()
+	config, base = core.load_project(path)
+	for key in ('name', 'prompts', 'workflows', 'output'):
+		config[key]              # a graph JSON has node ids for keys, not a project
+	PROJECT_PATH = path
+	CONFIG, BASE = config, base
+	OUTPUT_DIR = BASE / CONFIG.get('gallery_output', CONFIG['output'])
+	STATE_PATH = OUTPUT_DIR / 'state.toml'
+	return CONFIG, BASE
+
+
 DEFAULT_SERVER = core.DEFAULT_SERVER
 DEFAULT_NEGATIVE = ''
 http = core.request
@@ -58,9 +80,56 @@ def _mini_toml(text):
 	return state
 
 
-def load_state(path=STATE_PATH):
+PROJECTS_FILE = HERE / 'projects.json'   # the projects added by hand
+
+
+def is_project_file(path):
+	"""A project JSON names a project and its prompt, workflow and output
+	paths; a ComfyUI graph has node ids for keys."""
+	try:
+		text = Path(path).read_text(encoding='utf-8')
+	except OSError:
+		return False
+	if '"prompts"' not in text:	  # cheap veto before the parse
+		return False
+	try:
+		config = json.loads(text)
+	except ValueError:
+		return False
+	return isinstance(config, dict) and all(
+		key in config for key in ('name', 'prompts', 'workflows', 'output'))
+
+
+def discover_projects(added=()):
+	"""Every project JSON next to launch.py, then the ones added by hand."""
+	found = [path for path in sorted(HERE.glob('*.json')) if is_project_file(path)]
+	for path in added:
+		path = Path(path)
+		if path not in found and is_project_file(path):
+			found.append(path)
+	return found
+
+
+def load_added_projects():
+	try:
+		text = PROJECTS_FILE.read_text(encoding='utf-8')
+	except OSError:
+		return []
+	try:
+		return [Path(entry) for entry in json.loads(text)]
+	except ValueError:
+		return []
+
+
+def save_added_projects(paths):
+	PROJECTS_FILE.write_text(
+		json.dumps([str(path) for path in paths], indent='	') + '\n',
+		encoding='utf-8')
+
+
+def load_state(path=None):
 	"""Read state.toml -> dict of sections. {} if missing or unreadable."""
-	path = Path(path)
+	path = Path(path or STATE_PATH)   # read now: a project switch moves it
 	if not path.exists():
 		return {}
 	text = path.read_text(encoding="utf-8")
@@ -74,9 +143,10 @@ def load_state(path=STATE_PATH):
 		return {}
 
 
-def save_state(state, path=STATE_PATH):
+def save_state(state, path=None):
 	"""Write checkbox state as TOML (kept to the subset _mini_toml reads)."""
-	Path(path).parent.mkdir(parents=True, exist_ok=True)
+	path = Path(path or STATE_PATH)   # read now: a project switch moves it
+	path.parent.mkdir(parents=True, exist_ok=True)
 	lines = []
 	for section in ("app", "prompts", "workflows", "jobs"):
 		sec = state.get(section) or {}
@@ -98,7 +168,7 @@ def save_state(state, path=STATE_PATH):
 				continue
 			lines.append(f"{json.dumps(key, ensure_ascii=False)} = {shown}")
 		lines.append("")
-	Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+	path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def slg_slot(workflow):

@@ -21,9 +21,11 @@ python photos/generator/comfy_queue.py --workflow moss --no-refine --wait
 python photos/generator/comfy_queue.py --workflow video --situation video --wait
 ```
 
-`gallery.bat` / `gallery.sh` are desktop shortcuts. **Switch project…** opens a
-project JSON in a new gallery window and closes the current one after saving.
-This is a local desktop application, not a browser UI.
+`gallery.bat` / `gallery.sh` are desktop shortcuts. The sidebar lists every
+project it can find; clicking one opens it **in the same window** - the process,
+the window size, its position and the focus all stay put, and only the lists and
+the cards reload. **+ add project…** takes a project JSON from anywhere else and
+keeps it in the list. This is a local desktop application, not a browser UI.
 
 ## Project boundary
 
@@ -45,7 +47,11 @@ Example for a future separate generator checkout:
 
 - `gravity.json` is the default; it includes the existing photo captions and
   the additional helper-joke captions. `arc-steam.json` selects the preserved
-  mining-game captions and MOSS workflow.
+  mining-game captions and MOSS workflow. Both are found by the gallery, because
+  a project JSON is any JSON next to `launch.py` with `name`, `prompts`,
+  `workflows` and `output` keys - a workflow graph has node ids for keys.
+- Projects added by hand are remembered in `photos/generator/projects.json`
+  (git-ignored, local to the checkout).
 - `output` is the direct batch destination. `gallery_output` holds candidates,
   gallery state and gallery batch manifests. Copy a winner to its game filename.
 - Every API-format workflow JSON in `workflows` is discovered automatically.

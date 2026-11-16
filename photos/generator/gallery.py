@@ -45,8 +45,6 @@ try:
 except Exception:
 	PIL_OK = False
 
-OUTPUT_DIR = launch.OUTPUT_DIR
-TRASH_DIR = OUTPUT_DIR / ".trash"
 THUMB_W, THUMB_H = 170, 120
 THUMB_GAP = 10     # between two thumbnails of one row
 LIST_PAD = 10      # gutter between a card and the list viewport edge
@@ -260,7 +258,7 @@ class PromptCard(tk.Frame):
 		self.app.enqueue_variations(self.key)
 
 	def _copy_path(self):
-		path = OUTPUT_DIR / self.job["filename"]
+		path = self.app.out_dir / self.job["filename"]
 		self.app.clipboard_clear()
 		self.app.clipboard_append(str(path))
 		self.app.status(f"copied {path}")
@@ -814,6 +812,12 @@ class App(tk.Tk):
 		fam = tkfont.nametofont("TkDefaultFont").actual("family")
 		self.F = lambda s, b=False: (fam, s, "bold") if b else (fam, s)
 
+		# ---------------------------------------------------------- project
+		self.project_path = Path(launch.PROJECT_PATH)
+		self.added_projects = launch.load_added_projects()
+		self.out_dir = launch.OUTPUT_DIR
+		self.trash_dir = self.out_dir / ".trash"
+
 		# ------------------------------------------------------------ state
 		self.st = launch.load_state()
 		self.st.setdefault("app", {})
@@ -821,23 +825,7 @@ class App(tk.Tk):
 			self.st["app"].setdefault(k, v)
 
 		# ------------------------------------------------------- discovery
-		self.md_paths = launch.find_prompt_mds()
-		self.wf_paths = launch.find_workflows()
-		self.wf_stems = {p.stem for p in self.wf_paths}
-		self.wf_templates = {}
-		self.jobs, self.job_order, self.job_md = {}, [], {}
-		self.md_jobs = {p.name: [] for p in self.md_paths}
-		for md in self.md_paths:
-			for job in launch.parse_prompts(md):
-				key = launch.job_state_key(md, job)
-				if key in self.jobs:  # duplicate slug in one file
-					continue
-				self.jobs[key] = job
-				self.job_md[key] = md.name
-				self.job_order.append(key)
-				self.md_jobs[md.name].append(key)
-		self.stem_owner = {self.jobs[key]["slug"].replace(" ", "_"): key
-						   for key in self.job_order}
+		self._load_project_files()
 
 		# ---------------------------------------------------------- runtime
 		self.ev = queue.Queue()
@@ -880,6 +868,28 @@ class App(tk.Tk):
 
 		threading.Thread(target=self._worker, daemon=True).start()
 		self.after(150, self._drain)
+
+	# ============================================================ project
+	def _load_project_files(self):
+		"""Read what the project names: its prompt markdown, its workflows and
+		the job table they produce - the list the cards and the sidebar show."""
+		self.md_paths = launch.find_prompt_mds()
+		self.wf_paths = launch.find_workflows()
+		self.wf_stems = {p.stem for p in self.wf_paths}
+		self.wf_templates = {}
+		self.jobs, self.job_order, self.job_md = {}, [], {}
+		self.md_jobs = {p.name: [] for p in self.md_paths}
+		for md in self.md_paths:
+			for job in launch.parse_prompts(md):
+				key = launch.job_state_key(md, job)
+				if key in self.jobs:  # duplicate slug in one file
+					continue
+				self.jobs[key] = job
+				self.job_md[key] = md.name
+				self.job_order.append(key)
+				self.md_jobs[md.name].append(key)
+		self.stem_owner = {self.jobs[key]["slug"].replace(" ", "_"): key
+						   for key in self.job_order}
 
 	# ================================================================ UI
 	def mkbtn(self, parent, text, cmd, primary=False, width=None):
@@ -942,55 +952,13 @@ class App(tk.Tk):
 		side_wrap.pack_propagate(False)
 		side = self.side = ScrollArea(side_wrap, bg=PANEL)
 		side.pack(fill="both", expand=True)
-		F9 = self.F(9)
-		box = side.body
-
-		wf_box = tk.LabelFrame(box, text=" Workflows ", bg=PANEL, fg=FG,
-							   bd=0, highlightthickness=1,
-							   highlightbackground=EDGE, padx=8, pady=6)
-		wf_box.pack(fill="x", padx=10, pady=(10, 0))
-		if not self.wf_paths:
-			tk.Label(wf_box, text="none found - drop a ComfyUI API-format "
-					 "*.json next to gallery.py", bg=PANEL, fg=FAINT,
-					 font=F9, wraplength=240, justify="left").pack(anchor="w")
-		self.wf_stats = {}
-		for p in self.wf_paths:
-			var = tk.BooleanVar(value=self.wf_enabled(p.name))
-			tk.Checkbutton(wf_box, text=p.name, variable=var,
-						   command=lambda p=p, v=var: self._wf_toggle(p, v),
-						   bg=PANEL, fg=FG, selectcolor=SELECT,
-						   activebackground=PANEL, anchor="w", bd=0,
-						   font=F9).pack(fill="x", anchor="w")
-			st = tk.Label(wf_box, text="", bg=PANEL, fg=FAINT, font=self.F(8))
-			st.pack(anchor="w", padx=(20, 0))
-			self.wf_stats[p.name] = (var, st)
-
-		md_box = tk.LabelFrame(box, text=" Prompt files ", bg=PANEL, fg=FG,
-							   bd=0, highlightthickness=1,
-							   highlightbackground=EDGE, padx=8, pady=6)
-		md_box.pack(fill="x", padx=10, pady=(10, 0))
-		if not self.md_paths:
-			tk.Label(md_box, text="none found - drop a prompts *.md with "
-					 "### N · category · slug -> `file` headings",
-					 bg=PANEL, fg=FAINT, font=F9, wraplength=240,
-					 justify="left").pack(anchor="w")
-		self.md_stats = {}
-		for p in self.md_paths:
-			var = tk.BooleanVar(value=self.md_enabled(p.name))
-			tk.Checkbutton(md_box, text=p.name, variable=var,
-						   command=lambda p=p, v=var: self._md_toggle(p, v),
-						   bg=PANEL, fg=FG, selectcolor=SELECT,
-						   activebackground=PANEL, anchor="w", bd=0,
-						   font=F9).pack(fill="x", anchor="w")
-			st = tk.Label(md_box, text="", bg=PANEL, fg=FAINT, font=self.F(8))
-			st.pack(anchor="w", padx=(20, 0))
-			self.md_stats[p.name] = (var, st)
-
-		self.mkbtn(box, "Switch project…", self.switch_project).pack(
-			fill="x", padx=10, pady=(12, 0))
-		self.side_note = tk.Label(box, text="", bg=PANEL, fg=FAINT,
+		self.side_lists = tk.Frame(side.body, bg=PANEL)
+		self.side_lists.pack(fill="x")
+		# the note is not project-specific, so it outlives a rebuild of the lists
+		self.side_note = tk.Label(side.body, text="", bg=PANEL, fg=FAINT,
 								  font=self.F(8), justify="left", wraplength=250)
 		self.side_note.pack(fill="x", padx=10, pady=(12, 10))
+		self._build_side_lists()
 
 		# ---------------------------------------------------------- photos
 		right = tk.Frame(self, bg=BG)
@@ -1003,6 +971,83 @@ class App(tk.Tk):
 								  padx=10, pady=3, font=self.F(8),
 								  text=self.hint_text())
 		self.list_hint.pack(side="bottom", fill="x")
+
+	# ------------------------------------------------------------ sidebar
+	def _build_side_lists(self):
+		"""The sidebar's three lists - projects, workflows, prompt files. All
+		three follow the open project, so a switch rebuilds the block as one."""
+		for widget in self.side_lists.winfo_children():
+			widget.destroy()
+		self.wf_stats, self.md_stats = {}, {}
+		self._build_project_box(self.side_lists)
+		self._build_workflow_box(self.side_lists)
+		self._build_prompt_box(self.side_lists)
+
+	def _side_box(self, parent, title):
+		box = tk.LabelFrame(parent, text=f" {title} ", bg=PANEL, fg=FG, bd=0,
+							highlightthickness=1, highlightbackground=EDGE, padx=8, pady=6)
+		box.pack(fill="x", padx=10, pady=(10, 0))
+		return box
+
+	def _build_project_box(self, parent):
+		"""One row per project JSON found next to gallery.py or added by hand.
+
+		The workflow and prompt-file lists are checkboxes because any number of
+		entries can be on at once; exactly one project is open, so its rows are
+		radios - the same list, the honest control.
+		"""
+		box = self._side_box(parent, "Project")
+		paths = launch.discover_projects(self.added_projects)
+		if self.project_path not in paths:
+			paths.insert(0, self.project_path)
+		self.project_var = tk.StringVar(value=str(self.project_path))
+		for path in paths:
+			row = tk.Radiobutton(box, text=path.stem, variable=self.project_var,
+								 value=str(path), command=lambda p=path: self.switch_project(p),
+								 bg=PANEL, fg=FG, selectcolor=SELECT,
+								 activebackground=PANEL, anchor="w", bd=0,
+								 font=self.F(9))
+			row.pack(fill="x", anchor="w")
+			Tooltip(row, str(path))
+		self.mkbtn(box, "+ add project…", self.add_project).pack(
+			fill="x", pady=(6, 0))
+
+	def _build_workflow_box(self, parent):
+		F9 = self.F(9)
+		box = self._side_box(parent, "Workflows")
+		if not self.wf_paths:
+			tk.Label(box, text="none found - drop a ComfyUI API-format "
+					 "*.json next to gallery.py", bg=PANEL, fg=FAINT,
+					 font=F9, wraplength=240, justify="left").pack(anchor="w")
+		for p in self.wf_paths:
+			var = tk.BooleanVar(value=self.wf_enabled(p.name))
+			tk.Checkbutton(box, text=p.name, variable=var,
+						   command=lambda p=p, v=var: self._wf_toggle(p, v),
+						   bg=PANEL, fg=FG, selectcolor=SELECT,
+						   activebackground=PANEL, anchor="w", bd=0,
+						   font=F9).pack(fill="x", anchor="w")
+			st = tk.Label(box, text="", bg=PANEL, fg=FAINT, font=self.F(8))
+			st.pack(anchor="w", padx=(20, 0))
+			self.wf_stats[p.name] = (var, st)
+
+	def _build_prompt_box(self, parent):
+		F9 = self.F(9)
+		box = self._side_box(parent, "Prompt files")
+		if not self.md_paths:
+			tk.Label(box, text="none found - drop a prompts *.md with "
+					 "### N · category · slug -> `file` headings",
+					 bg=PANEL, fg=FAINT, font=F9, wraplength=240,
+					 justify="left").pack(anchor="w")
+		for p in self.md_paths:
+			var = tk.BooleanVar(value=self.md_enabled(p.name))
+			tk.Checkbutton(box, text=p.name, variable=var,
+						   command=lambda p=p, v=var: self._md_toggle(p, v),
+						   bg=PANEL, fg=FG, selectcolor=SELECT,
+						   activebackground=PANEL, anchor="w", bd=0,
+						   font=F9).pack(fill="x", anchor="w")
+			st = tk.Label(box, text="", bg=PANEL, fg=FAINT, font=self.F(8))
+			st.pack(anchor="w", padx=(20, 0))
+			self.md_stats[p.name] = (var, st)
 
 	def hint_text(self):
 		if self.mode == self.GRID:
@@ -1218,10 +1263,10 @@ class App(tk.Tk):
 		"""The output dir in one pass: name -> (mtime, size). Files younger
 		than SETTLE_S are skipped, because a writer may still be filling them."""
 		out = {}
-		if not OUTPUT_DIR.exists():
+		if not self.out_dir.exists():
 			return out
 		now = time.time()
-		for p in OUTPUT_DIR.iterdir():
+		for p in self.out_dir.iterdir():
 			if not p.is_file() or p.suffix.lower() not in IMAGE_EXTS:
 				continue
 			try:
@@ -1246,7 +1291,7 @@ class App(tk.Tk):
 			by_key.setdefault(key, []).append((mtime, name))
 		for key, rows in by_key.items():
 			rows.sort(key=lambda r: (seed_of(r[1]) is not None, r[0], r[1]))
-			by_key[key] = [OUTPUT_DIR / name for _mtime, name in rows]
+			by_key[key] = [self.out_dir / name for _mtime, name in rows]
 		self.files_by_key = by_key
 		self.orphans = orphans
 
@@ -1325,12 +1370,13 @@ class App(tk.Tk):
 		path = Path(path)
 		if not path.exists():
 			return
+		trash = self.trash_dir
 		try:
-			TRASH_DIR.mkdir(parents=True, exist_ok=True)
-			dest = TRASH_DIR / path.name
+			trash.mkdir(parents=True, exist_ok=True)
+			dest = trash / path.name
 			i = 1
 			while dest.exists():
-				dest = TRASH_DIR / f"{path.stem}-{i}{path.suffix}"
+				dest = trash / f"{path.stem}-{i}{path.suffix}"
 				i += 1
 			path.rename(dest)
 		except Exception as e:
@@ -1349,7 +1395,7 @@ class App(tk.Tk):
 		if not src.exists():
 			self.status("trashed file is gone")
 			return
-		dest = OUTPUT_DIR / src.name
+		dest = self.out_dir / src.name
 		if dest.exists():
 			self.status(f"cannot undo: {src.name} already exists - left in .trash")
 			return
@@ -1463,7 +1509,7 @@ class App(tk.Tk):
 								"A batch is already running in its own window.")
 			return
 		cmd = [sys.executable, str(HERE / "launch.py"),
-			   "--project", str(launch.PROJECT_PATH)]
+			   "--project", str(self.project_path)]
 		if force:
 			cmd.append("--force")
 		try:
@@ -1486,14 +1532,14 @@ class App(tk.Tk):
 
 	def open_output(self):
 		try:
-			OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+			self.out_dir.mkdir(parents=True, exist_ok=True)
 			if sys.platform.startswith("win"):
-				os.startfile(str(OUTPUT_DIR))
+				os.startfile(str(self.out_dir))
 			elif sys.platform == "darwin":
-				subprocess.Popen(["open", str(OUTPUT_DIR)])
+				subprocess.Popen(["open", str(self.out_dir)])
 			else:
-				subprocess.Popen(["xdg-open", str(OUTPUT_DIR)])
-			self.status(f"opened {OUTPUT_DIR}")
+				subprocess.Popen(["xdg-open", str(self.out_dir)])
+			self.status(f"opened {self.out_dir}")
 		except Exception as e:
 			self.status(f"could not open folder: {e}")
 
@@ -1501,28 +1547,92 @@ class App(tk.Tk):
 		SettingsDialog(self)
 
 	def refresh(self):
-		self._last_scan = None  # force the worker to report a scan
+		"""Re-read the output dir and repaint: the Refresh button, and the tail
+		of a project switch."""
+		for pending in (self._resize_job, self._filter_job):
+			if pending:
+				self.after_cancel(pending)
+		self._resize_job = self._filter_job = None
+		self._last_scan = None  # force the worker to report a scan too
 		self._thumb_cache.clear()
 		self._thumb_order = []
 		self._grid_photo = {}
+		self.index_scan(self.scan_output())
 		self.rebuild_cards()
 		self.status("refreshed")
 
-	def switch_project(self):
-		path = filedialog.askopenfilename(title="Open generator project",
-			initialdir=HERE, filetypes=[("Project JSON", "*.json")])
+	def switch_project(self, path):
+		"""Open another project in this window.
+
+		It used to start a second gallery process and close this one, which on
+		Windows means a new window: it lands where the window manager decides,
+		without the focus, the size and the position the user had. Nothing about
+		a project needs a process - launch.py's globals are the only state - so
+		the window reloads its own lists instead.
+		"""
+		path = Path(path).resolve()
+		if path == self.project_path:
+			return
+		self.save_state_now()          # the state the project is left with
+		try:
+			config, _base = launch.use_project(path)
+		except Exception as error:      # launch.use_project validates the file
+			messagebox.showerror("Invalid project", f"{path.name}\n{error}")
+			self.project_var.set(str(self.project_path))
+			return
+		self._close_viewer()
+		self.pending.clear()           # those jobs belong to the other project
+		self.pending_fails.clear()
+		self.trash_stack.clear()
+		self.project_path = path
+		self.out_dir = launch.OUTPUT_DIR
+		self.trash_dir = self.out_dir / ".trash"
+		self.title(f"{config['name']} · Prompt gallery")
+		self.project_lbl.configure(text=config["name"])
+		self.st = launch.load_state()
+		self.st.setdefault("app", {})
+		for key, value in DEFAULTS.items():
+			self.st["app"].setdefault(key, value)
+		self.spin_var.set(int(self.cfg("variations")))
+		self.server_ok = None
+		self.update_server_label()
+		self.queue_lbl.configure(text="queue -")
+		self.update_pending_label()
+		self.selected = -1
+		self.filter_var.set("")
+		self._load_project_files()
+		self._build_side_lists()
+		self.refresh()
+		self.list_area.move_to(0)
+		self.status(f"{config['name']}: {len(self.job_order)} prompts · "
+					f"{len(self.wf_paths)} workflows · {self.out_dir}")
+
+	def _close_viewer(self):
+		viewer = getattr(self, "_viewer", None)
+		if viewer is not None and viewer.winfo_exists():
+			viewer.destroy()
+		self._viewer = None
+
+	def add_project(self):
+		"""A project JSON discovery did not find: ask for it, keep it in the
+		list next to the discovered ones and open it."""
+		path = filedialog.askopenfilename(
+			title="Add a project", initialdir=str(self.project_path.parent),
+			filetypes=[("Project JSON", "*.json")])
 		if not path:
 			return
-		try:
-			config, _base = launch.core.load_project(path)
-			for key in ("name", "prompts", "workflows", "output"):
-				config[key]
-		except Exception as error:
-			messagebox.showerror("Invalid project", str(error))
+		path = Path(path).resolve()
+		if not launch.is_project_file(path):
+			messagebox.showerror("Not a project",
+								 f"{path.name} has no name/prompts/workflows/output")
 			return
-		self.save_state_now()
-		subprocess.Popen([sys.executable, str(HERE / "gallery.py"), "--project", path])
-		self._on_close()
+		if path not in self.added_projects:
+			self.added_projects.append(path)
+			launch.save_added_projects(self.added_projects)
+		if path == self.project_path:  # already open: the list still gains the row
+			self._build_side_lists()
+			return
+		self.switch_project(path)
 
 	def open_viewer(self, key, path):
 		if Path(path).suffix.lower() in VIDEO_EXTS:
@@ -1808,10 +1918,12 @@ class App(tk.Tk):
 					if saved:
 						self.ev.put(("downloaded", jkey, saved))
 				# 2) rescan the output dir
-				scan = self.scan_output()
+				# tag the scan with the project it was taken from, so a tick
+				# that started before a switch cannot repaint the new list
+				project, scan = self.project_path, self.scan_output()
 				if scan != self._last_scan:
 					self._last_scan = scan
-					self.ev.put(("rescan", scan))
+					self.ev.put(("rescan", project, scan))
 				# 3) ping the server and read the queue depth
 				if time.time() - last_ping >= 5:
 					last_ping = time.time()
@@ -1821,12 +1933,13 @@ class App(tk.Tk):
 			time.sleep(1.0)
 
 	def _worker_download(self, server, jkey, seed, imgs, workflow):
+		out_dir = self.out_dir            # a switch mid-download keeps this one
 		stem = self.jobs[jkey]["slug"].replace(" ", "_")
 		saved = []
 		for i, info in enumerate(imgs):
 			ext = Path(info["filename"]).suffix or ".png"
 			suffix = "" if len(imgs) == 1 else f"_{i + 1}"
-			out = OUTPUT_DIR / f"{stem}__s{seed}__{workflow}{suffix}{ext}"
+			out = out_dir / f"{stem}__s{seed}__{workflow}{suffix}{ext}"
 			if out.exists():
 				continue
 			try:
@@ -1865,7 +1978,10 @@ class App(tk.Tk):
 	def _handle_event(self, item):
 		kind = item[0]
 		if kind == "rescan":
-			self.index_scan(item[1])
+			_, project, scan = item
+			if project != self.project_path:   # a scan of the project left behind
+				return
+			self.index_scan(scan)
 			self.sync_cards()
 		elif kind == "downloaded":
 			_, jkey, names = item

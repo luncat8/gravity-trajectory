@@ -7,3 +7,5 @@ __pycache__/
 .vscode/
 
 photos/generator/output/
+
+photos/generator/projects.json
