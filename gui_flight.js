@@ -219,6 +219,7 @@ function flightRefuel() {
 	launchState = -1;
 	dirty = true;
 	refreshGameUi();
+	careerRecordingCapture(true);
 	return true;
 }
 

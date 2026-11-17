@@ -1596,37 +1596,51 @@ const evacStatus = career.ended === pageGame.CAREER_OPEN
 	: career.ended === pageGame.CAREER_BROKE ? 'broke · career over' : 'complete · career over';
 check(kui.get('cargoStatus').textContent === evacStatus,
 	'after evacuation: expected ' + evacStatus + ', got ' + kui.get('cargoStatus').textContent);
+function copiedCareerState(env) {
+	const text = env.elements.get('gameLink').value;
+	const codec = env.context.CareerReplay;
+	const encoded = text.startsWith(codec.PREFIX) ? text.slice(codec.PREFIX.length)
+		: new URLSearchParams(text.slice(text.indexOf('#') + 1)).get('replay');
+	const record = encoded && codec.decode(encoded);
+	if (!record) return null;
+	let state = codec.copy(record.start);
+	for (const frame of record.frames) state = codec.apply(state, frame.d);
+	return state;
+}
 careerEnv.click('gameCopy');
-check(kui.get('gameLink').value.endsWith('#game=1&seed=42&rate=1&rule=career&bot=normal'),
-	'career link keeps the flying rivals: ' + kui.get('gameLink').value);
+const sharedCareer = copiedCareerState(careerEnv);
+check(sharedCareer && sharedCareer.seed === 42 && sharedCareer.state.careers.length === 3,
+	'career replay keeps the shared run');
 careerEnv.setValue('expGravity', 0.8);
 careerEnv.setValue('expForce', 1.5);
 careerEnv.click('gameCopy');
 const expLink = kui.get('gameLink').value;
-check(expLink.endsWith('#game=1&seed=42&rate=1&rule=career&bot=normal&gs=0.8&fs=1.5'),
-	'career link must carry the experimental scales: ' + expLink);
-careerEnv.setHash(expLink.slice(expLink.indexOf('#')));
+const expCareer = copiedCareerState(careerEnv);
+check(expCareer && expCareer.gs === 0.8 && expCareer.fs === 1.5,
+	'career replay must carry the experimental scales');
+careerEnv.setHash('#game=1&seed=42&rate=1&rule=career&bot=normal&gs=0.8&fs=1.5');
 careerEnv.runFrames(2, 16.0);
 check(kCargo.gravityScale === 0.8 && kCargo.forceScale === 1.5 &&
 	kui.get('expGravity').value === '0.8' && kui.get('expForce').value === '1.5' &&
 	kui.get('expGravityLabel').textContent === '×0.80',
 	'reloaded link did not restore the experimental scales: ' + kui.get('expTag').textContent);
-console.log('experimental link:', expLink.slice(expLink.indexOf('#')), '->', kui.get('expTag').textContent);
+console.log('experimental replay:', expLink.length, 'characters ->', kui.get('expTag').textContent);
 /* the stay-pay is career world state as well: the link carries it, a reload restores it */
 careerEnv.toggle('expHarvest');
 check(kui.get('expHarvest').checked && kGame.harvestMode() === kGame.HARVEST_TICK,
 	'stay-pay box did not switch the collection rule: ' + kui.get('expTag').textContent);
 careerEnv.click('gameCopy');
 const tickLink = kui.get('gameLink').value;
-check(tickLink.endsWith('&gs=0.8&fs=1.5&ht=1'), 'career link must carry the stay-pay: ' + tickLink);
-careerEnv.setHash(tickLink.slice(tickLink.indexOf('#')));
+const tickCareer = copiedCareerState(careerEnv);
+check(tickCareer && tickCareer.ht === true, 'career replay must carry the stay-pay');
+careerEnv.setHash('#game=1&seed=42&rate=1&rule=career&bot=normal&gs=0.8&fs=1.5&ht=1');
 careerEnv.runFrames(2, 16.0);
 check(kui.get('expHarvest').checked && kGame.harvestMode() === kGame.HARVEST_TICK,
 	'reloaded link did not restore the stay-pay: ' + kui.get('expTag').textContent);
 careerEnv.toggle('expHarvest');
 check(!kui.get('expHarvest').checked && kGame.harvestMode() === kGame.HARVEST_ENTRY,
 	'stay-pay did not switch back to the entry rule');
-console.log('stay-pay link:', tickLink.slice(tickLink.indexOf('#')));
+console.log('stay-pay replay:', tickLink.length, 'characters');
 careerEnv.setValue('expGravity', 1);
 careerEnv.setValue('expForce', 1);
 careerEnv.choose('modeLab');
@@ -1654,7 +1668,8 @@ check(cheatCareer.cheat === 'endgame' && cheatCareer.padCount === 12 &&
 check(cheatEnv.elements.get('ruleTag').textContent === 'career · 12 / 13 pads · endgame',
 	'cheat rule tag: ' + cheatEnv.elements.get('ruleTag').textContent);
 cheatEnv.click('gameCopy');
-check(cheatEnv.elements.get('gameLink').value.endsWith('&rule=career&cheat=endgame'), 'cheat survives the link');
+const copiedCheat = copiedCareerState(cheatEnv);
+check(copiedCheat && copiedCheat.cheat === 'endgame', 'cheat survives the replay');
 const badCheat = loadPage({ hash: '#game=1&seed=42&rate=1&rule=tour&cheat=endgame', clipboard: false });
 badCheat.runFrames(2, 16.0);
 check(badCheat.elements.get('modeTag').textContent === 'invalid link · back to lab' &&
@@ -2451,8 +2466,7 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	const burnNotice = nUi.get('careerMsg').textContent;
 	check(!nUi.get('careerMsg').hidden && burnNotice.startsWith('bot burn Δv '),
 		'bot burn notice: ' + burnNotice);
-	/* a career link deliberately carries no shots, so the shot record itself is
-	 * the replay source: one entry per burn, at the step it fired */
+	/* The shot record keeps one entry per burn, at the step it fired. */
 	const steps = botBurnShot.burns.map(b => b.step);
 	check(steps.length === new Set(steps).size && steps.length <= 2,
 		'the bot burn was recorded twice or past the flight budget: ' + steps.join(','));

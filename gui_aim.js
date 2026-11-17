@@ -455,6 +455,7 @@ function fire(abortStep) {
 	blockedPlanet = -1;
 	hudAt = -Infinity;
 	if (game.on) refreshGameUi();
+	if (careerRule()) careerRecordingCapture(true);
 }
 
 /* the launch state must not depend on frame timing, so roster and clock are re-read here */
@@ -500,6 +501,7 @@ function setSource(next) {
 	if (next === mode && cargoSim.fillField) return;
 	cancelHelperForChange('gravity source');
 	mode = next;
+	careerRecordingMark();
 	srcPlanetsEl.checked = mode === MODE_PLANETS;
 	srcPortsEl.checked = mode === MODE_PORTS;
 	if (game.on && routeRule() && !replay.on) {
@@ -515,6 +517,7 @@ function setSource(next) {
 	if (activeSim().status === STATUS_FLYING) dirty = true;
 	hudAt = -Infinity;
 	syncSeedUrl(replay.on);
+	careerRecordingCapture(true);
 }
 
 

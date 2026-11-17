@@ -522,7 +522,7 @@ let routeBotVersion = -1;
 let playerBotSyncNeeded = true;
 /* replay of a link: shots fired in order, aim shown then flown; verdict after the last */
 const replay = { on: false, shots: null, end: null, index: 0, phase: PHASE_GAP, until: 0,
-	speed: REPLAY_DEFAULT, verdict: '', route: false, length: null,
+	speed: REPLAY_DEFAULT, verdict: '', route: false, career: false, length: null,
 	activeShot: null, burnIndex: 0 };
 
 function makeGlow(fill) {
@@ -672,7 +672,7 @@ if (careerBoxEl) {
 if (careerWaitBtn) careerWaitBtn.addEventListener('click', () => careerAct({ act: 'wait' }));
 if (launchBuildBtn) {
 	launchBuildBtn.addEventListener('click', () => {
-		if (!careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return;
+		if (replay.on || !careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return;
 		const career = playerCareer();
 		if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
 			career.pads[career.at].catapult !== null) return;
@@ -773,7 +773,9 @@ if (planetCountInputEl) {
 		const value = Math.round(Number(planetCountInputEl.value));
 		if (!Number.isFinite(value) || !setPlanetUniverseSize(value)) {
 			planetCountInputEl.value = planetCount;
+			return;
 		}
+		careerRecordingCapture(true);
 	});
 }
 if (playerCountDownEl) playerCountDownEl.addEventListener('click', () => setPlayerCount(-1));
@@ -795,7 +797,7 @@ replaySkipBtn.addEventListener('click', skipReplay);
 playSlowerBtn.addEventListener('click', () => stepPlayback(-1));
 playFasterBtn.addEventListener('click', () => stepPlayback(1));
 playResetBtn.addEventListener('click', resetPlayback);
-window.addEventListener('hashchange', loadLink);
+window.addEventListener('hashchange', () => loadLink());
 if (helpBtn) {
 	helpBtn.addEventListener('click', () => setHelpOpen(!helpPinned));
 	helpBtn.addEventListener('pointerenter', event => {

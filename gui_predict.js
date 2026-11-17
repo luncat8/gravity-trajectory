@@ -257,6 +257,7 @@ function refreshExperimentUi() {
 
 /* one entry point for the sliders and for a link that carries the scales */
 function setExperimentScales(nextGravity, nextForce, nextHarvest, nextWear) {
+	careerRecordingMark();
 	gravityScale = Math.round(nextGravity * 100) / 100;
 	forceScale = Math.round(nextForce * 100) / 100;
 	if (nextWear !== undefined) spaceWearScale = Math.round(nextWear * 100) / 100;
@@ -275,11 +276,13 @@ function onHarvestChange() {
 	const next = Boolean(expHarvestEl && expHarvestEl.checked) && careerRule();
 	if (next !== harvestTick) cancelHelperForChange('stay-pay');
 	harvestTick = next;
+	careerRecordingMark();
 	applyExperiment();
 	refreshExperimentUi();
 	if (careerRule()) refreshLaunchList(true);
 	dirty = true;
 	hudAt = -Infinity;
+	careerRecordingCapture(true);
 }
 
 /* Ageing affects every company and any active preview, not the field itself. */
@@ -288,12 +291,14 @@ function onWearInput() {
 	const next = Math.round(Number(expWearEl.value) * 100) / 100;
 	if (next === spaceWearScale) return;
 	spaceWearScale = next;
+	careerRecordingMark();
 	cancelHelperForChange('space wear');
 	GravityGame.setSpaceWearScale(spaceWearScale);
 	refreshExperimentUi();
 	refreshLaunchList(true);
 	dirty = true;
 	hudAt = -Infinity;
+	careerRecordingCapture(true);
 }
 
 /* a pad can lose its ceiling while a shot is armed (drained battery, lowered
@@ -321,6 +326,7 @@ function onExperimentInput() {
 	if (careerRule()) refreshCareerPanel();
 	dirty = true;
 	hudAt = -Infinity;
+	careerRecordingCapture(true);
 }
 
 /* the route planner scores traced plans, so its world must not change under
@@ -435,11 +441,14 @@ function syncCareerPause() {
 }
 
 function setCareerPaused(next, slot = activeSlotIndex()) {
+	if (replay.on && replay.career) return;
+	careerRecordingMark();
 	if (!pauseAllowed()) return;
 	slotPaused[slot] = Boolean(next) && !slotIsBot(slot);
 	if (!next && slot === activeSlotIndex()) clearBurnAim();
 	syncCareerPause();
 	refreshAimLabel();
+	careerRecordingCapture(true);
 }
 
 /* why the armed shot cannot fire from its pad right now ('' when it can) */

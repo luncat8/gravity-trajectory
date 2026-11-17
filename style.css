@@ -184,6 +184,21 @@ body {
 	pointer-events: auto;
 }
 
+#cargoHud > .panelHead {
+	flex-wrap: wrap;
+}
+
+#cargoHud > .panelHead .headBtns {
+	flex-wrap: wrap;
+}
+
+.runHint {
+	margin: 5px 0 7px;
+	color: var(--dim);
+	font-size: 11px;
+	line-height: 1.4;
+}
+
 /* H is a non-modal card next to the flight panel; answers are plain text so
  * the live numbers remain selectable and screen-reader visible. */
 .commsButton {
@@ -210,6 +225,26 @@ body {
 	vertical-align: bottom;
 	white-space: nowrap;
 	font-size: 10px;
+}
+
+.commsCall {
+	top: 14px;
+	right: 322px;
+	width: min(300px, calc(100vw - 350px));
+	z-index: 7;
+	border-color: rgba(255, 207, 110, 0.72);
+	background: rgba(28, 21, 12, 0.97);
+	color: var(--accent);
+}
+
+.commsCall .actions {
+	justify-content: flex-start;
+	margin-top: 6px;
+}
+
+#commsCallReason {
+	margin-top: 3px;
+	color: var(--text);
 }
 
 .commsCard {
@@ -1769,6 +1804,22 @@ polyline.sciKnownHull {
 
 /* the bot log is a read-only snapshot: file:// has no clipboard permission,
  * so the panel itself is the copy source, not just a fallback */
+.replayImport {
+	margin: 7px 0;
+	color: var(--dim);
+	font-size: 11px;
+}
+
+.replayImport summary {
+	cursor: pointer;
+	color: var(--mint);
+}
+
+.replayImport label {
+	display: block;
+	margin: 5px 0;
+}
+
 .botLogBox {
 	margin-top: 6px;
 }
@@ -2449,6 +2500,13 @@ polyline.sciKnownHull {
 @media (max-width: 820px) {
 	.commsTag {
 		max-width: 54px;
+	}
+
+	.commsCall {
+		top: 8px;
+		right: 8px;
+		left: 8px;
+		width: auto;
 	}
 
 	.commsCard {

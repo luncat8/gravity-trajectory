@@ -8,6 +8,7 @@
 'use strict';
 
 function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
+	careerRecordingClear();
 	const wasCareer = careerRule();
 	cancelCareerWait();
 	for (let s = 0; s < slotTurrets.length; s++) cancelTurret(slotTurrets[s]);
@@ -81,6 +82,7 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	gameLinkEl.hidden = true;
 	hideBotLog();
 	refreshGameUi();
+	careerRecordingReset();
 	syncSeedUrl();
 }
 
@@ -157,7 +159,7 @@ function setPlayMode(next) {
  * one.
  */
 function setBot(next) {
-	if (next === game.bot) return;
+	if (replay.on || next === game.bot) return;
 	game.bot = next;
 	if (!game.on) {
 		syncBotRadios();
@@ -183,6 +185,7 @@ function setBot(next) {
 	}
 	syncBotRadios();
 	refreshGameUi();
+	careerRecordingCapture(true);
 	syncSeedUrl(replay.on);
 }
 
@@ -195,6 +198,7 @@ function playerCountShown() {
 
 function setPlayerCount(delta) {
 	if (replay.on) return;
+	careerRecordingMark();
 	const current = playerCountShown();
 	const count = Math.max(1, Math.min(MAX_PLAYERS, current + Math.sign(delta)));
 	if (count === current) return;
@@ -236,6 +240,7 @@ function setPlayerCount(delta) {
 			game.playerCount = count;
 			refreshGameUi();
 			refreshPlanetUniverseUi();
+			careerRecordingCapture(true);
 			return;
 		}
 	} else if (game.on) {
@@ -250,6 +255,7 @@ function setPlayerCount(delta) {
 		syncCareerPause();
 		refreshGameUi();
 		refreshPlanetUniverseUi();
+		careerRecordingCapture(true);
 		return;
 	}
 	game.playerCount = count;
@@ -268,14 +274,17 @@ function refreshPlanetUniverseUi() {
 		}
 		planetCountInputEl.min = PLANET_UNIVERSE_MIN;
 		planetCountInputEl.max = PLANET_UNIVERSE_MAX;
+		planetCountInputEl.disabled = replay.on;
 	}
 	const shown = playerCountShown();
 	if (playerCountValueEl) playerCountValueEl.textContent = shown;
-	if (playerCountDownEl) playerCountDownEl.disabled = shown <= 1;
-	if (playerCountUpEl) playerCountUpEl.disabled = shown >= MAX_PLAYERS || planetCount >= PLANET_UNIVERSE_MAX;
+	if (playerCountDownEl) playerCountDownEl.disabled = replay.on || shown <= 1;
+	if (playerCountUpEl) playerCountUpEl.disabled = replay.on || shown >= MAX_PLAYERS ||
+		planetCount >= PLANET_UNIVERSE_MAX;
 }
 
 function setSlotType(slot, next) {
+	if (replay.on) return;
 	if (slot < 0 || slot >= slotTypes.length) return;
 	const normalized = next === PLAYER_BOT ? PLAYER_BOT : PLAYER_USER;
 	if (slotTypes[slot] === normalized && (slot !== 0 || game.player === normalized)) return;
@@ -288,6 +297,7 @@ function setSlotType(slot, next) {
 	if (game.on && careerRule()) {
 		applySlotTypeNow(slot);
 		refreshGameUi();
+		careerRecordingCapture(true);
 		return;
 	}
 	if (game.on) startGame(game.seed, game.fixedRate, game.rule, game.bot, slotTypes[0], game.cheat);
@@ -299,6 +309,7 @@ function applySlotTypeNow(slot) {
 	cancelTurret(slotTurrets[slot]);
 	setCareerPaused(!slotIsBot(slot) && pauseOnLanding && slotSim(slot).status !== STATUS_FLYING, slot);
 	if (slot === 0) {
+		bot.setPlayerType(slotTypes[0]);
 		playerBotSyncNeeded = true;
 		bot.attachCareerPlayer(game.career, cargoSim);
 		return;
@@ -309,8 +320,9 @@ function applySlotTypeNow(slot) {
 /* one selection for the whole page: the HUD, career panels and pads follow it,
  * and a user slot is flown by hand from wherever the selection sits */
 function selectSlot(slot) {
-	if (!game.on || replay.on) return;
+	if (!game.on || (replay.on && !replay.career)) return;
 	if (slot < 0 || slot >= slotCount()) return;
+	if (replay.on && replay.career) careerRecording.follow = -1;
 	if (slot === activeSlot) return;
 	if (helperState.active) stopHelper();
 	lastAimTrace.origin = -1;
@@ -354,6 +366,7 @@ function selectSlot(slot) {
 
 /* back to lab: the world stays, the clock returns to real time, a running flight continues */
 function stopGame() {
+	careerRecordingClear();
 	const wasCareer = careerRule();
 	cancelCareerWait();
 	for (let s = 0; s < slotTurrets.length; s++) cancelTurret(slotTurrets[s]);
@@ -459,6 +472,10 @@ function careerPlayerBotLaunch() {
  * 3 ms slices and resumes from the exact same step.
  */
 function stepGame(now, dt) {
+	if (replay.on && replay.career) {
+		advanceCareerReplay(dt, false);
+		return;
+	}
 	if (routeRule()) {
 		playAcc = 0;
 		if (replay.on) {

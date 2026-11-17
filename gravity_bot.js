@@ -442,6 +442,8 @@
 		};
 		/* bounded decision trace and the last line per actor */
 		this.trace = [];
+		this.traceRevision = 0;
+		this.traceByActor = Array.from({ length: MAX_RIVALS + 2 }, () => []);
 		this.lastDecision = new Array(MAX_RIVALS + 1).fill('');
 		this.worldStep = 0;
 
@@ -476,6 +478,11 @@
 		return index === PLAYER_INDEX ? 'YOU' : 'R' + (index + 1);
 	}
 
+	/* Galaxy career indices include YOU at 0; bot trace indices put YOU last. */
+	function careerTraceIndex(career) {
+		return career.index === 0 ? PLAYER_INDEX : career.index - 1;
+	}
+
 	/* flat fees are numbers; `careerPrice` reads item.buildCost and must not be
 	 * handed one (an undefined price made every evacuation unaffordable) */
 	function careerFee(career, value) {
@@ -486,24 +493,33 @@
 		const line = '[' + worldClock(step) + '] ' + actorLabel(index) + ' ' + decision +
 			(detail ? ' · ' + detail : '');
 		this.trace.push(line);
+		this.traceRevision += 1;
 		if (this.trace.length > TRACE_MAX) this.trace.shift();
+		const bucket = this.traceByActor[index < 0 ? MAX_RIVALS + 1 : index];
+		if (bucket) {
+			bucket.push({ order: this.traceRevision, line: line });
+			if (bucket.length > TRACE_MAX) bucket.shift();
+		}
 		if (index >= 0 && index < this.lastDecision.length) this.lastDecision[index] = line;
 	};
 
 	GravityBot.prototype.traceReset = function () {
 		this.trace.length = 0;
+		for (const bucket of this.traceByActor) bucket.length = 0;
 		for (let i = 0; i < this.lastDecision.length; i++) this.lastDecision[i] = '';
 	};
 
-	GravityBot.prototype.traceHeaders = function (step) {
+	GravityBot.prototype.traceHeaders = function (step, selected) {
 		const actors = [];
 		for (let i = 0; i < this.count; i++) {
-			if (this.isRivalBot(i)) actors.push(this.actorStatus(i, step));
+			if (selected ? selected.includes(i) : this.isRivalBot(i)) {
+				actors.push(this.actorStatus(i, step));
+			}
 		}
-		if (this.playerType === GravityGame.PLAYER_BOT) {
+		if (selected ? selected.includes(PLAYER_INDEX) : this.playerType === GravityGame.PLAYER_BOT) {
 			if (this.rule === GravityGame.RULE_CAREER) {
 				if (this.careerPlayer.career) actors.push(this.careerPlayerStatus(step));
-			} else if (this.rule !== GravityGame.RULE_ROUTE) {
+			} else {
 				actors.push(this.actorStatus(PLAYER_INDEX, step));
 			}
 		}
@@ -529,16 +545,23 @@
 	};
 
 	/* the copyable log: live state first, then the newest decisions */
-	GravityBot.prototype.decisionLog = function (step, header) {
+	GravityBot.prototype.decisionLog = function (step, header, selected) {
 		const lines = ['gravity cargo · bot decisions', header || '', ''];
-		const states = this.traceHeaders(step);
+		const states = this.traceHeaders(step, selected);
 		for (let i = 0; i < states.length; i++) lines.push(states[i]);
-		lines.push('', 'decisions (' + this.trace.length + ' of the last ' + TRACE_MAX + ', newest last):');
-		if (this.trace.length === 0) {
-			lines.push('(none yet · the world clock may be paused)');
-		} else {
-			for (let i = 0; i < this.trace.length; i++) lines.push(this.trace[i]);
+		let decisions = this.trace;
+		if (selected) {
+			const entries = this.traceByActor[MAX_RIVALS + 1].slice();
+			for (const actor of selected) {
+				if (this.traceByActor[actor]) entries.push(...this.traceByActor[actor]);
+			}
+			entries.sort((a, b) => a.order - b.order);
+			decisions = entries.map(entry => entry.line);
 		}
+		lines.push('', 'decisions (' + decisions.length + (selected ? ' · last ' + TRACE_MAX +
+			' per checked bot' : ' of the last ' + TRACE_MAX) + ', newest last):');
+		if (decisions.length === 0) lines.push('(none yet · the world clock may be paused)');
+		else lines.push(...decisions);
 		return lines.join('\n');
 	};
 
@@ -780,6 +803,13 @@
 	 * level, so it is dropped and the next tick plans at the new one — the cost
 	 * of a switch is one replan, not a world rebuild.
 	 */
+	GravityBot.prototype.setPlayerType = function (type) {
+		this.playerType = type === GravityGame.PLAYER_BOT ? GravityGame.PLAYER_BOT : GravityGame.PLAYER_USER;
+		this.playerLevel = this.playerType === GravityGame.PLAYER_BOT
+			? (this.level === GravityGame.BOT_OFF ? GravityGame.BOT_NORMAL : this.level)
+			: GravityGame.BOT_OFF;
+	};
+
 	GravityBot.prototype.setLevel = function (level) {
 		const allowed = LEVELS[level] && !(this.ruleSpec().solo && this.ruleSpec().humanOnly);
 		this.level = allowed ? level : GravityGame.BOT_OFF;
@@ -2102,7 +2132,7 @@
 				CAREER_PURSE_RESERVE);
 		}
 		this.careerPadGearBought += 1;
-		this.traceAdd(career.index, 'gear', 'P' + planet + ' ' + best.label +
+		this.traceAdd(careerTraceIndex(career), 'gear', 'P' + planet + ' ' + best.label +
 			' · ' + best.cost.toFixed(2) + ' · yield +' + (best.rate * 60).toFixed(2) + '/min' +
 			(best.rate > 0 ? ' · payback ' + (best.cost / best.rate).toFixed(0) + ' s' : ''),
 			runStep || 0);
@@ -2134,7 +2164,7 @@
 		const reserve = condition > 0 ? CAREER_PURSE_RESERVE : 0;
 		if (career.ledger.purse + 1e-9 < cost + reserve) return false;
 		if (!GravityGame.repairCareer(career)) return false;
-		this.traceAdd(career.index, 'repair', 'P' + career.at + ' · cond ' +
+		this.traceAdd(careerTraceIndex(career), 'repair', 'P' + career.at + ' · cond ' +
 			Math.round(condition * 100) + ' % → 100 % · −' + cost.toFixed(2), runStep);
 		return true;
 	};
@@ -2208,7 +2238,7 @@
 			const hold = OrbitTech.HOLDS[1];
 			if (career.ledger.purse + 1e-9 >= careerPrice(career, hold) + CAREER_PURSE_RESERVE &&
 				GravityGame.installPart(career, OrbitTech.KIND_HOLD, hold)) {
-				this.traceAdd(career.index, 'gear', 'P' + career.at + ' ' + hold.id +
+				this.traceAdd(careerTraceIndex(career), 'gear', 'P' + career.at + ' ' + hold.id +
 					' · ' + hold.capacity + ' t', runStep);
 				actions += 1;
 			}
@@ -2298,7 +2328,7 @@
 			!this.careerRivalQueued(planet, career)) return false;
 		const result = GravityGame.acceptBribe(career, market, sim, planet, runStep);
 		if (!result.ok) return false;
-		this.traceAdd(career.index, 'bribe', 'P' + planet + ' paid +' +
+		this.traceAdd(careerTraceIndex(career), 'bribe', 'P' + planet + ' paid +' +
 			result.amount.toFixed(2) + ' · rot ' + result.corruption.toFixed(1) +
 			(result.arrested ? ' · ARRESTED' : ''), runStep);
 		return true;
@@ -3039,7 +3069,7 @@
 		if (!GravityGame.careerBurn(career, sim, plan.angle, plan.dv)) return null;
 		state.burn += 1;
 		this.careerBurnsPlanned += 1;
-		this.traceAdd(state.index === undefined ? career.index : state.index, 'burn',
+		this.traceAdd(state.index === undefined ? careerTraceIndex(career) : state.index, 'burn',
 			'Δv ' + plan.dv.toFixed(1) + ' → P' + plan.body +
 			' · score ' + signed(plan.score) + ' · fuel ' + ship.fuelKg.toFixed(1) + ' kg',
 			runStep);
@@ -3097,6 +3127,8 @@
 
 	GravityBot.prototype.addRival = function (planet, step) {
 		const i = this.count;
+		this.traceByActor[i].length = 0;
+		this.lastDecision[i] = '';
 		this.ensureRivals(i + 1);
 		const r = this.rivals[i];
 		this.rivalTypes[i] = GravityGame.PLAYER_BOT;
@@ -3117,6 +3149,8 @@
 
 	GravityBot.prototype.addCareerRival = function (galaxy, trade, planet, step) {
 		const i = this.count;
+		this.traceByActor[i].length = 0;
+		this.lastDecision[i] = '';
 		this.ensureRivals(i + 1);
 		const r = this.rivals[i];
 		this.rivalTypes[i] = GravityGame.PLAYER_BOT;

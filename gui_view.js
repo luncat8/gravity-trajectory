@@ -402,7 +402,7 @@ function slotIsBot(slot) {
 }
 
 function activeSlotIndex() {
-	return game.on && !replay.on ? activeSlot : 0;
+	return game.on && (!replay.on || replay.career) ? activeSlot : 0;
 }
 
 function slotSim(slot) {

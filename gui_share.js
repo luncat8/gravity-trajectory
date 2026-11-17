@@ -23,6 +23,10 @@ function copyUrlText(url, btn, label) {
 }
 
 function copyLink() {
+	if (careerRule()) {
+		copyCareerReplay();
+		return;
+	}
 	if (routeRule() && (armed || aiming)) predictShot();
 	const slot = activeSlotIndex();
 	if (slot > 0) {
@@ -51,9 +55,18 @@ function copyLink() {
 	copyUrlText(url, gameCopyBtn, 'copy replay');
 }
 
+function rivalCopyIndex() {
+	const slot = activeSlotIndex();
+	return slot > 0 ? slot - 1 : 0;
+}
+
 function copyBotLink() {
 	if (bot.count === 0) return;
-	const rIdx = activeSlotIndex() === 1 && bot.count > 1 ? 1 : 0;
+	const rIdx = rivalCopyIndex();
+	if (careerRule()) {
+		copyCareerReplay(rIdx + 1, botCopyBtn, 'copy rival');
+		return;
+	}
 	if (bot.rivals[rIdx].shots.length === 0) return;
 	const hash = bot.rivalLink(game.seed, scene.trade.speed, rIdx, gravityScale, forceScale,
 		spaceWearScale, harvestTick);
@@ -70,14 +83,25 @@ function showLink() {
 
 /* --- rival decisions: a copyable log and a read-only snapshot -------- */
 
-function botLogHeader() {
+function selectedBotActors() {
+	const actors = [];
+	if (slotIsBot(0)) actors.push(GravityBot.PLAYER_INDEX);
+	for (let i = 0; i < bot.count; i++) {
+		if (slotIsBot(i + 1)) actors.push(i);
+	}
+	return actors;
+}
+
+function botLogHeader(actors) {
+	const names = actors.map(i => i === GravityBot.PLAYER_INDEX ? 'YOU' : 'R' + (i + 1));
 	return game.rule + ' · ' + game.bot + ' · ' + bot.count + ' rivals · seed ' +
 		game.seed + ' · t+ ' + (game.clockSteps * DT).toFixed(1) +
 		' s (step ' + game.clockSteps + ') · sky ×' + scene.trade.rate +
 		' · g ×' + gravityScale.toFixed(2) + ' · force ×' + forceScale.toFixed(2) +
 		(careerRule() ? ' · space wear ×' + spaceWearScale.toFixed(2) : '') +
 		' · ' + (cargoSim.fieldStatic ? 'planets · static · lists on' : 'ports · moving · lists off') +
-		(careerRule() && careerPaused ? ' · world clock paused' : '');
+		(careerRule() && careerPaused ? ' · world clock paused' : '') +
+		' · checked bots: ' + (names.length ? names.join(', ') : 'none');
 }
 
 function hideBotLog() {
@@ -96,7 +120,8 @@ function showBotLog() {
 
 function copyBotLog() {
 	if (!game.on || !botLogBtn || !botLogTextEl || !botLogBoxEl) return;
-	const text = bot.decisionLog(game.clockSteps, botLogHeader());
+	const actors = selectedBotActors();
+	const text = bot.decisionLog(game.clockSteps, botLogHeader(actors), actors);
 	botLogTextEl.value = text;
 	botLogBoxEl.hidden = false;
 	if (botLogBoxEl.scrollIntoView) botLogBoxEl.scrollIntoView({ block: 'nearest' });
@@ -111,9 +136,24 @@ function copyBotLog() {
 	}, showBotLog);
 }
 
-function loadLink() {
-	if (!GravityGame.isGameLink(location.hash)) return false;
-	const link = GravityGame.decodeLink(location.hash);
+function loadLink(hash = location.hash) {
+	if (!GravityGame.isGameLink(hash)) return false;
+	const params = new URLSearchParams(String(hash).replace(/^#/, ''));
+	const movieText = params.get('replay');
+	if (movieText !== null) {
+		const movie = CareerReplay.decode(movieText);
+		loadingUrl = true;
+		const ok = Boolean(movie && startCareerReplay(movie, true));
+		loadingUrl = false;
+		if (!ok) {
+			linkNote = 'invalid career replay';
+			refreshGameUi();
+			return false;
+		}
+		syncSeedUrl(true);
+		return true;
+	}
+	const link = GravityGame.decodeLink(hash);
 	if (!link) {
 		linkNote = game.on ? 'invalid game link' : 'invalid link · back to lab';
 		refreshGameUi();
@@ -228,3 +268,32 @@ function loadSearchParams() {
 	syncSeedUrl(true);
 	return true;
 }
+
+/* Large careers copy as text when a browser address would be too long. */
+function loadReplayText() {
+	const input = $('replayInput');
+	const note = $('replayLoadNote');
+	if (!input) return;
+	const text = input.value.trim();
+	let ok = false;
+	if (text.startsWith(CareerReplay.PREFIX)) {
+		const movie = CareerReplay.decode(text.slice(CareerReplay.PREFIX.length));
+		loadingUrl = true;
+		ok = Boolean(movie && startCareerReplay(movie, true));
+		loadingUrl = false;
+		if (ok) syncSeedUrl();
+	} else {
+		const at = text.indexOf('#');
+		const hash = at >= 0 ? text.slice(at) : '#' + text.replace(/^#/, '');
+		ok = loadLink(hash);
+		if (ok && history.replaceState) {
+			try { history.replaceState(null, '', location.href.split('#')[0] + hash); }
+			catch (error) { /* Some file:// viewers do not permit history updates. */ }
+			syncSeedUrl(true);
+		}
+	}
+	if (note) note.textContent = ok ? 'replay opened' : 'not a valid replay';
+}
+
+const replayLoadButton = $('replayLoad');
+if (replayLoadButton) replayLoadButton.addEventListener('click', loadReplayText);

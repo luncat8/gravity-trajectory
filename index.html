@@ -70,6 +70,7 @@
 		</div>
 	</div>
 	<div id="careerBox" hidden>
+		<p id="careerReplayHint" class="runHint" hidden>Replay is read-only. Select a scoreboard row to inspect that company.</p>
 		<div class="careerTabs" role="tablist" aria-label="career sections">
 			<button id="careerUpgradesTab" class="careerTab on" data-act="careerTab" data-tab="upgrades"
 				role="tab" aria-selected="true" aria-controls="careerUpgrades">upgrades</button>
@@ -149,7 +150,7 @@
 		<div class="headBtns">
 			<button id="soundToggle" class="miniBtn" type="button" aria-pressed="true" title="mute or unmute launch sounds">sound on</button>
 			<button id="helpBtn" class="miniBtn" title="mission & controls (?)">? help</button>
-			<button id="commsButton" class="miniBtn commsButton" type="button" title="open H radio assistant" aria-label="open H radio assistant" aria-pressed="false">☏ H <span id="commsBadge" class="commsBadge" hidden>!</span><span id="commsTag" class="commsTag" hidden></span></button>
+			<button id="commsButton" class="miniBtn commsButton" type="button" title="open the H radio assistant" aria-label="open H radio assistant" aria-pressed="false">☏ H assistant <span id="commsBadge" class="commsBadge" hidden>!</span><span id="commsTag" class="commsTag" hidden></span></button>
 			<button id="foldBtn" class="miniBtn" data-fold="cargoHud" title="minimize panel" aria-expanded="true">−</button>
 		</div>
 	</div>
@@ -188,6 +189,7 @@
 				<label><input id="botNormal" type="radio" name="gameBot" value="normal" checked> normal</label>
 				<label><input id="botHard" type="radio" name="gameBot" value="hard"> hard</label>
 			</div>
+			<p class="runHint">Rivals share the same resources. Difficulty changes bot skill; off restarts the run. The scoreboard player count overrides the default roster.</p>
 		</div>
 		<div class="stats">
 			<div class="stat" id="purseRow"><span>purse</span><b id="gamePurse">—</b></div>
@@ -197,12 +199,14 @@
 			<button id="gameRestart" class="miniBtn" title="same seed, fresh start">restart</button>
 			<button id="gameNewSeed" class="miniBtn" title="random world">new seed</button>
 			<button id="gameCopy" class="miniBtn" title="link with seed, rate and every launch">copy replay</button>
-			<button id="botCopy" class="miniBtn" title="copy rival shot list as a replay link" hidden>copy rival</button>
-			<button id="botLog" class="miniBtn" title="copy the last rival decisions and why a rival is waiting · click again to refresh" hidden>copy bot log</button>
+			<button id="botCopy" class="miniBtn" title="copy the selected rival’s solo replay (R1 when YOU is selected)" hidden>copy rival</button>
+			<button id="botLog" class="miniBtn" title="copy recent decisions of the players whose bot boxes are checked · click again to refresh" hidden>copy bot log</button>
 			<button id="replaySpeed" class="miniBtn" title="replay speed" hidden>×1</button>
-			<button id="replaySkip" class="miniBtn" title="re-simulate the rest instantly" hidden>skip</button>
+			<button id="replaySkip" class="miniBtn" title="skip to the end of the replay" hidden>skip</button>
+			<button id="replayAgain" class="miniBtn" type="button" title="watch the career recording again" hidden>replay again</button>
 		</div>
-		<input id="gameLink" type="text" readonly hidden aria-label="replay link">
+		<p class="runHint" id="shareHint">Copy rival replays the selected rival alone (or R1 if YOU is selected). Copy bot log includes the checked bot rows.</p>
+		<input id="gameLink" type="text" readonly hidden aria-label="replay link or text">
 		<div id="botLogBox" class="botLogBox" hidden>
 			<div class="botLogHead"><span>rival decisions · snapshot</span>
 				<button id="botLogClose" class="miniBtn" title="hide the log panel">close ×</button>
@@ -210,6 +214,14 @@
 			<textarea id="botLogText" class="botLogText" readonly spellcheck="false" aria-label="bot decision log"></textarea>
 		</div>
 	</div>
+
+	<details id="replayImport" class="group replayImport">
+		<summary>open a copied replay</summary>
+		<label for="replayInput">Paste a replay link or long career replay text:</label>
+		<textarea id="replayInput" class="botLogText" rows="3" spellcheck="false"></textarea>
+		<button id="replayLoad" class="miniBtn" type="button">open replay</button>
+		<span id="replayLoadNote" class="runHint" role="status"></span>
+	</details>
 
 	<div id="mapGroup" class="group">
 		<div class="caption"><span>saved maps</span><span id="mapTag">saved_maps.js</span></div>
@@ -412,7 +424,9 @@
 	</div>
 	<div id="helperGroup" class="group">
 		<div class="caption"><span>auto helpers</span><span id="helperTag">ready</span></div>
+		<p class="runHint">Scans find trajectories. For questions, call assistant H by radio.</p>
 		<div class="actions helperActions">
+			<button id="commsHelper" class="miniBtn" type="button" title="open the H radio assistant">☏ ask H</button>
 			<button id="helperScan" class="miniBtn" title="broad random scan · if a planet is selected only that planet is used, otherwise any planet">quick scan</button>
 			<button id="helperFocus" class="miniBtn" title="scan only the selected planet">scan here</button>
 			<button id="helperTweak" class="miniBtn" title="nudge the best plan slightly · each press adds fresh random">tweak best</button>
@@ -427,6 +441,14 @@
 		</div>
 	</div>
 </aside>
+
+<div id="commsCall" class="panel commsCall" role="status" aria-live="polite" hidden>
+	<div><b>Assistant H is calling</b><div id="commsCallReason"></div></div>
+	<div class="actions">
+		<button id="commsAnswerCall" class="miniBtn" type="button">answer</button>
+		<button id="commsDismissCall" class="miniBtn" type="button">dismiss</button>
+	</div>
+</div>
 
 <aside id="commsCard" class="panel commsCard" aria-label="H communications" hidden>
 	<div class="panelHead">
@@ -465,6 +487,11 @@
 	<section aria-labelledby="helpAllTitle">
 		<h3 id="helpAllTitle" class="helpSectionTitle">all modes</h3>
 		<p id="helpControls" class="helpControls"></p>
+	</section>
+	<section aria-labelledby="helpRivalsTitle">
+		<h3 id="helpRivalsTitle" class="helpSectionTitle">rivals &amp; sharing</h3>
+		<p class="helpControls">Rivals are other players competing for the same resources. Difficulty changes bot skill; off restarts the run. The scoreboard player count overrides the default roster. Copy rival follows the selected rival (R1 if YOU is selected): in career it shares the whole run, elsewhere its solo trajectory. Copy bot log includes only rows with bot checked.</p>
+		<p class="helpControls">Open ☏ H assistant at the top of the right panel, or ask H beside the auto scans. H calls when it detects a launch problem; answer or dismiss the call.</p>
 	</section>
 	<section aria-labelledby="helpModeTitle">
 		<h3 id="helpModeTitle" class="helpSectionTitle">lab</h3>
@@ -522,6 +549,8 @@
 <script src="gravity_bot.js"></script>
 <script src="saved_maps.js"></script>
 <script src="saved_map.js"></script>
+<script src="vendor/lz-string.min.js"></script>
+<script src="career_replay.js"></script>
 <script src="photo_deck.js"></script>
 <script src="gravity_field.js"></script>
 <script src="sounds/selected/pack.js"></script>
@@ -540,6 +569,7 @@
 <script src="gui_route.js"></script>
 <script src="gui_helper.js"></script>
 <script src="gui_replay.js"></script>
+<script src="gui_career_replay.js"></script>
 <script src="gui_hud_game.js"></script>
 <script src="gui_world.js"></script>
 <script src="gui_career.js"></script>

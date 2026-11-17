@@ -25,6 +25,9 @@
 	const GravityGame = typeof module !== 'undefined' && module.exports
 		? require('./gravity_game.js')
 		: root.GravityGame;
+	const OrbitSim = typeof module !== 'undefined' && module.exports
+		? require('./orbit_sim.js')
+		: root.OrbitSim;
 
 	const FORMAT = 1;
 	const GEAR_ID = /^(OBS|EMC|SP|BAT|HOLD|IMP|FT|HELP)-\d+$/;
@@ -41,10 +44,11 @@
 		'colonies', 'corruption', 'mapOut', 'log', 'planetMask'];
 	const RIVAL_SKIP = ['sim', 'career', 'ledger', 'turret'];
 	/* a sim's geometry, field and refs are rebuilt; only the past is saved */
-	const SHIP_KEYS = ['status', 'landedBody', 'origin', 'endReason', 'endBody',
+	const SHIP_KEYS = ['status', 'landedBody', 'origin', 'angle', 'speed', 'cargo',
+		'endReason', 'endBody',
 		'liveSteps', 'stepLimit', 'limitReason', 'flightTime', 'flightLength',
 		'flightFieldT', 'acc', 'fieldT', 'fieldRate', 'visited', 'visitedCount',
-		'visitStep', 'trailCount', 'trailX', 'trailY'];
+		'visitStep', 'trailCount', 'trailStride', 'trailX', 'trailY'];
 	/* the bot's YOU-as-bot turn state: the plan it already made and the gap
 	 * timers around it decide when the next barrel turns */
 	const PLANNER_SKIP = ['career', 'sim'];
@@ -302,20 +306,12 @@
 			unpackData(info.planner, state.planner, PLANNER_SKIP);
 		}
 		GravityGame.refreshNetwork(galaxy);
-		/* a landed ship's place is its planet; the field and the rails follow.
-		 * `placeShip` derives stranded/flying from the pad, which is only one of
-		 * the ways off a planet (a guest or the commercial rail is another), so
-		 * the saved verdict is restored over it. */
+		/* Relocate the sim, not the career: placeShip resets the selected rail
+		 * and cannot handle a ship stranded in space (at = -1). */
 		for (let i = 0; i < galaxy.actors.length && i < info.sims.length; i++) {
 			const career = galaxy.actors[i];
-			const saved = state.careers[i];
-			GravityGame.placeShip(career, info.sims[i], career.at);
+			info.sims[i].relocate(career.at);
 			unpackKeys(info.sims[i], state.ships[i]);
-			if (!saved) continue;
-			career.at = saved.at;
-			career.flying = saved.flying === true;
-			career.stranded = saved.stranded === true;
-			career.ended = saved.ended;
 		}
 		info.game.steps = state.run.steps;
 		info.game.length = state.run.length;
@@ -331,6 +327,28 @@
 		info.cargo.fieldT = trade.t;
 		info.cargo.fieldRate = info.rate;
 		return true;
+	}
+
+	/* Canonical packed shapes let the replay importer reject incomplete state
+	 * before it replaces a live run. Construct them only when importing. */
+	let stateShapes = null;
+	function runStateShapes() {
+		if (stateShapes) return stateShapes;
+		const trade = new OrbitSim(1);
+		const galaxy = GravityGame.createGalaxy();
+		GravityGame.resetGalaxy(galaxy, 1);
+		stateShapes = {
+			trade: packData(trade, TRADE_SKIP),
+			tradeEvents: {
+				time: packData(trade.events.time), kind: packData(trade.events.kind),
+				ref: packData(trade.events.ref), revision: packData(trade.events.revision), size: 0
+			},
+			market: packData(GravityGame.createMarket(), MARKET_SKIP),
+			galaxy: packData(galaxy, GALAXY_SKIP),
+			career: packData(GravityGame.createCareer(GravityGame.createLedger()), CAREER_SKIP),
+			colony: trade.colonies.length ? packData(trade.colonies[0]) : null
+		};
+		return stateShapes;
 	}
 
 	/* --- loading ----------------------------------------------------------- */
@@ -458,6 +476,7 @@
 		startRecord,
 		runRecord,
 		captureState,
+		runStateShapes,
 		applyState,
 		applySeats,
 		arm,

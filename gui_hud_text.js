@@ -23,8 +23,8 @@ function updateGameHud() {
 		hudRivalTagText = rTag;
 		if (rivalTagEl) rivalTagEl.textContent = rTag;
 	}
-	if (botCopyBtn && game.bot !== BOT_OFF) {
-		const rIdx = activeSlotIndex() === 1 && bot.count > 1 ? 1 : 0;
+	if (botCopyBtn && !careerRule() && bot.count > 0) {
+		const rIdx = rivalCopyIndex();
 		botCopyBtn.disabled = replay.on || bot.count === 0 ||
 			bot.rivals[rIdx].shots.length === 0;
 	}
@@ -89,7 +89,10 @@ function updateGameHud() {
 		if (careerRule()) syncSciencePurse(activeCareer());
 	}
 	const replayText = replay.on
-		? replay.route
+		? replay.career
+			? replay.verdict || (careerRecording.finished ? 'career recording complete · restart to play'
+				: 'career recording · ' + careerRecording.index + ' / ' + careerRecording.movie.frames.length)
+		: replay.route
 			? 'tracing one plan · ' + Math.round(slotSim(0).routeProgress() * 100) + ' %'
 			: 'shot ' + (replay.index + (replay.phase === PHASE_AIM ? 1 : 0)) + ' / ' +
 				replay.shots.length + ' · ×' + REPLAY_SPEEDS[replay.speed]
@@ -391,7 +394,7 @@ function setLaunchState(blocked, exitWarning) {
 	const c = playerCareer();
 	const landed = career && c.ended === GravityGame.CAREER_OPEN &&
 		sim.status !== STATUS_FLYING;
-	const showActions = landed && (c.at >= 0 || c.stranded);
+	const showActions = landed && !replay.on && (c.at >= 0 || c.stranded);
 	const commercialOn = showActions && c.at >= 0 && c.commercialPlanet === c.at;
 	launchButton.hidden = showActions && c.at < 0;
 	if (planetActionsEl) planetActionsEl.hidden = !showActions;

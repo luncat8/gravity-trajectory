@@ -206,10 +206,13 @@ const hash = new URL(env.clipboardText).hash;
 assert.match(hash, /&ws=0\.75/);
 assert.strictEqual(Game.decodeLink(hash).spaceWearScale, 0.75);
 const reopened = loadPage({ search: '?mode=lab&seed=42', hash });
+reopened.click('replaySkip');
 assert.strictEqual(reopened.context.GravityGame.spaceWearScaleOf(), 0.75);
 assert.strictEqual(reopened.elements.get('expWear').value, '0.75');
 assert.strictEqual(reopened.elements.get('expWearLabel').textContent, '×0.75');
-assert.strictEqual(reopened.elements.get('expWear').disabled, false);
+assert.strictEqual(reopened.elements.get('expWear').disabled, true, 'career playback locks the recorded scales');
+reopened.click('gameRestart');
+assert.strictEqual(reopened.elements.get('expWear').disabled, false, 'a new career unlocks them');
 reopened.choose('modeLab');
 assert.strictEqual(reopened.elements.get('expWear').disabled, true);
 reopened.choose('modeCareer');
@@ -219,21 +222,24 @@ reopened.setHash('#game=1&seed=3&rate=1&rule=career');
 assert.strictEqual(reopened.context.GravityGame.spaceWearScaleOf(), 1, 'old links default to ×1');
 assert.strictEqual(reopened.elements.get('expWear').value, '1');
 
-/* Both selected-rival and copy-rival links carry the same shared settings. */
+/* In career, even when a rival is selected, copy includes the entire shared recording. */
 const rivals = loadPage({ search: mapSearch(3) + '&rate=0.5' });
 rivals.setValue('expWear', 1.5);
 rivals.toggle('expHarvest');
 const rivalsScene = rivals.context.GravityScene;
 rivalsScene.selectSlot(1);
 rivals.context.copyLink();
-let rivalLink = new URL(rivals.clipboardText).hash;
+const rivalLink = new URL(rivals.clipboardText).hash;
 assert.strictEqual(rivals.context.GravityGame.decodeLink(rivalLink).spaceWearScale, 1.5);
 assert.strictEqual(rivals.context.GravityGame.decodeLink(rivalLink).harvestTick, true);
-rivalsScene.bot.rivals[1].shots.push(rivals.context.GravityGame.createShot(0, 0, 0, 0, -1));
+const rivalMovie = rivals.context.CareerReplay.decode(new URLSearchParams(rivalLink.slice(1)).get('replay'));
+assert.strictEqual(rivalMovie.start.state.careers.length, 3);
+assert.strictEqual(rivals.elements.get('botCopy').hidden, false, 'career can follow a rival');
 rivals.context.copyBotLink();
-rivalLink = new URL(rivals.clipboardText).hash;
-assert.strictEqual(rivals.context.GravityGame.decodeLink(rivalLink).spaceWearScale, 1.5);
-assert.strictEqual(rivals.context.GravityGame.decodeLink(rivalLink).harvestTick, true);
+const watchedLink = new URL(rivals.clipboardText).hash;
+const watchedMovie = rivals.context.CareerReplay.decode(new URLSearchParams(watchedLink.slice(1)).get('replay'));
+assert.strictEqual(watchedMovie.watch, 1);
+assert.strictEqual(watchedMovie.start.state.careers.length, 3, 'the rival copy keeps the shared world');
 
 /* A selected rival's preview must read its own observation device, not YOU's. */
 const r = rivalsScene.bot.rivals[0];

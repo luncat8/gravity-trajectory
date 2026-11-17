@@ -44,6 +44,7 @@ function startReplay(shots, end, length) {
 	soundFlightSim = null;
 	clearBurnAim();
 	replay.on = true;
+	replay.career = false;
 	replay.shots = shots;
 	replay.end = end;
 	replay.length = length === undefined ? null : length;
@@ -75,7 +76,9 @@ function startReplay(shots, end, length) {
 }
 
 function stopReplay() {
+	stopCareerReplay();
 	replay.on = false;
+	replay.career = false;
 	replay.route = false;
 	replay.length = null;
 	replay.verdict = '';
@@ -171,6 +174,10 @@ function verdictText(end) {
 }
 
 function skipReplay() {
+	if (replay.on && replay.career) {
+		advanceCareerReplay(0, true);
+		return;
+	}
 	if (routeRule() && replay.on) {
 		predictShot();
 		finishRouteReplay();

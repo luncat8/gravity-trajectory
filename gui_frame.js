@@ -67,6 +67,7 @@ function frame(now) {
 
 	if (careerWaitBusy()) careerWaitTick(now);
 	if (game.on) stepGame(now, dt);
+	careerRecordingCapture(false);
 	if (helperState.active) helperTick(HELPER_BUDGET_MS);
 	syncField();
 	if (!game.on) cargoSim.step(dt * playScale());

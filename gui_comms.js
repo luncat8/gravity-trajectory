@@ -14,6 +14,11 @@ const H_TOPICS = CommsCopy.H_TOPICS;
 const commsButton = $('commsButton');
 const commsBadge = $('commsBadge');
 const commsTag = $('commsTag');
+const commsHelperButton = $('commsHelper');
+const commsCall = $('commsCall');
+const commsCallReason = $('commsCallReason');
+const commsAnswerCallButton = $('commsAnswerCall');
+const commsDismissCallButton = $('commsDismissCall');
 const commsCard = $('commsCard');
 const commsCloseButton = $('commsClose');
 const commsFoldButton = $('commsFold');
@@ -114,6 +119,7 @@ function commsResetVisit(career, planet) {
 	commsState.currentKey = '';
 	commsState.callKey = '';
 	commsState.callReason = null;
+	commsState.lastCallSecond = -1;
 	commsState.seen = Object.create(null);
 	commsState.dismissed = Object.create(null);
 	commsState.asked = Object.create(null);
@@ -136,8 +142,11 @@ function commsActiveFinding(career) {
 	if (!armedHere && GravityGame.careerShipUsable(career) && !career.stranded) return null;
 	const speed = armedHere ? aimSpeed : SPEED_MIN;
 	const reason = GravityGame.launchReason(career, activeCareerSim(), career.at, speed, false);
+	if (!reason && career.stranded && !armedHere) {
+		return { id: 'stranded', need: null, have: null };
+	}
 	if (!reason) return null;
-	if (!armedHere && reason.id !== 'worn') return null;
+	if (!armedHere && reason.id !== 'worn' && !career.stranded) return null;
 	return reason;
 }
 
@@ -262,11 +271,13 @@ function commsRunAction(actId) {
 
 function commsOpen() {
 	if (commsState.open) return;
+	const topic = commsState.callReason && commsState.callReason.id === 'stranded'
+		? 'pad' : CommsCopy.H_META_ID;
 	commsState.open = true;
 	commsState.collapsed = false;
 	commsState.callKey = '';
 	commsState.callReason = null;
-	commsAsk(CommsCopy.H_META_ID);
+	commsAsk(topic);
 	const focusTarget = $('commsQuestion') || commsCloseButton;
 	if (focusTarget && focusTarget.focus) focusTarget.focus();
 }
@@ -328,10 +339,16 @@ function commsCtasMarkup(actions) {
 	return html;
 }
 
+function commsReasonText(reason) {
+	if (!reason) return '';
+	return reason.id === 'stranded' ? 'Landed without your own pad · ask H how to leave'
+		: GravityGame.formatLaunchReason(reason);
+}
+
 function commsPaint() {
 	const called = Boolean(commsState.callKey);
 	if (commsButton) {
-		const tagText = called ? GravityGame.formatLaunchReason(commsState.callReason) : '';
+		const tagText = called ? commsReasonText(commsState.callReason) : '';
 		commsButton.classList.toggle('called', called);
 		commsButton.setAttribute('aria-label', called
 			? 'H calls: ' + tagText + ' · open radio assistant'
@@ -340,10 +357,14 @@ function commsPaint() {
 			: 'open H radio assistant';
 		commsButton.setAttribute('aria-pressed', commsState.open ? 'true' : 'false');
 	}
+	if (commsCall) commsCall.hidden = !called;
+	if (commsCallReason) {
+		commsCallReason.textContent = called ? commsReasonText(commsState.callReason) : '';
+	}
 	if (commsBadge) commsBadge.hidden = !called;
 	if (commsTag) {
 		commsTag.hidden = !called;
-		commsTag.textContent = called ? GravityGame.formatLaunchReason(commsState.callReason) : '';
+		commsTag.textContent = called ? commsReasonText(commsState.callReason) : '';
 	}
 	if (commsCard) {
 		commsCard.hidden = !commsState.open;
@@ -395,6 +416,9 @@ function commsFindData(event, key) {
 }
 
 if (commsButton) commsButton.addEventListener('click', commsOpen);
+if (commsHelperButton) commsHelperButton.addEventListener('click', commsOpen);
+if (commsAnswerCallButton) commsAnswerCallButton.addEventListener('click', commsOpen);
+if (commsDismissCallButton) commsDismissCallButton.addEventListener('click', commsDismiss);
 if (commsCloseButton) commsCloseButton.addEventListener('click', commsClose);
 if (commsFoldButton) commsFoldButton.addEventListener('click', commsToggleFold);
 if (commsBackButton) commsBackButton.addEventListener('click', commsBack);

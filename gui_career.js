@@ -86,9 +86,14 @@ function realSecText(sec) {
 
 function refreshCareerWaitUi(career, ended) {
 	const busy = careerWaitBusy();
-	careerWaitBtn.disabled = busy || ended || turret.pending ||
+	careerWaitBtn.disabled = replay.on || busy || ended || turret.pending ||
 		activeSim().status === STATUS_FLYING;
 	careerWaitBtn.classList.toggle('on', busy);
+	if (replay.on) {
+		careerWaitBtn.title = 'The career recording is read-only';
+		if (careerWaitInfoEl) careerWaitInfoEl.hidden = true;
+		return;
+	}
 	if (!busy) careerWaitBtn.textContent = 'wait · ' + GravitySim.WAIT_SEC + ' s';
 	if (!busy && otherHumanPlays()) {
 		careerWaitBtn.textContent = 'wait · resume time';
@@ -197,6 +202,8 @@ function careerSelectTab(tab) {
 
 function refreshCareerPanel() {
 	if (!careerBoxEl) return;
+	const replayHint = $('careerReplayHint');
+	if (replayHint) replayHint.hidden = !(replay.on && replay.career);
 	refreshCareerTabs();
 	/* the wait button sits in the game bar, so it follows the rule */
 	careerWaitBtn.hidden = !careerRule();
@@ -235,11 +242,12 @@ function careerChanged() {
 	launchState = -1;
 	dirty = true;
 	refreshGameUi();
+	careerRecordingCapture(true);
 }
 
 /* switch the ship's current planet onto or off the neutral commercial rail */
 function toggleCommercialRail(selectOnly) {
-	if (!careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return false;
+	if (replay.on || !careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return false;
 	const career = playerCareer();
 	if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0) return false;
 	if (career.commercialPlanet === career.at) {
@@ -475,7 +483,7 @@ function careerWaitTick(now) {
 
 /* one press starts the real-time fast-forward (CAREER_WAIT_SEC); only the end settles the board */
 function waitCareer() {
-	if (!careerRule() || careerWaitBusy() || turret.pending ||
+	if (replay.on || !careerRule() || careerWaitBusy() || turret.pending ||
 		activeSim().status === STATUS_FLYING) return;
 	const career = activeCareer();
 	if (career.ended !== GravityGame.CAREER_OPEN) return;
@@ -614,12 +622,13 @@ function careerAct(data) {
 	if (!careerRule()) return;
 	const act = data.act;
 	if (act === 'careerTab') return careerSelectTab(data.tab);
-	if (act === 'bookDrop') return dropStaleBook();
-	const career = activeCareer();
-	/* balance tooling + science R&D stay available during flight, wait or turret spin */
 	if (act === 'copy') return careerCopySpec(data);
 	if (act === 'sciCopy') return careerCopyFrontier(data.family);
 	if (act === 'sciFamily') return careerScienceFamily(data.family);
+	if (replay.on && replay.career) return;
+	if (act === 'bookDrop') return dropStaleBook();
+	const career = activeCareer();
+	/* balance tooling + science R&D stay available during flight, wait or turret spin */
 	if (act === 'sciAccept') {
 		if (career.ended !== GravityGame.CAREER_OPEN) {
 			careerNotice('career over · restart for a new HQ');

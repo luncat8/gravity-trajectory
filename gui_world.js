@@ -102,6 +102,8 @@ function clearPlanetPads(planet) {
  * a protected planet. Career rival expansion may nominate its planned HQ as
  * the first added world; ordinary size edits keep their random selection. */
 function setPlanetUniverseSize(next, preferredPlanet) {
+	if (replay.on) return false;
+	careerRecordingMark();
 	const count = Math.max(PLANET_UNIVERSE_MIN, Math.min(next, PLANET_UNIVERSE_MAX));
 	if (count === planetCount) return false;
 	if (count > planetCount) {
@@ -216,7 +218,8 @@ function syncBotRadios() {
  * the hatch marks each human whose pause still holds the shared clock */
 function syncScoreControls() {
 	const active = activeSlotIndex();
-	const pausable = pauseAllowed();
+	const watchingCareer = replay.on && replay.career;
+	const pausable = pauseAllowed() || watchingCareer;
 	for (let s = 0; s < scoreRowEls.length; s++) {
 		const row = scoreRowEls[s];
 		const box = scoreBotEls[s];
@@ -226,17 +229,17 @@ function syncScoreControls() {
 		const isPaused = pausable && isUser && slotPaused[s];
 		if (box) {
 			box.checked = isBot;
-			box.disabled = false;
+			box.disabled = replay.on;
 		}
 		if (!row) continue;
 		if (s > 0) row.hidden = s - 1 >= bot.count;
-		row.classList.toggle('locked', replay.on);
+		row.classList.toggle('locked', replay.on && !watchingCareer);
 		row.classList.toggle('isUser', isUser);
 		row.classList.toggle('isActive', isActive);
 		row.classList.toggle('isPaused', isPaused);
 		/* a row stays in the tab order whenever a click on it would select */
-		row.tabIndex = replay.on ? -1 : 0;
-		row.title = (isBot
+		row.tabIndex = replay.on && !watchingCareer ? -1 : 0;
+		row.title = watchingCareer ? 'View ' + slotName(s) + ' in the career replay' : (isBot
 			? slotName(s) + ' · bot controlled (uncheck bot to play it by hand)'
 			: isActive
 			? slotName(s) + ' · you fly this player'

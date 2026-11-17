@@ -51,10 +51,10 @@ function refreshGameUi() {
 	for (let i = 0; i < modeEls.length; i++) {
 		if (modeEls[i][1]) modeEls[i][1].disabled = flightLock && modeEls[i][0] !== PLAY_LAB;
 	}
-	if (botOffEl) botOffEl.disabled = false;
-	if (botEasyEl) botEasyEl.disabled = false;
-	if (botNormalEl) botNormalEl.disabled = false;
-	if (botHardEl) botHardEl.disabled = false;
+	if (botOffEl) botOffEl.disabled = replay.on && replay.career;
+	if (botEasyEl) botEasyEl.disabled = replay.on && replay.career;
+	if (botNormalEl) botNormalEl.disabled = replay.on && replay.career;
+	if (botHardEl) botHardEl.disabled = replay.on && replay.career;
 	syncScoreControls();
 	refreshStatsStrip();
 	let anyShots = game.shots.length > 0;
@@ -80,27 +80,35 @@ function refreshGameUi() {
 	clearButton.hidden = game.on && !route;
 	clearButton.textContent = route ? 'clear plan' : 'clear';
 	clearButton.disabled = route && (replay.on || playerIsBot());
-	gameCopyBtn.disabled = flightLock;
+	gameCopyBtn.disabled = career ? false : flightLock;
+	gameCopyBtn.title = career ? 'copy the whole shared career recording' : 'copy the selected player’s replay link';
 	if (botCopyBtn) {
-		const rIdx = activeSlotIndex() === 1 && bot.count > 1 ? 1 : 0;
-		botCopyBtn.hidden = game.bot === BOT_OFF;
-		botCopyBtn.disabled = flightLock || bot.count === 0 ||
+		const rIdx = rivalCopyIndex();
+		botCopyBtn.hidden = bot.count === 0 || (!career && game.bot === BOT_OFF);
+		botCopyBtn.disabled = career ? bot.count === 0 : flightLock || bot.count === 0 ||
 			bot.rivals[rIdx].shots.length === 0;
+		botCopyBtn.title = career ? 'copy the shared career replay, following the selected rival' :
+			'copy the selected rival’s solo replay (R1 when YOU is selected)';
 	}
 	if (botLogBtn) {
-		const hasBots = game.on && (bot.count > 0 || playerIsBot());
+		const hasBots = game.on && !replay.on && selectedBotActors().length > 0;
 		botLogBtn.hidden = !hasBots;
 		if (!hasBots) hideBotLog();
 	}
 	if (rivalRowEl) rivalRowEl.hidden = game.bot === BOT_OFF;
+	const shareHint = $('shareHint');
+	if (shareHint) shareHint.textContent = career
+		? 'Copy replay shares every company. Copy rival follows the selected rival (R1 if YOU is selected). Bot log includes checked bots.'
+		: 'Copy rival replays the selected rival alone (or R1 if YOU is selected). Bot log includes the checked bot rows.';
 	if (purseRowEl) purseRowEl.hidden = route;
 	if (predProfitRowEl) predProfitRowEl.hidden = !game.on || route;
 	if (visitLabelEl) visitLabelEl.textContent = route ? 'route score' : 'systems visited';
 	if (predVisitLabelEl) predVisitLabelEl.textContent = route ? 'plan end' : 'pred visits';
 	horizonSlider.disabled = route;
 
-	replaySpeedBtn.hidden = !replay.on || replay.route;
-	replaySkipBtn.hidden = !replay.on;
+	replaySpeedBtn.hidden = !replay.on || replay.route || (replay.career && careerRecording.finished);
+	replaySkipBtn.hidden = !replay.on || (replay.career && careerRecording.finished);
+	if (replayAgainButton) replayAgainButton.hidden = !replay.on || !replay.career;
 	replaySpeedBtn.textContent = '×' + REPLAY_SPEEDS[replay.speed];
 	replayRowEl.hidden = !replay.on && replay.verdict === '';
 	refreshPlaybackUi();
