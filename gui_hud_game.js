@@ -81,7 +81,14 @@ function refreshGameUi() {
 	clearButton.textContent = route ? 'clear plan' : 'clear';
 	clearButton.disabled = route && (replay.on || playerIsBot());
 	gameCopyBtn.disabled = career ? false : flightLock;
-	gameCopyBtn.title = career ? 'copy the whole shared career recording' : 'copy the selected player’s replay link';
+	gameCopyBtn.textContent = career ? 'copy actions' : 'copy replay';
+	gameCopyBtn.title = career
+		? 'copy the seed, its settings and your inputs as a small text · paste it back to replay this run, or share it to investigate why a bot acts · no world snapshot'
+		: 'copy the selected player’s replay link';
+	if (careerSaveCopyBtn) {
+		careerSaveCopyBtn.hidden = !career;
+		careerSaveCopyBtn.title = 'copy the whole recorded world snapshot · big · paste it into open replay to resume this exact run · copy actions is enough for most cases';
+	}
 	if (botCopyBtn) {
 		const rIdx = rivalCopyIndex();
 		botCopyBtn.hidden = bot.count === 0 || (!career && game.bot === BOT_OFF);
@@ -93,14 +100,12 @@ function refreshGameUi() {
 	if (botLogBtn) {
 		const hasBots = game.on && !replay.on && selectedBotActors().length > 0;
 		botLogBtn.hidden = !hasBots;
-		const careerSaveCopyBtn = $('careerSaveCopy');
-		if (careerSaveCopyBtn) careerSaveCopyBtn.hidden = !careerRule();
 		if (!hasBots) hideBotLog();
 	}
 	if (rivalRowEl) rivalRowEl.hidden = game.bot === BOT_OFF;
 	const shareHint = $('shareHint');
 	if (shareHint) shareHint.textContent = career
-		? 'Copy replay shares every company. Copy rival follows the selected rival (R1 if YOU is selected). Bot log includes checked bots.'
+		? 'Copy actions copies the seed, its settings and your inputs · small, replays from the seed. Copy full save copies every company and the whole world (big). Copy rival follows the selected rival (R1 if YOU is selected). Bot log includes checked bots.'
 		: 'Copy rival replays the selected rival alone (or R1 if YOU is selected). Bot log includes the checked bot rows.';
 	if (purseRowEl) purseRowEl.hidden = route;
 	if (predProfitRowEl) predProfitRowEl.hidden = !game.on || route;

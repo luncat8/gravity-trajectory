@@ -1607,13 +1607,13 @@ function copiedCareerState(env) {
 	for (const frame of record.frames) state = codec.apply(state, frame.d);
 	return state;
 }
-careerEnv.click('gameCopy');
+careerEnv.click('careerSaveCopy');
 const sharedCareer = copiedCareerState(careerEnv);
 check(sharedCareer && sharedCareer.seed === 42 && sharedCareer.state.careers.length === 3,
-	'career replay keeps the shared run');
+	'career full save keeps the shared run');
 careerEnv.setValue('expGravity', 0.8);
 careerEnv.setValue('expForce', 1.5);
-careerEnv.click('gameCopy');
+careerEnv.click('careerSaveCopy');
 const expLink = kui.get('gameLink').value;
 const expCareer = copiedCareerState(careerEnv);
 check(expCareer && expCareer.gs === 0.8 && expCareer.fs === 1.5,
@@ -1629,7 +1629,7 @@ console.log('experimental replay:', expLink.length, 'characters ->', kui.get('ex
 careerEnv.toggle('expHarvest');
 check(kui.get('expHarvest').checked && kGame.harvestMode() === kGame.HARVEST_TICK,
 	'stay-pay box did not switch the collection rule: ' + kui.get('expTag').textContent);
-careerEnv.click('gameCopy');
+careerEnv.click('careerSaveCopy');
 const tickLink = kui.get('gameLink').value;
 const tickCareer = copiedCareerState(careerEnv);
 check(tickCareer && tickCareer.ht === true, 'career replay must carry the stay-pay');
@@ -1667,9 +1667,12 @@ check(cheatCareer.cheat === 'endgame' && cheatCareer.padCount === 12 &&
 	cheatEnv.context.GravityScene.game.money.purse === kGame.CAREER.endgamePurse, 'endgame cheat link');
 check(cheatEnv.elements.get('ruleTag').textContent === 'career · 12 / 13 pads · endgame',
 	'cheat rule tag: ' + cheatEnv.elements.get('ruleTag').textContent);
-cheatEnv.click('gameCopy');
+cheatEnv.click('careerSaveCopy');
 const copiedCheat = copiedCareerState(cheatEnv);
-check(copiedCheat && copiedCheat.cheat === 'endgame', 'cheat survives the replay');
+check(copiedCheat && copiedCheat.cheat === 'endgame', 'cheat survives the full save');
+cheatEnv.click('gameCopy');
+check(cheatEnv.elements.get('gameLink').value.startsWith('GRAVITY_ACTIONS:'),
+	'career main copy is the actions payload');
 const badCheat = loadPage({ hash: '#game=1&seed=42&rate=1&rule=tour&cheat=endgame', clipboard: false });
 badCheat.runFrames(2, 16.0);
 check(badCheat.elements.get('modeTag').textContent === 'invalid link · back to lab' &&

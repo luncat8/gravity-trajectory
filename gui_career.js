@@ -253,7 +253,7 @@ function toggleCommercialRail(selectOnly) {
 	if (career.commercialPlanet === career.at) {
 		if (selectOnly) return false;
 		if (armed && aimBody === career.at) {
-			launchShot();
+			launchShot(); /* the armed shot is the action: the launch records itself at fire time */
 			return true;
 		}
 		GravityGame.setCommercial(career, -1);
@@ -267,6 +267,9 @@ function toggleCommercialRail(selectOnly) {
 	if ((armed || aiming) && aimBody === career.at) {
 		placeGripFromSpeed();
 		dirty = true;
+	}
+	if (typeof recordCareerAction === 'function') {
+		recordCareerAction('commercial', { on: career.commercialPlanet === career.at });
 	}
 	launchState = -1;
 	careerChanged();
@@ -625,6 +628,19 @@ function careerAct(data) {
 	if (act === 'copy') return careerCopySpec(data);
 	if (act === 'sciCopy') return careerCopyFrontier(data.family);
 	if (act === 'sciFamily') return careerScienceFamily(data.family);
+	/* every remaining act is a world mutation the player asked for; keep the
+	 * serializable args so the input replays exactly */
+	if (typeof recordCareerAction === 'function') {
+		if (act === 'sciAccept') {
+			recordCareerAction('act', { act: 'sciAccept', family: scienceFamily, params: scienceParams(scienceFamily) });
+		} else {
+			const safe = {};
+			for (const key of ['act', 'kind', 'tier', 'item', 'slot', 'entry']) {
+				if (data[key] !== undefined) safe[key] = data[key];
+			}
+			recordCareerAction('act', safe);
+		}
+	}
 	if (replay.on && replay.career) return;
 	if (act === 'bookDrop') return dropStaleBook();
 	const career = activeCareer();

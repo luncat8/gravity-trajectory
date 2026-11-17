@@ -374,7 +374,8 @@ assert.strictEqual(get(calls, 'commsState.open'), true);
 assert.match(calls.elements.get('commsAnswer').textContent, /repair/i);
 assert.strictEqual(calls.elements.get('commsCall').hidden, true);
 
-/* Stranding with a usable commercial rail is still a situation worth a call. */
+/* Landing without your own pad with money for the commercial rail is normal
+ * travel, not a call; with an empty purse it is a stuck gate and H calls. */
 const stranded = loadPage({ search: mapSearch(42) });
 get(stranded, `(() => {
 	const career = playerCareer();
@@ -386,12 +387,26 @@ get(stranded, `(() => {
 	}
 	GravityGame.placeShip(career, sim, planet);
 	career.stranded = true;
+	career.ledger.purse = 50;
+	GravityGame.setShipCondition(career, 1);
 	armed = false;
 	commsTick();
 })()`);
-assert.strictEqual(get(stranded, 'commsState.callReason.id'), 'stranded');
+assert.strictEqual(get(stranded, 'commsState.callKey'), '',
+	'an off-network landing you can afford is not a situation worth a call');
+assert.strictEqual(stranded.elements.get('commsCall').hidden, true);
+get(stranded, `(() => {
+	const career = playerCareer();
+	career.ledger.purse = 0.01;
+	game.clockSteps += Math.ceil(1 / GravitySim.DT);
+	commsInvalidate();
+	commsTick();
+})()`);
+assert.ok(get(stranded, 'commsState.callKey').startsWith('fee|P'),
+	'an unaffordable way off the planet raises the radio call');
 assert.strictEqual(stranded.elements.get('commsCall').hidden, false);
 stranded.click('commsAnswerCall');
-assert.match(stranded.elements.get('commsAnswer').textContent, /commercial|rail|pad/i);
+assert.match(stranded.elements.get('commsAnswer').textContent, /purse/i,
+	'the open answer names the shortfall');
 
 console.log('CAREER REPLAY OK · shared timeline, long import, selected bot logs, Helper calls');

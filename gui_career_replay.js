@@ -1,5 +1,12 @@
 /* Career playback records the shared world, not just one company's shots.
- * Snapshots are delta-compressed and sampled during play; no bot is re-run. */
+ * Snapshots are delta-compressed and sampled during play; no bot is re-run.
+ *
+ * The minimal player-actions log (GRAVITY_ACTIONS:) rides the same file: only
+ * the inputs the player makes (launches, burns, shop and board actions, clock
+ * and roster edits) with the step they happened on — no world snapshot. The
+ * world is deterministic from the seed, so this is enough to replay a run or
+ * to paste into a conversation and investigate why a bot acted. Loading one
+ * applies the recorded inputs at their steps as the clock reaches them. */
 'use strict';
 
 const CAREER_RECORD_STEPS = Math.round(0.5 / DT);
@@ -12,11 +19,25 @@ const careerRecording = {
 	finished: false, follow: -1
 };
 const careerActionLog = [];
+/* the action replay in flight: the recorded inputs, applied at their steps */
+const careerActionReplay = {
+	active: false, applying: false, pending: [], index: 0, applied: 0, skipped: 0
+};
 
 function recordCareerAction(type, data) {
-	if (!careerRule() || replay.on || careerRecording.loading) return;
+	if (!careerRule() || replay.on || careerRecording.loading || careerActionReplay.applying) return;
 	const entry = Object.assign({ step: game.clockSteps, slot: activeSlotIndex(), type: type }, data || {});
 	careerActionLog.push(entry);
+}
+
+/* drops any queued action replay; called whenever a run (re)starts */
+function careerActionReplayReset(actions) {
+	careerActionReplay.pending = Array.isArray(actions) ? actions.slice() : [];
+	careerActionReplay.index = 0;
+	careerActionReplay.applied = 0;
+	careerActionReplay.skipped = 0;
+	careerActionReplay.active = careerActionReplay.pending.length > 0;
+	careerActionReplay.applying = false;
 }
 
 function careerRecordingSnapshot() {
@@ -37,6 +58,7 @@ function careerRecordingClear() {
 	careerRecording.previous = null;
 	careerRecording.dirty = false;
 	careerActionLog.length = 0;
+	careerActionReplayReset([]);
 }
 
 function careerRecordingReset() {
@@ -94,7 +116,7 @@ function copyCareerReplay(followSlot, button = gameCopyBtn, label = 'copy replay
 	copyUrlText(text, button, label);
 }
 
-function copyCareerActions(button = gameCopyBtn, label = 'copy replay') {
+function copyCareerActions(button = gameCopyBtn, label = 'copy actions') {
 	const payload = {
 		v: 1,
 		seed: game.seed,
@@ -108,7 +130,10 @@ function copyCareerActions(button = gameCopyBtn, label = 'copy replay') {
 		w: spaceWearScale,
 		h: harvestTick,
 		steps: game.clockSteps,
-		actions: careerActionLog.slice()
+		actions: careerActionLog.slice(),
+		note: 'seed, settings and the planet universe reproduce this run deterministically; ' +
+			'actions are the human inputs, each with the game step it happened on ' +
+			'(empty when YOU is a bot — its inputs derive from the seed)'
 	};
 	if (game.cheat) payload.cheat = game.cheat;
 	const text = CareerActions.encode(payload);
@@ -135,8 +160,143 @@ function startCareerActionsReplay(data) {
 	for (let i = 0; i < data.actions.length; i++) {
 		careerActionLog.push(data.actions[i]);
 	}
-	careerNotice('actions loaded · ' + data.actions.length + ' player actions from seed ' + data.seed);
+	careerActionReplayReset(data.actions);
+	/* the world clock has to run for recorded inputs to land: a live run
+	 * unpaused when the player clicked EMC or let it run while they acted */
+	if (careerActionReplay.active) setCareerPaused(false);
+	careerNotice(careerActionReplay.active
+		? 'replaying ' + data.actions.length + ' recorded actions · the world runs from seed ' + data.seed
+		: 'actions loaded · seed ' + data.seed + ' · the bots act on their own');
 	return true;
+}
+
+/* --- apply recorded actions at the steps they happened on ------------
+ * The world is deterministic from the seed, so a recorded input applies
+ * cleanly at its step: a launch fires as armed (the turret queue is
+ * superseded), a burn spends the same fuel, a shop button buys the same
+ * thing. Inputs that no longer match the state (diverged world) are
+ * skipped and counted, never forced. */
+
+function applyCareerLaunch(entry) {
+	const career = playerCareer();
+	if (!career || career.ended !== GravityGame.CAREER_OPEN) return false;
+	if (career.at !== entry.origin) return false;
+	const slot = Number.isInteger(entry.slot) ? entry.slot : 0;
+	if (slot !== 0) return false; /* career shots fire the flagship company */
+	if (activeSlotIndex() !== 0) selectSlot(0);
+	if (typeof cancelTurret === 'function') cancelTurret();
+	const speed = GravityGame.speedOf(entry.speedU);
+	if (!GravityGame.careerCanFire(career, activeCareerSim(), entry.origin, speed)) return false; /* the rail cannot lift it (world diverged) */
+	setCareerPaused(false); /* the EMC click resumed the clock in the live run */
+	aimBody = entry.origin;
+	aimAngle = GravityGame.angleOf(entry.angleU);
+	aimSpeed = GravityGame.speedOf(entry.speedU);
+	armed = true;
+	fire(NO_ABORT);
+	return true;
+}
+
+function applyCareerBurn(entry) {
+	const slot = Number.isInteger(entry.slot) ? entry.slot : 0;
+	if (slot !== activeSlotIndex()) selectSlot(slot);
+	const sim = activeSim();
+	const career = playerCareer();
+	if (sim.status !== STATUS_FLYING) return false;
+	const angle = GravityGame.angleOf(entry.angleU);
+	const dv = GravityGame.speedOf(entry.dvU);
+	if (!(dv > 0)) return false;
+	const live = Number.isFinite(entry.live) ? entry.live : sim.liveSteps;
+	if (!GravityGame.careerBurn(career, sim, angle, dv)) return false;
+	const shots = slotShots(slot);
+	if (shots.length > 0) shots[shots.length - 1].burns.push(GravityGame.createBurn(live, entry.angleU, entry.dvU));
+	return true;
+}
+
+function applyCareerAct(data) {
+	if (!data || typeof data !== 'object') return false;
+	if (data.act === 'sciAccept') {
+		/* drive the real research button through the recorded family/params:
+		 * the notice, turret cancel and careerChanged all stay honest */
+		const career = playerCareer();
+		if (!career || career.ended !== GravityGame.CAREER_OPEN) return false;
+		if (typeof data.family !== 'string' || !SCIENCE_AXES[data.family]) return false;
+		scienceFamily = data.family;
+		careerResearch();
+		return true;
+	}
+	careerAct(Object.assign({}, data));
+	return true;
+}
+
+function applyCareerCommercial(entry) {
+	const career = playerCareer();
+	if (!career || career.ended !== GravityGame.CAREER_OPEN || career.at < 0) return false;
+	const want = Boolean(entry.on);
+	if ((career.commercialPlanet === career.at) === want) return true;
+	/* never go through the armed-launch branch of the toggle: a recorded rail
+	 * switch is not a launch */
+	GravityGame.setCommercial(career, want ? career.at : -1);
+	careerChanged();
+	return true;
+}
+
+function applyCareerAction(entry) {
+	if (!entry || typeof entry !== 'object') return false;
+	if (entry.type === 'launch') return applyCareerLaunch(entry);
+	if (entry.type === 'burn') return applyCareerBurn(entry);
+	if (entry.type === 'act') {
+		const slot = Number.isInteger(entry.slot) ? entry.slot : 0;
+		if (slot !== activeSlotIndex()) selectSlot(slot);
+		return applyCareerAct(entry.data);
+	}
+	if (entry.type === 'commercial') return applyCareerCommercial(entry);
+	if (entry.type === 'source') {
+		if (entry.mode !== MODE_PLANETS && entry.mode !== MODE_PORTS) return false;
+		setSource(entry.mode);
+		return true;
+	}
+	if (entry.type === 'playerCount') {
+		const delta = Number(entry.delta);
+		if (!Number.isFinite(delta) || delta === 0) return false;
+		setPlayerCount(delta);
+		return true;
+	}
+	return false;
+}
+
+/* applies everything due at the current game step, in recorded order; a
+ * recorded input never moves the world backwards, it just plays out.
+ * Returns how many launches were applied, so the caller can hold the clock
+ * at the step exactly like the EMC barrel does when its shot fires */
+function applyCareerActionsDue() {
+	if (!careerActionReplay.active || careerActionReplay.applying || replay.on) return 0;
+	let launches = 0;
+	while (careerActionReplay.index < careerActionReplay.pending.length) {
+		const entry = careerActionReplay.pending[careerActionReplay.index];
+		const step = entry && Number.isFinite(entry.step) ? entry.step : -1;
+		if (step > game.clockSteps) break;
+		careerActionReplay.index += 1;
+		careerActionReplay.applying = true;
+		let ok = false;
+		try { ok = applyCareerAction(entry); } catch (error) { ok = false; }
+		careerActionReplay.applying = false;
+		if (ok) {
+			careerActionReplay.applied += 1;
+			if (entry.type === 'launch') launches += 1;
+		} else {
+			careerActionReplay.skipped += 1;
+		}
+	}
+	if (careerActionReplay.active && careerActionReplay.index >= careerActionReplay.pending.length) {
+		careerActionReplay.active = false;
+		const applied = careerActionReplay.applied;
+		const skipped = careerActionReplay.skipped;
+		careerNotice(skipped === 0
+			? 'recorded actions replayed · ' + applied + ' applied · the world is live'
+			: 'recorded actions replayed · ' + applied + ' applied · ' + skipped +
+				' skipped (world diverged)');
+	}
+	return launches;
 }
 
 function careerReplayRoster(snapshot) {

@@ -53,7 +53,8 @@ assert.strictEqual(get('commsState.callKey'), '', 'an open card is not also a ca
 env.click('commsQuestion');
 env.click('commsQuestion');
 env.click('commsQuestion');
-assert.strictEqual(get('commsState.exchanges.length'), 3, 'the transcript keeps only the last three exchanges');
+assert.strictEqual(get('commsState.exchanges.length'), 1,
+	're-asking the same question refreshes it in place instead of stacking an identical copy');
 env.click('commsFold');
 assert.strictEqual(get('commsState.collapsed'), true);
 env.click('commsFold');

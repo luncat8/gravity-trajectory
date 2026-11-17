@@ -142,11 +142,11 @@ function commsActiveFinding(career) {
 	if (!armedHere && GravityGame.careerShipUsable(career) && !career.stranded) return null;
 	const speed = armedHere ? aimSpeed : SPEED_MIN;
 	const reason = GravityGame.launchReason(career, activeCareerSim(), career.at, speed, false);
-	if (!reason && career.stranded && !armedHere) {
-		return { id: 'stranded', need: null, have: null };
-	}
-	if (!reason) return null;
-	if (!armedHere && reason.id !== 'worn' && !career.stranded) return null;
+	if (!reason) return null; /* no closed gate: an off-network landing you can afford is not news */
+	/* a call only for a gate the player is standing behind: a worn hull, an
+	 * unaffordable fee, a rail that cannot lift the load. Landing without your
+	 * own pad is normal travel — the commercial rail covers it when the purse can. */
+	if (!armedHere && reason.id !== 'worn' && reason.id !== 'fee' && reason.id !== 'cap') return null;
 	return reason;
 }
 
@@ -230,13 +230,20 @@ function commsAsk(topicId) {
 	const snapshot = commsBuildSnapshot();
 	if (id !== CommsCopy.H_META_ID && H_TOPICS[id]) commsState.asked[id] = true;
 	const rendered = CommsCopy.renderTopic(id, snapshot, commsState.asked);
-	commsState.exchanges.push({
-		id: rendered.id,
-		question: rendered.question,
-		answer: rendered.text,
-		actions: rendered.actions
-	});
-	if (commsState.exchanges.length > CommsCopy.EXCHANGE_CAP) commsState.exchanges.shift();
+	const latest = commsState.exchanges[commsState.exchanges.length - 1];
+	if (latest && latest.id === rendered.id) {
+		latest.question = rendered.question;
+		latest.answer = rendered.text;
+		latest.actions = rendered.actions;
+	} else {
+		commsState.exchanges.push({
+			id: rendered.id,
+			question: rendered.question,
+			answer: rendered.text,
+			actions: rendered.actions
+		});
+		if (commsState.exchanges.length > CommsCopy.EXCHANGE_CAP) commsState.exchanges.shift();
+	}
 	commsPaint();
 }
 
@@ -341,7 +348,7 @@ function commsCtasMarkup(actions) {
 
 function commsReasonText(reason) {
 	if (!reason) return '';
-	return reason.id === 'stranded' ? 'Landed without your own pad · ask H how to leave'
+	return reason.id === 'stranded' ? 'No affordable way off this planet · ask H how to leave'
 		: GravityGame.formatLaunchReason(reason);
 }
 

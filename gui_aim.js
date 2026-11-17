@@ -348,6 +348,7 @@ function executeBurn() {
 	const ship = career.ship;
 	const beforeFuel = ship.fuelKg;
 	if (!GravityGame.careerBurn(career, sim, angle, dv)) return false;
+	recordCareerAction('burn', { angleU: angleU, dvU: dvU, live: step });
 	const used = beforeFuel - ship.fuelKg;
 	const shots = slotShots(slot);
 	if (shots.length > 0) {
@@ -429,6 +430,12 @@ function fire(abortStep) {
 	clearBurnAim();
 	const slot = activeSlotIndex();
 	const sim = slotSim(slot);
+	if (careerRule() && slot === 0 && !replay.on && !playerIsBot()) {
+		/* the inputs that reproduce this flight on replay, in engine units; a
+		 * bot-flown YOU derives its shots from the seed, so it stays out */
+		recordCareerAction('launch', { origin: aimBody,
+			angleU: GravityGame.angleUnits(aimAngle), speedU: GravityGame.speedUnits(aimSpeed) });
+	}
 	if (game.on) recordSlotShot(slot, abortStep);
 	predictShot();
 	dirty = false;

@@ -502,6 +502,8 @@ function stepGame(now, dt) {
 		syncRoutePlan();
 		return;
 	}
+	/* a loaded action log plays its inputs out at the steps they happened on */
+	if (!replay.on) applyCareerActionsDue();
 	if (replay.on && replay.phase !== PHASE_FLY && now >= replay.until) advanceReplay(now);
 	/* a queued career launch fires once the in-game clock reaches the step
 	 * where the EMC barrel lines up with the aim; the world clock keeps
@@ -570,6 +572,14 @@ function stepGame(now, dt) {
 		}
 		if (cargoSim.status === STATUS_FLYING) wasSlot0Flying = true;
 		advanceGameOneStep();
+		/* replay applies the inputs recorded on this step before the next one */
+		if (!replay.on && applyCareerActionsDue() > 0) {
+			/* the flight is underway: hold the clock at this step, the way a
+			 * queued EMC shot ends the frame it fires on */
+			playAcc = 0;
+			stepsDone += 1;
+			break;
+		}
 		playAcc -= DT;
 		stepsDone += 1;
 		if (pauseAllowed() && pauseOnLanding) {

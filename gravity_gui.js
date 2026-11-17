@@ -286,6 +286,7 @@ const replayEl = $('replayReadout');
 const gameRestartBtn = $('gameRestart');
 const gameNewSeedBtn = $('gameNewSeed');
 const gameCopyBtn = $('gameCopy');
+const careerSaveCopyBtn = $('careerSaveCopy');
 const botCopyBtn = $('botCopy');
 const botLogBtn = $('botLog');
 const botLogBoxEl = $('botLogBox');
