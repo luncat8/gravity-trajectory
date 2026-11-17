@@ -1,0 +1,9 @@
+{
+	"name": "gravity-trajectory",
+	"prompts": ["../prompts.md", "../helper-joke-prompts.md"],
+	"workflows": ".",
+	"output": "..",
+	"gallery_output": "output/gravity",
+	"prefix": "gravity",
+	"default_workflow": "image_krea2_turbo_t2i_int8"
+}

@@ -50,7 +50,8 @@ quoted paragraphs is a variant set: each paragraph is queued as its own file
 
 ## generator
 
-`generator/comfy_queue.py` queues every caption in `prompts.md` into a running
+`generator/comfy_queue.py` defaults to `gravity.json`, which includes
+`prompts.md` and `helper-joke-prompts.md`, and queues compatible captions into a running
 ComfyUI server and downloads the renders straight into `space/`, `landed/` and
 `career/`.
 
@@ -103,6 +104,31 @@ python3 photos/generator/comfy_queue.py --situation career --wait
   the `COMFYUI` env var). All templates write the same file names, so
   `--workflow all` is a comparison run: the last finished render wins unless
   you give each run its own `--out`.
+
+### visual gallery and reusable projects
+
+Run `python3 photos/generator/gallery.py` (or `generator/gallery.bat` /
+`generator/gallery.sh`) for the desktop Tk gallery: prompt cards, thumbnails,
+checkboxes, seed variations, delete/undo, batch rendering and settings.
+**Switch project…** opens another project JSON; `arc-steam.json` preserves the
+imported mining-game prompt pack. Gravity remains the default.
+
+The gallery keeps candidates separate from the game's selected art, under
+`generator/output/<project>/`; copy a chosen image to its documented game path.
+For direct-to-game batch output, keep using `comfy_queue.py`.
+
+```sh
+python3 photos/generator/comfy_queue.py --project photos/generator/arc-steam.json --list
+python3 photos/generator/comfy_queue.py --workflow video --situation video --wait
+```
+
+Image workflows skip video captions and vice versa. The supplied video graph
+uses `RandomNoise`, `MiniMaxH3ImageToVideo` and `SaveVideo`; its sampler is not a
+KSampler. Use `--set` for graph-specific controls, for example
+`--set 140:133.value=6` for duration, rather than `--steps` / `--cfg`.
+
+See [`generator/README.md`](generator/README.md) for project configuration,
+standalone extraction, GUI state, requirements and offline tests.
 
 ## checklist
 

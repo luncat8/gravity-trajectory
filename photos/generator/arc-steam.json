@@ -1,0 +1,25 @@
+{
+	"name": "arc-steam",
+	"prompts": [
+		"packs/arc-steam-moss-prompts.md"
+	],
+	"workflows": ".",
+	"output": "output/arc-steam",
+	"gallery_output": "output/arc-steam",
+	"prefix": "arc_steam",
+	"default_workflow": "image_moss_image_t2i",
+	"category_sizes": {
+		"splash": [
+			"16:9",
+			2
+		],
+		"background": [
+			"16:9",
+			1
+		],
+		"art": [
+			"3:2",
+			1.5
+		]
+	}
+}

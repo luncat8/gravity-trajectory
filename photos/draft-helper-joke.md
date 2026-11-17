@@ -21,3 +21,7 @@ most models always hallucinated old european town, not sci-fi. need to think how
 → `prompts.md` §18 (two MOSS variants: signal panels, then the aluminium
 spyglass), `comfy_queue.py` (a blank quoted line separates variant paragraphs),
 `archive/0.7.14-worklog.md`.
+→ Additional ready-to-queue captions: `helper-joke-prompts.md` (three images,
+two continuous-shot videos). `generator/gravity.json` includes both prompt
+files. Select the MiniMax/Pika video workflow only for the video captions;
+the original image variants remain in `prompts.md` §18.

@@ -1072,3 +1072,47 @@ for the plain visit, which is the whole contract; a fixture that hand-stamps a
 landing must stamp both clocks, and an unreported landing must set
 `reportPrev = reportStep` so a bribe on it does not take back a report nobody
 made.
+
+## Tk: a list that blinks is a list that is rebuilt, and a checkbox that loses focus is `configure()`d
+
+`photos/generator/gallery.py` destroyed and recreated every prompt card on each
+`rescan` tick, each delete and each checkbox click. Three widget-level rules fix
+it, and all three are cheap:
+
+- **split "the set changed" from "a member changed".** `rebuild_cards()` owns the
+  visible set (filter, prompt file, column count, view mode); `sync_cards()`
+  walks the cards that already exist and calls `card.set_images(files, pending)`,
+  which diffs the tuple and touches only the count/pending labels. The worker's
+  one-second scan, a finished download, a delete and an undo all take the second
+  path, so the scroll offset, the hover and the keyboard focus survive.
+- **repainting a mode-0 `Checkbutton` destroys its indicator.** `configure()` on
+  a Tk checkbutton regenerates the label parts, so the click that just happened
+  loses focus and the list jumps. Put the state in the variable and the
+  `text` (the slug) on the widget, keep the indicator colour as the constant
+  `selectcolor`/`bg`, and express "off" with a separate small chip. Then a
+  toggle is `variable.set` + one `state=` on a button.
+- **`bind_all` for the wheel is finer-grained than per-widget binds, if it is
+  gated.** A `bind_all` handler that walks `winfo_containing(x_root, y_root)`
+  up the `master` chain to the scrolled canvas scrolls the list under the
+  pointer while a `Text` (batch log) or a `Toplevel` (viewer) keeps its own
+  wheel; binding every label inside every card would need a bind per thumbnail.
+  The same walk decides which of two panes (cards, sidebar) gets the event.
+
+Two more, learned the hard way in the same file:
+
+- **a list binding on one widget shadows `bind_all` for that widget's
+  children.** A `Toplevel`-bound `<Up>` that does not `return "break"` runs
+  *before* the `App`'s `bind_all` `<Up>` and then the list moves too; and an
+  `App` handler that returns `"break"` while the pointer is in an `Entry`
+  swallows the typed character. Gate on `winfo_class()` and return `None` for
+  entries, `"break"` for the rest.
+- **write the pan from `canvas.bbox("all")`, not from the last event's size.**
+  Scrollregion follows the canvas width as well as the frame height, so a
+  window resize with fitted cards fires no widget `<Configure>` at all; bind the
+  canvas `<Configure>` for the width/region and the inner frame `<Configure>`
+  for the column reflow, and only reflow when the column count (not the pixel
+  width) changes.
+
+Rebuilding is not the only transparency trap: a disabled card's caption in
+`FAINT` on `CARD_OFF` is about `2.9:1`, so read the contrast as well as the
+layout — `DIM` on `CARD_OFF` is `5:1`.

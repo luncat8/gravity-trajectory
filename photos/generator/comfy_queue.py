@@ -30,22 +30,23 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+sys.dont_write_bytecode = True
+
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-PROMPTS_MD = REPO / 'photos' / 'prompts.md'
 MANIFEST = HERE / 'queue-manifest.json'
 manifest_path = MANIFEST
 MANIFEST_NAME = 'queue-manifest.json'
 
 
-def discover_workflows():
+def discover_workflows(root=None):
 	"""Every API-format workflow json next to this script is a template.
 
 	The queue manifest and any json that is not a ComfyUI "Save (API format)"
 	export (a dict of nodes keyed by id, each with a class_type) are skipped.
 	"""
 	found = {}
-	for path in sorted(HERE.glob('*.json')):
+	for path in sorted((Path(root) if root else HERE).glob('*.json')):
 		if path.name == MANIFEST_NAME:
 			continue
 		try:
@@ -56,7 +57,7 @@ def discover_workflows():
 				all(isinstance(node, dict) and 'class_type' in node
 					for node in graph.values())):
 			continue
-		found[path.stem] = path.name
+		found[path.stem] = str(path.resolve())
 	return found
 
 
@@ -98,16 +99,17 @@ ASPECT_3_2 = '3:2 (Photo)'
 # 1.5 MP at 3:2 is exactly 1536 x 1024, the size photos/README.md asks for.
 MEGAPIXELS = 1.5
 PROMPT_SLOT = '##prompt'
-EXTS = ('.jpg', '.png')
+EXTS = ('.jpg', '.png', '.webp', '.mp4', '.webm')
 DEFAULT_SERVER = os.environ.get('COMFYUI', 'http://127.0.0.1:8188')
-
-CAPTION_ROW = re.compile(
-	r'^###\s+\d+\s*·\s*([a-z]+)\s*·\s*(from space|landed|career)\s*→\s*`([^`]+)`\s*$')
-
 
 class ComfyError(RuntimeError):
 	"""A ComfyUI call failed; the message is the whole diagnosis."""
 
+
+ASPECT_LABELS = {ratio: f'{ratio} ({label})' for ratio, label in (
+	('1:1', 'Square'), ('2:3', 'Portrait Photo'), ('3:2', 'Photo'),
+	('3:4', 'Portrait Standard'), ('4:3', 'Standard'),
+	('9:16', 'Portrait Widescreen'), ('16:9', 'Widescreen'), ('21:9', 'Ultrawide'))}
 
 # ---------------------------------------------------------------- prompts.md
 
@@ -134,34 +136,40 @@ def read_prompts(path):
 	generator writes each as its own file (`<stem>.jpg`, `<stem>-2.jpg`, ...).
 	"""
 	items = []
+	pattern = re.compile(r'^###\s+\d+\s*·\s*([^·]+)\s*·\s*(.+?)\s*→\s*`([^`]+)`\s*$')
 	current = None
-	for raw in path.read_text(encoding='utf-8').splitlines():
+	for raw in Path(path).read_text(encoding='utf-8').splitlines():
 		line = raw.strip()
-		match = CAPTION_ROW.match(line)
+		match = pattern.match(line)
 		if match:
-			type_, where, target = match.groups()
-			current = {'type': type_,
-				'situation': 'space' if where == 'from space' else where,
+			category, label, target = (v.strip() for v in match.groups())
+			where = 'space' if label == 'from space' else label
+			game = where in ('space', 'landed', 'career', 'video')
+			current = {'type': category if game else label,
+				'situation': where if game else category,
 				'target': target, 'style': '', 'parts': []}
 			items.append(current)
 			continue
 		if current is None:
 			continue
-		if line.startswith('## ') or line.startswith('# '):
+		if line.startswith('#'):
 			current = None
 		elif line.startswith('*Style:'):
 			current['style'] = line[7:].strip().rstrip('*').strip().rstrip('.')
+		elif line.startswith('*Aspect:'):
+			aspect = re.search(r'(\d+:\d+)\s*·\s*([\d.]+)\s*MP', line)
+			if aspect:
+				current['aspect_ratio'] = aspect.group(1)
+				current['megapixels'] = float(aspect.group(2))
 		elif line.startswith('>'):
 			current['parts'].append(line[1:].strip())
 	for item in items:
 		item['texts'] = paragraphs(item.pop('parts'))
+		if not item['texts']:
+			raise SystemExit(f"empty caption for {item['target']}")
+		item['text'] = item['texts'][0]
 	if not items:
 		raise SystemExit(f'no captions found in {path}')
-	empty = [i['target'] for i in items if not i['texts']]
-	if empty:
-		raise SystemExit(f'empty caption for {", ".join(empty)}')
-	for item in items:
-		item['text'] = item['texts'][0]
 	return items
 
 
@@ -191,8 +199,8 @@ def one_node(workflow, class_type):
 
 def prompt_slot(workflow):
 	"""The multiline text node holding the '##prompt' placeholder."""
-	for nid, node in nodes_of(workflow, 'PrimitiveStringMultiline'):
-		if PROMPT_SLOT in str(node['inputs'].get('value', '')):
+	for nid, node in workflow.items():
+		if any(value == PROMPT_SLOT for value in node.get('inputs', {}).values()):
 			return nid
 	raise SystemExit(f'workflow has no text node containing {PROMPT_SLOT!r}')
 
@@ -233,14 +241,6 @@ def negative_slot(workflow):
 	return None
 
 
-def latent_node(workflow):
-	for class_type in ('EmptyLatentImage', 'EmptyFlux2LatentImage'):
-		found = nodes_of(workflow, class_type)
-		if found:
-			return found[0][1]
-	return None
-
-
 def apply_override(workflow, spec):
 	"""--set NODE.INPUT=VALUE, e.g. --set 30:3.steps=8 or 30:24.value=false."""
 	target, sep, raw = spec.partition('=')
@@ -260,13 +260,22 @@ def apply_override(workflow, spec):
 
 def build(workflow_path, job, args):
 	"""Load the template and patch one job into it."""
-	workflow = json.loads(workflow_path.read_text(encoding='utf-8'))
+	return patch_graph(json.loads(workflow_path.read_text(encoding='utf-8')), job, args)
 
-	workflow[prompt_slot(workflow)]['inputs']['value'] = job['text']
 
-	sampler = sampler_node(workflow)['inputs']
+def patch_graph(template, job, args):
+	workflow = json.loads(json.dumps(template))
+	slot = workflow[prompt_slot(workflow)]['inputs']
+	key = next(key for key, value in slot.items() if value == PROMPT_SLOT)
+	slot[key] = job['text']
+
+	video = bool(nodes_of(workflow, 'SaveVideo'))
+	sampler = one_node(workflow, 'RandomNoise' if video else 'KSampler')['inputs']
+	seed_key = 'noise_seed' if video else 'seed'
 	if job['seed'] is not None:
-		sampler['seed'] = job['seed']
+		sampler[seed_key] = job['seed']
+	if video and (args.steps is not None or args.cfg is not None):
+		raise SystemExit('video uses ManualSigmas/BasicGuider; use --set for sampler overrides')
 	if args.steps is not None:
 		sampler['steps'] = args.steps
 	if args.cfg is not None:
@@ -274,29 +283,30 @@ def build(workflow_path, job, args):
 
 	if args.no_refine:
 		node_id, name = refine_slot(workflow)
-		if node_id is None:
-			raise SystemExit('workflow has no prompt-refine switch to turn off')
-		workflow[node_id]['inputs'][name] = False
+		if node_id is not None:
+			workflow[node_id]['inputs'][name] = False
 
-	negative = negative_slot(workflow)
+	negative = None if video else negative_slot(workflow)
 	if negative is not None and args.negative is not None:
 		negative['inputs']['text'] = args.negative
 
 	resolution = nodes_of(workflow, 'ResolutionSelector')
 	if resolution and args.size is None:
 		inputs = resolution[0][1]['inputs']
-		inputs['aspect_ratio'] = args.aspect
-		inputs['megapixels'] = args.megapixels
+		ratio = job.get('aspect_ratio')
+		inputs['aspect_ratio'] = args.aspect or (ASPECT_LABELS[ratio] if ratio else ASPECT_3_2)
+		inputs['megapixels'] = args.megapixels or job.get('megapixels', MEGAPIXELS)
 
-	latent = latent_node(workflow)
-	if latent is not None and args.size is not None:
+	if args.size is not None:
 		width, height = args.size
-		latent['inputs']['width'] = width
-		latent['inputs']['height'] = height
+		for node in workflow.values():
+			inputs = node.get('inputs', {})
+			if 'width' in inputs and 'height' in inputs:
+				inputs['width'], inputs['height'] = width, height
 
 	stem = Path(job['target']).stem
-	one_node(workflow, 'SaveImage')['inputs']['filename_prefix'] = \
-		f'gravity/{job["situation"]}/{stem}'
+	one_node(workflow, 'SaveVideo' if video else 'SaveImage')['inputs']['filename_prefix'] = \
+		f'{args.prefix}/{job["situation"]}/{stem}'
 
 	for spec in args.set or ():
 		apply_override(workflow, spec)
@@ -338,8 +348,8 @@ def job_extra_data(job, args):
 		return None
 	stem = Path(job['target']).stem
 	return {'extra_pnginfo': {'workflow': {
-		'workflow_name': f'gravity · {job["workflow"]} · {job["situation"]}/{stem}',
-		'id': f'gravity-{job["workflow"]}',
+		'workflow_name': f'{getattr(args, "prefix", "renders")} · {job["workflow"]} · {job["situation"]}/{stem}',
+		'id': f'{getattr(args, "prefix", "renders")}-{job["workflow"]}',
 	}}}
 
 
@@ -357,10 +367,15 @@ def history(server, prompt_id):
 	return json.loads(raw).get(prompt_id) or {}
 
 
+def output_files(node_output):
+	return [item for key in ('images', 'videos', 'gifs')
+		for item in node_output.get(key, ()) if 'filename' in item]
+
+
 def save_outputs(server, entry, target):
 	written = []
 	for node_output in (entry.get('outputs') or {}).values():
-		for image in node_output.get('images') or ():
+		for image in output_files(node_output):
 			query = urllib.parse.urlencode({
 				'filename': image['filename'],
 				'subfolder': image.get('subfolder', ''),
@@ -368,6 +383,8 @@ def save_outputs(server, entry, target):
 			})
 			blob = request(f'{server}/view?{query}', timeout=120)
 			path = resolve(target).with_suffix(Path(image['filename']).suffix or '.png')
+			if written:
+				path = path.with_name(f'{path.stem}-{len(written) + 1}{path.suffix}')
 			path.parent.mkdir(parents=True, exist_ok=True)
 			path.write_bytes(blob)
 			written.append(path)
@@ -379,10 +396,14 @@ def save_outputs(server, entry, target):
 def target_path(job, out_dir):
 	"""photos/space/rock.jpg -> <out>/space/rock[-N].jpg (also career/), matching photo_deck.js."""
 	named = Path(job['target'])
+	if named.is_absolute() or '..' in named.parts:
+		raise SystemExit('prompt targets must be relative paths without ..')
+	if named.parts and named.parts[0] == 'photos':
+		named = Path(*named.parts[1:])
 	stem = named.stem
 	if job['variant']:
 		stem = f'{stem}-{job["variant"] + 1}'
-	return Path(out_dir) / named.parent.name / f'{stem}{named.suffix}'
+	return Path(out_dir) / named.parent / f'{stem}{named.suffix}'
 
 
 def resolve(target):
@@ -404,11 +425,15 @@ def existing(target):
 def make_jobs(items, args, workflows):
 	jobs = []
 	for workflow in workflows:
+		graph = json.loads(Path(WORKFLOWS[workflow]).read_text(encoding='utf-8'))
+		is_video = bool(nodes_of(graph, 'SaveVideo'))
 		for item in items:
+			if (item['situation'] == 'video') != is_video:
+				continue
 			# A career caption writes one card per quoted paragraph; the deck
 			# reads no career variants, so extra texts are separate files, not
 			# seed repeats. A planet caption is one text repeated by --variants.
-			pictures = (len(item['texts']) if item['situation'] == 'career'
+			pictures = (len(item['texts']) if item['situation'] in ('career', 'video')
 				else args.variants)
 			for variant in range(pictures):
 				job = dict(item)
@@ -433,6 +458,7 @@ def load_manifest():
 
 
 def write_manifest(manifest):
+	manifest_path.parent.mkdir(parents=True, exist_ok=True)
 	manifest_path.write_text(json.dumps(manifest, indent='\t') + '\n', encoding='utf-8')
 
 
@@ -539,6 +565,20 @@ def parse_size(text):
 	return int(match.group(1)), int(match.group(2))
 
 
+def project_items(items, config):
+	for item in items:
+		size = config.get('category_sizes', {}).get(item['situation'])
+		if size:
+			item.setdefault('aspect_ratio', size[0])
+			item.setdefault('megapixels', size[1])
+	return items
+
+
+def load_project(path):
+	path = Path(path).resolve()
+	return json.loads(path.read_text(encoding='utf-8')), path.parent
+
+
 def main(argv=None):
 	parser = argparse.ArgumentParser(
 		description='Queue photos/prompts.md into ComfyUI and collect the renders.',
@@ -548,6 +588,10 @@ def main(argv=None):
 			'  comfy_queue.py --workflow all --variants 2 --wait\n'
 			'  comfy_queue.py --types gas,ice --situation landed --force\n'
 			'  comfy_queue.py --set 30:3.steps=6 --set 30:24.value=false\n')
+	parser.add_argument('--project', default=str(HERE / 'gravity.json'), help='project configuration JSON')
+	parser.add_argument('--prompts', action='append', help='Markdown prompt file (repeatable)')
+	parser.add_argument('--workflow-dir', help='directory of API workflow JSON templates')
+	parser.add_argument('--prefix', default=None, help='ComfyUI output prefix')
 	parser.add_argument('--server', default=DEFAULT_SERVER,
 		help=f'ComfyUI base url (default {DEFAULT_SERVER}, env COMFYUI)')
 	parser.add_argument('--workflow', default=None, metavar='NAME',
@@ -556,7 +600,7 @@ def main(argv=None):
 	parser.add_argument('--types', default='all',
 		help='comma list of rock,terran,super,dwarf,mini,gas,ice,circus or '
 			'catapult,delivery,sport (default all)')
-	parser.add_argument('--situation', choices=['space', 'landed', 'career', 'both'], default='both')
+	parser.add_argument('--situation', default='both')
 	parser.add_argument('--variants', type=int, default=1,
 		help='pictures per caption; planet texts repeat with a new seed, a caption '
 			'with several quoted paragraphs cycles them; career captions write '
@@ -565,15 +609,15 @@ def main(argv=None):
 		help='base seed; without it the seed stored in the template is reused')
 	parser.add_argument('--steps', type=int, default=None, help='override KSampler steps')
 	parser.add_argument('--cfg', type=float, default=None, help='override KSampler cfg')
-	parser.add_argument('--aspect', default=ASPECT_3_2,
+	parser.add_argument('--aspect', default=None,
 		help=f'ResolutionSelector aspect_ratio (default {ASPECT_3_2!r})')
-	parser.add_argument('--megapixels', type=float, default=MEGAPIXELS)
+	parser.add_argument('--megapixels', type=float, default=None)
 	parser.add_argument('--size', type=parse_size, default=None,
 		help='exact WxH, bypassing the ResolutionSelector (e.g. 1536x1024)')
 	parser.add_argument('--negative', default=None, help='replace the negative prompt text')
 	parser.add_argument('--no-refine', action='store_true',
 		help='send the caption verbatim, skipping the graph\'s prompt refiner')
-	parser.add_argument('--out', default=str(REPO / 'photos'),
+	parser.add_argument('--out', default=None,
 		help='where photos/space and photos/landed live (default photos/)')
 	parser.add_argument('--force', action='store_true', help='redo captions that already have art')
 	parser.add_argument('--no-extra-data', action='store_true',
@@ -586,7 +630,7 @@ def main(argv=None):
 		help='seconds to wait for renders with --wait/--collect (default 1800)')
 	parser.add_argument('--collect', action='store_true',
 		help='only download jobs recorded in the manifest')
-	parser.add_argument('--manifest', default=str(MANIFEST))
+	parser.add_argument('--manifest', default=None)
 	parser.add_argument('--list', action='store_true', help='print the caption pack and exit')
 	parser.add_argument('--set', action='append', default=[], metavar='NODE.INPUT=VALUE',
 		help='raw patch of the template, repeatable')
@@ -597,10 +641,18 @@ def main(argv=None):
 		parser.error('--variants is capped at 3: photo_deck.js only looks for '
 			'<type>, <type>-2 and <type>-3')
 
+	config, base = load_project(args.project)
+	args.out = args.out or str(base / config['output'])
+	args.prefix = args.prefix or config.get('prefix', 'renders')
+	global WORKFLOWS
+	WORKFLOWS = discover_workflows(args.workflow_dir or base / config['workflows'])
 	global manifest_path
-	manifest_path = Path(args.manifest)
+	manifest_path = Path(args.manifest) if args.manifest else (
+		MANIFEST if Path(args.project).resolve() == HERE / 'gravity.json'
+		else Path(args.out) / MANIFEST_NAME)
 
-	items = read_prompts(PROMPTS_MD)
+	paths = [Path(p).resolve() for p in args.prompts] if args.prompts else [base / p for p in config['prompts']]
+	items = project_items([item for path in paths for item in read_prompts(path)], config)
 	if args.list:
 		print_table(items)
 		return 0
@@ -612,12 +664,14 @@ def main(argv=None):
 			raise SystemExit(str(err))
 
 	workflows = resolve_workflow(args.workflow if args.workflow is not None
-		else default_workflow())
+		else config.get('default_workflow') or default_workflow())
 	for workflow in workflows:
 		for spec in args.set:
 			apply_override(json.loads((HERE / WORKFLOWS[workflow]).read_text(encoding='utf-8')), spec)
 
 	jobs = make_jobs(select(items, args.types, args.situation), args, workflows)
+	if not jobs:
+		raise SystemExit('no compatible jobs: select an image workflow for images, or a video workflow for video captions')
 	print(f'{len(jobs)} job(s): {", ".join(workflows)} · {args.aspect} · '
 		f'{args.megapixels} MP{"" if args.size is None else f" · {args.size[0]}x{args.size[1]}"}'
 		f'{" · dry run" if args.dry_run else ""}')
