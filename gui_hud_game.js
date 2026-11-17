@@ -354,8 +354,7 @@ function statsStripHtml(galaxy, market, step) {
 		tax += career.taxEarned;
 		fees += career.feesPaid;
 		fuel += career.fuelSpent;
-		evac += career.evacuations *
-			(career.cheat === GravityGame.CHEAT_COMMUNISM ? 0 : GravityGame.CAREER.evacFee);
+		evac += career.evacuationSpent;
 		const base = 2 + i * 4;
 		profitData.push(statsRateRow(stats.series[base], count, seconds));
 		propertyData.push(stats.series[base + 1]);

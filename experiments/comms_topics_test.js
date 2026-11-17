@@ -225,7 +225,8 @@ assertCleanOutput(spaceRepair, 'space/repair');
 assert.strictEqual(spaceRepair.text.split('Money can be earned').length - 1, 1);
 assert.strictEqual(spaceRepair.actions.length, 1);
 assert.strictEqual(spaceRepair.actions[0].id, 'evac');
-assert.strictEqual(spaceRepair.actions[0].enabled, false);
+assert.strictEqual(spaceRepair.actions[0].enabled, true);
+assert.ok(spaceRepair.text.includes('takes ' + Game.evacuationSeconds(w.career).toFixed(0) + ' s'));
 
 /* 5. Bounded one-step look-ahead: states arithmetic only when 1 on-planet step covers it. */
 Game.placeShip(w.career, w.sim, other);
@@ -251,7 +252,7 @@ Game.setShipCondition(w.career, 1);
 w.career.ledger.purse = 4.0;
 w.market.visitPay[other] = 1.25; /* offer = 2.50 -> 4.00 + 2.50 = 6.50 >= evac 6.00 */
 const evacAhead = Comms.renderTopic('pad', snap(w));
-assert.ok(evacAhead.text.includes('covering evacuation ' + Game.CAREER.evacFee.toFixed(2)),
+assert.ok(evacAhead.text.includes('covering the full evacuation fare ' + Game.CAREER.evacFee.toFixed(2)),
 	evacAhead.text);
 assert.strictEqual(evacAhead.actions.some(a => a.id === 'bribe'), false);
 

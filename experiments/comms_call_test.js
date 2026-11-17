@@ -105,5 +105,16 @@ assert.strictEqual(get('Object.keys(commsState.dismissed).length'), 0);
 
 run('playerCareer().ship.condition = 0; replay.on = true; commsTick()');
 assert.strictEqual(get('commsState.callKey'), '', 'no call during replay');
+run('replay.on = false; playerCareer().ledger.purse = 0; playerCareer().at = -1; ' +
+	'playerCareer().stranded = true; game.clockSteps += Math.ceil(1 / GravitySim.DT); commsTick()');
+assert.ok(get('commsState.callKey').startsWith('space|P-1|'),
+	'a lost-in-space situation raises the radio call');
+assert.strictEqual(ui.get('commsBadge').hidden, false);
+assert.ok(ui.get('commsButton').attributes['aria-label'].includes('open radio assistant'),
+	'the always-visible entry point identifies itself as radio');
+env.click('commsButton');
+assert.strictEqual(ui.get('commsCard').hidden, false, 'the H radio button opens the dialog manually');
+assert.ok(ui.get('commsAnswer').textContent.includes('Evacuate to HQ'),
+	ui.get('commsAnswer').textContent);
 
 console.log('COMMS CALL OK');

@@ -125,10 +125,15 @@ function commsResetVisit(career, planet) {
 
 function commsActiveFinding(career) {
 	if (!career || !careerRule() || replay.on || playerIsBot() ||
-		career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
+		career.ended !== GravityGame.CAREER_OPEN ||
 		activeSim().status === STATUS_FLYING || careerWaitBusy()) return null;
+	if (career.at < 0) {
+		return career.stranded
+			? GravityGame.launchReason(career, activeCareerSim(), career.hq, SPEED_MIN, false)
+			: null;
+	}
 	const armedHere = armed && aimBody === career.at;
-	if (!armedHere && GravityGame.careerShipUsable(career)) return null;
+	if (!armedHere && GravityGame.careerShipUsable(career) && !career.stranded) return null;
 	const speed = armedHere ? aimSpeed : SPEED_MIN;
 	const reason = GravityGame.launchReason(career, activeCareerSim(), career.at, speed, false);
 	if (!reason) return null;
@@ -328,8 +333,11 @@ function commsPaint() {
 	if (commsButton) {
 		const tagText = called ? GravityGame.formatLaunchReason(commsState.callReason) : '';
 		commsButton.classList.toggle('called', called);
-		commsButton.setAttribute('aria-label', called ? 'H calls: ' + tagText : 'call H');
-		commsButton.title = called ? 'H calls: ' + tagText : 'call H';
+		commsButton.setAttribute('aria-label', called
+			? 'H calls: ' + tagText + ' · open radio assistant'
+			: 'open H radio assistant');
+		commsButton.title = called ? 'H calls: ' + tagText + ' · open radio assistant'
+			: 'open H radio assistant';
 		commsButton.setAttribute('aria-pressed', commsState.open ? 'true' : 'false');
 	}
 	if (commsBadge) commsBadge.hidden = !called;

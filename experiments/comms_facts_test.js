@@ -201,7 +201,9 @@ try {
 	w.career.knownGear['EMC-ALPHA'] = true;
 	w.sim.setScales(1, 1.5);
 	s = snap(w);
-	assert.strictEqual(s.evacCost, 9.45);
+	assert.strictEqual(s.evacFee, 9.45);
+	assert.strictEqual(s.evacCost, Math.max(0, w.career.ledger.purse));
+	assert.ok(s.evacSeconds >= Game.CAREER.evacFullSeconds);
 	assert.strictEqual(s.taxPerKwh, 1.75);
 	assert.strictEqual(s.nextPadId, 'EMC-ALPHA');
 	assert.strictEqual(s.nextPadCost, 5.67);
@@ -216,9 +218,10 @@ try {
 	assert.strictEqual(buildBtn.enabled, false);
 	assert.ok(buildBtn.why.includes((5.67 - 1.15).toFixed(2)), buildBtn.why);
 	const evacBtn = padOut.actions.find(a => a.id === 'evac');
-	assert.ok(evacBtn && evacBtn.label.includes('9.45'));
-	assert.strictEqual(evacBtn.enabled, false);
-	assert.ok(evacBtn.why.includes((9.45 - 1.15).toFixed(2)), evacBtn.why);
+	assert.ok(evacBtn && evacBtn.label.includes('1.15'));
+	assert.strictEqual(evacBtn.enabled, true);
+	assert.strictEqual(evacBtn.why, '');
+	assert.ok(padOut.text.includes('takes ' + Comms.H_SLOTS.evacSeconds(s)));
 
 	/* Change OBS[1].id: money and repair pick up the live device name, not a string literal. */
 	Tech.OBS[1].id = 'OBS-PRIME';

@@ -359,7 +359,12 @@ function careerWaitProgress(p) {
 	const pct = Math.round(p * 100);
 	if (pct === careerWaitAnim.pct) return;
 	careerWaitAnim.pct = pct;
-	careerWaitBtn.textContent = 'waiting · ' + pct + ' %';
+	const evac = careerWaitAnim.kind === 'evac';
+	careerWaitBtn.textContent = evac ? 'evacuating · ' + pct + ' %' : 'waiting · ' + pct + ' %';
+	if (evac && launchEvacBtn) {
+		launchEvacBtn.disabled = true;
+		launchEvacBtn.textContent = 'evacuating · ' + pct + ' %';
+	}
 	const career = careerWaitAnim.career;
 	const pad = career.pads[careerWaitAnim.planet];
 	if (pad && pad.catapult !== null) {
@@ -383,6 +388,13 @@ function careerWaitProgress(p) {
 		? ' · ' + planetName(careerWaitAnim.planet) + ' ' + pad.chargeKwh.toFixed(2) +
 			' / ' + pad.battery.capacity.toFixed(2) + ' kWh'
 		: '';
+	if (evac) {
+		careerWaitInfoEl.textContent = 'evacuation · ' +
+			Math.round(careerWaitAnim.wallSeconds * p) + ' / ' +
+			Math.round(careerWaitAnim.wallSeconds) + ' real s · cost ' +
+			careerWaitAnim.cost.toFixed(2);
+		return;
+	}
 	careerWaitInfoEl.textContent = 'fast-forward · ' + (CAREER_WAIT_SEC * p).toFixed(1) +
 		' / ' + CAREER_WAIT_SEC + ' s · clock +' +
 		Math.round(GravitySim.gameSeconds(careerWaitAnim.done)) + ' s' + padNote;
@@ -394,6 +406,17 @@ function careerWaitFinish() {
 	careerWaitAnim = null;
 	const career = anim.career;
 	if (pauseOnLanding) setCareerPaused(true, anim.slot);
+	if (anim.kind === 'evac') {
+		GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
+		const purseBefore = career.ledger.purse;
+		const done = GravityGame.evacuate(career, anim.sim, anim.cost);
+		const paid = purseBefore - career.ledger.purse;
+		careerWaitBtn.classList.remove('on');
+		careerNotice(done ? 'evacuated to HQ ' + planetName(career.hq) + ' · paid ' +
+			paid.toFixed(2) + ' · ' + Math.round(anim.wallSeconds) + ' real s' : 'evacuation failed');
+		careerChanged();
+		return;
+	}
 	const pad = career.pads[anim.planet];
 	const after = pad.catapult === null ? 0 : pad.chargeKwh;
 	const gain = after - anim.before;
@@ -423,11 +446,13 @@ function careerWaitTick(now) {
 	const dt = now - anim.last;
 	anim.last = now;
 	if (dt > 0) anim.credit += dt < WAIT_FRAME_MS ? dt : WAIT_FRAME_MS;
-	const p = anim.credit < CAREER_WAIT_MS ? anim.credit / CAREER_WAIT_MS : 1;
+	const durationMs = anim.durationMs || CAREER_WAIT_MS;
+	const p = anim.credit < durationMs ? anim.credit / durationMs : 1;
 	const eased = easeInOut(p);
 	const steps = Math.round(eased * anim.steps);
+	const clockSec = anim.clockSec || GravitySim.WAIT_SEC;
 	tradeSim.advanceTo(anim.startT +
-		GravitySim.tradeMinutes(GravitySim.WAIT_SEC, scene.trade.speed) * eased);
+		GravitySim.tradeMinutes(clockSec, scene.trade.speed) * eased);
 	cargoSim.fieldT = tradeSim.t;
 	if (steps > anim.done) {
 		/* recharge from the start snapshot, so the eased chunks land on the
@@ -491,13 +516,43 @@ function cancelCareerWait() {
 
 function careerEvacuate() {
 	const career = activeCareer();
-	if (!GravityGame.evacuate(career, activeSim())) {
+	if (!career.stranded || career.ended !== GravityGame.CAREER_OPEN) {
 		careerNotice('nothing to evacuate');
 		return;
 	}
+	const cost = GravityGame.evacuationCost(career);
+	const durationSec = GravityGame.evacuationSeconds(career);
+	const clockSec = durationSec * playPace();
+	const steps = GravitySim.stepsForGameSeconds(clockSec);
+	setCareerPaused(false);
 	cancelAim();
-	careerNotice('evacuated to HQ ' + planetName(career.hq));
-	careerChanged();
+	careerWaitAnim = {
+		kind: 'evac',
+		slot: activeSlotIndex(),
+		career: career,
+		sim: activeSim(),
+		planet: -1,
+		before: 0,
+		charges: Float64Array.from(career.pads, p => p.chargeKwh),
+		steps: steps,
+		clockSec: GravitySim.gameSeconds(steps),
+		durationSec: durationSec,
+		wallSeconds: durationSec / playPace(),
+		durationMs: durationSec / playPace() * 1000,
+		cost: cost,
+		done: 0,
+		pct: -1,
+		credit: 0,
+		last: performance.now(),
+		startClock: game.clockSteps,
+		startT: tradeSim.t
+	};
+	careerWaitBtn.disabled = true;
+	careerWaitBtn.classList.add('on');
+	careerWaitProgress(0);
+	careerNotice('evacuation started · ' + cost.toFixed(2) + ' · ' +
+		Math.round(durationSec) + ' s at ×1');
+	hudAt = -Infinity;
 }
 
 function conditionText(career) {

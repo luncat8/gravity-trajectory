@@ -174,22 +174,28 @@ assert.match(ui.get('careerMsg').textContent, /^bribed the rulers of P/);
 assert.match(ui.get('commsCtas').innerHTML, /data-comms-act="bribe"[^>]*disabled/);
 assert.ok(ui.get('commsCtas').innerHTML.includes('already bribed this visit'));
 
-/* 9. Evac CTA refuses when purse < evacFee (never bankrupts) and flies home when solvent. */
+/* 9. A short purse still evacuates: the quoted fare is affordable cash and the duration grows. */
 const third = unownedNormalPlanet(career);
 Game.placeShip(career, sim, third);
 career.stranded = true;
 career.ledger.purse = Game.CAREER.evacFee - 1;
+const expectedEvacSeconds = Game.evacuationSeconds(career);
 run('commsTick()');
 clickChip('pad');
-assert.match(ui.get('commsCtas').innerHTML, /data-comms-act="evac"[^>]*disabled/);
-assert.strictEqual(get("commsRunAction('evac')"), false);
-assert.strictEqual(career.at, third);
-assert.strictEqual(career.ended, Game.CAREER_OPEN);
-
-career.ledger.purse = Game.CAREER.evacFee + 2;
-run('commsInvalidate(); commsTick()');
-clickCta('evac');
+assert.match(ui.get('commsCtas').innerHTML, /data-comms-act="evac"[^>]*>/);
+assert.strictEqual(get("commsRunAction('evac')"), true);
+assert.strictEqual(career.at, third, 'the ship stays stranded while the rescue is underway');
+assert.strictEqual(get('careerWaitAnim.kind'), 'evac');
+assert.strictEqual(get('careerWaitAnim.cost'), career.ledger.purse);
+assert.ok(get('careerWaitAnim.durationSec') > Game.CAREER.evacFullSeconds);
+get('careerWaitAnim').credit = 20;
+get('careerWaitAnim').durationMs = 20;
+get('careerWaitAnim').steps = 1;
+get('careerWaitAnim').clockSec = Sim.DT;
+run('careerWaitTick(careerWaitAnim.last + 20)');
 assert.strictEqual(career.at, hq);
-assert.strictEqual(ui.get('careerMsg').textContent, 'evacuated to HQ P' + hq);
+assert.strictEqual(ui.get('careerMsg').textContent,
+	'evacuated to HQ P' + hq + ' · paid ' + (Game.CAREER.evacFee - 1).toFixed(2) + ' · ' +
+	Math.round(expectedEvacSeconds / get('playPace()')) + ' real s');
 
 console.log('COMMS PAGE OK');

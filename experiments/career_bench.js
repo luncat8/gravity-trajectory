@@ -477,7 +477,7 @@ check('career stranded: building a catapult brings a charged starter pad; the pa
 	assert.ok(!GravityGame.buildGear(career, here, 'battery', BAT[0]), 'no downgrade');
 });
 
-check('career evacuation: fee, ship back on HQ, broke when the purse cannot cover an exit', () => {
+check('career evacuation: full fare, partial fare and zero fare all return the ship to HQ', () => {
 	const w = makeWorld(42);
 	startCareer(w, 42);
 	const { career, sim, ledger } = w;
@@ -485,22 +485,33 @@ check('career evacuation: fee, ship back on HQ, broke when the purse cannot cove
 	const shot = findShot(w, career.hq, -1);
 	fly(w, career.hq, shot.angle, shot.speed);
 	const purse = ledger.purse;
+	assert.strictEqual(GravityGame.evacuationCost(career), CAREER.evacFee);
+	assert.strictEqual(GravityGame.evacuationSeconds(career), CAREER.evacFullSeconds);
 	assert.ok(GravityGame.evacuate(career, sim));
 	assert.ok(Math.abs(ledger.purse - (purse - CAREER.evacFee)) < 1e-9);
 	assert.ok(career.at === career.hq && !career.stranded && career.evacuations === 1);
 	assert.strictEqual(sim.landedBody, career.hq);
 	assert.ok(sim.status === GravitySim.STATUS_IDLE && sim.canLaunchFrom(career.hq));
 	assert.strictEqual(career.ended, GravityGame.CAREER_OPEN);
-	/* second stranding with a thin purse: no affordable exit = broke */
+	/* second stranding with a thin purse stays recoverable through a slower evacuation */
 	const again = findShot(w, career.hq, -1);
 	assert.ok(again, 'HQ pad still has charge for a slow shot: limit ' + sim.speedLimit(career.hq));
 	assert.strictEqual(fly(w, career.hq, again.angle, again.speed), GravityGame.CAREER_OPEN);
 	assert.ok(career.stranded);
-	/* a purse short of every way off is broke; price it the way checkEnded does */
 	const exit = GravityGame.exitCostAt(career, career.at, career.ship.mass);
 	ledger.purse = exit - 0.5;
-	assert.strictEqual(GravityGame.checkEnded(career), GravityGame.CAREER_BROKE);
-	assert.strictEqual(career.ended, GravityGame.CAREER_BROKE);
+	assert.strictEqual(GravityGame.checkEnded(career), GravityGame.CAREER_OPEN);
+	assert.strictEqual(GravityGame.evacuationCost(career), ledger.purse);
+	assert.ok(GravityGame.evacuationSeconds(career) > GravityGame.CAREER.evacFullSeconds);
+	assert.ok(GravityGame.evacuate(career, sim));
+	assert.strictEqual(ledger.purse, 0);
+	assert.strictEqual(career.ended, GravityGame.CAREER_OPEN);
+	career.at = -1;
+	career.stranded = true;
+	assert.strictEqual(GravityGame.evacuationCost(career), 0);
+	assert.strictEqual(GravityGame.evacuationSeconds(career), GravityGame.CAREER.evacFreeSeconds);
+	assert.ok(GravityGame.evacuate(career, sim));
+	assert.strictEqual(ledger.purse, 0, 'zero-cost evacuation never makes the purse negative');
 	/* a negative purse is broke anywhere */
 	const v = makeWorld(7);
 	startCareer(v, 7);
@@ -665,7 +676,10 @@ check('career lost in space: a map exit strands nowhere; only the evacuation bri
 	ledger.purse = 20;
 	assert.ok(GravityGame.buildGear(career, career.hq, 'catapult', EMC[1]) && career.stranded, 'building does not rescue');
 	ledger.purse = CAREER.evacFee - 0.5;
-	assert.strictEqual(GravityGame.checkEnded(career), GravityGame.CAREER_BROKE, 'a cheap catapult is no way out');
+	assert.strictEqual(GravityGame.checkEnded(career), GravityGame.CAREER_OPEN,
+		'a short purse remains recoverable through a slower evacuation');
+	assert.strictEqual(GravityGame.evacuationCost(career), CAREER.evacFee - 0.5);
+	assert.ok(GravityGame.evacuationSeconds(career) > CAREER.evacFullSeconds);
 	const v = makeWorld(42);
 	startCareer(v, 42);
 	v.sim.landedBody = -1;
@@ -1943,8 +1957,9 @@ check('rail facts: the line, the block reasons and careerCanFire agree', () => {
 		'shot leaves from P' + far);
 	/* in space: only the evacuation is left */
 	assert.strictEqual(GravityGame.railText(w.career, w.sim, -1),
-		'ship in space · evac ' + GravityGame.CAREER.evacFee.toFixed(2) +
-			' · purse ' + w.career.ledger.purse.toFixed(2));
+		'ship in space · evac ' + GravityGame.evacuationCost(w.career).toFixed(2) +
+			' · ' + Math.round(GravityGame.evacuationSeconds(w.career)) + ' s · purse ' +
+			w.career.ledger.purse.toFixed(2));
 	w.career.at = -1;
 	assert.strictEqual(GravityGame.railBlock(w.career, w.sim, at, GravitySim.SPEED_MIN),
 		'ship in space');

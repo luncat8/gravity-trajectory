@@ -186,6 +186,10 @@ body {
 
 /* H is a non-modal card next to the flight panel; answers are plain text so
  * the live numbers remain selectable and screen-reader visible. */
+.commsButton {
+	white-space: nowrap;
+}
+
 .commsButton.called {
 	border-color: rgba(255, 207, 110, 0.72);
 	background: rgba(255, 207, 110, 0.14);

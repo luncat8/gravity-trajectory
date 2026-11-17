@@ -210,7 +210,9 @@
 			index: 0,
 			purse: 0,
 			stranded: false,
+			evacFee: 0,
 			evacCost: 0,
+			evacSeconds: 0,
 			reasons: Object.freeze([]),
 			feeNeed: 0,
 			armed: false,
@@ -398,7 +400,9 @@
 			index: career.index,
 			purse: purse,
 			stranded: Boolean(career.stranded),
-			evacCost: careerPrice(career, GravityGame.CAREER.evacFee),
+			evacFee: careerPrice(career, GravityGame.CAREER.evacFee),
+			evacCost: GravityGame.evacuationCost(career),
+			evacSeconds: GravityGame.evacuationSeconds(career),
 			reasons: reasons,
 			feeNeed: feeNeed,
 			armed: armed,
@@ -644,7 +648,7 @@
 			test: s => landedOpen(s) && (
 				(s.nextPadId !== '' && !canPay(s.purse, s.nextPadCost)) ||
 				(!s.ownPadHere && !canPay(s.purse, s.minFee)) ||
-				(padUnderpowered(s) && s.stranded && !canPay(s.purse, s.evacCost))),
+				(padUnderpowered(s) && s.stranded && !canPay(s.purse, s.evacFee))),
 			why: s => 'purse ' + money(s.purse)
 		}),
 		'can-offer-evac': Object.freeze({
@@ -654,13 +658,13 @@
 		}),
 		'can-evac': Object.freeze({
 			test: s => s.careerMode && s.ended === GravityGame.CAREER_OPEN &&
-				!s.flying && !s.arrested && s.stranded && canPay(s.purse, s.evacCost),
-			why: s => 'short ' + shortfall(s.evacCost, s.purse) + ' (purse ' + money(s.purse) + ')'
+				!s.flying && !s.arrested && s.stranded,
+			why: () => 'nothing to evacuate'
 		}),
 		'evac-short': Object.freeze({
 			test: s => s.careerMode && s.ended === GravityGame.CAREER_OPEN &&
-				!s.flying && !s.arrested && s.stranded && !canPay(s.purse, s.evacCost),
-			why: s => 'short ' + shortfall(s.evacCost, s.purse)
+				!s.flying && !s.arrested && s.stranded && !canPay(s.purse, s.evacFee),
+			why: s => 'reduced fare ' + cost(s.evacCost) + ' · takes ' + whole(s.evacSeconds) + ' s'
 		}),
 		'can-slower-shot': Object.freeze({
 			test: s => landedOpen(s) && hasReason(s, 'cap') && s.armedHere &&
@@ -685,7 +689,7 @@
 				(hasReason(s, 'worn') && !canPay(s.purse, s.repairCost)) ||
 				((hasReason(s, 'no-rail') || padUnderpowered(s)) && (
 					(s.nextPadId !== '' && !canPay(s.purse, s.nextPadCost)) ||
-					(s.stranded && !canPay(s.purse, s.evacCost))))),
+					(s.stranded && !canPay(s.purse, s.evacFee))))),
 			why: s => 'purse ' + money(s.purse)
 		}),
 		'fuel-ready': Object.freeze({
@@ -766,7 +770,7 @@
 		}),
 		'step-bribe-evac': Object.freeze({
 			test: s => bribeOpen(s) && s.stranded &&
-				!canPay(s.purse, s.evacCost) && canPay(s.purse + s.bribeAmount, s.evacCost),
+				!canPay(s.purse, s.evacFee) && canPay(s.purse + s.bribeAmount, s.evacFee),
 			why: () => ''
 		}),
 		'step-charge-fuel': Object.freeze({
@@ -783,6 +787,8 @@
 		hqTag: s => planetLabel(s.hq),
 		purse: s => money(s.purse),
 		evacCost: s => cost(s.evacCost),
+		evacFee: s => cost(s.evacFee),
+		evacSeconds: s => whole(s.evacSeconds) + ' s',
 		arrestWhy: s => HH_FACTS.arrest.why(s) || 'under arrest',
 		arrestLeft: s => whole(s.arrestLeftSec) + ' s',
 		arrestSeconds: s => whole(s.arrestSeconds) + ' s',
@@ -984,7 +990,7 @@
 			when: 'space',
 			lines: Object.freeze([
 				Object.freeze({
-					text: 'Ship is stranded in space · purse {purse}. Evacuate to HQ {hqTag}: {evacCost}.',
+					text: 'Ship is stranded in space · purse {purse}. Evacuate to HQ {hqTag} for {evacCost}; it takes {evacSeconds}.',
 					note: Object.freeze({ fact: 'can-evac', invert: true })
 				})
 			]),
@@ -1018,7 +1024,7 @@
 		}),
 		'bribe-evac': Object.freeze({
 			when: 'step-bribe-evac',
-			text: 'Purse {purse} + rulers’ offer {bribeAmount} = {afterBribePurse}, covering evacuation {evacCost} (one per visit, +{bribeRot} rot).'
+			text: 'Purse {purse} + rulers’ offer {bribeAmount} = {afterBribePurse}, covering the full evacuation fare {evacFee} (one per visit, +{bribeRot} rot).'
 		}),
 		'charge-fuel': Object.freeze({
 			when: 'step-charge-fuel',
@@ -1044,7 +1050,7 @@
 					when: 'arrest'
 				}),
 				Object.freeze({
-					text: 'Evacuate to HQ {hqTag}: {evacCost}.',
+					text: 'Evacuate to HQ {hqTag} for {evacCost}; it takes {evacSeconds}.',
 					when: Object.freeze({ all: Object.freeze(['space', 'can-offer-evac']) }),
 					note: Object.freeze({ fact: 'can-evac', invert: true })
 				}),
@@ -1074,7 +1080,7 @@
 					note: Object.freeze({ fact: 'can-build-pad', invert: true })
 				}),
 				Object.freeze({
-					text: 'Evacuate to HQ {hqTag}: {evacCost}.',
+					text: 'Evacuate to HQ {hqTag} for {evacCost}; it takes {evacSeconds}.',
 					when: Object.freeze({ all: Object.freeze([
 						Object.freeze({ any: Object.freeze(['no-rail', 'pad-underpowered']) }),
 						'can-offer-evac'
@@ -1194,7 +1200,7 @@
 					when: Object.freeze({ not: 'at-capital' })
 				}),
 				Object.freeze({
-					text: 'Evacuate to HQ {hqTag}: {evacCost}.',
+					text: 'Evacuate to HQ {hqTag} for {evacCost}; it takes {evacSeconds}.',
 					when: 'can-offer-evac',
 					note: Object.freeze({ fact: 'can-evac', invert: true })
 				})

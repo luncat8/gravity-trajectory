@@ -452,14 +452,22 @@ function setLaunchState(blocked, exitWarning) {
 			if (!c.stranded) {
 				launchEvacBtn.hidden = true;
 			} else {
-				const evacCost = careerCost(c, GravityGame.CAREER.evacFee);
-				const evacPoor = purseTooSmall(c, evacCost);
+				const evacCost = GravityGame.evacuationCost(c);
+				const evacSeconds = GravityGame.evacuationSeconds(c);
+				const evacWallSeconds = evacSeconds / playPace();
+				const evacuating = careerWaitAnim && careerWaitAnim.kind === 'evac';
 				launchEvacBtn.hidden = false;
 				launchEvacBtn.disabled = waitBusy;
-				launchEvacBtn.classList.toggle('costly', evacPoor);
-				launchEvacBtn.textContent = 'evacuate · ' + costText(evacCost);
-				launchEvacBtn.title = 'fly the ship home to HQ ' + planetName(c.hq) +
-					' for ' + costText(evacCost);
+				launchEvacBtn.classList.toggle('costly', evacCost > 0);
+				launchEvacBtn.textContent = evacuating
+					? 'evacuating · ' + Math.max(0, careerWaitAnim.pct) + ' %'
+					: 'evacuate · ' + costText(evacCost) + ' · ' + Math.round(evacWallSeconds) + ' s';
+				launchEvacBtn.title = evacuating
+					? 'evacuation to HQ ' + planetName(c.hq) + ' is in progress'
+					: 'fly home to HQ ' + planetName(c.hq) + ' · pay ' + costText(evacCost) +
+						' · ' + Math.round(evacSeconds) + ' game seconds, ' +
+						Math.round(evacWallSeconds) + ' real seconds at ' + paceTag() +
+						'; less money takes longer';
 			}
 		}
 	} else {

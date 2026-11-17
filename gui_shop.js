@@ -471,7 +471,8 @@ function padBlockHtml(career) {
 			' · ' + guestFeeClause(career, at) + '</div>' +
 			'<div class="careerLine dim">lifts ' + ship.mass.toFixed(1) + ' t to ' +
 			Math.round(lift) + ' px/s' + (heavy
-				? ' · too heavy · evacuate ' + costText(careerCost(career, GravityGame.CAREER.evacFee))
+				? ' · too heavy · evacuate ' + costText(GravityGame.evacuationCost(career)) +
+					' · ' + Math.round(GravityGame.evacuationSeconds(career)) + ' s at ×1'
 				: ' · charged for you') + '</div>';
 		if (occupied) {
 			html += '<div class="careerLine dim">' + claimTag(claimOwnerIdx) +

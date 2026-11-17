@@ -28,7 +28,7 @@ const RATE = 1;
 
 const STAT_FIELDS = [
     'visitIncome', 'flownPx', 'feesPaid', 'buildSpent', 'sciSpent',
-    'earned', 'bribeIncome', 'taxEarned', 'fuelSpent', 'evacuations'
+    'earned', 'bribeIncome', 'taxEarned', 'fuelSpent', 'evacuations', 'evacuationSpent'
 ];
 
 let failures = 0;
@@ -283,10 +283,11 @@ check('purse identity and per-transaction isolation over a scripted career', () 
 
     /* an evacuation from the planet the ship is stranded on */
     if (career.stranded) {
+        const evacCost = GravityGame.evacuationCost(career);
         assert.ok(GravityGame.evacuate(career, sim), 'evacuate failed');
         const afterEvac = snapshot(career);
         checkMoves('evacuation', afterBribe, afterEvac, {
-            evacuations: 1, purse: -CAREER.evacFee
+            evacuations: 1, evacuationSpent: evacCost, purse: -evacCost
         });
         checkIdentity(career, 'after evacuation');
     } else {

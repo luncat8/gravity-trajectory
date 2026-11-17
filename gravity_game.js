@@ -734,13 +734,16 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * and the neutral commercial EMC-1 standing on every planet charges a fee
 	 * that scales with the shot. So a padless planet is no longer a dead end,
 	 * only an expensive one.
-	 * The run ends broke (purse below zero, or no affordable exit) or complete
-	 * (a catapult on every planet; cheat runs never complete).
+	 * The run ends broke below zero or with an unrepairable ship, or complete
+	 * (a catapult on every planet; cheat runs never complete). Evacuation can
+	 * use the remaining purse and trades time for any unpaid fare.
 	 * Every `*Sec` below is flight seconds (`steps · DT`) — the clock the board,
 	 * the barrels and the HUD read — never world minutes or real seconds.
 	 */
 	const CAREER = {
 		evacFee: 6,
+		evacFullSeconds: 12,
+		evacFreeSeconds: 240,
 		taxPerKwh: 1,
 		endgamePurse: 99,
 		hqMinLight: 0.5,
@@ -1174,8 +1177,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 */
 	function railText(career, sim, planet) {
 		if (planet < 0) {
-			return 'ship in space · evac ' + price(career, CAREER.evacFee).toFixed(2) +
-				' · purse ' + career.ledger.purse.toFixed(2);
+			return 'ship in space · evac ' + evacuationCost(career).toFixed(2) +
+			' · ' + Math.round(evacuationSeconds(career)) + ' s · purse ' +
+			career.ledger.purse.toFixed(2);
 		}
 		const pad = padAt(career, planet);
 		const exit = exitCostAt(career, planet, career.ship.mass);
@@ -1371,6 +1375,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			flights: 0,
 			burns: 0,
 			evacuations: 0,
+			evacuationSpent: 0,
 			delivered: 0,
 			competitions: 0,
 			earned: 0,
@@ -3256,9 +3261,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * fills the caller-owned row without allocating */
 	function careerStats(out, career) {
 		out.income = career.visitIncome + career.earned + career.bribeIncome + career.taxEarned;
-		/* the evacuation the purse paid for: free under communism, like every fee */
 		out.running = career.feesPaid + career.fuelSpent + career.maintenanceSpent +
-			career.evacuations * price(career, CAREER.evacFee);
+			career.evacuationSpent;
 		out.profit = out.income - out.running;
 		out.property = career.buildSpent;
 		out.science = career.sciSpent;
@@ -3380,6 +3384,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.flights = 0;
 		career.burns = 0;
 		career.evacuations = 0;
+		career.evacuationSpent = 0;
 		career.delivered = 0;
 		career.competitions = 0;
 		career.earned = 0;
@@ -3480,13 +3485,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return covered;
 	}
 
-	/* broke = negative purse, no affordable way off the planet, or a worn-out
-	 * ship the purse cannot repair (it can neither launch nor report) */
+	/* broke = negative purse or a worn-out ship the purse cannot repair */
 	function checkEnded(career) {
 		if (career.ended !== CAREER_OPEN) return career.ended;
 		const purse = career.ledger.purse;
 		if (purse < -1e-9 ||
-			(career.stranded && purse + 1e-9 < exitCost(career)) ||
 			(!career.flying && !careerShipUsable(career) &&
 				purse + 1e-9 < repairCost(career))) career.ended = CAREER_BROKE;
 		else if (career.cheat === null &&
@@ -4444,12 +4447,30 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return checkEnded(career);
 	}
 
-	/* flies the stranded ship home for the fee (the cargo rides along) */
-	function evacuate(career, sim) {
+	function evacuationCost(career) {
+		const fee = price(career, CAREER.evacFee);
+		if (fee <= 0) return 0;
+		return Math.min(fee, Math.max(0, career.ledger.purse));
+	}
+
+	function evacuationSeconds(career) {
+		const fee = price(career, CAREER.evacFee);
+		if (fee <= 0) return CAREER.evacFullSeconds;
+		const paid = evacuationCost(career);
+		const fractionPaid = paid / fee;
+		return CAREER.evacFreeSeconds -
+			(CAREER.evacFreeSeconds - CAREER.evacFullSeconds) * fractionPaid;
+	}
+
+	/* the stranded ship heads to HQ; paying less than the full fee takes longer */
+	function evacuate(career, sim, agreedCost) {
 		if (!career.stranded) return false;
 		clearMedicalCargo(career);
-		career.ledger.purse -= price(career, CAREER.evacFee);
+		const quoted = agreedCost === undefined ? evacuationCost(career) : agreedCost;
+		const paid = Math.min(Math.max(0, quoted), Math.max(0, career.ledger.purse));
+		career.ledger.purse -= paid;
 		career.evacuations += 1;
+		career.evacuationSpent += paid;
 		placeShip(career, sim, career.hq);
 		checkEnded(career);
 		return true;
@@ -4637,7 +4658,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		wearFactor, setSpaceWearScale, spaceWearScaleOf, launchWear, spaceWear, impulseWear, landingWear,
 		forecastCondition, forecastReportUntil, forecastRepairReserve, forecastWearCost,
 		careerShipUsable, setShipCondition, careerWearAt, careerWeatherWear,
-		repairCost, repairCareer,
+		repairCost, repairCareer, evacuationCost, evacuationSeconds,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById, gearKnown, planetBuildable, planetSeized,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart, partRefusal,

@@ -6,6 +6,7 @@
  */
 'use strict';
 
+const vm = require('vm');
 const { loadPage } = require('./dom_stub.js');
 
 const env = loadPage({ search: '?mode=lab&seed=7' });
@@ -1495,13 +1496,13 @@ check(!kui.get('launch').hidden && !kui.get('planetActions').hidden &&
 	kui.get('launchBuild').textContent === 'buy EMC-1 · 3.04' &&
 	kui.get('launchCommercial').textContent ===
 		'commercial EMC-1 · ' + kGame.commercialFee(career, career.at, kSim.SPEED_MIN).toFixed(2) &&
-	kui.get('launchEvac').textContent === 'evacuate · 6.00',
+kui.get('launchEvac').textContent.startsWith('evacuate · 6.00 · '),
 	'planet action buttons: ' + kui.get('launchBuild').textContent + ' / ' +
 		kui.get('launchCommercial').textContent + ' / ' + kui.get('launchEvac').textContent);
 const strandedAt = career.at;
 check(kui.get('careerPad').innerHTML.includes('no EMC here'),
 	'stranded pad block: ' + kui.get('careerPad').innerHTML);
-check(!kui.get('launchEvac').disabled && kui.get('launchEvac').textContent === 'evacuate · 6.00',
+check(!kui.get('launchEvac').disabled && kui.get('launchEvac').textContent.startsWith('evacuate · 6.00 · '),
 	'stranded evacuate button: ' + kui.get('launchEvac').textContent);
 /* the commercial launch, end to end: pick the rail, aim, fire from its button */
 let commercialShot = null;
@@ -1581,7 +1582,9 @@ console.log('visit pills:', litSteps + ' frames lit · ' + litAfter + ' left lit
 kScene.game.money.purse = 20;
 const purseBeforeEvac = kScene.game.money.purse;
 careerEnv.click('launchEvac');
-careerEnv.runFrames(8, 40.0);
+vm.runInContext('careerWaitAnim.credit = careerWaitAnim.durationMs; careerWaitTick(careerWaitAnim.last + 20)',
+	careerEnv.context);
+careerEnv.runFrames(1, 16.0);
 check(career.at === career.hq && !career.stranded, 'evacuate button did not bring the ship home');
 check(Math.abs(kScene.game.money.purse - (purseBeforeEvac - 6)) < 1e-9,
 	'evacuation fee: ' + kScene.game.money.purse);
@@ -3122,6 +3125,8 @@ function protoOf(career, family, id) {
 		'lost in space shows only launchEvac in planetActions');
 	cCareer.ledger.purse = 20;
 	cEnv.click('launchEvac');
+	vm.runInContext('careerWaitAnim.credit = careerWaitAnim.durationMs; careerWaitTick(careerWaitAnim.last + 20)',
+		cEnv.context);
 	check(!cCareer.stranded && cCareer.at === cCareer.hq &&
 		!cui.get('launch').hidden && !cui.get('launchCommercial').hidden,
 		'launchEvac brings ship back to HQ and restores #launch');
@@ -3789,8 +3794,7 @@ function protoOf(career, family, id) {
 		tax += career.taxEarned;
 		fees += career.feesPaid;
 		fuel += career.fuelSpent;
-		evac += career.evacuations *
-			(career.cheat === sGame.CHEAT_COMMUNISM ? 0 : sGame.CAREER.evacFee);
+		evac += career.evacuationSpent;
 	}
 	const allSigned = (allProfitRate / n < 0 ? '' : '+') + (allProfitRate / n).toFixed(2);
 	check(html.includes('>all</span> ' + allSigned + '/s'), 'profit caption carries all ' + allSigned + '/s');
