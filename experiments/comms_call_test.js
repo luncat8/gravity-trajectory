@@ -1,0 +1,105 @@
+/* H's call key, dismissal, snapshot and non-pausing card. */
+'use strict';
+
+const assert = require('assert');
+const vm = require('vm');
+const { loadPage, mapSearch } = require('./dom_stub.js');
+
+const env = loadPage({ search: mapSearch(1) + '&rate=1' });
+env.runFrames(2, 16);
+const context = env.context;
+const ui = env.elements;
+const get = expression => vm.runInContext(expression, context);
+const run = expression => vm.runInContext(expression, context);
+const factIds = get('Object.keys(HH_FACTS).sort().join(",")');
+assert.strictEqual(factIds, 'arrest,cap,fee,no-rail,space,worn,wrong-planet');
+for (const id of factIds.split(',')) {
+	assert.strictEqual(get('typeof HH_FACTS[' + JSON.stringify(id) + '].test'), 'function');
+	assert.strictEqual(get('typeof HH_FACTS[' + JSON.stringify(id) + '].why'), 'function');
+}
+
+const key = get("commsFindingKey({ id: 'fee', need: 3.04, have: 1, repair: false }, 2)");
+assert.strictEqual(key, 'fee|P2|3.04|1|launch');
+assert.notStrictEqual(get("commsFindingKey({ id: 'fee', need: 3.05, have: 1, repair: false }, 2)"), key,
+	'a changed price is a new fact');
+assert.notStrictEqual(get("commsFindingKey({ id: 'fee', need: 3.04, have: 2, repair: false }, 2)"), key,
+	'a changed purse is a new fact');
+assert.notStrictEqual(get("commsFindingKey({ id: 'fee', need: 3.04, have: 1, repair: false }, 3)"), key,
+	'a different planet is a new fact');
+
+run('playerCareer().ship.condition = 0; armed = false; commsTick()');
+let state = get('commsState');
+const wornKey = state.callKey;
+assert.ok(wornKey.startsWith('worn|P'), wornKey);
+assert.strictEqual(ui.get('commsBadge').hidden, false);
+assert.strictEqual(ui.get('commsTag').textContent, context.GravityGame.WORN_OUT_BLOCK);
+run('commsTick()');
+assert.strictEqual(get('commsState.callKey'), wornKey, 'same fact stays called, not re-offered');
+
+const before = get('game.clockSteps');
+env.click('commsButton');
+assert.strictEqual(ui.get('commsCard').hidden, false);
+assert.strictEqual(get('Object.isFrozen(commsState.snapshot)'), true);
+assert.strictEqual(get('Object.isFrozen(commsState.snapshot.reasons)'), true);
+assert.strictEqual(ui.get('commsBadge').hidden, true, 'opening the card clears the badge');
+assert.strictEqual(ui.get('commsAnswer').textContent, context.GravityGame.WORN_OUT_BLOCK);
+assert.match(ui.get('commsStamp').textContent, /^checked \d+ s · P\d+$/);
+assert.strictEqual(get('game.clockSteps'), before, 'opening H does not advance the game clock');
+assert.strictEqual(get('commsState.callKey'), '', 'an open card is not also a call');
+env.click('commsQuestion');
+env.click('commsQuestion');
+env.click('commsQuestion');
+assert.strictEqual(get('commsState.exchanges.length'), 3, 'the transcript keeps only the last three exchanges');
+env.click('commsFold');
+assert.strictEqual(get('commsState.collapsed'), true);
+env.click('commsFold');
+assert.strictEqual(get('commsState.collapsed'), false);
+
+run('commsDismiss()');
+assert.strictEqual(ui.get('commsCard').hidden, true);
+assert.strictEqual(get('commsState.dismissed[' + JSON.stringify(wornKey) + ']'), true);
+run('commsTick()');
+assert.strictEqual(get('commsState.callKey'), '', 'dismissal is remembered for this visit');
+
+run("playerCareer().ship.condition = 1; playerCareer().ledger.purse = -1; " +
+	"activeCareerSim().canLaunchFrom = () => true; activeCareerSim().speedLimit = () => 100; " +
+	"armed = true; aimBody = playerCareer().at; aimSpeed = 50; commsInvalidate(); commsTick()");
+assert.strictEqual(get('commsState.callKey'), '', 'different facts do not call twice in one game second');
+run('game.clockSteps += Math.ceil(1 / GravitySim.DT); commsTick()');
+const feeKey = get('commsState.callKey');
+assert.ok(feeKey.startsWith('fee|P'), feeKey);
+assert.notStrictEqual(feeKey, wornKey, 'a different gate calls once with a new fact key');
+
+run("playerCareer().ledger.purse = -2; game.clockSteps += Math.ceil(1 / GravitySim.DT); " +
+	'commsInvalidate(); commsTick()');
+const changedFeeKey = get('commsState.callKey');
+assert.ok(changedFeeKey.startsWith('fee|P'), changedFeeKey);
+assert.notStrictEqual(changedFeeKey, feeKey, 'a changed live amount gets its own call');
+
+/* A new fact discovered while the card is open waits until it closes. */
+env.click('commsButton');
+run("playerCareer().ledger.purse = -3; game.clockSteps += Math.ceil(1 / GravitySim.DT); " +
+	'commsInvalidate(); commsTick()');
+assert.strictEqual(get('commsState.callKey'), '', 'never calls over an open answer');
+assert.match(ui.get('commsAnswer').textContent, /purse -3\.00/,
+	'the open answer refreshes from a new immutable snapshot');
+run('commsClose(); commsTick()');
+assert.ok(get('commsState.callKey').startsWith('fee|P'), 'a pending fact may call after the card closes');
+
+env.click('commsButton');
+env.fireWindow('keydown', { code: 'Escape', target: { tagName: 'BODY' } });
+assert.strictEqual(ui.get('commsCard').hidden, true, 'Escape closes the non-modal card');
+
+run('armed = false; playerCareer().ship.condition = 1; commsTick()');
+assert.strictEqual(get('commsState.callKey'), '', 'a cleared gate quiets the icon on the same tick');
+assert.strictEqual(ui.get('commsBadge').hidden, true);
+
+/* Planet changes reset transcript and per-visit dismissals. */
+run("playerCareer().at = (playerCareer().at + 1) % 13; commsTick()");
+assert.strictEqual(get('commsState.exchanges.length'), 0);
+assert.strictEqual(get('Object.keys(commsState.dismissed).length'), 0);
+
+run('playerCareer().ship.condition = 0; replay.on = true; commsTick()');
+assert.strictEqual(get('commsState.callKey'), '', 'no call during replay');
+
+console.log('COMMS CALL OK');

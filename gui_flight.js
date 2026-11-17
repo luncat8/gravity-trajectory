@@ -253,6 +253,16 @@ function flightWhyText() {
 	return reason ? GravityGame.formatLaunchReason(reason) : '';
 }
 
+function updateFlightWhy() {
+	const why = flightWhyText();
+	if (why === flightHud.why) return;
+	flightHud.why = why;
+	commsInvalidate();
+	if (!flightWhyEl) return;
+	flightWhyEl.textContent = why;
+	flightWhyEl.hidden = !why;
+}
+
 function flightStateText() {
 	/* every line here describes the selected player's ship, never YOU's */
 	const sim = activeSim();
@@ -283,14 +293,6 @@ function updateFlightHud() {
 	if (state !== flightHud.state) {
 		flightHud.state = state;
 		if (flightStateEl) flightStateEl.textContent = state;
-	}
-	const why = flightWhyText();
-	if (why !== flightHud.why) {
-		flightHud.why = why;
-		if (flightWhyEl) {
-			flightWhyEl.textContent = why;
-			flightWhyEl.hidden = !why;
-		}
 	}
 	const career = careerRule() ? activeCareer() : null;
 	const ship = career ? career.ship : null;

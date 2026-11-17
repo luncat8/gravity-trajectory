@@ -16,6 +16,8 @@ function updateHud(now) {
 		: formatClock('exp', (now - expStart) / 1000);
 	statusEl.textContent = statusText();
 	if (game.on) updateGameHud();
+	updateFlightWhy();
+	commsTick();
 
 	calcEl.textContent = sim.predCount >= 2
 		? sim.predSteps + ' steps · ' + sim.predMs.toFixed(2) + ' ms'

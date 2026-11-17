@@ -140,6 +140,7 @@ function careerNotice(text) {
 	if (!careerMsgEl) return;
 	careerMsgEl.textContent = text;
 	careerMsgEl.hidden = text === '';
+	commsInvalidate();
 }
 
 function shopButton(label, act, kind, tier, disabled, title, costly) {

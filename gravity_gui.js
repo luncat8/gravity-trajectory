@@ -958,6 +958,7 @@ window.addEventListener('keydown', event => {
 		return;
 	}
 	if (event.code === 'Escape') {
+		if (commsEscape()) return;
 		if (helpOpen) setHelpOpen(false);
 		else if (!launchMenuEl.hidden) setLaunchMenu(false);
 		else if (burnAiming || burnArmed) {

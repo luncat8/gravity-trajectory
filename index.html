@@ -149,6 +149,7 @@
 		<div class="headBtns">
 			<button id="soundToggle" class="miniBtn" type="button" aria-pressed="true" title="mute or unmute launch sounds">sound on</button>
 			<button id="helpBtn" class="miniBtn" title="mission & controls (?)">? help</button>
+			<button id="commsButton" class="miniBtn commsButton" type="button" title="call H" aria-label="call H" aria-pressed="false">H <span id="commsBadge" class="commsBadge" hidden>!</span><span id="commsTag" class="commsTag" hidden></span></button>
 			<button id="foldBtn" class="miniBtn" data-fold="cargoHud" title="minimize panel" aria-expanded="true">−</button>
 		</div>
 	</div>
@@ -427,6 +428,30 @@
 	</div>
 </aside>
 
+<aside id="commsCard" class="panel commsCard" aria-label="H communications" hidden>
+	<div class="panelHead">
+		<div>
+			<div class="kicker">H · base radio</div>
+			<div class="roleTag">launch check</div>
+		</div>
+		<div class="headBtns">
+			<button id="commsFold" class="miniBtn" type="button" aria-label="collapse H" aria-expanded="true">−</button>
+			<button id="commsClose" class="miniBtn" type="button" aria-label="close H">×</button>
+		</div>
+	</div>
+	<div id="commsBody">
+		<div id="commsStamp" class="commsStamp">checked —</div>
+		<div id="commsTranscript" class="commsTranscript" aria-live="polite"></div>
+		<div class="actions commsChips" role="group" aria-label="questions for H">
+			<button id="commsQuestion" class="miniBtn" type="button">why is launch blocked?</button>
+		</div>
+		<div id="commsAnswer" class="commsAnswer" aria-live="polite"></div>
+		<div class="actions commsActions">
+			<button id="commsDismiss" class="miniBtn" type="button">dismiss this call</button>
+		</div>
+	</div>
+</aside>
+
 <aside id="helpDrawer" class="panel drawer" aria-label="game help">
 	<div class="panelHead">
 		<div>
@@ -519,6 +544,7 @@
 <script src="gui_predict.js"></script>
 <script src="gui_hud_text.js"></script>
 <script src="gui_flight.js"></script>
+<script src="gui_comms.js"></script>
 <script src="gui_aim.js"></script>
 <script src="gui_game.js"></script>
 <script src="gui_draw_world.js"></script>

@@ -2303,6 +2303,7 @@ console.log('career:', 'HQ P' + career.hq, 'Â· limit', limit.toFixed(0), 'px/s Â
 		hudUi.get('flightActionTag').textContent === 'enter',
 		'the action caption names the shortcut: ' + hudUi.get('flightActionTag').textContent);
 	hudGame.setShipCondition(hudCareer, 0);
+	hudEnv.advance(600);
 	hudEnv.runFrames(2, 16.0);
 	check(!hudUi.get('flightWhy').hidden &&
 		hudUi.get('flightWhy').textContent === hudGame.WORN_OUT_BLOCK,
