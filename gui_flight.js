@@ -12,6 +12,7 @@
 
 const flightHudEl = $('flightHud');
 const flightStateEl = $('flightState');
+const flightWhyEl = $('flightWhy');
 const flightShipTagEl = $('flightShipTag');
 const flightSpeedEl = $('flightSpeed');
 const flightTimeEl = $('flightTime');
@@ -33,7 +34,7 @@ const flightQuestRows = [$('flightQuest0'), $('flightQuest1')];
 /* the panel paints from these scratch values, and only writes a node when the
  * text really changed — the frame loop calls this twice a second */
 const flightHud = {
-	state: '', shipTag: '', speed: '', time: '', fuel: '', engine: '', report: '',
+	state: '', why: '', shipTag: '', speed: '', time: '', fuel: '', engine: '', report: '',
 	fuelPct: -1, refuel: '', refuelText: '', refuelWhy: '', questTag: '', questKey: '',
 	actionTag: '', refuelKg: 0
 };
@@ -236,6 +237,22 @@ function flightActionState() {
 	return flightHud.action;
 }
 
+/* the first closed launch gate for the armed shot — the one line of why on
+ * the state tag; at condition 0 it shows without an aim, because every shot
+ * is blocked by that fact alone */
+function flightWhyText() {
+	if (!careerRule() || replay.on || playerIsBot()) return '';
+	const career = playerCareer();
+	if (career.ended !== GravityGame.CAREER_OPEN) return '';
+	const sim = activeSim();
+	if (sim.status === STATUS_FLYING || career.at < 0) return '';
+	const armedHere = armed && aimBody === career.at;
+	if (!armedHere && GravityGame.careerShipUsable(career)) return '';
+	const reason = GravityGame.launchReason(career, activeCareerSim(), career.at,
+		armedHere ? aimSpeed : GravitySim.SPEED_MIN, false);
+	return reason ? GravityGame.formatLaunchReason(reason) : '';
+}
+
 function flightStateText() {
 	/* every line here describes the selected player's ship, never YOU's */
 	const sim = activeSim();
@@ -266,6 +283,14 @@ function updateFlightHud() {
 	if (state !== flightHud.state) {
 		flightHud.state = state;
 		if (flightStateEl) flightStateEl.textContent = state;
+	}
+	const why = flightWhyText();
+	if (why !== flightHud.why) {
+		flightHud.why = why;
+		if (flightWhyEl) {
+			flightWhyEl.textContent = why;
+			flightWhyEl.hidden = !why;
+		}
 	}
 	const career = careerRule() ? activeCareer() : null;
 	const ship = career ? career.ship : null;

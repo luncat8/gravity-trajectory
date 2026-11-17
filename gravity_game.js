@@ -1194,25 +1194,101 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	}
 
 	/*
-	 * The one reason a shot at `speed` cannot leave `planet` now, in the words
-	 * the launch list prints under a row and the bot log puts on a "no shot"
-	 * line. '' means firable.
+	 * The launch gates as structured reasons, in the ladder order the launch
+	 * list prints: arrest, ship in space, wrong planet, worn out, no rail,
+	 * speed cap, purse. launchReasons is every closed gate (the headline and
+	 * the blockers under it); launchReason is the first, null when the shot
+	 * fires. Ship-state gates (arrest, worn) report even behind a position
+	 * gate; planet gates (no rail, cap, fee) need the ship on the planet, and
+	 * no rail closes cap and fee. formatLaunchReason spells one reason in the
+	 * words the list prints, and launchBlock is that spelling of the first
+	 * reason — one writer, one order.
 	 */
-	function launchBlock(career, sim, planet, speed, repaired) {
-		if (career.arrested) return 'under arrest · Capital transport';
-		if (career.at < 0) return 'ship in space';
-		if (career.at !== planet) return 'shot leaves from P' + planet;
-		if (!repaired && !careerShipUsable(career)) return WORN_OUT_BLOCK;
-		if (!sim.canLaunchFrom(planet)) return 'no rail under the ship';
+	function recordLaunchReason(out, reason, firstOnly) {
+		if (firstOnly) return reason;
+		out.push(reason);
+		return null;
+	}
+
+	/* The same ordered checker serves the list (all reasons) and old callers
+	 * (first only). The latter avoids allocating an array on the launch path. */
+	function scanLaunchReasons(career, sim, planet, speed, repaired, firstOnly) {
+		const out = firstOnly ? null : [];
+		let first;
+		if (career.arrested) {
+			first = recordLaunchReason(out, { id: 'arrest', need: null, have: null }, firstOnly);
+			if (first) return first;
+		}
+		if (career.at < 0) {
+			first = recordLaunchReason(out, { id: 'space', need: null, have: null }, firstOnly);
+			if (first) return first;
+			if (!repaired && !careerShipUsable(career)) {
+				first = recordLaunchReason(out, { id: 'worn', need: null, have: career.ship.condition }, firstOnly);
+				if (first) return first;
+			}
+			return out;
+		}
+		if (career.at !== planet) {
+			first = recordLaunchReason(out,
+				{ id: 'wrong-planet', need: planet, have: career.at }, firstOnly);
+			if (first) return first;
+			if (!repaired && !careerShipUsable(career)) {
+				first = recordLaunchReason(out, { id: 'worn', need: null, have: career.ship.condition }, firstOnly);
+				if (first) return first;
+			}
+			return out;
+		}
+		if (!repaired && !careerShipUsable(career)) {
+			first = recordLaunchReason(out, { id: 'worn', need: null, have: career.ship.condition }, firstOnly);
+			if (first) return first;
+		}
+		if (!sim.canLaunchFrom(planet)) {
+			first = recordLaunchReason(out, { id: 'no-rail', need: null, have: null }, firstOnly);
+			if (first) return first;
+			return out;
+		}
 		const cap = sim.speedLimit(planet);
-		if (speed > cap + 1e-9) return 'cap ' + cap.toFixed(0) + ' < ' + speed.toFixed(0) + ' px/s';
+		if (speed > cap + 1e-9) {
+			first = recordLaunchReason(out, { id: 'cap', need: cap, have: speed }, firstOnly);
+			if (first) return first;
+		}
 		const fee = launchFee(career, planet, speed);
 		const cost = repaired ? fee + repairCost(career) : fee;
 		if (career.ledger.purse + 1e-9 < cost) {
-			return (repaired ? 'repair + fee ' : 'fee ') + cost.toFixed(2) +
-				' > purse ' + career.ledger.purse.toFixed(2);
+			first = recordLaunchReason(out,
+				{ id: 'fee', need: cost, have: career.ledger.purse, repair: repaired }, firstOnly);
+			if (first) return first;
 		}
-		return '';
+		return out;
+	}
+
+	function launchReasons(career, sim, planet, speed, repaired) {
+		return scanLaunchReasons(career, sim, planet, speed, repaired, false);
+	}
+
+	function launchReason(career, sim, planet, speed, repaired) {
+		return scanLaunchReasons(career, sim, planet, speed, repaired, true);
+	}
+
+	function formatLaunchReason(reason) {
+		if (!reason) return '';
+		if (reason.id === 'arrest') return 'under arrest · Capital transport';
+		if (reason.id === 'space') return 'ship in space';
+		if (reason.id === 'wrong-planet') return 'shot leaves from P' + reason.need;
+		if (reason.id === 'worn') return WORN_OUT_BLOCK;
+		if (reason.id === 'no-rail') return 'no rail under the ship';
+		if (reason.id === 'cap') {
+			return 'cap ' + reason.need.toFixed(0) + ' < ' + reason.have.toFixed(0) + ' px/s';
+		}
+		return (reason.repair ? 'repair + fee ' : 'fee ') + reason.need.toFixed(2) +
+			' > purse ' + reason.have.toFixed(2);
+	}
+
+	/* the one reason a shot at `speed` cannot leave `planet` now, in the words
+	 * the launch list prints under a row and the bot log puts on a "no shot"
+	 * line. '' means firable. */
+	function launchBlock(career, sim, planet, speed, repaired) {
+		return formatLaunchReason(launchReason(career, sim, planet, speed, repaired));
 	}
 
 	function railBlock(career, sim, planet, speed) {
@@ -4554,7 +4630,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		createGalaxy, resetGalaxy, joinGalaxy, rivalSeed,
 		turretPeriod, turretAngle, padAt, padOwner, claimOwner, refreshNetwork, setCommercial,
 		launchFee, exitCost, exitCostAt, careerCanFire, padLift, reserveEnergy, releaseEnergy,
-		railOwnerText, railText, railBlock, repairLaunchBlock, fragileBreaks,
+		railOwnerText, railText, launchBlock, railBlock, repairLaunchBlock, fragileBreaks,
+		launchReason, launchReasons, formatLaunchReason,
 		WEAR_SPACE, WEAR_LANDING, WEAR_EMC, WEAR_EMC_REF, WEAR_EMC_MAX, WEAR_IMP, WEAR_IMP_DV,
 		WEAR_FLEET, WEAR_SCIENCE_MIN, WEAR_SCIENCE_STEP, WEAR_REPAIR_COST, WORN_OUT_BLOCK,
 		wearFactor, setSpaceWearScale, spaceWearScaleOf, launchWear, spaceWear, impulseWear, landingWear,

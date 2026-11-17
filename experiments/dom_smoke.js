@@ -2302,6 +2302,11 @@ console.log('career:', 'HQ P' + career.hq, 'Â· limit', limit.toFixed(0), 'px/s Â
 	check(hudUi.get('flightState').textContent !== 'coasting' &&
 		hudUi.get('flightActionTag').textContent === 'enter',
 		'the action caption names the shortcut: ' + hudUi.get('flightActionTag').textContent);
+	hudGame.setShipCondition(hudCareer, 0);
+	hudEnv.runFrames(2, 16.0);
+	check(!hudUi.get('flightWhy').hidden &&
+		hudUi.get('flightWhy').textContent === hudGame.WORN_OUT_BLOCK,
+		'the flight panel gives the first launch blocker without changing its state tag');
 
 	/* work rows are the contract and the competition, named with their leg */
 	hudCareer.ledger.purse = 40;
