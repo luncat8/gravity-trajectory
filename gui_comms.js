@@ -1,21 +1,30 @@
 /*
- * H's live launch-gate call and factual answer card.
+ * H's live launch-gate call, non-modal card, ranked topic chips and verified CTAs.
  *
- * Part of the gui family: a flat global script, no modules/build, file:// safe.
+ * Facts, slots and topics live in comms_copy.js; this file owns only the DOM
+ * surface, the per-visit call state and the 1-to-1 action dispatcher.
  */
 'use strict';
 
-const commsButton = document.getElementById('commsButton');
-const commsBadge = document.getElementById('commsBadge');
-const commsTag = document.getElementById('commsTag');
-const commsCard = document.getElementById('commsCard');
-const commsCloseButton = document.getElementById('commsClose');
-const commsFoldButton = document.getElementById('commsFold');
-const commsDismissButton = document.getElementById('commsDismiss');
-const commsQuestionButton = document.getElementById('commsQuestion');
-const commsStamp = document.getElementById('commsStamp');
-const commsTranscript = document.getElementById('commsTranscript');
-const commsAnswer = document.getElementById('commsAnswer');
+const HH_FACTS = CommsCopy.HH_FACTS;
+const H_SLOTS = CommsCopy.H_SLOTS;
+const H_ACTIONS = CommsCopy.H_ACTIONS;
+const H_TOPICS = CommsCopy.H_TOPICS;
+
+const commsButton = $('commsButton');
+const commsBadge = $('commsBadge');
+const commsTag = $('commsTag');
+const commsCard = $('commsCard');
+const commsCloseButton = $('commsClose');
+const commsFoldButton = $('commsFold');
+const commsBackButton = $('commsBack');
+const commsDismissButton = $('commsDismiss');
+const commsChipsEl = $('commsChips');
+const commsQuestionButton = $('commsQuestion');
+const commsStamp = $('commsStamp');
+const commsTranscript = $('commsTranscript');
+const commsAnswer = $('commsAnswer');
+const commsCtasEl = $('commsCtas');
 
 const commsState = {
 	open: false,
@@ -28,38 +37,68 @@ const commsState = {
 	lastCallSecond: -1,
 	seen: Object.create(null),
 	dismissed: Object.create(null),
+	asked: Object.create(null),
 	snapshot: null,
 	snapshotDirty: true,
+	chipsHtml: '',
+	ctasHtml: '',
 	exchanges: []
 };
 
-function commsReasonFact(id) {
-	return {
-		test(snapshot) {
-			for (let i = 0; i < snapshot.reasons.length; i++) {
-				if (snapshot.reasons[i].id === id) return true;
-			}
-			return false;
-		},
-		why(snapshot) {
-			for (let i = 0; i < snapshot.reasons.length; i++) {
-				const reason = snapshot.reasons[i];
-				if (reason.id === id) return GravityGame.formatLaunchReason(reason);
-			}
-			return '';
+/* Every H_ACTIONS key maps to a real page handler; nothing here invents mechanics. */
+const COMMS_HANDLERS = Object.freeze({
+	'slower-shot'() {
+		if (!armed || aimBody < 0) return;
+		const limit = activeCareerSim().speedLimit(aimBody);
+		if (limit + 1e-9 < SPEED_MIN) return;
+		aimSpeed = limit;
+		placeGripFromSpeed();
+		careerNotice('aimed ' + Math.round(aimSpeed) + ' px/s · within rail cap');
+		launchState = -1;
+		dirty = true;
+		refreshGameUi();
+	},
+	repair() {
+		careerAct({ act: 'repair' });
+	},
+	commercial() {
+		toggleCommercialRail(true);
+	},
+	'build-pad'(snapshot) {
+		if (!snapshot || !snapshot.nextPadId) return;
+		careerFollow = true;
+		if (snapshot.nextPadProto) {
+			careerAct({ act: 'build', kind: OrbitTech.KIND_CATAPULT, item: snapshot.nextPadProto });
+			return;
 		}
-	};
-}
-
-const HH_FACTS = Object.freeze({
-	arrest: commsReasonFact('arrest'),
-	space: commsReasonFact('space'),
-	'wrong-planet': commsReasonFact('wrong-planet'),
-	worn: commsReasonFact('worn'),
-	'no-rail': commsReasonFact('no-rail'),
-	cap: commsReasonFact('cap'),
-	fee: commsReasonFact('fee')
+		if (snapshot.nextPadTier < 0) return;
+		careerAct({ act: 'build', kind: OrbitTech.KIND_CATAPULT, tier: String(snapshot.nextPadTier) });
+	},
+	wait() {
+		careerAct({ act: 'wait' });
+	},
+	evac(snapshot) {
+		if (!snapshot || !HH_FACTS['can-evac'].test(snapshot)) return;
+		careerAct({ act: 'evac' });
+	},
+	'produce-fuel'() {
+		careerAct({ act: 'produceFuel' });
+	},
+	'buy-fuel'() {
+		careerAct({ act: 'buyFuel' });
+	},
+	bribe() {
+		careerAct({ act: 'bribe' });
+	}
 });
+
+function commsEscapeHtml(text) {
+	return String(text)
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;');
+}
 
 function commsFindingKey(reason, planet) {
 	if (!reason) return '';
@@ -77,6 +116,7 @@ function commsResetVisit(career, planet) {
 	commsState.callReason = null;
 	commsState.seen = Object.create(null);
 	commsState.dismissed = Object.create(null);
+	commsState.asked = Object.create(null);
 	commsState.snapshot = null;
 	commsState.snapshotDirty = true;
 	commsState.exchanges.length = 0;
@@ -88,12 +128,50 @@ function commsActiveFinding(career) {
 		career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
 		activeSim().status === STATUS_FLYING || careerWaitBusy()) return null;
 	const armedHere = armed && aimBody === career.at;
-	if (!armedHere && career.ship.condition !== 0) return null;
-	const speed = armedHere ? aimSpeed : GravitySim.SPEED_MIN;
+	if (!armedHere && GravityGame.careerShipUsable(career)) return null;
+	const speed = armedHere ? aimSpeed : SPEED_MIN;
 	const reason = GravityGame.launchReason(career, activeCareerSim(), career.at, speed, false);
 	if (!reason) return null;
 	if (!armedHere && reason.id !== 'worn') return null;
 	return reason;
+}
+
+function commsBuildSnapshot() {
+	const inCareer = careerRule() && !replay.on;
+	const rule = replay.on ? 'replay' : game.on ? game.rule : PLAY_LAB;
+	const career = inCareer ? playerCareer() : null;
+	const sim = inCareer ? activeCareerSim() : activeSim();
+	const snapshot = CommsCopy.buildSnapshot({
+		rule: rule,
+		gameOn: game.on && !replay.on,
+		clockSteps: game.clockSteps,
+		career: career,
+		market: game.market,
+		galaxy: game.galaxy,
+		sim: sim,
+		planetCount: planetCount,
+		armed: armed,
+		aimBody: aimBody,
+		aimSpeed: aimSpeed,
+		waitLocked: careerWaitBusy() || turret.pending || sim.status === STATUS_FLYING
+	});
+	commsState.snapshot = snapshot;
+	commsState.snapshotDirty = false;
+	if (commsStamp) {
+		commsStamp.textContent = 'checked ' + snapshot.second + ' s · ' +
+			(snapshot.planet >= 0 ? planetName(snapshot.planet)
+				: snapshot.careerMode ? 'in space' : snapshot.rule);
+	}
+	return snapshot;
+}
+
+function commsRefreshLatest(snapshot) {
+	if (!commsState.exchanges.length) return;
+	const latest = commsState.exchanges[commsState.exchanges.length - 1];
+	const rendered = CommsCopy.renderTopic(latest.id, snapshot, commsState.asked);
+	latest.question = rendered.question;
+	latest.answer = rendered.text;
+	latest.actions = rendered.actions;
 }
 
 function commsTick() {
@@ -109,9 +187,9 @@ function commsTick() {
 		commsState.callKey = '';
 		commsState.callReason = null;
 	}
+	const second = game.on && !replay.on ? Math.floor(game.clockSteps * DT) : 0;
 	if (key && !commsState.open && !commsState.callKey &&
 		!commsState.seen[key] && !commsState.dismissed[key]) {
-		const second = Math.floor(game.clockSteps * GravitySim.DT);
 		if (second !== commsState.lastCallSecond) {
 			commsState.callKey = key;
 			commsState.callReason = reason;
@@ -119,11 +197,11 @@ function commsTick() {
 			commsState.lastCallSecond = second;
 		}
 	}
-	if (commsState.open && commsState.snapshotDirty) {
+	if (commsState.open && (commsState.snapshotDirty || !commsState.snapshot ||
+		second !== commsState.snapshot.second)) {
 		const snapshot = commsBuildSnapshot();
-		if (commsState.exchanges.length) {
-			commsState.exchanges[commsState.exchanges.length - 1].answer = commsAnswerText(snapshot);
-		}
+		if (commsState.exchanges.length) commsRefreshLatest(snapshot);
+		else commsAsk(CommsCopy.H_META_ID);
 	}
 	commsPaint();
 }
@@ -132,62 +210,49 @@ function commsInvalidate() {
 	commsState.snapshotDirty = true;
 }
 
-function commsSnapshotReasons(career) {
-	if (!career || career.at < 0 || !careerRule() || replay.on ||
-		career.ended !== GravityGame.CAREER_OPEN || activeSim().status === STATUS_FLYING) return [];
-	const armedHere = armed && aimBody === career.at;
-	if (!armedHere && career.ship.condition !== 0) return [];
-	return GravityGame.launchReasons(career, activeCareerSim(), career.at,
-		armedHere ? aimSpeed : GravitySim.SPEED_MIN, false);
-}
-
-function commsBuildSnapshot() {
-	const career = careerRule() ? playerCareer() : null;
-	const reasons = career ? commsSnapshotReasons(career) : [];
-	const copies = [];
-	for (let i = 0; i < reasons.length; i++) {
-		const reason = reasons[i];
-		const fact = HH_FACTS[reason.id];
-		if (!fact || !fact.test({ reasons: reasons })) continue;
-		copies.push(Object.freeze({ id: reason.id, need: reason.need, have: reason.have,
-			repair: reason.repair === true }));
-	}
-	const snapshot = {
-		planet: career ? career.at : -1,
-		second: game.on ? Math.floor(game.clockSteps * GravitySim.DT) : 0,
-		reasons: Object.freeze(copies),
-		purse: career ? career.ledger.purse : 0
-	};
-	commsState.snapshot = Object.freeze(snapshot);
-	commsState.snapshotDirty = false;
-	commsStamp.textContent = 'checked ' + snapshot.second + ' s · ' +
-		(snapshot.planet >= 0 ? 'P' + snapshot.planet : 'in space');
-	return commsState.snapshot;
-}
-
-function commsAnswerText(snapshot) {
-	if (!snapshot || snapshot.reasons.length === 0) return 'No launch blocker is active.';
-	let text = '';
-	for (let i = 0; i < snapshot.reasons.length; i++) {
-		const reason = snapshot.reasons[i];
-		const fact = HH_FACTS[reason.id];
-		if (!fact) continue;
-		const line = fact.why(snapshot);
-		if (!line) continue;
-		text += (text ? '\nAlso blocked: ' : '') + line;
-	}
-	return text;
-}
-
-function commsAsk() {
+function commsAsk(topicId) {
 	if (!commsState.open) return;
-	const snapshot = commsState.snapshotDirty || !commsState.snapshot
-		? commsBuildSnapshot() : commsState.snapshot;
-	const question = 'Why is launch blocked?';
-	const answer = commsAnswerText(snapshot);
-	commsState.exchanges.push({ question: question, answer: answer });
-	if (commsState.exchanges.length > 3) commsState.exchanges.shift();
+	const id = typeof topicId === 'string' && topicId ? topicId : CommsCopy.H_META_ID;
+	const snapshot = commsBuildSnapshot();
+	if (id !== CommsCopy.H_META_ID && H_TOPICS[id]) commsState.asked[id] = true;
+	const rendered = CommsCopy.renderTopic(id, snapshot, commsState.asked);
+	commsState.exchanges.push({
+		id: rendered.id,
+		question: rendered.question,
+		answer: rendered.text,
+		actions: rendered.actions
+	});
+	if (commsState.exchanges.length > CommsCopy.EXCHANGE_CAP) commsState.exchanges.shift();
 	commsPaint();
+}
+
+function commsBack() {
+	if (!commsState.open || commsState.exchanges.length <= 1) return false;
+	commsState.exchanges.pop();
+	commsRefreshLatest(commsBuildSnapshot());
+	commsPaint();
+	return true;
+}
+
+function commsRunAction(actId) {
+	if (!commsState.open || !actId) return false;
+	const handler = COMMS_HANDLERS[actId];
+	if (!handler || !commsState.exchanges.length) return false;
+	const snapshot = commsBuildSnapshot();
+	commsRefreshLatest(snapshot);
+	const latest = commsState.exchanges[commsState.exchanges.length - 1];
+	let allowed = null;
+	for (let i = 0; i < latest.actions.length; i++) {
+		if (latest.actions[i].id === actId) allowed = latest.actions[i];
+	}
+	if (!allowed || !allowed.enabled) {
+		commsPaint();
+		return false;
+	}
+	handler(snapshot);
+	commsInvalidate();
+	commsTick();
+	return true;
 }
 
 function commsOpen() {
@@ -196,10 +261,9 @@ function commsOpen() {
 	commsState.collapsed = false;
 	commsState.callKey = '';
 	commsState.callReason = null;
-	commsBuildSnapshot();
-	commsPaint();
-	commsAsk();
-	if (commsQuestionButton && commsQuestionButton.focus) commsQuestionButton.focus();
+	commsAsk(CommsCopy.H_META_ID);
+	const focusTarget = $('commsQuestion') || commsCloseButton;
+	if (focusTarget && focusTarget.focus) focusTarget.focus();
 }
 
 function commsToggleFold() {
@@ -229,23 +293,49 @@ function commsEscape() {
 	return commsClose();
 }
 
+function commsChipsMarkup(snapshot, activeId) {
+	const chips = CommsCopy.chipList(snapshot, commsState.asked);
+	let html = '';
+	for (let i = 0; i < chips.length; i++) {
+		const chip = chips[i];
+		const idAttr = chip.id === CommsCopy.H_META_ID ? ' id="commsQuestion"' : '';
+		const onClass = chip.id === activeId ? ' on' : '';
+		html += '<button' + idAttr + ' class="miniBtn' + onClass +
+			'" type="button" data-comms-topic="' + commsEscapeHtml(chip.id) + '">' +
+			commsEscapeHtml(chip.ask) + '</button>';
+	}
+	return html;
+}
+
+function commsCtasMarkup(actions) {
+	if (!actions || actions.length === 0) return '';
+	let html = '';
+	for (let i = 0; i < actions.length; i++) {
+		const act = actions[i];
+		const cls = 'miniBtn' + (act.costly ? ' costly' : '');
+		const dis = act.enabled ? '' : ' disabled';
+		html += '<div class="commsActRow"><button class="' + cls +
+			'" type="button" data-comms-act="' + commsEscapeHtml(act.id) + '"' + dis + '>' +
+			commsEscapeHtml(act.label) + '</button>' +
+			(act.why ? '<span class="commsWhy">' + commsEscapeHtml(act.why) + '</span>' : '') +
+			'</div>';
+	}
+	return html;
+}
+
 function commsPaint() {
 	const called = Boolean(commsState.callKey);
 	if (commsButton) {
+		const tagText = called ? GravityGame.formatLaunchReason(commsState.callReason) : '';
 		commsButton.classList.toggle('called', called);
-		commsButton.setAttribute('aria-label', called
-			? 'H calls: ' + GravityGame.formatLaunchReason(commsState.callReason)
-			: 'call H');
-		commsButton.title = called
-			? 'H calls: ' + GravityGame.formatLaunchReason(commsState.callReason)
-			: 'call H';
+		commsButton.setAttribute('aria-label', called ? 'H calls: ' + tagText : 'call H');
+		commsButton.title = called ? 'H calls: ' + tagText : 'call H';
 		commsButton.setAttribute('aria-pressed', commsState.open ? 'true' : 'false');
 	}
 	if (commsBadge) commsBadge.hidden = !called;
 	if (commsTag) {
 		commsTag.hidden = !called;
-		commsTag.textContent = called
-			? GravityGame.formatLaunchReason(commsState.callReason) : '';
+		commsTag.textContent = called ? GravityGame.formatLaunchReason(commsState.callReason) : '';
 	}
 	if (commsCard) {
 		commsCard.hidden = !commsState.open;
@@ -257,21 +347,60 @@ function commsPaint() {
 		commsFoldButton.setAttribute('aria-label', commsState.collapsed ? 'expand H' : 'collapse H');
 	}
 	if (!commsState.open || !commsTranscript || !commsAnswer) return;
+	const count = commsState.exchanges.length;
+	const latest = count ? commsState.exchanges[count - 1] : null;
 	let transcript = '';
-	for (let i = 0; i < commsState.exchanges.length - 1; i++) {
+	for (let i = 0; i < count - 1; i++) {
 		const exchange = commsState.exchanges[i];
 		transcript += (transcript ? '\n\n' : '') + 'You: ' + exchange.question +
 			'\nH: ' + exchange.answer;
 	}
-	const latest = commsState.exchanges.length
-		? commsState.exchanges[commsState.exchanges.length - 1] : null;
 	if (latest) transcript += (transcript ? '\n\n' : '') + 'You: ' + latest.question;
 	commsTranscript.textContent = transcript;
 	commsAnswer.textContent = latest ? latest.answer : '';
+	if (commsBackButton) commsBackButton.hidden = count <= 1;
+	if (commsChipsEl && commsState.snapshot) {
+		const nextChips = commsChipsMarkup(commsState.snapshot, latest ? latest.id : '');
+		if (nextChips !== commsState.chipsHtml) {
+			commsState.chipsHtml = nextChips;
+			commsChipsEl.innerHTML = nextChips;
+		}
+	}
+	if (commsCtasEl) {
+		const nextCtas = commsCtasMarkup(latest ? latest.actions : null);
+		if (nextCtas !== commsState.ctasHtml) {
+			commsState.ctasHtml = nextCtas;
+			commsCtasEl.innerHTML = nextCtas;
+		}
+		commsCtasEl.hidden = nextCtas === '';
+	}
+}
+
+function commsFindData(event, key) {
+	let node = event && event.target;
+	while (node) {
+		if (node.disabled) return '';
+		if (node.dataset && node.dataset[key]) return node.dataset[key];
+		node = node.parentElement;
+	}
+	return '';
 }
 
 if (commsButton) commsButton.addEventListener('click', commsOpen);
 if (commsCloseButton) commsCloseButton.addEventListener('click', commsClose);
 if (commsFoldButton) commsFoldButton.addEventListener('click', commsToggleFold);
+if (commsBackButton) commsBackButton.addEventListener('click', commsBack);
 if (commsDismissButton) commsDismissButton.addEventListener('click', commsDismiss);
-if (commsQuestionButton) commsQuestionButton.addEventListener('click', commsAsk);
+if (commsQuestionButton) commsQuestionButton.addEventListener('click', () => commsAsk(CommsCopy.H_META_ID));
+if (commsChipsEl) {
+	commsChipsEl.addEventListener('click', event => {
+		const topic = commsFindData(event, 'commsTopic');
+		if (topic) commsAsk(topic);
+	});
+}
+if (commsCtasEl) {
+	commsCtasEl.addEventListener('click', event => {
+		const act = commsFindData(event, 'commsAct');
+		if (act) commsRunAction(act);
+	});
+}

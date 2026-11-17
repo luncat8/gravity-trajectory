@@ -681,30 +681,7 @@ if (launchBuildBtn) {
 	});
 }
 if (launchCommercialBtn) {
-	launchCommercialBtn.addEventListener('click', () => {
-		if (!careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return;
-		const career = playerCareer();
-		if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0) return;
-		if (career.commercialPlanet === career.at) {
-			/* selected and armed: the button is the commercial launch itself */
-			if (armed && aimBody === career.at) {
-				launchShot();
-				return;
-			}
-			GravityGame.setCommercial(career, -1);
-			careerNotice('standing rail on ' + planetName(career.at));
-		} else {
-			GravityGame.setCommercial(career, career.at);
-			careerNotice('commercial EMC-1 · ' + planetName(career.at) + ' · drag to aim');
-		}
-		/* the drag range follows the newly selected rail's ceiling */
-		if ((armed || aiming) && aimBody === career.at) {
-			placeGripFromSpeed();
-			dirty = true;
-		}
-		launchState = -1;
-		careerChanged();
-	});
+	launchCommercialBtn.addEventListener('click', () => toggleCommercialRail(false));
 }
 if (launchEvacBtn) {
 	launchEvacBtn.addEventListener('click', () => careerAct({ act: 'evac' }));

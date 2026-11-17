@@ -248,6 +248,26 @@ body {
 	justify-content: flex-start;
 }
 
+.commsCtas {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-top: 6px;
+}
+
+.commsActRow {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.commsWhy {
+	color: var(--dim);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+
 .commsCard .panelHead {
 	align-items: center;
 }

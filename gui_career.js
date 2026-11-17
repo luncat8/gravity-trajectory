@@ -231,9 +231,38 @@ function refreshCareerPanel() {
 /* any career edit can change the armed shot, the clock and the board */
 function careerChanged() {
 	clampArmedToPad();
+	commsInvalidate();
 	launchState = -1;
 	dirty = true;
 	refreshGameUi();
+}
+
+/* switch the ship's current planet onto or off the neutral commercial rail */
+function toggleCommercialRail(selectOnly) {
+	if (!careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return false;
+	const career = playerCareer();
+	if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0) return false;
+	if (career.commercialPlanet === career.at) {
+		if (selectOnly) return false;
+		if (armed && aimBody === career.at) {
+			launchShot();
+			return true;
+		}
+		GravityGame.setCommercial(career, -1);
+		careerNotice('standing rail on ' + planetName(career.at));
+	} else {
+		GravityGame.setCommercial(career, career.at);
+		careerNotice('commercial ' + GravityGame.COMMERCIAL_PAD.catapult.id +
+			' · ' + planetName(career.at) + ' · drag to aim');
+	}
+	/* the drag range follows the newly selected rail's ceiling */
+	if ((armed || aiming) && aimBody === career.at) {
+		placeGripFromSpeed();
+		dirty = true;
+	}
+	launchState = -1;
+	careerChanged();
+	return true;
 }
 
 

@@ -432,7 +432,7 @@
 	<div class="panelHead">
 		<div>
 			<div class="kicker">H · base radio</div>
-			<div class="roleTag">launch check</div>
+			<div class="roleTag">base assistant</div>
 		</div>
 		<div class="headBtns">
 			<button id="commsFold" class="miniBtn" type="button" aria-label="collapse H" aria-expanded="true">−</button>
@@ -442,11 +442,13 @@
 	<div id="commsBody">
 		<div id="commsStamp" class="commsStamp">checked —</div>
 		<div id="commsTranscript" class="commsTranscript" aria-live="polite"></div>
-		<div class="actions commsChips" role="group" aria-label="questions for H">
-			<button id="commsQuestion" class="miniBtn" type="button">why is launch blocked?</button>
+		<div id="commsChips" class="actions commsChips" role="group" aria-label="questions for H">
+			<button id="commsQuestion" class="miniBtn" type="button">what should I do?</button>
 		</div>
 		<div id="commsAnswer" class="commsAnswer" aria-live="polite"></div>
-		<div class="actions commsActions">
+		<div id="commsCtas" class="commsCtas" hidden></div>
+		<div id="commsActions" class="actions commsActions">
+			<button id="commsBack" class="miniBtn" type="button" hidden>back</button>
 			<button id="commsDismiss" class="miniBtn" type="button">dismiss this call</button>
 		</div>
 	</div>
@@ -544,6 +546,7 @@
 <script src="gui_predict.js"></script>
 <script src="gui_hud_text.js"></script>
 <script src="gui_flight.js"></script>
+<script src="comms_copy.js"></script>
 <script src="gui_comms.js"></script>
 <script src="gui_aim.js"></script>
 <script src="gui_game.js"></script>

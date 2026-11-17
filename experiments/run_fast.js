@@ -31,6 +31,8 @@ const KNOWN_RED = {
 /* logic only, no page boot: the tier you can afford after every edit */
 const FAST = [
 	['launch_reason_test.js', 0.2],
+	['comms_facts_test.js', 0.4],
+	['comms_topics_test.js', 0.4],
 	['comms_call_test.js', 1],
 	['balance_changes_test.js', 0.2],
 	['bribe_score_test.js', 0.2],
@@ -64,6 +66,7 @@ const SLOW = [
 	['helper_multiplayer_test.js', 3],
 	['career_guidance_test.js', 1],
 	['politics_gui_test.js', 1],
+	['comms_page_test.js', 1],
 	['profit_monotonic_test.js', 1],
 	['career_pause_test.js', 1],
 	['career_departure_test.js', 85],

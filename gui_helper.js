@@ -510,6 +510,7 @@ function stopHelper() {
 }
 
 function cancelHelperForChange(reason) {
+	commsInvalidate();
 	if (!helperState.active) return;
 	stopHelper();
 	if (careerRule()) careerNotice(reason + ' changed · scan again');

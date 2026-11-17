@@ -11,8 +11,12 @@ const context = env.context;
 const ui = env.elements;
 const get = expression => vm.runInContext(expression, context);
 const run = expression => vm.runInContext(expression, context);
+const gateIds = get('Array.from(CommsCopy.LAUNCH_GATE_ORDER).join(",")');
+assert.strictEqual(gateIds, 'arrest,space,wrong-planet,worn,no-rail,cap,fee');
 const factIds = get('Object.keys(HH_FACTS).sort().join(",")');
-assert.strictEqual(factIds, 'arrest,cap,fee,no-rail,space,worn,wrong-planet');
+for (const id of gateIds.split(',')) {
+	assert.ok(factIds.split(',').includes(id), 'missing gate fact ' + id);
+}
 for (const id of factIds.split(',')) {
 	assert.strictEqual(get('typeof HH_FACTS[' + JSON.stringify(id) + '].test'), 'function');
 	assert.strictEqual(get('typeof HH_FACTS[' + JSON.stringify(id) + '].why'), 'function');
@@ -42,7 +46,7 @@ assert.strictEqual(ui.get('commsCard').hidden, false);
 assert.strictEqual(get('Object.isFrozen(commsState.snapshot)'), true);
 assert.strictEqual(get('Object.isFrozen(commsState.snapshot.reasons)'), true);
 assert.strictEqual(ui.get('commsBadge').hidden, true, 'opening the card clears the badge');
-assert.strictEqual(ui.get('commsAnswer').textContent, context.GravityGame.WORN_OUT_BLOCK);
+assert.strictEqual(ui.get('commsAnswer').textContent.split('\n')[0], context.GravityGame.WORN_OUT_BLOCK);
 assert.match(ui.get('commsStamp').textContent, /^checked \d+ s · P\d+$/);
 assert.strictEqual(get('game.clockSteps'), before, 'opening H does not advance the game clock');
 assert.strictEqual(get('commsState.callKey'), '', 'an open card is not also a call');
