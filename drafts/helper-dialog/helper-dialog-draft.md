@@ -23,12 +23,24 @@ P:
 - В чём смысл жизни?
 	- Этот вопрос требует обсуждения в другой обстановке. Что касается работы эмиссара - то её цель собирать данные и передавать их в столицу этого звездного скопления. Откуда другие передадут в столицу галактики и так далее вплоть до столицы всех столиц находящейся вне пространств и времён. Шучу. Надеюсь суть ты понял. Работа не сложная - цирковые навыки приветствуются. <img alt="A circus acrobat is launched from a sci-fi oversized planetary cannon, soaring through the air while holding maritime signal flag and compact aluminium spyglass">
 
+entry point at the moment of the problem or manual call 'h'
+i imagine it as - Helper call player if found problem, if call ignored  or problem solved ico disappears
 
 На первом этапе разработки достаточно концепции. потом мы сравним с другими предложениями перед написанием of the implementation plan
 
 → **open** — three proposals and one merge live in this folder;
 `concept-helper-dialog-merged.md` §3 drops everything that is still a plan and
 not a mechanic, so H only ever explains what has a button. Nothing is in the
-code. The plan must answer first: *is H's headline one cause or a ranked list,
-and does that order come from `launchReason` or from a second opinion of its
-own?* (`concept-helper-dialog-merged.md` §8)
+code. Decision: H shows the first launch blocker as its headline and the other
+active blockers underneath, in the game's shared `launchReason` order; H does
+not invent a second ranking. Example: “Repair your hull first”, then “You need
+20 more credits for launch.” The implementation plan must define how the
+shared check exposes all active blockers without duplicating launch rules.
+
+→ the entry point is decided in `concept-helper-dialog-merged.md` §4.11: H
+raises one icon beside the rule-help button when the player stands behind a
+closed `launchReason` gate (tagged with the finding), never a toast and never
+text by itself; a dismissal holds for that planet visit, one silent re-call is
+allowed when the numbers change, and the icon clears by itself the moment the
+gate does — the call is a rendering of the current gate, not a queue. `h` stays
+the rule drawer's key (`gravity_gui.js:917`), so the card opens on the button.

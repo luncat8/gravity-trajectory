@@ -28,6 +28,9 @@ options, except where the code contradicts them — and §3 shows one that does.
    stored as ready-made text"* (G), *"H owns zero facts"* (A).
 2. **One cause at a time, in priority order, first true wins.**
    Diagnosis `steps` (G) = first failing check (E) = the `launchBlock` ladder (A).
+   The *entry point is the moment of the problem* (the draft, ERNIE): H calls the
+   player with one icon when that first cause is closed — §4.11 turns the note
+   into three states and a trigger that needs no authoring.
 3. **Blocked options are shown with their reason, not hidden** — this is what
    makes *«но у тебя таких нет»* appear without anyone writing it.
 4. **Answers end in a button that calls an existing handler.** No new mechanics,
@@ -155,7 +158,7 @@ is worse than no dialog, so this table is the merge's hard filter.
 | "bases earn when someone buys EMC **or fuel**"; "wait for fuel sales" (G §4.4, E `wait_base_income`) | **fuel pays nobody** — `buyFuel` takes from the purse, credits no owner. Pad income is the guest-launch tax only (`taxPerKwh`) | *"a guest launch on your rail pays you a tax; nothing else does"* |
 | rival characters Builder / Emissary / Rocketeer / Racer, "Rocketeer and Racer take bribes" (G, signed decision 1) | **plan only** (0.6.6, no `CAREER_CHARACTERS` in code). Live: one seeded flag, `GravityBot.prototype.careerBribeProne` | never name a persona; say *"some companies price a bribe into a landing, some don't"* |
 | "planet visits pay `0.24 → 4.00`" (G §4.2) | `MONEY = { cost: 1, k: 0.00625, initSec: 40, cap: 4 }` — the curve is the market's, not those numbers | slot reads `planetProfit`; no number is ever typed into copy |
-| "the ship is broken / engine broken" (E `ship.engines_ok`, G `ship.broken`) | there is **one** condition, 0–100 %, with three thresholds that matter: `< 100` (repair offered), `≤ 50` (worth warning), `0` (`WORN_OUT_BLOCK`, no launch, no burn, no report) | say *condition %, what it costs to fix, what it costs to ignore* |
+| "the ship is broken / engine broken" (E `ship.engines_ok`, G `ship.broken`) | there is **one** condition, 0–100 %, and only two thresholds exist in the code: `< 1` (a repair is offered, `repairCost` prices `2.00` per whole condition) and `0` (`WORN_OUT_BLOCK`: no launch, no burn, no report, `careerShipUsable` false). Any "warn below N %" would be a **new constant**, which §4.10.2 forbids | say *condition %, what it costs to fix, what it costs to ignore*; never invent a warning line |
 | "repair at the local workshop, needs a shop on the planet" (E, G) | false — `repairCareer` works on any planet the ship stands on | "anywhere you stand is a yard" |
 | "sell cargo at a market" (E) | no career action; contracts are legs, not inventory | drop it |
 | player may take bribes, once per visit, until another planet | **true** (`acceptBribe`, `reportPrev`/`reportStep`, 0.7.16) and the README's rival wording buries it | keep, and fix the README line in the same change (§4.9) |
@@ -287,9 +290,12 @@ fixture, which is worth more than a well-argued weight vector.
 ### 4.7 surface, freshness, transcript
 
 - **entry**: a `comms` button beside the rule-help button (`?` / `KeyH` open the
-  rule drawer today — `gravity_gui.js:917`), plus a follow-up chip on the
-  flight panel's own state tag when a ladder gate is closed. **No new hotkey in
-  the MVP**; `c` only if a key is ever wanted.
+  rule drawer today — `gravity_gui.js:917`), and a **notice icon that H raises
+  itself** when it finds a problem at the moment of the problem. See §4.11 for
+  the call, the ignore, and when the icon disappears. **No new hotkey in the
+  MVP**: `KeyH` and `?` already open the rule drawer, and `KeyC` is free but
+  would sit next to `KeyF`/`KeyZ`/`KeyP` and the arrow trims — a key is only
+  worth taking when the button proves too far.
 - **card**, non-modal, ~300 px, bottom-right above the flight panel, scrolls,
   collapses to one line. It never pauses the clock and never moves the flight
   panel. On a phone it becomes the same overlay the photo deck already uses when
@@ -355,7 +361,9 @@ one-line README edit made in the same change as the dialog, because H quotes it.
    tables and fails on `[0-9]` outside a slot. This is the one rule that keeps
    H from becoming the fourth source of truth about a price.
 2. **no new constants.** A threshold H needs ("warn at `≤ 50 %`") either exists
-   in the rules layer and the HUD reads it too, or it does not exist.
+   in the rules layer and the HUD reads it too, or it does not exist — and §3
+   shows that the wear warning does not exist, so H prints the condition and
+   the repair price and warns nothing. Only `< 1` and `0` are real.
 3. **H changes no state** — no purse, clock, seed, replay hash, no
    `Math.random`, nothing in the frame loop, no per-frame allocation.
 4. **no orphan CTA**: every `act` resolves to a real handler, and a CTA the
@@ -368,6 +376,70 @@ one-line README edit made in the same change as the dialog, because H quotes it.
    advice with `undefined` in it.
 
 ---
+
+### 4.11 the entry point: H calls the player, and the icon is the contract
+
+The draft's own line — *«entry point at the moment of the problem»* — is a
+**call, not a toast**. H does not speak first: it raises one small icon, the
+player decides whether to answer. The three states are the whole specification:
+
+| state | shown | cleared by |
+|---|---|---|
+| **quiet** | the `comms` button, dim, no badge | — |
+| **called** | the same button, lit, with the finding's tag (`no rail`, `worn`, `fee 2.54 › purse`) and a `!` badge | the finding changes, the card is opened, or the player dismisses |
+| **dismissed** | the button only, no badge, no tag | nothing. One silent re-call per fact-change (§4.11.2) |
+
+**4.11.1 what counts as a problem.** Not "something is suboptimal" — that is the
+scan engine's job (`gui_helper.js`) and it already has its own button. H calls
+only for a **closed gate the player is standing behind**, and the trigger is
+mechanical, so nothing is authored for it: *called ⇔ the player has a shot
+armed from this planet (`armed`, `aimBody` — the state the launch button
+reads), and `launchReason` names a gate for it, and neither the gate nor the
+player's last armed shot changed in the last second.* Both sides exist already
+— `launchReason` (§4.4) and the armed-shot state `gui_aim.js` keeps — so the
+call invents no timer, no threshold and no second ranking. That condition is
+also what makes the call rare: it cannot fire during a drag (the aim is
+changing), it fires once the player stops fighting the pad, and taking the
+shot away quiets it. The one case that calls without an aim is the ship worn to
+`0` (`WORN_OUT_BLOCK`): every shot is blocked by that fact alone, so the gate is
+the problem whether or not a shot is armed, and `launchReason` already reports
+it — no second check is written for it.
+
+**4.11.2 it never nags.** Three rules, and they are why this is not a tutorial:
+
+- **one call per fact-key per planet visit** — the key is
+  `gate id + planet + the numbers in it` (from §4.4's `{ id, need, have }`), so
+  *"fee 2.54 › purse 0.50"* called once is never called again, but the same gate
+  with a new price after a purse change is a new fact and may call once more;
+- **the ignore is remembered** for the whole planet visit (`commsState.dismissed[key]`),
+  and §4.7's transcript reset clears it with the transcript — a dismissal is a
+  statement about this planet, not about the game;
+- **never while the clock is settling, during a replay, or while the card is
+  open**, and never twice in the same second: the call rides the HUD tick
+  (`gui_frame.js`) in the same throttle the flight panel already uses.
+
+**4.11.3 when the icon disappears.** *"problem solved → icon disappears"* is
+taken literally, and it is free: the call is a **rendering of the snapshot**, not
+a record. `launchReason` returning `null` (gate cleared, or the ship left the
+planet) puts the button back to quiet in the same tick, with no timer and no
+"dismissed" flag to clean up. A dismissal hides a *call*, never a *fact*: the
+tag still updates, so an impatient player who dismissed it can see the number
+move when they sell the OBS data.
+
+**4.11.4 what the call costs.** Nothing new in the frame loop: §4.4's
+`launchReason` is already computed for the launch button and the flight panel's
+state tag, and the comparison `call key ≠ last key` is a string compare per HUD
+tick (twice a second) — the same shape as `flightHud.state` in `gui_flight.js`.
+The counter and the dismissal map live in `commsState`, are cleared by the same
+`cancelHelperForChange`-style invalidation, and §4.10.3's "H changes no state"
+still holds: a call writes a *log line and a badge*, never a purse, a clock or a
+replay hash.
+
+**4.11.5 why not the toast.** A toast is seen during a flight the player is
+losing, cannot be re-read, and competes with the flight panel's own state tag,
+which already prints the gate in words. The icon is the smallest object that
+survives both — and it is the draft's own shape: *"if call ignored or problem
+solved, the icon disappears"*.
 
 ## 5. content inventory (live features only)
 
@@ -403,6 +475,7 @@ a good sign for the content budget.
 |---|---|---|
 | `comms_facts_test.js` | every `HH_FACTS` key has `test` and `why`; `why` never contains a digit literal; the ladder order equals `launchReason`'s | no page, milliseconds |
 | `comms_topics_test.js` | every `when`/`ref`/`chips` id resolves; the combinator trees are acyclic; the chip list for four fixtures (stuck, worn, healthy, arrested) is exactly `['what should I do?', …]`; the copy tables contain no digit literal; every slot resolves on a fixture snapshot | this is ERNIE's loader validator, moved to CI where it cannot be skipped |
+| `comms_call_test.js` | the call key is `gate id + planet + numbers`; a dismissed key stays quiet for the rest of the visit and is offered again only after the numbers change; `launchReason` returning `null` quiets the button in the same tick; no call during a replay or while the card is open | the facts, no page |
 | `comms_page_test.js` | open on a seed, headline text, purse figure equals `career.ledger.purse`, the `repair` CTA produces the same `careerMsg` the real button does, land, reopen, headline changed, transcript cleared | one page load |
 | `dom_smoke` | the card's wiring and load order, once | only when `index.html` changes |
 
@@ -417,7 +490,7 @@ list's own page test already covers most of it.
 | stage | content | the point |
 |---|---|---|
 | **M0** | `launchReason` split + `HH_FACTS` + one line of *why* on the flight panel's state tag | a one-line cause already beats the whole HUD, and it needs no dialog |
-| **M1** | the card: chips, answer, dim CTAs with reasons, stamp, transcript reset, `Esc`, no pause | the draft's core loop, still with zero authored answers |
+| **M1** | the call icon (§4.11) and, on a press, the card: chips, answer, dim CTAs with reasons, stamp, transcript reset, `Esc`, no pause | the draft's core loop plus its own entry point, still with zero authored answers |
 | **M2** | `ref` subtrees + the bounded one-step look-ahead (`money` under a shortfall) | this is where *«потому что у тебя нет денег»* appears without being written as a tree |
 | **M3** | the topic index, the canon and the voice, `photos/helper/`, the easter eggs, `didn't help`, *what changed* | flavour, cheap, and the only place a joke belongs |
 | **M4** | the README bribe wording; per-rule answers for `tour`/`money`/`route`; optionally *"what is the rival doing?"* answered from the **bot log line already printed** (never a fresh `careerPlan` — a second opinion that can contradict the rival on screen) | the edges |
@@ -426,16 +499,18 @@ list's own page test already covers most of it.
 
 ## 8. what the plan must decide first
 
-1. **The headline: one cause or a ranked short list?** Single is faster and
-   cannot be wrong about priority; a list is more honest when two blockers hold
-   at once (worn **and** broke) and the ladder's order is a guess. My answer:
-   one cause, plus dim alternatives — that is exactly what the ladder already
-   encodes, and a second opinion would contradict the launch list.
-2. **Does H ever speak unasked?** GLM's *"no pop-up tutorials"* and my *"never
-   speak unless opened before"* agree on silence; ERNIE's *"entry point at the
-   moment of the problem"* asks for a nudge. Merged answer: the **state tag on
-   the flight panel** is the nudge (one line, one button, no card), and the card
-   opens itself only if the player opened it before — never during a replay.
+1. **Decided: headline plus other blockers.** Show the first active launch
+   blocker as the headline and the remaining active blockers underneath, in
+   the shared `launchReason` ladder order. H has no independent blocker ranking.
+   Example: “Repair your hull first”, then “You need 20 more credits for launch.”
+   The shared checker must expose all active blockers while preserving the
+   first-result contract for existing launch callers; do not duplicate rules in H.
+2. **Does H ever speak unasked?** Decided in §4.11: **it calls with an icon,
+   never with text or a toast**, once per fact-key per planet visit, and the call
+   disappears by itself the moment the gate clears. The flight panel's state tag
+   already prints the same gate in words, so the icon adds `!` and a tag, not a
+   second story. H never opens the card by itself — that stays the player's
+   press, and never during a replay.
 3. **Is the one-step look-ahead allowed to recommend?** "Take the offer, then
    the evacuator is paid" is arithmetic over live numbers, or it is a strategy
    the player did not ask for. My answer: allowed, one step, printed as a line
@@ -456,6 +531,7 @@ list's own page test already covers most of it.
 ## 9. one sentence
 
 **H is a small, testable reader of the rules layer with a dry voice: it walks
-the same gate ladder the launch list already prints, shows the first closed
-gate with the numbers that closed it, keeps every alternative visible but dim
-with its own price, and never writes down a number of its own.**
+the same gate ladder the launch list already prints, raises one icon when the
+player is standing behind a closed gate, shows the first closed gate with the
+numbers that closed it, keeps every alternative visible but dim with its own
+price, and never writes down a number of its own.**
