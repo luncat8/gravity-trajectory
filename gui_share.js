@@ -24,7 +24,7 @@ function copyUrlText(url, btn, label) {
 
 function copyLink() {
 	if (careerRule()) {
-		copyCareerReplay();
+		copyCareerActions();
 		return;
 	}
 	if (routeRule() && (armed || aiming)) predictShot();
@@ -276,7 +276,13 @@ function loadReplayText() {
 	if (!input) return;
 	const text = input.value.trim();
 	let ok = false;
-	if (text.startsWith(CareerReplay.PREFIX)) {
+	if (typeof CareerActions !== 'undefined' && text.startsWith(CareerActions.PREFIX)) {
+		const data = CareerActions.decode(text);
+		loadingUrl = true;
+		ok = Boolean(data && startCareerActionsReplay(data));
+		loadingUrl = false;
+		if (ok) syncSeedUrl();
+	} else if (text.startsWith(CareerReplay.PREFIX)) {
 		const movie = CareerReplay.decode(text.slice(CareerReplay.PREFIX.length));
 		loadingUrl = true;
 		ok = Boolean(movie && startCareerReplay(movie, true));
@@ -297,3 +303,9 @@ function loadReplayText() {
 
 const replayLoadButton = $('replayLoad');
 if (replayLoadButton) replayLoadButton.addEventListener('click', loadReplayText);
+const careerSaveCopyButton = $('careerSaveCopy');
+if (careerSaveCopyButton) {
+	careerSaveCopyButton.addEventListener('click', () => {
+		if (careerRule()) copyCareerReplay(undefined, careerSaveCopyButton, 'copy full save');
+	});
+}

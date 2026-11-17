@@ -199,6 +199,7 @@ function playerCountShown() {
 function setPlayerCount(delta) {
 	if (replay.on) return;
 	careerRecordingMark();
+	if (typeof recordCareerAction === 'function') recordCareerAction('playerCount', { delta: Math.sign(delta) });
 	const current = playerCountShown();
 	const count = Math.max(1, Math.min(MAX_PLAYERS, current + Math.sign(delta)));
 	if (count === current) return;

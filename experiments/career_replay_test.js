@@ -59,6 +59,11 @@ live.context.careerAct(actionData);
 live.context.careerAct({ act: 'build', kind: 'panel', tier: '1' });
 assert(get(live, 'game.money.purse') < initialPurse, 'same-step purchases succeed');
 live.click('gameCopy');
+const actionsText = get(live, 'gameLinkEl.value');
+assert(actionsText.startsWith('GRAVITY_ACTIONS:'), 'gameCopy copies minimal player actions');
+const actionsData = live.context.CareerActions.decode(actionsText);
+assert(actionsData && actionsData.seed === 42 && Array.isArray(actionsData.actions), 'actions payload decodes');
+live.click('careerSaveCopy');
 let movie = decodeCopy(live);
 let snapshots = visitFrames(live.context.CareerReplay, movie);
 assert(snapshots.some(s => s.state.slotPaused[0]), 'pause belongs in the recording');
@@ -76,7 +81,7 @@ planetInput.value = '14';
 universeEdits.fireElement(planetInput, 'change');
 planetInput.value = '13';
 universeEdits.fireElement(planetInput, 'change');
-universeEdits.click('gameCopy');
+universeEdits.click('careerSaveCopy');
 const universeStates = visitFrames(universeEdits.context.CareerReplay, decodeCopy(universeEdits));
 assert(universeStates.some(s => s.universe === 14), 'expanded universe is recorded');
 assert.strictEqual(universeStates.at(-1).universe, 13, 'subsequent shrink is recorded');
@@ -84,7 +89,7 @@ assert.strictEqual(universeStates.at(-1).universe, 13, 'subsequent shrink is rec
 /* The trade event heap can grow beyond its initial capacity. */
 const grownQueue = loadPage({ search: mapSearch(42) });
 get(grownQueue, 'tradeSim.events.grow()');
-grownQueue.click('gameCopy');
+grownQueue.click('careerSaveCopy');
 const grownMovie = decodeCopy(grownQueue);
 assert.strictEqual(visitFrames(grownQueue.context.CareerReplay, grownMovie).at(-1)
 	.state.tradeEvents.time.d.length, 512);
@@ -115,7 +120,7 @@ assert.strictEqual(get(lateRival, 'activeSlotIndex()'), 3, 'follow the rival whe
 get(live, 'selectSlot(0); setSlotType(1, PLAYER_USER)');
 get(live, 'setPlayerCount(-1)');
 live.runFrames(2, 16);
-live.click('gameCopy');
+live.click('careerSaveCopy');
 movie = decodeCopy(live);
 snapshots = visitFrames(live.context.CareerReplay, movie);
 assert(snapshots.some(s => s.state.ships.length === 4), 'record an added company');
@@ -165,7 +170,7 @@ assert.strictEqual(watching.elements.get('careerWait').disabled, true);
 assert.strictEqual(watching.elements.get('careerReplayHint').hidden, false);
 watching.click('botCopy');
 assert.strictEqual(decodeCopy(watching).watch, 1, 'a replay can be shared with a different focus');
-watching.click('gameCopy');
+watching.click('careerSaveCopy');
 assert.strictEqual(JSON.stringify(decodeCopy(watching)), JSON.stringify(movie),
 	'a forwarded replay preserves the entire decoded payload');
 const frozen = get(watching, 'JSON.stringify(careerRecordingSnapshot().state)');
@@ -212,7 +217,7 @@ manual.dragBurn(-1.15, manualScene.sim.burnLimit() * 0.6);
 const fuelBeforeBurn = pilot.ship.fuelKg;
 manual.fireWindow('keydown', { code: 'Enter', key: 'Enter', target: { tagName: 'BODY' }, preventDefault() {} });
 assert(pilot.ship.fuelKg < fuelBeforeBurn);
-manual.click('gameCopy');
+manual.click('careerSaveCopy');
 const manualMovie = decodeCopy(manual);
 const manualStates = visitFrames(manual.context.CareerReplay, manualMovie);
 assert(manualStates.some(s => s.state.run.shots.length && s.state.run.shots[0].burns.length === 1),
@@ -229,14 +234,14 @@ const special = loadPage({ search: mapSearch(42) });
 special.context.careerAct({ act: 'sciAccept', kind: 'engine' });
 assert.strictEqual(get(special, 'game.career.research'), 1);
 assert.strictEqual(get(special, 'toggleCommercialRail(false)'), true);
-special.click('gameCopy');
+special.click('careerSaveCopy');
 let specialReplay = openCopy(special.clipboardText);
 specialReplay.click('replaySkip');
 assert.strictEqual(get(specialReplay, 'game.career.commercialPlanet'), get(special, 'game.career.at'));
 assert.strictEqual(get(specialReplay, 'game.career.research'), 1, 'research is restored');
 get(special, 'game.career.at = -1; game.career.stranded = true; game.career.flying = false; ' +
 	'cargoSim.status = STATUS_ENDED; cargoSim.landedBody = -1');
-special.click('gameCopy');
+special.click('careerSaveCopy');
 specialReplay = openCopy(special.clipboardText);
 specialReplay.click('replaySkip');
 assert.strictEqual(get(specialReplay, 'replay.verdict'), '');
@@ -248,7 +253,7 @@ const longRun = loadPage({ search: mapSearch(42) });
 get(longRun, 'setSlotType(0, PLAYER_BOT); playIndex = 7');
 for (let i = 0; i < 5; i++) {
 	longRun.runFrames(100, 16);
-	longRun.click('gameCopy');
+	longRun.click('careerSaveCopy');
 	if (longRun.clipboardText.startsWith('gravity-career:')) break;
 }
 assert(longRun.clipboardText.startsWith('gravity-career:'), 'long recordings use the text fallback');
@@ -260,7 +265,7 @@ assert.strictEqual(get(longWatch, 'careerRecording.index'), longMovie.frames.len
 
 /* file:// without clipboard permission still exposes a copyable recording. */
 const fallback = loadPage({ search: mapSearch(42), clipboard: false });
-fallback.click('gameCopy');
+fallback.click('careerSaveCopy');
 assert.strictEqual(fallback.elements.get('gameLink').hidden, false);
 const fallbackReplay = openCopy(fallback.elements.get('gameLink').value);
 assert.strictEqual(get(fallbackReplay, 'replay.career'), true);

@@ -93,6 +93,8 @@ function refreshGameUi() {
 	if (botLogBtn) {
 		const hasBots = game.on && !replay.on && selectedBotActors().length > 0;
 		botLogBtn.hidden = !hasBots;
+		const careerSaveCopyBtn = $('careerSaveCopy');
+		if (careerSaveCopyBtn) careerSaveCopyBtn.hidden = !careerRule();
 		if (!hasBots) hideBotLog();
 	}
 	if (rivalRowEl) rivalRowEl.hidden = game.bot === BOT_OFF;

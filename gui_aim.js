@@ -502,6 +502,7 @@ function setSource(next) {
 	cancelHelperForChange('gravity source');
 	mode = next;
 	careerRecordingMark();
+	if (typeof recordCareerAction === 'function') recordCareerAction('source', { mode: next });
 	srcPlanetsEl.checked = mode === MODE_PLANETS;
 	srcPortsEl.checked = mode === MODE_PORTS;
 	if (game.on && routeRule() && !replay.on) {

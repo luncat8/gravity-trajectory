@@ -11,6 +11,13 @@ const careerRecording = {
 	dirty: false, loading: false, movie: null, current: null, next: null, index: 0, elapsed: 0,
 	finished: false, follow: -1
 };
+const careerActionLog = [];
+
+function recordCareerAction(type, data) {
+	if (!careerRule() || replay.on || careerRecording.loading) return;
+	const entry = Object.assign({ step: game.clockSteps, slot: activeSlotIndex(), type: type }, data || {});
+	careerActionLog.push(entry);
+}
 
 function careerRecordingSnapshot() {
 	const snapshot = GravityMaps.runRecord(mapRunInfo());
@@ -29,10 +36,12 @@ function careerRecordingClear() {
 	careerRecording.record = null;
 	careerRecording.previous = null;
 	careerRecording.dirty = false;
+	careerActionLog.length = 0;
 }
 
 function careerRecordingReset() {
 	if (careerRecording.loading || !careerRule() || !game.galaxy.mapSeats) return;
+	careerActionLog.length = 0;
 	const start = careerRecordingSnapshot();
 	careerRecording.record = CareerReplay.create(start);
 	careerRecording.previous = start;
@@ -83,6 +92,51 @@ function copyCareerReplay(followSlot, button = gameCopyBtn, label = 'copy replay
 		careerNotice('long replay copied as text · paste it into open replay');
 	}
 	copyUrlText(text, button, label);
+}
+
+function copyCareerActions(button = gameCopyBtn, label = 'copy replay') {
+	const payload = {
+		v: 1,
+		seed: game.seed,
+		rule: game.rule,
+		rate: scene.trade.speed,
+		bot: game.bot,
+		player: game.player,
+		playerCount: typeof playerCountShown === 'function' ? playerCountShown() : (1 + bot.count),
+		g: gravityScale,
+		f: forceScale,
+		w: spaceWearScale,
+		h: harvestTick,
+		steps: game.clockSteps,
+		actions: careerActionLog.slice()
+	};
+	if (game.cheat) payload.cheat = game.cheat;
+	const text = CareerActions.encode(payload);
+	copyUrlText(text, button, label);
+}
+
+function startCareerActionsReplay(data) {
+	if (!data || !Number.isFinite(data.seed)) return false;
+	if (typeof data.g === 'number') gravityScale = data.g;
+	if (typeof data.f === 'number') forceScale = data.f;
+	if (typeof data.w === 'number') spaceWearScale = data.w;
+	if (typeof data.h === 'number') harvestTick = data.h;
+	const rule = data.rule || 'career';
+	const rate = Number.isFinite(data.rate) ? data.rate : scene.trade.speed;
+	const botDiff = data.bot || game.bot;
+	const player = data.player || game.player;
+	const cheat = data.cheat || '';
+	startGame(data.seed, rate, rule, botDiff, player, cheat);
+	if (typeof data.playerCount === 'number' && typeof setPlayerCount === 'function') {
+		while (playerCountShown() < data.playerCount) setPlayerCount(1);
+		while (playerCountShown() > data.playerCount) setPlayerCount(-1);
+	}
+	careerActionLog.length = 0;
+	for (let i = 0; i < data.actions.length; i++) {
+		careerActionLog.push(data.actions[i]);
+	}
+	careerNotice('actions loaded · ' + data.actions.length + ' player actions from seed ' + data.seed);
+	return true;
 }
 
 function careerReplayRoster(snapshot) {
