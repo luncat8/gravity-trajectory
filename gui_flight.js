@@ -203,6 +203,7 @@ function flightRefuel() {
 	if (career.ended !== GravityGame.CAREER_OPEN) return false;
 	const kg = flightRefuelPlan(career);
 	if (kg <= 0) return false;
+	recordCareerAction('refuel');
 	const before = career.ship.fuelKg;
 	const converted = GravityGame.produceFuel(career, career.at, kg);
 	const rest = kg - converted;

@@ -3339,8 +3339,8 @@ function protoOf(career, family, id) {
 	check(!bui.get('botLog').hidden, 'career rivals need a copy bot log button');
 	check(bui.get('botLogBox').hidden, 'the log panel starts closed');
 	bEnv.click('botLog');
-	const pausedLog = bui.get('botLogText').value;
-	check(!bui.get('botLogBox').hidden &&
+	const pausedLog = bui.get('gameLink').value;
+	check(bui.get('botLogBox').hidden && !bui.get('gameLink').hidden &&
 		pausedLog.startsWith('gravity cargo · bot decisions') &&
 		pausedLog.includes('career · normal · 2 rivals · seed 42') &&
 		pausedLog.includes('R1 ·') && pausedLog.includes('kWh →') &&
@@ -3355,7 +3355,7 @@ function protoOf(career, family, id) {
 	bEnv.click('careerClock');
 	bEnv.runFrames(400, 16.0);
 	bEnv.click('botLog');
-	const liveLog = bui.get('botLogText').value;
+	const liveLog = bui.get('gameLink').value;
 	check(/\] R1 (plan|queue|fire|land|sit|no shot|commercial) ·/.test(liveLog),
 		'rival decisions never reached the log: ' + liveLog.slice(-300));
 	check(liveLog.includes('retry in') || liveLog.includes('barrel in') ||
@@ -3363,9 +3363,7 @@ function protoOf(career, family, id) {
 	check(bui.get('rivalMeta1').textContent.includes(' · ') &&
 		bui.get('rivalMeta1').title.includes('last:'),
 		'the rival row must show its live state: ' + bui.get('rivalMeta1').textContent);
-	bEnv.click('botLogClose');
-	check(bui.get('botLogBox').hidden && bui.get('botLogText').value === '',
-		'closing the log panel must clear it');
+	check(bui.get('botLogBox').hidden, 'the copy fallback does not open a log panel');
 	console.log('0.4.24 verified: copy bot log (clipboard + file:// panel), live rival state ' +
 		'in the scoreboard, reasons for queues and waits');
 }
@@ -3534,8 +3532,8 @@ function protoOf(career, family, id) {
 	check(copied.startsWith('gravity cargo · bot decisions') &&
 		copied.includes('R1 ·') && copied.includes('decisions ('),
 		'the clipboard did not receive the decision log: ' + copied.slice(0, 200));
-	check(cui.get('botLogText').value === copied,
-		'the panel and the clipboard must hold the same snapshot');
+	check(cui.get('botLogBox').hidden && cui.get('gameLink').value === copied,
+		'copy does not open a log panel');
 	cEnv.choose('botOff');
 	cEnv.runFrames(2, 16.0);
 	check(cui.get('botLog').hidden && cui.get('botLogBox').hidden,

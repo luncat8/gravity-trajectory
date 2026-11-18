@@ -198,13 +198,13 @@
 		<div class="actions gameActions">
 			<button id="gameRestart" class="miniBtn" title="same seed, fresh start">restart</button>
 			<button id="gameNewSeed" class="miniBtn" title="random world">new seed</button>
-			<button id="gameCopy" class="miniBtn" title="copy replay link · in career: copy minimal player actions">copy replay</button>
-			<button id="careerSaveCopy" class="miniBtn" title="copy the whole recorded world snapshot · big" hidden>copy full save</button>
+			<button id="gameCopy" class="miniBtn" title="copy replay">copy replay</button>
 			<button id="botCopy" class="miniBtn" title="copy the selected rival’s solo replay (R1 when YOU is selected)" hidden>copy rival</button>
 			<button id="botLog" class="miniBtn" title="copy recent decisions of the players whose bot boxes are checked · click again to refresh" hidden>copy bot log</button>
 			<button id="replaySpeed" class="miniBtn" title="replay speed" hidden>×1</button>
 			<button id="replaySkip" class="miniBtn" title="skip to the end of the replay" hidden>skip</button>
 			<button id="replayAgain" class="miniBtn" type="button" title="watch the career recording again" hidden>replay again</button>
+			<button id="careerSaveCopy" class="miniBtn" title="copy the whole recorded world snapshot · big" hidden>copy full save</button>
 		</div>
 		<p class="runHint" id="shareHint">Copy rival replays the selected rival alone (or R1 if YOU is selected). Copy bot log includes the checked bot rows.</p>
 		<input id="gameLink" type="text" readonly hidden aria-label="replay link or text">
@@ -218,7 +218,7 @@
 
 	<details id="replayImport" class="group replayImport">
 		<summary>open a copied replay</summary>
-		<label for="replayInput">Paste a replay link or long career replay text:</label>
+		<label for="replayInput">Paste a replay link, career replay text, or full save:</label>
 		<textarea id="replayInput" class="botLogText" rows="3" spellcheck="false"></textarea>
 		<button id="replayLoad" class="miniBtn" type="button">open replay</button>
 		<span id="replayLoadNote" class="runHint" role="status"></span>
@@ -491,7 +491,7 @@
 	</section>
 	<section aria-labelledby="helpRivalsTitle">
 		<h3 id="helpRivalsTitle" class="helpSectionTitle">rivals &amp; sharing</h3>
-		<p class="helpControls">Rivals are other players competing for the same resources. Difficulty changes bot skill; off restarts the run. The scoreboard player count overrides the default roster. Copy rival follows the selected rival (R1 if YOU is selected): in career it shares the whole run, elsewhere its solo trajectory. Copy bot log includes only rows with bot checked.</p>
+		<p class="helpControls">Rivals are other players competing for the same resources. Difficulty changes bot skill; off restarts the run. The scoreboard player count overrides the default roster. Career replay includes all player inputs; bots are simulated again. Outside career, copy rival shares its solo trajectory. Copy bot log includes recent decisions for rows currently checked as bots.</p>
 		<p class="helpControls">Open ☏ H assistant at the top of the right panel, or ask H beside the auto scans. H calls when it detects a launch problem; answer or dismiss the call.</p>
 	</section>
 	<section aria-labelledby="helpModeTitle">

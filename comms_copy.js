@@ -1489,7 +1489,6 @@
 		}
 		if (snapshot.reasons.length > 0) return 'leave';
 		if (HH_FACTS['ship-worn'].test(snapshot)) return 'repair';
-		if (!snapshot.ownPadHere && snapshot.buildable) return 'pad';
 		if (HH_FACTS['own-pad-charging'].test(snapshot)) return 'pad';
 		if (HH_FACTS['fuel-need'].test(snapshot)) return 'fuel';
 		return 'money';
@@ -1551,7 +1550,7 @@
 			id: meta ? H_META_ID : topic.id,
 			resolvedId: topic.id,
 			question: question,
-			text: lines.join('\n'),
+			text: [...new Set(lines)].join('\n'),
 			actions: resolveActions(actionIds, snapshot),
 			chips: chipList(snapshot, asked)
 		});

@@ -139,7 +139,6 @@ function commsActiveFinding(career) {
 			: null;
 	}
 	const armedHere = armed && aimBody === career.at;
-	if (!armedHere && GravityGame.careerShipUsable(career) && !career.stranded) return null;
 	const speed = armedHere ? aimSpeed : SPEED_MIN;
 	const reason = GravityGame.launchReason(career, activeCareerSim(), career.at, speed, false);
 	if (!reason) return null; /* no closed gate: an off-network landing you can afford is not news */

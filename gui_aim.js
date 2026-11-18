@@ -146,6 +146,10 @@ function restoreSaved() {
 /* the barrel must line up with the aimed direction before the rail fires */
 function cancelTurret(queued = turret) {
 	if (!queued.pending) return;
+	const queuedSlot = slotTurrets.indexOf(queued);
+	if (queuedSlot >= 0 && careerRule() && !slotIsBot(queuedSlot) && !careerActionReplay.applying) {
+		careerActionLog.push({ step: game.clockSteps, slot: queuedSlot, type: 'cancelLaunch' });
+	}
 	queued.pending = false;
 	GravityGame.releaseEnergy(queued.pad, queued.energy);
 	careerNotice('');
@@ -159,6 +163,7 @@ function cancelTurret(queued = turret) {
  * when the barrel lines up with the aim on world time, not on wall clock,
  * and the aimed shot's energy is reserved from the pad battery at the click */
 function queueTurretShot() {
+	if (!slotIsBot(activeSlotIndex())) recordCareerAction('launch', { origin: aimBody, angle: aimAngle, speed: aimSpeed });
 	const period = GravityGame.turretPeriod(game.galaxy, aimBody);
 	const seconds = game.clockSteps * DT;
 	const gun = GravityGame.turretAngle(game.galaxy, aimBody, seconds);
@@ -365,6 +370,12 @@ function executeBurn() {
 
 /* The game bar and keyboard both control the shared career clock. */
 function toggleFlightPause() {
+	if (careerActionReplay.halted) {
+		careerActionReplay.halted = false;
+		for (let s = 0; s < slotCount(); s++) slotPaused[s] = false;
+		syncCareerPause();
+		return true;
+	}
 	if (!pauseAllowed() || playerIsBot()) return false;
 	setCareerPaused(!slotPaused[activeSlotIndex()]);
 	return true;
@@ -385,6 +396,7 @@ function launchShot() {
 	 * through, and with no firable shot the click is the repair alone */
 	if (repairOffered()) {
 		const chained = shotFiresRepaired();
+		recordCareerAction('act', { act: 'repair' });
 		if (!careerRepair() || !chained) return;
 	}
 	launchArmedShot();
@@ -430,12 +442,8 @@ function fire(abortStep) {
 	clearBurnAim();
 	const slot = activeSlotIndex();
 	const sim = slotSim(slot);
-	if (careerRule() && slot === 0 && !replay.on && !playerIsBot()) {
-		/* the inputs that reproduce this flight on replay, in engine units; a
-		 * bot-flown YOU derives its shots from the seed, so it stays out */
-		recordCareerAction('launch', { origin: aimBody,
-			angleU: GravityGame.angleUnits(aimAngle), speedU: GravityGame.speedUnits(aimSpeed) });
-	}
+
+	if (careerRule() && !replay.on) recordCareerFlight(slot, game.clockSteps, aimBody, aimAngle, aimSpeed);
 	if (game.on) recordSlotShot(slot, abortStep);
 	predictShot();
 	dirty = false;

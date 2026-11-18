@@ -119,3 +119,20 @@ assert.ok(ui.get('commsAnswer').textContent.includes('Evacuate to HQ'),
 	ui.get('commsAnswer').textContent);
 
 console.log('COMMS CALL OK');
+
+/* No pad by itself is ordinary travel, but an unaffordable standing rail is
+ * still a useful call even before the player arms a shot. */
+const visitor = loadPage({ search: mapSearch(42) });
+const visit = expression => vm.runInContext(expression, visitor.context);
+visit(`(() => {
+	const career = playerCareer();
+	const other = Array.from(planetMask).findIndex((on, p) => on && p !== career.hq &&
+		p !== career.capitalPlanet && p !== career.arfPlanet);
+	GravityGame.placeShip(career, activeCareerSim(), other);
+	career.stranded = false;
+	career.ledger.purse = 100;
+	armed = false;
+})()`);
+assert.strictEqual(visit('commsActiveFinding(playerCareer())'), null, 'affordable visitor does not trigger a call');
+visit('playerCareer().ledger.purse = -100');
+assert.strictEqual(visit('commsActiveFinding(playerCareer()).id'), 'fee', 'unaffordable rail calls even before aiming');

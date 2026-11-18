@@ -257,6 +257,11 @@ function refreshExperimentUi() {
 
 /* one entry point for the sliders and for a link that carries the scales */
 function setExperimentScales(nextGravity, nextForce, nextHarvest, nextWear) {
+	if (careerRule() && game.on && careerRecording.record &&
+		(nextGravity !== gravityScale || nextForce !== forceScale || nextHarvest !== harvestTick ||
+		(nextWear !== undefined && nextWear !== spaceWearScale))) {
+		recordCareerAction('scales', { g: nextGravity, f: nextForce, h: nextHarvest === true, w: nextWear === undefined ? spaceWearScale : nextWear });
+	}
 	careerRecordingMark();
 	gravityScale = Math.round(nextGravity * 100) / 100;
 	forceScale = Math.round(nextForce * 100) / 100;
@@ -275,6 +280,7 @@ function setExperimentScales(nextGravity, nextForce, nextHarvest, nextWear) {
 function onHarvestChange() {
 	const next = Boolean(expHarvestEl && expHarvestEl.checked) && careerRule();
 	if (next !== harvestTick) cancelHelperForChange('stay-pay');
+	if (next !== harvestTick) recordCareerAction('scales', { g: gravityScale, f: forceScale, h: next, w: spaceWearScale });
 	harvestTick = next;
 	careerRecordingMark();
 	applyExperiment();
@@ -290,6 +296,7 @@ function onWearInput() {
 	if (!careerRule()) return;
 	const next = Math.round(Number(expWearEl.value) * 100) / 100;
 	if (next === spaceWearScale) return;
+	recordCareerAction('scales', { g: gravityScale, f: forceScale, h: harvestTick, w: next });
 	spaceWearScale = next;
 	careerRecordingMark();
 	cancelHelperForChange('space wear');
@@ -414,8 +421,8 @@ function refreshCareerClockUi() {
 	const held = allowed && slotPaused[slot];
 	if (careerClockBtn) {
 		careerClockBtn.hidden = !allowed;
-		careerClockBtn.disabled = slotIsBot(slot);
-		careerClockBtn.textContent = held ? '▶ time' : '❚❚ time';
+		careerClockBtn.disabled = slotIsBot(slot) && !careerActionReplay.halted;
+		careerClockBtn.textContent = held || careerActionReplay.halted ? '▶ time' : '❚❚ time';
 		careerClockBtn.classList.toggle('on', held);
 		careerClockBtn.title = held ? 'Release this player’s pause (Space / P)'
 			: careerPaused ? 'Waiting for other players; click to pause this player too'
@@ -426,7 +433,7 @@ function refreshCareerClockUi() {
 }
 
 function syncCareerPause() {
-	const next = pauseAllowed() && otherPlayerPaused(-1);
+	const next = pauseAllowed() && (careerActionReplay.halted || otherPlayerPaused(-1));
 	if (careerPaused !== next) {
 		careerPaused = next;
 		playAcc = 0;

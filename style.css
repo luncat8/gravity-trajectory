@@ -251,7 +251,7 @@ body {
 	left: auto;
 	right: 322px;
 	bottom: calc(var(--footReserve, 64px) + 8px);
-	width: min(460px, calc(100vw - 340px));
+	width: min(620px, calc(100vw - 340px));
 	max-height: min(52vh, 460px);
 	display: flex;
 	flex-direction: column;
@@ -2497,7 +2497,7 @@ polyline.sciKnownHull {
 		radial-gradient(1px 1px at 32% 66%, rgba(255, 255, 255, 0.5), transparent);
 }
 
-@media (max-width: 820px) {
+@media (max-width: 1050px) {
 	.commsTag {
 		max-width: 54px;
 	}

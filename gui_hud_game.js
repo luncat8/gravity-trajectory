@@ -80,18 +80,18 @@ function refreshGameUi() {
 	clearButton.hidden = game.on && !route;
 	clearButton.textContent = route ? 'clear plan' : 'clear';
 	clearButton.disabled = route && (replay.on || playerIsBot());
-	gameCopyBtn.disabled = career ? false : flightLock;
-	gameCopyBtn.textContent = career ? 'copy actions' : 'copy replay';
+	gameCopyBtn.disabled = career ? replay.on || careerActionReplay.active : flightLock;
+	gameCopyBtn.textContent = career ? 'copy career replay' : 'copy replay';
 	gameCopyBtn.title = career
-		? 'copy the seed, its settings and your inputs as a small text · paste it back to replay this run, or share it to investigate why a bot acts · no world snapshot'
+		? 'copy the opening and timed player inputs · bots are simulated again · paste into open a copied replay'
 		: 'copy the selected player’s replay link';
 	if (careerSaveCopyBtn) {
 		careerSaveCopyBtn.hidden = !career;
-		careerSaveCopyBtn.title = 'copy the whole recorded world snapshot · big · paste it into open replay to resume this exact run · copy actions is enough for most cases';
+		careerSaveCopyBtn.title = 'copy the large recorded world timeline · paste into open replay to watch it';
 	}
 	if (botCopyBtn) {
 		const rIdx = rivalCopyIndex();
-		botCopyBtn.hidden = bot.count === 0 || (!career && game.bot === BOT_OFF);
+		botCopyBtn.hidden = career || bot.count === 0 || game.bot === BOT_OFF;
 		botCopyBtn.disabled = career ? bot.count === 0 : flightLock || bot.count === 0 ||
 			bot.rivals[rIdx].shots.length === 0;
 		botCopyBtn.title = career ? 'copy the shared career replay, following the selected rival' :
@@ -105,7 +105,7 @@ function refreshGameUi() {
 	if (rivalRowEl) rivalRowEl.hidden = game.bot === BOT_OFF;
 	const shareHint = $('shareHint');
 	if (shareHint) shareHint.textContent = career
-		? 'Copy actions copies the seed, its settings and your inputs · small, replays from the seed. Copy full save copies every company and the whole world (big). Copy rival follows the selected rival (R1 if YOU is selected). Bot log includes checked bots.'
+		? 'Career replay copies all human inputs and the selected player’s launches; bots are simulated again. Bot log copies recent decisions for checked bots, not a replay. Full save is a large recorded timeline.'
 		: 'Copy rival replays the selected rival alone (or R1 if YOU is selected). Bot log includes the checked bot rows.';
 	if (purseRowEl) purseRowEl.hidden = route;
 	if (predProfitRowEl) predProfitRowEl.hidden = !game.on || route;

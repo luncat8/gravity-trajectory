@@ -1,12 +1,8 @@
 /* Career playback records the shared world, not just one company's shots.
  * Snapshots are delta-compressed and sampled during play; no bot is re-run.
  *
- * The minimal player-actions log (GRAVITY_ACTIONS:) rides the same file: only
- * the inputs the player makes (launches, burns, shop and board actions, clock
- * and roster edits) with the step they happened on — no world snapshot. The
- * world is deterministic from the seed, so this is enough to replay a run or
- * to paste into a conversation and investigate why a bot acted. Loading one
- * applies the recorded inputs at their steps as the clock reaches them. */
+ * The compact GRAVITY_ACTIONS record contains the opening and timed inputs;
+ * bots are simulated again, rather than saved as world snapshots. */
 'use strict';
 
 const CAREER_RECORD_STEPS = Math.round(0.5 / DT);
@@ -19,9 +15,15 @@ const careerRecording = {
 	finished: false, follow: -1
 };
 const careerActionLog = [];
+const careerFlights = [];
+
+function recordCareerFlight(slot, step, origin, angle, speed) {
+	if (!careerRule() || replay.on || careerRecording.loading) return;
+	careerFlights.push({ slot: slot, step: step, origin: origin, angle: angle, speed: speed });
+}
 /* the action replay in flight: the recorded inputs, applied at their steps */
 const careerActionReplay = {
-	active: false, applying: false, pending: [], index: 0, applied: 0, skipped: 0
+	active: false, applying: false, pending: [], index: 0, applied: 0, skipped: 0, endStep: 0, watch: 0, halted: false, expected: []
 };
 
 function recordCareerAction(type, data) {
@@ -31,12 +33,14 @@ function recordCareerAction(type, data) {
 }
 
 /* drops any queued action replay; called whenever a run (re)starts */
-function careerActionReplayReset(actions) {
+function careerActionReplayReset(actions, endStep = 0) {
 	careerActionReplay.pending = Array.isArray(actions) ? actions.slice() : [];
 	careerActionReplay.index = 0;
 	careerActionReplay.applied = 0;
 	careerActionReplay.skipped = 0;
-	careerActionReplay.active = careerActionReplay.pending.length > 0;
+	careerActionReplay.endStep = endStep;
+	careerActionReplay.halted = false;
+	careerActionReplay.active = endStep > 0 || careerActionReplay.pending.length > 0;
 	careerActionReplay.applying = false;
 }
 
@@ -58,12 +62,14 @@ function careerRecordingClear() {
 	careerRecording.previous = null;
 	careerRecording.dirty = false;
 	careerActionLog.length = 0;
+	careerFlights.length = 0;
 	careerActionReplayReset([]);
 }
 
 function careerRecordingReset() {
 	if (careerRecording.loading || !careerRule() || !game.galaxy.mapSeats) return;
 	careerActionLog.length = 0;
+	careerFlights.length = 0;
 	const start = careerRecordingSnapshot();
 	careerRecording.record = CareerReplay.create(start);
 	careerRecording.previous = start;
@@ -116,83 +122,98 @@ function copyCareerReplay(followSlot, button = gameCopyBtn, label = 'copy replay
 	copyUrlText(text, button, label);
 }
 
-function copyCareerActions(button = gameCopyBtn, label = 'copy actions') {
+function copyCareerActions(button = gameCopyBtn, label = 'copy career replay') {
+	const start = careerRecording.record && careerRecording.record.start;
+	if (!start || replay.on || careerActionReplay.active) return;
+	if (careerWaitBusy()) { careerNotice('wait for the current fast-forward to finish before copying'); return; }
 	const payload = {
-		v: 1,
-		seed: game.seed,
-		rule: game.rule,
-		rate: scene.trade.speed,
-		bot: game.bot,
-		player: game.player,
-		playerCount: typeof playerCountShown === 'function' ? playerCountShown() : (1 + bot.count),
-		g: gravityScale,
-		f: forceScale,
-		w: spaceWearScale,
-		h: harvestTick,
-		steps: game.clockSteps,
-		actions: careerActionLog.slice(),
-		note: 'seed, settings and the planet universe reproduce this run deterministically; ' +
-			'actions are the human inputs, each with the game step it happened on ' +
-			'(empty when YOU is a bot — its inputs derive from the seed)'
+		v: 2, seed: start.seed, rule: 'career', rate: start.rate,
+		bot: start.bot, player: start.player, playerCount: start.seats.length,
+		players: start.state.run.slots.slice(0, start.seats.length),
+		universe: start.universe, mask: start.state.mask, seats: start.seats, targetPay: start.targetPay,
+		g: start.gs, f: start.fs, w: start.ws, h: start.ht,
+		source: start.source, corruption: start.state.market.permanentCorruption,
+		steps: game.clockSteps, watch: activeSlotIndex(), actions: careerActionLog.slice(),
+		flights: careerFlights.filter(flight => flight.slot === activeSlotIndex())
 	};
-	if (game.cheat) payload.cheat = game.cheat;
-	const text = CareerActions.encode(payload);
-	copyUrlText(text, button, label);
+	if (start.cheat) payload.cheat = start.cheat;
+	if (start.state.clock.clockSteps !== 0) {
+		careerNotice('compact replay unavailable for a restored run · use full save');
+		return;
+	}
+	copyUrlText(CareerActions.encode(payload), button, label);
 }
 
 function startCareerActionsReplay(data) {
-	if (!data || !Number.isFinite(data.seed)) return false;
-	if (typeof data.g === 'number') gravityScale = data.g;
-	if (typeof data.f === 'number') forceScale = data.f;
-	if (typeof data.w === 'number') spaceWearScale = data.w;
-	if (typeof data.h === 'number') harvestTick = data.h;
-	const rule = data.rule || 'career';
-	const rate = Number.isFinite(data.rate) ? data.rate : scene.trade.speed;
-	const botDiff = data.bot || game.bot;
-	const player = data.player || game.player;
-	const cheat = data.cheat || '';
-	startGame(data.seed, rate, rule, botDiff, player, cheat);
-	if (typeof data.playerCount === 'number' && typeof setPlayerCount === 'function') {
-		while (playerCountShown() < data.playerCount) setPlayerCount(1);
-		while (playerCountShown() > data.playerCount) setPlayerCount(-1);
+	if (!data || data.v !== 2 || !Number.isInteger(data.seed) || data.seed < 1 || data.seed > 0xffffffff ||
+		data.rule !== 'career' || !Number.isInteger(data.steps) || data.steps < 0 ||
+		!Number.isInteger(data.playerCount) || data.playerCount < 1 || data.playerCount > MAX_PLAYERS ||
+		!Number.isInteger(data.universe) || data.universe < PLANET_UNIVERSE_MIN || data.universe > PLANET_UNIVERSE_MAX ||
+		!Number.isFinite(data.rate) || data.rate < 0.5 || data.rate > 12 ||
+		!Number.isFinite(data.g) || data.g < 0 || data.g > 9 ||
+		!Number.isFinite(data.f) || data.f < 0.25 || data.f > 3 ||
+		!Number.isFinite(data.w) || data.w < 0 || data.w > 3 || typeof data.h !== 'boolean' ||
+		!Object.prototype.hasOwnProperty.call(GravityGame.BOTS, data.bot) ||
+		(data.cheat && !Object.prototype.hasOwnProperty.call(GravityGame.CHEATS, data.cheat)) ||
+		(data.source !== MODE_PLANETS && data.source !== MODE_PORTS) ||
+		typeof data.mask !== 'string' || !/^[01]+$/.test(data.mask) || data.mask.length !== PLANETS ||
+		data.mask.split('1').length - 1 !== data.universe ||
+		!Array.isArray(data.seats) || data.seats.length !== data.playerCount ||
+		new Set(data.seats).size !== data.seats.length ||
+		!data.seats.every(p => Number.isInteger(p) && p >= 0 && p < PLANETS && data.mask[p] === '1') ||
+		!Number.isFinite(data.targetPay) || !Number.isInteger(data.watch) || data.watch < 0 || data.watch >= MAX_PLAYERS ||
+		!Array.isArray(data.flights) || !Array.isArray(data.players) || data.players.length !== data.playerCount ||
+		!data.players.every(p => GravityGame.PLAYER_TYPES[p]) ||
+		!Array.isArray(data.actions)) return false;
+	let last = 0;
+	for (const entry of data.actions) {
+		if (!entry || !Number.isInteger(entry.step) || entry.step < last || entry.step > data.steps ||
+			!Number.isInteger(entry.slot) || entry.slot < 0 || entry.slot >= MAX_PLAYERS ||
+			typeof entry.type !== 'string') return false;
+		last = entry.step;
 	}
-	careerActionLog.length = 0;
-	for (let i = 0; i < data.actions.length; i++) {
-		careerActionLog.push(data.actions[i]);
+	GravityMaps.disarm();
+	if (Array.isArray(data.seats) && data.seats.length === data.playerCount &&
+		typeof data.mask === 'string' && /^[01]+$/.test(data.mask) && data.mask.length === PLANETS) {
+		GravityMaps.arm({ seed: data.seed, seats: data.seats, universe: data.universe,
+			gs: data.g, fs: data.f, targetPay: data.targetPay, state: { mask: data.mask } });
 	}
-	careerActionReplayReset(data.actions);
-	/* the world clock has to run for recorded inputs to land: a live run
-	 * unpaused when the player clicked EMC or let it run while they acted */
-	if (careerActionReplay.active) setCareerPaused(false);
-	careerNotice(careerActionReplay.active
-		? 'replaying ' + data.actions.length + ' recorded actions · the world runs from seed ' + data.seed
-		: 'actions loaded · seed ' + data.seed + ' · the bots act on their own');
+	game.planetUniverse = data.universe;
+	game.playerCount = data.playerCount;
+	for (let i = 0; i < MAX_PLAYERS; i++) slotTypes[i] = data.players[i] || PLAYER_BOT;
+	$('permanentCorruption').checked = Boolean(data.corruption);
+	setExperimentScales(data.g, data.f, data.h, data.w);
+	scene.setSpeed(data.rate);
+	if (data.source === MODE_PLANETS || data.source === MODE_PORTS) setSource(data.source);
+	startGame(data.seed, true, 'career', data.bot, data.players[0], data.cheat);
+	careerActionLog.push(...data.actions);
+	careerActionReplayReset(data.actions, data.steps);
+	careerActionReplay.active = true;
+	careerActionReplay.watch = Number.isInteger(data.watch) ? data.watch : 0;
+	careerActionReplay.expected = Array.isArray(data.flights) ? data.flights : [];
+	slotPaused.fill(false);
+	syncCareerPause();
+	refreshGameUi();
+	careerNotice('replaying career from seed ' + data.seed + ' to step ' + data.steps);
 	return true;
 }
 
-/* --- apply recorded actions at the steps they happened on ------------
- * The world is deterministic from the seed, so a recorded input applies
- * cleanly at its step: a launch fires as armed (the turret queue is
- * superseded), a burn spends the same fuel, a shop button buys the same
- * thing. Inputs that no longer match the state (diverged world) are
- * skipped and counted, never forced. */
+/* Inputs are attempted at their recorded steps; a launch or burn that no
+ * longer matches the world is skipped rather than forced. */
 
 function applyCareerLaunch(entry) {
+	const slot = entry.slot;
+	if (slot >= slotCount() || slotIsBot(slot)) return false;
+	if (activeSlotIndex() !== slot) selectSlot(slot);
 	const career = playerCareer();
-	if (!career || career.ended !== GravityGame.CAREER_OPEN) return false;
-	if (career.at !== entry.origin) return false;
-	const slot = Number.isInteger(entry.slot) ? entry.slot : 0;
-	if (slot !== 0) return false; /* career shots fire the flagship company */
-	if (activeSlotIndex() !== 0) selectSlot(0);
-	if (typeof cancelTurret === 'function') cancelTurret();
-	const speed = GravityGame.speedOf(entry.speedU);
-	if (!GravityGame.careerCanFire(career, activeCareerSim(), entry.origin, speed)) return false; /* the rail cannot lift it (world diverged) */
-	setCareerPaused(false); /* the EMC click resumed the clock in the live run */
+	if (!career || career.ended !== GravityGame.CAREER_OPEN || career.at !== entry.origin ||
+		!Number.isFinite(entry.angle) || !Number.isFinite(entry.speed)) return false;
+	if (!GravityGame.careerCanFire(career, activeCareerSim(), entry.origin, entry.speed)) return false;
 	aimBody = entry.origin;
-	aimAngle = GravityGame.angleOf(entry.angleU);
-	aimSpeed = GravityGame.speedOf(entry.speedU);
+	aimAngle = entry.angle;
+	aimSpeed = entry.speed;
 	armed = true;
-	fire(NO_ABORT);
+	queueTurretShot();
 	return true;
 }
 
@@ -221,10 +242,17 @@ function applyCareerAct(data) {
 		if (!career || career.ended !== GravityGame.CAREER_OPEN) return false;
 		if (typeof data.family !== 'string' || !SCIENCE_AXES[data.family]) return false;
 		scienceFamily = data.family;
+		if (!Array.isArray(data.params) || data.params.length !== SCIENCE_AXES[data.family].length) return false;
+		for (let i = 0; i < data.params.length; i++) {
+			if (!Number.isFinite(data.params[i])) return false;
+			scienceValues[data.family][SCIENCE_AXES[data.family][i].key] = data.params[i];
+		}
 		careerResearch();
 		return true;
 	}
-	careerAct(Object.assign({}, data));
+	const action = Object.assign({}, data);
+	if (data.targetSlot !== undefined) action.slot = data.targetSlot;
+	careerAct(action);
 	return true;
 }
 
@@ -244,12 +272,54 @@ function applyCareerAction(entry) {
 	if (!entry || typeof entry !== 'object') return false;
 	if (entry.type === 'launch') return applyCareerLaunch(entry);
 	if (entry.type === 'burn') return applyCareerBurn(entry);
+	if (entry.type === 'refuel') {
+		if (entry.slot >= slotCount()) return false;
+		if (entry.slot !== activeSlotIndex()) selectSlot(entry.slot);
+		return flightRefuel();
+	}
+	if (entry.type === 'cancelLaunch') {
+		if (entry.slot >= slotCount()) return false;
+		cancelTurret(slotTurrets[entry.slot]);
+		return true;
+	}
 	if (entry.type === 'act') {
 		const slot = Number.isInteger(entry.slot) ? entry.slot : 0;
 		if (slot !== activeSlotIndex()) selectSlot(slot);
-		return applyCareerAct(entry.data);
+		return applyCareerAct(entry);
 	}
-	if (entry.type === 'commercial') return applyCareerCommercial(entry);
+	if (entry.type === 'commercial') {
+		if (entry.slot >= slotCount()) return false;
+		if (entry.slot !== activeSlotIndex()) selectSlot(entry.slot);
+		return applyCareerCommercial(entry);
+	}
+	if (entry.type === 'controller') {
+		if (entry.slot >= slotCount() || !GravityGame.PLAYER_TYPES[entry.player]) return false;
+		setSlotType(entry.slot, entry.player);
+		slotPaused.fill(false);
+		syncCareerPause();
+		return true;
+	}
+	if (entry.type === 'gravity') {
+		if (!Number.isInteger(entry.body) || !Number.isFinite(entry.value)) return false;
+		return setBodyStrength(entry.body, entry.value);
+	}
+	if (entry.type === 'universe') {
+		if (typeof entry.mask !== 'string' || entry.mask.length !== PLANETS || !/^[01]+$/.test(entry.mask)) return false;
+		let count = 0;
+		for (let i = 0; i < PLANETS; i++) {
+			if (planetMask[i] && entry.mask[i] === '0') clearPlanetPads(i);
+			planetMask[i] = entry.mask[i] === '1' ? 1 : 0;
+			count += planetMask[i];
+		}
+		planetCount = game.planetUniverse = count;
+		applyPlanetUniverse();
+		return true;
+	}
+	if (entry.type === 'difficulty') {
+		if (!GravityGame.BOTS[entry.bot] || entry.bot === BOT_OFF) return false;
+		setBot(entry.bot); return true;
+	}
+	if (entry.type === 'scales') { setExperimentScales(entry.g, entry.f, entry.h, entry.w); return true; }
 	if (entry.type === 'source') {
 		if (entry.mode !== MODE_PLANETS && entry.mode !== MODE_PORTS) return false;
 		setSource(entry.mode);
@@ -269,7 +339,7 @@ function applyCareerAction(entry) {
  * Returns how many launches were applied, so the caller can hold the clock
  * at the step exactly like the EMC barrel does when its shot fires */
 function applyCareerActionsDue() {
-	if (!careerActionReplay.active || careerActionReplay.applying || replay.on) return 0;
+	if (!careerActionReplay.active || careerActionReplay.applying || replay.on || careerWaitBusy()) return 0;
 	let launches = 0;
 	while (careerActionReplay.index < careerActionReplay.pending.length) {
 		const entry = careerActionReplay.pending[careerActionReplay.index];
@@ -282,18 +352,27 @@ function applyCareerActionsDue() {
 		careerActionReplay.applying = false;
 		if (ok) {
 			careerActionReplay.applied += 1;
-			if (entry.type === 'launch') launches += 1;
+
 		} else {
 			careerActionReplay.skipped += 1;
 		}
+		if (careerWaitBusy()) break;
 	}
-	if (careerActionReplay.active && careerActionReplay.index >= careerActionReplay.pending.length) {
+	if (careerActionReplay.active && careerActionReplay.index >= careerActionReplay.pending.length && !careerWaitBusy() &&
+		game.clockSteps >= careerActionReplay.endStep) {
 		careerActionReplay.active = false;
+		if (careerActionReplay.watch < slotCount()) selectSlot(careerActionReplay.watch);
+		careerActionReplay.halted = true;
+		syncCareerPause();
+		const actual = careerFlights.filter(flight => flight.slot === careerActionReplay.watch);
+		const sameFlights = JSON.stringify(actual) === JSON.stringify(careerActionReplay.expected);
 		const applied = careerActionReplay.applied;
 		const skipped = careerActionReplay.skipped;
+		refreshGameUi();
 		careerNotice(skipped === 0
-			? 'recorded actions replayed · ' + applied + ' applied · the world is live'
-			: 'recorded actions replayed · ' + applied + ' applied · ' + skipped +
+			? 'career replay reached step ' + game.clockSteps + ' · ' + applied +
+				' inputs attempted · selected flights ' + (sameFlights ? 'match' : 'differ from recording')
+			: 'career replay · ' + applied + ' inputs attempted · ' + skipped +
 				' skipped (world diverged)');
 	}
 	return launches;

@@ -115,6 +115,14 @@ for (const rule of ['lab', Game.RULE_TOUR, Game.RULE_ROUTE, Game.RULE_MONEY]) {
 /* 3. Exact chip lists across four canonical fixtures: stuck, worn, healthy, arrested. */
 const other = normalUnowned(w);
 
+/* A normal off-network stop is not itself a problem or a reason to build. */
+Game.placeShip(w.career, w.sim, other);
+w.career.stranded = false;
+Game.setShipCondition(w.career, 1);
+w.career.ledger.purse = 100;
+const solventVisitor = snap(w);
+assert.notStrictEqual(Comms.topTopicId(solventVisitor), 'pad', 'no own pad is not an emergency');
+
 /* Fixture A: stuck (unowned planet, short on fee and build, full hull). */
 Game.placeShip(w.career, w.sim, other);
 w.career.stranded = true;

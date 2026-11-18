@@ -416,7 +416,7 @@ function careerWaitFinish() {
 	const anim = careerWaitAnim;
 	careerWaitAnim = null;
 	const career = anim.career;
-	if (pauseOnLanding) setCareerPaused(true, anim.slot);
+	if (pauseOnLanding && !careerActionReplay.active) setCareerPaused(true, anim.slot);
 	if (anim.kind === 'evac') {
 		GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
 		const purseBefore = career.ledger.purse;
@@ -628,6 +628,8 @@ function careerAct(data) {
 	if (act === 'copy') return careerCopySpec(data);
 	if (act === 'sciCopy') return careerCopyFrontier(data.family);
 	if (act === 'sciFamily') return careerScienceFamily(data.family);
+	if (act === 'bookDrop') return dropStaleBook();
+	if (act === 'book') return useBookEntry(Number(data.entry));
 	/* every remaining act is a world mutation the player asked for; keep the
 	 * serializable args so the input replays exactly */
 	if (typeof recordCareerAction === 'function') {
@@ -635,14 +637,15 @@ function careerAct(data) {
 			recordCareerAction('act', { act: 'sciAccept', family: scienceFamily, params: scienceParams(scienceFamily) });
 		} else {
 			const safe = {};
-			for (const key of ['act', 'kind', 'tier', 'item', 'slot', 'entry']) {
+			for (const key of ['act', 'kind', 'tier', 'item', 'entry']) {
 				if (data[key] !== undefined) safe[key] = data[key];
 			}
+			if (data.slot !== undefined) safe.targetSlot = data.slot;
+			if (act === 'build') safe.planet = Number.isInteger(data.planet) ? data.planet : careerPickPlanet();
 			recordCareerAction('act', safe);
 		}
 	}
 	if (replay.on && replay.career) return;
-	if (act === 'bookDrop') return dropStaleBook();
 	const career = activeCareer();
 	/* balance tooling + science R&D stay available during flight, wait or turret spin */
 	if (act === 'sciAccept') {
@@ -664,7 +667,6 @@ function careerAct(data) {
 	if (act === 'quiet') return careerQuiet();
 	if (act === 'evac') return careerEvacuate();
 	if (act === 'repair') return careerRepair();
-	if (act === 'book') return useBookEntry(Number(data.entry));
 	if (career.ended !== GravityGame.CAREER_OPEN) {
 		careerNotice('career over · restart for a new HQ');
 		return;
@@ -679,7 +681,7 @@ function careerAct(data) {
 	}
 	const item = shopRecord(data);
 	if (!item) return;
-	if (act === 'build') careerBuild(career, careerPickPlanet(), data.kind, item);
+	if (act === 'build') careerBuild(career, Number.isInteger(data.planet) ? data.planet : careerPickPlanet(), data.kind, item);
 	else if (act === 'bulk') careerBulk(career, data.kind, item);
 	else if (act === 'part') careerPart(career, data.kind, item);
 }

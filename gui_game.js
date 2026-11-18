@@ -113,6 +113,7 @@ function startCareerRun(seed) {
 	GravityGame.prepareCareerStarts(game.galaxy, tradeSim.world, tradeSim,
 		planetMask, planetCount, 1 + bot.count, cargoSim);
 	GravityGame.startCareer(game.career, cargoSim, seed, tradeSim, game.cheat, game.galaxy);
+	bot.onCareerLaunch = recordCareerFlight;
 	bot.startCareers(game.galaxy, seed, tradeSim);
 	pinCareerStrengths();
 	bot.setPlanetMask(planetMask, planetCount);
@@ -172,6 +173,7 @@ function setBot(next) {
 		startGame(game.seed, game.fixedRate, game.rule, next, game.player, game.cheat);
 		return;
 	}
+	if (careerRule()) recordCareerAction('difficulty', { bot: next });
 	bot.setLevel(next);
 	/* outside a career the level also fields its rival count; the scoreboard's
 	 * +/- pins the roster, so a level never overrides a count the player set */
@@ -289,6 +291,9 @@ function setSlotType(slot, next) {
 	if (slot < 0 || slot >= slotTypes.length) return;
 	const normalized = next === PLAYER_BOT ? PLAYER_BOT : PLAYER_USER;
 	if (slotTypes[slot] === normalized && (slot !== 0 || game.player === normalized)) return;
+	if (game.on && careerRule()) {
+		if (!careerActionReplay.applying) careerActionLog.push({ step: game.clockSteps, slot: slot, type: 'controller', player: normalized });
+	}
 	slotTypes[slot] = normalized;
 	if (slot === 0) game.player = normalized;
 	/* a career keeps its map, purses and pads: a ticked box hands the player
@@ -447,7 +452,7 @@ function launchPlayerBotIfReady(budgetMs, force) {
  */
 function careerPlayerBotLaunch() {
 	const career = game.career;
-	if (career.ended !== GravityGame.CAREER_OPEN || turret.pending) return true;
+	if (career.ended !== GravityGame.CAREER_OPEN || slotTurrets[0].pending) return true;
 	/* the page books a landing at the end of the frame: until then the career
 	 * record still names the pad the ship has already left */
 	if (cargoSim.status === STATUS_FLYING || cargoSim.landedBody !== career.at) return true;
@@ -456,6 +461,8 @@ function careerPlayerBotLaunch() {
 	playerBotSyncNeeded = false;
 	if (!ready) return true;
 	const plan = bot.careerPlayerPlan();
+	const selected = activeSlotIndex();
+	if (selected !== 0) selectSlot(0);
 	aimBody = plan.origin;
 	aimAngle = plan.angle;
 	aimSpeed = plan.speed;
@@ -463,6 +470,7 @@ function careerPlayerBotLaunch() {
 	dirty = true;
 	armed = true;
 	queueTurretShot();
+	if (selected !== 0) selectSlot(selected);
 	return true;
 }
 
@@ -580,9 +588,10 @@ function stepGame(now, dt) {
 			stepsDone += 1;
 			break;
 		}
+		if (careerActionReplay.halted) { playAcc = 0; stepsDone += 1; break; }
 		playAcc -= DT;
 		stepsDone += 1;
-		if (pauseAllowed() && pauseOnLanding) {
+		if (pauseAllowed() && pauseOnLanding && !careerActionReplay.active) {
 			let landed = wasSlot0Flying && !slotIsBot(0) && cargoSim.status !== STATUS_FLYING;
 			for (let i = 0; i < bot.count; i++) {
 				if ((wasUserRivalMask & (1 << i)) && bot.rivals[i].sim.status !== STATUS_FLYING) landed = true;
@@ -740,7 +749,7 @@ function endGameFlight() {
 		careerFollow = true;
 		/* default: freeze the world clock at flight end (rivals too) so
 		 * the next shot can be aimed in peace; the setting can turn it off */
-		if (pauseOnLanding && !replay.on && !slotIsBot(0)) setCareerPaused(true, 0);
+		if (pauseOnLanding && !replay.on && !careerActionReplay.active && !slotIsBot(0)) setCareerPaused(true, 0);
 	} else GravityGame.endFlight(game.money);
 	game.steps += cargoSim.liveSteps;
 	game.length += cargoSim.flightLength;
@@ -762,7 +771,7 @@ function endGameFlight() {
 }
 
 function endUserRivalFlight(rIdx) {
-	if (pauseAllowed() && pauseOnLanding) setCareerPaused(true, rIdx + 1);
+	if (pauseAllowed() && pauseOnLanding && !careerActionReplay.active) setCareerPaused(true, rIdx + 1);
 	const r = bot.rivals[rIdx];
 	settleBotsWhenUsersDone();
 	moneyToastFor(rIdx + 1, r.sim, r.ledger, r.shots.length);

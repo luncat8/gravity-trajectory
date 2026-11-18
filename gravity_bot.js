@@ -3943,6 +3943,7 @@
 		if (fieldRate !== undefined) sim.fieldRate = fieldRate;
 		sim.stepLimit = GravityGame.CAP_STEPS;
 		sim.limitReason = END_TIME;
+		if (this.onCareerLaunch) this.onCareerLaunch(career.index, runStep, origin, angle, speed);
 		r.shots.push(GravityGame.createShot(GravityGame.SRC_PLANETS, origin,
 			GravityGame.angleUnits(angle), GravityGame.speedUnits(speed), GravityGame.NO_ABORT));
 		sim.launch(origin, angle, speed);

@@ -119,21 +119,10 @@ function showBotLog() {
 }
 
 function copyBotLog() {
-	if (!game.on || !botLogBtn || !botLogTextEl || !botLogBoxEl) return;
+	if (!game.on || !botLogBtn) return;
 	const actors = selectedBotActors();
 	const text = bot.decisionLog(game.clockSteps, botLogHeader(actors), actors);
-	botLogTextEl.value = text;
-	botLogBoxEl.hidden = false;
-	if (botLogBoxEl.scrollIntoView) botLogBoxEl.scrollIntoView({ block: 'nearest' });
-	const clipboard = navigator.clipboard;
-	if (!clipboard) {
-		showBotLog();
-		return;
-	}
-	clipboard.writeText(text).then(() => {
-		botLogBtn.textContent = 'copied ✓';
-		setTimeout(() => { botLogBtn.textContent = 'copy bot log'; }, 1600);
-	}, showBotLog);
+	copyUrlText(text, botLogBtn, 'copy bot log');
 }
 
 function loadLink(hash = location.hash) {

@@ -678,6 +678,7 @@ if (launchBuildBtn) {
 		if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
 			career.pads[career.at].catapult !== null) return;
 		careerFollow = true;
+		recordCareerAction('act', { act: 'build', kind: OrbitTech.KIND_CATAPULT, tier: '0', planet: career.at });
 		careerBuild(career, career.at, OrbitTech.KIND_CATAPULT, OrbitTech.CATAPULTS[0]);
 	});
 }
@@ -776,6 +777,7 @@ if (planetCountInputEl) {
 			planetCountInputEl.value = planetCount;
 			return;
 		}
+		if (careerRule()) recordCareerAction('universe', { mask: Array.from(planetMask).join('') });
 		careerRecordingCapture(true);
 	});
 }
