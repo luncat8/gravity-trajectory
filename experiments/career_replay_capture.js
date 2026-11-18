@@ -63,12 +63,15 @@ GravityScene.bot.traceCareerLanding = function (career, sim, step) {
 
 /* A refinanced company gets a fresh ledger. Keep the old activity for a
  * fair whole-run comparison rather than silently counting just its last life. */
-const retired = names.map(() => ({ flights: 0, visits: 0, restarts: 0 }));
+const retired = names.map(() => ({ flights: 0, visits: 0, profit: 0, restarts: 0 }));
+const stats = {};
 const restart = GravityScene.bot.careerRestart;
 GravityScene.bot.careerRestart = function (r, index, trade, step) {
 	const totals = retired[r.career.index];
 	totals.flights += r.career.flights;
 	totals.visits += r.career.visitIncome;
+	GravityGame.careerStats(stats, r.career);
+	totals.profit += stats.profit;
 	totals.restarts++;
 	return restart.call(this, r, index, trade, step);
 };
@@ -113,6 +116,8 @@ console.log('seed', data.seed, '· map', MAP, '· step', data.steps, '· rate', 
 for (let i = 0; i < names.length; i++) {
 	const c = GravityScene.career.galaxy.actors[i];
 	const past = retired[i];
+	GravityGame.careerStats(stats, c);
+	const profit = past.profit + stats.profit;
 	console.log(names[i] + ' · first on-site EMC ' + (first[i] || 'none') +
 		' · ' + unclaimed[i] + ' unclaimed landings · ' + c.padCount + ' pads · ' + c.flights +
 		' flights · purse ' + c.ledger.purse.toFixed(2) + ' · visits ' + c.visitIncome.toFixed(2) +
@@ -125,7 +130,8 @@ for (let i = 0; i < names.length; i++) {
 	if (!c.flying) row.longestGap = Math.max(row.longestGap, STEPS - row.stop);
 	console.log('  ' + row.flights + ' landings · ' + row.returns + ' returns · ' +
 		seconds(row.flightSteps + partial) + ' s flying · longest gap ' + seconds(row.longestGap) +
-		' s · ' + row.sits + ' sits · ' + row.noShots + ' no shots');
+		' s · ' + row.sits + ' sits · ' + row.noShots + ' no shots' +
+		' · operating profit ' + profit.toFixed(2) + ' (' + (profit / GravitySim.gameSeconds(STEPS)).toFixed(4) + '/game s)');
 
 	if (past.restarts) console.log('  including retired ledgers: ' + (c.flights + past.flights) +
 		' flights · visits ' + (c.visitIncome + past.visits).toFixed(2));

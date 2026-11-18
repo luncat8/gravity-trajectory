@@ -104,6 +104,62 @@ for (const condition of [0.6, 0]) {
 	Game.careerAdvance(host, actor.readyStep - 100);
 	assert.ok(pad.chargeKwh > 0.05, 'only elapsed sunlight bought energy');
 }
+/* The map-10 P4 trap: the rail can lift the ship but the SP-1 cannot
+ * recharge an interplanetary shot in four sits. Test the real exit fan. */
+{
+	const { bot, sim, career, Game, Tech } = opening();
+	const p = 4;
+	career.ledger.purse = 20;
+	assert.ok(Game.buildGear(career, p, 'catapult', Tech.CATAPULTS[1]));
+	assert.ok(Game.buildGear(career, p, 'battery', Tech.BATTERIES[1]));
+	assert.ok(Game.installPart(career, 'hold', Tech.HOLDS[1]));
+	career.at = p;
+	sim.relocate(p);
+	const pad = career.pads[p];
+	pad.chargeKwh = 0.38;
+	const actor = { career, sim, index: 0, waitTries: 0, gapPhase: 0 };
+	const gap = bot.constructor.CAREER_SIT_GAP;
+	const tries = bot.constructor.CAREER_SIT_TRIES;
+	bot.prepareCareerExitProbe(sim);
+	assert.ok(!bot.careerRechargeExit(actor, pad, pad.panel, gap, tries));
+	assert.ok(bot.careerRechargeExit(actor, pad, Tech.PANELS[1], gap, tries));
+
+	const guest = bot.rivals[0];
+	guest.career.at = p;
+	guest.sim.relocate(p);
+	guest.career.ledger.purse = 20;
+	assert.ok(Game.installPart(guest.career, 'hold', Tech.HOLDS[1]));
+	assert.ok(!bot.careerRechargeSit(guest, 100), 'a guest cannot refit the host rail');
+	assert.strictEqual(pad.panel, Tech.PANELS[0]);
+	actor.waitTries = tries;
+	assert.ok(!bot.careerRechargeSit(actor, 100, 4.54), 'a fare must not restart a panel-buying cycle');
+	actor.waitTries = 0;
+	career.ledger.purse = 4; // can buy SP-2, but not keep one cheap launch
+	assert.ok(!bot.careerRechargeSit(actor, 100));
+	career.ledger.purse = 4.94;
+	pad.reservedKwh = pad.chargeKwh;
+	assert.ok(!bot.careerRechargeSit(actor, 100), 'promised charge is not available for the escape');
+	assert.strictEqual(pad.panel, Tech.PANELS[0]);
+	assert.strictEqual(career.ledger.purse, 4.94);
+	pad.reservedKwh = 0;
+	assert.ok(bot.careerRechargeSit(actor, 100));
+	assert.strictEqual(pad.panel, Tech.PANELS[1]);
+	assert.ok(Math.abs(career.ledger.purse - (4.94 - Tech.PANELS[1].buildCost)) < 1e-9);
+	assert.strictEqual(pad.chargeKwh, 0.38, 'buying sunlight does not buy any kWh');
+	assert.strictEqual(actor.readyStep, 100 + gap, 'retry on the clock, not with the projected charge');
+	assert.strictEqual(actor.waitTries, 1);
+	assert.strictEqual(career.evacuations, 0);
+
+	/* Compare the forecast cap to the live one after the same individual
+	 * steps, with a reservation held throughout. No shot uses that charge. */
+	pad.reservedKwh = 0.1;
+	let forecast = 0;
+	bot.careerExitSpeed = (planet, cap) => { forecast = cap; return 0; };
+	bot.careerRechargeExit(actor, pad, pad.panel, gap, tries);
+	for (let step = 0; step < gap * tries; step++) Game.careerAdvance(career, 1);
+	assert.ok(Math.abs(forecast - sim.speedLimit(p)) < 1e-8, 'recharge forecast drifted from live solar/leak');
+}
+
 /* An unprofitable Capital delivery isn't a reason to buy a hold. A local
  * pickup that covers the refit and can actually leave under load is. */
 {

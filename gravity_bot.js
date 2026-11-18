@@ -4075,6 +4075,51 @@
 		return null;
 	};
 
+	/* Accumulate the live leak-then-sun update over N game steps. Solar input
+	 * leaks too; treating the whole wait as one charging step overquotes it. */
+	function careerChargeAfter(pad, panel, light, steps) {
+		const minutes = GravitySim.padMinutes(GravitySim.DT);
+		const decay = pad.battery.leak * minutes;
+		const sunSteps = decay ? Math.expm1(-decay * steps) / Math.expm1(-decay) : steps;
+		const next = OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, minutes * steps) +
+			OrbitTech.solarCharge(panel, light, GravitySim.padSeconds(GravitySim.DT) * sunSteps);
+		return Math.max(0, Math.min(next, pad.battery.capacity) - pad.reservedKwh);
+	}
+
+	/* Sample at the times we would actually retry. A higher speed ceiling
+	 * doesn't guarantee that the exit fan's new set of rungs hits a planet. */
+	GravityBot.prototype.careerRechargeExit = function (r, pad, panel, gap, tries) {
+		const career = r.career;
+		const at = career.at;
+		const now = careerCargoSpeed(career, r.sim.speedLimit(at));
+		for (let i = 1; i <= tries; i++) {
+			const free = careerChargeAfter(pad, panel, career.light[at], gap * i);
+			const cap = careerCargoSpeed(career, OrbitTech.speedLimit(free,
+				career.ship.mass, pad.catapult, r.sim.forceScale));
+			if (Math.min(GravitySim.SPEED_MAX, cap) <= now + 1e-9) continue;
+			const speed = this.careerExitSpeed(at, cap);
+			if (speed && GravityGame.launchFee(career, at, speed) <= career.ledger.purse + 1e-9) return true;
+		}
+		return false;
+	};
+
+	/* Only invest when ordinary sunlight can't get us off this pad in time.
+	 * Keep the launch reserve and don't buy a panel to solve a weak rail. */
+	GravityBot.prototype.careerRechargePanel = function (r, pad, gap, tries, runStep) {
+		const career = r.career;
+		const at = career.at;
+		if (r.waitTries || pad !== career.pads[at]) return false;
+		const panel = careerNextItem(career, OrbitTech.KIND_PANEL, OrbitTech.PANELS, pad.panel);
+		if (!panel || !GravityGame.gearKnown(career, panel)) return false;
+		const cost = careerPrice(career, panel);
+		const fallback = GravityGame.canEvacuate(career) ? GravityGame.evacuationCost(career) : CAREER_PURSE_RESERVE;
+		if (cost >= fallback || career.ledger.purse + 1e-9 < cost + CAREER_PURSE_RESERVE) return false;
+		if (this.careerExitSpeed(at, careerCargoSpeed(career, r.sim.speedLimit(at)))) return false;
+		if (!this.careerRechargeExit(r, pad, panel, gap, tries)) return false;
+		return this.careerBuyGear(career, at, OrbitTech.KIND_PANEL, panel, CAREER_PURSE_RESERVE,
+			runStep, 'recharge a blocked exit');
+	};
+
 	/* No payable plan. Prefer a short recharge on a real panel (ours or a
 	 * host's) to a commercial ticket, but only if it can buy a better exit. */
 	GravityBot.prototype.careerRechargeSit = function (r, runStep, losingFee = 0) {
@@ -4084,20 +4129,14 @@
 			GravityGame.padOwner(career, at) < 0) return false;
 		const pad = GravityGame.padAt(career, at);
 		const tries = losingFee ? CAREER_SIT_TRIES : CAREER_SIT_TRIES - r.waitTries;
-		const sec = GravitySim.gameSeconds(CAREER_SIT_GAP * tries);
-		const next = OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, GravitySim.padMinutes(sec)) +
-			OrbitTech.solarCharge(pad.panel, career.light[at], GravitySim.padSeconds(sec));
-		const free = Math.max(0, Math.min(next, pad.battery.capacity) - pad.reservedKwh);
-		const cap = careerCargoSpeed(career, OrbitTech.speedLimit(free, career.ship.mass, pad.catapult, r.sim.forceScale));
-		const now = careerCargoSpeed(career, r.sim.speedLimit(at));
-		if (Math.min(GravitySim.SPEED_MAX, cap) <= now + 1e-9) return false;
+		const gap = CAREER_SIT_GAP + (r.gapPhase || 0);
 		this.prepareCareerExitProbe(r.sim);
-		const speed = this.careerExitSpeed(at, cap);
-		if (!speed || GravityGame.launchFee(career, at, speed) > career.ledger.purse + 1e-9) return false;
+		if (!this.careerRechargeExit(r, pad, pad.panel, gap, tries) &&
+			!this.careerRechargePanel(r, pad, gap, tries, runStep)) return false;
 		r.waitTries = Math.min(CAREER_SIT_TRIES, r.waitTries + 1);
 		/* Only the owner can upgrade the charging pad. */
 		this.careerBetweenFlights(career, r.sim, runStep);
-		r.readyStep = runStep + CAREER_SIT_GAP + (r.gapPhase || 0);
+		r.readyStep = runStep + gap;
 		const why = losingFee ? 'wait instead of losing a ' + losingFee.toFixed(2) + ' commercial ticket' : 'drained pad';
 		this.traceAdd(r.index, 'sit', why + ' · charge ' + pad.chargeKwh.toFixed(2) +
 			' kWh · sit ' + r.waitTries + '/' + CAREER_SIT_TRIES + ' · retry in ' +
