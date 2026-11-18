@@ -1,94 +1,106 @@
-/*
- * Three-bot career capture: boots a saved map with every seat handed to the
- * bot, flies the world clock to a step endpoint and writes the page's own
- * `copy career replay` payload (`GRAVITY_ACTIONS:` v3) to a file, plus the
- * scoreboard of all three companies.
- *
- * The payload is the exact text the page copies, so it opens with
- * `open replay` / `load from link` and re-flies the run deterministically:
- * no seat takes a human input, so the recording holds no actions at all and
- * the bots alone reproduce it.
- *
- *   node experiments/career_replay_capture.js                       # ?map=10, 120473 steps
- *   MAP=10 STEPS=120473 RATE=0.5 OUT=archive/replays/run.txt node …
- *
- * Not a gate: it prints numbers and writes a file.
- */
+/* Three-bot career capture and playback check, using the page's own clipboard
+ * and open-replay paths. No human inputs; the page still records fireQueued
+ * for the player-seat barrel. Sparse replays need the matching bot code.
+ * MAP=10 RATE=0.5 STEPS=120473 OUT=archive/replays/run.txt node experiments/career_replay_capture.js */
 'use strict';
 
+const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const { loadPage } = require('./dom_stub.js');
 
-const root = path.join(__dirname, '..');
 const MAP = Number(process.env.MAP || 10);
 const STEPS = Number(process.env.STEPS || 120473);
 const RATE = Number(process.env.RATE || 0.5);
 const OUT = process.env.OUT || 'archive/replays/career-3bots.txt';
-const SLICE = 240;
+const names = ['YOU', 'R1', 'R2'];
+const live = loadPage({ search: '?map=' + MAP + '&rate=' + RATE + '&you=bot' });
+const get = (env, code) => vm.runInContext(code, env.context);
+assert.ok(get(live, 'game.on && careerRule()'), 'the map did not boot a career');
+assert.strictEqual(get(live, 'slotTypes.slice(0, slotCount()).join(",")'), 'bot,bot,bot');
 
-const env = loadPage({ search: '?map=' + MAP + '&rate=' + RATE + '&you=bot' });
-const get = (code) => vm.runInContext(code, env.context);
+/* Observe ownership at impact, not at the end (when the landing may have
+ * been claimed or seized). This counter spans refinancings, unlike a ledger. */
+const unclaimed = [0, 0, 0];
+const { GravityScene, GravityGame } = live.context;
+const first = [null, null, null];
+const build = GravityGame.buildGear;
+GravityGame.buildGear = function (career, planet, kind, item) {
+	const before = career.padCount;
+	const bought = build(career, planet, kind, item);
+	if (bought && career.padCount > before && !first[career.index]) {
+		first[career.index] = `P${planet} ${item.id} (g ${GravityScene.bot.strength[planet]}) @ ${get(live, 'game.clockSteps')}`;
+	}
+	return bought;
+};
+const land = GravityScene.bot.traceCareerLanding;
+GravityScene.bot.traceCareerLanding = function (career, sim, step) {
+	if (career.at >= 0 && !career.pads[career.at].catapult && GravityGame.planetBuildable(career, career.at)) {
+		unclaimed[career.index]++;
+	}
+	return land.call(this, career, sim, step);
+};
 
-if (!get('game.on') || !get('careerRule()')) throw new Error('the map did not boot a career');
-if (get('slotTypes.slice(0, 3).join(",")') !== 'bot,bot,bot') {
-	throw new Error('every seat must be a bot: ' + get('slotTypes.slice(0, 3).join(",")'));
+/* A refinanced company gets a fresh ledger. Keep the old activity for a
+ * fair whole-run comparison rather than silently counting just its last life. */
+const retired = names.map(() => ({ flights: 0, visits: 0, restarts: 0 }));
+const restart = GravityScene.bot.careerRestart;
+GravityScene.bot.careerRestart = function (r, index, trade, step) {
+	const totals = retired[r.career.index];
+	totals.flights += r.career.flights;
+	totals.visits += r.career.visitIncome;
+	totals.restarts++;
+	return restart.call(this, r, index, trade, step);
+};
+
+function finish(env, slice) {
+	const advance = get(env, `(limit) => {
+		playAcc = 0;
+		stepGame(performance.now(), (limit + 0.25) * DT / playScale());
+		return game.clockSteps;
+	}`);
+	for (let step = get(env, 'game.clockSteps'); step < STEPS;) {
+		const after = advance(Math.min(slice, STEPS - step));
+		assert.ok(after > step && after <= STEPS, 'clock stalled or overshot at ' + step);
+		step = after;
+	}
 }
 
-/* one frame's worth of settled steps, without the render loop */
-const advance = get(`(limit) => {
-	playAcc = 0;
-	stepGame(performance.now(), (limit + 0.25) * DT / playScale());
-	return game.clockSteps;
-}`);
-let step = get('game.clockSteps');
-for (let guard = 0; step < STEPS; guard++) {
-	if (guard > 1e6) throw new Error('the clock stalled at step ' + step);
-	const after = advance(Math.min(SLICE, STEPS - step));
-	if (after <= step) throw new Error('the clock stalled at step ' + step);
-	step = after;
-}
+finish(live, 240);
+live.click('gameCopy');
+const payload = live.clipboardText;
+const data = live.context.CareerActions.decode(payload);
+assert.ok(data && data.steps === STEPS, 'expected a sparse replay at step ' + STEPS);
 
-env.click('gameCopy');
-const payload = env.clipboardText;
-if (!payload || !payload.startsWith('GRAVITY_ACTIONS:')) {
-	throw new Error('gameCopy did not copy the sparse career recording');
-}
-const data = env.context.CareerActions.decode(payload);
-if (!data || data.steps !== STEPS) throw new Error('the recording does not end at step ' + STEPS);
+/* Import on a clean page at a different playback cadence. The page verifies
+ * the selected history; compare all three companies, including pad charge. */
+const replay = loadPage({ search: '?mode=lab&seed=7' });
+replay.elements.get('replayInput').value = payload;
+replay.click('replayLoad');
+assert.ok(get(replay, 'careerActionReplay.active'));
+assert.strictEqual(get(replay, 'game.clockSteps'), 0, 'replay must start at the opening');
+finish(replay, 173);
+assert.match(replay.elements.get('careerMsg').textContent, /history matches/);
+assert.strictEqual(get(replay, 'careerActionReplay.skipped'), 0);
+const state = 'JSON.stringify(careerRecordingSnapshot().state.careers)';
+assert.strictEqual(get(replay, state), get(live, state), 'company states differ after playback');
 
-function company(slot) {
-	const at = slot === 0 ? 'game.career' : 'bot.rivals[' + (slot - 1) + '].career';
-	const value = (field) => get(at + '.' + field);
-	return {
-		purse: value('ledger.purse'), pads: value('padCount'), flights: value('flights'),
-		visits: value('visitIncome'), build: value('buildSpent'), fees: value('feesPaid'),
-		taxEarned: value('taxEarned'), taxPaid: value('taxPaid'), delivered: value('delivered'),
-		evacuations: value('evacuations'), repairs: value('repairs'),
-		spentRepair: value('maintenanceSpent'), ended: value('ended')
-	};
+console.log('seed', data.seed, '· map', MAP, '· step', data.steps, '· rate', data.rate);
+for (let i = 0; i < names.length; i++) {
+	const c = GravityScene.career.galaxy.actors[i];
+	const past = retired[i];
+	console.log(names[i] + ' · first EMC ' + (first[i] || 'none') +
+		' · ' + unclaimed[i] + ' unclaimed landings · ' + c.padCount + ' pads · ' + c.flights +
+		' flights · purse ' + c.ledger.purse.toFixed(2) + ' · visits ' + c.visitIncome.toFixed(2) +
+		' · build ' + c.buildSpent.toFixed(2) + ' · fees ' + c.feesPaid.toFixed(2) +
+		' · tax +' + c.taxEarned.toFixed(2) + ' / −' + c.taxPaid.toFixed(2) +
+		' · ' + c.delivered + ' delivered · ' + c.evacuations + ' evac · repairs ' + c.maintenanceSpent.toFixed(2) +
+		' · ' + past.restarts + ' restarts' + (c.ended ? ' · ended ' + c.ended : ''));
+	if (past.restarts) console.log('  including retired ledgers: ' + (c.flights + past.flights) +
+		' flights · visits ' + (c.visitIncome + past.visits).toFixed(2));
 }
-
-const rows = [0, 1, 2].map(company);
-const money = (v) => v.toFixed(2).padStart(7);
-console.log('seed', get('game.seed'), '· map', MAP, '· step', step, '· t+' +
-	(step * get('DT')).toFixed(1) + ' s · rate', RATE);
-for (let i = 0; i < rows.length; i++) {
-	const r = rows[i];
-	console.log('  ' + ['YOU', 'R1 ', 'R2 '][i] + ' purse' + money(r.purse) + ' · ' +
-		r.pads + ' pads · ' + r.flights + ' flights · visits' + money(r.visits) +
-		' · build' + money(r.build) + ' · fees' + money(r.fees) +
-		' · tax +' + r.taxEarned.toFixed(2) + ' / −' + r.taxPaid.toFixed(2) +
-		' · ' + r.delivered + ' delivered · ' + r.evacuations + ' evac · ' +
-		r.repairs + ' repairs ' + r.spentRepair.toFixed(2) + (r.ended ? ' · ended ' + r.ended : ''));
-}
-const total = rows.reduce((sum, r) => sum + r.purse, 0);
-console.log('  combined purse ' + total.toFixed(2) + ' · pads ' +
-	rows.reduce((sum, r) => sum + r.pads, 0) + ' · visits ' +
-	rows.reduce((sum, r) => sum + r.visits, 0).toFixed(2));
-
-const file = path.join(root, OUT);
+const file = path.resolve(__dirname, '..', OUT);
 fs.mkdirSync(path.dirname(file), { recursive: true });
 fs.writeFileSync(file, payload + '\n');
-console.log('wrote ' + OUT + ' · ' + payload.length + ' chars · ' + data.actions.length + ' actions');
+console.log('verified and wrote', OUT, '·', data.actions.length, 'actions ·', data.events.length, 'watched events');

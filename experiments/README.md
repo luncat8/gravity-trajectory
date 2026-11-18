@@ -67,7 +67,7 @@ with no fair opening: the registry is also the pool `load map` draws from, so
 |---|---|
 | `orbit_world`, `orbit_sim`, `orbit_econ` trade laws | `special_planets_test`, `orbit_clock_test`, `politics_test` |
 | the seeded PRNG (`seedRandom`) and world geometry | `gravity_seed_test` (bench tier), `orbit_clock_test` |
-| `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `route_bench` (long trace), `bot_gravity_test` (known red fixture) |
+| `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `route_bench` (long trace), `bot_gravity_test` (exit/claim decisions on a saved field) |
 | `gravity_field` CPU raster and palette | `gravity_bench` (color + budget), `gravity_view_test` |
 | `gravity_game` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
 | career opening and the seat search | `career_start_fairness` (independent exit-safe pay band), `career_start_seat_test`, `make_saved_maps.js --check` (stale records) |
@@ -105,13 +105,15 @@ checks.
 
 ## red on a clean main
 
-`run_fast.js` marks these, runs them and does not sink the tier over them. It
-prints why each one failed, so a new reason cannot hide behind the old note. A
-green one means the note is stale.
+There are currently no `KNOWN_RED` exemptions. A new exemption needs a named
+failure reproduced on the base revision, not just a count.
 
-- `bot_gravity_test` — the `careerNextPad` fixture never arms the bot's
-  `exitProbe`, so every site values `-Infinity` and the pick is −1 (fixture,
-  not law).
+Previously fixed:
+
+- `bot_gravity_test`, `career_bench`, `career_bot_bench` (0.7.27): real field
+  and ownership for pad choice; separate tourist and freight endpoints, compare
+  loaded/dry on the same rail, and count the Capital's coverage and the free HQ.
+  See [the replay comparison and checks](../archive/0.7.27-worklog.md).
 - `gravity_view_test` — fixed in 0.7.11, no longer red. Its two stale
   expectations were the pre-pinning blue count (seed 61 career now shows 112
   blue px; bar lowered to > 50 with the reason in the test) and the `+0.46`
@@ -126,11 +128,6 @@ green one means the note is stale.
   `COUNT=13 SEATS=5 SEEDS=1-4` still reports no distinct buildable site for all
   four *chosen HQ sets* (see the open 0.6.8 plan, which traces the failures to
   max-floor `seatAssignment` and the `seatsWanted <= 4 && count <= 26` cutoff).
-- `career_bench` (3), `career_bot_bench` (10) — known failures, listed with
-  their names in `findings-pitfalls-skills.md`.
-
-Left this list:
-
 - `bot_bench` (0.7.9) — `BOT BENCH OK` at the 0.7.8 commit and after it; the
   "1 known failure" had no name on record.
 - `player_growth_test` (0.7.9) — never red, only slow: 8 min at the 0.7.8

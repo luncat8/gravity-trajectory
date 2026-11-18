@@ -20,13 +20,8 @@
 const { spawnSync } = require('child_process');
 const path = require('path');
 
-/* red at f987145 on a clean main, for reasons experiments/README.md explains:
- * a fixture that never arms the bot's exit probe, colours pinned to a seed */
-const KNOWN_RED = {
-	'bot_gravity_test.js': 'careerNextPad fixture never arms exitProbe (pick −1)',
-	'career_bench.js': '3 known failures, findings-pitfalls-skills.md',
-	'career_bot_bench.js': '10 known failures, findings-pitfalls-skills.md'
-};
+/* An exemption needs a named, reproduced failure (see experiments/README.md). */
+const KNOWN_RED = {};
 
 /* logic only, no page boot: the tier you can afford after every edit */
 const FAST = [
@@ -57,6 +52,7 @@ const SLOW = [
 	['sound_test.js', 4],
 	['trajectory_sound_test.js', 0.2],
 	['voronoi_sound_test.js', 1],
+	['bot_gravity_test.js', 2],
 	['multiplayer_career_test.js', 1],
 	['multiplayer_pause_preview_test.js', 1],
 	['multiplayer_impulse_test.js', 1],

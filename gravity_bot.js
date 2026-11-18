@@ -88,8 +88,7 @@
 	const CAREER_ENERGY_WAIT_COST = 0.04;
 	const CAREER_BUILT_PAD_VALUE = 2.5;
 	const CAREER_NETWORK_PAD_VALUE = 4;
-	/* unclaimed ground whose only exit is a paid rail (an EMC-2 under an EMC-1):
-	 * a real claim, but one the purse has to rescue before it earns */
+	/* A well that needs a stronger first rail is a more expensive claim. */
 	const CAREER_STEEP_PAD_VALUE = 2;
 	/* a rival or rebel rail: a landing, a usage tax, and no claim on the planet */
 	const CAREER_FOREIGN_PAD_VALUE = 1;
@@ -97,24 +96,19 @@
 	/* breadth of one launch counts toward a pad's worth: sunlight alone would
 	 * put EMCs in wells the starter rail cannot leave, and those never earn */
 	const CAREER_REACH_VALUE = 0.4;
-	const CAREER_DEAD_SITE = 3;
 	const CAREER_SITE_BONUS = 0.5;
 	/* pad gear is bought for what it earns, not only for the next departure: a
 	 * rung has to pay its price back inside this much pad time on the pad it
 	 * upgrades, measured against the money that pad's last launch made */
 	const CAREER_PAD_HORIZON = 2400;
 	const CAREER_SAME_PAD_VALUE = -1;
-	const CAREER_REFIT_VALUE = 3;
 	/* a medical mission is worth chasing (0.5.13: it outranks a plain
 	 * delivery): the reward is per patient, the medic leg lands on a planet
 	 * paying the 4x fly-by ramp, and the quelled planet turns that ramp back
 	 * into normal trade — the rebellion is a contest the rivals should play,
 	 * not a tax they pay */
 	const CAREER_MEDIC_VALUE = 2.5;
-	/* the Capital's flat entry fine, as careerAccept prices it */
-	const CAREER_CAPITAL_FINE = 3;
-	/* board ticks a company stays off the board after dropping an unreachable
-	 * contract: the board it would re-read is the one that just failed */
+	/* Game steps, not shopping passes, before revisiting an unreachable board. */
 	const CAREER_ACCEPT_HOLD = Math.round(30 / GravitySim.DT);
 	/* no shot and no affordable departure for this many tries = a dead end */
 	const CAREER_STUCK_TRIES = 4;
@@ -384,7 +378,7 @@
 			builds: false, length: 0, steps: 0, burnGain: 0, burnBody: -1,
 			fuelKg: 0, fuelProducedKg: 0, fuelBoughtKg: 0
 		};
-		this.careerFuelPlan = {
+		this.careerSparePlan = {
 			origin: -1, body: -1, angleU: 0, speedU: 0, angle: 0, speed: 0,
 			score: -Infinity, taskPay: 0, padValue: 0, energy: 0, wait: 0, fee: 0,
 			exitCost: Infinity, exitSource: '', fromBook: false,
@@ -1765,22 +1759,10 @@
 		return mass;
 	};
 
-	/*
-	 * kWh a rail can spend on an exit. An own pad is charged by its own panel, so
-	 * the forecast is its capacity — a drained one needs a wait or a bigger
-	 * battery, both of which the shopping pass prices. A foreign rail holds
-	 * whatever its owner left in it, reservations included: a drained rival pad
-	 * is not the cheap exit its capacity used to promise.
-	 */
-	GravityBot.prototype.careerRailCharge = function (career, planet) {
-		const pad = GravityGame.padAt(career, planet);
-		if (GravityGame.padOwner(career, planet) === career.index) return pad.battery.capacity;
-		const free = pad.chargeKwh - pad.reservedKwh;
-		return free > 0 ? free : 0;
-	};
-
-	/* A forecast can pass the post-repair condition instead of today's ship. */
-	GravityBot.prototype.careerDeparture = function (career, planet, cash, mass, sourceSim, condition) {
+	/* Normally quote the cheapest way off. A shopper/scorer seeking a claim
+	 * wants the cheapest *owned kit* instead. Keep the ticket as fallback if
+	 * there is no affordable kit, including on somebody else's ground. */
+	GravityBot.prototype.careerDeparture = function (career, planet, cash, mass, sourceSim, condition, seekClaim) {
 		const out = this.careerExit;
 		out.ok = false;
 		out.physical = false;
@@ -1807,24 +1789,27 @@
 		}
 		const arrivalMass = Number.isFinite(mass) && mass > 0 ? mass : career.ship.mass;
 		const available = cash === Infinity ? Infinity : Number.isFinite(cash) ? cash : -Infinity;
-		const forceScale = sourceSim ? sourceSim.forceScale : career.forceScale;
+		const forceScale = sim.forceScale;
 		const own = career.pads[planet];
 		const pad = GravityGame.padAt(career, planet);
 		const owner = GravityGame.padOwner(career, planet);
 
 		const buildable = GravityGame.planetBuildable(career, planet);
-		if (own.catapult === null) {
+		if (own.catapult === null && buildable) {
 			const starterCap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
 				arrivalMass, OrbitTech.CATAPULTS[0], forceScale);
 			out.starterCanExit = this.careerExitSpeed(planet, starterCap) > 0;
 			/* only claim an unclaimed (commercial) or own planet: you cannot
 			 * replace another player's EMC with your own */
-			out.canBuildStarter = buildable && out.starterCanExit &&
+			out.canBuildStarter = out.starterCanExit &&
 				available + 1e-9 >= careerPrice(career, OrbitTech.CATAPULTS[0]);
 			if (out.starterCanExit) out.physical = true;
 		}
 
-		const currentCap = OrbitTech.speedLimit(this.careerRailCharge(career, planet),
+		/* Our panel can recharge. A guest cannot count on charge its host has
+		 * already spent or promised to another barrel. */
+		const charge = owner === career.index ? pad.battery.capacity : Math.max(0, pad.chargeKwh - pad.reservedKwh);
+		const currentCap = OrbitTech.speedLimit(charge,
 			arrivalMass, pad.catapult, forceScale);
 		const currentSpeed = this.careerExitSpeed(planet, currentCap);
 		let bestCost = Infinity;
@@ -1852,6 +1837,9 @@
 			}
 		}
 
+		if (seekClaim && !own.catapult) bestCost = Infinity;
+		if (bestCost === 0 || !buildable) return out;
+
 		const catPrototypes = career.prototypes
 			? career.prototypes[OrbitTech.KIND_CATAPULT] : null;
 		const batteryPrototypes = career.prototypes
@@ -1868,7 +1856,6 @@
 			} else if (ci < OrbitTech.CATAPULTS.length) catapult = OrbitTech.CATAPULTS[ci];
 			else catapult = catPrototypes[ci - OrbitTech.CATAPULTS.length];
 			const buildCatapult = catapult !== own.catapult;
-			if (buildCatapult && own.catapult === null && !buildable) continue;
 			if (own.catapult !== null && buildCatapult &&
 				catapult.tier <= own.catapult.tier) continue;
 			if (buildCatapult && !GravityGame.gearKnown(career, catapult)) continue;
@@ -1965,91 +1952,76 @@
 		return null;
 	};
 
-	GravityBot.prototype.careerGravityCost = function (planet) {
-		return Math.max(0, this.probe.strength[planet] * this.probe.gravityScale - 1) *
-			CAREER_GRAVITY_COST;
+	GravityBot.prototype.careerGravityCost = function (planet, sim = this.probe) {
+		return Math.max(0, sim.strength[planet] * sim.gravityScale - 1) * CAREER_GRAVITY_COST;
 	};
 
-	/*
-	 * What an EMC on `planet` is worth before its build cost: sunlight feeds
-	 * the panel, the breadth of a starter launch feeds its income, and a deep
-	 * gravity well costs both. -Infinity when the starter rail cannot leave at
-	 * all: such a pad is a spent EMC-1 and battery, whatever its sunlight.
-	 */
-	GravityBot.prototype.careerSiteValue = function (career, planet, target) {
-		const cap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
-			career.ship.mass, OrbitTech.CATAPULTS[0], career.forceScale);
-		const reach = this.careerReach(planet, cap);
-		if (reach <= 0) return -Infinity;
+	/* Only called for a proven kit. The full-speed reach fan may miss the
+	 * slower exit that careerDeparture found; that is still one neighbour. */
+	GravityBot.prototype.careerSiteValue = function (career, planet, target, cap) {
+		const reach = Math.max(1, this.careerReach(planet, cap));
 		return career.light[planet] + reach * CAREER_REACH_VALUE -
-			this.careerGravityCost(planet) + (planet === target ? CAREER_SITE_BONUS : 0);
+			this.careerGravityCost(planet, this.exitProbe) + (planet === target ? CAREER_SITE_BONUS : 0);
 	};
 
-	/*
-	 * The best planet to claim next for `cash`: the site value it earns, kept
-	 * only where the cheapest proven way off it can be paid — an EMC-2 under a
-	 * rail the starter EMC-1 cannot leave is a claim plus a rescue, and the
-	 * rescue is what `careerDeparture` already prices.
-	 */
-	GravityBot.prototype.careerNextPad = function (career, cash) {
-		let target = -1;
-		if (career.contract >= 0) {
-			const task = career.tasks[career.contract];
-			target = task.state === GravityGame.TASK_LOADED ? task.to : task.from;
-		}
-		const available = cash === undefined ? career.ledger.purse : cash;
+	/* Price the rail we would own, not the commercial ticket that may be the
+	 * cheapest one-off exit. Use the same site valuation for a landing and a
+	 * remote purchase, at the mass the kit actually has to launch. */
+	GravityBot.prototype.careerClaimValue = function (career, planet, target, departure, mass) {
+		const cap = OrbitTech.speedLimit(departure.battery.capacity, mass, departure.catapult, this.exitProbe.forceScale);
+		return (departure.canBuildStarter ? CAREER_NETWORK_PAD_VALUE : CAREER_STEEP_PAD_VALUE) +
+			this.careerSiteValue(career, planet, target, cap) - departure.cost;
+	};
+
+	GravityBot.prototype.careerPadOffer = function (career, planet, cash, sim) {
+		return this.careerDeparture(career, planet, cash, career.ship.mass, sim, undefined, true);
+	};
+
+	GravityBot.prototype.careerNextPad = function (career, cash = career.ledger.purse, sim = this.probe) {
+		const target = career.contract >= 0 ? this.careerTarget(career) : -1;
 		let best = -1;
 		let bestValue = -Infinity;
-		for (let p = 0; p < PLANETS; p++) {
-			if (career.pads[p].catapult !== null) continue;
-			if (!GravityGame.planetBuildable(career, p)) continue;
-			const value = this.careerSiteValue(career, p, target);
-			if (!Number.isFinite(value) || value <= bestValue) continue;
-			/* the commercial rail is a landing, not a claim: only a planet whose
-			 * own rail (starter or stronger) the cash can buy is a new pad */
-			const departure = this.careerDeparture(career, p, available, career.ship.mass);
-			if (!departure.canBuildStarter && !(departure.ok && departure.builds)) continue;
+		for (let p = 0; p < sim.planetCount; p++) {
+			if (!sim.planetActive(p) || career.pads[p].catapult || this.careerContested(career, p) ||
+				!GravityGame.planetBuildable(career, p)) continue;
+			const exit = this.careerPadOffer(career, p, cash, sim);
+			if (!exit.builds) continue;
+			const value = this.careerClaimValue(career, p, target, exit, career.ship.mass);
+			if (value <= bestValue) continue;
 			best = p;
 			bestValue = value;
 		}
 		return best;
 	};
 
-	/*
-	 * Can the rail at `planet` lift `tons` of cargo? The pad's full charge is
-	 * the ceiling a loaded shot has, so a contract whose load no rail on its
-	 * origin can raise at SPEED_MIN is not a job — it is a dead end flown to.
-	 */
-	GravityBot.prototype.careerLoadLift = function (career, planet, tons) {
-		const pad = GravityGame.padAt(career, planet);
-		const cap = OrbitTech.speedLimit(pad.battery.capacity, career.ship.mass + tons,
-			pad.catapult, career.forceScale);
-		return cap + 1e-9 >= GravitySim.SPEED_MIN;
+	/* A delivery starting here doesn't pay another fine for getting here. */
+	function careerNetReward(career, task) {
+		const entries = Number(task.from === career.capitalPlanet && task.from !== career.at) +
+			Number(task.to === career.capitalPlanet);
+		return task.reward + entries * GravityGame.CAPITAL_VISIT_PAY;
+	}
+
+	/* The pickup has to launch the loaded ship. Don't take a job whose
+	 * reward cannot even pay that ticket, or whose delivery is a dead end. */
+	GravityBot.prototype.careerDeliveryNet = function (career, task, hold, budget, sim) {
+		const dry = OrbitTech.refitMass(career.ship, OrbitTech.KIND_HOLD, hold, 0);
+		const loaded = this.careerDeparture(career, task.from, budget, dry + task.tons, sim);
+		const net = careerNetReward(career, task) - loaded.cost;
+		if (!loaded.ok || net <= 0) return -Infinity;
+		return this.careerDeparture(career, task.to, budget + net, dry, sim).ok ? net : -Infinity;
 	};
 
-	/* the Capital charges a flat fine on every entry, so a contract that ends
-	 * there pays `CAREER_CAPITAL_FINE` less than its reward says */
-	GravityBot.prototype.careerCapitalFines = function (career, task) {
-		let fines = 0;
-		if (task.from === career.capitalPlanet) fines += 1;
-		if (task.to === career.capitalPlanet) fines += 1;
-		return fines;
-	};
-
-	GravityBot.prototype.careerAccept = function (career, step = this.worldStep) {
-		if (career.contract >= 0) return false;
-		if (career.acceptHold > 0) {
-			career.acceptHold -= 1;
-			return false;
-		}
+	GravityBot.prototype.careerAccept = function (career, step = this.worldStep, sim = this.probe) {
+		if (career.contract >= 0 || step < career.acceptAfterStep) return false;
 		let best = -1;
 		let bestScore = -Infinity;
 		for (let i = 0; i < GravityGame.BOARD_SIZE; i++) {
 			if (!GravityGame.canAccept(career, i)) continue;
 			const task = career.tasks[i];
-			if (!this.careerLoadLift(career, task.from, task.tons)) continue;
-			let score = task.reward - task.tons * 0.02 -
-				CAREER_CAPITAL_FINE * this.careerCapitalFines(career, task);
+			const net = task.kind === GravityGame.TASK_DELIVERY
+				? this.careerDeliveryNet(career, task, career.ship.hold, career.ledger.purse, sim) : task.reward;
+			if (!Number.isFinite(net)) continue;
+			let score = net - task.tons * 0.02;
 			if (task.kind === GravityGame.TASK_MEDIC) score += CAREER_MEDIC_VALUE;
 			if (task.from === career.at) score += 0.75;
 			if (career.pads[task.from].catapult !== null) score += 0.25;
@@ -2170,10 +2142,7 @@
 		if (battery && GravityGame.gearKnown(career, battery)) {
 			const cap = OrbitTech.speedLimit(battery.capacity, mass, pad.catapult, scale);
 			const reach = this.careerReach(planet, cap);
-			const refill = this.careerRefillWait(career, planet, pad.panel, missed);
-			this.careerGearOffer(career,
-				(money + Math.max(0, reach - reachNow) * CAREER_REACH_VALUE) /
-				(flownSec + refill) - yieldNow,
+			this.careerGearOffer(career, Math.max(0, reach - reachNow) * CAREER_REACH_VALUE / cycle,
 				careerPrice(career, battery), OrbitTech.KIND_BATTERY, battery, null, battery.id);
 		}
 
@@ -2196,7 +2165,7 @@
 			const shot = OrbitTech.launchEnergy(mass, catapult, speed < cap ? speed : cap);
 			/* the mate keeps the charge this pad holds, so the panel replaces the
 			 * whole shot, exactly as the standing rail's cycle does */
-			const refill = this.careerRefillWait(career, planet, pad.panel, shot - Math.min(free, shot));
+			const refill = this.careerRefillWait(career, planet, pad.panel, Math.max(0, shot - free));
 			this.careerGearOffer(career,
 				(money + Math.max(0, reach - reachNow) * CAREER_REACH_VALUE) /
 				(flownSec + refill) - yieldNow, careerPrice(career, catapult) + mateCost,
@@ -2239,19 +2208,13 @@
 		best.label = label;
 	};
 
-	/* service before shopping: early with the launch reserve kept, and at 0
-	 * with the whole purse, because nothing else gets a worn-out ship flying.
-	 * On unclaimed ground the claim itself is the reserve: a `0.76` service is
-	 * not worth passing up the `3.04` pad the ship is standing on. */
+	/* Keep a launch in reserve for optional service. A worn-out ship has to
+	 * spend its last coin on repairs before it can use any rail. */
 	GravityBot.prototype.careerRepair = function (career, runStep) {
 		const condition = career.ship.condition;
 		if (condition > CAREER_REPAIR_AT) return false;
 		const cost = GravityGame.repairCost(career);
-		let reserve = condition > 0 ? CAREER_PURSE_RESERVE : 0;
-		if (condition > 0 && career.pads[career.at].catapult === null &&
-			GravityGame.planetBuildable(career, career.at)) {
-			reserve += careerPrice(career, OrbitTech.CATAPULTS[0]);
-		}
+		const reserve = condition > 0 ? CAREER_PURSE_RESERVE : 0;
 		if (career.ledger.purse + 1e-9 < cost + reserve) return false;
 		if (!GravityGame.repairCareer(career)) return false;
 		this.traceAdd(careerTraceIndex(career), 'repair', 'P' + career.at + ' · cond ' +
@@ -2265,99 +2228,61 @@
 	 * carries the hold and pays more than it costs. The weight is the reason —
 	 * 1.5 t is 15 % of a dry ship, and every launch, fee and tax carries it.
 	 */
-	GravityBot.prototype.careerWantHold = function (career) {
-		if (career.padCount >= CAREER_HOLD_PADS) return true;
+	GravityBot.prototype.careerWantHold = function (career, sim) {
 		const hold = OrbitTech.HOLDS[1];
+		const price = careerPrice(career, hold);
+		const budget = career.ledger.purse - price;
+		if (career.padCount >= CAREER_HOLD_PADS &&
+			budget >= CAREER_PURSE_RESERVE + careerPrice(career, OrbitTech.CATAPULTS[0])) return true;
 		for (let i = 0; i < GravityGame.BOARD_SIZE; i++) {
 			const task = career.tasks[i];
 			if (task.kind !== GravityGame.TASK_DELIVERY || task.state !== GravityGame.TASK_OFFERED) continue;
 			if (task.from !== career.at || task.tons > hold.capacity) continue;
-			if (task.reward > careerPrice(career, hold)) return true;
+			if (this.careerDeliveryNet(career, task, hold, budget, sim) > price) return true;
 		}
 		return false;
 	};
 
-	/* the cheapest proven kit off `planet` — the starter rail, or the pair a deep
-	 * well needs — bought only when `cash` covers it and the launch reserve */
-	GravityBot.prototype.careerBuyPad = function (career, planet, cash, runStep) {
-		const departure = this.careerDeparture(career, planet, cash, career.ship.mass);
-		const why = 'expand network with reserve intact';
-		if (departure.canBuildStarter) {
-			return this.careerBuyGear(career, planet, OrbitTech.KIND_CATAPULT,
-				OrbitTech.CATAPULTS[0], CAREER_PURSE_RESERVE, runStep, why);
-		}
-		if (!departure.ok || !departure.builds) return false;
-		if (!this.careerBuyGear(career, planet, OrbitTech.KIND_CATAPULT, departure.catapult,
-			CAREER_PURSE_RESERVE, runStep, why)) return false;
-		if (career.pads[planet].battery !== departure.battery) {
-			this.careerBuyGear(career, planet, OrbitTech.KIND_BATTERY, departure.battery,
-				CAREER_PURSE_RESERVE, runStep, why);
-		}
-		return true;
+	/* Install exactly the kit the exit probe priced, even when just its
+	 * battery is missing. A fresh rail comes with BAT-1 (and its charge). */
+	GravityBot.prototype.careerBuyPad = function (career, planet, exit, reserve, step, why) {
+		if (!exit.builds) return false;
+		const cat = exit.catapult;
+		const bat = exit.battery;
+		const pad = career.pads[planet];
+		if (pad.catapult !== cat && !this.careerBuyGear(career, planet, OrbitTech.KIND_CATAPULT,
+			cat, reserve, step, why)) return false;
+		return pad.battery === bat || this.careerBuyGear(career, planet, OrbitTech.KIND_BATTERY,
+			bat, reserve, step, why);
 	};
 
-	/* Gear shopping happens while idle: rescue, repair, refit/accept, upgrade, expand,
-	 * then the pad itself is sized for its earnings. Fuel is priced later, at the
-	 * committed launch, so a sit or a forced rebuild never stocks a tank for free. */
 	GravityBot.prototype.careerBetweenFlights = function (career, sim, runStep = this.worldStep) {
 		if (career.ended !== GravityGame.CAREER_OPEN) return 0;
 		/* transport trips own the ship and the clock until arrival */
 		if (career.arrested || career.evacuating) return 0;
 		let actions = 0;
-		const evacPrice = careerFee(career, GravityGame.CAREER.evacFee);
 		if (career.at < 0) {
-			if (this.careerRecover(career, sim, evacPrice, runStep, 'lost in space')) return 1;
+			if (this.careerRecover(career, sim, runStep, 'lost in space')) return 1;
 			return 0;
 		}
-		/* the commercial EMC lifts a parked ship for its fee, so a padless planet
-		 * is no dead end; only a load nothing here can lift needs a rescue.
-		 * If buying a starter EMC-1 would leave the purse below evacuation
-		 * cost and the rail still couldn't lift the ship, evacuate instead. */
-		if (GravityGame.padLift(career, career.at) + 1e-9 < GravitySim.SPEED_MIN) {
+		/* Mandatory service first. An affordable exit kit comes before an
+		 * optional repair, contract or evacuation, just as the fan priced it. */
+		if (!GravityGame.careerShipUsable(career)) {
+			if (!this.careerRepair(career, runStep)) return 0;
+			actions++;
+		}
+		const at = career.at;
+		const departure = this.careerPadOffer(career, at, career.ledger.purse, sim);
+		if (this.careerBuyPad(career, at, departure, 0, runStep,
+			career.pads[at].catapult ? 'affordable exit' : 'claim an exitable landing')) actions++;
+		if (GravityGame.padLift(career, at, sim.forceScale) + 1e-9 < GravitySim.SPEED_MIN) {
 			if (career.contract >= 0) {
 				GravityGame.dropContract(career);
 				this.traceAdd(careerTraceIndex(career), 'drop contract', 'load cannot lift', runStep);
-				actions += 1;
-			} else {
-				/* will EMC-1 + BAT-1 lift this load? */
-				const starterCap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
-					career.ship.mass, OrbitTech.CATAPULTS[0], career.forceScale);
-				const starterCost = careerPrice(career, OrbitTech.CATAPULTS[0]);
-				const starterLifts = starterCap + 1e-9 >= GravitySim.SPEED_MIN &&
-					career.ledger.purse + 1e-9 >= starterCost;
-				if (starterLifts && this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
-					OrbitTech.CATAPULTS[0], 0, runStep, 'restore minimum lift')) {
-					actions += 1;
-				} else if (this.careerRecover(career, sim, evacPrice, runStep, 'no affordable rail can lift')) {
-					actions += 1;
-				}
-			}
+				actions++;
+			} else if (this.careerRecover(career, sim, runStep, 'no affordable rail can lift')) return actions + 1;
 		}
-		if (career.ended !== GravityGame.CAREER_OPEN || career.evacuating) return actions;
 		if (this.careerRepair(career, runStep)) actions += 1;
-
-		/* a pad whose full battery still cannot lift the current ship is a dead
-		 * end (heavy cargo, lowered force scale): repair it before shopping */
-		if (career.pads[career.at].catapult !== null &&
-			GravityGame.padLift(career, career.at) + 1e-9 < GravitySim.SPEED_MIN &&
-			this.careerUpgrade(career, sim, GravitySim.SPEED_MIN, 0, runStep)) actions += 1;
-
-		/* repair the occupied planet only with gear that gives a proven exit. */
-		let departure = this.careerDeparture(career, career.at, career.ledger.purse,
-			career.ship.mass, sim);
-		if (departure.ok && departure.builds) {
-			if (career.pads[career.at].catapult !== departure.catapult &&
-				this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
-					departure.catapult, 0, runStep, 'affordable exit')) actions += 1;
-			if (career.pads[career.at].battery !== departure.battery &&
-				this.careerBuyGear(career, career.at, OrbitTech.KIND_BATTERY,
-					departure.battery, 0, runStep, 'affordable exit')) actions += 1;
-		}
-		/* a starter pad is still an economic claim, but never replace a stronger
-		 * shared rail with EMC-1 unless this ship can actually leave on it. */
-		if (career.pads[career.at].catapult === null && departure.canBuildStarter &&
-			this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
-				OrbitTech.CATAPULTS[0], 0, runStep, 'claim an exitable landing')) actions += 1;
 
 		if (this.careerUseResearch && career.at === career.hq) {
 			let part;
@@ -2366,7 +2291,7 @@
 				actions += 1;
 			}
 		}
-		if (this.careerAccept(career, runStep)) actions += 1;
+		if (this.careerAccept(career, runStep, sim)) actions += 1;
 		if (this.careerBribe(career, sim, runStep)) actions += 1;
 
 		if (career.contract >= 0) {
@@ -2383,25 +2308,21 @@
 			}
 		}
 
-		/* expansion claims at most one fresh pad per call: the bot must fly a
-		 * revenue-earning flight (and land, collect profit, possibly upgrade)
-		 * before it buys the next network planet. This stops a rich start
-		 * purse from auto-completing the map with zero flights. */
-		/* the reserve is the way off the planet the ship stands on plus the
-		 * service its wear will need: a `6.00` evacuation is only one of the
-		 * ways out and must not gate a `3.04` claim */
-		const expansionReserve = CAREER_PURSE_RESERVE +
-			careerFee(career, GravityGame.exitCostAt(career, career.at, career.ship.mass)) +
-			careerFee(career, (1 - career.ship.condition) * GravityGame.WEAR_REPAIR_COST);
-		if (career.ended === GravityGame.CAREER_OPEN && career.padCount < PLANETS) {
-			/* never claim another planet until the current rail can actually
-			 * fire an affordable shot (own/battery, rival or commercial) */
-			const here = this.careerDeparture(career, career.at, career.ledger.purse,
-				career.ship.mass, sim);
-			if (here.ok) {
-				const cash = career.ledger.purse - expansionReserve;
-				const planet = this.careerNextPad(career, cash);
-				if (planet >= 0 && this.careerBuyPad(career, planet, cash, runStep)) actions += 1;
+		/* At most one remote claim per shop. Before the first flight, keep the
+		 * first landing's EMC money at hand rather than claiming a remote site
+		 * and then having to pay the commercial rail under the ship. */
+		const reserve = CAREER_PURSE_RESERVE + GravityGame.repairCost(career) +
+			(career.flights === 0 ? careerPrice(career, OrbitTech.CATAPULTS[0]) : 0);
+		if (career.ended === GravityGame.CAREER_OPEN && career.ledger.purse >= reserve) {
+			const here = this.careerDeparture(career, career.at, career.ledger.purse, career.ship.mass, sim);
+			const keep = reserve + here.cost;
+			const cash = career.ledger.purse - keep;
+			if (here.ok && cash >= 0) {
+				const planet = this.careerNextPad(career, cash, sim);
+				if (planet >= 0) {
+					const kit = this.careerPadOffer(career, planet, cash, sim);
+					if (this.careerBuyPad(career, planet, kit, keep, runStep, 'expand network')) actions += 1;
+				}
 			}
 		}
 		/* the hold is fitted wherever the ship stands, but only once the network
@@ -2409,7 +2330,7 @@
 		 * It follows the claim, so one pass can buy a pad and then kit out. */
 		if (career.at >= 0 && career.ship.hold === OrbitTech.HOLDS[0] &&
 			career.ledger.purse + 1e-9 >= careerPrice(career, OrbitTech.HOLDS[1]) +
-				CAREER_PURSE_RESERVE && this.careerWantHold(career) &&
+				CAREER_PURSE_RESERVE && this.careerWantHold(career, sim) &&
 			GravityGame.installPart(career, OrbitTech.KIND_HOLD, OrbitTech.HOLDS[1])) {
 			this.traceAdd(careerTraceIndex(career), 'gear', 'P' + career.at + ' ' +
 				OrbitTech.HOLDS[1].id + ' · ' + OrbitTech.HOLDS[1].capacity + ' t', runStep);
@@ -2423,7 +2344,7 @@
 		return actions;
 	};
 
-	GravityBot.prototype.careerRecover = function (career, sim, cost, step, why) {
+	GravityBot.prototype.careerRecover = function (career, sim, step, why) {
 		const from = career.at;
 		const paid = GravityGame.evacuationCost(career);
 		if (!career.stranded || !GravityGame.evacuate(career, sim, paid, step)) return false;
@@ -2679,54 +2600,34 @@
 		/* A dead ship must be repaired before it can take any departure. */
 		const mandatoryRepair = GravityGame.forecastRepairReserve(career, arrivalCondition);
 		const exitCash = career.ledger.purse + cashPay - launchFee - mandatoryRepair;
+		/* Other companies can harvest the projected visits before we do. A
+		 * fixed entry fine must be covered by cash or this landing's payout. */
+		if (landingValue < 0 && exitCash - visitPay + landingValue < -1e-9) {
+			this.careerEval.reject = 'fee';
+			return -Infinity;
+		}
 		const arrivalMass = this.careerArrivalMass(career, body);
+		const contested = this.careerContested(career, body);
 		const departure = this.careerDeparture(career, body, exitCash, arrivalMass, this.probe,
-			arrivalCondition === 0 ? 1 : arrivalCondition);
-		if (!departure.ok) {
+			arrivalCondition === 0 ? 1 : arrivalCondition, !contested);
+		if (!departure.ok || exitCash + 1e-9 < departure.cost) {
 			this.careerEval.reject = departure.physical ? 'exit' : 'unlaunchable';
 			return -Infinity;
 		}
-		const build = careerPrice(career, OrbitTech.CATAPULTS[0]);
-		let reserve = career.padCount === career.planetCount - 1 &&
-			departure.cost >= build ? CAREER_PURSE_RESERVE : 0;
-		/* an escape that must be bought needs its fee kept back: landing with
-		 * just enough for the rail would strand the company on the pad */
-		if (departure.builds) reserve += CAREER_PURSE_RESERVE;
-		if (exitCash + 1e-9 < departure.cost + reserve) {
-			this.careerEval.reject = 'exit';
-			return -Infinity;
-		}
-
 		const own = career.pads[body];
-		const padOwner = GravityGame.padOwner(career, body);
+		const claim = !contested && !own.catapult && departure.builds;
 		let padValue;
-		if (body === origin) padValue = CAREER_SAME_PAD_VALUE;
-		else if (own.catapult !== null) padValue = CAREER_BUILT_PAD_VALUE + (own.catapult.tier - 1) * 0.1;
-		else if (padOwner !== GravityGame.OWNER_COMMERCIAL && padOwner !== career.index) {
-			/* a foreign rail is a landing, a usage tax and no claim; the Capitol's
-			 * pad value is 0 so its -3 entry fine reaches the score */
-			padValue = padOwner === GravityGame.OWNER_CAPITAL ? 0 : CAREER_FOREIGN_PAD_VALUE;
-		} else if (!GravityGame.planetBuildable(career, body)) {
-			/* unclaimed ground that can never be claimed: a shop, not a site */
-			padValue = CAREER_FOREIGN_PAD_VALUE;
-		} else {
-			/* an unclaimed site is worth what an EMC there buys; a starter rail
-			 * that only its own price cannot leave (departure.builds) is the
-			 * steeper claim, priced below the starter one */
-			padValue = (departure.canBuildStarter ? CAREER_NETWORK_PAD_VALUE
-				: CAREER_STEEP_PAD_VALUE) + this.careerSiteValue(career, body, -1);
+		if (body === origin) padValue = CAREER_SAME_PAD_VALUE - departure.cost;
+		else if (own.catapult) padValue = CAREER_BUILT_PAD_VALUE + (own.catapult.tier - 1) * 0.1 - departure.cost;
+		else if (claim) padValue = this.careerClaimValue(career, body, -1, departure, arrivalMass);
+		else {
+			/* A commercial ticket, rival rail or imperial rail buys no property. */
+			const owner = GravityGame.padOwner(career, body);
+			padValue = (owner >= 0 || owner === GravityGame.OWNER_REBEL ? CAREER_FOREIGN_PAD_VALUE : 0) - departure.cost;
 		}
-		if (this.careerContested(career, body)) padValue -= CAREER_CONTESTED_COST;
-		padValue -= departure.cost + (wearCost || 0);
-		if (body === career.hq && career.at !== career.hq &&
-			career.ship.hold === OrbitTech.HOLDS[0] &&
-			exitCash + 1e-9 >= careerPrice(career, OrbitTech.HOLDS[1]) + CAREER_PURSE_RESERVE) {
-			padValue += CAREER_REFIT_VALUE;
-		}
-		/* a padless landing is progress only where the starter rail can leave:
-		 * an EMC-2 rescue is a purchase, not a claim on the planet */
-		this.careerEval.builds = own.catapult === null
-			? departure.canBuildStarter : departure.builds;
+		if (contested) padValue -= CAREER_CONTESTED_COST;
+		padValue -= wearCost || 0;
+		this.careerEval.builds = claim || (own.catapult !== null && departure.builds);
 		this.careerEval.exitCost = departure.cost;
 		this.careerEval.exitSource = departure.source;
 		this.careerEval.taskPay = taskPay;
@@ -2734,18 +2635,14 @@
 		return taskPay + padValue;
 	};
 
-	/*
-	 * Is another company already queued to fire at `body`? The first to queue
-	 * owns the landing: the second arrives on a visit the first just collected.
-	 * Both rivals queued the identical shot from `P11` and fired on the same
-	 * step; the later one harvested nothing and went broke.
-	 */
+	/* A claimed trajectory, not a speculative fan winner. Remains contested
+	 * while the barrel turns AND while the ship is in transit. */
 	GravityBot.prototype.careerContested = function (career, body) {
 		if (!career.galaxy || body === career.at) return false;
-		for (let i = 0; i < this.count; i++) {
-			const r = this.rivals[i];
-			if (!r || r.career === career || !r.turret) continue;
-			if (r.turret.body === body && r.turret.fireAt > this.worldStep) return true;
+		const actors = career.galaxy.actors;
+		for (let i = 0; i < actors.length; i++) {
+			const other = actors[i];
+			if (other !== career && other.plannedLanding === body) return true;
 		}
 		return false;
 	};
@@ -2847,9 +2744,6 @@
 		 * bot never has to know which kind it is flying */
 		const goals = GravityGame.careerGoalBodies(career);
 		if (career.contract >= 0) return goals[0];
-		if (career.at !== career.hq && career.ship.hold === OrbitTech.HOLDS[0] &&
-			career.ledger.purse + 1e-9 >=
-				careerPrice(career, OrbitTech.HOLDS[1]) + CAREER_PURSE_RESERVE) return career.hq;
 		for (let i = 0; i < goals.length; i++) {
 			const planet = goals[i];
 			if (planet !== career.at && career.pads[planet].catapult !== null) return planet;
@@ -3244,6 +3138,7 @@
 		}
 		if (!GravityGame.careerBurn(career, sim, plan.angle, plan.dv)) return null;
 		state.burn += 1;
+		career.plannedLanding = plan.body;
 		this.careerBurnsPlanned += 1;
 		this.traceCareerBurn(career, sim, plan.angle, plan.dv, runStep,
 			'→ P' + plan.body + ' · score ' + signed(plan.score) +
@@ -3550,6 +3445,7 @@
 		if (!r.turret) return;
 		GravityGame.releaseEnergy(r.turret.pad, r.turret.energy);
 		r.turret = null;
+		r.career.plannedLanding = -1;
 	};
 
 	/* Mirror the live field into the one scratch flight shared by pre-launch
@@ -3800,7 +3696,7 @@
 		const ship = career.ship;
 		const quote = this.careerFuelOffer(career, plan.origin, r.sim);
 		if (quote.kg <= 0 || plan.fuelProducedKg + plan.fuelBoughtKg > 0) return false;
-		const saved = this.careerFuelPlan;
+		const saved = this.careerSparePlan;
 		copyCareerPlan(plan, saved);
 		const fuel0 = ship.fuelKg;
 		this.careerBurnOffer(plan.score - plan.burnGain, plan.angleU, plan.speedU, plan.fromBook);
@@ -3976,6 +3872,16 @@
 		this.careerBurnTopReset();
 		let plan = this.careerPlan(career, sim, market, runStep, false, angles);
 		if (!plan) plan = this.careerPlan(career, sim, market, runStep, true, angles);
+		else if (this.careerShouldWait(plan, 0) ||
+			(career.padCount === 1 && career.contract < 0 && !plan.builds)) {
+			/* Before settling for a shuttle on opening day, or a losing sit,
+			 * give the longer fan one chance to find a paying land-and-claim. */
+			const first = this.careerSparePlan;
+			copyCareerPlan(plan, first);
+			const wider = this.careerPlan(career, sim, market, runStep, true, angles);
+			if (wider && wider.score > first.score) plan = wider;
+			else copyCareerPlan(first, plan);
+		}
 		if (plan) return this.careerReadyShot(r, plan, market, runStep, true);
 		if (career.contract >= 0) {
 			plan = this.careerPlan(career, sim, market, runStep, true, angles, true);
@@ -4027,24 +3933,25 @@
 		return null;
 	};
 
-	/*
-	 * A drained own pad is not a dead end: the panel is charging it. One sit of
-	 * CAREER_SIT_GAP pad time usually buys the minimum shot back, and paying the
-	 * commercial rail's 2.27-4.54 instead is what drained a rival's purse in one
-	 * hop between two recharging pads.
-	 */
+	/* No payable plan. Prefer a short recharge on a real panel (ours or a
+	 * host's) to a commercial ticket, but only if it can buy a better exit. */
 	GravityBot.prototype.careerRechargeSit = function (r, runStep) {
 		const career = r.career;
-		if (r.waitTries >= CAREER_SIT_TRIES) return false;
-		if (career.at < 0 || career.pads[career.at].catapult === null) return false;
-		const pad = career.pads[career.at];
-		if (pad.battery.capacity + 1e-9 >= OrbitTech.launchEnergy(career.ship.mass,
-			pad.catapult, GravitySim.SPEED_MIN)) return false;
-		const gain = OrbitTech.solarCharge(pad.panel, career.light[career.at],
-			GravitySim.padSeconds(CAREER_SIT_GAP * GravitySim.DT));
-		if (!(gain > 0)) return false;
+		const at = career.at;
+		if (r.waitTries >= CAREER_SIT_TRIES || at < 0 || !GravityGame.careerShipUsable(career) ||
+			GravityGame.padOwner(career, at) < 0) return false;
+		const pad = GravityGame.padAt(career, at);
+		const sec = GravitySim.gameSeconds(CAREER_SIT_GAP * (CAREER_SIT_TRIES - r.waitTries));
+		const next = OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, GravitySim.padMinutes(sec)) +
+			OrbitTech.solarCharge(pad.panel, career.light[at], GravitySim.padSeconds(sec));
+		const free = Math.max(0, Math.min(next, pad.battery.capacity) - pad.reservedKwh);
+		const cap = OrbitTech.speedLimit(free, career.ship.mass, pad.catapult, r.sim.forceScale);
+		if (Math.min(GravitySim.SPEED_MAX, cap) <= r.sim.speedLimit(at) + 1e-9) return false;
+		this.prepareCareerExitProbe(r.sim);
+		const speed = this.careerExitSpeed(at, cap);
+		if (!speed || GravityGame.launchFee(career, at, speed) > career.ledger.purse + 1e-9) return false;
 		r.waitTries += 1;
-		/* a charging pad is exactly when a bigger panel or battery pays */
+		/* Only the owner can upgrade the charging pad. */
 		this.careerBetweenFlights(career, r.sim, runStep);
 		r.readyStep = runStep + CAREER_SIT_GAP + (r.gapPhase || 0);
 		this.traceAdd(r.index, 'sit', 'drained pad · charge ' + pad.chargeKwh.toFixed(2) +
@@ -4061,30 +3968,20 @@
 		const why = this.careerNoPlanWhy(career, sim);
 		let recovery = '';
 		r.idleTries += 1;
-		/* a dead end is a fact about the rail, not about the rule's stranded
-		 * flag: the Capital's free imperial rail nothing can lift left a rival
-		 * accepting and dropping contracts for 168 s */
-		const stuck = !this.careerDeparture(career, career.at, career.ledger.purse,
-			career.ship.mass, sim).ok;
-		if (stuck && r.idleTries >= CAREER_STUCK_TRIES && !career.evacuating) {
-			if (GravityGame.evacuate(career, sim, GravityGame.evacuationCost(career), runStep)) {
-				recovery = 'evacuation started';
-			}
+		/* All fans failed, including the commercial fallback and any recharge
+		 * wait. A physical exit into another unaffordable landing isn't a way
+		 * out, even on the Capital where the origin rail itself is free. */
+		if (r.idleTries >= CAREER_STUCK_TRIES && GravityGame.canEvacuate(career) &&
+			GravityGame.evacuate(career, sim, GravityGame.evacuationCost(career), runStep)) {
+			recovery = 'evacuation started';
 		} else if (career.contract >= 0 && r.idleTries >= 3) {
 			GravityGame.dropContract(career);
 			GravityGame.refreshBoard(career, trade, runStep);
-			career.acceptHold = CAREER_ACCEPT_HOLD;
+			career.acceptAfterStep = runStep + CAREER_ACCEPT_HOLD;
 			recovery = 'dropped the unreachable contract';
 		}
-		const wasAt = career.at;
-		const wasStranded = career.stranded;
 		this.careerBetweenFlights(career, sim, runStep);
-		if (!recovery) {
-			if (wasAt < 0 && career.at >= 0) recovery = 'evacuated to P' + career.at;
-			else if (wasStranded && !career.stranded && career.at === career.hq && wasAt !== career.hq) {
-				recovery = 'evacuated to P' + career.at;
-			}
-		}
+		if (career.evacuating) recovery = 'evacuation started';
 		if (recovery) r.idleTries = 0;
 		const gap = recovery ? 1 : CAREER_RIVAL_GAP + (r.gapPhase || 0);
 		r.readyStep = runStep + gap;
@@ -4187,6 +4084,7 @@
 			const pad = GravityGame.padAt(career, plan.origin);
 			const energy = OrbitTech.launchEnergy(career.ship.mass, pad.catapult, plan.speed);
 			GravityGame.reserveEnergy(pad, energy);
+			career.plannedLanding = plan.body;
 			r.turret = {
 				origin: plan.origin,
 				angle: plan.angle,

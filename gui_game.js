@@ -470,7 +470,7 @@ function careerPlayerBotLaunch() {
 	placeGripFromSpeed();
 	dirty = true;
 	armed = true;
-	queueTurretShot();
+	queueTurretShot(plan.body);
 	if (selected !== 0) selectSlot(selected);
 	return true;
 }

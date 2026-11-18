@@ -3400,6 +3400,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		refitShip(career);
 		for (let i = 0; i < BOARD_SIZE; i++) clearTask(career.tasks[i]);
 		career.contract = -1;
+		/* Optional planner state in full saves (absent means no cooldown/intent). */
+		career.acceptAfterStep = 0;
+		career.plannedLanding = -1;
 		career.serial = 0;
 		career.flights = 0;
 		career.burns = 0;
@@ -3484,6 +3487,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		clearEvacuation(career, sim);
 		returnLandingVisits.delete(career);
 		career.at = planet;
+		career.plannedLanding = -1;
 		career.flying = false;
 		setCommercial(career, -1);
 		career.stranded = career.pads[planet].catapult === null;
@@ -3879,7 +3883,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * the pad, clamped to its new capacity. Only a fresh pad (fitPad) starts
 	 * charged, because there is no earlier charge to keep. */
 	function chargeAfterBattery(pad, battery) {
-		pad.chargeKwh = pad.chargeKwh < battery.capacity ? pad.chargeKwh : battery.capacity;
+		pad.chargeKwh = Math.min(pad.chargeKwh, battery.capacity);
 	}
 
 	/* a first catapult brings a starter panel and battery (charged) with it;
@@ -4444,6 +4448,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const used = OrbitTech.impulseFuel(dv, ship.engine, ship.mass, ship.fuelKg);
 		if (!(used > 0)) return false;
 		if (!sim.burn(angle, dv)) return false;
+		career.plannedLanding = -1;
 		ship.fuelKg = ship.fuelKg > used ? ship.fuelKg - used : 0;
 		career.burns += 1;
 		career.lastFuel += used;
@@ -4475,6 +4480,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* a landing settles contracts; a vessel that left the map or timed out is
 	 * lost in space (at = -1) and only an evacuation brings it back */
 	function careerEndFlight(career, sim, trade, step) {
+		career.plannedLanding = -1;
 		career.visitIncome += endFlight(career.ledger);
 		career.flownPx += sim.flightLength;
 		const landed = sim.endReason === GravitySim.END_IMPACT && sim.endBody >= 0;

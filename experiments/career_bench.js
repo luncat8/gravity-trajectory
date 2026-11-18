@@ -390,8 +390,9 @@ check('career start: HQ pad only, sim gates on the network, link codec carries c
 		GravityGame.RULES.career.humanOnly);
 });
 
-check('career board: deliveries pair an exporting colony with a short one, pay below the evacuation fee', () => {
+check('career board: freight connects colonies, tourists use resorts, both price by the load', () => {
 	let offers = 0;
+	let tourists = 0;
 	for (const seed of [1, 7, 42, 913, 2024]) {
 		const w = makeWorld(seed);
 		startCareer(w, seed);
@@ -400,7 +401,11 @@ check('career board: deliveries pair an exporting colony with a short one, pay b
 			if (t.kind !== GravityGame.TASK_DELIVERY) continue;
 			offers += 1;
 			assert.ok(t.from !== t.to && t.from >= 0 && t.to >= 0);
-			assert.ok(w.trade.colonyAt(t.from) && w.trade.colonyAt(t.to), 'both ends are colonies');
+			if (t.tourist) {
+				tourists++;
+				assert.ok(t.to === w.career.arfPlanet || t.to === w.career.capitalPlanet ||
+					t.from === w.career.capitalPlanet, 'tourist resort');
+			} else assert.ok(w.trade.colonyAt(t.from) && w.trade.colonyAt(t.to), 'both freight ends are colonies');
 			assert.ok(t.reward > 0 && (t.reward < CAREER.evacFee || t.deep),
 				'reward ' + t.reward + (t.deep ? ' (deep origin)' : ''));
 			assert.ok(GravityGame.CARGO_TONS.indexOf(t.tons) >= 0);
@@ -408,6 +413,7 @@ check('career board: deliveries pair an exporting colony with a short one, pay b
 			assert.ok(!GravityGame.canAccept(w.career, i), 'HOLD-0 cannot accept cargo');
 		}
 	}
+	assert.ok(tourists > 0 && tourists < offers, 'exercise both boards');
 	assert.ok(offers >= 15, 'only ' + offers + ' offers over 5 seeds');
 });
 
@@ -473,7 +479,10 @@ check('career stranded: building a catapult brings a charged starter pad; the pa
 	assert.ok(sim.canLaunchFrom(here) && sim.canFire(here, 90));
 	assert.ok(!GravityGame.buildGear(career, here, 'catapult', EMC[0]), 'same tier again is a no-op');
 	assert.ok(!GravityGame.buildGear(career, here, 'catapult', EMC[4]), 'cannot afford EMC-5');
+	pad.chargeKwh = 0;
 	assert.ok(GravityGame.buildGear(career, here, 'battery', BAT[1]) && pad.battery === BAT[1]);
+	assert.strictEqual(pad.chargeKwh, 0, 'storage is not a fast charge');
+	assert.ok(!sim.canFire(here, GravitySim.SPEED_MIN));
 	assert.ok(!GravityGame.buildGear(career, here, 'battery', BAT[0]), 'no downgrade');
 });
 
@@ -616,8 +625,9 @@ check('career contracts: hold required, cargo adds mass, delivery pays on landin
 	assert.ok(GravityGame.acceptTask(career, 0));
 	assert.ok(!GravityGame.acceptTask(career, 1), 'one contract at a time');
 	assert.strictEqual(career.contract, 0);
-	/* teleport the idle ship to the origin pad, as a landing there would */
-	GravityGame.buildGear(career, task.from, 'catapult', EMC[0]);
+	/* Simulate the pickup. A tourist may board at the imperial EMC-3:
+	 * compare the same rail, empty and loaded. */
+	const dryLimit = sim.speedLimit(task.from);
 	career.ledger.purse = 50;
 	sim.relocate(task.from);
 	sim.endReason = GravitySim.END_IMPACT;
@@ -626,7 +636,7 @@ check('career contracts: hold required, cargo adds mass, delivery pays on landin
 	GravityGame.careerEndFlight(career, sim, w.trade, w.step);
 	assert.strictEqual(task.state, GravityGame.TASK_LOADED);
 	assert.ok(Math.abs(career.ship.mass - (dryMass + task.tons)) < 1e-9, 'cargo mass');
-	assert.ok(sim.speedLimit(task.from) < OrbitTech.speedLimit(BAT[0].capacity, dryMass, EMC[0]));
+	assert.ok(sim.speedLimit(task.from) < dryLimit);
 	/* deliver */
 	const reward = task.reward;
 	const purse = ledger.purse;
@@ -811,6 +821,9 @@ check('career bulk upgrade: total before, every built pad after, unbuilt untouch
 	const other = (career.hq + 5) % PLANETS;
 	ledger.purse = 20;
 	GravityGame.buildGear(career, other, 'catapult', EMC[0]);
+	const home = career.pads[career.hq];
+	home.chargeKwh = 0.75;
+	GravityGame.reserveEnergy(home, 0.25);
 	const cost = GravityGame.bulkUpgradeCost(career, 'battery', BAT[2]);
 	assert.strictEqual(cost, 2 * BAT[2].buildCost);
 	ledger.purse = cost - 0.5;
@@ -819,10 +832,9 @@ check('career bulk upgrade: total before, every built pad after, unbuilt untouch
 	assert.ok(GravityGame.bulkUpgrade(career, 'battery', BAT[2]));
 	assert.ok(Math.abs(ledger.purse) < 1e-9);
 	assert.ok(career.pads[career.hq].battery === BAT[2] && career.pads[other].battery === BAT[2]);
-	/* storage is bought, not energy: a fresh pad's BAT-1 charge is kept */
-	assert.ok(career.pads[career.hq].chargeKwh === BAT[0].capacity,
-		'a bulk battery upgrade must keep the charge the pad holds: ' +
-		career.pads[career.hq].chargeKwh + ' kWh');
+	assert.strictEqual(home.chargeKwh, 0.75, 'keep kWh, not the old fill percentage');
+	assert.strictEqual(home.reservedKwh, 0.25, 'a queued launch keeps its reservation');
+	assert.strictEqual(career.pads[other].chargeKwh, BAT[0].capacity, 'each pad keeps its own charge');
 	assert.strictEqual(career.pads[(other + 1) % PLANETS].battery, null);
 	assert.strictEqual(GravityGame.bulkUpgradeCost(career, 'battery', BAT[2]), 0);
 });
@@ -837,11 +849,15 @@ check('career cheats: communism prices everything 0; endgame fits all and never 
 	assert.strictEqual(GravityGame.bulkUpgradeCost(career, 'catapult', EMC[4]), 0);
 	assert.strictEqual(ledger.purse, purse);
 	for (let p = 0; p < PLANETS; p++) GravityGame.buildGear(career, p, 'catapult', EMC[0]);
-	assert.ok(career.padCount === PLANETS && career.ended === GravityGame.CAREER_OPEN, 'cheat runs never complete');
+	assert.strictEqual(career.padCount, PLANETS - 1, 'imperial rail cannot be bought');
+	assert.strictEqual(career.pads[career.capitalPlanet].catapult, null);
+	assert.strictEqual(career.ended, GravityGame.CAREER_OPEN, 'cheat runs never complete');
 	const e = makeWorld(42);
 	startCareer(e, 42, GravityGame.CHEAT_ENDGAME);
 	assert.strictEqual(e.ledger.purse, CAREER.endgamePurse);
-	assert.ok(e.career.padCount === PLANETS && e.career.ship.hold === HOLD[2]);
+	assert.strictEqual(e.career.padCount, PLANETS - 1);
+	assert.strictEqual(e.career.pads[e.career.capitalPlanet].catapult, null);
+	assert.strictEqual(e.career.ship.hold, HOLD[2]);
 	assert.ok(e.career.pads[0].catapult === EMC[4] && e.career.pads[0].chargeKwh === BAT[4].capacity);
 	assert.ok(e.sim.canFire(e.career.hq, 200), 'endgame HQ lifts the fitted ship fast');
 	e.career.ship.cargoTons = HOLD[2].capacity;
@@ -921,7 +937,7 @@ check('career in-flight burn: predictBurn & predictBurnFast match stepOne, fuel 
 	const burnStep = sim.liveSteps;
 	const burnAngle = GravityGame.angleOf(GravityGame.angleUnits(-1.1));
 	const burnDv = GravityGame.speedOf(GravityGame.speedUnits(Math.min(8.5, sim.burnLimit() * 0.7)));
-	sim.predictBurn(burnAngle, burnDv);
+	sim.predictBurn(burnAngle, burnDv, 1e9); // full prediction, not the interactive frame budget
 	const predReason = sim.predReason;
 	const predBody = sim.predBody;
 	const predSteps = sim.predSteps;

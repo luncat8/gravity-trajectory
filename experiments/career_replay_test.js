@@ -276,8 +276,17 @@ noHistory.click('replayLoad');
 assert.strictEqual(noHistory.elements.get('replayLoadNote').textContent, 'replay opened');
 assert.strictEqual(get(noHistory, 'replay.career'), true, 'file viewers without history still import');
 
-/* Reject malformed payloads without resetting the current career. */
 const codec = live.context.CareerReplay;
+/* Planner intent/cooldown are optional in an older full snapshot. Neither
+ * field is a required part of the physical run or the replay format. */
+const prior = codec.copy(movie.start);
+for (const career of prior.state.careers) {
+	delete career.plannedLanding;
+	delete career.acceptAfterStep;
+}
+assert.ok(codec.valid(codec.create(prior)), 'an earlier full save must still open');
+
+/* Reject malformed payloads without resetting the current career. */
 const target = loadPage({ search: mapSearch(7) });
 const seed = get(target, 'game.seed');
 const initialSteps = get(target, 'game.clockSteps');

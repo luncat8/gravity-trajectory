@@ -211,5 +211,14 @@ const cancelReplay = verify(cancelCopy.text, cancelled, 0);
 assert.strictEqual(get(cancelReplay, 'slotTurrets[0].pending'), false);
 assert.strictEqual(get(cancelReplay, 'game.clockSteps'), 0);
 
+/* A player-seat bot uses the page's barrel. Cancelling it from a different
+ * selected slot must release the original company's destination. */
+const auto = loadPage({ search: mapSearch(93293) + '&rate=0.5&you=bot' });
+until(auto, 'slotTurrets[0].pending');
+const target = get(auto, 'game.career.plannedLanding');
+assert.ok(target >= 0 && get(auto, 'bot.careerContested(slotCareer(1), game.career.plannedLanding)'));
+get(auto, 'selectSlot(1); cancelTurret(slotTurrets[0])');
+assert.strictEqual(get(auto, 'game.career.plannedLanding'), -1);
+
 console.log('CAREER ACTIONS OK · ' + first.text.length + ' chars for a first launch, ' + record.text.length +
 	' chars for the handover · exact steps, human and bot history, shared inputs and waits');

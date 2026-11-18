@@ -147,7 +147,10 @@ function restoreSaved() {
 function cancelTurret(queued = turret) {
 	if (!queued.pending) return;
 	const queuedSlot = slotTurrets.indexOf(queued);
-	if (queuedSlot >= 0) recordCareerAction('cancelLaunch', undefined, queuedSlot);
+	if (queuedSlot >= 0) {
+		recordCareerAction('cancelLaunch', undefined, queuedSlot);
+		slotCareer(queuedSlot).plannedLanding = -1;
+	}
 	queued.pending = false;
 	GravityGame.releaseEnergy(queued.pad, queued.energy);
 	careerNotice('');
@@ -160,7 +163,8 @@ function cancelTurret(queued = turret) {
 /* the barrel turns with the in-game career clock, so a queued launch fires
  * when the barrel lines up with the aim on world time, not on wall clock,
  * and the aimed shot's energy is reserved from the pad battery at the click */
-function queueTurretShot() {
+function queueTurretShot(plannedLanding = -1) {
+	playerCareer().plannedLanding = plannedLanding;
 	if (!slotIsBot(activeSlotIndex())) recordCareerAction('launch', { origin: aimBody, angle: aimAngle, speed: aimSpeed });
 	const period = GravityGame.turretPeriod(game.galaxy, aimBody);
 	const seconds = game.clockSteps * DT;
@@ -224,6 +228,7 @@ function tickTurret() {
 	armed = true;
 	careerNotice('');
 	fire(NO_ABORT);
+	if (!playerCareer().flying) playerCareer().plannedLanding = -1;
 	return true;
 }
 

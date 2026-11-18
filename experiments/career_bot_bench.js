@@ -255,6 +255,15 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = 
 		bot.careerPrepareFuel(w.actor, plan, w.market, w.step);
 		fly(w, plan);
 	}
+	/* Solo: only active, claimable ground needs a purchase. HQ was free. */
+	let claimable = 0;
+	for (let p = 0; p < PLANETS; p++) {
+		const available = sim.planetActive(p) && GravityGame.planetBuildable(career, p);
+		if (available) claimable++;
+		if (career.ended === GravityGame.CAREER_COMPLETE) {
+			assert.strictEqual(Boolean(career.pads[p].catapult), available, 'pad on P' + p);
+		}
+	}
 	return {
 		seed,
 		ended: career.ended,
@@ -264,6 +273,7 @@ function runCareer(seed, trace, gravityScale = 1, forceScale = 1, useResearch = 
 		steps: w.step,
 		gameSeconds: GravitySim.gameSeconds(w.step),
 		pads: career.padCount,
+		claimable,
 		builds: bot.careerBuilds,
 		upgrades: bot.careerUpgrades,
 		gear: bot.careerPadGearBought,
@@ -654,7 +664,7 @@ check('a flight nudges once, spends tank fuel and logs the burn for the page', (
 		'burn terms are not usable: ' + JSON.stringify(burn));
 	const logged = w.bot.trace.filter(line => line.includes(' burn · Δv '));
 	assert.strictEqual(logged.length, 1, 'burn not trace-logged: ' + logged.join(' | '));
-	assert.ok(logged[0].includes('R1 burn'), 'burn logged under the wrong actor: ' + logged[0]);
+	assert.ok(logged[0].includes('YOU burn'), 'burn logged under the wrong actor: ' + logged[0]);
 });
 
 check('rescueOnly pays one coast trace and leaves a healthy flight alone', () => {
@@ -914,7 +924,7 @@ for (const seed of SEEDS) {
 }
 
 for (const seed of SEEDS) {
-	check('full career seed ' + seed + ': 26 pads from a funded purse', () => {
+	check('full career seed ' + seed + ': all buildable planets from a funded purse', () => {
 		const r = runCareer(seed, process.env.TRACE === '1', 1, 1, false, LATE_PURSE);
 		console.log('  career s' + seed + ': ' + (r.ended === GravityGame.CAREER_COMPLETE ? 'complete' : 'ENDED ' + r.ended) +
 			' · purse ' + r.purse.toFixed(2) + ' · earned ' + r.earned.toFixed(2) +
@@ -924,10 +934,10 @@ for (const seed of SEEDS) {
 			' · traces ' + r.traces + ' · $/h ' +
 			(r.earned / (r.gameSeconds / 3600)).toFixed(2));
 		assert.strictEqual(r.ended, GravityGame.CAREER_COMPLETE, 'career did not complete');
-		assert.strictEqual(r.pads, PLANETS);
+		assert.strictEqual(r.pads, r.claimable);
 		assert.ok(r.purse + 1e-9 >= 0, 'purse went negative: ' + r.purse);
 		assert.ok(r.flights > 0 && r.flights < MAX_FLIGHTS, 'flight guard');
-		assert.ok(r.builds >= PLANETS - 1, 'not all pads were bought through the controller');
+		assert.strictEqual(r.builds, r.claimable - 1, 'not all pads were bought through the controller');
 		if (process.env.CPU === '1') {
 			const hist = [0, 0, 0, 0];
 			for (const n of r.planTrace) {
@@ -947,7 +957,7 @@ for (const seed of SEEDS) {
 for (const world of SCALED_WORLDS) {
 	for (const seed of world.seeds) {
 		check('scaled career seed ' + seed + ' (g ×' + world.gravity + ', f ×' + world.force +
-			'): 26 pads', () => {
+			'): all buildable planets', () => {
 			const r = runCareer(seed, process.env.TRACE === '1', world.gravity, world.force, false,
 				world.purse);
 			console.log('  scaled s' + seed + ' g' + world.gravity + ' f' + world.force + ': ' +
@@ -957,7 +967,7 @@ for (const world of SCALED_WORLDS) {
 				' · upgrades ' + r.upgrades + ' · waits ' + r.waits + ' · fallbacks ' + r.fallbacks +
 				' · evac ' + r.evacuations);
 			assert.strictEqual(r.ended, GravityGame.CAREER_COMPLETE, 'scaled career did not complete');
-			assert.strictEqual(r.pads, PLANETS);
+			assert.strictEqual(r.pads, r.claimable);
 			assert.ok(r.purse + 1e-9 >= 0, 'scaled purse went negative: ' + r.purse);
 			assert.ok(r.flights > 0 && r.flights < MAX_FLIGHTS, 'flight guard');
 		});
@@ -971,7 +981,7 @@ for (const cfg of [
 	{ seed: 42, gravity: 0.8, force: 1.5, purse: LATE_PURSE, label: 'friendly-rail R&D' }
 ]) {
 	check('research career seed ' + cfg.seed + ' (' + cfg.label +
-		'): 26 pads and R&D used', () => {
+		'): all buildable planets and R&D used', () => {
 		const r = runCareer(cfg.seed, process.env.TRACE === '1', cfg.gravity, cfg.force, true,
 			cfg.purse);
 		console.log('  research s' + cfg.seed + ' g' + cfg.gravity + ' f' + cfg.force + ': ' +
@@ -980,7 +990,7 @@ for (const cfg of [
 			' · pads ' + r.pads + ' · flights ' + r.flights + ' · deliveries ' + r.delivered +
 			' · researches ' + r.researches + ' · upgrades ' + r.upgrades + ' · burns ' + r.burns);
 		assert.strictEqual(r.ended, GravityGame.CAREER_COMPLETE, 'research career did not complete');
-		assert.strictEqual(r.pads, PLANETS);
+		assert.strictEqual(r.pads, r.claimable);
 		assert.ok(r.researches >= 1, 'bot did not unlock any research prototype');
 		assert.ok(r.purse + 1e-9 >= 0, 'research purse went negative: ' + r.purse);
 	});
@@ -1008,6 +1018,8 @@ check('career rivals queue on the EMC barrel: the shot fires only once it lines 
 	const commercial = r.turret.pad === GravityGame.COMMERCIAL_PAD;
 	assert.strictEqual(r.turret.pad.reservedKwh, commercial ? 0 : r.turret.energy,
 		'the queued shot must reserve the pad charge it needs');
+	const target = r.turret.body;
+	assert.strictEqual(r.career.plannedLanding, target);
 	const fireAt = r.turret.fireAt;
 	while (step < fireAt + 2 && r.sim.status !== GravitySim.STATUS_FLYING) {
 		step += 1;
@@ -1015,6 +1027,7 @@ check('career rivals queue on the EMC barrel: the shot fires only once it lines 
 	}
 	assert.strictEqual(r.sim.status, GravitySim.STATUS_FLYING, 'the aligned shot never fired');
 	assert.strictEqual(r.turret, null, 'the fired shot keeps its queue entry');
+	assert.strictEqual(r.career.plannedLanding, target, 'the destination stays contested in flight');
 	assert.strictEqual(r.turret === null && r.career.pads[r.sim.origin].reservedKwh, 0,
 		'the fired shot must release its reservation');
 });
@@ -1128,31 +1141,33 @@ check('flat fees are priced as fees: a lost or stranded ship evacuates', () => {
 	career.stranded = true;
 	assert.ok(w.bot.careerBetweenFlights(career, w.sim) > 0,
 		'the idle controller ignored a ship in space');
+	assert.ok(career.evacuating, 'the lost ship was not picked up');
+	GravityGame.advanceEvacuation(career, w.sim, career.evacUntilStep, w.trade);
 	assert.strictEqual(career.at, career.hq, 'the lost ship did not come home');
 	assert.strictEqual(career.evacuations, 1);
-	/* a stranded landing: the launch path evacuates after two planless tries.
+	/* a stranded landing: the launch path starts the return ride.
 	 * Cargo is loaded so heavy (94 t total) that neither the commercial EMC-1
 	 * nor a freshly built starter EMC-1/BAT-1 can lift it above SPEED_MIN,
-	 * so the only way out is the evacuation fee. */
-	const other = (career.hq + 1) % PLANETS;
+	 * and a stronger kit costs more than the remaining purse. */
+	const other = career.pads.findIndex((pad, p) => !pad.catapult && p !== career.capitalPlanet);
 	career.at = other;
 	career.stranded = true;
 	w.sim.relocate(other);
 	career.ship.cargoTons = 84;
 	career.ship.mass = OrbitTech.shipMass(career.ship, 84);
-	w.ledger.purse = 8;
+	w.ledger.purse = GravityGame.CAREER.evacFee;
 	const r = w.bot.rivals[0];
 	r.career = career;
 	r.sim = w.sim;
 	r.idleTries = 0;
 	w.bot.careerPlan = () => null;
 	w.bot.traceReset();
-	for (let i = 0; i < 3; i++) {
-		assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, FIELD_RATE, 1000 + i * 600), false);
-	}
+	assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, FIELD_RATE, 1000), false);
 	assert.strictEqual(career.evacuations, 2, 'the stranded ship never evacuated');
+	assert.ok(career.evacuating);
+	GravityGame.advanceEvacuation(career, w.sim, career.evacUntilStep, w.trade);
 	assert.strictEqual(career.at, career.hq);
-	assert.ok(w.bot.trace.some(line => line.includes('evacuated to P')),
+	assert.ok(w.bot.trace.some(line => line.includes('evac · P' + other + ' → HQ')),
 		'the evacuation is missing from the decision trace');
 });
 
@@ -1199,9 +1214,11 @@ check('a finished career gives its queued pad charge back', () => {
 	const pad = r.career.pads[r.career.hq];
 	GravityGame.reserveEnergy(pad, 0.5);
 	r.turret = { pad: pad, energy: 0.5, fireAt: 99999 };
+	r.career.plannedLanding = 5;
 	r.career.ended = GravityGame.CAREER_COMPLETE;
 	w.bot.stepCareer(100, w.market, w.trade);
 	assert.strictEqual(r.turret, null, 'the queue outlived the company');
+	assert.strictEqual(r.career.plannedLanding, -1);
 	assert.strictEqual(pad.reservedKwh, 0, 'the reserved charge was never released');
 });
 
