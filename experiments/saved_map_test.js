@@ -10,7 +10,7 @@
  *    JS context — the save action's only format — and the committed registry
  *    is exactly that text.
  * 4. A page booted on `?map=` is the page its seed link boots, minus the
- *    search: seated from the record, and the same run frame for frame, at the
+ *    search: seated from the record, and the same run step for step, at the
  *    record's orbit rate or the one the address asks for.
  * 5. An exact state captured at rest and restored into a second page continues
  *    identically: both pages are driven with the same frames and their captured
@@ -122,15 +122,23 @@ console.log('file text: ' + Buffer.byteLength(text) + ' bytes');
 
 /* --- 4. a page booted on a saved map ------------------------------------ */
 
-/* one frame at a time until the run has real progress and every company is on
- * the ground with no barrel waiting: the only moment an exact state can be
- * saved, and a full flight into the run. Returns the frames it took. */
-function stepToRest(env, maxFrames, minStep, minFlights) {
-	for (let i = 0; i < maxFrames; i++) {
-		env.runFrames(1, 16.0);
-		const game = env.context.GravityScene.game;
-		if (game.clockSteps < minStep || game.career.flights < minFlights) continue;
-		if (env.context.careerAtRest() === '') return i + 1;
+/* The fixture needs a landed snapshot, not a particular itinerary. Advance
+ * real page steps without painting until all three companies stop together. */
+function stepPage(env) {
+	return vm.runInContext(`() => {
+		playAcc = 0;
+		stepGame(performance.now(), 1.25 * DT / playScale());
+		return game.clockSteps;
+	}`, env.context);
+}
+
+function stepToRest(env) {
+	const advance = stepPage(env);
+	const { game, bot } = env.context.GravityScene;
+	for (let i = 0; i < 5 * GravityGame.CAP_STEPS; i++) {
+		const step = advance();
+		if (game.career.flights === 0 || env.context.careerAtRest() !== '') continue;
+		if (!bot.rivals.slice(0, bot.count).some(rival => rival.turret)) return step;
 	}
 	return -1;
 }
@@ -174,11 +182,12 @@ const seedRun = loadPage({
 const seedMs = Date.now() - seedStart;
 const bootState = runState(mapRun);
 assert.strictEqual(bootState, runState(seedRun), '?map=0 boots the run its seed link plans');
-const flown = stepToRest(seedRun, 6000, 400, 1);
+const flown = stepToRest(seedRun);
 assert.ok(flown > 0, 'the seed-link run flew a flight and came to rest');
-mapRun.runFrames(flown, 16.0);
+const advanceMap = stepPage(mapRun);
+for (let step = 1; step <= flown; step++) assert.strictEqual(advanceMap(), step);
 assert.strictEqual(runState(mapRun), runState(seedRun),
-	'both boots fly the same run for ' + flown + ' frames');
+	'both boots fly the same run for ' + flown + ' steps');
 assert.strictEqual(mapRun.context.Math.random(), seedRun.context.Math.random(),
 	'both boots leave the page the same random stream');
 
@@ -192,7 +201,7 @@ assert.strictEqual(slowState.ships[0].fieldRate, 0.5, 'rate= reaches the ship');
 slowState.ships[0].fieldRate = start.rate;
 assert.strictEqual(JSON.stringify(slowState), bootState, 'rate= changes the rate and nothing else');
 console.log('page boot: ?map=0 in ' + bootMs + ' ms · its seed link in ' + seedMs +
-	' ms · same run after ' + flown + ' frames · rate= honoured');
+	' ms · same run after ' + flown + ' steps · rate= honoured');
 
 /* the address after any boot says what the page is: `?map=` is a way in, not a
  * state, so it is gone by the time the page has started and every param it
@@ -233,8 +242,7 @@ console.log('address: map, universe and roster of the run, reloaded the same');
 
 const search = '?map=0&you=bot';
 const pageA = loadPage({ search: search, random: () => 0.5 });
-const frames = stepToRest(pageA, 6000, 400, 1);
-assert.ok(frames > 0, 'page A reached a rest point to save from');
+assert.ok(stepToRest(pageA) > 0, 'page A reached a rest point to save from');
 const save = pageA.context.GravityMaps.runRecord(pageA.context.mapRunInfo());
 assert.strictEqual(save.kind, 'run');
 assert.ok(save.state.careers[0].flights > 0, 'the saved run has flown a flight');
@@ -271,7 +279,7 @@ if (a !== b) {
 		a.slice(Math.max(0, at - 120), at + 120) + ' | ' +
 		b.slice(Math.max(0, at - 120), at + 120));
 }
-console.log('exact state: saved at frame ' + frames + ', restored, ' + runFrames +
-	' frames identical · purse ' + savedPurse.toFixed(2) + ' · step ' + savedStep);
+console.log('exact state: saved at step ' + savedStep + ', restored, ' + runFrames +
+	' frames identical · purse ' + savedPurse.toFixed(2));
 
 console.log('SAVED MAPS OK');

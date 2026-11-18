@@ -983,12 +983,13 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	/* the pad `career` fires from on `planet`: the commercial EMC-1 stands on
 	 * every planet and wins whenever it is the chosen rail, else your own EMC,
-	 * else the best rival EMC, else the commercial one again */
-	function padAt(career, planet) {
+	 * else the best rival EMC, else the commercial one again. Ignore the
+	 * one-shot override when forecasting the rail after a landing. */
+	function padAt(career, planet, useCommercial = true) {
 		if (planet === career.capitalPlanet) return CAPITAL_PAD;
 		const rebel = rebelRail(career, planet);
 		if (rebel) return rebel;
-		if (career.commercialPlanet === planet) return COMMERCIAL_PAD;
+		if (useCommercial && career.commercialPlanet === planet) return COMMERCIAL_PAD;
 		if (career.pads[planet].catapult !== null) return career.pads[planet];
 		if (!career.galaxy) return COMMERCIAL_PAD;
 		const owner = foreignOwner(career.galaxy, career, planet);
@@ -997,13 +998,13 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	/* owner index of that pad, -1 for the neutral commercial EMC, -2 for the
 	 * fixed imperial rail on the Capital */
-	function padOwner(career, planet) {
+	function padOwner(career, planet, useCommercial = true) {
 		if (planet === career.capitalPlanet) return OWNER_CAPITAL;
 		const market = career.market;
 		if (market && market.rebel[planet]) return OWNER_REBEL;
 		/* a quelled rebellion leaves its rail commercial for good */
 		if (market && market.seized[planet]) return OWNER_COMMERCIAL;
-		if (career.commercialPlanet === planet) return OWNER_COMMERCIAL;
+		if (useCommercial && career.commercialPlanet === planet) return OWNER_COMMERCIAL;
 		if (career.pads[planet].catapult !== null) return career.index;
 		if (!career.galaxy) return OWNER_COMMERCIAL;
 		return foreignOwner(career.galaxy, career, planet);

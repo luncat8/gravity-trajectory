@@ -121,4 +121,164 @@ for (const condition of [0.6, 0]) {
 	assert.ok(!bot.careerAccept(career, 199, sim), 'another shop is not another time step');
 	assert.ok(bot.careerAccept(career, 200, sim));
 }
-console.log('BOT GRAVITY OK · claim economics, repair, whole kits, guest recharge and contracts');
+/* A pay-positive visit isn't necessarily a profitable return. Commercial
+ * selection prices this shot only; on landing the natural rail is back. */
+{
+	const { bot, career, Game } = opening();
+	const p = career.at;
+	const score = (pay, fee) => bot.careerScoreFacts(career, p, career.market,
+		0, 0, fee, p, pay, 1000, 120, 50, 0.4, 0.8, 0);
+	assert.strictEqual(score(0.3, 0), -Infinity, 'even a reported bounce can lose money');
+	assert.ok(Math.abs(score(1, 0) - 0.6) < 1e-9, 'a real harvest loop has no fictitious pad penalty');
+	Game.setCommercial(career, p);
+	const fee = Game.launchFee(career, p, 50);
+	assert.strictEqual(score(fee + 0.3, fee), -Infinity, 'a return must cover its commercial fee');
+	assert.ok(Math.abs(score(fee + 1, fee) - fee - 0.6) < 1e-9);
+	assert.strictEqual(bot.careerEval.exitSource, 'own', 'a return must see the real rail after landing');
+	assert.ok(!bot.careerEval.builds);
+	assert.strictEqual(Game.padOwner(career, p), Game.OWNER_COMMERCIAL, 'the forecast must not switch the live rail');
+}
+
+/* A booked contract pickup can score well on credit without earning cash.
+ * It must not rule out trying fresh shots. A rich, currently payable entry
+ * still skips tracing. An expired leg does not count as a directed hit. */
+{
+	const { bot, sim, career, Game, Tech } = opening();
+	const target = 6;
+	career.ledger.purse = 20;
+	assert.ok(Game.buildGear(career, target, 'catapult', Tech.CATAPULTS[0]));
+	assert.ok(Game.installPart(career, 'hold', Tech.HOLDS[1]));
+	for (const task of career.tasks) task.kind = Game.TASK_NONE;
+	const task = career.tasks[0];
+	Object.assign(task, { kind: Game.TASK_DELIVERY, state: Game.TASK_OFFERED, from: target,
+		to: 8, tons: 2, reward: 30, deadline: 50000 });
+	assert.ok(Game.acceptTask(career, 0));
+	const market = career.market;
+	const k = market.k;
+	market.k = 0;
+	const plan = bot.careerPlan(career, sim, market, 10, true);
+	assert.ok(plan && plan.body === target && plan.score >= 6, 'fixture needs a high-credit pickup');
+	assert.ok(bot.careerPlan(career, sim, market, 11, true));
+	assert.ok(bot.careerScan.book > 0 && bot.careerScan.tried > 0, 'pickup credit is not harvest cash');
+	market.k = k;
+	market.lastVisitStep.fill(-100000);
+	assert.ok(bot.careerPlan(career, sim, market, 12, true).fromBook);
+	assert.strictEqual(bot.careerScan.tried, 0, 'a strong cash-paying book shot still saves the fan');
+	task.deadline = 14;
+	assert.strictEqual(bot.careerPlan(career, sim, market, 13, true), null, 'cannot pick up after the deadline');
+}
+
+/* Keep the five coarse speed rungs. Normal and hard spend only a small
+ * extra fan around promising aims; easy still uses the cheap coarse fan. */
+for (const [level, extra] of [['easy', 0], ['normal', 14], ['hard', 21]]) {
+	const { bot, sim, career, Game } = opening();
+	bot.setPlayerType(Game.PLAYER_BOT);
+	bot.setLevel(level);
+	career.flights = 1;
+	const predict = bot.probe.predictFast;
+	let extended = 0;
+	let top = 0;
+	const limit = sim.speedLimit(career.at);
+	bot.probe.predictFast = function (origin, angle, speed, horizon) {
+		assert.ok(speed <= limit + 1e-9, 'a refinement exceeded live battery charge');
+		assert.ok(horizon <= (level === 'hard' ? 120 : 90));
+		if (horizon > 45) extended++;
+		top = Math.max(top, speed);
+		return predict.call(this, origin, angle, speed, horizon);
+	};
+	assert.ok(bot.careerPlan(career, sim, career.market, 100, false, bot.spec().careerAngles));
+	assert.ok(limit - top < 0.01, 'the primary fan dropped its full-speed rung');
+	if (extra) assert.ok(extended > 0 && extended <= extra, 'bounded refinement count: ' + extended);
+	else assert.strictEqual(extended, 0);
+}
+
+/* Book, fresh fan and shared commercial barrels: never duplicate the aim
+ * another company has committed, even if the destination penalty is small. */
+{
+	const { bot, sim, career, Game } = opening();
+	const market = career.market;
+	const rival = bot.rivals[0];
+	const plan = { ...bot.careerPlan(career, sim, market, 10, true) };
+	assert.ok(plan.origin >= 0 && plan.body >= 0);
+	rival.career.at = plan.origin;
+	rival.career.plannedLanding = plan.body;
+	rival.turret = plan;
+	const different = bot.careerPlan(career, sim, market, 11, true);
+	assert.ok(!different || different.angleU !== plan.angleU || different.speedU !== plan.speedU);
+	assert.ok(bot.careerScan.busy > 0, 'no rival aim was skipped');
+	assert.ok(!bot.careerShotBusy(career, plan.origin, plan.angleU + 1, plan.speedU), 'nearby aims remain available');
+	rival.turret = null;
+	rival.sim.relocate(plan.origin);
+	Game.setCommercial(rival.career, plan.origin);
+	rival.sim.launch(plan.origin, plan.angle, plan.speed);
+	Game.careerBeginFlight(rival.career, rival.sim);
+	assert.ok(bot.careerShotBusy(career, plan.origin, plan.angleU, plan.speedU), 'a coasting rival still harvests that route');
+	rival.career.flying = false;
+	rival.career.plannedLanding = -1;
+	assert.ok(!bot.careerShotBusy(career, plan.origin, plan.angleU, plan.speedU), 'a landed rival no longer blocks the trajectory');
+	bot.setPlayerType(Game.PLAYER_BOT);
+	Object.assign(bot.careerPlayer.plan, plan);
+	career.plannedLanding = plan.body;
+	assert.ok(bot.careerShotBusy(rival.career, plan.origin, plan.angleU, plan.speedU), 'YOU shares the same deconfliction');
+}
+
+/* A loaded fragile contract searches the safe speed band, including at
+ * full battery, rather than selecting an impact that would void the order. */
+{
+	const { bot, sim, career, Game, Tech } = opening();
+	career.ledger.purse = 20;
+	assert.ok(Game.buildGear(career, career.at, 'catapult', Tech.CATAPULTS[1]));
+	assert.ok(Game.buildGear(career, career.at, 'battery', Tech.BATTERIES[1]));
+	career.pads[career.at].chargeKwh = Tech.BATTERIES[1].capacity;
+	assert.ok(Game.installPart(career, 'hold', Tech.HOLDS[1]));
+	Object.assign(career.tasks[0], { kind: Game.TASK_DELIVERY, state: Game.TASK_OFFERED,
+		from: career.at, to: 6, reward: 2, tons: 2, fragile: true, deadline: 50000 });
+	assert.ok(Game.acceptTask(career, 0));
+	assert.ok(sim.speedLimit(career.at) > Game.FRAGILE_SPEED, 'fixture needs a rail strong enough to break the load');
+	const predict = bot.probe.predictFast;
+	let shots = 0;
+	bot.probe.predictFast = function (origin, angle, speed, horizon) {
+		assert.ok(speed <= Game.FRAGILE_SPEED + 1e-9);
+		shots++;
+		return predict.call(this, origin, angle, speed, horizon);
+	};
+	bot.careerPlan(career, sim, career.market, 100, true);
+	assert.ok(shots > 0);
+}
+
+/* Ordinary patience can run out; an affordable recharge still beats a
+ * cash-losing commercial ticket that neither claims a pad nor advances work. */
+{
+	const { bot, sim, career } = opening();
+	career.pads[career.at].chargeKwh = 0.48;
+	const r = { career, sim, index: 0, idleTries: 0, waitTries: 4 };
+	const fare = { builds: false, cashNet: -2, fee: 4.54 };
+	bot.careerPlan = c => c.commercialPlanet < 0 ? null : fare;
+	assert.strictEqual(bot.careerNextShot(r, career.market, bot.tradeSim, 100), null);
+	assert.strictEqual(career.commercialPlanet, -1, 'one-shot commercial override must clear on a wait');
+	assert.ok(r.readyStep > 100 && !career.evacuating);
+	assert.ok(bot.trace.some(line => line.includes('instead of losing a 4.54 commercial ticket')));
+}
+
+/* A return loop is not a reposition toward the unreachable destination. Drop
+ * the load and reprice at dry mass before choosing a shot, then pause the board. */
+{
+	const { bot, sim, career, Game, Tech } = opening();
+	assert.ok(Game.installPart(career, 'hold', Tech.HOLDS[1]));
+	const task = career.tasks[0];
+	Object.assign(task, { kind: Game.TASK_DELIVERY, state: Game.TASK_OFFERED,
+		from: career.at, to: 6, reward: 2, tons: 2, deadline: 10000 });
+	assert.ok(Game.acceptTask(career, 0));
+	const loaded = career.ship.mass;
+	const loop = { origin: career.at, body: career.at, score: 1 };
+	bot.careerPlan = (c, src, market, step, fallback, angles, relaxed) => {
+		if (c.contract >= 0) return relaxed ? loop : null;
+		assert.ok(c.ship.mass < loaded, 'the replacement shot must be priced dry');
+		return loop;
+	};
+	const actor = { career, sim, index: 0, idleTries: 0, waitTries: 0 };
+	assert.strictEqual(bot.careerNextShot(actor, career.market, bot.tradeSim, 100), loop);
+	assert.strictEqual(career.contract, -1);
+	assert.ok(career.acceptAfterStep > 100 && !bot.careerAccept(career, 100, sim));
+}
+console.log('BOT GRAVITY OK · claims, exit kits, recharge, paid returns, book gate, refinements, shared shots and work legs');

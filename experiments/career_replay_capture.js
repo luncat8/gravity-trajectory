@@ -23,19 +23,38 @@ assert.strictEqual(get(live, 'slotTypes.slice(0, slotCount()).join(",")'), 'bot,
 /* Observe ownership at impact, not at the end (when the landing may have
  * been claimed or seized). This counter spans refinancings, unlike a ledger. */
 const unclaimed = [0, 0, 0];
-const { GravityScene, GravityGame } = live.context;
+const { GravityScene, GravityGame, GravityBot, GravitySim } = live.context;
+const seconds = steps => GravitySim.gameSeconds(steps).toFixed(2);
+const activity = names.map(() => ({ flights: 0, returns: 0, flightSteps: 0, stop: 0, longestGap: 0, sits: 0, noShots: 0 }));
+const bot = GravityScene.bot;
+const trace = bot.traceAdd;
+bot.traceAdd = function (index, decision, detail, step, move) {
+	const slot = index === GravityBot.PLAYER_INDEX ? 0 : index + 1;
+	if (index >= 0 && slot < activity.length) {
+		const row = activity[slot];
+		if (decision === 'fire') row.longestGap = Math.max(row.longestGap, step - row.stop);
+		if (decision === 'sit') row.sits++;
+		if (decision === 'no shot') row.noShots++;
+	}
+	return trace.call(this, index, decision, detail, step, move);
+};
 const first = [null, null, null];
 const build = GravityGame.buildGear;
 GravityGame.buildGear = function (career, planet, kind, item) {
 	const before = career.padCount;
 	const bought = build(career, planet, kind, item);
-	if (bought && career.padCount > before && !first[career.index]) {
+	if (bought && career.padCount > before && career.at === planet && !first[career.index]) {
 		first[career.index] = `P${planet} ${item.id} (g ${GravityScene.bot.strength[planet]}) @ ${get(live, 'game.clockSteps')}`;
 	}
 	return bought;
 };
 const land = GravityScene.bot.traceCareerLanding;
 GravityScene.bot.traceCareerLanding = function (career, sim, step) {
+	const row = activity[career.index];
+	row.stop = step;
+	row.flightSteps += sim.liveSteps;
+	if (career.at >= 0) row.flights++;
+	if (career.at === sim.origin) row.returns++;
 	if (career.at >= 0 && !career.pads[career.at].catapult && GravityGame.planetBuildable(career, career.at)) {
 		unclaimed[career.index]++;
 	}
@@ -85,18 +104,29 @@ assert.match(replay.elements.get('careerMsg').textContent, /history matches/);
 assert.strictEqual(get(replay, 'careerActionReplay.skipped'), 0);
 const state = 'JSON.stringify(careerRecordingSnapshot().state.careers)';
 assert.strictEqual(get(replay, state), get(live, state), 'company states differ after playback');
+for (let i = 0; i < names.length; i++) {
+	const history = 'JSON.stringify(careerEventsFor(' + i + '))';
+	assert.strictEqual(get(replay, history), get(live, history), names[i] + ' history differs after playback');
+}
 
 console.log('seed', data.seed, '· map', MAP, '· step', data.steps, '· rate', data.rate);
 for (let i = 0; i < names.length; i++) {
 	const c = GravityScene.career.galaxy.actors[i];
 	const past = retired[i];
-	console.log(names[i] + ' · first EMC ' + (first[i] || 'none') +
+	console.log(names[i] + ' · first on-site EMC ' + (first[i] || 'none') +
 		' · ' + unclaimed[i] + ' unclaimed landings · ' + c.padCount + ' pads · ' + c.flights +
 		' flights · purse ' + c.ledger.purse.toFixed(2) + ' · visits ' + c.visitIncome.toFixed(2) +
 		' · build ' + c.buildSpent.toFixed(2) + ' · fees ' + c.feesPaid.toFixed(2) +
 		' · tax +' + c.taxEarned.toFixed(2) + ' / −' + c.taxPaid.toFixed(2) +
 		' · ' + c.delivered + ' delivered · ' + c.evacuations + ' evac · repairs ' + c.maintenanceSpent.toFixed(2) +
 		' · ' + past.restarts + ' restarts' + (c.ended ? ' · ended ' + c.ended : ''));
+	const row = activity[i];
+	const partial = c.flying ? get(live, 'slotSim(' + i + ').liveSteps') : 0;
+	if (!c.flying) row.longestGap = Math.max(row.longestGap, STEPS - row.stop);
+	console.log('  ' + row.flights + ' landings · ' + row.returns + ' returns · ' +
+		seconds(row.flightSteps + partial) + ' s flying · longest gap ' + seconds(row.longestGap) +
+		' s · ' + row.sits + ' sits · ' + row.noShots + ' no shots');
+
 	if (past.restarts) console.log('  including retired ledgers: ' + (c.flights + past.flights) +
 		' flights · visits ' + (c.visitIncome + past.visits).toFixed(2));
 }
