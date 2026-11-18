@@ -1,0 +1,259 @@
+/* Saved maps: a start map is a proven career opening (seed, universe, seat
+ * plan); a run adds an exact snapshot of the live state. Written by the game's
+ * save action and by `node experiments/make_saved_maps.js` — edit by saving,
+ * not by hand. Loading is just this file being present. */
+(function (root) {
+	'use strict';
+	const MAPS = [
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 1 · 13 planets · 3 seats",
+			seed: 1,
+			universe: 13,
+			seats: [2, 3, 9],
+			targetPay: 3.7605317875542883,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "career default",
+			stats: {
+				weakest: 0.88,
+				sites: 2
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 2 · 13 planets · 3 seats",
+			seed: 2,
+			universe: 13,
+			seats: [0, 7, 6],
+			targetPay: 2.1737928300215765,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "career default",
+			stats: {
+				weakest: 0.87,
+				sites: 2
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 3 · 13 planets · 2 seats",
+			seed: 3,
+			universe: 13,
+			seats: [8, 1],
+			targetPay: 1.4313670372268554,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "YOU + one rival",
+			stats: {
+				weakest: 0.97,
+				sites: 1
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 4 · 26 planets · 3 seats",
+			seed: 4,
+			universe: 26,
+			seats: [23, 12, 6],
+			targetPay: 3.129151785436959,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "the old 26-world subset",
+			stats: {
+				weakest: 0.89,
+				sites: 6
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 2 · 8 planets · 2 seats",
+			seed: 2,
+			universe: 8,
+			seats: [6, 0],
+			targetPay: 1.7929402467265765,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "the small universe",
+			stats: {
+				weakest: 0.92,
+				sites: 2
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 5 · 26 planets · 4 seats",
+			seed: 5,
+			universe: 26,
+			seats: [18, 23, 12, 13],
+			targetPay: 1.86154819755008,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "four companies on 26",
+			stats: {
+				weakest: 0.92,
+				sites: 1
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 42 · 13 planets · 3 seats",
+			seed: 42,
+			universe: 13,
+			seats: [1, 3, 12],
+			targetPay: 1.0558258977968071,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "career default · a page-test world",
+			stats: {
+				weakest: 0.77,
+				sites: 3
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 7 · 13 planets · 3 seats",
+			seed: 7,
+			universe: 13,
+			seats: [6, 5, 0],
+			targetPay: 2.564252636946226,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "career default · a page-test world",
+			stats: {
+				weakest: 0.9,
+				sites: 1
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 3 · 13 planets · 3 seats",
+			seed: 3,
+			universe: 13,
+			seats: [9, 8, 3],
+			targetPay: 1.3227332571102466,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "career default · a page-test world",
+			stats: {
+				weakest: 0.65,
+				sites: 1
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 520383 · 13 planets · 3 seats",
+			seed: 520383,
+			universe: 13,
+			seats: [4, 10, 11],
+			targetPay: 2.0082260696753766,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "career default · a page-test world",
+			stats: {
+				weakest: 0.78,
+				sites: 1
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 93293 · 13 planets · 3 seats",
+			seed: 93293,
+			universe: 13,
+			seats: [11, 2, 7],
+			targetPay: 1.175128135558583,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 0.5,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false
+		}
+	];
+	if (typeof module !== 'undefined' && module.exports) module.exports = MAPS;
+	else root.SAVED_MAPS = MAPS;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
