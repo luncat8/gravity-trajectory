@@ -570,6 +570,25 @@ function careerRepair() {
 	return true;
 }
 
+/* auto-repair on landing: the same service the repair button buys, paid on
+ * touchdown while the purse covers it and keeps one cheap way off any planet
+ * (the bot's reserve); at 0 % condition the whole purse may serve, since
+ * nothing flies before the repair anyway. Off during any playback: the
+ * recorded repair lands through the action log there. */
+function autoRepairOnLanding() {
+	if (!autoRepair || !careerRule() || replay.on || careerActionReplay.active || slotIsBot(0)) return;
+	const career = game.career;
+	if (!career || career.ended !== GravityGame.CAREER_OPEN || career.flying || career.at < 0) return;
+	if (career.arrested || career.ship.condition >= 1) return;
+	const cost = GravityGame.repairCost(career);
+	const reserve = career.ship.condition > 0 ? GravityGame.commercialMinFee() : 0;
+	if (career.ledger.purse + 1e-9 < cost + reserve) {
+		careerNotice('auto-repair skipped · purse too small for the repair');
+		return;
+	}
+	careerRepair();
+}
+
 /* (0.5.12) the rulers' bribe: money for the company, rot for the planet and
  * a chance of the Capital transport instead */
 function careerBribe() {

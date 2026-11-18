@@ -759,6 +759,7 @@ function endGameFlight() {
 		const competitions = career.competitions;
 		GravityGame.careerEndFlight(career, cargoSim, tradeSim, game.clockSteps);
 		bot.traceCareerLanding(career, cargoSim, game.clockSteps);
+		autoRepairOnLanding();
 		if (career.delivered > delivered) careerPhoto('delivery');
 		else if (career.competitions > competitions) careerPhoto('sport');
 		/* the shop follows the ship again after every landing / stranding */

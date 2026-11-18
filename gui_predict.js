@@ -433,6 +433,8 @@ function refreshCareerClockUi() {
 	}
 	if (careerPauseLandLabelEl) careerPauseLandLabelEl.hidden = !allowed;
 	if (careerPauseLandEl) careerPauseLandEl.checked = pauseOnLanding;
+	if (careerAutoRepairLabelEl) careerAutoRepairLabelEl.hidden = !allowed;
+	if (careerAutoRepairEl) careerAutoRepairEl.checked = autoRepair;
 }
 
 function syncCareerPause() {

@@ -1237,6 +1237,13 @@ check(kui.get('careerPlanet').innerHTML.includes(' · commercial'),
 	'planet picker marks unbuilt planets as the commercial rail: ' + kui.get('careerPlanet').innerHTML);
 check(kui.get('careerTasks').innerHTML.includes('careerRow'), 'career task board empty');
 check(kui.get('gameScore').textContent === '6.00 purse', 'career score is the purse: ' + kui.get('gameScore').textContent);
+/* the default is checked and visible; this fixture wants the worn ship on
+ * landing, so it flies with the auto-repair setting off */
+check(kScene.autoRepair() && kui.get('careerAutoRepair').checked &&
+	!kui.get('careerAutoRepairLabel').hidden,
+	'auto-repair ships checked and visible');
+careerEnv.toggle('careerAutoRepair');
+check(!kScene.autoRepair() && !kui.get('careerAutoRepair').checked, 'auto-repair must toggle off');
 const noPad = (career.hq + 3) % pageWorld.PLANETS;
 careerEnv.dragAim(noPad, 0.7, CAREER_TEST_SPEED);
 careerEnv.runFrames(2, 16.0);
@@ -1876,6 +1883,8 @@ console.log('career drawer:', 'built P' + far, '· bulk EMC-2 · hold', shopCare
 	'· wait', sui.get('careerMsg').textContent);
 /* the whole gate: land without a catapult, build one from the pad block, launch again */
 const buildEnv = loadPage({ search: '?rule=career&seed=7&rate=1', clipboard: false });
+/* the landing must leave the ship worn for the repair-launch checks below */
+buildEnv.toggle('careerAutoRepair');
 buildEnv.runFrames(2, 16.0);
 const bui = buildEnv.elements;
 const bScene = buildEnv.context.GravityScene;
@@ -3007,6 +3016,8 @@ function protoOf(career, family, id) {
 		'the flight hud must own the ship facts, the fuel row, the work rows and the action row');
 
 	const cEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
+	/* the landing must leave the ship worn for the repair checks below */
+	cEnv.toggle('careerAutoRepair');
 	cEnv.runFrames(2, 16.0);
 	const cui = cEnv.elements;
 	const cScene = cEnv.context.GravityScene;
@@ -3850,6 +3861,8 @@ function protoOf(career, family, id) {
  * action, the caret menu's separate repair and launch, and the gates at 0 */
 {
 	const wEnv = loadPage({ search: '?rule=career&seed=42&rate=1', clipboard: false });
+	/* the landing must leave the ship worn for the repair & launch checks */
+	wEnv.toggle('careerAutoRepair');
 	wEnv.runFrames(2, 16.0);
 	const wui = wEnv.elements;
 	const wScene = wEnv.context.GravityScene;

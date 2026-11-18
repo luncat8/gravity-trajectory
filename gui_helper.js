@@ -63,7 +63,7 @@ function helperUpdateUi() {
 		helperProfitBtn.title = landed < 0
 			? 'career · land somewhere to scan for money shots'
 			: 'scan 34 aims from ' + planetName(landed) +
-				' · rank by money (visits + contract legs − EMC fee − exit − repair and wear)' +
+				' · rank by money (visits + contract legs − EMC fee − exit − the wear the shot adds)' +
 				' · a saved shot that pays more wins';
 	}
 	if (helperEmcBtn) {

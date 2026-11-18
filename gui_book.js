@@ -125,8 +125,11 @@ const shotMoney = {
 
 /* A fresh trace and a stored visit log differ only in the harvest they
  * price, so both feed this table: the rule's landing factors (cash for the
- * purse, credit for the contract leg it advances), the launch fee and the
- * cost of leaving the landing planet. */
+ * purse, credit for the contract leg it advances), the launch fee, the wear
+ * the shot adds and the cost of leaving the landing planet. The repair the
+ * launch button pays first is the caller's separate choice, not the route's
+ * cost, so `net` never carries it; it still gates `launchable` and the
+ * budget handed to the exit. */
 function moneyFacts(origin, speed, body, steps, length, visitPay) {
 	const career = activeCareer();
 	GravityGame.careerLandingFacts(shotMoney, career, origin, body, 0, length, steps,
@@ -145,7 +148,7 @@ function moneyFacts(origin, speed, body, steps, length, visitPay) {
 	shotMoney.visit = visitPay;
 	shotMoney.fee = fee;
 	shotMoney.exit = departure.ok ? departure.cost : Infinity;
-	shotMoney.net = departure.ok ? shotMoney.cash - fee - departure.cost - repair - wear : -Infinity;
+	shotMoney.net = departure.ok ? shotMoney.cash - fee - departure.cost - wear : -Infinity;
 	shotMoney.builds = padless && (departure.builds || departure.canBuildStarter);
 	shotMoney.launchable = career.ledger.purse + 1e-9 >= fee + repair && available >= -1e-9 && departure.ok;
 	shotMoney.source = departure.source;

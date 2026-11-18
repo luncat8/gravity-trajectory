@@ -249,6 +249,8 @@ const careerWaitBtn = $('careerWait');
 const careerClockBtn = $('careerClock');
 const careerPauseLandEl = $('careerPauseLand');
 const careerPauseLandLabelEl = $('careerPauseLandLabel');
+const careerAutoRepairEl = $('careerAutoRepair');
+const careerAutoRepairLabelEl = $('careerAutoRepairLabel');
 
 const careerMsgEl = $('careerMsg');
 const ruleTagEl = $('ruleTag');
@@ -499,6 +501,8 @@ const slotPaused = new Array(MAX_PLAYERS).fill(false);
  * so nothing animates while the world clock holds still */
 let careerPauseNow = 0;
 let pauseOnLanding = true;
+/* auto-repair the ship on landing while the purse covers it and keeps one cheap way off */
+let autoRepair = true;
 /* a career launch is queued until the planet's EMC barrel reaches the aim */
 const slotTurrets = Array.from({ length: MAX_PLAYERS }, () => ({
 	pending: false, body: -1, angle: 0, speed: 0, fireAt: 0, pad: null, energy: 0
@@ -700,6 +704,12 @@ if (careerPauseLandEl) {
 			!(careerRule() && activeCareer().evacuating)) {
 			setCareerPaused(pauseOnLanding);
 		}
+		refreshCareerClockUi();
+	});
+}
+if (careerAutoRepairEl) {
+	careerAutoRepairEl.addEventListener('change', () => {
+		autoRepair = careerAutoRepairEl.checked;
 		refreshCareerClockUi();
 	});
 }
@@ -998,6 +1008,7 @@ root.GravityScene = {
 	slotPaused: slot => slotPaused[slot],
 	setCareerPaused,
 	pauseOnLanding: () => pauseOnLanding,
+	autoRepair: () => autoRepair,
 	careerNotice,
 	careerPickPlanet,
 	refreshCareerPanel,
@@ -1054,6 +1065,7 @@ game.player = slotTypes[0];
 
 if (careerCleanEl) cleanCareerView = careerCleanEl.checked;
 if (careerPauseLandEl) pauseOnLanding = careerPauseLandEl.checked;
+if (careerAutoRepairEl) autoRepair = careerAutoRepairEl.checked;
 refreshPlaybackUi();
 refreshCareerClockUi();
 cargoSim.horizon = Number(horizonSlider.value);
