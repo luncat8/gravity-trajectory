@@ -127,6 +127,17 @@ paused buttons has independent state for each player. bots dont use pause button
 → per-player holds on one shared clock, the hatched scoreboard row marks a hold,
 bots never hold, a landing auto-pauses by default.
 
+the landing settings belong to the ship, not to the clock bar: `auto-repair`
+(and the pad's own build offer) sit in the pad block above the action row, where
+a landing is serviced; the game bar keeps the clock, `pause on landing` and the
+playback speed.
+
+← the operator asked to move the auto-repair checkbox into the place the
+commercial EMC held.
+
+→ `#planetActions` (the pad block) holds `buy EMC-1` and `careerAutoRepairLabel`;
+the label shows only while a hand-flown career ship sits on a planet.
+
 ## 6.6 map and camera ← `archive/draft.txt`
 
 ### gravity potential view map
@@ -141,6 +152,16 @@ you can draw in low resolution if this is heavy to calculate all pixels
 → `view · potential` (`?view=potential`): blue where gravity repels, see-through
 near zero, green where it pulls, red around a heavy planet (`g ≥ +2`); a WebGL
 shader with a ¼-resolution 2D fallback. The legend sits by the view radios.
+
+the three view modes and the full-view switch are one line over the canvas, not
+a panel row: the picture is switched over the picture.
+
+← the operator asked to move the view modes to a single line above the canvas,
+  including the full-view checkbox.
+
+→ `#viewBar` over the canvas carries the backdrop radios, `full view` and
+`clean render` on one line, the potential legend under it, and `#viewTag` when
+the line has room; it docks at the left edge under the HUD columns on phones.
 
 ### ui
 

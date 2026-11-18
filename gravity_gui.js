@@ -118,8 +118,7 @@ const viewTagEl = $('viewTag');
 const viewSpaceEl = $('viewSpace');
 const viewFieldEl = $('viewField');
 const viewPotentialEl = $('viewPotential');
-const viewZoomMainEl = $('viewZoomMain');
-const viewZoomFullEl = $('viewZoomFull');
+const viewFullEl = $('viewFull');
 const potentialLegendEl = $('potentialLegend');
 const zoneBarEl = $('zoneBar');
 const careerCleanEl = $('careerClean');
@@ -584,14 +583,9 @@ if (viewPotentialEl) {
 		if (viewPotentialEl.checked) setViewMode(VIEW_POTENTIAL);
 	});
 }
-if (viewZoomMainEl) {
-	viewZoomMainEl.addEventListener('change', () => {
-		if (viewZoomMainEl.checked) setViewFrame(FRAME_MAIN);
-	});
-}
-if (viewZoomFullEl) {
-	viewZoomFullEl.addEventListener('change', () => {
-		if (viewZoomFullEl.checked) setViewFrame(FRAME_FULL);
+if (viewFullEl) {
+	viewFullEl.addEventListener('change', () => {
+		setViewFrame(viewFullEl.checked ? FRAME_FULL : FRAME_MAIN);
 	});
 }
 if (careerCleanEl) {

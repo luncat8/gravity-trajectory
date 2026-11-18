@@ -177,6 +177,17 @@ Bots can use other's EMC and pay to other players for it as this a lot cheaper t
 → the bot's rail order in `careerDeparture`: own, then a rival's (paying tax),
 then commercial; the last is the urgent fallback.
 
+the commercial rail is a fallback, not a second button: it sits as one entry of
+the launch `▾` menu, so a planet the ship can already leave does not offer it
+first.
+
+← the operator's request to move the commercial EMC into the dropdown triangle
+list.
+
+→ the launch `▾` menu lists `commercial EMC-1 · <fee>` beside the repair and toe
+entries. The `buy EMC-1` offer kept its place above the action row, and the
+`auto-repair` landing setting sits with it, in the pad block.
+
 ## 2.8 fuel ← `archive/draft.txt`
 
 fuel made from owner's battery charge or cost (need balance, fuel more price then EMC but still profitable in some cases: typical strategy: change trajectory to stay in space and avoid to land on heavy planet without owner's EMC or change trajectory visit very profitable planet that is difficult to reach using EMC).

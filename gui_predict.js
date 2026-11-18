@@ -411,6 +411,12 @@ function pauseAllowed() {
 	return game.on && ruleSpec().pause && !replay.on;
 }
 
+/* the auto-repair setting is a landing control: it shows only where a landing
+ * can service the ship — the career, hand-flown, no replay */
+function autoRepairShown() {
+	return pauseAllowed() && !playerIsBot();
+}
+
 function otherPlayerPaused(slot) {
 	for (let s = 0; s < slotCount(); s++) {
 		if (s !== slot && !slotIsBot(s) && slotPaused[s]) return true;
@@ -433,7 +439,8 @@ function refreshCareerClockUi() {
 	}
 	if (careerPauseLandLabelEl) careerPauseLandLabelEl.hidden = !allowed;
 	if (careerPauseLandEl) careerPauseLandEl.checked = pauseOnLanding;
-	if (careerAutoRepairLabelEl) careerAutoRepairLabelEl.hidden = !allowed;
+	/* the auto-repair label lives in the flight panel: setLaunchState owns its
+	 * visibility (landed, hand-flown, career open), this only mirrors the value */
 	if (careerAutoRepairEl) careerAutoRepairEl.checked = autoRepair;
 }
 

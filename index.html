@@ -11,6 +11,32 @@
 <canvas id="c"></canvas>
 <canvas id="g"></canvas>
 
+<div id="viewBar" class="viewBar" role="group" aria-label="canvas view">
+	<div class="radioRow" role="radiogroup" aria-label="view mode">
+		<label title="starfield and gravity well rings (f)"><input id="viewSpace" type="radio" name="viewMode" value="space" checked> space</label>
+		<label title="hue = pull direction · lightness = potential gradient (f)"><input id="viewField" type="radio" name="viewMode" value="field"> gravity field</label>
+		<label title="gravity zones by size, not direction · blue repels, clear near zero, green pulls, red heavy (g ≥ +2) (f)"><input id="viewPotential" type="radio" name="viewMode" value="potential"> potential</label>
+	</div>
+	<label id="viewFullLabel" class="viewCheck" title="zoom out to the whole flight area, where a ship that left the canvas is still visible (z)"><input id="viewFull" type="checkbox"> full view</label>
+	<label id="careerCleanLabel" class="viewCheck" title="clean career canvas: hide thick orbit visit highlights and the blue past-flight trail, highlighting planet outlines instead"><input id="careerClean" type="checkbox" checked> clean render</label>
+	<span id="viewTag" class="viewBarTag">space</span>
+	<div id="potentialLegend" class="potentialLegend" hidden aria-label="gravity zone legend" title="each planet spreads its g around it and nearby planets add up · clear is about 0, solid from 1 up">
+		<div id="zoneBar" class="zoneBar"></div>
+		<div class="zoneTicks">
+			<span style="--z: -1">−1</span>
+			<span style="--z: 0">0</span>
+			<span style="--z: 1">+1</span>
+			<span style="--z: 2">+2</span>
+			<span style="--z: 3.5">+3.5</span>
+		</div>
+		<div class="zoneWords">
+			<span class="potentialNegative">blue repels</span>
+			<span class="potentialPositive">green pulls</span>
+			<span class="potentialHeavy">red heavy</span>
+		</div>
+	</div>
+</div>
+
 <div id="leftHud" class="hudStack">
 	<aside id="scoreHud" class="panel scoreHud" hidden aria-label="game scoreboard">
 		<div class="scoreHead">
@@ -229,41 +255,20 @@
 		<div id="mapNote" class="mapNote"></div>
 	</div>
 
-	<div id="viewGroup" class="group">
-		<div class="caption"><span>view</span><span id="viewTag">space</span></div>
-		<div class="radioRow" role="radiogroup" aria-label="view mode">
-			<label title="starfield and gravity well rings (f)"><input id="viewSpace" type="radio" name="viewMode" value="space" checked> space</label>
-			<label title="hue = pull direction · lightness = potential gradient (f)"><input id="viewField" type="radio" name="viewMode" value="field"> gravity field</label>
-			<label title="gravity zones by size, not direction · blue repels, clear near zero, green pulls, red heavy (g ≥ +2) (f)"><input id="viewPotential" type="radio" name="viewMode" value="potential"> potential</label>
-		</div>
-		<div class="radioRow" role="radiogroup" aria-label="zoom">
-			<label title="frame the planet field, where the planets are placed (z)"><input id="viewZoomMain" type="radio" name="viewZoom" value="main" checked> main</label>
-			<label title="zoom out to the whole flight area, where a ship that left the canvas is still visible (z)"><input id="viewZoomFull" type="radio" name="viewZoom" value="full"> full area</label>
-		</div>
-		<div id="potentialLegend" class="potentialLegend" hidden aria-label="gravity zone legend" title="each planet spreads its g around it and nearby planets add up · clear is about 0, solid from 1 up">
-			<div id="zoneBar" class="zoneBar"></div>
-			<div class="zoneTicks">
-				<span style="--z: -1">−1</span>
-				<span style="--z: 0">0</span>
-				<span style="--z: 1">+1</span>
-				<span style="--z: 2">+2</span>
-				<span style="--z: 3.5">+3.5</span>
-			</div>
-			<div class="zoneWords">
-				<span class="potentialNegative">blue repels</span>
-				<span class="potentialPositive">green pulls</span>
-				<span class="potentialHeavy">red heavy</span>
-			</div>
-		</div>
-		<label id="careerCleanLabel" class="viewCheck" title="clean career canvas: hide thick orbit visit highlights and the blue past-flight trail, highlighting planet outlines instead"><input id="careerClean" type="checkbox" checked> clean render</label>
-	</div>
-
-	<div class="group">
+	<div id="gravityGroup" class="group">
 		<div class="caption"><span>gravity positions</span><span id="sourceTag">planets</span></div>
 		<div class="radioRow" role="radiogroup" aria-label="gravity positions">
 			<label><input id="srcPlanets" type="radio" name="gravitySource" value="planets" checked> planets</label>
 			<label><input id="srcPorts" type="radio" name="gravitySource" value="ports"> ports</label>
 		</div>
+	</div>
+
+	<div class="group">
+		<div class="caption"><span>relative trim</span><span id="trimTarget">—</span></div>
+		<label class="ctl">±
+			<input id="trim" type="range" min="-5" max="5" step="0.5" value="0" disabled>
+			<output id="trimLabel">0%</output>
+		</label>
 	</div>
 
 	<div id="bodyGroup" class="group">
@@ -406,12 +411,13 @@
 				<div id="launchMenu" hidden>
 					<button id="launchRepair" type="button">repair</button>
 					<button id="launchOnly" type="button">launch</button>
+					<button id="launchCommercial" type="button" hidden>commercial EMC-1 · 3.00</button>
 					<button id="launchEvac" type="button" hidden>evacuate</button>
 				</div>
 			</div>
 			<div id="planetActions" class="planetActions" hidden>
 				<button id="launchBuild" class="primary">buy EMC-1 · 9.00</button>
-				<button id="launchCommercial">commercial EMC-1 · 3.00</button>
+				<label id="careerAutoRepairLabel" class="careerPauseLand" title="repair the ship automatically when your flight lands, while the purse covers the repair and keeps one cheap way off any planet; at 0% condition the whole purse may serve" hidden><input id="careerAutoRepair" type="checkbox" checked> auto-repair</label>
 			</div>
 			<button id="clear">clear</button>
 			<button id="routeBest" title="restore the longest finished plan for this planet" hidden disabled>use best</button>
@@ -523,7 +529,6 @@
 	<button id="careerWait" class="miniBtn" title="fast-forward the clock 60 s so every pad charges: 2 s of real time" hidden>wait · 60 s</button>
 	<button id="careerClock" class="miniBtn" title="career world clock: click to pause or resume time (pads charge, rivals fly, visit profits grow while it runs)" hidden>❚❚ time</button>
 	<label id="careerPauseLandLabel" class="careerPauseLand" title="pause the career world clock when your flight ends, so you can aim in peace; launching or the time button resumes it" hidden><input id="careerPauseLand" type="checkbox" checked> pause on landing</label>
-	<label id="careerAutoRepairLabel" class="careerPauseLand" title="repair the ship automatically when your flight lands, while the purse covers the repair and keeps one cheap way off any planet; at 0% condition the whole purse may serve" hidden><input id="careerAutoRepair" type="checkbox" checked> auto-repair</label>
 	<span id="playbackGroup" class="flightPlayback" title="game speed: ×1 is real time, one game second per real second · career is balanced at ×4 · only the watching speed changes, never the physics">
 		<span class="playbackLabel">play <b id="playTag">×1</b></span>
 		<button id="playSlower" class="miniBtn" title="slower · physics unchanged">−</button>

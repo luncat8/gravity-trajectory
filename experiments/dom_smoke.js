@@ -1237,11 +1237,14 @@ check(kui.get('careerPlanet').innerHTML.includes(' · commercial'),
 	'planet picker marks unbuilt planets as the commercial rail: ' + kui.get('careerPlanet').innerHTML);
 check(kui.get('careerTasks').innerHTML.includes('careerRow'), 'career task board empty');
 check(kui.get('gameScore').textContent === '6.00 purse', 'career score is the purse: ' + kui.get('gameScore').textContent);
-/* the default is checked and visible; this fixture wants the worn ship on
- * landing, so it flies with the auto-repair setting off */
+/* the default is checked and visible in the pad block beside the build offer;
+ * this fixture wants the worn ship on landing, so it flies with it off */
+const autoRepairHtml = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
+const padBlock = /<div id="planetActions"[^>]*>([\s\S]*?)<\/div>/.exec(autoRepairHtml);
 check(kScene.autoRepair() && kui.get('careerAutoRepair').checked &&
-	!kui.get('careerAutoRepairLabel').hidden,
-	'auto-repair ships checked and visible');
+	!kui.get('careerAutoRepairLabel').hidden &&
+	padBlock !== null && padBlock[1].includes('id="careerAutoRepair"'),
+	'auto-repair ships checked and visible in the pad block beside buy EMC-1');
 careerEnv.toggle('careerAutoRepair');
 check(!kScene.autoRepair() && !kui.get('careerAutoRepair').checked, 'auto-repair must toggle off');
 const noPad = (career.hq + 3) % pageWorld.PLANETS;
@@ -1499,11 +1502,14 @@ check(kScene.careerPaused(), 'the clock must pause again at landing (default set
 check(kScene.game.money.purse >= purse0, 'no launch fee in career: ' + kScene.game.money.purse);
 check(kui.get('cargoStatus').textContent === 'impact P' + career.at + ' · clock paused',
 	'stranded-but-launchable status: ' + kui.get('cargoStatus').textContent);
+/* the pad block holds the build offer and the auto-repair setting; the
+ * commercial rail is one entry of the launch ▾ menu */
 check(!kui.get('launch').hidden && !kui.get('planetActions').hidden &&
 	kui.get('launchBuild').textContent === 'buy EMC-1 · 3.04' &&
 	kui.get('launchCommercial').textContent ===
 		'commercial EMC-1 · ' + kGame.commercialFee(career, career.at, kSim.SPEED_MIN).toFixed(2) &&
 	!kui.get('launchMenuBtn').hidden && kui.get('launchMenu').hidden &&
+	!kui.get('careerAutoRepairLabel').hidden &&
 	kui.get('launchEvac').textContent.startsWith('evacuate · 6.00 · '),
 	'planet action buttons: ' + kui.get('launchBuild').textContent + ' / ' +
 		kui.get('launchCommercial').textContent + ' / ' + kui.get('launchEvac').textContent);
@@ -1964,6 +1970,17 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	const fRenderer = fScene.fieldRenderer();
 	check(fScene.viewMode() === 'field' && fui.get('viewField').checked && !fui.get('f').hidden,
 		'?view=field activates field view');
+	/* the three backdrops, the full view switch and clean render share one line
+	 * over the canvas, outside every HUD panel */
+	const viewHtml = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
+	const viewBarHtml = /<div id="viewBar"[^>]*>([\s\S]*?)<\/div>\s*<div id="leftHud"/.exec(viewHtml);
+	check(viewBarHtml !== null && viewBarHtml[1].includes('id="viewSpace"') &&
+		viewBarHtml[1].includes('id="viewField"') && viewBarHtml[1].includes('id="viewPotential"') &&
+		viewBarHtml[1].includes('id="viewFull"') && viewBarHtml[1].includes('id="careerClean"') &&
+		viewBarHtml[1].includes('id="viewTag"') &&
+		!/name="viewZoom"/.test(viewHtml) && !/<div id="viewGroup"/.test(viewHtml),
+		'the view modes, the full view checkbox and clean render must share one line over the canvas');
+	check(!fui.get('viewFull').checked && fScene.viewMode() === 'field', 'full view starts unchecked');
 	check(oScene.backdropVisible() === false, 'field view hides opaque starfield backdrop');
 	check(fRenderer && fRenderer.backend() === '2d' && fRenderer.scaleDiv() === 4,
 		'VM stub uses 1/4-res 2D fallback');
@@ -3008,6 +3025,7 @@ function protoOf(career, family, id) {
 		footMatch[1].includes('id="launchBuild"') &&
 		footMatch[1].includes('id="launchCommercial"') &&
 		footMatch[1].includes('id="launchEvac"') &&
+		footMatch[1].includes('id="careerAutoRepair"') &&
 		footMatch[1].includes('id="flightSpeed"') &&
 		footMatch[1].includes('id="flightFuel"') &&
 		footMatch[1].includes('id="flightRefuel"') &&
@@ -3125,6 +3143,7 @@ function protoOf(career, family, id) {
 	check(cCareer.stranded && cCareer.at === targetPlanet, 'ship stranded on padless planet');
 	check(!cui.get('launch').hidden && !cui.get('planetActions').hidden &&
 		!cui.get('launchBuild').hidden && !cui.get('launchCommercial').hidden &&
+		!cui.get('careerAutoRepairLabel').hidden &&
 		!cui.get('launchMenuBtn').hidden && !cui.get('launchEvac').hidden,
 		'padless landing keeps build and commercial, with evacuation in the menu');
 
@@ -3876,8 +3895,12 @@ function protoOf(career, family, id) {
 	for (const id of ['launchGroup', 'launch', 'launchMenuBtn', 'launchMenu', 'launchRepair', 'launchOnly']) {
 		check(wui.get(id) !== undefined && wui.get(id) !== null, 'launch control part missing: #' + id);
 	}
-	check(wCareer.ship.condition === 1 && wui.get('launchMenuBtn').hidden && wui.get('launchMenu').hidden,
-		'a new ship has no repair menu');
+	/* a new ship owes no repair, but the caret still lists the planet's
+	 * commercial rail; the two repair entries stay hidden */
+	check(wCareer.ship.condition === 1 && !wui.get('launchMenuBtn').hidden &&
+		wui.get('launchMenu').hidden && wui.get('launchRepair').hidden &&
+		wui.get('launchOnly').hidden && !wui.get('launchCommercial').hidden,
+		'a new ship lists only the commercial rail in the menu');
 	check(wui.get('careerPad').innerHTML.includes('condition 100 %') &&
 		/data-act="repair"[^>]*disabled/.test(wui.get('careerPad').innerHTML),
 		'shop header shows the condition and a disabled repair at 100 %');
@@ -3922,7 +3945,7 @@ function protoOf(career, family, id) {
 	check(wui.get('careerMsg').textContent === 'repaired · \u22121.00 · condition 100 %',
 		'repair notice: ' + wui.get('careerMsg').textContent);
 	check(wui.get('launch').textContent === 'launch' + kwh && wui.get('launchMenu').hidden &&
-		wui.get('launchMenuBtn').hidden,
+		wui.get('launchRepair').hidden && wui.get('launchOnly').hidden,
 		'after the repair the control is the plain launch: ' + wui.get('launch').textContent);
 
 	/* the menu's launch flies worn; the main click repairs first, atomically */

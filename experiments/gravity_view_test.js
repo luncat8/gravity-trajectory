@@ -146,9 +146,9 @@ const mainScale = sceneView.scale;
 assert.strictEqual(scene.frame(), 'main');
 assert.ok(Math.abs(sceneView.scale - Math.min((1280 - 28) / OrbitSim.WORLD_W,
 	(800 - 14 - 76) / OrbitSim.WORLD_H)) < 1e-9, 'main frame fits the planet field');
-env.choose('viewZoomFull');
+env.choose('viewFull');
 assert.strictEqual(scene.frame(), 'full');
-assert.ok(ui.get('viewZoomFull').checked && !ui.get('viewZoomMain').checked, 'full radio checked');
+assert.ok(ui.get('viewFull').checked, 'full view checkbox checked');
 const areaScale = Math.min((1280 - 28) / OrbitSim.AREA_W, (800 - 14 - 76) / OrbitSim.AREA_H);
 assert.ok(Math.abs(sceneView.scale - areaScale) < 1e-9, 'full frame fits the flight area');
 assert.ok(sceneView.scale < mainScale, 'full frame is zoomed out');
@@ -159,7 +159,7 @@ assert.ok(Math.abs(fieldMidX - areaMidX) < 1e-9, 'field centred in the area');
 env.fireWindow('keydown', { code: 'KeyZ', key: 'z', target: { tagName: 'BODY' } });
 assert.strictEqual(scene.frame(), 'main');
 assert.ok(Math.abs(sceneView.scale - mainScale) < 1e-9, 'z toggles back to main');
-env.choose('viewZoomFull');
+env.choose('viewFull');
 
 /* Planet cards print profit then gravity; EMC claims colour the border. */
 env.calls.texts.length = 0;

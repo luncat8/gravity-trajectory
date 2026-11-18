@@ -1166,13 +1166,54 @@ body {
 	margin-top: 6px;
 }
 
-#viewGroup .radioRow {
+/* one view line over the canvas: the three backdrops, the full view switch and
+ * the clean render toggle, so the picture is switched over the picture; the
+ * legend hangs under it only while potential is the visible backdrop */
+.viewBar {
+	position: fixed;
+	top: 10px;
+	left: 50%;
+	z-index: 4;
+	display: flex;
+	align-items: center;
+	gap: 6px 12px;
+	max-width: min(760px, calc(100vw - 700px));
+	padding: 5px 10px;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	background: var(--panel);
+	backdrop-filter: blur(10px);
+	transform: translateX(-50%);
 	flex-wrap: wrap;
-	gap: 6px 14px;
+	justify-content: center;
+	pointer-events: auto;
+}
+
+.viewBar .radioRow,
+.viewBar .viewCheck {
+	flex: none;
+	margin: 0;
+	white-space: nowrap;
+}
+
+.viewBar .radioRow {
+	flex-wrap: wrap;
+	gap: 4px 10px;
+}
+
+.viewBarTag {
+	color: var(--dim);
+	font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+	white-space: nowrap;
+}
+
+.viewBar .potentialLegend {
+	flex: 1 1 100%;
+	order: 9;
+	margin-top: 0;
 }
 
 .potentialLegend {
-	margin-top: 8px;
 	font: 10.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -1302,10 +1343,13 @@ body {
 	white-space: normal;
 }
 
+/* the pad block: the build offer, and the landing setting that belongs to the
+ * planet under the ship; both stay on the row above clear */
 .planetActions {
 	display: flex;
+	align-items: center;
 	flex-wrap: wrap;
-	gap: 6px;
+	gap: 6px 10px;
 	min-width: 0;
 }
 
@@ -1313,6 +1357,17 @@ body {
 	flex: 1 1 45%;
 	min-width: 0;
 	padding: 5px 8px;
+}
+
+.planetActions .careerPauseLand {
+	flex: 1 1 100%;
+}
+
+/* the launch menu is a small sheet: every entry the planet offers, one per row */
+#launchMenu button {
+	text-align: left;
+	padding: 4px 8px;
+	font-size: 11.5px;
 }
 
 #clear {
@@ -1951,6 +2006,19 @@ polyline.sciKnownHull {
 	font-size: 10px;
 }
 
+@media (max-width: 1100px) {
+	/* the view line keeps the gap between the two HUD columns, which is the
+	 * only strip of canvas it can own; it wraps and drops the tag first */
+	.viewBar {
+		max-width: max(190px, calc(100vw - 620px));
+		gap: 4px 9px;
+	}
+
+	.viewBarTag {
+		display: none;
+	}
+}
+
 @media (max-width: 960px) {
 	/* keep help beside—never over—the rule radios it explains */
 	.drawer {
@@ -1959,9 +2027,23 @@ polyline.sciKnownHull {
 		width: min(318px, calc(100vw - 336px));
 	}
 
+	.viewBar {
+		padding: 4px 8px;
+	}
+
+	.viewBar .radioRow,
+	.viewBar .viewCheck {
+		font-size: 11px;
+		gap: 4px;
+	}
+
 	/* keep the game bar compact on tablet widths */
 	#gameControls {
 		gap: 8px;
+	}
+
+	#careerPauseLandLabel {
+		font-size: 10px;
 	}
 
 	#careerWait {
@@ -2096,6 +2178,24 @@ polyline.sciKnownHull {
 @media (max-width: 599px) {
 	#leftHud {
 		width: 158px;
+	}
+
+	/* the two HUD columns leave no strip for the view line, so it docks at the
+	 * left edge under them: the canvas keeps its own left strip */
+	.viewBar {
+		top: auto;
+		left: 8px;
+		bottom: calc(var(--footReserve, 60px) + 8px);
+		max-width: calc(100vw - 16px);
+		padding: 4px 8px;
+		transform: none;
+		justify-content: flex-start;
+	}
+
+	.viewBar .radioRow,
+	.viewBar .viewCheck {
+		font-size: 10px;
+		gap: 3px;
 	}
 
 	.careerTab,

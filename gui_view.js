@@ -8,9 +8,7 @@
 'use strict';
 
 function refreshViewUi() {
-	const frame = scene.view.frame;
-	if (viewZoomMainEl) viewZoomMainEl.checked = frame === FRAME_MAIN;
-	if (viewZoomFullEl) viewZoomFullEl.checked = frame === FRAME_FULL;
+	if (viewFullEl) viewFullEl.checked = scene.view.frame === FRAME_FULL;
 	if (viewSpaceEl) viewSpaceEl.checked = viewMode === VIEW_SPACE;
 	if (viewFieldEl) viewFieldEl.checked = viewMode === VIEW_FIELD;
 	if (viewPotentialEl) viewPotentialEl.checked = viewMode === VIEW_POTENTIAL;

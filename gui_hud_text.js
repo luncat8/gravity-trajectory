@@ -338,14 +338,22 @@ function hideLaunchMenu() {
 	setLaunchMenu(false);
 }
 
-/* A priced-out commercial rail can still be inspected, but is not a way home. */
-function setPlanetActions(career, show, busy, commercialOn, usable) {
+/* the pad block belongs to a landed ship: with a burn or a queued shot armed
+ * it is out of reach, and its auto-repair setting goes with it */
+function hidePlanetActions() {
+	planetActionsEl.hidden = true;
+	careerAutoRepairLabelEl.hidden = true;
+}
+
+/* the pad block holds the build button and the auto-repair setting: the two
+ * controls that belong to the planet under the ship */
+function setPlanetActions(career, show, busy) {
 	const at = career.at;
 	const build = show && career.pads[at].catapult === null && GravityGame.planetBuildable(career, at);
-	const commercial = show && at !== career.capitalPlanet;
-	planetActionsEl.hidden = !build && !commercial;
+	const autoRepair = show && autoRepairShown();
+	planetActionsEl.hidden = !build && !autoRepair;
 	launchBuildBtn.hidden = !build;
-	launchCommercialBtn.hidden = !commercial;
+	careerAutoRepairLabelEl.hidden = !autoRepair;
 	let buildReady = false;
 	if (build) {
 		const first = OrbitTech.CATAPULTS[0];
@@ -360,7 +368,17 @@ function setPlanetActions(career, show, busy, commercialOn, usable) {
 			' · full battery lifts ' + career.ship.mass.toFixed(1) + ' t to ' +
 			Math.round(lift) + ' px/s · claims the planet';
 	}
-	if (!commercial) return buildReady;
+	return buildReady;
+}
+
+/* the commercial EMC-1 is the planet's fallback rail, so it is priced as one
+ * entry of the launch menu; a priced-out rail can still be inspected, but is
+ * not a way home */
+function setCommercialOption(career, show, busy, commercialOn, usable) {
+	const at = career.at;
+	const commercial = show && at !== career.capitalPlanet;
+	launchCommercialBtn.hidden = !commercial;
+	if (!commercial) return { ready: false, shown: false };
 	const lift = padCap(career, GravityGame.COMMERCIAL_PAD.catapult, GravityGame.COMMERCIAL_PAD.battery);
 	const canLift = lift + 1e-9 >= SPEED_MIN;
 	const fire = commercialOn && armed && aimBody === at;
@@ -380,7 +398,7 @@ function setPlanetActions(career, show, busy, commercialOn, usable) {
 		: 'launch from the commercial EMC-1 on ' + planetName(at) +
 			' · always charged · lifts the ship to ' + Math.round(lift) +
 			' px/s · never claims the planet or blocks building yours';
-	return buildReady || (!launchCommercialBtn.disabled && !poor && usable);
+	return { ready: !launchCommercialBtn.disabled && !poor && usable, shown: true };
 }
 
 function setEvacuationOption(career, offer, busy, evacuating) {
@@ -430,7 +448,7 @@ function setLaunchState(blocked, exitWarning) {
 		launchNote = text;
 		hideLaunchMenu();
 		launchButton.value = '';
-		planetActionsEl.hidden = true;
+		hidePlanetActions();
 		launchButton.disabled = !burnArmed;
 		launchButton.classList.toggle('exitWarning', warnExit);
 		launchButton.textContent = text;
@@ -447,7 +465,7 @@ function setLaunchState(blocked, exitWarning) {
 		const left = Math.max(0, turret.fireAt - game.clockSteps) * DT;
 		hideLaunchMenu();
 		launchButton.value = '';
-		planetActionsEl.hidden = true;
+		hidePlanetActions();
 		launchButton.disabled = false;
 		launchButton.classList.remove('costly', 'exitWarning');
 		launchButton.textContent = 'gun · ' + left.toFixed(1) + ' s';
@@ -469,7 +487,8 @@ function setLaunchState(blocked, exitWarning) {
 	const waitBusy = careerWaitBusy();
 	const commercialOn = onPlanet && c.commercialPlanet === c.at;
 	const usable = !career || GravityGame.careerShipUsable(c);
-	const planetAction = setPlanetActions(c, onPlanet, waitBusy, commercialOn, usable);
+	const planetAction = setPlanetActions(c, onPlanet, waitBusy);
+	const commercial = setCommercialOption(c, onPlanet, waitBusy, commercialOn, usable);
 	const evacuating = idleCareer && c.evacuating;
 	const offerEvac = idleCareer && (evacuating || GravityGame.canEvacuate(c));
 	setEvacuationOption(c, offerEvac, waitBusy, evacuating);
@@ -485,7 +504,7 @@ function setLaunchState(blocked, exitWarning) {
 	const mainOff = worn ? !chained && repairPoor : launchOff;
 	/* Keep the tow in the menu even when another action is available. */
 	const evacPrimary = evacuating || (offerEvac && !botPlayer && !waitBusy && mainOff &&
-		!planetAction && (!worn || launchOff));
+		!planetAction && !commercial.ready && (!worn || launchOff));
 	const noImpulse = career && !usable && !botPlayer && sim.burnLimit() > 0;
 	launchRepairBtn.hidden = launchOnlyBtn.hidden = !worn;
 	if (worn) {
@@ -497,7 +516,7 @@ function setLaunchState(blocked, exitWarning) {
 		launchOnlyBtn.title = !usable ? GravityGame.WORN_OUT_BLOCK
 			: launchOff ? 'Arm a shot this pad can fire' : 'Launch without repair · the ship keeps wearing';
 	}
-	if (worn || offerEvac) launchMenuBtn.hidden = false;
+	if (worn || offerEvac || commercial.shown) launchMenuBtn.hidden = false;
 	else hideLaunchMenu();
 	if (evacPrimary) {
 		launchButton.value = 'evac';

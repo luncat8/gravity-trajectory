@@ -232,7 +232,9 @@ Game.careerBeginFlight(w.career, w.sim);
 Game.setShipCondition(w.career, Game.spaceWear(w.career, 1) * 0.75);
 const bot = new Bot(World.WORLD_W, World.WORLD_H);
 bot.count = 1;
-bot.rivals[0] = { sim: w.sim, career: w.career, ledger: w.career.ledger, steps: 0 };
+/* a rival slot always carries its saved shots: the burn is attached to the
+ * flight's own shot record, so the hand-built slot needs the empty list */
+bot.rivals[0] = { sim: w.sim, career: w.career, ledger: w.career.ledger, steps: 0, shots: [] };
 let burned = false;
 let burnStep = -1;
 bot.careerFlightBurn = (career, sim, market, step) => {
@@ -248,7 +250,7 @@ assert.strictEqual(w.career.ship.condition, 0, 'space wear follows the burn on t
 const human = world(1, true);
 human.sim.launch(0, 0, 100);
 Game.careerBeginFlight(human.career, human.sim);
-bot.rivals[0] = { sim: human.sim, career: human.career, ledger: human.career.ledger, steps: 0 };
+bot.rivals[0] = { sim: human.sim, career: human.career, ledger: human.career.ledger, steps: 0, shots: [] };
 bot.rivalTypes[0] = Game.PLAYER_USER;
 burned = false;
 burnStep = -1;
@@ -264,7 +266,7 @@ capped.sim.launch(0, 0, 100);
 Game.careerBeginFlight(capped.career, capped.sim);
 Game.setShipCondition(capped.career, 0.5);
 capped.sim.stepLimit = capped.sim.liveSteps;
-const actor = { sim: capped.sim, career: capped.career, ledger: capped.career.ledger, steps: 0 };
+const actor = { sim: capped.sim, career: capped.career, ledger: capped.career.ledger, steps: 0, shots: [] };
 bot.rivals[0] = actor;
 bot.careerLand = () => {};
 Game.setHarvestMode(Game.HARVEST_TICK);
