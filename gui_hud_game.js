@@ -11,11 +11,12 @@
 function refreshGameUi() {
 	const route = routeRule();
 	const career = careerRule();
+	const playback = careerActionReplay.active;
 	refreshExperimentUi();
 	const anyFlying = clockDriverFlying();
 	const activeFlying = activeSim().status === STATUS_FLYING;
 	const flightLock = game.on && (career
-		? activeFlying || turret.pending || replay.on
+		? activeFlying || turret.pending || replay.on || playback
 		: anyFlying || replay.on);
 	const activeSlotNow = activeSlotIndex();
 	/* "run" matches the run box: the rule itself is named in its caption */
@@ -51,10 +52,10 @@ function refreshGameUi() {
 	for (let i = 0; i < modeEls.length; i++) {
 		if (modeEls[i][1]) modeEls[i][1].disabled = flightLock && modeEls[i][0] !== PLAY_LAB;
 	}
-	if (botOffEl) botOffEl.disabled = replay.on && replay.career;
-	if (botEasyEl) botEasyEl.disabled = replay.on && replay.career;
-	if (botNormalEl) botNormalEl.disabled = replay.on && replay.career;
-	if (botHardEl) botHardEl.disabled = replay.on && replay.career;
+	if (botOffEl) botOffEl.disabled = playback || (replay.on && replay.career);
+	if (botEasyEl) botEasyEl.disabled = playback || (replay.on && replay.career);
+	if (botNormalEl) botNormalEl.disabled = playback || (replay.on && replay.career);
+	if (botHardEl) botHardEl.disabled = playback || (replay.on && replay.career);
 	syncScoreControls();
 	refreshStatsStrip();
 	let anyShots = game.shots.length > 0;
@@ -63,7 +64,7 @@ function refreshGameUi() {
 	}
 	/* the scales define the world a link re-flies, so a flown run locks them;
 	 * career has no shot replay and stays tunable while it runs */
-	const experimentLock = game.on && (career ? replay.on : replay.on || anyShots);
+	const experimentLock = game.on && (replay.on || playback || (!career && anyShots));
 	if (expGravityEl) expGravityEl.disabled = experimentLock;
 	if (expForceEl) expForceEl.disabled = experimentLock;
 	if (expWearEl) expWearEl.disabled = experimentLock || !career;
@@ -80,10 +81,10 @@ function refreshGameUi() {
 	clearButton.hidden = game.on && !route;
 	clearButton.textContent = route ? 'clear plan' : 'clear';
 	clearButton.disabled = route && (replay.on || playerIsBot());
-	gameCopyBtn.disabled = career ? replay.on || careerActionReplay.active : flightLock;
+	gameCopyBtn.disabled = career ? replay.on || playback : flightLock;
 	gameCopyBtn.textContent = career ? 'copy career replay' : 'copy replay';
 	gameCopyBtn.title = career
-		? 'copy the opening and timed player inputs · bots are simulated again · paste into open a copied replay'
+		? 'copy the opening, shared inputs and the selected player’s actions and decisions'
 		: 'copy the selected player’s replay link';
 	if (careerSaveCopyBtn) {
 		careerSaveCopyBtn.hidden = !career;
@@ -92,20 +93,18 @@ function refreshGameUi() {
 	if (botCopyBtn) {
 		const rIdx = rivalCopyIndex();
 		botCopyBtn.hidden = career || bot.count === 0 || game.bot === BOT_OFF;
-		botCopyBtn.disabled = career ? bot.count === 0 : flightLock || bot.count === 0 ||
+		botCopyBtn.disabled = career || flightLock || bot.count === 0 ||
 			bot.rivals[rIdx].shots.length === 0;
-		botCopyBtn.title = career ? 'copy the shared career replay, following the selected rival' :
-			'copy the selected rival’s solo replay (R1 when YOU is selected)';
 	}
 	if (botLogBtn) {
-		const hasBots = game.on && !replay.on && selectedBotActors().length > 0;
-		botLogBtn.hidden = !hasBots;
-		if (!hasBots) hideBotLog();
+		botLogBtn.hidden = !game.on || replay.on || careerActionReplay.active || !selectedBotActors().length;
+		botLogBtn.title = career ? 'copy checked players’ actions and bot decisions from the opening'
+			: 'copy recent decisions for checked bots';
 	}
 	if (rivalRowEl) rivalRowEl.hidden = game.bot === BOT_OFF;
 	const shareHint = $('shareHint');
 	if (shareHint) shareHint.textContent = career
-		? 'Career replay copies all human inputs and the selected player’s launches; bots are simulated again. Bot log copies recent decisions for checked bots, not a replay. Full save is a large recorded timeline.'
+		? 'Career replay follows the selected row. Bot log copies the checked rows’ history, including their human turns. Full save is a separate, large world recording.'
 		: 'Copy rival replays the selected rival alone (or R1 if YOU is selected). Bot log includes the checked bot rows.';
 	if (purseRowEl) purseRowEl.hidden = route;
 	if (predProfitRowEl) predProfitRowEl.hidden = !game.on || route;

@@ -352,6 +352,7 @@ function applyMode() {
 }
 
 function setBodyStrength(body, value) {
+	if (careerInputLocked()) return false;
 	if (!cargoSim.setStrength(body, value)) return false;
 	if (careerRule() && game.on) recordCareerAction('gravity', { body: body, value: cargoSim.strength[body] });
 	cancelHelperForChange('gravity');

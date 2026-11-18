@@ -278,6 +278,7 @@ function setExperimentScales(nextGravity, nextForce, nextHarvest, nextWear) {
  * scales: flipping it mid-career only changes the steps still to fly. The
  * box is dark outside career, where it springs back if anything ticks it. */
 function onHarvestChange() {
+	if (careerInputLocked()) return;
 	const next = Boolean(expHarvestEl && expHarvestEl.checked) && careerRule();
 	if (next !== harvestTick) cancelHelperForChange('stay-pay');
 	if (next !== harvestTick) recordCareerAction('scales', { g: gravityScale, f: forceScale, h: next, w: spaceWearScale });
@@ -293,7 +294,7 @@ function onHarvestChange() {
 
 /* Ageing affects every company and any active preview, not the field itself. */
 function onWearInput() {
-	if (!careerRule()) return;
+	if (!careerRule() || careerInputLocked()) return;
 	const next = Math.round(Number(expWearEl.value) * 100) / 100;
 	if (next === spaceWearScale) return;
 	recordCareerAction('scales', { g: gravityScale, f: forceScale, h: harvestTick, w: next });
@@ -321,6 +322,7 @@ function clampArmedToPad() {
 }
 
 function onExperimentInput() {
+	if (careerInputLocked()) return;
 	const nextGravity = Math.round(Number(expGravityEl.value) * 100) / 100;
 	const nextForce = Math.round(Number(expForceEl.value) * 100) / 100;
 	if (nextGravity !== gravityScale || nextForce !== forceScale) {
@@ -421,7 +423,7 @@ function refreshCareerClockUi() {
 	const held = allowed && slotPaused[slot];
 	if (careerClockBtn) {
 		careerClockBtn.hidden = !allowed;
-		careerClockBtn.disabled = slotIsBot(slot) && !careerActionReplay.halted;
+		careerClockBtn.disabled = careerActionReplay.active || (slotIsBot(slot) && !careerActionReplay.halted);
 		careerClockBtn.textContent = held || careerActionReplay.halted ? '▶ time' : '❚❚ time';
 		careerClockBtn.classList.toggle('on', held);
 		careerClockBtn.title = held ? 'Release this player’s pause (Space / P)'
@@ -433,7 +435,8 @@ function refreshCareerClockUi() {
 }
 
 function syncCareerPause() {
-	const next = pauseAllowed() && (careerActionReplay.halted || otherPlayerPaused(-1));
+	const next = pauseAllowed() && !careerActionReplay.active &&
+		(careerActionReplay.halted || otherPlayerPaused(-1));
 	if (careerPaused !== next) {
 		careerPaused = next;
 		playAcc = 0;
@@ -448,7 +451,7 @@ function syncCareerPause() {
 }
 
 function setCareerPaused(next, slot = activeSlotIndex()) {
-	if (replay.on && replay.career) return;
+	if ((replay.on && replay.career) || careerInputLocked()) return;
 	careerRecordingMark();
 	if (!pauseAllowed()) return;
 	slotPaused[slot] = Boolean(next) && !slotIsBot(slot);
@@ -584,7 +587,7 @@ function clockDriverFlying() {
 	const slot0Flying = cargoSim.status === STATUS_FLYING;
 	if (replay.on) return slot0Flying;
 	/* career rivals fly on the same clock, so their flights drive it too */
-	if (careerRule() && rivalFlying(true)) return true;
+	if (careerRule()) return slot0Flying || rivalFlying(true) || rivalFlying(false);
 	if (slot0Flying && !slotIsBot(0)) return true;
 	if (rivalFlying(false)) return true;
 	if (hasLiveUser()) return false;
@@ -605,7 +608,7 @@ function gameLocked() {
 	if (careerWaitBusy()) return true;
 	const slot = activeSlotIndex();
 	const sim = slotSim(slot);
-	if (replay.on || sim.status === STATUS_FLYING || slotIsBot(slot)) return true;
+	if (replay.on || careerInputLocked() || sim.status === STATUS_FLYING || slotIsBot(slot)) return true;
 	if (routeRule()) return false;
 	return slotFlownDone(slot);
 }

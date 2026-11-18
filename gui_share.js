@@ -1,5 +1,5 @@
 /*
- * Link and share plumbing: copy the replay or bot url, load state from the link and the search params, and the bot decision log panel.
+ * Link and share plumbing: copy the replay or bot url, load state from the link and the search params, and the copy-only decision history.
  *
  * Part of the gui family (0.5 plan): a flat global script, no IIFE, no build,
  * file:// friendly. Loaded by index.html; nothing here is exported per file.
@@ -7,19 +7,25 @@
 
 'use strict';
 
-function copyUrlText(url, btn, label) {
-	gameLinkEl.value = url;
+function copyUrlText(text, btn, label) {
+	hideCopyText();
+	const fallback = () => {
+		gameLinkEl.value = text;
+		gameLinkEl.hidden = false;
+		gameLinkEl.focus();
+		gameLinkEl.select();
+	};
 	const clipboard = navigator.clipboard;
-	if (!clipboard) {
-		showLink();
-		return;
-	}
-	clipboard.writeText(url).then(() => {
+	if (!clipboard) { fallback(); return; }
+	clipboard.writeText(text).then(() => {
 		btn.textContent = 'copied ✓';
-		setTimeout(() => {
-			btn.textContent = label;
-		}, 1600);
-	}, showLink);
+		setTimeout(() => { btn.textContent = label; }, 1600);
+	}, fallback);
+}
+
+function hideCopyText() {
+	gameLinkEl.hidden = true;
+	gameLinkEl.value = '';
 }
 
 function copyLink() {
@@ -61,12 +67,8 @@ function rivalCopyIndex() {
 }
 
 function copyBotLink() {
-	if (bot.count === 0) return;
+	if (careerRule() || bot.count === 0) return;
 	const rIdx = rivalCopyIndex();
-	if (careerRule()) {
-		copyCareerReplay(rIdx + 1, botCopyBtn, 'copy rival');
-		return;
-	}
 	if (bot.rivals[rIdx].shots.length === 0) return;
 	const hash = bot.rivalLink(game.seed, scene.trade.speed, rIdx, gravityScale, forceScale,
 		spaceWearScale, harvestTick);
@@ -74,14 +76,6 @@ function copyBotLink() {
 	const url = location.href.split('#')[0] + '#' + hash;
 	copyUrlText(url, botCopyBtn, 'copy rival');
 }
-
-function showLink() {
-	gameLinkEl.hidden = false;
-	gameLinkEl.focus();
-	gameLinkEl.select();
-}
-
-/* --- rival decisions: a copyable log and a read-only snapshot -------- */
 
 function selectedBotActors() {
 	const actors = [];
@@ -104,24 +98,65 @@ function botLogHeader(actors) {
 		' · checked bots: ' + (names.length ? names.join(', ') : 'none');
 }
 
-function hideBotLog() {
-	if (!botLogBoxEl) return;
-	botLogBoxEl.hidden = true;
-	if (botLogTextEl) botLogTextEl.value = '';
+const CAREER_SHARED_ACTIONS = new Set(['playerCount', 'universe', 'source', 'gravity', 'scales', 'difficulty']);
+
+function careerLogRow(step, name, event, detail) {
+	return '[' + step + ' · t+' + (step * DT).toFixed(1) + 's] ' + name + ' ' + event +
+		(detail ? ' · ' + detail : '');
 }
 
-/* without a clipboard the panel is the copy source: select the whole log */
-function showBotLog() {
-	if (!botLogTextEl || !botLogBoxEl) return;
-	botLogBoxEl.hidden = false;
-	botLogTextEl.focus();
-	botLogTextEl.select();
+function careerLogEvent(entry) {
+	const [step, slot, event, detail, a, b] = entry;
+	let motion = '';
+	if (event === 'fire') motion = ' · angle ' + b.toFixed(3);
+	if (event === 'burn') motion = ' · angle ' + b.toFixed(3) + ' · flight step ' + a;
+	if (event === 'land' && b !== END_IMPACT) motion = ' · ' + (b === END_EXIT ? 'left the map' : 'flight limit');
+	return careerLogRow(step, slotName(slot), event, detail + motion);
+}
+
+function careerLogAction(entry) {
+	const { step, slot, type, act, ...args } = entry;
+	const detail = Object.entries(args).map(([key, value]) => key + '=' + value).join(' ');
+	return careerLogRow(step, CAREER_SHARED_ACTIONS.has(type) ? 'world' : slotName(slot), act || type, detail);
+}
+
+function careerLogText(actors) {
+	const slots = actors.map(index => index === GravityBot.PLAYER_INDEX ? 0 : index + 1);
+	const start = careerRecording.record.start;
+	const first = start.state.clock.clockSteps;
+	const lines = [
+		'gravity cargo · career actions and bot decisions',
+		'career · ' + start.bot + ' · ' + (start.seats.length - 1) + ' rivals · seed ' + start.seed +
+			' · steps ' + first + '–' + game.clockSteps + (careerPaused ? ' · world clock paused' : ''),
+		'checked players: ' + slots.map(slotName).join(', ')
+	];
+	if (careerRecording.restored) lines.push('restored run · earlier history was not recorded');
+	lines.push('opening · mask ' + start.state.mask + ' · rate ' + start.rate +
+		' · ' + (start.source === MODE_PLANETS ? 'planets' : 'ports') +
+		' · g/f/w ' + start.gs + '/' + start.fs + '/' + start.ws +
+		(start.ht ? ' · stay-pay' : '') + (start.state.market.permanentCorruption ? ' · entrenched corruption' : '') +
+		(start.cheat ? ' · ' + start.cheat : ''));
+	for (const slot of slots) {
+		if (slot >= start.seats.length) continue;
+		const controller = start.state.run.slots[slot] === PLAYER_BOT ? 'bot' : 'human';
+		lines.push(careerLogRow(first, slotName(slot), careerRecording.restored ? 'resume' : 'start',
+			'HQ P' + start.seats[slot] + ' · ' + controller));
+	}
+	const entries = careerHistory.filter(entry => Array.isArray(entry) ? slots.includes(entry[1])
+		: (slots.includes(entry.slot) || CAREER_SHARED_ACTIONS.has(entry.type)) &&
+			entry.type !== 'fireQueued' && entry.type !== 'bookTrace');
+	entries.sort((a, b) => (a.step ?? a[0]) - (b.step ?? b[0]));
+	for (const entry of entries) lines.push(Array.isArray(entry) ? careerLogEvent(entry) : careerLogAction(entry));
+	lines.push('', 'Current state:');
+	for (const state of bot.traceHeaders(game.clockSteps, actors)) lines.push(state);
+	return lines.join('\n');
 }
 
 function copyBotLog() {
-	if (!game.on || !botLogBtn) return;
+	if (!game.on || replay.on || careerActionReplay.active) return;
 	const actors = selectedBotActors();
-	const text = bot.decisionLog(game.clockSteps, botLogHeader(actors), actors);
+	if (!actors.length) return;
+	const text = careerRule() ? careerLogText(actors) : bot.decisionLog(game.clockSteps, botLogHeader(actors), actors);
 	copyUrlText(text, botLogBtn, 'copy bot log');
 }
 
@@ -292,9 +327,6 @@ function loadReplayText() {
 
 const replayLoadButton = $('replayLoad');
 if (replayLoadButton) replayLoadButton.addEventListener('click', loadReplayText);
-const careerSaveCopyButton = $('careerSaveCopy');
-if (careerSaveCopyButton) {
-	careerSaveCopyButton.addEventListener('click', () => {
-		if (careerRule()) copyCareerReplay(undefined, careerSaveCopyButton, 'copy full save');
-	});
-}
+$('careerSaveCopy').addEventListener('click', () => {
+	if (careerRule()) copyCareerReplay();
+});

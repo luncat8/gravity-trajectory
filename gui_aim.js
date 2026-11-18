@@ -147,9 +147,7 @@ function restoreSaved() {
 function cancelTurret(queued = turret) {
 	if (!queued.pending) return;
 	const queuedSlot = slotTurrets.indexOf(queued);
-	if (queuedSlot >= 0 && careerRule() && !slotIsBot(queuedSlot) && !careerActionReplay.applying) {
-		careerActionLog.push({ step: game.clockSteps, slot: queuedSlot, type: 'cancelLaunch' });
-	}
+	if (queuedSlot >= 0) recordCareerAction('cancelLaunch', undefined, queuedSlot);
 	queued.pending = false;
 	GravityGame.releaseEnergy(queued.pad, queued.energy);
 	careerNotice('');
@@ -180,6 +178,8 @@ function queueTurretShot() {
 	turret.energy = activeCareerSim().launchEnergy(aimBody, aimSpeed);
 	GravityGame.reserveEnergy(turret.pad, turret.energy);
 	turret.fireAt = game.clockSteps + Math.ceil(wait / DT);
+	if (slotIsBot(activeSlotIndex())) bot.traceCareerQueue(playerCareer(), aimBody, aimAngle, aimSpeed,
+		turret.energy, turret.fireAt, game.clockSteps);
 	/* the barrel only turns while the world clock runs */
 	setCareerPaused(false);
 	careerNotice(wait > 0
@@ -201,7 +201,7 @@ function turretReady() {
 }
 
 function tickTurrets() {
-	if (careerPaused || !turretReady()) return;
+	if (careerActionReplay.active || careerPaused || !turretReady()) return;
 	const selectedSlot = activeSlotIndex();
 	for (let s = 0; s < slotCount(); s++) {
 		const queued = slotTurrets[s];
@@ -213,8 +213,10 @@ function tickTurrets() {
 }
 
 function tickTurret() {
-	if (!turret.pending || game.clockSteps < turret.fireAt) return;
-	if (careerRule() && careerPaused) return;
+	if (!turret.pending || game.clockSteps < turret.fireAt || careerPaused) return false;
+	/* Same-step clicks can occur on either side of a barrel firing, even
+	 * while another player holds time. Keep the order without wall pauses. */
+	recordCareerAction('fireQueued');
 	turret.pending = false;
 	aimBody = turret.body;
 	aimAngle = turret.angle;
@@ -222,6 +224,7 @@ function tickTurret() {
 	armed = true;
 	careerNotice('');
 	fire(NO_ABORT);
+	return true;
 }
 
 function cancelAim() {
@@ -243,7 +246,7 @@ function cancelAim() {
 /* the manual burn belongs to the selected player's own ship: another player's
  * coasting drive must not take the launch row, and a bot burns by itself */
 function canImpulse() {
-	if (!careerRule() || replay.on || playerIsBot()) return false;
+	if (!careerRule() || replay.on || careerInputLocked() || playerIsBot()) return false;
 	const sim = activeSim();
 	return sim.status === STATUS_FLYING && sim.burnLimit() > 0 &&
 		GravityGame.careerShipUsable(playerCareer());
@@ -354,6 +357,7 @@ function executeBurn() {
 	const beforeFuel = ship.fuelKg;
 	if (!GravityGame.careerBurn(career, sim, angle, dv)) return false;
 	recordCareerAction('burn', { angleU: angleU, dvU: dvU, live: step });
+	bot.traceCareerBurn(career, sim, angle, dv, game.clockSteps);
 	const used = beforeFuel - ship.fuelKg;
 	const shots = slotShots(slot);
 	if (shots.length > 0) {
@@ -376,12 +380,13 @@ function toggleFlightPause() {
 		syncCareerPause();
 		return true;
 	}
-	if (!pauseAllowed() || playerIsBot()) return false;
+	if (!pauseAllowed() || careerInputLocked() || playerIsBot()) return false;
 	setCareerPaused(!slotPaused[activeSlotIndex()]);
 	return true;
 }
 
 function launchShot() {
+	if (careerInputLocked()) return;
 	if (canImpulse()) {
 		if (burnArmed) executeBurn();
 		return;
@@ -396,7 +401,6 @@ function launchShot() {
 	 * through, and with no firable shot the click is the repair alone */
 	if (repairOffered()) {
 		const chained = shotFiresRepaired();
-		recordCareerAction('act', { act: 'repair' });
 		if (!careerRepair() || !chained) return;
 	}
 	launchArmedShot();
@@ -443,7 +447,6 @@ function fire(abortStep) {
 	const slot = activeSlotIndex();
 	const sim = slotSim(slot);
 
-	if (careerRule() && !replay.on) recordCareerFlight(slot, game.clockSteps, aimBody, aimAngle, aimSpeed);
 	if (game.on) recordSlotShot(slot, abortStep);
 	predictShot();
 	dirty = false;
@@ -455,6 +458,7 @@ function fire(abortStep) {
 	if (game.on) {
 		if (careerRule()) {
 			GravityGame.careerBeginFlight(playerCareer(), sim);
+			bot.traceCareerFire(playerCareer(), sim, game.clockSteps);
 			if (playerCareer().fragileLost) {
 				careerNotice('fragile load lost · fired at ' + Math.round(aimSpeed) +
 					' px/s · it survives a ' + fragileLimitText() + ' · contract void');
@@ -512,15 +516,16 @@ function clearCargo() {
 }
 
 /* gravity source: static planets or their moving ports */
-function setSource(next) {
+function setSource(next, restartRoute = true) {
+	if (careerInputLocked()) return;
 	if (next === mode && cargoSim.fillField) return;
 	cancelHelperForChange('gravity source');
 	mode = next;
 	careerRecordingMark();
-	if (typeof recordCareerAction === 'function') recordCareerAction('source', { mode: next });
+	recordCareerAction('source', { mode: next });
 	srcPlanetsEl.checked = mode === MODE_PLANETS;
 	srcPortsEl.checked = mode === MODE_PORTS;
-	if (game.on && routeRule() && !replay.on) {
+	if (restartRoute && game.on && routeRule() && !replay.on) {
 		/* every route plan is traced in one field; changing it restarts the contest */
 		startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player, game.cheat);
 		return;

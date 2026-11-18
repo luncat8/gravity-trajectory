@@ -218,7 +218,7 @@ function startMapRecord(record) {
 		return false;
 	}
 	mapNotice('loaded ' + record.name);
-	careerRecordingReset();
+	careerRecordingReset(true);
 	return true;
 }
 

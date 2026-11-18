@@ -33,7 +33,8 @@ function visitFrames(codec, movie) {
 
 /* The import must not be nested in runBox, which is hidden in lab mode. */
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-assert.match(html, /id="botLogText"[^>]*><\/textarea>\s*<\/div>\s*<\/div>\s*<details id="replayImport"/);
+assert.match(html, /id="gameLink"[^>]*><\/textarea>\s*<\/div>\s*<details id="replayImport"/);
+assert.doesNotMatch(html, /id="botLogBox"/, 'no rendered log panel');
 
 function openCopy(text) {
 	if (!text.startsWith('gravity-career:')) {
@@ -59,7 +60,7 @@ live.context.careerAct(actionData);
 live.context.careerAct({ act: 'build', kind: 'panel', tier: '1' });
 assert(get(live, 'game.money.purse') < initialPurse, 'same-step purchases succeed');
 live.click('gameCopy');
-const actionsText = get(live, 'gameLinkEl.value');
+const actionsText = live.clipboardText;
 assert(actionsText.startsWith('GRAVITY_ACTIONS:'), 'gameCopy copies minimal player actions');
 const actionsData = live.context.CareerActions.decode(actionsText);
 assert(actionsData && actionsData.seed === 42 && Array.isArray(actionsData.actions), 'actions payload decodes');
@@ -110,9 +111,10 @@ assert(get(live, 'cargoSim.status === STATUS_FLYING'), 'copy while in flight');
 get(live, 'setPlayerCount(1); setPlayerCount(-1); setPlayerCount(1)');
 live.runFrames(90, 16);
 get(live, 'selectSlot(3)');
-live.click('botCopy');
+assert(live.elements.get('botCopy').hidden, 'full saves only use the secondary button');
+live.click('careerSaveCopy');
 const lateRivalCopy = live.clipboardText;
-assert.strictEqual(decodeCopy(live).watch, 3, 'copy rival follows the selected company');
+assert.strictEqual(decodeCopy(live).watch, 3, 'full save can follow the selected company');
 const lateRival = openCopy(lateRivalCopy);
 assert.strictEqual(get(lateRival, 'activeSlotIndex()'), 0, 'late rival has not joined yet');
 lateRival.click('replaySkip');
@@ -137,7 +139,7 @@ const watching = openCopy(text);
 assert.strictEqual(get(watching, 'replay.career'), true);
 assert.strictEqual(get(watching, 'careerRecording.index'), 0);
 assert.strictEqual(watching.elements.get('botCopy').hidden, true, 'career shares use the compact replay or full save');
-assert.match(watching.elements.get('shareHint').textContent, /human inputs/);
+assert.match(watching.elements.get('shareHint').textContent, /including their human turns/);
 watching.click('replaySpeed');
 assert.strictEqual(get(watching, 'REPLAY_SPEEDS[replay.speed]'), 4);
 watching.runFrames(3, 16);
@@ -168,8 +170,6 @@ assert.strictEqual(watching.elements.get('playerCountUp').disabled, true);
 assert.strictEqual(watching.elements.get('planetCountInput').disabled, true);
 assert.strictEqual(watching.elements.get('careerWait').disabled, true);
 assert.strictEqual(watching.elements.get('careerReplayHint').hidden, false);
-watching.click('botCopy');
-assert.strictEqual(decodeCopy(watching).watch, 1, 'a replay can be shared with a different focus');
 watching.click('careerSaveCopy');
 assert.strictEqual(JSON.stringify(decodeCopy(watching)), JSON.stringify(movie),
 	'a forwarded replay preserves the entire decoded payload');
@@ -345,22 +345,43 @@ for (const [index, name] of [[get(logs, 'GravityBot.PLAYER_INDEX'), 'YOU'], [0, 
 }
 get(logs, `bot.traceAdd(GravityBot.PLAYER_INDEX, 'YOU-OLD', '', 0);
 	bot.traceAdd(0, 'R1-OLD', '', 0); bot.traceAdd(1, 'R2-OLD', '', 0);
-	for (let i = 0; i < 300; i++) bot.traceAdd(0, 'R1-NOISE-' + i, '', 0);`);
+	for (let i = 0; i < 300; i++) {
+		bot.traceAdd(0, 'R1-NOISE-' + i, '', 0);
+		bot.traceAdd(GravityBot.PLAYER_INDEX, 'YOU-NOISE-' + i, '', 0);
+	}`);
 get(logs, 'setSlotType(0, PLAYER_USER); setSlotType(1, PLAYER_USER)');
 logs.click('botLog');
-assert.match(logs.clipboardText, /checked bots: R2/);
+assert.match(logs.clipboardText, /checked players: R2/);
 assert.match(logs.clipboardText, /R2-OLD/);
 for (const event of ['repair', 'gear', 'bribe']) {
 	assert.match(logs.clipboardText, new RegExp('R2 ' + event));
 	assert.doesNotMatch(logs.clipboardText, new RegExp('(?:YOU|R1) ' + event));
 }
-assert.doesNotMatch(logs.clipboardText, /YOU-OLD|R1-NOISE|R1-OLD/);
+assert.doesNotMatch(logs.clipboardText, /YOU-OLD|YOU-NOISE|R1-NOISE|R1-OLD/);
 get(logs, 'setSlotType(0, PLAYER_BOT)');
 logs.click('botLog');
-assert.match(logs.clipboardText, /checked bots: YOU, R2/);
+assert.match(logs.clipboardText, /checked players: YOU, R2/);
 assert.match(logs.clipboardText, /YOU-OLD/);
+assert.match(logs.clipboardText, /YOU-NOISE-299/);
+assert(!get(logs, 'bot.traceByActor[GravityBot.PLAYER_INDEX].some(event => event.line.includes("YOU-OLD"))'),
+	'HUD ring discarded the old event, but export did not');
 assert.match(logs.clipboardText, /R2-OLD/);
 assert.doesNotMatch(logs.clipboardText, /R1-NOISE|R1-OLD/);
+
+/* A missing clipboard allows one manual copy, without stripping line breaks. */
+fallback.click('botLog');
+const fallbackLog = fallback.elements.get('gameLink');
+assert.strictEqual(fallbackLog.tagName, 'TEXTAREA');
+assert.strictEqual(fallbackLog.hidden, false);
+assert.match(fallbackLog.value, /bot decisions\ncareer.*\nchecked players: R1, R2/);
+
+/* A restored snapshot cannot reconstruct the unrecorded opening, even at step 0. */
+const restored = loadPage({ search: mapSearch(42) });
+get(restored, 'startMapRecord(careerRecordingSnapshot())');
+restored.click('gameCopy');
+assert.match(restored.elements.get('careerMsg').textContent, /opening history is unavailable/);
+restored.click('botLog');
+assert.match(restored.clipboardText, /restored run · earlier history was not recorded/);
 
 /* A truly blocked shot produces a visible call and opens the relevant answer. */
 const calls = loadPage({ search: mapSearch(42) });

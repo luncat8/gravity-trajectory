@@ -489,7 +489,7 @@
 		return career.cheat === GravityGame.CHEAT_COMMUNISM ? 0 : value;
 	}
 
-	GravityBot.prototype.traceAdd = function (index, decision, detail, step) {
+	GravityBot.prototype.traceAdd = function (index, decision, detail, step, move) {
 		const line = '[' + worldClock(step) + '] ' + actorLabel(index) + ' ' + decision +
 			(detail ? ' · ' + detail : '');
 		this.trace.push(line);
@@ -501,6 +501,9 @@
 			if (bucket.length > TRACE_MAX) bucket.shift();
 		}
 		if (index >= 0 && index < this.lastDecision.length) this.lastDecision[index] = line;
+		if (this.onCareerTrace && this.rule === GravityGame.RULE_CAREER && index >= 0) {
+			this.onCareerTrace(index, decision, detail, step, move);
+		}
 	};
 
 	GravityBot.prototype.traceReset = function () {
@@ -1871,12 +1874,14 @@
 		return out;
 	};
 
-	GravityBot.prototype.careerBuyGear = function (career, planet, kind, item, reserve) {
+	GravityBot.prototype.careerBuyGear = function (career, planet, kind, item, reserve, step, why) {
 		if (!item || career.ledger.purse + 1e-9 < careerPrice(career, item) + reserve) return false;
 		const fresh = kind === OrbitTech.KIND_CATAPULT && career.pads[planet].catapult === null;
 		if (!GravityGame.buildGear(career, planet, kind, item)) return false;
 		if (fresh) this.careerBuilds += 1;
 		else this.careerUpgrades += 1;
+		if (why) this.traceAdd(careerTraceIndex(career), 'gear', 'P' + planet + ' ' + item.id +
+			' · ' + why + ' · −' + careerPrice(career, item).toFixed(2), step);
 		return true;
 	};
 
@@ -1966,7 +1971,7 @@
 		return best;
 	};
 
-	GravityBot.prototype.careerAccept = function (career) {
+	GravityBot.prototype.careerAccept = function (career, step = this.worldStep) {
 		if (career.contract >= 0) return false;
 		let best = -1;
 		let bestScore = -Infinity;
@@ -1983,11 +1988,15 @@
 				best = i;
 			}
 		}
-		return best >= 0 && GravityGame.acceptTask(career, best);
+		if (best < 0 || !GravityGame.acceptTask(career, best)) return false;
+		const task = career.tasks[best];
+		this.traceAdd(careerTraceIndex(career), 'contract', 'P' + task.from + '→P' + task.to +
+			' · reward ' + task.reward.toFixed(2) + ' · best board score ' + signed(bestScore), step);
+		return true;
 	};
 
 	/* Raise the pad's full-battery cap, not its accidentally low current charge. */
-	GravityBot.prototype.careerUpgrade = function (career, sim, wantedSpeed, reserve) {
+	GravityBot.prototype.careerUpgrade = function (career, sim, wantedSpeed, reserve, step = this.worldStep) {
 		const planet = career.at;
 		if (planet < 0) return false;
 		const pad = career.pads[planet];
@@ -2007,7 +2016,8 @@
 				item = careerNextItem(career, kind, table, pad[kind]);
 			}
 			const needed = fullLimit < GravitySim.SPEED_MIN;
-			if (!this.careerBuyGear(career, planet, kind, item, needed ? 0 : reserve)) break;
+			if (!this.careerBuyGear(career, planet, kind, item, needed ? 0 : reserve, step,
+				needed ? 'restore minimum lift' : 'lift loaded contract')) break;
 			upgraded = true;
 		}
 		return upgraded;
@@ -2172,15 +2182,17 @@
 	/* Gear shopping happens while idle: rescue, repair, refit/accept, upgrade, expand,
 	 * then the pad itself is sized for its earnings. Fuel is priced later, at the
 	 * committed launch, so a sit or a forced rebuild never stocks a tank for free. */
-	GravityBot.prototype.careerBetweenFlights = function (career, sim, runStep) {
+	GravityBot.prototype.careerBetweenFlights = function (career, sim, runStep = this.worldStep) {
 		if (career.ended !== GravityGame.CAREER_OPEN) return 0;
 		/* the Capital transport is still flying: nothing to shop, nowhere to go */
 		if (career.arrested) return 0;
 		let actions = 0;
 		const evacPrice = careerFee(career, GravityGame.CAREER.evacFee);
 		if (career.at < 0) {
-			if (career.ledger.purse + 1e-9 >= evacPrice && GravityGame.evacuate(career, sim)) actions += 1;
-			return actions;
+			if (this.careerRecover(career, sim, evacPrice, runStep, 'lost in space')) return 1;
+			this.traceAdd(careerTraceIndex(career), 'no shot', 'lost in space · evac ' +
+				evacPrice.toFixed(2) + ' > purse ' + career.ledger.purse.toFixed(2), runStep);
+			return 0;
 		}
 		/* the commercial EMC lifts a parked ship for its fee, so a padless planet
 		 * is no dead end; only a load nothing here can lift needs a rescue.
@@ -2189,6 +2201,7 @@
 		if (GravityGame.padLift(career, career.at) + 1e-9 < GravitySim.SPEED_MIN) {
 			if (career.contract >= 0) {
 				GravityGame.dropContract(career);
+				this.traceAdd(careerTraceIndex(career), 'drop contract', 'load cannot lift', runStep);
 				actions += 1;
 			} else {
 				/* will EMC-1 + BAT-1 lift this load? */
@@ -2198,10 +2211,9 @@
 				const starterLifts = starterCap + 1e-9 >= GravitySim.SPEED_MIN &&
 					career.ledger.purse + 1e-9 >= starterCost;
 				if (starterLifts && this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
-					OrbitTech.CATAPULTS[0], 0)) {
+					OrbitTech.CATAPULTS[0], 0, runStep, 'restore minimum lift')) {
 					actions += 1;
-				} else if (career.ledger.purse + 1e-9 >= evacPrice &&
-					GravityGame.evacuate(career, sim)) {
+				} else if (this.careerRecover(career, sim, evacPrice, runStep, 'no affordable rail can lift')) {
 					actions += 1;
 				}
 			}
@@ -2213,7 +2225,7 @@
 		 * end (heavy cargo, lowered force scale): repair it before shopping */
 		if (career.pads[career.at].catapult !== null &&
 			GravityGame.padLift(career, career.at) + 1e-9 < GravitySim.SPEED_MIN &&
-			this.careerUpgrade(career, sim, GravitySim.SPEED_MIN, 0)) actions += 1;
+			this.careerUpgrade(career, sim, GravitySim.SPEED_MIN, 0, runStep)) actions += 1;
 
 		/* repair the occupied planet only with gear that gives a proven exit. */
 		let departure = this.careerDeparture(career, career.at, career.ledger.purse,
@@ -2221,16 +2233,16 @@
 		if (departure.ok && departure.builds) {
 			if (career.pads[career.at].catapult !== departure.catapult &&
 				this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
-					departure.catapult, 0)) actions += 1;
+					departure.catapult, 0, runStep, 'affordable exit')) actions += 1;
 			if (career.pads[career.at].battery !== departure.battery &&
 				this.careerBuyGear(career, career.at, OrbitTech.KIND_BATTERY,
-					departure.battery, 0)) actions += 1;
+					departure.battery, 0, runStep, 'affordable exit')) actions += 1;
 		}
 		/* a starter pad is still an economic claim, but never replace a stronger
 		 * shared rail with EMC-1 unless this ship can actually leave on it. */
 		if (career.pads[career.at].catapult === null && departure.canBuildStarter &&
 			this.careerBuyGear(career, career.at, OrbitTech.KIND_CATAPULT,
-				OrbitTech.CATAPULTS[0], 0)) actions += 1;
+				OrbitTech.CATAPULTS[0], 0, runStep, 'claim an exitable landing')) actions += 1;
 
 		/* the hold is fitted wherever the ship stands: a rival is only on its
 		 * HQ before its first launch, and the contract board needs 4 t */
@@ -2244,19 +2256,24 @@
 			}
 		}
 		if (this.careerUseResearch && career.at === career.hq) {
-			while (this.careerResearch(career, sim, CAREER_PURSE_RESERVE)) actions += 1;
+			let part;
+			while ((part = this.careerResearch(career, sim, CAREER_PURSE_RESERVE))) {
+				this.traceAdd(careerTraceIndex(career), 'research', part + ' · HQ gear', runStep);
+				actions += 1;
+			}
 		}
-		if (this.careerAccept(career)) actions += 1;
+		if (this.careerAccept(career, runStep)) actions += 1;
 		if (this.careerBribe(career, sim, runStep)) actions += 1;
 
 		if (career.contract >= 0) {
 			const task = career.tasks[career.contract];
 			if (task.state === GravityGame.TASK_LOADED) {
-				if (this.careerUpgrade(career, sim, CAREER_LOADED_SPEED, CAREER_PURSE_RESERVE)) {
+				if (this.careerUpgrade(career, sim, CAREER_LOADED_SPEED, CAREER_PURSE_RESERVE, runStep)) {
 					actions += 1;
 				}
 				if (GravityGame.padLift(career, career.at) + 1e-9 < GravitySim.SPEED_MIN) {
 					GravityGame.dropContract(career);
+					this.traceAdd(careerTraceIndex(career), 'drop contract', 'upgraded rail still cannot lift', runStep);
 					actions += 1;
 				}
 			}
@@ -2279,7 +2296,7 @@
 			if (here.ok) {
 				const planet = this.careerNextPad(career);
 				if (planet >= 0 && this.careerBuyGear(career, planet, OrbitTech.KIND_CATAPULT,
-					OrbitTech.CATAPULTS[0], expansionReserve)) {
+					OrbitTech.CATAPULTS[0], expansionReserve, runStep, 'expand network with reserve intact')) {
 					actions += 1;
 				}
 			}
@@ -2290,6 +2307,12 @@
 			actions += 1;
 		}
 		return actions;
+	};
+
+	GravityBot.prototype.careerRecover = function (career, sim, cost, step, why) {
+		if (career.ledger.purse + 1e-9 < cost || !GravityGame.evacuate(career, sim)) return false;
+		this.traceAdd(careerTraceIndex(career), 'evac', 'to HQ P' + career.at + ' · ' + why, step);
+		return true;
 	};
 
 	/*
@@ -3064,16 +3087,24 @@
 		const nudge = state.burn === 0;
 		state.burnTries += 1;
 		state.burnNext = sim.liveSteps + CAREER_BURN_EVERY;
+		const who = careerTraceIndex(career);
 		const plan = this.careerBurnPlan(career, sim, market, runStep, !nudge);
-		if (!plan) return null;
+		if (!plan) {
+			if (state.burnTries === 1) this.traceAdd(who, 'coast', 'no improving burn found', runStep);
+			return null;
+		}
 		if (!GravityGame.careerBurn(career, sim, plan.angle, plan.dv)) return null;
 		state.burn += 1;
 		this.careerBurnsPlanned += 1;
-		this.traceAdd(state.index === undefined ? careerTraceIndex(career) : state.index, 'burn',
-			'Δv ' + plan.dv.toFixed(1) + ' → P' + plan.body +
-			' · score ' + signed(plan.score) + ' · fuel ' + ship.fuelKg.toFixed(1) + ' kg',
-			runStep);
+		this.traceCareerBurn(career, sim, plan.angle, plan.dv, runStep,
+			'→ P' + plan.body + ' · score ' + signed(plan.score) +
+			' vs coast ' + signed(plan.coastScore));
 		return plan;
+	};
+
+	GravityBot.prototype.traceCareerBurn = function (career, sim, angle, dv, step, why = 'manual') {
+		this.traceAdd(careerTraceIndex(career), 'burn', 'Δv ' + dv.toFixed(1) + ' · ' + why +
+			' · ' + career.ship.fuelKg.toFixed(1) + ' kg left', step, [sim.liveSteps, angle, dv]);
 	};
 
 	/*
@@ -3231,7 +3262,11 @@
 			career.market = market;
 			const flightStep = r.sim.status === STATUS_FLYING && r.sim.liveSteps < r.sim.stepLimit;
 			/* Bot burns precede this step's wear; hand-flown rivals choose their own. */
-			if (flightStep && this.isRivalBot(i)) this.careerFlightBurn(career, r.sim, market, runStep - 1, r);
+			if (flightStep && this.isRivalBot(i)) {
+				const burn = this.careerFlightBurn(career, r.sim, market, runStep - 1, r);
+				const shot = r.shots[r.shots.length - 1];
+				if (burn && shot) shot.burns.push(GravityGame.createBurn(r.sim.liveSteps, burn.angleU, burn.dvU));
+			}
 			GravityGame.careerAdvance(career, 1, flightStep);
 			if (r.sim.status === STATUS_FLYING) {
 				r.sim.stepOne();
@@ -3304,23 +3339,27 @@
 		const career = p.career;
 		if (!career || !p.sim || career.ended !== GravityGame.CAREER_OPEN) return false;
 		if (career.arrested || p.sim.status === STATUS_FLYING) return false;
-		/* the page books a landing at the end of its frame: until it does, the
-		 * career record still names the pad the ship has already left */
-		if (p.sim.landedBody !== career.at) return false;
 		if (refresh) {
 			/* just landed (or just started): shop, then turn the barrel */
 			p.idleTries = 0;
 			p.waitTries = 0;
 			this.careerBetweenFlights(career, p.sim, runStep);
+			if (career.at < 0) return false;
 			p.readyStep = runStep + CAREER_RIVAL_GAP;
+			this.traceAdd(p.index, 'ready', 'shop done · next try in ' +
+				(CAREER_RIVAL_GAP * GravitySim.DT).toFixed(1) + ' s', runStep);
 			return false;
 		}
 		if (runStep < p.readyStep) return false;
 		const plan = this.careerNextShot(p, market, trade, runStep);
 		if (!plan) return false;
+		this.traceCareerPlan(p.index, plan, runStep);
 		if (this.careerSit(p, plan, runStep)) return false;
 		const requested = plan.fuelProducedKg + plan.fuelBoughtKg > 0;
-		if (requested && !this.careerCommitFuel(p, plan, runStep)) return false;
+		if (requested && !this.careerCommitFuel(p, plan, runStep)) {
+			p.readyStep = runStep + CAREER_RIVAL_GAP;
+			return false;
+		}
 		if (!requested) this.careerPrepareFuel(p, plan, market, runStep);
 		p.readyStep = runStep + CAREER_RIVAL_GAP;
 		const out = p.plan;
@@ -3336,11 +3375,6 @@
 		out.fromBook = plan.fromBook;
 		out.burnGain = plan.burnGain;
 		out.burnBody = plan.burnBody;
-		this.traceAdd(PLAYER_INDEX, 'plan', 'P' + plan.origin + '→P' + plan.body +
-			' v' + plan.speed.toFixed(0) + ' score ' + signed(plan.score) +
-			' fee ' + plan.fee.toFixed(2) + ' · ' +
-			(plan.fromBook ? 'book reuse' : 'fan ' + this.careerScan.tried + ' traces') +
-			' · EMC build ' + (plan.builds ? 'affordable' : 'no') + burnNote(plan), runStep);
 		return true;
 	};
 
@@ -3581,7 +3615,11 @@
 			GravityGame.buyFuel(career, bought);
 		plan.fuelProducedKg = 0;
 		plan.fuelBoughtKg = 0;
-		if (got !== produced + bought) return false;
+		if (got !== produced + bought) {
+			this.traceAdd(r.index, 'no shot', 'fuel quote changed · got ' + got + ' of ' +
+				(produced + bought) + ' kg · retry in ' + (CAREER_RIVAL_GAP * GravitySim.DT).toFixed(1) + ' s', runStep);
+			return false;
+		}
 		this.careerFuelTopUps += 1;
 		this.traceAdd(r.index, 'fuel', '+' + got + ' kg · ' + produced + ' from battery · ' +
 			bought + ' bought · ' + (bought * GravityGame.fuelPrice(career)).toFixed(2) +
@@ -3876,6 +3914,35 @@
 		return true;
 	};
 
+	GravityBot.prototype.traceCareerPlan = function (who, plan, runStep) {
+		this.traceAdd(who, 'plan', 'P' + plan.origin + '→P' + plan.body +
+			' v' + plan.speed.toFixed(0) + ' score ' + signed(plan.score) +
+			' pay ' + signed(plan.taskPay) +
+			(plan.bribe > 0 ? ' (bribe ' + plan.bribe.toFixed(2) + ')' : '') +
+			' pad after wear ' + signed(plan.padValue) +
+			' fee ' + plan.fee.toFixed(2) + ' exit ' + (plan.exitCost || 0).toFixed(2) +
+			' (' + (plan.exitSource || 'own') + ') · ' +
+			(plan.fromBook ? 'book reuse' : 'fan ' + this.careerScan.tried + ' traces') +
+			' · EMC build ' + (plan.builds ? 'affordable' : 'no') + burnNote(plan), runStep);
+	};
+
+	GravityBot.prototype.traceCareerQueue = function (career, origin, angle, speed, energy, fireAt, step) {
+		this.traceAdd(careerTraceIndex(career), 'queue', 'P' + origin + ' angle ' + angle.toFixed(2) +
+			' v' + speed.toFixed(0) + ' · ' + GravityGame.railOwnerText(career, origin) +
+			' · ' + energy.toFixed(2) + ' kWh · barrel in ' + ((fireAt - step) * GravitySim.DT).toFixed(1) + ' s', step);
+	};
+
+	GravityBot.prototype.traceCareerFire = function (career, sim, step) {
+		this.traceAdd(careerTraceIndex(career), 'fire', 'P' + sim.origin + ' · v' + sim.speed.toFixed(1) +
+			' · purse ' + career.ledger.purse.toFixed(2), step, [sim.origin, sim.angle, sim.speed]);
+	};
+
+	GravityBot.prototype.traceCareerLanding = function (career, sim, step) {
+		this.traceAdd(careerTraceIndex(career), 'land', (career.at < 0 ? 'lost in space' : 'P' + career.at) +
+			' · purse ' + career.ledger.purse.toFixed(2) + ' · ' + career.padCount + ' pads',
+			step, [career.at, sim.endReason, sim.liveSteps]);
+	};
+
 	GravityBot.prototype.careerLaunch = function (r, market, trade, fieldRate, runStep) {
 		const career = r.career;
 		const sim = r.sim;
@@ -3891,15 +3958,7 @@
 		} else {
 			const plan = this.careerNextShot(r, market, trade, runStep);
 			if (!plan) return false;
-			this.traceAdd(who, 'plan', 'P' + plan.origin + '→P' + plan.body +
-				' v' + plan.speed.toFixed(0) + ' score ' + signed(plan.score) +
-				' pay ' + signed(plan.taskPay) +
-				(plan.bribe > 0 ? ' (bribe ' + plan.bribe.toFixed(2) + ')' : '') +
-				' pad after wear ' + signed(plan.padValue) +
-				' fee ' + plan.fee.toFixed(2) + ' exit ' + (plan.exitCost || 0).toFixed(2) +
-				' (' + (plan.exitSource || 'own') + ') · ' +
-				(plan.fromBook ? 'book reuse' : 'fan ' + this.careerScan.tried + ' traces') +
-				' · EMC build ' + (plan.builds ? 'affordable' : 'no') + burnNote(plan), runStep);
+			this.traceCareerPlan(who, plan, runStep);
 			r.idleTries = 0;
 			if (this.careerSit(r, plan, runStep)) return false;
 			const requested = plan.fuelProducedKg + plan.fuelBoughtKg > 0;
@@ -3928,11 +3987,7 @@
 				pad: pad,
 				energy: energy
 			};
-			this.traceAdd(who, 'queue', 'P' + plan.origin + ' angle ' + plan.angle.toFixed(2) +
-				' v' + plan.speed.toFixed(0) + ' → P' + plan.body + ' · ' +
-				GravityGame.railOwnerText(career, plan.origin) +
-				' · ' + energy.toFixed(2) + ' kWh · barrel in ' +
-				((r.turret.fireAt - runStep) * GravitySim.DT).toFixed(1) + ' s', runStep);
+			this.traceCareerQueue(career, plan.origin, plan.angle, plan.speed, energy, r.turret.fireAt, runStep);
 			return false;
 		}
 		/* fire the queued shot */
@@ -3943,15 +3998,12 @@
 		if (fieldRate !== undefined) sim.fieldRate = fieldRate;
 		sim.stepLimit = GravityGame.CAP_STEPS;
 		sim.limitReason = END_TIME;
-		if (this.onCareerLaunch) this.onCareerLaunch(career.index, runStep, origin, angle, speed);
 		r.shots.push(GravityGame.createShot(GravityGame.SRC_PLANETS, origin,
 			GravityGame.angleUnits(angle), GravityGame.speedUnits(speed), GravityGame.NO_ABORT));
 		sim.launch(origin, angle, speed);
 		GravityGame.careerBeginFlight(career, sim);
 		r.basePlanet = origin;
-		this.traceAdd(who, 'fire', 'P' + origin + ' v' + speed.toFixed(0) +
-			' → P' + shot.body + ' · score ' + signed(shot.score) +
-			' · purse ' + career.ledger.purse.toFixed(2), runStep);
+		this.traceCareerFire(career, sim, runStep);
 		return true;
 	};
 
@@ -3962,11 +4014,8 @@
 		r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
 		r.idleTries = 0;
 		r.waitTries = 0;
+		this.traceCareerLanding(career, r.sim, runStep);
 		this.careerBetweenFlights(career, r.sim, runStep);
-		this.traceAdd(r.index, 'land', (career.at < 0 ? 'lost in space' : 'P' + career.at) +
-			' · purse ' + career.ledger.purse.toFixed(2) + ' · ' + career.padCount + ' pads · ' +
-			(career.at < 0 || career.stranded ? 'no own EMC here' : 'own rail') +
-			' · next in ' + ((r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s', runStep);
 	};
 
 	/* a company that runs out of money is wound up and refinanced at its old HQ,

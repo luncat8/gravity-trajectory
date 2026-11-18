@@ -289,9 +289,6 @@ const gameCopyBtn = $('gameCopy');
 const careerSaveCopyBtn = $('careerSaveCopy');
 const botCopyBtn = $('botCopy');
 const botLogBtn = $('botLog');
-const botLogBoxEl = $('botLogBox');
-const botLogTextEl = $('botLogText');
-const botLogCloseBtn = $('botLogClose');
 const gameHudEl = $('gameHud');
 const gameClockEl = $('gameClock');
 const gameShotsEl = $('gameShots');
@@ -673,12 +670,11 @@ if (careerBoxEl) {
 if (careerWaitBtn) careerWaitBtn.addEventListener('click', () => careerAct({ act: 'wait' }));
 if (launchBuildBtn) {
 	launchBuildBtn.addEventListener('click', () => {
-		if (replay.on || !careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return;
+		if (replay.on || careerInputLocked() || !careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return;
 		const career = playerCareer();
 		if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
 			career.pads[career.at].catapult !== null) return;
 		careerFollow = true;
-		recordCareerAction('act', { act: 'build', kind: OrbitTech.KIND_CATAPULT, tier: '0', planet: career.at });
 		careerBuild(career, career.at, OrbitTech.KIND_CATAPULT, OrbitTech.CATAPULTS[0]);
 	});
 }
@@ -791,7 +787,6 @@ gameNewSeedBtn.addEventListener('click', () => {
 gameCopyBtn.addEventListener('click', copyLink);
 if (botCopyBtn) botCopyBtn.addEventListener('click', copyBotLink);
 if (botLogBtn) botLogBtn.addEventListener('click', copyBotLog);
-if (botLogCloseBtn) botLogCloseBtn.addEventListener('click', hideBotLog);
 replaySpeedBtn.addEventListener('click', () => {
 	replay.speed = (replay.speed + 1) % REPLAY_SPEEDS.length;
 	refreshGameUi();
@@ -952,7 +947,7 @@ window.addEventListener('keydown', event => {
 			launchState = -1;
 			hudAt = -Infinity;
 		} else if (isBurnPaused()) setBurnPaused(false);
-		else if (!replay.on) cancelAim();
+		else if (!replay.on && !careerInputLocked()) cancelAim();
 	}
 });
 window.addEventListener('keyup', event => {

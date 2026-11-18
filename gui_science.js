@@ -444,6 +444,7 @@ function careerResearch() {
 			: 'research needs the preview fee in the purse');
 		return;
 	}
+	recordCareerAction('act', { act: 'sciAccept', family: family, params: params });
 	if (turret.pending && !GravityGame.careerCanFire(career, activeSim(), turret.body, turret.speed)) {
 		cancelTurret();
 	}
@@ -451,4 +452,5 @@ function careerResearch() {
 	careerNotice('researched ' + family + ' ' + label + ' ' + scienceVectorText(family, params) +
 		' · −' + (before - career.ledger.purse).toFixed(2) + ' · hull ' + n + ' points');
 	careerChanged();
+	return true;
 }

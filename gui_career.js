@@ -14,8 +14,8 @@
 function waitSettlement(career) {
 	const steps = GravitySim.stepsForGameSeconds(GravitySim.WAIT_SEC);
 	const gameSec = Math.round(GravitySim.gameSeconds(steps));
-	const padSec = GravitySim.padSeconds(gameSec);
-	const padMin = GravitySim.padMinutes(gameSec);
+	const padSec = GravitySim.padSeconds(DT);
+	const padMin = GravitySim.padMinutes(DT);
 	/* what the same span costs to watch instead of fast-forwarding */
 	const watchSec = GravitySim.wallSeconds(steps, playPace());
 	const nextStep = game.clockSteps + steps;
@@ -26,9 +26,10 @@ function waitSettlement(career) {
 	for (let i = 0; i < career.pads.length; i++) {
 		const pad = career.pads[i];
 		if (pad.catapult === null) continue;
-		const after = Math.min(pad.battery.capacity,
-			OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, padMin) +
-			OrbitTech.solarCharge(pad.panel, career.light[i], padSec));
+		const leak = -pad.battery.leak * padMin;
+		const sun = OrbitTech.solarCharge(pad.panel, career.light[i], padSec);
+		const gainSteps = leak === 0 ? steps : Math.expm1(leak * steps) / Math.expm1(leak);
+		const after = Math.min(pad.battery.capacity, pad.chargeKwh * Math.exp(leak * steps) + sun * gainSteps);
 		const gain = after > pad.chargeKwh ? after - pad.chargeKwh : 0;
 		if (i === here) hereGain = gain;
 		if (gain > 0.005) {
@@ -86,7 +87,7 @@ function realSecText(sec) {
 
 function refreshCareerWaitUi(career, ended) {
 	const busy = careerWaitBusy();
-	careerWaitBtn.disabled = replay.on || busy || ended || turret.pending ||
+	careerWaitBtn.disabled = replay.on || careerActionReplay.active || busy || ended || turret.pending ||
 		activeSim().status === STATUS_FLYING;
 	careerWaitBtn.classList.toggle('on', busy);
 	if (replay.on) {
@@ -203,7 +204,7 @@ function careerSelectTab(tab) {
 function refreshCareerPanel() {
 	if (!careerBoxEl) return;
 	const replayHint = $('careerReplayHint');
-	if (replayHint) replayHint.hidden = !(replay.on && replay.career);
+	if (replayHint) replayHint.hidden = !(replay.on && replay.career) && !careerActionReplay.active;
 	refreshCareerTabs();
 	/* the wait button sits in the game bar, so it follows the rule */
 	careerWaitBtn.hidden = !careerRule();
@@ -247,7 +248,7 @@ function careerChanged() {
 
 /* switch the ship's current planet onto or off the neutral commercial rail */
 function toggleCommercialRail(selectOnly) {
-	if (replay.on || !careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return false;
+	if (replay.on || careerInputLocked() || !careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return false;
 	const career = playerCareer();
 	if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0) return false;
 	if (career.commercialPlanet === career.at) {
@@ -268,9 +269,7 @@ function toggleCommercialRail(selectOnly) {
 		placeGripFromSpeed();
 		dirty = true;
 	}
-	if (typeof recordCareerAction === 'function') {
-		recordCareerAction('commercial', { on: career.commercialPlanet === career.at });
-	}
+	recordCareerAction('commercial', { on: career.commercialPlanet === career.at });
 	launchState = -1;
 	careerChanged();
 	return true;
@@ -278,6 +277,12 @@ function toggleCommercialRail(selectOnly) {
 
 
 /* ── career actions ── build, bulk, part, accept and drop, wait easing, evacuate, act */
+function recordCareerShop(act, kind, item, planet) {
+	const tier = item ? tierIndex(TECH_TABLES[kind], item) : NO_TIER;
+	const part = item && tier < 0 ? { item: item.id } : { tier: tier };
+	recordCareerAction('act', { act: act, kind: kind, ...part, ...(planet === undefined ? {} : { planet }) });
+}
+
 function careerBuild(career, planet, kind, item) {
 	const before = career.ledger.purse;
 	if (kind === OrbitTech.KIND_CATAPULT && career.pads[planet].catapult === null &&
@@ -292,9 +297,11 @@ function careerBuild(career, planet, kind, item) {
 			costText(careerCost(career, item.buildCost)) + ' and a free ' + kind + ' slot');
 		return;
 	}
+	recordCareerShop('build', kind, item, planet);
 	careerNotice('built ' + item.id + ' on ' + planetName(planet) + ' · −' +
 		(before - career.ledger.purse).toFixed(2));
 	careerChanged();
+	return true;
 }
 
 function careerBulk(career, kind, item) {
@@ -303,8 +310,10 @@ function careerBulk(career, kind, item) {
 		careerNotice('cannot fit ' + item.id + ' on every pad · ' + costText(cost));
 		return;
 	}
+	recordCareerShop('bulk', kind, item);
 	careerNotice('every ' + kind + ' now ' + item.id + ' · −' + cost.toFixed(2));
 	careerChanged();
+	return true;
 }
 
 function careerPart(career, kind, item) {
@@ -314,11 +323,13 @@ function careerPart(career, kind, item) {
 		careerNotice('cannot fit ' + name + (reason ? ' · ' + reason : ''));
 		return;
 	}
+	recordCareerShop('part', kind, item);
 	const dv = OrbitTech.shipDeltaV(career.ship, career.ship.cargoTons);
 	careerNotice('fitted ' + name + ' · ship ' + career.ship.mass.toFixed(1) + ' t' +
 		(dv > 0 ? ' · Δv ' + dv.toFixed(1) + ' px/s' : '') +
 		(career.ship.obs.fitted ? '' : ' · no observation device: visits pay nothing'));
 	careerChanged();
+	return true;
 }
 
 function careerFuelAction(career, produce) {
@@ -329,10 +340,12 @@ function careerFuelAction(career, produce) {
 			: 'fuel purchase needs a usable tank and purse');
 		return;
 	}
+	recordCareerAction('act', { act: produce ? 'produceFuel' : 'buyFuel' });
 	careerNotice((produce ? 'converted ' : 'bought ') + got.toFixed(1) + ' kg fuel · ' +
 		(produce ? (got / GravityGame.FUEL_KG_PER_KWH).toFixed(2) + ' kWh'
 			: costText(got * GravityGame.fuelPrice(career))));
 	careerChanged();
+	return true;
 }
 
 function careerAccept(career, index) {
@@ -340,20 +353,24 @@ function careerAccept(career, index) {
 		careerNotice('cannot take that delivery');
 		return;
 	}
+	recordCareerAction('act', { act: 'accept', targetSlot: index });
 	const task = career.tasks[index];
 	careerNotice(task.state === GravityGame.TASK_LOADED
 		? 'contract accepted · cargo loaded at ' + planetName(task.from)
 		: 'contract accepted · load at ' + planetName(task.from));
 	careerChanged();
+	return true;
 }
 
 function careerDrop(career) {
 	if (career.contract < 0) return;
+	recordCareerAction('act', { act: 'drop' });
 	GravityGame.dropContract(career);
 	/* a freed slot is offered again at once instead of after the next landing */
 	GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
 	careerNotice('contract dropped');
 	careerChanged();
+	return true;
 }
 
 function careerWaitBusy() {
@@ -411,7 +428,7 @@ function careerWaitProgress(p) {
 		Math.round(GravitySim.gameSeconds(careerWaitAnim.done)) + ' s' + padNote;
 }
 
-/* the whole settled result lands exactly on the old instant wait */
+/* Settle the board and any evacuation before the next input at this step. */
 function careerWaitFinish() {
 	const anim = careerWaitAnim;
 	careerWaitAnim = null;
@@ -437,16 +454,13 @@ function careerWaitFinish() {
 	careerNotice('clock +' + Math.round(GravitySim.gameSeconds(anim.steps)) + ' s · ' +
 		planetName(anim.planet) + ' pad ' +
 		(gain > 0.005 ? '+' + gain.toFixed(2) + ' kWh'
+			: gain < -0.005 ? '−' + (-gain).toFixed(2) + ' kWh'
 			: pad.catapult === null ? 'has no catapult' : 'already full'));
 	careerWaitBtn.classList.remove('on');
 	careerChanged();
 }
 
-/* the world advances in eased chunks each frame: the trade planets visibly
- * race, pads charge and the board ages exactly as one instant wait did.
- * Each frame credits at most WAIT_FRAME_MS toward the wait, so below
- * ~50 fps the real-time run stretches past CAREER_WAIT_SEC and every frame
- * keeps a bounded step chunk — slow machines slow down instead of freezing. */
+/* Easing schedules the work; it never changes the order of world steps. */
 function careerWaitTick(now) {
 	const anim = careerWaitAnim;
 	if (anim === null) return;
@@ -459,28 +473,15 @@ function careerWaitTick(now) {
 	if (dt > 0) anim.credit += dt < WAIT_FRAME_MS ? dt : WAIT_FRAME_MS;
 	const durationMs = anim.durationMs || CAREER_WAIT_MS;
 	const p = anim.credit < durationMs ? anim.credit / durationMs : 1;
-	const eased = easeInOut(p);
-	const steps = Math.round(eased * anim.steps);
-	const clockSec = anim.clockSec || GravitySim.WAIT_SEC;
-	tradeSim.advanceTo(anim.startT +
-		GravitySim.tradeMinutes(clockSec, scene.trade.speed) * eased);
-	cargoSim.fieldT = tradeSim.t;
-	if (steps > anim.done) {
-		/* recharge from the start snapshot, so the eased chunks land on the
-		 * exact single-call result (leak is exponential, solar is linear) */
-		const pads = anim.career.pads;
-		for (let i = 0; i < pads.length; i++) pads[i].chargeKwh = anim.charges[i];
-		GravityGame.careerAdvance(anim.career, steps);
-		/* the rival companies live the same fast-forwarded steps: they
-		 * charge, launch, fly and harvest while you wait */
-		for (let s = anim.done + 1; s <= steps; s++) {
-			bot.stepCareer(anim.startClock + s, game.market, tradeSim, scene.trade.speed);
-		}
-		game.clockSteps = anim.startClock + steps;
-		anim.done = steps;
-		cargoSim.predCount = 0;
+	const steps = p < 1 ? Math.min(anim.steps - 1, Math.round(easeInOut(p) * anim.steps)) : anim.steps;
+	while (anim.done < steps) {
+		advanceCareerOneStep();
+		anim.done++;
+		if (anim.done === anim.steps) break;
+		applyCareerActionsDue();
 	}
-	if (p < 1) careerWaitProgress(p);
+	cargoSim.predCount = 0;
+	if (anim.done < anim.steps) careerWaitProgress(p);
 	else careerWaitFinish();
 }
 
@@ -503,19 +504,18 @@ function waitCareer() {
 		career: career,
 		planet: planet,
 		before: pad.catapult === null ? 0 : pad.chargeKwh,
-		charges: Float64Array.from(career.pads, p => p.chargeKwh),
 		steps: GravitySim.stepsForGameSeconds(GravitySim.WAIT_SEC),
 		done: 0,
 		pct: -1,
 		credit: 0,
-		last: performance.now(),
-		startClock: game.clockSteps,
-		startT: tradeSim.t
+		last: performance.now()
 	};
+	recordCareerAction('act', { act: 'wait' });
 	careerWaitBtn.disabled = true;
 	careerWaitBtn.classList.add('on');
 	careerWaitProgress(0);
 	hudAt = -Infinity;
+	return true;
 }
 
 function cancelCareerWait() {
@@ -525,7 +525,7 @@ function cancelCareerWait() {
 	careerWaitBtn.textContent = 'wait · ' + GravitySim.WAIT_SEC + ' s';
 }
 
-function careerEvacuate() {
+function careerEvacuate(recordedSteps) {
 	const career = activeCareer();
 	if (!career.stranded || career.ended !== GravityGame.CAREER_OPEN) {
 		careerNotice('nothing to evacuate');
@@ -533,8 +533,8 @@ function careerEvacuate() {
 	}
 	const cost = GravityGame.evacuationCost(career);
 	const durationSec = GravityGame.evacuationSeconds(career);
-	const clockSec = durationSec * playPace();
-	const steps = GravitySim.stepsForGameSeconds(clockSec);
+	const steps = recordedSteps ?? GravitySim.stepsForGameSeconds(durationSec * playPace());
+	recordCareerAction('act', { act: 'evac', steps: steps });
 	setCareerPaused(false);
 	cancelAim();
 	careerWaitAnim = {
@@ -544,9 +544,7 @@ function careerEvacuate() {
 		sim: activeSim(),
 		planet: -1,
 		before: 0,
-		charges: Float64Array.from(career.pads, p => p.chargeKwh),
 		steps: steps,
-		clockSec: GravitySim.gameSeconds(steps),
 		durationSec: durationSec,
 		wallSeconds: durationSec / playPace(),
 		durationMs: durationSec / playPace() * 1000,
@@ -554,9 +552,7 @@ function careerEvacuate() {
 		done: 0,
 		pct: -1,
 		credit: 0,
-		last: performance.now(),
-		startClock: game.clockSteps,
-		startT: tradeSim.t
+		last: performance.now()
 	};
 	careerWaitBtn.disabled = true;
 	careerWaitBtn.classList.add('on');
@@ -564,6 +560,7 @@ function careerEvacuate() {
 	careerNotice('evacuation started · ' + cost.toFixed(2) + ' · ' +
 		Math.round(durationSec) + ' s at ×1');
 	hudAt = -Infinity;
+	return true;
 }
 
 function conditionText(career) {
@@ -582,6 +579,7 @@ function careerRepair() {
 			: 'career over · restart for a new HQ');
 		return false;
 	}
+	recordCareerAction('act', { act: 'repair' });
 	careerNotice('repaired · −' + cost.toFixed(2) + ' · condition ' + conditionText(career));
 	careerChanged();
 	return true;
@@ -598,6 +596,7 @@ function careerBribe() {
 		careerNotice(result.reason);
 		return;
 	}
+	recordCareerAction('act', { act: 'bribe' });
 	if (result.arrested) {
 		cancelAim();
 		cancelTurret();
@@ -606,6 +605,7 @@ function careerBribe() {
 		result.amount.toFixed(2) + ' · corruption ' + result.corruption.toFixed(1) + '%' +
 		(result.arrested ? ' · ARRESTED · Capital transport' : ''));
 	careerChanged();
+	return true;
 }
 
 function careerQuiet() {
@@ -615,14 +615,16 @@ function careerQuiet() {
 		careerNotice(GravityGame.quietRefusal(career, game.market, planet));
 		return;
 	}
+	recordCareerAction('act', { act: 'quiet' });
 	careerNotice(planetName(planet) + ' went quiet · no reports there until it is quelled · ' +
 		'the device is on the shelf, refit it to report elsewhere');
 	careerChanged();
+	return true;
 }
 
 /* every shop / board button carries data-act (and its args) */
 function careerAct(data) {
-	if (!careerRule()) return;
+	if (!careerRule() || careerInputLocked()) return;
 	const act = data.act;
 	if (act === 'careerTab') return careerSelectTab(data.tab);
 	if (act === 'copy') return careerCopySpec(data);
@@ -630,21 +632,6 @@ function careerAct(data) {
 	if (act === 'sciFamily') return careerScienceFamily(data.family);
 	if (act === 'bookDrop') return dropStaleBook();
 	if (act === 'book') return useBookEntry(Number(data.entry));
-	/* every remaining act is a world mutation the player asked for; keep the
-	 * serializable args so the input replays exactly */
-	if (typeof recordCareerAction === 'function') {
-		if (act === 'sciAccept') {
-			recordCareerAction('act', { act: 'sciAccept', family: scienceFamily, params: scienceParams(scienceFamily) });
-		} else {
-			const safe = {};
-			for (const key of ['act', 'kind', 'tier', 'item', 'entry']) {
-				if (data[key] !== undefined) safe[key] = data[key];
-			}
-			if (data.slot !== undefined) safe.targetSlot = data.slot;
-			if (act === 'build') safe.planet = Number.isInteger(data.planet) ? data.planet : careerPickPlanet();
-			recordCareerAction('act', safe);
-		}
-	}
 	if (replay.on && replay.career) return;
 	const career = activeCareer();
 	/* balance tooling + science R&D stay available during flight, wait or turret spin */
@@ -665,7 +652,7 @@ function careerAct(data) {
 	}
 	if (act === 'bribe') return careerBribe();
 	if (act === 'quiet') return careerQuiet();
-	if (act === 'evac') return careerEvacuate();
+	if (act === 'evac') return careerEvacuate(data.steps);
 	if (act === 'repair') return careerRepair();
 	if (career.ended !== GravityGame.CAREER_OPEN) {
 		careerNotice('career over · restart for a new HQ');
@@ -676,14 +663,14 @@ function careerAct(data) {
 	if (act === 'drop') return careerDrop(career);
 	if (act === 'accept') return careerAccept(career, Number(data.slot));
 	if (!data.item && Math.round(Number(data.tier)) === NO_TIER) {
-		if (act === 'part') careerPart(career, data.kind, null);
+		if (act === 'part') return careerPart(career, data.kind, null);
 		return;
 	}
 	const item = shopRecord(data);
 	if (!item) return;
-	if (act === 'build') careerBuild(career, Number.isInteger(data.planet) ? data.planet : careerPickPlanet(), data.kind, item);
-	else if (act === 'bulk') careerBulk(career, data.kind, item);
-	else if (act === 'part') careerPart(career, data.kind, item);
+	if (act === 'build') return careerBuild(career, Number.isInteger(data.planet) ? data.planet : careerPickPlanet(), data.kind, item);
+	if (act === 'bulk') return careerBulk(career, data.kind, item);
+	if (act === 'part') return careerPart(career, data.kind, item);
 }
 
 /* delegated click on the generated rows; data-* args live on the button */

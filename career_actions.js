@@ -1,11 +1,9 @@
-/* Minimal player-actions log for career mode:
- * records only player inputs (launches, shop/career actions, toggles)
- * without background world snapshots, so it is small enough to paste in chat
- * to investigate bot behavior or replay from the same seed. */
+/* Career opening + timed inputs + the selected player’s observed events. */
 'use strict';
 
 (function (global) {
 	const PREFIX = 'GRAVITY_ACTIONS:';
+	const FORMAT = 3;
 
 	function encode(payload) {
 		return PREFIX + JSON.stringify(payload);
@@ -17,7 +15,7 @@
 		if (!trimmed.startsWith(PREFIX)) return null;
 		try {
 			const data = JSON.parse(trimmed.slice(PREFIX.length));
-			if (!data || typeof data !== 'object' || !Array.isArray(data.actions)) return null;
+			if (!data || typeof data !== 'object' || data.v !== FORMAT || !Array.isArray(data.actions)) return null;
 			return data;
 		} catch (e) {
 			return null;
@@ -26,6 +24,7 @@
 
 	global.CareerActions = {
 		PREFIX: PREFIX,
+		FORMAT: FORMAT,
 		encode: encode,
 		decode: decode
 	};

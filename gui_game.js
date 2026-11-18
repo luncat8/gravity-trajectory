@@ -79,8 +79,7 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	careerNotice('');
 	if (routeRule()) bot.useField(cargoSim, mode);
 	launchState = -1;
-	gameLinkEl.hidden = true;
-	hideBotLog();
+	hideCopyText();
 	refreshGameUi();
 	careerRecordingReset();
 	syncSeedUrl();
@@ -113,7 +112,7 @@ function startCareerRun(seed) {
 	GravityGame.prepareCareerStarts(game.galaxy, tradeSim.world, tradeSim,
 		planetMask, planetCount, 1 + bot.count, cargoSim);
 	GravityGame.startCareer(game.career, cargoSim, seed, tradeSim, game.cheat, game.galaxy);
-	bot.onCareerLaunch = recordCareerFlight;
+	bot.onCareerTrace = recordCareerTrace;
 	bot.startCareers(game.galaxy, seed, tradeSim);
 	pinCareerStrengths();
 	bot.setPlanetMask(planetMask, planetCount);
@@ -160,7 +159,7 @@ function setPlayMode(next) {
  * one.
  */
 function setBot(next) {
-	if (replay.on || next === game.bot) return;
+	if (replay.on || careerInputLocked() || next === game.bot) return;
 	game.bot = next;
 	if (!game.on) {
 		syncBotRadios();
@@ -198,29 +197,31 @@ function playerCountShown() {
 	return game.playerCount > 0 ? game.playerCount : 1 + bot.count;
 }
 
-function setPlayerCount(delta) {
-	if (replay.on) return;
+function setPlayerCount(delta, replayPlanet) {
+	if (replay.on || careerInputLocked()) return false;
 	careerRecordingMark();
-	if (typeof recordCareerAction === 'function') recordCareerAction('playerCount', { delta: Math.sign(delta) });
 	const current = playerCountShown();
 	const count = Math.max(1, Math.min(MAX_PLAYERS, current + Math.sign(delta)));
-	if (count === current) return;
+	if (count === current) return false;
 	if (delta > 0) {
-		if (planetCount >= PLANET_UNIVERSE_MAX) return;
+		if (planetCount >= PLANET_UNIVERSE_MAX) return false;
 		/* A live career must choose the new bot's generated world before enabling
 		 * it. The planner keeps existing companies in place and verifies that the
 		 * new G=1 HQ has a free, non-heavy, starter-exitable first landing at pay
 		 * comparable to the run's original opening band. */
-		const expansion = game.on && careerRule()
-			? GravityGame.planCareerExpansion(game.galaxy, tradeSim.world, tradeSim,
-				planetMask, planetCount, cargoSim)
-			: null;
-		if (game.on && careerRule() && !expansion) {
-			careerNotice('no safe generated HQ is available for another player');
-			return;
+		let home = replayPlanet ?? -1;
+		if (careerRule() && replayPlanet === undefined) {
+			const expansion = GravityGame.planCareerExpansion(game.galaxy, tradeSim.world, tradeSim,
+				planetMask, planetCount, cargoSim);
+			if (!expansion) {
+				careerNotice('no safe generated HQ is available for another player');
+				return false;
+			}
+			home = expansion.planet;
 		}
+		if (replayPlanet !== undefined && planetMask[home] !== 0) return false;
 		const before = planetMask.slice();
-		if (!setPlanetUniverseSize(planetCount + 1, expansion ? expansion.planet : -1)) return;
+		if (!setPlanetUniverseSize(planetCount + 1, home)) return false;
 		let added = -1;
 		for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
 			if (planetMask[i] && !before[i]) { added = i; break; }
@@ -228,6 +229,7 @@ function setPlayerCount(delta) {
 		if (game.on) {
 			slotTypes[count - 1] = PLAYER_BOT;
 			if (careerRule()) {
+				recordCareerAction('playerCount', { delta: 1, planet: added });
 				planetBaseStrength[added] = 1;
 				portPlanetStrength[added] = 1;
 				syncPlanetStrengths();
@@ -244,12 +246,13 @@ function setPlayerCount(delta) {
 			refreshGameUi();
 			refreshPlanetUniverseUi();
 			careerRecordingCapture(true);
-			return;
+			return true;
 		}
 	} else if (game.on) {
 		if (activeSlotIndex() === current - 1) selectSlot(0);
 		if (careerRule()) {
 			cancelTurret(slotTurrets[current - 1]);
+			recordCareerAction('playerCount', { delta: -1 });
 			slotPaused[current - 1] = false;
 			bot.removeCareerRival();
 		}
@@ -259,7 +262,7 @@ function setPlayerCount(delta) {
 		refreshGameUi();
 		refreshPlanetUniverseUi();
 		careerRecordingCapture(true);
-		return;
+		return true;
 	}
 	game.playerCount = count;
 	if (game.on) startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player, game.cheat);
@@ -277,23 +280,21 @@ function refreshPlanetUniverseUi() {
 		}
 		planetCountInputEl.min = PLANET_UNIVERSE_MIN;
 		planetCountInputEl.max = PLANET_UNIVERSE_MAX;
-		planetCountInputEl.disabled = replay.on;
+		planetCountInputEl.disabled = replay.on || careerActionReplay.active;
 	}
 	const shown = playerCountShown();
 	if (playerCountValueEl) playerCountValueEl.textContent = shown;
-	if (playerCountDownEl) playerCountDownEl.disabled = replay.on || shown <= 1;
-	if (playerCountUpEl) playerCountUpEl.disabled = replay.on || shown >= MAX_PLAYERS ||
+	if (playerCountDownEl) playerCountDownEl.disabled = replay.on || careerActionReplay.active || shown <= 1;
+	if (playerCountUpEl) playerCountUpEl.disabled = replay.on || careerActionReplay.active || shown >= MAX_PLAYERS ||
 		planetCount >= PLANET_UNIVERSE_MAX;
 }
 
 function setSlotType(slot, next) {
-	if (replay.on) return;
+	if (replay.on || careerInputLocked()) return;
 	if (slot < 0 || slot >= slotTypes.length) return;
 	const normalized = next === PLAYER_BOT ? PLAYER_BOT : PLAYER_USER;
 	if (slotTypes[slot] === normalized && (slot !== 0 || game.player === normalized)) return;
-	if (game.on && careerRule()) {
-		if (!careerActionReplay.applying) careerActionLog.push({ step: game.clockSteps, slot: slot, type: 'controller', player: normalized });
-	}
+	recordCareerAction('controller', { player: normalized }, slot);
 	slotTypes[slot] = normalized;
 	if (slot === 0) game.player = normalized;
 	/* a career keeps its map, purses and pads: a ticked box hands the player
@@ -320,7 +321,10 @@ function applySlotTypeNow(slot) {
 		bot.attachCareerPlayer(game.career, cargoSim);
 		return;
 	}
+	const rival = bot.rivals[slot - 1];
+	bot.careerDropQueue(rival);
 	bot.rivalTypes[slot - 1] = slotTypes[slot];
+	if (!slotIsBot(slot) && rival.sim.status !== STATUS_FLYING) syncUserRivalFields();
 }
 
 /* one selection for the whole page: the HUD, career panels and pads follow it,
@@ -396,8 +400,7 @@ function stopGame() {
 	cargoSim.stepLimit = Infinity;
 	cargoSim.limitReason = END_TIME;
 	launchState = -1;
-	gameLinkEl.hidden = true;
-	hideBotLog();
+	hideCopyText();
 	refreshSelected();
 	refreshGameUi();
 	syncSeedUrl();
@@ -453,9 +456,7 @@ function launchPlayerBotIfReady(budgetMs, force) {
 function careerPlayerBotLaunch() {
 	const career = game.career;
 	if (career.ended !== GravityGame.CAREER_OPEN || slotTurrets[0].pending) return true;
-	/* the page books a landing at the end of the frame: until then the career
-	 * record still names the pad the ship has already left */
-	if (cargoSim.status === STATUS_FLYING || cargoSim.landedBody !== career.at) return true;
+	if (cargoSim.status === STATUS_FLYING) return true;
 	const ready = bot.tickCareerPlayer(game.clockSteps, game.market, tradeSim,
 		playerBotSyncNeeded);
 	playerBotSyncNeeded = false;
@@ -474,6 +475,63 @@ function careerPlayerBotLaunch() {
 	return true;
 }
 
+function advanceCareerWorld() {
+	tradeSim.advanceTo(tradeSim.t + DT * scene.trade.speed);
+	cargoSim.fieldT = tradeSim.t;
+	bot.stepCareer(game.clockSteps, game.market, tradeSim, scene.trade.speed);
+}
+
+function advanceCareerOneStep() {
+	const flying = cargoSim.status === STATUS_FLYING;
+	let manualRivals = 0;
+	for (let i = 0; i < bot.count; i++) {
+		if (!bot.isRivalBot(i) && bot.rivals[i].sim.status === STATUS_FLYING) manualRivals |= 1 << i;
+	}
+	careerBotBurn();
+	game.clockSteps++;
+	const moves = flying && cargoSim.liveSteps < cargoSim.stepLimit;
+	GravityGame.careerAdvance(game.career, 1, moves);
+	if (flying) cargoSim.stepOne();
+	if (moves) {
+		GravityGame.careerWeatherWear(game.career, cargoSim);
+		GravityGame.stepHarvest(game.money, game.market, cargoSim, game.clockSteps);
+	}
+	advanceCareerWorld();
+	if (flying && cargoSim.status !== STATUS_FLYING) endGameFlight();
+	if (manualRivals) {
+		for (let i = 0; i < bot.count; i++) {
+			if ((manualRivals & (1 << i)) && bot.rivals[i].sim.status !== STATUS_FLYING) endUserRivalFlight(i);
+		}
+	}
+	/* New colonies may join the moving field between flights, not between frames. */
+	if (mode === MODE_PORTS && cargoSim.bodyCount !== tradeSim.portCount && !clockDriverFlying() && syncPortRoster()) {
+		syncUserRivalFields();
+		fieldChanged();
+	}
+}
+
+/* Frame time only decides how many settled steps to show, never when a ship
+ * lands or which trade state the bot sees on a given step. */
+function stepCareerGame(dt) {
+	applyCareerActionsDue();
+	if (careerWaitBusy() || careerPaused) { playAcc = 0; return; }
+	tickTurrets();
+	playAcc = Math.min(PLAY_MAX * 0.1, playAcc + dt * playScale());
+	for (let n = 0; playAcc >= DT && n < MAX_GAME_STEPS; n++) {
+		if (!careerWorldOpen() && !clockDriverFlying()) {
+			playAcc = 0;
+			if (careerActionReplay.active) finishCareerActionsReplay();
+			return;
+		}
+		playAcc -= DT;
+		if (slotIsBot(0)) careerPlayerBotLaunch();
+		advanceCareerOneStep();
+		tickTurrets();
+		applyCareerActionsDue();
+		if (careerPaused || careerWaitBusy()) { playAcc = 0; return; }
+	}
+}
+
 /*
  * Playback scales the wall-clock slice fed to the fixed-step physics. Player
  * and rivals step in exact integer DT lockstep against the shared planet
@@ -483,6 +541,10 @@ function careerPlayerBotLaunch() {
 function stepGame(now, dt) {
 	if (replay.on && replay.career) {
 		advanceCareerReplay(dt, false);
+		return;
+	}
+	if (careerRule() && !replay.on) {
+		stepCareerGame(dt);
 		return;
 	}
 	if (routeRule()) {
@@ -510,30 +572,9 @@ function stepGame(now, dt) {
 		syncRoutePlan();
 		return;
 	}
-	/* a loaded action log plays its inputs out at the steps they happened on */
-	if (!replay.on) applyCareerActionsDue();
 	if (replay.on && replay.phase !== PHASE_FLY && now >= replay.until) advanceReplay(now);
-	/* a queued career launch fires once the in-game clock reaches the step
-	 * where the EMC barrel lines up with the aim; the world clock keeps
-	 * running through the wind-up (pausing it would stop the barrel) */
-	tickTurrets();
-	/* the eased career wait owns the world clock for its 2 s */
-	if (careerWaitBusy()) {
-		playAcc = 0;
-		return;
-	}
-	/* a paused career clock freezes everyone — rival companies included —
-	 * so the player can aim while nothing on the shared map changes */
-	if (pauseAllowed() && careerPaused) {
-		playAcc = 0;
-		return;
-	}
 	const capSteps = ruleSpec().capSteps;
-	/* in career the clock also runs between flights while unpaused: pads
-	 * charge, visit profits grow and the rival companies fly their turns */
-	const careerIdle = careerRule() && !replay.on && !careerPaused &&
-		careerWorldOpen() && !clockDriverFlying();
-	if (!clockDriverFlying() && !careerIdle) {
+	if (!clockDriverFlying()) {
 		playAcc = 0;
 		if (replay.on) return;
 		if (!hasLiveUser()) {
@@ -567,9 +608,7 @@ function stepGame(now, dt) {
 		}
 	}
 	let stepsDone = 0;
-	while ((clockDriverFlying() || careerIdle) && playAcc >= DT && stepsDone < MAX_GAME_STEPS) {
-		/* never step past the aligned barrel: the queued shot fires first */
-		if (turretReady()) break;
+	while (clockDriverFlying() && playAcc >= DT && stepsDone < MAX_GAME_STEPS) {
 		if (!bot.prepareStep(game.clockSteps, game.market, capSteps, BOT_STEP_MS, false)) {
 			playAcc = 0;
 			break;
@@ -580,45 +619,19 @@ function stepGame(now, dt) {
 		}
 		if (cargoSim.status === STATUS_FLYING) wasSlot0Flying = true;
 		advanceGameOneStep();
-		/* replay applies the inputs recorded on this step before the next one */
-		if (!replay.on && applyCareerActionsDue() > 0) {
-			/* the flight is underway: hold the clock at this step, the way a
-			 * queued EMC shot ends the frame it fires on */
-			playAcc = 0;
-			stepsDone += 1;
-			break;
-		}
-		if (careerActionReplay.halted) { playAcc = 0; stepsDone += 1; break; }
 		playAcc -= DT;
 		stepsDone += 1;
-		if (pauseAllowed() && pauseOnLanding && !careerActionReplay.active) {
-			let landed = wasSlot0Flying && !slotIsBot(0) && cargoSim.status !== STATUS_FLYING;
-			for (let i = 0; i < bot.count; i++) {
-				if ((wasUserRivalMask & (1 << i)) && bot.rivals[i].sim.status !== STATUS_FLYING) landed = true;
-			}
-			if (landed) break;
-		}
 	}
-	let fieldMoved = false;
 	if (wasSlot0Flying || cargoSim.status === STATUS_FLYING) {
 		tradeSim.advanceTo(cargoSim.flightFieldT);
-		fieldMoved = true;
 	} else {
 		for (let i = 0; i < bot.count; i++) {
 			const rSim = bot.rivals[i].sim;
 			if ((wasUserRivalMask & (1 << i)) || rSim.status === STATUS_FLYING) {
 				tradeSim.advanceTo(rSim.flightFieldT);
-				fieldMoved = true;
 				break;
 			}
 		}
-	}
-	/* Idle career time advances the same orbit clock as a flight or wait.
-	 * Use the run's locked field rate, not the sun's balance price: a linked
-	 * non-default rate must not make the sky drift slower between flights. */
-	if (!fieldMoved && careerRule() && stepsDone > 0) {
-		tradeSim.advanceTo(tradeSim.t +
-			GravitySim.tradeMinutes(stepsDone * DT, scene.trade.speed));
 	}
 	if (wasSlot0Flying && cargoSim.status !== STATUS_FLYING) {
 		if (!clockDriverFlying()) playAcc = 0;
@@ -630,8 +643,6 @@ function stepGame(now, dt) {
 			endUserRivalFlight(i);
 		}
 	}
-	/* Landings acquire their holds before any newly aligned shot fires. */
-	tickTurrets();
 }
 
 /*
@@ -677,6 +688,10 @@ function applyReplayBurns() {
 }
 
 function advanceGameOneStep() {
+	if (careerRule() && !replay.on) {
+		advanceCareerOneStep();
+		return;
+	}
 	let endedLimit = false;
 	if (cargoSim.status === STATUS_FLYING && cargoSim.liveSteps >= cargoSim.stepLimit) {
 		cargoSim.stepOne();
@@ -703,11 +718,7 @@ function advanceGameOneStep() {
 		(cargoSim.status !== STATUS_FLYING && !rivalFlying(false)))) {
 		return;
 	}
-	if (replay.on) {
-		if (cargoSim.status === STATUS_FLYING) applyReplayBurns();
-	} else {
-		careerBotBurn();
-	}
+	if (replay.on && cargoSim.status === STATUS_FLYING) applyReplayBurns();
 	game.clockSteps += 1;
 	if (careerRule()) GravityGame.careerAdvance(game.career, 1,
 		cargoSim.status === STATUS_FLYING && cargoSim.liveSteps < cargoSim.stepLimit);
@@ -743,6 +754,7 @@ function endGameFlight() {
 		const delivered = career.delivered;
 		const competitions = career.competitions;
 		GravityGame.careerEndFlight(career, cargoSim, tradeSim, game.clockSteps);
+		bot.traceCareerLanding(career, cargoSim, game.clockSteps);
 		if (career.delivered > delivered) careerPhoto('delivery');
 		else if (career.competitions > competitions) careerPhoto('sport');
 		/* the shop follows the ship again after every landing / stranding */
@@ -754,7 +766,7 @@ function endGameFlight() {
 	game.steps += cargoSim.liveSteps;
 	game.length += cargoSim.flightLength;
 	playerBotSyncNeeded = true;
-	const settleRivals = !hasLiveUser() &&
+	const settleRivals = !careerRule() && !hasLiveUser() &&
 		((slotBroke(0) && !(spec.stopOnTour && game.doneSteps >= 0)) ||
 			(spec.maxShots > 0 && game.shots.length >= spec.maxShots));
 	if (settleRivals && bot.count > 0) {
@@ -773,7 +785,7 @@ function endGameFlight() {
 function endUserRivalFlight(rIdx) {
 	if (pauseAllowed() && pauseOnLanding && !careerActionReplay.active) setCareerPaused(true, rIdx + 1);
 	const r = bot.rivals[rIdx];
-	settleBotsWhenUsersDone();
+	if (!careerRule()) settleBotsWhenUsersDone();
 	moneyToastFor(rIdx + 1, r.sim, r.ledger, r.shots.length);
 	refreshGameUi();
 }

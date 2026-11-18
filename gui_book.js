@@ -184,16 +184,39 @@ function escapeHtml(text) {
 
 /* one finished page trace joins the career's book */
 function saveTrace(probe, origin, angleU, speedU) {
-	if (!careerRule() || !activeCareerSim().fieldStatic) return;
+	if (!careerRule() || careerActionReplay.active || !activeCareerSim().fieldStatic) return;
 	if (probe.predReason !== END_IMPACT || probe.predBody < 0) return;
 	const money = traceMoney(probe, origin, GravityGame.speedOf(speedU));
-	GravityGame.recordLaunch(activeCareer().launchBook, pageBookTag(), {
+	const book = activeCareer().launchBook;
+	const version = book.version;
+	const tag = pageBookTag();
+	const entry = GravityGame.recordLaunch(book, tag, {
 		origin: origin, angleU: angleU, speedU: speedU, body: probe.predBody,
 		steps: probe.predSteps, time: probe.predTime, length: probe.predLength,
 		score: money.net, money: money.cash, logPlanet: probe.predLogPlanet,
-		logStep: probe.predLogStep,
-		logCount: probe.predLogCount
+		logStep: probe.predLogStep, logCount: probe.predLogCount
 	});
+	/* A bot can reuse a trace found by a human before the handover. Keep
+	 * only changes to the book, not the aim, scan or failed candidates. */
+	if (book.version === version || !book.entries.includes(entry)) return;
+	recordCareerAction('bookTrace', { trace: [tag, origin, angleU, speedU, entry.body, entry.steps,
+		entry.time, entry.length, Number.isFinite(entry.score) ? entry.score : null, entry.money,
+		Array.from(entry.logPlanet.subarray(0, entry.logCount)),
+		Array.from(entry.logStep.subarray(0, entry.logCount))] });
+}
+
+function applyCareerBookTrace(trace) {
+	if (!Array.isArray(trace) || trace.length !== 12 || !trace.slice(0, 8).every(Number.isFinite) ||
+		(trace[8] !== null && !Number.isFinite(trace[8])) || !Number.isFinite(trace[9])) return false;
+	const [tag, origin, angleU, speedU, body, steps, time, length, score, money, logPlanet, logStep] = trace;
+	if (!Array.isArray(logPlanet) || !Array.isArray(logStep) || logPlanet.length !== logStep.length ||
+		logStep.length > GravityGame.BOOK_LOG_MAX ||
+		!logPlanet.every(p => Number.isInteger(p) && p >= 0 && p < PLANETS) || !logStep.every(Number.isInteger)) return false;
+	GravityGame.recordLaunch(activeCareer().launchBook, tag, {
+		origin, angleU, speedU, body, steps, time, length, score: score ?? -Infinity, money,
+		logPlanet, logStep, logCount: logStep.length
+	});
+	return true;
 }
 
 /* A reset book needs the aim again; an explicit clear suppresses the old aim. */
@@ -368,6 +391,7 @@ function dropStaleBook() {
 	const book = activeCareer().launchBook;
 	if (book.entries.length === 0) return;
 	const count = book.entries.length;
+	recordCareerAction('act', { act: 'bookDrop' });
 	GravityGame.resetLaunchBook(book);
 	lastAimTrace.origin = aimBody;
 	lastAimTrace.angleU = GravityGame.angleUnits(aimAngle);
@@ -378,6 +402,7 @@ function dropStaleBook() {
 	lastAimTrace.cleared = true;
 	careerNotice('cleared ' + count + ' stale saved shots');
 	refreshLaunchList(true);
+	return true;
 }
 
 /* arm a saved shot: the list's one click, then the launch button fires it.

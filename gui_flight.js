@@ -203,7 +203,6 @@ function flightRefuel() {
 	if (career.ended !== GravityGame.CAREER_OPEN) return false;
 	const kg = flightRefuelPlan(career);
 	if (kg <= 0) return false;
-	recordCareerAction('refuel');
 	const before = career.ship.fuelKg;
 	const converted = GravityGame.produceFuel(career, career.at, kg);
 	const rest = kg - converted;
@@ -213,6 +212,7 @@ function flightRefuel() {
 		careerNotice('refuel needs charge or purse');
 		return false;
 	}
+	recordCareerAction('refuel');
 	careerNotice('refuelled +' + gained.toFixed(1) + ' kg · ' + career.ship.fuelKg.toFixed(1) + ' / ' +
 		career.ship.tank.fuelCap + ' kg' +
 		(converted > 0 ? ' · ' + converted + ' kg own charge' : '') +

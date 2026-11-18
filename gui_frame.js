@@ -40,7 +40,7 @@ function syncField() {
 		if (careerRule()) refreshCareerPanel();
 	}
 	const rosterLocked = game.on && clockDriverFlying();
-	if (mode === MODE_PORTS && !rosterLocked && syncPortRoster()) fieldChanged();
+	if (mode === MODE_PORTS && (!careerRule() || replay.on) && !rosterLocked && syncPortRoster()) fieldChanged();
 	if (!cargoSim.fieldStatic) cargoSim.refreshField();
 	if (game.on) {
 		for (let i = 0; i < bot.count; i++) {

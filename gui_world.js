@@ -102,7 +102,7 @@ function clearPlanetPads(planet) {
  * a protected planet. Career rival expansion may nominate its planned HQ as
  * the first added world; ordinary size edits keep their random selection. */
 function setPlanetUniverseSize(next, preferredPlanet) {
-	if (replay.on) return false;
+	if (replay.on || careerInputLocked()) return false;
 	careerRecordingMark();
 	const count = Math.max(PLANET_UNIVERSE_MIN, Math.min(next, PLANET_UNIVERSE_MAX));
 	if (count === planetCount) return false;
@@ -229,7 +229,7 @@ function syncScoreControls() {
 		const isPaused = pausable && isUser && slotPaused[s];
 		if (box) {
 			box.checked = isBot;
-			box.disabled = replay.on;
+			box.disabled = replay.on || careerActionReplay.active;
 		}
 		if (!row) continue;
 		if (s > 0) row.hidden = s - 1 >= bot.count;
