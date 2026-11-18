@@ -234,6 +234,29 @@
 				weakest: 0.78,
 				sites: 1
 			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 93293 · 13 planets · 3 seats",
+			seed: 93293,
+			universe: 13,
+			seats: [11, 2, 7],
+			targetPay: 1.175128135558583,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "career default",
+			stats: {
+				weakest: 0.85,
+				sites: 2
+			}
 		}
 	];
 	if (typeof module !== 'undefined' && module.exports) module.exports = MAPS;
