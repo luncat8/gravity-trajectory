@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gravity Map</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 20px; color: #222; }
+  svg { width: 800px; max-width: 100%; height: auto; background: #fafafa; border: 1px solid #ddd; touch-action: none; user-select: none; }
+  .axis { stroke: #444; stroke-width: 2; }
+  .tick { stroke: #888; }
+  .zero { stroke: #bbb; stroke-dasharray: 4 4; }
+  .tlabel { font-size: 11px; fill: #666; text-anchor: middle; }
+  .band { fill: #f59e0b; opacity: 0.25; }
+  .body { stroke: #1e3a8a; stroke-width: 1.5; cursor: grab; }
+  .planet.selected .body { stroke: #f59e0b; stroke-width: 3; }
+  .plabel { font-size: 12px; fill: #222; text-anchor: middle; }
+  .del { opacity: 1; cursor: pointer; }
+  .del line { stroke: red; stroke-width: 2.5; stroke-linecap: round; pointer-events: none; }
+  .del .hit { fill: transparent; pointer-events: all; }
+  table { border-collapse: collapse; margin-top: 16px; width: 800px; max-width: 100%; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; font-size: 14px; }
+  th { background: #f3f4f6; }
+  tr.sel td { background: #fff7e6; }
+  input { width: 80px; padding: 3px; }
+  .preview { font-family: monospace; }
+  .hint { font-size: 13px; color: #666; margin: 6px 0; }
+  button { padding: 6px 12px; margin-top: 10px; cursor: pointer; }
+  .small { padding: 6px 12px; margin: 0; min-width: 70px; min-height: 30px; cursor: pointer; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 12px; color: #555; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 13px; height: 13px; border-radius: 50%; display: inline-block; border: 1px solid #1e3a8a; }
+</style>
+</head>
+<body>
+
+<h2>Gravity Map</h2>
+<p class="hint">Click on or above the line to add a planet. Drag to move. Arrow keys nudge the selected planet, Delete removes it, Escape deselects. Hover a planet and click its red cross to remove it. The shaded band is the gravity range (gravity ± margin).</p>
+
+<label class="hint">Default margin for new planets (±) <input id="defMargin" type="number" min="0" step="0.05" value="0.5"></label>
+<label class="hint">Gravity range <input id="gravMin" type="number" step="0.5" value="-1"> to <input id="gravMax" type="number" step="0.5" value="4"></label>
+<br>
+<svg id="map" viewBox="0 0 800 220"></svg>
+
+<div class="legend" id="legend"></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Planet</th>
+      <th>Number to generate</th>
+      <th>Gravity</th>
+      <th>Margin (±)</th>
+      <th>Range</th>
+      <th>Rolled preview</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+<button id="reroll">Re-roll</button>
+
+<pre>
+	minimal css html js
+
+	map generator helper
+	
+	horizontal line from negative to positive gravity of planet.
+	
+	user can position planet ico (simple circle) on this line: GUI allow set, drag move, remove
+	
+	margin of gravity from values, default is +-0.5, to generate randomness.
+	Configurable default gravity margin for new planets.
+	
+	Configurable gravity min/max , default is -1 .. +4
+	
+	click on or above line to add new, click below planet to remove (small red cross draw below)
+	
+	preview margin range on line
+	
+	color planet based on EMC-1 EMC-2 ability to typically launch from this planet (no hardcoded power, because EMC can be changed in new versions). typically mean on typical map, because it depends on near planet gravity. for my observation -0.2 ... 1.1 is green (EMC-1) and >2.5 || < -1 is red (cant on EMC-2). but this is subject to do some fast tests to find range.
+	
+	table of result 
+	Planet | number to generate	| Gravity	| Margin (±)	| Range 	| Rolled preview
+	
+	## integration:
+	- ability to load js that 'random saved maps' pre-generated maps to view distribution.
+	- press generate to make map from planet list and see result distribution (adjusted by generator).
+	- save result to pre-generated saved maps. to make this possible probably we need note this script should be run from http, otherwise file save dialog.
+	- to game add dropdown to select specific saved pre-generated map (near random)
+</pre>
+<!-- EMC specs come from the real tech tables, so a retuned EMC recolors the map. -->
+<script src="orbit_science.js"></script>
+<script src="orbit_tech.js"></script>
+<script>
+const W = 800, H = 220, LY = 110, X0 = 50, X1 = 750;
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('map');
+const tbody = document.getElementById('rows');
+const defMarginEl = document.getElementById('defMargin');
+const gravMinEl = document.getElementById('gravMin');
+const gravMaxEl = document.getElementById('gravMax');
+const gMin = () => Number(gravMinEl.value);
+const gMax = () => Number(gravMaxEl.value);
+
+/* Launch viability: a body of gravity strength g is a softened point mass
+ * (gravity_sim.js: MU, SOFT). A ship sitting on it escapes when its launch
+ * speed beats escape speed v_esc = sqrt(2·MU·g / SOFT); g ≤ 0 has no well.
+ * The rail's reach is OrbitTech.maxSpeed(mass, catapult) — read from the live
+ * CATAPULTS table, never hardcoded — for a typical loaded ship. */
+const MU = 400000;
+const SOFT = 60;
+const REF_MASS = OrbitTech.SHIP_DRY_MASS;   // reference ship (t); tune for loaded craft
+const EMC1 = OrbitTech.CATAPULTS[0];
+const EMC2 = OrbitTech.CATAPULTS[1];
+const V_EMC1 = OrbitTech.maxSpeed(REF_MASS, EMC1);
+const V_EMC2 = OrbitTech.maxSpeed(REF_MASS, EMC2);
+
+const COL_NONE = '#94a3b8';   // g ≤ 0: no well, trivially launchable
+const COL_EMC1 = '#22c55e';   // EMC-1 clears the well
+const COL_EMC2 = '#f59e0b';   // needs EMC-2
+const COL_HEAVY = '#ef4444';  // beyond EMC-2
+
+function escapeSpeed(g) {
+  return g > 0 ? Math.sqrt(2 * MU * g / SOFT) : 0;
+}
+
+function planetColor(g) {
+  if (g <= 0) return COL_NONE;
+  const v = escapeSpeed(g);
+  if (v <= V_EMC1) return COL_EMC1;
+  if (v <= V_EMC2) return COL_EMC2;
+  return COL_HEAVY;
+}
+
+function legendHtml() {
+  return '' +
+    `<span><i style="background:${COL_NONE}"></i>g ≤ 0 (no well)</span>` +
+    `<span><i style="background:${COL_EMC1}"></i>${EMC1.id} · ${REF_MASS} t</span>` +
+    `<span><i style="background:${COL_EMC2}"></i>${EMC2.id} · ${REF_MASS} t</span>` +
+    `<span><i style="background:${COL_HEAVY}"></i>beyond ${EMC2.id}</span>`;
+}
+
+let planets = [
+  { id: 1, name: 'P1', g: -0.5, m: 0.5, count: 3, rolled: null },
+  { id: 2, name: 'P2', g: 1,    m: 0.5, count: 2, rolled: null },
+  { id: 3, name: 'P3', g: 3,    m: 0.5, count: 1, rolled: null }
+];
+let nextId = 4, selectedId = null, dragId = null;
+
+const clamp = (v, lo = gMin(), hi = gMax()) => Math.min(hi, Math.max(lo, v));
+const round2 = (v) => Math.round(v * 100) / 100;
+const gToX = (g) => X0 + (g - gMin()) / (gMax() - gMin()) * (X1 - X0);
+const xToG = (x) => gMin() + (x - X0) / (X1 - X0) * (gMax() - gMin());
+const find = (id) => planets.find(p => p.id === id);
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+function pos(e) {
+  const r = svg.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+}
+
+function drawMap() {
+  svg.innerHTML = '';
+  el('line', { x1: X0, y1: LY, x2: X1, y2: LY, class: 'axis' }, svg);
+  el('line', { x1: gToX(0), y1: LY - 40, x2: gToX(0), y2: LY + 40, class: 'zero' }, svg);
+
+  const lo = gMin(), hi = gMax();
+  for (let i = 0; i <= 8; i++) {
+    const v = lo + (hi - lo) * i / 8;
+    const x = gToX(v);
+    el('line', { x1: x, y1: LY - 5, x2: x, y2: LY + 5, class: 'tick' }, svg);
+    const t = el('text', { x: x, y: LY + 20, class: 'tlabel' }, svg);
+    t.textContent = v.toFixed(1);
+  }
+
+  // Margin bands first, so planets sit on top
+  planets.forEach(p => {
+    const lo = clamp(p.g - p.m), hi = clamp(p.g + p.m);
+    el('rect', { x: gToX(lo), y: LY - 14, width: gToX(hi) - gToX(lo), height: 28, class: 'band' }, svg);
+  });
+
+  planets.forEach(p => {
+    const cx = gToX(p.g);
+    const g = el('g', { class: 'planet' + (p.id === selectedId ? ' selected' : '') }, svg);
+    const title = el('title', {}, g);
+    title.textContent = `${p.name}: gravity ${p.g.toFixed(2)}`;
+
+    el('circle', { cx: cx, cy: LY, r: 11, class: 'body', fill: planetColor(p.g) }, g);
+    const lbl = el('text', { x: cx, y: LY - 20, class: 'plabel' }, g);
+    lbl.textContent = `${p.name} (${p.g.toFixed(2)})`;
+
+    const del = el('g', { class: 'del' }, g);
+    el('rect', { x: cx - 12, y: LY + 20, width: 24, height: 24, class: 'hit' }, del);
+    el('line', { x1: cx - 5, y1: LY + 28, x2: cx + 5, y2: LY + 38 }, del);
+    el('line', { x1: cx + 5, y1: LY + 28, x2: cx - 5, y2: LY + 38 }, del);
+
+    g.addEventListener('pointerdown', e => {
+      if (e.target.closest('.del')) return;
+      e.stopPropagation();
+      dragId = p.id;
+      selectedId = p.id;
+      svg.setPointerCapture(e.pointerId);
+      renderAll();
+    });
+    del.addEventListener('pointerdown', e => e.stopPropagation());
+    del.addEventListener('click', e => {
+      e.stopPropagation();
+      removePlanet(p.id);
+    });
+  });
+}
+
+function ensureRolled(p) {
+  if (p.rolled === null) {
+    p.rolled = [];
+    for (let i = 0; i < p.count; i++) {
+      p.rolled.push(round2(clamp(p.g - p.m + Math.random() * 2 * p.m)));
+    }
+  }
+  return p.rolled.length ? p.rolled.map(v => v.toFixed(2)).join(', ') : '—';
+}
+
+function renderTable() {
+  tbody.innerHTML = '';
+  planets.forEach(p => {
+    const tr = document.createElement('tr');
+    if (p.id === selectedId) tr.className = 'sel';
+    tr.innerHTML = `
+      <td>${p.name}</td>
+      <td><input class="count" type="number" min="0" step="1"></td>
+      <td><input class="grav" type="number" min="${gMin()}" max="${gMax()}" step="0.01"></td>
+      <td><input class="margin" type="number" min="0" step="0.05"></td>
+      <td class="range"></td>
+      <td class="preview preview-cell"></td>
+      <td><button class="small remove">Remove</button></td>`;
+
+    const countI = tr.querySelector('.count');
+    const gravI = tr.querySelector('.grav');
+    const marI = tr.querySelector('.margin');
+    countI.value = p.count;
+    gravI.value = p.g.toFixed(2);
+    marI.value = p.m;
+
+    const refreshRow = () => {
+      tr.querySelector('.range').textContent =
+        `${round2(clamp(p.g - p.m)).toFixed(2)} to ${round2(clamp(p.g + p.m)).toFixed(2)}`;
+      tr.querySelector('.preview-cell').textContent = ensureRolled(p);
+    };
+
+    countI.addEventListener('input', () => {
+      p.count = Math.max(0, Math.floor(Number(countI.value) || 0));
+      p.rolled = null;
+      refreshRow();
+      drawMap();
+    });
+    gravI.addEventListener('input', () => {
+      if (gravI.value === '' || isNaN(gravI.value)) return;
+      p.g = round2(clamp(Number(gravI.value)));
+      p.rolled = null;
+      refreshRow();
+      drawMap();
+    });
+    marI.addEventListener('input', () => {
+      p.m = Math.max(0, Number(marI.value) || 0);
+      p.rolled = null;
+      refreshRow();
+      drawMap();
+    });
+    [countI, gravI, marI].forEach(i => i.addEventListener('change', renderAll));
+
+    tr.addEventListener('click', e => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+      selectedId = p.id;
+      renderAll();
+    });
+    tr.querySelector('.remove').addEventListener('click', () => removePlanet(p.id));
+
+    refreshRow();
+    tbody.appendChild(tr);
+  });
+}
+
+function renderAll() {
+  drawMap();
+  renderTable();
+  document.getElementById('legend').innerHTML = legendHtml();
+}
+
+function addPlanet(g, m) {
+  const margin = m === undefined ? Math.max(0, Number(defMarginEl.value) || 0) : Math.max(0, m);
+  const p = { id: nextId, name: 'P' + nextId, g: round2(clamp(g)), m: margin, count: 1, rolled: null };
+  nextId++;
+  planets.push(p);
+  selectedId = p.id;
+  renderAll();
+}
+
+function removePlanet(id) {
+  planets = planets.filter(p => p.id !== id);
+  if (selectedId === id) selectedId = null;
+  renderAll();
+}
+
+svg.addEventListener('pointerdown', e => {
+  if (e.target.closest('.planet')) return;
+  const { x, y } = pos(e);
+  if (y <= LY) {
+    addPlanet(xToG(x));
+  } else {
+    selectedId = null;
+    renderAll();
+  }
+});
+
+svg.addEventListener('pointermove', e => {
+  if (dragId === null) return;
+  const p = find(dragId);
+  if (!p) return;
+  p.g = round2(clamp(xToG(pos(e).x)));
+  p.rolled = null;
+  drawMap();
+});
+
+svg.addEventListener('pointerup', () => {
+  if (dragId === null) return;
+  dragId = null;
+  renderAll();
+});
+
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const p = find(selectedId);
+  if (e.key === 'Escape') { selectedId = null; renderAll(); return; }
+  if (!p) return;
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    removePlanet(p.id);
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    const step = e.key === 'ArrowLeft' ? -0.1 : 0.1;
+    p.g = round2(clamp(p.g + step));
+    p.rolled = null;
+    renderAll();
+  }
+});
+
+document.getElementById('reroll').addEventListener('click', () => {
+  planets.forEach(p => { p.rolled = null; });
+  renderTable();
+});
+
+[gravMinEl, gravMaxEl].forEach(i => i.addEventListener('input', renderAll));
+
+renderAll();
+</script>
+</body>
+</html>
