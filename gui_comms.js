@@ -1,5 +1,5 @@
 /*
- * H's live launch-gate call, non-modal card, ranked topic chips and verified CTAs.
+ * H's live calls, non-modal card, ranked topic chips and verified CTAs.
  *
  * Facts, slots and topics live in comms_copy.js; this file owns only the DOM
  * surface, the per-visit call state and the 1-to-1 action dispatcher.
@@ -10,6 +10,8 @@ const HH_FACTS = CommsCopy.HH_FACTS;
 const H_SLOTS = CommsCopy.H_SLOTS;
 const H_ACTIONS = CommsCopy.H_ACTIONS;
 const H_TOPICS = CommsCopy.H_TOPICS;
+const RETURN_TOW = Object.freeze({ id: 'return-tow' });
+const commsOfferedTows = new WeakSet();
 
 const commsButton = $('commsButton');
 const commsBadge = $('commsBadge');
@@ -130,14 +132,12 @@ function commsResetVisit(career, planet) {
 }
 
 function commsActiveFinding(career) {
-	if (!career || !careerRule() || replay.on || playerIsBot() ||
+	if (!career || !careerRule() || replay.on || careerActionReplay.active || playerIsBot() ||
 		career.ended !== GravityGame.CAREER_OPEN ||
-		activeSim().status === STATUS_FLYING || careerWaitBusy()) return null;
-	if (career.at < 0) {
-		return career.stranded
-			? GravityGame.launchReason(career, activeCareerSim(), career.hq, SPEED_MIN, false)
-			: null;
-	}
+		activeSim().status === STATUS_FLYING || careerWaitBusy() || turret.pending) return null;
+	const visit = CommsCopy.returnTowVisit(career);
+	if (visit && (commsState.callReason === RETURN_TOW || !commsOfferedTows.has(visit))) return RETURN_TOW;
+	if (career.at < 0) return GravityGame.launchReason(career, activeCareerSim(), career.hq, SPEED_MIN, false);
 	const armedHere = armed && aimBody === career.at;
 	const speed = armedHere ? aimSpeed : SPEED_MIN;
 	const reason = GravityGame.launchReason(career, activeCareerSim(), career.at, speed, false);
@@ -150,14 +150,16 @@ function commsActiveFinding(career) {
 }
 
 function commsBuildSnapshot() {
-	const inCareer = careerRule() && !replay.on;
-	const rule = replay.on ? 'replay' : game.on ? game.rule : PLAY_LAB;
+	const watching = replay.on || careerActionReplay.active;
+	const inCareer = careerRule() && !watching;
+	const rule = watching ? 'replay' : game.on ? game.rule : PLAY_LAB;
 	const career = inCareer ? playerCareer() : null;
 	const sim = inCareer ? activeCareerSim() : activeSim();
 	const snapshot = CommsCopy.buildSnapshot({
 		rule: rule,
-		gameOn: game.on && !replay.on,
+		gameOn: game.on && !watching,
 		clockSteps: game.clockSteps,
+		pace: playPace(),
 		career: career,
 		market: game.market,
 		galaxy: game.galaxy,
@@ -199,19 +201,19 @@ function commsTick() {
 		commsState.currentKey = key;
 		commsState.callKey = '';
 		commsState.callReason = null;
+		commsState.snapshotDirty = true;
 	}
-	const second = game.on && !replay.on ? Math.floor(game.clockSteps * DT) : 0;
-	if (key && !commsState.open && !commsState.callKey &&
-		!commsState.seen[key] && !commsState.dismissed[key]) {
-		if (second !== commsState.lastCallSecond) {
-			commsState.callKey = key;
-			commsState.callReason = reason;
-			commsState.seen[key] = true;
-			commsState.lastCallSecond = second;
-		}
+	const second = game.on && !replay.on && !careerActionReplay.active ? Math.floor(game.clockSteps * DT) : 0;
+	if (key && !commsState.open && !commsState.callKey && second !== commsState.lastCallSecond &&
+		(reason === RETURN_TOW || (!commsState.seen[key] && !commsState.dismissed[key]))) {
+		commsState.callKey = key;
+		commsState.callReason = reason;
+		if (reason === RETURN_TOW) commsOfferedTows.add(CommsCopy.returnTowVisit(career));
+		else commsState.seen[key] = true;
+		commsState.lastCallSecond = second;
 	}
 	if (commsState.open && (commsState.snapshotDirty || !commsState.snapshot ||
-		second !== commsState.snapshot.second)) {
+		second !== commsState.snapshot.second || playPace() !== commsState.snapshot.pace)) {
 		const snapshot = commsBuildSnapshot();
 		if (commsState.exchanges.length) commsRefreshLatest(snapshot);
 		else commsAsk(CommsCopy.H_META_ID);
@@ -277,8 +279,7 @@ function commsRunAction(actId) {
 
 function commsOpen() {
 	if (commsState.open) return;
-	const topic = commsState.callReason && commsState.callReason.id === 'stranded'
-		? 'pad' : CommsCopy.H_META_ID;
+	const topic = commsState.callReason === RETURN_TOW ? RETURN_TOW.id : CommsCopy.H_META_ID;
 	commsState.open = true;
 	commsState.collapsed = false;
 	commsState.callKey = '';
@@ -347,30 +348,37 @@ function commsCtasMarkup(actions) {
 
 function commsReasonText(reason) {
 	if (!reason) return '';
-	return reason.id === 'stranded' ? 'No affordable way off this planet · ask H how to leave'
-		: GravityGame.formatLaunchReason(reason);
+	if (reason === RETURN_TOW) {
+		const career = commsState.career;
+		const gameSec = Math.round(GravityGame.evacuationSeconds(career));
+		const watchSec = gameSec / playPace();
+		return 'Your last two flights brought you back to ' + planetName(career.at) +
+			'. Want a tow to HQ? ' + costText(GravityGame.evacuationCost(career)) + ' · ' +
+			gameSec + ' s (' + realSecText(watchSec) + ' s to watch at ' + paceTag() + ')';
+	}
+	return GravityGame.formatLaunchReason(reason);
 }
 
 function commsPaint() {
 	const called = Boolean(commsState.callKey);
+	const reasonText = called ? commsReasonText(commsState.callReason) : '';
 	if (commsButton) {
-		const tagText = called ? commsReasonText(commsState.callReason) : '';
 		commsButton.classList.toggle('called', called);
 		commsButton.setAttribute('aria-label', called
-			? 'H calls: ' + tagText + ' · open radio assistant'
+			? 'H calls: ' + reasonText + ' · open radio assistant'
 			: 'open H radio assistant');
-		commsButton.title = called ? 'H calls: ' + tagText + ' · open radio assistant'
+		commsButton.title = called ? 'H calls: ' + reasonText + ' · open radio assistant'
 			: 'open H radio assistant';
 		commsButton.setAttribute('aria-pressed', commsState.open ? 'true' : 'false');
 	}
 	if (commsCall) commsCall.hidden = !called;
 	if (commsCallReason) {
-		commsCallReason.textContent = called ? commsReasonText(commsState.callReason) : '';
+		commsCallReason.textContent = reasonText;
 	}
 	if (commsBadge) commsBadge.hidden = !called;
 	if (commsTag) {
 		commsTag.hidden = !called;
-		commsTag.textContent = called ? commsReasonText(commsState.callReason) : '';
+		commsTag.textContent = commsState.callReason === RETURN_TOW ? 'tow to HQ?' : reasonText;
 	}
 	if (commsCard) {
 		commsCard.hidden = !commsState.open;

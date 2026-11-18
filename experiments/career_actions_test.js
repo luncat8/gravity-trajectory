@@ -73,7 +73,7 @@ verify(first.text, live, 0);
 until(live, 'game.career.flights === 1 && cargoSim.status !== STATUS_FLYING');
 assert(get(live, 'game.career.stranded'));
 assert(get(live, "playIndex = PLAY_SPEEDS.indexOf(1); careerAct({act:'evac'})"));
-until(live, '!careerWaitBusy()', 27);
+until(live, '!game.career.evacuating', 27);
 assert.strictEqual(get(live, 'game.career.at'), get(live, 'game.career.hq'));
 const evacuated = capture(live);
 assert(evacuated.data.actions.some(a => a.act === 'evac' && a.steps === 1440));

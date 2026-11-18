@@ -618,7 +618,10 @@ horizonSlider.addEventListener('input', () => {
 	fieldChanged();
 	hudAt = -Infinity;
 });
-launchButton.addEventListener('click', launchShot);
+launchButton.addEventListener('click', () => {
+	if (launchButton.value === 'evac') careerAct({ act: 'evac' });
+	else launchShot();
+});
 launchMenuBtn.addEventListener('click', () => setLaunchMenu(launchMenuEl.hidden));
 launchRepairBtn.addEventListener('click', () => {
 	setLaunchMenu(false);
@@ -693,7 +696,8 @@ if (careerPauseLandEl) {
 	careerPauseLandEl.addEventListener('change', () => {
 		pauseOnLanding = careerPauseLandEl.checked;
 		/* apply at once while landed, so the setting is never a surprise */
-		if (pauseAllowed() && activeSim().status !== STATUS_FLYING) {
+		if (pauseAllowed() && activeSim().status !== STATUS_FLYING &&
+			!(careerRule() && activeCareer().evacuating)) {
 			setCareerPaused(pauseOnLanding);
 		}
 		refreshCareerClockUi();
@@ -912,6 +916,12 @@ window.addEventListener('keydown', event => {
 			return;
 		}
 	}
+	/* Let the focused options handle their own keyboard activation. */
+	if (event.code === 'Enter' || event.code === 'Space') {
+		const button = event.target;
+		if (button && (button === launchMenuBtn || button.parentElement === launchMenuEl ||
+			(button === launchButton && launchButton.value === 'evac'))) return;
+	}
 	if ((event.code === 'Space' || event.code === 'KeyP') &&
 		!event.ctrlKey && !event.metaKey && !event.altKey) {
 		const tag = event.target && event.target.tagName;
@@ -937,8 +947,10 @@ window.addEventListener('keydown', event => {
 	if (event.code === 'Escape') {
 		if (commsEscape()) return;
 		if (helpOpen) setHelpOpen(false);
-		else if (!launchMenuEl.hidden) setLaunchMenu(false);
-		else if (burnAiming || burnArmed) {
+		else if (!launchMenuEl.hidden) {
+			setLaunchMenu(false);
+			if (event.target && event.target.parentElement === launchMenuEl) launchMenuBtn.focus();
+		} else if (burnAiming || burnArmed) {
 			burnAiming = false;
 			burnArmed = false;
 			savedBurnArmed = false;

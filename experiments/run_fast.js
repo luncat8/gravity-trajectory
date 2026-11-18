@@ -62,6 +62,7 @@ const SLOW = [
 	['multiplayer_impulse_test.js', 1],
 	['career_replay_test.js', 15],
 	['career_actions_test.js', 20],
+	['career_evacuation_test.js', 6],
 	['career_history_seed_test.js', 45],
 	['wear_forecast_gui_test.js', 2],
 	['obs_fragile_gui_test.js', 1],

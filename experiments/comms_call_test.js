@@ -118,7 +118,6 @@ assert.strictEqual(ui.get('commsCard').hidden, false, 'the H radio button opens 
 assert.ok(ui.get('commsAnswer').textContent.includes('Evacuate to HQ'),
 	ui.get('commsAnswer').textContent);
 
-console.log('COMMS CALL OK');
 
 /* No pad by itself is ordinary travel, but an unaffordable standing rail is
  * still a useful call even before the player arms a shot. */
@@ -136,3 +135,37 @@ visit(`(() => {
 assert.strictEqual(visit('commsActiveFinding(playerCareer())'), null, 'affordable visitor does not trigger a call');
 visit('playerCareer().ledger.purse = -100');
 assert.strictEqual(visit('commsActiveFinding(playerCareer()).id'), 'fee', 'unaffordable rail calls even before aiming');
+
+/* Settle flight outcomes directly to exercise the repeat-call lifecycle. */
+visit('playerCareer().ledger.purse = 100; commsTick()');
+const land = visit(`planet => {
+	const career = playerCareer();
+	const sim = activeCareerSim();
+	sim.origin = career.at;
+	sim.endBody = planet;
+	sim.endReason = planet >= 0 ? GravitySim.END_IMPACT : GravitySim.END_EXIT;
+	sim.status = STATUS_ENDED;
+	game.clockSteps += Math.ceil(1 / DT);
+	GravityGame.careerEndFlight(career, sim, tradeSim, game.clockSteps);
+	commsTick();
+}`);
+const here = visit('playerCareer().at');
+land(here);
+assert.strictEqual(visit('commsState.callKey'), '', 'first return is quiet');
+land(here);
+assert.strictEqual(visit('commsState.callReason.id'), 'return-tow');
+visitor.click('commsDismissCall');
+land(here);
+assert.strictEqual(visit('commsState.callKey'), '', 'further loops do not repeat a dismissed tow offer');
+land(visit('playerCareer().hq'));
+assert.strictEqual(visit('GravityGame.returnLandingVisit(playerCareer())'), null);
+land(here);
+land(here);
+assert.strictEqual(visit('commsState.callKey'), '', 'an intervening departure resets the count');
+land(here);
+assert.strictEqual(visit('commsState.callReason.id'), 'return-tow', 'a later visit can call again');
+land(-1);
+assert.strictEqual(visit('GravityGame.returnLandingVisit(playerCareer())'), null, 'an exit is not a return');
+assert.strictEqual(visit('commsState.callReason.id'), 'space');
+
+console.log('COMMS CALL OK');

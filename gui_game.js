@@ -492,6 +492,10 @@ function advanceCareerOneStep() {
 	const moves = flying && cargoSim.liveSteps < cargoSim.stepLimit;
 	GravityGame.careerAdvance(game.career, 1, moves);
 	if (flying) cargoSim.stepOne();
+	if (game.career && game.career.evacuating) {
+		const arrived = !GravityGame.advanceEvacuation(game.career, cargoSim, game.clockSteps, tradeSim);
+		if (arrived) endGameEvacuation(0);
+	}
 	if (moves) {
 		GravityGame.careerWeatherWear(game.career, cargoSim);
 		GravityGame.stepHarvest(game.money, game.market, cargoSim, game.clockSteps);
@@ -788,6 +792,23 @@ function endUserRivalFlight(rIdx) {
 	if (!careerRule()) settleBotsWhenUsersDone();
 	moneyToastFor(rIdx + 1, r.sim, r.ledger, r.shots.length);
 	refreshGameUi();
+}
+
+function endGameEvacuation(slot) {
+	clearBurnAim();
+	const career = slot === 0 ? game.career : bot.rivals[slot - 1].career;
+	if (!career) return;
+	GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
+	careerFollow = true;
+	if (slot === 0) playerBotSyncNeeded = true;
+	if (pauseOnLanding && !replay.on && !careerActionReplay.active && !slotIsBot(slot)) {
+		setCareerPaused(true, slot);
+	}
+	cargoSim.predCount = 0;
+	careerNotice('evacuated to HQ ' + planetName(career.hq) + ' · paid ' +
+		(career.evacLastPaid || 0).toFixed(2));
+	commsInvalidate();
+	careerChanged();
 }
 
 function signedMoney(value) {

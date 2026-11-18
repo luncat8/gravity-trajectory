@@ -293,7 +293,20 @@ full price 12sec irl time
 
 zero cost 240sec
 
-→ today `evacuate` is one instant: purse −`6.00`, ship placed on HQ, the trade
+evacuation should be always available under dropdown triangle.
+if money is no enough - less cost.
+no need overcomplicate evacuation allowing. show it as default variant if other buttons are inactive - so this is GUI usability but not game restriction.
+
+
+→ The launch `▾` offers evacuation for an idle ship away from HQ, regardless
+of its rail. If the other launch controls are unavailable, evacuation is the
+primary action. It quotes the available cash up to the full fare and the time
+at the current playback pace. H also offers a tow after two consecutive
+landings back on the same non-HQ planet, once per visit.
+
+Earlier design notes (before the timed evacuation):
+
+→ at the time `evacuate` is one instant: purse −`6.00`, ship placed on HQ, the trade
 background does not move. **Open, and it needs a plan of its own** (`0.7.5`):
 these three points are now answered, the rest below is still the spec's job.
 

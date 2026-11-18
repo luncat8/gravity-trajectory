@@ -1323,6 +1323,14 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return OrbitWorld.hashBits(seed >>> 0, index + 1, SALT_RIVAL);
 	}
 
+	/* Live advice only: compact replays rebuild the streak from their landings. */
+	const returnLandingVisits = new WeakMap();
+
+	function returnLandingVisit(career) {
+		const visit = returnLandingVisits.get(career);
+		return visit && visit.planet === career.at ? visit : null;
+	}
+
 	/* `ledger` is the purse shared with the page's score rows; pads and ship
 	 * are the objects a GravitySim gates on (setLaunchNetwork) */
 	function createCareer(ledger) {
@@ -1394,6 +1402,17 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			market: null,
 			arrested: false,
 			arrestUntilStep: 0,
+			evacuating: false,
+			evacUntilStep: 0,
+			evacStartStep: 0,
+			evacFromX: 0,
+			evacFromY: 0,
+			evacToX: 0,
+			evacToY: 0,
+			evacDurationSteps: 0,
+			evacLastPaid: 0,
+			evacLastSteps: 0,
+			evacFrom: -1,
 			arrests: 0,
 			bribes: 0,
 			bribeIncome: 0,
@@ -3348,6 +3367,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.hq = homePlanet === undefined ? pickHq(career.seed, trade.world, hqMask(career),
 			career.planetMask, career.planetCount, trade, sim) : homePlanet;
 		career.at = career.hq;
+		returnLandingVisits.delete(career);
 		career.flying = false;
 		career.stranded = false;
 		career.fragileLost = false;
@@ -3401,6 +3421,15 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.ended = CAREER_OPEN;
 		career.arrested = false;
 		career.arrestUntilStep = 0;
+		career.evacuating = false;
+		career.evacUntilStep = 0;
+		career.evacStartStep = 0;
+		career.evacFromX = career.evacFromY = 0;
+		career.evacToX = career.evacToY = 0;
+		career.evacDurationSteps = 0;
+		career.evacLastPaid = 0;
+		career.evacLastSteps = 0;
+		career.evacFrom = -1;
 		career.arrests = 0;
 		career.bribes = 0;
 		career.bribeIncome = 0;
@@ -3440,8 +3469,20 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.ship.tank = topTier(OrbitTech.TANKS);
 	}
 
+	function clearEvacuation(career, sim) {
+		career.evacuating = false;
+		career.evacUntilStep = 0;
+		career.evacDurationSteps = 0;
+		career.evacStartStep = 0;
+		career.evacFromX = career.evacFromY = career.evacToX = career.evacToY = 0;
+		career.evacFrom = -1;
+		if (sim && sim.evacuationTrip === career) sim.evacuationTrip = null;
+	}
+
 	/* places the idle vessel on a planet and syncs the sim's landed base */
 	function placeShip(career, sim, planet) {
+		clearEvacuation(career, sim);
+		returnLandingVisits.delete(career);
 		career.at = planet;
 		career.flying = false;
 		setCommercial(career, -1);
@@ -3488,6 +3529,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* broke = negative purse or a worn-out ship the purse cannot repair */
 	function checkEnded(career) {
 		if (career.ended !== CAREER_OPEN) return career.ended;
+		if (career.evacuating) return career.ended;
 		const purse = career.ledger.purse;
 		if (purse < -1e-9 ||
 			(!career.flying && !careerShipUsable(career) &&
@@ -4437,6 +4479,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				careerWearAt(career, sim.cargo.x, sim.cargo.y));
 		}
 		career.at = landed ? sim.endBody : -1;
+		if (landed && sim.endBody === sim.origin && sim.endBody !== career.hq) {
+			const visit = returnLandingVisit(career);
+			if (visit) visit.count += 1;
+			else returnLandingVisits.set(career, { planet: sim.endBody, count: 1 });
+		} else returnLandingVisits.delete(career);
 		career.flying = false;
 		/* the commercial choice bought one launch; the next planet starts fresh */
 		setCommercial(career, -1);
@@ -4447,33 +4494,101 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return checkEnded(career);
 	}
 
+	function canEvacuate(career) {
+		return career.ended === CAREER_OPEN && !career.flying && !career.arrested &&
+			!career.evacuating && career.at !== career.hq;
+	}
+
 	function evacuationCost(career) {
 		const fee = price(career, CAREER.evacFee);
 		if (fee <= 0) return 0;
 		return Math.min(fee, Math.max(0, career.ledger.purse));
 	}
 
-	function evacuationSeconds(career) {
+	function evacuationSecondsForPaid(career, paid) {
 		const fee = price(career, CAREER.evacFee);
-		if (fee <= 0) return CAREER.evacFullSeconds;
-		const paid = evacuationCost(career);
-		const fractionPaid = paid / fee;
+		if (fee <= 0) return CAREER.evacFreeSeconds;
+		const fractionPaid = Math.min(1, Math.max(0, paid / fee));
 		return CAREER.evacFreeSeconds -
 			(CAREER.evacFreeSeconds - CAREER.evacFullSeconds) * fractionPaid;
 	}
 
-	/* the stranded ship heads to HQ; paying less than the full fee takes longer */
-	function evacuate(career, sim, agreedCost) {
-		if (!career.stranded) return false;
+	function evacuationSeconds(career) {
+		return evacuationSecondsForPaid(career, evacuationCost(career));
+	}
+
+	/* Evacuation is a paid, clock-driven ride, not a flight or an instant placeShip.
+	 * Headless callers (bench/tests) omit runStep to complete synchronously. */
+	function evacuate(career, sim, agreedCost, runStep, agreedSteps) {
+		if (!canEvacuate(career) || !sim) return false;
 		clearMedicalCargo(career);
+		returnLandingVisits.delete(career);
 		const quoted = agreedCost === undefined ? evacuationCost(career) : agreedCost;
 		const paid = Math.min(Math.max(0, quoted), Math.max(0, career.ledger.purse));
+		const duration = agreedSteps === undefined
+			? Math.max(1, Math.round(evacuationSecondsForPaid(career, paid) / GravitySim.DT))
+			: Math.max(1, Math.round(agreedSteps));
+		const hasPlanets = Boolean(sim.planetX && sim.planetY);
+		career.evacLastPaid = paid;
+		career.evacLastSteps = duration;
 		career.ledger.purse -= paid;
 		career.evacuations += 1;
 		career.evacuationSpent += paid;
-		placeShip(career, sim, career.hq);
-		checkEnded(career);
+		if (!Number.isFinite(runStep)) {
+			/* headless / unit-test path: arrive immediately so assertions see HQ */
+			career.evacuating = false;
+			career.evacStartStep = career.evacUntilStep = 0;
+			career.evacDurationSteps = 0;
+			career.evacFromX = career.evacFromY = career.evacToX = career.evacToY = 0;
+			career.evacFrom = -1;
+			placeShip(career, sim, career.hq);
+			checkEnded(career);
+			return true;
+		}
+		const from = career.at >= 0 ? career.at : sim.landedBody;
+		career.evacStartStep = Math.max(0, Math.round(runStep));
+		career.evacDurationSteps = duration;
+		career.evacUntilStep = career.evacStartStep + duration;
+		career.evacFromX = career.at >= 0 && hasPlanets ? sim.planetX[career.at] : sim.cargo.x;
+		career.evacFromY = career.at >= 0 && hasPlanets ? sim.planetY[career.at] : sim.cargo.y;
+		career.evacToX = hasPlanets ? sim.planetX[career.hq] : 0;
+		career.evacToY = hasPlanets ? sim.planetY[career.hq] : 0;
+		career.evacFrom = from;
+		career.evacuating = true;
+		career.at = -1;
+		career.flying = false;
+		career.stranded = true;
+		setCommercial(career, -1);
+		sim.relocate(GravitySim.NO_BODY);
+		sim.cargo.x = career.evacFromX;
+		sim.cargo.y = career.evacFromY;
+		sim.evacuationTrip = career;
 		return true;
+	}
+
+	function advanceEvacuation(career, sim, runStep, trade) {
+		if (!career.evacuating) return false;
+		const elapsed = Math.max(0, Math.min(career.evacDurationSteps,
+			Math.round(runStep) - career.evacStartStep));
+		const progress = career.evacDurationSteps > 0 ? elapsed / career.evacDurationSteps : 1;
+		if (sim) {
+			sim.cargo.x = career.evacFromX +
+				(career.evacToX - career.evacFromX) * progress;
+			sim.cargo.y = career.evacFromY +
+				(career.evacToY - career.evacFromY) * progress;
+			sim.evacuationTrip = career;
+		}
+		if (runStep < career.evacUntilStep) return true;
+		const toX = career.evacToX;
+		const toY = career.evacToY;
+		placeShip(career, sim, career.hq);
+		if (sim) {
+			sim.cargo.x = toX;
+			sim.cargo.y = toY;
+		}
+		if (trade) refreshBoard(career, trade, runStep);
+		checkEnded(career);
+		return false;
 	}
 
 	/* --- launch book --------------------------------------------------- */
@@ -4658,12 +4773,13 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		wearFactor, setSpaceWearScale, spaceWearScaleOf, launchWear, spaceWear, impulseWear, landingWear,
 		forecastCondition, forecastReportUntil, forecastRepairReserve, forecastWearCost,
 		careerShipUsable, setShipCondition, careerWearAt, careerWeatherWear,
-		repairCost, repairCareer, evacuationCost, evacuationSeconds,
+		repairCost, repairCareer, canEvacuate, evacuationCost, evacuationSeconds,
+		advanceEvacuation,
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById, gearKnown, planetBuildable, planetSeized,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart, partRefusal,
 		refreshBoard, canAccept, acceptTask, dropContract, medicLoad, settleMedic,
-		careerBeginFlight, careerBurn, careerAdvance, careerEndFlight, evacuate
+		careerBeginFlight, careerBurn, careerAdvance, careerEndFlight, returnLandingVisit, evacuate
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = GravityGame;

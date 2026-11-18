@@ -491,10 +491,37 @@ function drawTrail(sim = activeSim(), other = false) {
 }
 
 function drawCargo(now, sim = activeSim(), other = false) {
-	if (sim.status === GravitySim.STATUS_IDLE) return;
 	const px = 1 / view.scale;
 	const x = sim.cargo.x;
 	const y = sim.cargo.y;
+	if (sim.evacuationTrip) {
+		const trip = sim.evacuationTrip;
+		const dx = trip.evacToX - trip.evacFromX;
+		const dy = trip.evacToY - trip.evacFromY;
+		const angle = Math.atan2(dy, dx);
+		ctx.beginPath();
+		ctx.moveTo(trip.evacFromX, trip.evacFromY);
+		ctx.lineTo(x, y);
+		ctx.strokeStyle = 'rgba(255, 207, 110, 0.55)';
+		ctx.lineWidth = 1.15 * px;
+		ctx.stroke();
+		ctx.globalAlpha = 0.75;
+		ctx.drawImage(glow, x - 18 * px, y - 18 * px, 36 * px, 36 * px);
+		ctx.globalAlpha = 1;
+		const size = 5.2 * px;
+		ctx.beginPath();
+		ctx.moveTo(x + Math.cos(angle) * size, y + Math.sin(angle) * size);
+		ctx.lineTo(x + Math.cos(angle + 2.45) * size, y + Math.sin(angle + 2.45) * size);
+		ctx.lineTo(x + Math.cos(angle - 2.45) * size, y + Math.sin(angle - 2.45) * size);
+		ctx.closePath();
+		ctx.fillStyle = other ? MINT : GOLD;
+		ctx.fill();
+		ctx.strokeStyle = 'rgba(3, 8, 16, 0.9)';
+		ctx.lineWidth = 0.9 * px;
+		ctx.stroke();
+		return;
+	}
+	if (sim.status === GravitySim.STATUS_IDLE) return;
 	if (sim.status === STATUS_FLYING) {
 		if (!other && isBurnPaused()) {
 			const holdPulse = 0.5 + 0.5 * Math.sin(now * 0.006);

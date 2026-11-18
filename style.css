@@ -1289,11 +1289,17 @@ body {
 	flex-direction: column;
 	gap: 4px;
 	min-width: 60%;
+	max-width: 100%;
 	margin-top: 4px;
 	padding: 6px;
 	border: 1px solid rgba(255, 207, 110, 0.4);
 	border-radius: 6px;
 	background: #060d19;
+}
+
+#launch[value="evac"],
+#launchEvac {
+	white-space: normal;
 }
 
 .planetActions {

@@ -227,6 +227,7 @@ function flightRefuel() {
 /* the context action: a career flight with a drive pauses, resumes or burns;
  * everything else is the launch row gui_hud_text paints */
 function flightActionState() {
+	if (launchButton.value === 'evac') return 'tow to HQ';
 	if (canImpulse()) {
 		flightHud.action = 'space';
 		return 'space';

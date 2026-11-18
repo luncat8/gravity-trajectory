@@ -389,10 +389,6 @@ function careerWaitProgress(p) {
 	careerWaitAnim.pct = pct;
 	const evac = careerWaitAnim.kind === 'evac';
 	careerWaitBtn.textContent = evac ? 'evacuating · ' + pct + ' %' : 'waiting · ' + pct + ' %';
-	if (evac && launchEvacBtn) {
-		launchEvacBtn.disabled = true;
-		launchEvacBtn.textContent = 'evacuating · ' + pct + ' %';
-	}
 	const career = careerWaitAnim.career;
 	const pad = career.pads[careerWaitAnim.planet];
 	if (pad && pad.catapult !== null) {
@@ -527,38 +523,27 @@ function cancelCareerWait() {
 
 function careerEvacuate(recordedSteps) {
 	const career = activeCareer();
-	if (!career.stranded || career.ended !== GravityGame.CAREER_OPEN) {
+	if (!GravityGame.canEvacuate(career)) {
 		careerNotice('nothing to evacuate');
-		return;
+		return false;
 	}
 	const cost = GravityGame.evacuationCost(career);
 	const durationSec = GravityGame.evacuationSeconds(career);
-	const steps = recordedSteps ?? GravitySim.stepsForGameSeconds(durationSec * playPace());
-	recordCareerAction('act', { act: 'evac', steps: steps });
+	/* The trip's duration is game time. Playback pace only changes how long it
+	 * takes to watch those world-clock steps elapse. */
+	const steps = recordedSteps ?? GravitySim.stepsForGameSeconds(durationSec);
+	setLaunchMenu(false);
 	setCareerPaused(false);
 	cancelAim();
-	careerWaitAnim = {
-		kind: 'evac',
-		slot: activeSlotIndex(),
-		career: career,
-		sim: activeSim(),
-		planet: -1,
-		before: 0,
-		steps: steps,
-		durationSec: durationSec,
-		wallSeconds: durationSec / playPace(),
-		durationMs: durationSec / playPace() * 1000,
-		cost: cost,
-		done: 0,
-		pct: -1,
-		credit: 0,
-		last: performance.now()
-	};
-	careerWaitBtn.disabled = true;
-	careerWaitBtn.classList.add('on');
-	careerWaitProgress(0);
+	if (!GravityGame.evacuate(career, activeSim(), cost, game.clockSteps, steps)) {
+		careerNotice('evacuation failed');
+		return false;
+	}
+	recordCareerAction('act', { act: 'evac', steps: steps });
 	careerNotice('evacuation started · ' + cost.toFixed(2) + ' · ' +
-		Math.round(durationSec) + ' s at ×1');
+		Math.round(durationSec) + ' game s');
+	commsInvalidate();
+	careerChanged();
 	hudAt = -Infinity;
 	return true;
 }
@@ -645,7 +630,7 @@ function careerAct(data) {
 	/* the eased world clock owns the career for its 2 s */
 	if (careerWaitBusy() || turret.pending || activeSim().status === STATUS_FLYING) return;
 	if (act === 'wait') return waitCareer();
-	if (career.arrested && act !== 'evac') {
+	if (career.arrested) {
 		const left = Math.max(0, Math.round((career.arrestUntilStep - game.clockSteps) * DT));
 		careerNotice('under arrest · the Capital transport lands in ' + left + ' s');
 		return;

@@ -180,22 +180,20 @@ Game.placeShip(career, sim, third);
 career.stranded = true;
 career.ledger.purse = Game.CAREER.evacFee - 1;
 const expectedEvacSeconds = Game.evacuationSeconds(career);
+const expectedPaid = career.ledger.purse;
 run('commsTick()');
 clickChip('pad');
 assert.match(ui.get('commsCtas').innerHTML, /data-comms-act="evac"[^>]*>/);
 assert.strictEqual(get("commsRunAction('evac')"), true);
-assert.strictEqual(career.at, third, 'the ship stays stranded while the rescue is underway');
-assert.strictEqual(get('careerWaitAnim.kind'), 'evac');
-assert.strictEqual(get('careerWaitAnim.cost'), career.ledger.purse);
-assert.ok(get('careerWaitAnim.durationSec') > Game.CAREER.evacFullSeconds);
-get('careerWaitAnim').credit = 20;
-get('careerWaitAnim').durationMs = 20;
-get('careerWaitAnim').steps = 1;
-get('careerWaitAnim').clockSec = Sim.DT;
-run('careerWaitTick(careerWaitAnim.last + 20)');
+assert.ok(career.evacuating, 'the career enters the evacuating state');
+assert.strictEqual(career.evacLastPaid, expectedPaid);
+assert.ok(career.evacLastSteps > Game.CAREER.evacFullSeconds / Sim.DT,
+	'partial fare stretches the trip beyond the minimum');
+/* advance the world clock to the end of the trip */
+run('game.clockSteps = game.career.evacUntilStep; advanceCareerOneStep(); commsTick()');
 assert.strictEqual(career.at, hq);
-assert.strictEqual(ui.get('careerMsg').textContent,
-	'evacuated to HQ P' + hq + ' · paid ' + (Game.CAREER.evacFee - 1).toFixed(2) + ' · ' +
-	Math.round(expectedEvacSeconds / get('playPace()')) + ' real s');
+assert.strictEqual(career.evacuations, 1);
+assert.match(ui.get('careerMsg').textContent,
+	new RegExp('evacuated to HQ P' + hq + ' · paid ' + expectedPaid.toFixed(2)));
 
 console.log('COMMS PAGE OK');

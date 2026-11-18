@@ -402,16 +402,16 @@
 		<div class="actions flightActions">
 			<div id="launchGroup">
 				<button id="launch" class="primary" disabled>launch</button>
-				<button id="launchMenuBtn" class="primary" type="button" aria-label="launch options" aria-haspopup="true" aria-expanded="false" title="repair and launch separately" hidden>▾</button>
+				<button id="launchMenuBtn" class="primary" type="button" aria-label="launch options" aria-controls="launchMenu" aria-expanded="false" title="launch options" hidden>▾</button>
 				<div id="launchMenu" hidden>
 					<button id="launchRepair" type="button">repair</button>
 					<button id="launchOnly" type="button">launch</button>
+					<button id="launchEvac" type="button" hidden>evacuate</button>
 				</div>
 			</div>
 			<div id="planetActions" class="planetActions" hidden>
 				<button id="launchBuild" class="primary">buy EMC-1 · 9.00</button>
 				<button id="launchCommercial">commercial EMC-1 · 3.00</button>
-				<button id="launchEvac">evacuate · 6.00</button>
 			</div>
 			<button id="clear">clear</button>
 			<button id="routeBest" title="restore the longest finished plan for this planet" hidden disabled>use best</button>
@@ -486,7 +486,7 @@
 	<section aria-labelledby="helpRivalsTitle">
 		<h3 id="helpRivalsTitle" class="helpSectionTitle">rivals &amp; sharing</h3>
 		<p class="helpControls">Rivals are other players competing for the same resources. Difficulty changes bot skill; off restarts the run. The scoreboard player count overrides the default roster. Career replay rebuilds the opening, replays shared inputs and compares the selected player’s actions and decisions. Copy bot log includes the history of checked players, even before they were bots. Outside career, copy rival shares a solo trajectory.</p>
-		<p class="helpControls">Open ☏ H assistant at the top of the right panel, or ask H beside the auto scans. H calls when it detects a launch problem; answer or dismiss the call.</p>
+		<p class="helpControls">Open ☏ H assistant at the top of the right panel, or ask H beside the auto scans. H calls about launch problems or repeated returns to the same planet; answer or dismiss the call.</p>
 	</section>
 	<section aria-labelledby="helpModeTitle">
 		<h3 id="helpModeTitle" class="helpSectionTitle">lab</h3>

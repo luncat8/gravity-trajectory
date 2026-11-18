@@ -406,12 +406,17 @@ async function scoreboardStable(page) {
 				const helperButton = reachable('helperProfit');
 				const build = reachable('launchBuild');
 				const commercial = reachable('launchCommercial');
+				document.getElementById('launchMenuBtn').click();
 				const evac = reachable('launchEvac');
+				setLaunchMenu(false);
 				career.at = -1;
 				GravityScene.refreshCareerPanel();
 				const lostBuildHidden = document.getElementById('launchBuild').hidden &&
 					document.getElementById('launchCommercial').hidden;
-				const lostEvac = reachable('launchEvac');
+				const lostEvac = reachable('launch');
+				const caret = reachable('launchMenuBtn');
+				const launchWidth = launch.parentElement.getBoundingClientRect().width;
+				const lostEvacPrimary = launch.textContent.startsWith('evacuate · ');
 				career.at = career.hq;
 				career.stranded = false;
 				GravityScene.refreshCareerPanel();
@@ -427,8 +432,8 @@ async function scoreboardStable(page) {
 					evacH: evac.height,
 					insideFoot: build.inside && commercial.inside && evac.inside,
 					lostBuildHidden,
-					lostEvacW: lostEvac.width,
-					lostEvacReachable: lostEvac.inside,
+					lostEvacReachable: lostEvacPrimary && lostEvac.inside && caret.inside &&
+						lostEvac.width >= 60 && lostEvac.height >= 24 && lostEvac.width + caret.width >= launchWidth - 3,
 					restoredLaunch: !launch.hidden &&
 						!document.getElementById('launchCommercial').hidden
 				};
@@ -462,12 +467,13 @@ async function scoreboardStable(page) {
 			check(layout.footBottom <= layout.gameBarTop, label + ': foot row overlaps the game footer');
 			check(layout.hudBottom <= layout.footTop + 1,
 				label + ': cargoHud overlaps flightHud (' + Math.round(layout.hudBottom) + ' > ' + Math.round(layout.footTop) + ')');
-			check(strandedLayout.helperInFoot && strandedLayout.launchShown &&
+			check(strandedLayout.helperInFoot, label + ': helper controls do not fit in the flight panel');
+			check(strandedLayout.launchShown &&
 				strandedLayout.actionsShown && strandedLayout.buildW >= 60 &&
 				strandedLayout.commercialW >= 60 && strandedLayout.evacW >= 60 &&
 				strandedLayout.buildH >= 24 && strandedLayout.commercialH >= 24 &&
 				strandedLayout.insideFoot && strandedLayout.lostBuildHidden &&
-				strandedLayout.lostEvacW >= 120 && strandedLayout.lostEvacReachable && strandedLayout.restoredLaunch,
+				strandedLayout.lostEvacReachable && strandedLayout.restoredLaunch,
 				label + ': stranded flightHud layout invalid ' + JSON.stringify(strandedLayout));
 			check(drawer.leftBottom <= layout.gameBarTop + 1, label + ': leftHud overlaps the game footer');
 			check(drawer.visible && drawer.run && drawer.rivals, label + ': boxes ' + JSON.stringify(drawer));

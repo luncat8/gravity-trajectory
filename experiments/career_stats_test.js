@@ -254,45 +254,35 @@ check('purse identity and per-transaction isolation over a scripted career', () 
     });
     checkIdentity(career, 'after flight 2');
 
+    /* Fund the commercial leg with a bribe at P2, below the arrest threshold. */
+    market.corruption[P2] = 10;
+    market.visitPay[P2] = 2;
+    market.reportStep[P2] = market.lastVisitStep[P2];
+    const bribeAmount = GravityGame.bribeAmount(market, P2, w.step);
+    const bribed = GravityGame.acceptBribe(career, market, sim, P2, w.step);
+    assert.ok(bribed.ok && !bribed.arrested);
+    const afterBribe = snapshot(career);
+    checkMoves('bribe', after2, afterBribe, { bribeIncome: bribeAmount, purse: bribeAmount });
+    checkIdentity(career, 'after bribe');
+
     /* flight 3: P2 -> the rival HQ; launching from P2 uses the commercial rail,
      * landing puts the ship on the rival's rail */
     const fee3 = GravityGame.launchFee(career, P2, s3.speed);
-    assert.ok(fee3 > 0, 'commercial launch from P2 should charge');
+    assert.ok(fee3 > 0 && career.ledger.purse >= fee3, 'commercial launch must be affordable');
     fly(w, P2, s3.angle, s3.speed);
     const after3 = snapshot(career);
-    const g3 = after3.visitIncome - after2.visitIncome;
-    checkMoves('flight 3 (commercial launch, rival landing)', after2, after3, {
+    const g3 = after3.visitIncome - afterBribe.visitIncome;
+    checkMoves('flight 3 (commercial launch, rival landing)', afterBribe, after3, {
         feesPaid: fee3, visitIncome: g3, flownPx: sim.flightLength, purse: g3 - fee3
     });
     checkIdentity(career, 'after flight 3');
 
-    /* a bribe on the planet the ship sits on */
-    const bribePlanetIdx = bribePlanet(w, rivalHQ, P2, capital, arf);
-    market.corruption[bribePlanetIdx] = 90;
-    /* the bribe takes its landing's report back (0.7.16): the fixture stands
-     * the report where the value clock is, so the rot math below is the law's */
-    market.reportStep[bribePlanetIdx] = market.lastVisitStep[bribePlanetIdx];
-    const bribeAmountBefore = GravityGame.bribeAmount(market, bribePlanetIdx, w.step);
-    const bribed = GravityGame.acceptBribe(career, market, sim, bribePlanetIdx, w.step);
-    const afterBribe = snapshot(career);
-    const bribeDelta = bribed.ok ? bribeAmountBefore : 0;
-    checkMoves('bribe', after3, afterBribe, {
-        bribeIncome: bribeDelta, purse: bribeDelta
+    const evacCost = GravityGame.evacuationCost(career);
+    assert.ok(GravityGame.evacuate(career, sim), 'evacuate failed');
+    const afterEvac = snapshot(career);
+    checkMoves('evacuation', after3, afterEvac, {
+        evacuations: 1, evacuationSpent: evacCost, purse: -evacCost
     });
-    checkIdentity(career, 'after bribe');
-
-    /* an evacuation from the planet the ship is stranded on */
-    if (career.stranded) {
-        const evacCost = GravityGame.evacuationCost(career);
-        assert.ok(GravityGame.evacuate(career, sim), 'evacuate failed');
-        const afterEvac = snapshot(career);
-        checkMoves('evacuation', afterBribe, afterEvac, {
-            evacuations: 1, evacuationSpent: evacCost, purse: -evacCost
-        });
-        checkIdentity(career, 'after evacuation');
-    } else {
-        console.log('note: career not stranded, evacuation step skipped');
-    }
 
     /* the identity must hold after every transaction */
     checkIdentity(career, 'final');
@@ -306,13 +296,6 @@ check('purse identity and per-transaction isolation over a scripted career', () 
     GravityGame.careerStats(out, career);
     assert.strictEqual(typeof out.profit, 'number');
 });
-
-/* pick a planet the ship has just landed on that can be bribed */
-function bribePlanet(w, preferred, fallback, capital, arf) {
-    const p = w.career.at;
-    if (p >= 0 && p !== capital && p !== arf) return p;
-    return preferred !== capital && preferred !== arf ? preferred : fallback;
-}
 
 /* drive the sampler headlessly: one sample per call, company values forced
  * distinct per step so thinning and determinism compare real data */
@@ -371,7 +354,7 @@ check('sampler: long runs stay capped at one block', () => {
 check('purse identity holds for a free (communism) evacuation', () => {
     const w = makeCareer(SEED);
     w.career.cheat = GravityGame.CHEAT_COMMUNISM;
-    w.career.stranded = true;
+    GravityGame.placeShip(w.career, w.sim, w.seats[1]);
     const purseBefore = w.career.ledger.purse;
     assert.ok(GravityGame.evacuate(w.career, w.sim), 'evacuate failed');
     assert.strictEqual(w.career.ledger.purse, purseBefore, 'a communism evacuation is free');

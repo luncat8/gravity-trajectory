@@ -78,7 +78,8 @@ function drawRivalsWorld(now) {
 			ctx.stroke();
 		}
 		/* rival base diamond when parked at a planet */
-		if (sim.status !== STATUS_FLYING && r.basePlanet >= 0) {
+		const rivalEvacuating = r.career && r.career.evacuating;
+		if (!rivalEvacuating && sim.status !== STATUS_FLYING && r.basePlanet >= 0) {
 			const bx = tradeSim.planetX[r.basePlanet];
 			const by = tradeSim.planetY[r.basePlanet];
 			const br = tradeSim.planetR[r.basePlanet] + (6 + rIdx * 3.5) * px;
@@ -94,8 +95,34 @@ function drawRivalsWorld(now) {
 			ctx.stroke();
 			ctx.globalAlpha = 1;
 		}
-		/* rival ship chevron in flight or ring when ended */
-		if (sim.status === STATUS_FLYING) {
+		/* rival ship chevron in flight or ring when ended; evacuating rival rides the tow */
+		if (rivalEvacuating) {
+			const trip = r.career;
+			const dx = trip.evacToX - trip.evacFromX;
+			const dy = trip.evacToY - trip.evacFromY;
+			const angle = Math.atan2(dy, dx);
+			const x = sim.cargo.x;
+			const y = sim.cargo.y;
+			const size = 4.3 * px;
+			ctx.beginPath();
+			ctx.moveTo(trip.evacFromX, trip.evacFromY);
+			ctx.lineTo(x, y);
+			ctx.strokeStyle = colour;
+			ctx.globalAlpha = 0.35;
+			ctx.lineWidth = 1.05 * px;
+			ctx.stroke();
+			ctx.globalAlpha = 1;
+			ctx.beginPath();
+			ctx.moveTo(x + Math.cos(angle) * size, y + Math.sin(angle) * size);
+			ctx.lineTo(x + Math.cos(angle + 2.4) * size, y + Math.sin(angle + 2.4) * size);
+			ctx.lineTo(x + Math.cos(angle - 2.4) * size, y + Math.sin(angle - 2.4) * size);
+			ctx.closePath();
+			ctx.fillStyle = colour;
+			ctx.fill();
+			ctx.strokeStyle = 'rgba(3, 8, 16, 0.85)';
+			ctx.lineWidth = 0.8 * px;
+			ctx.stroke();
+		} else if (sim.status === STATUS_FLYING) {
 			const x = sim.cargo.x;
 			const y = sim.cargo.y;
 			const angle = Math.atan2(sim.cargo.vy, sim.cargo.vx);

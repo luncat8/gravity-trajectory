@@ -2184,14 +2184,12 @@
 	 * committed launch, so a sit or a forced rebuild never stocks a tank for free. */
 	GravityBot.prototype.careerBetweenFlights = function (career, sim, runStep = this.worldStep) {
 		if (career.ended !== GravityGame.CAREER_OPEN) return 0;
-		/* the Capital transport is still flying: nothing to shop, nowhere to go */
-		if (career.arrested) return 0;
+		/* transport trips own the ship and the clock until arrival */
+		if (career.arrested || career.evacuating) return 0;
 		let actions = 0;
 		const evacPrice = careerFee(career, GravityGame.CAREER.evacFee);
 		if (career.at < 0) {
 			if (this.careerRecover(career, sim, evacPrice, runStep, 'lost in space')) return 1;
-			this.traceAdd(careerTraceIndex(career), 'no shot', 'lost in space · evac ' +
-				evacPrice.toFixed(2) + ' > purse ' + career.ledger.purse.toFixed(2), runStep);
 			return 0;
 		}
 		/* the commercial EMC lifts a parked ship for its fee, so a padless planet
@@ -2218,7 +2216,7 @@
 				}
 			}
 		}
-		if (career.ended !== GravityGame.CAREER_OPEN) return actions;
+		if (career.ended !== GravityGame.CAREER_OPEN || career.evacuating) return actions;
 		if (this.careerRepair(career, runStep)) actions += 1;
 
 		/* a pad whose full battery still cannot lift the current ship is a dead
@@ -2310,8 +2308,12 @@
 	};
 
 	GravityBot.prototype.careerRecover = function (career, sim, cost, step, why) {
-		if (career.ledger.purse + 1e-9 < cost || !GravityGame.evacuate(career, sim)) return false;
-		this.traceAdd(careerTraceIndex(career), 'evac', 'to HQ P' + career.at + ' · ' + why, step);
+		const from = career.at;
+		const paid = GravityGame.evacuationCost(career);
+		if (!career.stranded || !GravityGame.evacuate(career, sim, paid, step)) return false;
+		this.traceAdd(careerTraceIndex(career), 'evac',
+			(from < 0 ? 'space' : 'P' + from) + ' → HQ P' + career.hq +
+			' · ' + why + ' · ' + paid.toFixed(2) + ' paid', step);
 		return true;
 	};
 
@@ -2424,6 +2426,8 @@
 				return 'broke · restart in ' + Math.max(0, (r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s';
 			}
 			if (career.ended !== GravityGame.CAREER_OPEN) return 'complete';
+			if (career.evacuating) return 'evacuating · ' +
+				Math.max(0, (career.evacUntilStep - runStep) * GravitySim.DT).toFixed(1) + ' s';
 			if (career.at < 0) {
 				const fee = careerFee(career, GravityGame.CAREER.evacFee);
 				return career.ledger.purse + 1e-9 >= fee
@@ -3268,6 +3272,24 @@
 				if (burn && shot) shot.burns.push(GravityGame.createBurn(r.sim.liveSteps, burn.angleU, burn.dvU));
 			}
 			GravityGame.careerAdvance(career, 1, flightStep);
+			if (career.evacuating) {
+				const arrived = !GravityGame.advanceEvacuation(career, r.sim, runStep);
+				if (arrived) {
+					r.basePlanet = career.at;
+					r.idleTries = 0;
+					r.waitTries = 0;
+					this.traceAdd(i, 'evacuated', 'to HQ P' + career.hq, runStep);
+					if (this.isRivalBot(i)) {
+						r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
+						this.careerBetweenFlights(career, r.sim, runStep);
+					} else {
+						r.readyStep = runStep + CAREER_RIVAL_GAP;
+					}
+				} else {
+					r.readyStep = Math.max(r.readyStep, runStep + 1);
+				}
+				continue;
+			}
 			if (r.sim.status === STATUS_FLYING) {
 				r.sim.stepOne();
 				if (flightStep) {
@@ -3338,7 +3360,7 @@
 		const p = this.careerPlayer;
 		const career = p.career;
 		if (!career || !p.sim || career.ended !== GravityGame.CAREER_OPEN) return false;
-		if (career.arrested || p.sim.status === STATUS_FLYING) return false;
+		if (career.arrested || career.evacuating || p.sim.status === STATUS_FLYING) return false;
 		if (refresh) {
 			/* just landed (or just started): shop, then turn the barrel */
 			p.idleTries = 0;
@@ -3864,11 +3886,12 @@
 		const career = r.career;
 		const sim = r.sim;
 		const why = this.careerNoPlanWhy(career, sim);
-		const evac = careerFee(career, GravityGame.CAREER.evacFee);
 		let recovery = '';
 		r.idleTries += 1;
-		if (career.stranded && r.idleTries >= 2 && career.ledger.purse + 1e-9 >= evac) {
-			if (GravityGame.evacuate(career, sim)) recovery = 'evacuated to P' + career.at;
+		if (career.stranded && r.idleTries >= 2) {
+			if (GravityGame.evacuate(career, sim, GravityGame.evacuationCost(career), runStep)) {
+				recovery = 'evacuation started';
+			}
 		} else if (career.contract >= 0 && r.idleTries >= 3) {
 			GravityGame.dropContract(career);
 			GravityGame.refreshBoard(career, trade, runStep);

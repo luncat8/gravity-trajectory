@@ -118,9 +118,15 @@ function updateGameClockHud() {
 	if (!gameHudEl || gameHudEl.hidden) return;
 	const career = activeCareer();
 	if (gameClockEl) {
-		gameClockEl.textContent = formatGameClock(game.clockSteps * DT) +
-			(career && career.arrested ? ' · ARREST ' +
-				Math.max(0, Math.round((career.arrestUntilStep - game.clockSteps) * DT)) + ' s' : '');
+		let clockText = formatGameClock(game.clockSteps * DT);
+		if (career && career.arrested) {
+			clockText += ' · ARREST ' +
+				Math.max(0, Math.round((career.arrestUntilStep - game.clockSteps) * DT)) + ' s';
+		} else if (career && career.evacuating) {
+			clockText += ' · EVAC ' +
+				Math.max(0, Math.ceil((career.evacUntilStep - game.clockSteps) * DT)) + ' s';
+		}
+		gameClockEl.textContent = clockText;
 	}
 	if (gameShotsEl) gameShotsEl.textContent = String(career ? career.flights : 0);
 	if (gameFlightsEl) gameFlightsEl.textContent = String(game.shots ? game.shots.length : 0);
@@ -306,13 +312,13 @@ function updateLiveHud() {
 	}
 	const impulseOk = canImpulse();
 	const locked = gameLocked();
-	updateFlightHud();
 	const trimOff = (locked && !(impulseOk && burnArmed)) ||
 		(!armed && !(impulseOk && burnArmed) && (game.on || selected < 0));
 	if (trimSlider.disabled !== trimOff) trimSlider.disabled = trimOff;
 	const exitWarning = !routeRule() && (aiming || armed || burnAiming || burnArmed) &&
 		sim.predCount >= 2 && sim.predReason === END_EXIT;
 	setLaunchState(locked || !armed || !canAimFrom(aimBody), exitWarning);
+	updateFlightHud();
 }
 
 
@@ -325,11 +331,79 @@ function setLaunchMenu(open) {
 	}
 }
 
-/* the caret and its menu exist only while a landed ship can be repaired */
 function hideLaunchMenu() {
+	launchEvacBtn.hidden = true;
 	if (launchMenuBtn.hidden) return;
 	launchMenuBtn.hidden = true;
 	setLaunchMenu(false);
+}
+
+/* A priced-out commercial rail can still be inspected, but is not a way home. */
+function setPlanetActions(career, show, busy, commercialOn, usable) {
+	const at = career.at;
+	const build = show && career.pads[at].catapult === null && GravityGame.planetBuildable(career, at);
+	const commercial = show && at !== career.capitalPlanet;
+	planetActionsEl.hidden = !build && !commercial;
+	launchBuildBtn.hidden = !build;
+	launchCommercialBtn.hidden = !commercial;
+	let buildReady = false;
+	if (build) {
+		const first = OrbitTech.CATAPULTS[0];
+		const cost = careerCost(career, first.buildCost);
+		const poor = purseTooSmall(career, cost);
+		const lift = padCap(career, first, OrbitTech.BATTERIES[0]);
+		buildReady = !busy && !poor;
+		launchBuildBtn.disabled = !buildReady;
+		launchBuildBtn.classList.toggle('costly', poor);
+		launchBuildBtn.textContent = 'buy ' + first.id + ' · ' + costText(cost);
+		launchBuildBtn.title = 'build the first catapult on ' + planetName(at) +
+			' · full battery lifts ' + career.ship.mass.toFixed(1) + ' t to ' +
+			Math.round(lift) + ' px/s · claims the planet';
+	}
+	if (!commercial) return buildReady;
+	const lift = padCap(career, GravityGame.COMMERCIAL_PAD.catapult, GravityGame.COMMERCIAL_PAD.battery);
+	const canLift = lift + 1e-9 >= SPEED_MIN;
+	const fire = commercialOn && armed && aimBody === at;
+	const fee = fire ? GravityGame.launchFee(career, at, aimSpeed)
+		: GravityGame.commercialFee(career, at, SPEED_MIN);
+	const poor = purseTooSmall(career, fee);
+	launchCommercialBtn.disabled = busy || !canLift;
+	launchCommercialBtn.classList.toggle('costly', poor);
+	launchCommercialBtn.classList.toggle('on', commercialOn);
+	launchCommercialBtn.textContent = (fire ? 'commercial launch · ' : 'commercial EMC-1 · ') + costText(fee);
+	launchCommercialBtn.title = !canLift
+		? 'the commercial EMC-1 cannot lift ' + career.ship.mass.toFixed(1) +
+			' t (max ' + Math.round(lift) + ' px/s)'
+		: fire ? 'fire the armed shot from the commercial EMC-1 for ' + costText(fee)
+		: commercialOn ? 'commercial EMC-1 selected · drag from ' + planetName(at) +
+			' to aim · click again for the standing rail'
+		: 'launch from the commercial EMC-1 on ' + planetName(at) +
+			' · always charged · lifts the ship to ' + Math.round(lift) +
+			' px/s · never claims the planet or blocks building yours';
+	return buildReady || (!launchCommercialBtn.disabled && !poor && usable);
+}
+
+function setEvacuationOption(career, offer, busy, evacuating) {
+	launchEvacBtn.hidden = !offer;
+	if (!offer) return;
+	const cost = GravityGame.evacuationCost(career);
+	const seconds = GravityGame.evacuationSeconds(career);
+	const watchSec = seconds / playPace();
+	const elapsed = evacuating ? Math.max(0, game.clockSteps - career.evacStartStep) : 0;
+	const pct = evacuating && career.evacDurationSteps > 0
+		? Math.min(100, Math.round(elapsed * 100 / career.evacDurationSteps)) : 0;
+	const remainingGameSec = evacuating
+		? Math.max(0, Math.ceil((career.evacUntilStep - game.clockSteps) * DT)) : 0;
+	const text = evacuating ? 'evacuating · ' + pct + ' % · ' + remainingGameSec + ' s'
+		: 'evacuate · ' + costText(cost) + ' · ' + Math.round(seconds) + ' s';
+	launchEvacBtn.disabled = busy || evacuating;
+	if (launchEvacBtn.textContent !== text) launchEvacBtn.textContent = text;
+	launchEvacBtn.title = evacuating ? 'evacuation to HQ ' + planetName(career.hq) +
+			' · ' + remainingGameSec + ' game s remaining' +
+			' (' + realSecText(remainingGameSec / playPace()) + ' s to watch at ' + paceTag() + ')'
+		: 'tow to HQ ' + planetName(career.hq) + ' · pay ' + costText(cost) +
+			' · ' + Math.round(seconds) + ' game s' +
+			' (' + realSecText(watchSec) + ' s to watch at ' + paceTag() + '); less money takes longer';
 }
 
 function setLaunchState(blocked, exitWarning) {
@@ -355,8 +429,8 @@ function setLaunchState(blocked, exitWarning) {
 		launchState = state;
 		launchNote = text;
 		hideLaunchMenu();
-		launchButton.hidden = false;
-		if (planetActionsEl) planetActionsEl.hidden = true;
+		launchButton.value = '';
+		planetActionsEl.hidden = true;
 		launchButton.disabled = !burnArmed;
 		launchButton.classList.toggle('exitWarning', warnExit);
 		launchButton.textContent = text;
@@ -372,8 +446,8 @@ function setLaunchState(blocked, exitWarning) {
 	if (turret.pending) {
 		const left = Math.max(0, turret.fireAt - game.clockSteps) * DT;
 		hideLaunchMenu();
-		launchButton.hidden = false;
-		if (planetActionsEl) planetActionsEl.hidden = true;
+		launchButton.value = '';
+		planetActionsEl.hidden = true;
 		launchButton.disabled = false;
 		launchButton.classList.remove('costly', 'exitWarning');
 		launchButton.textContent = 'gun · ' + left.toFixed(1) + ' s';
@@ -388,110 +462,57 @@ function setLaunchState(blocked, exitWarning) {
 	const plan = slotPlans[slot];
 	const sim = slotSim(slot);
 	const career = careerRule();
-	/* planet actions beside launch: build yours, fire the commercial rail
-	 * that stands on every planet, or evacuate — shown whenever the career
-	 * ship sits landed (lost in space keeps only the evacuation) */
 	const c = playerCareer();
-	const landed = career && c.ended === GravityGame.CAREER_OPEN &&
-		sim.status !== STATUS_FLYING;
-	const showActions = landed && !replay.on && (c.at >= 0 || c.stranded);
-	const commercialOn = showActions && c.at >= 0 && c.commercialPlanet === c.at;
-	launchButton.hidden = showActions && c.at < 0;
-	if (planetActionsEl) planetActionsEl.hidden = !showActions;
-	if (showActions) {
-		const waitBusy = careerWaitBusy();
-		if (launchBuildBtn) {
-			const occupied = c.at >= 0 && !GravityGame.planetBuildable(c, c.at);
-			if (c.at < 0 || c.pads[c.at].catapult !== null || occupied) {
-				launchBuildBtn.hidden = true;
-			} else {
-				const first = OrbitTech.CATAPULTS[0];
-				const buildCost = careerCost(c, first.buildCost);
-				const buildPoor = purseTooSmall(c, buildCost);
-				const fresh = padCap(c, first, OrbitTech.BATTERIES[0]);
-				launchBuildBtn.hidden = false;
-				launchBuildBtn.disabled = buildPoor || waitBusy;
-				launchBuildBtn.classList.toggle('costly', buildPoor);
-				launchBuildBtn.textContent = 'buy ' + first.id + ' · ' + costText(buildCost);
-				launchBuildBtn.title = 'build the first catapult on ' + planetName(c.at) +
-					' · full battery lifts ' + c.ship.mass.toFixed(1) + ' t to ' +
-					Math.round(fresh) + ' px/s · claims the planet';
-			}
-		}
-		if (launchCommercialBtn) {
-			/* the Capital already has the free imperial rail: no commercial one */
-			if (c.at < 0 || c.at === c.capitalPlanet) {
-				launchCommercialBtn.hidden = true;
-			} else {
-				const feeMin = careerCost(c, GravityGame.commercialFee(c, c.at, GravitySim.SPEED_MIN));
-				const lift = padCap(c, OrbitTech.CATAPULTS[0], OrbitTech.BATTERIES[0]);
-				const canLift = lift + 1e-9 >= SPEED_MIN;
-				const armedHere = armed && aimBody === c.at;
-				const fee = armedHere
-					? careerCost(c, GravityGame.launchFee(c, c.at, aimSpeed))
-					: feeMin;
-				const feePoor = purseTooSmall(c, fee);
-				launchCommercialBtn.hidden = false;
-				launchCommercialBtn.disabled = waitBusy || !canLift;
-				launchCommercialBtn.classList.toggle('costly', feePoor);
-				launchCommercialBtn.classList.toggle('on', commercialOn);
-				launchCommercialBtn.textContent = commercialOn && armedHere
-					? 'commercial launch · ' + costText(fee)
-					: 'commercial EMC-1 · ' + costText(fee);
-				launchCommercialBtn.title = !canLift
-					? 'the commercial EMC-1 cannot lift ' + c.ship.mass.toFixed(1) +
-						' t (max ' + Math.round(lift) + ' px/s)'
-					: commercialOn
-					? armedHere
-						? 'fire the armed shot from the commercial EMC-1 for ' + costText(fee)
-						: 'commercial EMC-1 selected · drag from ' + planetName(c.at) +
-							' to aim · click again for the standing rail'
-					: 'launch from the commercial EMC-1 on ' + planetName(c.at) +
-						' · always charged · lifts the ship to ' + Math.round(lift) +
-						' px/s · never claims the planet or blocks building yours';
-			}
-		}
-		if (launchEvacBtn) {
-			if (!c.stranded) {
-				launchEvacBtn.hidden = true;
-			} else {
-				const evacCost = GravityGame.evacuationCost(c);
-				const evacSeconds = GravityGame.evacuationSeconds(c);
-				const evacWallSeconds = evacSeconds / playPace();
-				const evacuating = careerWaitAnim && careerWaitAnim.kind === 'evac';
-				launchEvacBtn.hidden = false;
-				launchEvacBtn.disabled = waitBusy;
-				launchEvacBtn.classList.toggle('costly', evacCost > 0);
-				launchEvacBtn.textContent = evacuating
-					? 'evacuating · ' + Math.max(0, careerWaitAnim.pct) + ' %'
-					: 'evacuate · ' + costText(evacCost) + ' · ' + Math.round(evacWallSeconds) + ' s';
-				launchEvacBtn.title = evacuating
-					? 'evacuation to HQ ' + planetName(c.hq) + ' is in progress'
-					: 'fly home to HQ ' + planetName(c.hq) + ' · pay ' + costText(evacCost) +
-						' · ' + Math.round(evacSeconds) + ' game seconds, ' +
-						Math.round(evacWallSeconds) + ' real seconds at ' + paceTag() +
-						'; less money takes longer';
-			}
-		}
-	} else {
-		if (launchBuildBtn) launchBuildBtn.hidden = true;
-		if (launchCommercialBtn) launchCommercialBtn.hidden = true;
-		if (launchEvacBtn) launchEvacBtn.hidden = true;
-	}
+	const idleCareer = career && c.ended === GravityGame.CAREER_OPEN &&
+		sim.status !== STATUS_FLYING && !replay.on && !careerActionReplay.active;
+	const onPlanet = idleCareer && c.at >= 0;
+	const waitBusy = careerWaitBusy();
+	const commercialOn = onPlanet && c.commercialPlanet === c.at;
+	const usable = !career || GravityGame.careerShipUsable(c);
+	const planetAction = setPlanetActions(c, onPlanet, waitBusy, commercialOn, usable);
+	const evacuating = idleCareer && c.evacuating;
+	const offerEvac = idleCareer && (evacuating || GravityGame.canEvacuate(c));
+	setEvacuationOption(c, offerEvac, waitBusy, evacuating);
 	const note = career ? careerOverText() || careerPadNote() : '';
 	const broke = game.on && !route && (career ? note !== '' : ledger.purse < MONEY.cost);
-	const usable = !career || GravityGame.careerShipUsable(c);
 	/* a landed, hand-flown ship below new: the main action services it first */
-	const worn = landed && c.at >= 0 && !botPlayer && !careerWaitBusy() && c.ship.condition < 1;
+	const worn = onPlanet && !botPlayer && !waitBusy && c.ship.condition < 1;
 	const repair = worn ? GravityGame.repairCost(c) : 0;
 	const repairPoor = worn && purseTooSmall(c, repair);
 	const chained = worn && !blocked && sim.canFire(aimBody, aimSpeed) &&
 		GravityGame.repairLaunchBlock(c, activeCareerSim(), aimBody, aimSpeed) === '';
+	const launchOff = route || botPlayer || blocked || broke || !usable;
+	const mainOff = worn ? !chained && repairPoor : launchOff;
+	/* Keep the tow in the menu even when another action is available. */
+	const evacPrimary = evacuating || (offerEvac && !botPlayer && !waitBusy && mainOff &&
+		!planetAction && (!worn || launchOff));
 	const noImpulse = career && !usable && !botPlayer && sim.burnLimit() > 0;
+	launchRepairBtn.hidden = launchOnlyBtn.hidden = !worn;
+	if (worn) {
+		launchRepairBtn.textContent = 'repair · ' + costText(repair);
+		launchRepairBtn.disabled = repairPoor;
+		launchRepairBtn.classList.toggle('costly', repairPoor);
+		launchOnlyBtn.textContent = 'launch' + (launchOff ? '' : launchRideText(c));
+		launchOnlyBtn.disabled = launchOff;
+		launchOnlyBtn.title = !usable ? GravityGame.WORN_OUT_BLOCK
+			: launchOff ? 'Arm a shot this pad can fire' : 'Launch without repair · the ship keeps wearing';
+	}
+	if (worn || offerEvac) launchMenuBtn.hidden = false;
+	else hideLaunchMenu();
+	if (evacPrimary) {
+		launchButton.value = 'evac';
+		launchButton.disabled = waitBusy || evacuating;
+		launchButton.classList.remove('exitWarning', 'costly');
+		launchButton.title = launchEvacBtn.title;
+		if (launchButton.textContent !== launchEvacBtn.textContent) {
+			launchButton.textContent = launchEvacBtn.textContent;
+		}
+		launchState = -1;
+		return;
+	}
 	const state = (blocked || broke ? 1 : 0) + (exitWarning ? 2 : 0) +
 		(broke ? 4 : 0) + (route ? 8 : 0) + (botPlayer ? 16 : 0) +
-		(route && plan.ready ? 32 : 0) + (slot * 64) + (showActions ? 8192 : 0) +
-		(commercialOn ? 16384 : 0) + (careerPaused ? 32768 : 0) + (worn ? 65536 : 0) +
+		(route && plan.ready ? 32 : 0) + (slot * 64) + (careerPaused ? 32768 : 0) + (worn ? 65536 : 0) +
 		(chained ? 131072 : 0) + (usable ? 0 : 262144) + (repairPoor ? 524288 : 0) +
 		(noImpulse ? 1048576 : 0);
 	const who = slotName(slot);
@@ -513,8 +534,8 @@ function setLaunchState(blocked, exitWarning) {
 	launchState = state;
 	launchNote = text;
 	launchRepairCents = repairCents;
-	const launchOff = route || botPlayer || blocked || broke || !usable;
-	launchButton.disabled = worn ? !chained && repairPoor : launchOff;
+	launchButton.value = '';
+	launchButton.disabled = mainOff;
 	launchButton.classList.toggle('exitWarning', exitWarning && (!worn || chained));
 	/* only a missing price is a price; a career pad note is a state gate */
 	launchButton.classList.toggle('costly', worn ? !chained && repairPoor : broke && !career);
@@ -532,19 +553,6 @@ function setLaunchState(blocked, exitWarning) {
 		? career ? 'The pad cannot fire this shot' : 'The purse cannot cover a launch; this run is over'
 		: exitWarning ? 'Warning: predicted trajectory ends outside the system'
 		: launchRideTitle(career ? c : null);
-	launchMenuBtn.hidden = !worn;
-	if (!worn) {
-		setLaunchMenu(false);
-		return;
-	}
-	launchMenuBtn.title = wear + ' · repair and launch separately';
-	launchRepairBtn.textContent = 'repair · ' + costText(repair);
-	launchRepairBtn.disabled = repairPoor;
-	launchRepairBtn.classList.toggle('costly', repairPoor);
-	launchOnlyBtn.textContent = 'launch' + (launchOff ? '' : launchRideText(c));
-	launchOnlyBtn.disabled = launchOff;
-	launchOnlyBtn.title = !usable ? GravityGame.WORN_OUT_BLOCK
-		: launchOff ? 'Arm a shot this pad can fire' : 'Launch without repair · the ship keeps wearing';
 }
 
 /* repair plus the launch: one credit total, and the pad energy an own EMC draws */
@@ -630,6 +638,13 @@ function statusText() {
 	if (burnArmed) return 'burn armed · Δv ' + burnDv.toFixed(1) + ' px/s';
 	if (isBurnPaused()) return 'flight paused · drag the ship for impulse';
 	if (careerRule() && careerPaused && sim.status === STATUS_FLYING) return 'flight paused · clock paused';
+	if (careerRule() && game.on && !replay.on) {
+		const c = slotCareer(slot);
+		if (c.evacuating) {
+			const rem = Math.max(0, Math.ceil((c.evacUntilStep - game.clockSteps) * DT));
+			return whoPrefix + 'evacuating to HQ · ' + rem + ' s';
+		}
+	}
 	if (aiming) return whoPrefix + 'aiming ' + planetName(aimBody);
 	if (armed) return whoPrefix + 'armed · ' + planetName(aimBody);
 	if (sim.status === STATUS_FLYING) {

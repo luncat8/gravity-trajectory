@@ -321,10 +321,10 @@ const RULE_HELP = {
 			'On its own pad a bot buys the next panel, battery or rail only when that pad\'s last launch ' +
 			'pays the price back in money per pad second, a rail always with the battery that fills it. ' +
 			'The career runs on the world clock; pause on landing holds it still, and each human player holds it ' +
-			'separately — a hatched scoreboard row is still holding time. Evacuation to HQ costs up to ' +
+			'separately — a hatched scoreboard row is still holding time. Away from HQ, the launch ▾ menu offers a tow home. It costs up to ' +
 			GravityGame.CAREER.evacFee.toFixed(2) + ' and takes ' +
 			GravityGame.CAREER.evacFullSeconds + '–' + GravityGame.CAREER.evacFreeSeconds +
-			' real seconds at ×1 depending on the fare paid. Fragile freight (light planets only, pays \u00d7' +
+			' game seconds depending on the fare paid. Fragile freight (light planets only, pays \u00d7' +
 			GravityGame.FRAGILE_PAY.toFixed(1) + ') breaks when launched above ' +
 			Math.floor(GravityGame.FRAGILE_SPEED) + ' px/s: a full-force EMC-1 is gentle enough, a stronger rail must be aimed softer. ' +
 			'Deep freight (' + GravityGame.DEEP_TONS + ' t or more from a well of g ≥ ' +

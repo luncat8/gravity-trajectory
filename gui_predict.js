@@ -396,6 +396,7 @@ function careerOverText() {
 	const career = playerCareer();
 	if (career.ended === GravityGame.CAREER_BROKE) return 'broke · career over';
 	if (career.ended === GravityGame.CAREER_COMPLETE) return 'catapult network complete';
+	if (career.evacuating) return 'evacuating to HQ';
 	if (!career.stranded) return '';
 	if (career.at < 0) return 'lost in space · evacuate';
 	/* no own EMC here, but a standing rail (commercial or a rival's) that
@@ -608,7 +609,8 @@ function gameLocked() {
 	if (careerWaitBusy()) return true;
 	const slot = activeSlotIndex();
 	const sim = slotSim(slot);
-	if (replay.on || careerInputLocked() || sim.status === STATUS_FLYING || slotIsBot(slot)) return true;
+	if (replay.on || careerInputLocked() || sim.status === STATUS_FLYING ||
+		(careerRule() && slotCareer(slot).evacuating) || slotIsBot(slot)) return true;
 	if (routeRule()) return false;
 	return slotFlownDone(slot);
 }

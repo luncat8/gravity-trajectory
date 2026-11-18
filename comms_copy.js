@@ -25,6 +25,7 @@
 	const H_META_ASK = 'what should I do?';
 	const CHIP_CAP = 6;
 	const EXCHANGE_CAP = 3;
+	const RETURN_LANDINGS_FOR_TOW = 2;
 
 	const LAUNCH_GATE_ORDER = Object.freeze([
 		'arrest', 'space', 'wrong-planet', 'worn', 'no-rail', 'cap', 'fee'
@@ -194,7 +195,13 @@
 		};
 	}
 
-	function baseSnapshot(rule, second, flying, waitLocked, obsRecord, commercialPad) {
+	function returnTowVisit(career) {
+		if (!GravityGame.canEvacuate(career)) return null;
+		const visit = GravityGame.returnLandingVisit(career);
+		return visit && visit.count >= RETURN_LANDINGS_FOR_TOW ? visit : null;
+	}
+
+	function baseSnapshot(rule, second, flying, waitLocked, pace, obsRecord, commercialPad) {
 		return {
 			rule: rule,
 			careerMode: false,
@@ -209,7 +216,9 @@
 			arfPlanet: -1,
 			index: 0,
 			purse: 0,
-			stranded: false,
+			evacAvailable: false,
+			returnTow: false,
+			pace: pace,
 			evacFee: 0,
 			evacCost: 0,
 			evacSeconds: 0,
@@ -318,7 +327,7 @@
 		const waitLocked = Boolean(opts.waitLocked);
 		const obsRecord = OrbitTech.OBS.find(item => item.fitted) || OrbitTech.OBS[0];
 		const commercialPad = GravityGame.COMMERCIAL_PAD;
-		const snap = baseSnapshot(rule, second, flying, waitLocked, obsRecord, commercialPad);
+		const snap = baseSnapshot(rule, second, flying, waitLocked, opts.pace || 1, obsRecord, commercialPad);
 		if (!career) return Object.freeze(snap);
 
 		const speedMin = snap.speedMin;
@@ -399,7 +408,8 @@
 			arfPlanet: career.arfPlanet,
 			index: career.index,
 			purse: purse,
-			stranded: Boolean(career.stranded),
+			evacAvailable: !flying && GravityGame.canEvacuate(career),
+			returnTow: !flying && returnTowVisit(career) !== null,
 			evacFee: careerPrice(career, GravityGame.CAREER.evacFee),
 			evacCost: GravityGame.evacuationCost(career),
 			evacSeconds: GravityGame.evacuationSeconds(career),
@@ -648,23 +658,24 @@
 			test: s => landedOpen(s) && (
 				(s.nextPadId !== '' && !canPay(s.purse, s.nextPadCost)) ||
 				(!s.ownPadHere && !canPay(s.purse, s.minFee)) ||
-				(padUnderpowered(s) && s.stranded && !canPay(s.purse, s.evacFee))),
+				(padUnderpowered(s) && s.evacAvailable && !canPay(s.purse, s.evacFee))),
 			why: s => 'purse ' + money(s.purse)
 		}),
 		'can-offer-evac': Object.freeze({
-			test: s => s.careerMode && s.ended === GravityGame.CAREER_OPEN &&
-				!s.flying && !s.arrested && s.stranded,
+			test: s => s.evacAvailable,
 			why: () => 'nothing to evacuate'
 		}),
 		'can-evac': Object.freeze({
-			test: s => s.careerMode && s.ended === GravityGame.CAREER_OPEN &&
-				!s.flying && !s.arrested && s.stranded,
-			why: () => 'nothing to evacuate'
+			test: s => s.evacAvailable && !s.waitLocked,
+			why: s => s.evacAvailable ? 'clock busy' : 'nothing to evacuate'
 		}),
 		'evac-short': Object.freeze({
-			test: s => s.careerMode && s.ended === GravityGame.CAREER_OPEN &&
-				!s.flying && !s.arrested && s.stranded && !canPay(s.purse, s.evacFee),
-			why: s => 'reduced fare ' + cost(s.evacCost) + ' · takes ' + whole(s.evacSeconds) + ' s'
+			test: s => s.evacAvailable && !canPay(s.purse, s.evacFee),
+			why: s => 'reduced fare ' + cost(s.evacCost) + ' · takes ' + H_SLOTS.evacSeconds(s)
+		}),
+		'return-tow': Object.freeze({
+			test: s => s.returnTow,
+			why: () => 'no recent return streak'
 		}),
 		'can-slower-shot': Object.freeze({
 			test: s => landedOpen(s) && hasReason(s, 'cap') && s.armedHere &&
@@ -689,7 +700,7 @@
 				(hasReason(s, 'worn') && !canPay(s.purse, s.repairCost)) ||
 				((hasReason(s, 'no-rail') || padUnderpowered(s)) && (
 					(s.nextPadId !== '' && !canPay(s.purse, s.nextPadCost)) ||
-					(s.stranded && !canPay(s.purse, s.evacFee))))),
+					(s.evacAvailable && !canPay(s.purse, s.evacFee))))),
 			why: s => 'purse ' + money(s.purse)
 		}),
 		'fuel-ready': Object.freeze({
@@ -769,7 +780,7 @@
 			why: () => ''
 		}),
 		'step-bribe-evac': Object.freeze({
-			test: s => bribeOpen(s) && s.stranded &&
+			test: s => bribeOpen(s) && s.evacAvailable &&
 				!canPay(s.purse, s.evacFee) && canPay(s.purse + s.bribeAmount, s.evacFee),
 			why: () => ''
 		}),
@@ -915,7 +926,7 @@
 		}),
 		evac: Object.freeze({
 			id: 'evac',
-			label: 'evacuate · {evacCost}',
+			label: 'evacuate · {evacCost} · {evacSeconds}',
 			when: 'can-offer-evac',
 			enabled: 'can-evac',
 			costly: true
@@ -1033,6 +1044,33 @@
 	});
 
 	const H_TOPICS = Object.freeze({
+		'return-tow': Object.freeze({
+			id: 'return-tow',
+			ask: 'tow to HQ?',
+			rank: 1,
+			when: 'return-tow',
+			steps: Object.freeze(['non-career', 'career-ended', 'at-arrest', 'in-flight', 'at-space']),
+			lines: Object.freeze([
+				Object.freeze({
+					text: 'Your last two flights brought you back to {planetTag}. Want a tow to HQ?',
+					when: 'return-tow'
+				}),
+				Object.freeze({
+					text: 'Evacuate to HQ {hqTag} for {evacCost}; it takes {evacSeconds} of game time.',
+					when: 'can-offer-evac',
+					note: Object.freeze({ fact: 'can-evac', invert: true })
+				}),
+				Object.freeze({
+					text: 'No tow to HQ is needed here.',
+					when: Object.freeze({ not: 'can-offer-evac' })
+				})
+			]),
+			lookAhead: Object.freeze([]),
+			ref: Object.freeze([]),
+			refWhen: null,
+			chips: Object.freeze([]),
+			actions: Object.freeze(['evac'])
+		}),
 		leave: Object.freeze({
 			id: 'leave',
 			ask: 'why is launch blocked?',
@@ -1487,6 +1525,7 @@
 		if (!snapshot.careerMode || snapshot.ended !== GravityGame.CAREER_OPEN || snapshot.flying) {
 			return 'leave';
 		}
+		if (snapshot.returnTow) return 'return-tow';
 		if (snapshot.reasons.length > 0) return 'leave';
 		if (HH_FACTS['ship-worn'].test(snapshot)) return 'repair';
 		if (HH_FACTS['own-pad-charging'].test(snapshot)) return 'pad';
@@ -1727,6 +1766,7 @@
 		H_LOOKAHEAD,
 		H_TOPICS,
 		buildSnapshot,
+		returnTowVisit,
 		evalWhen,
 		fillSlots,
 		topTopicId,

@@ -312,6 +312,7 @@
 			const career = galaxy.actors[i];
 			info.sims[i].relocate(career.at);
 			unpackKeys(info.sims[i], state.ships[i]);
+			info.sims[i].evacuationTrip = career.evacuating ? career : null;
 		}
 		info.game.steps = state.run.steps;
 		info.game.length = state.run.length;

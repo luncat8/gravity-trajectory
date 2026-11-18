@@ -1496,7 +1496,8 @@ check(!kui.get('launch').hidden && !kui.get('planetActions').hidden &&
 	kui.get('launchBuild').textContent === 'buy EMC-1 · 3.04' &&
 	kui.get('launchCommercial').textContent ===
 		'commercial EMC-1 · ' + kGame.commercialFee(career, career.at, kSim.SPEED_MIN).toFixed(2) &&
-kui.get('launchEvac').textContent.startsWith('evacuate · 6.00 · '),
+	!kui.get('launchMenuBtn').hidden && kui.get('launchMenu').hidden &&
+	kui.get('launchEvac').textContent.startsWith('evacuate · 6.00 · '),
 	'planet action buttons: ' + kui.get('launchBuild').textContent + ' / ' +
 		kui.get('launchCommercial').textContent + ' / ' + kui.get('launchEvac').textContent);
 const strandedAt = career.at;
@@ -1581,14 +1582,17 @@ console.log('visit pills:', litSteps + ' frames lit · ' + litAfter + ' left lit
 /* the commercial launch above already spent half the starter purse */
 kScene.game.money.purse = 20;
 const purseBeforeEvac = kScene.game.money.purse;
+kScene.refreshCareerPanel();
+careerEnv.click('launchMenuBtn');
+check(!kui.get('launchMenu').hidden, 'open the action menu to evacuate');
 careerEnv.click('launchEvac');
-vm.runInContext('careerWaitAnim.credit = careerWaitAnim.durationMs; careerWaitTick(careerWaitAnim.last + 20)',
+/* the new world-clock trip advances via advanceCareerOneStep until the trip ends */
+vm.runInContext('while (game.career.evacuating) { advanceCareerOneStep(); } commsTick(); updateLiveHud(); statusEl.textContent = statusText()',
 	careerEnv.context);
-careerEnv.runFrames(1, 16.0);
 check(career.at === career.hq && !career.stranded, 'evacuate button did not bring the ship home');
 check(Math.abs(kScene.game.money.purse - (purseBeforeEvac - 6)) < 1e-9,
 	'evacuation fee: ' + kScene.game.money.purse);
-check(kui.get('launchEvac').hidden, 'the inline evacuate hides once home at HQ');
+check(kui.get('launchEvac').hidden, 'the evacuation option hides once home at HQ');
 check(kui.get('careerMsg').textContent.startsWith('evacuated to HQ P' + career.hq),
 	'evacuation note: ' + kui.get('careerMsg').textContent);
 const evacStatus = career.ended === pageGame.CAREER_OPEN
@@ -3110,43 +3114,43 @@ function protoOf(career, family, id) {
 	check(cCareer.stranded && cCareer.at === targetPlanet, 'ship stranded on padless planet');
 	check(!cui.get('launch').hidden && !cui.get('planetActions').hidden &&
 		!cui.get('launchBuild').hidden && !cui.get('launchCommercial').hidden &&
-		!cui.get('launchEvac').hidden,
-		'stranded state keeps #launch and shows build + commercial + evacuate');
+		!cui.get('launchMenuBtn').hidden && !cui.get('launchEvac').hidden,
+		'padless landing keeps build and commercial, with evacuation in the menu');
 
 	/* cost gate on #launchBuild when purse < 3 */
 	const savedPurse = cCareer.ledger.purse;
 	cCareer.ledger.purse = 2.0;
 	cScene.refreshCareerPanel();
 	check(cui.get('launchBuild').disabled && cui.get('launchBuild').classList.contains('costly') &&
-		cui.get('launchEvac').classList.contains('costly'),
-		'low purse marks launchBuild disabled+costly and launchEvac costly');
+		!cui.get('launchEvac').disabled && cui.get('launchEvac').textContent.startsWith('evacuate · 2.00 · '),
+		'low purse disables building but reduces the evacuation fare');
 	cCareer.ledger.purse = Math.max(savedPurse, 10);
 	cScene.refreshCareerPanel();
 	check(!cui.get('launchBuild').disabled && !cui.get('launchBuild').classList.contains('costly'),
 		'sufficient purse enables launchBuild');
 
 	/* clicking #launchBuild directly buys EMC-1 on the stranded planet; the
-	 * commercial button stays (it stands on every planet), build/evac leave */
+	 * commercial button stays, as does evacuation in the menu */
 	cEnv.click('launchBuild');
 	check(!cCareer.stranded && cCareer.pads[targetPlanet].catapult.id === 'EMC-1' &&
 		!cui.get('launch').hidden && !cui.get('planetActions').hidden &&
 		cui.get('launchBuild').hidden && !cui.get('launchCommercial').hidden &&
-		cui.get('launchEvac').hidden &&
+		!cui.get('launchEvac').hidden &&
 		cui.get('launch').textContent === 'repair · ' + pageGame.repairCost(cCareer).toFixed(2),
 		'launchBuild unstrands ship; commercial stays available beside #launch: ' +
 			cui.get('launch').textContent);
 
-	/* lost in space hides build/commercial and leaves #launchEvac to go home */
+	/* lost in space makes evacuation the primary action */
 	cCareer.at = -1;
 	cCareer.stranded = true;
 	cScene.refreshCareerPanel();
-	check(cui.get('launch').hidden && !cui.get('planetActions').hidden &&
-		cui.get('launchBuild').hidden && cui.get('launchCommercial').hidden &&
-		!cui.get('launchEvac').hidden,
-		'lost in space shows only launchEvac in planetActions');
+	check(cui.get('launch').textContent.startsWith('evacuate · ') && !cui.get('launch').disabled &&
+		cui.get('planetActions').hidden && !cui.get('launchMenuBtn').hidden && !cui.get('launchEvac').hidden,
+		'lost in space promotes evacuation and keeps the menu entry');
 	cCareer.ledger.purse = 20;
-	cEnv.click('launchEvac');
-	vm.runInContext('careerWaitAnim.credit = careerWaitAnim.durationMs; careerWaitTick(careerWaitAnim.last + 20)',
+	cScene.refreshCareerPanel();
+	cEnv.click('launch');
+	vm.runInContext('while (game.career.evacuating) { advanceCareerOneStep(); } statusEl.textContent = statusText(); updateLiveHud()',
 		cEnv.context);
 	check(!cCareer.stranded && cCareer.at === cCareer.hq &&
 		!cui.get('launch').hidden && !cui.get('launchCommercial').hidden,
@@ -3180,7 +3184,7 @@ function protoOf(career, family, id) {
 	for (let i = 0; i < 7; i++) cEnv.click('playFaster');
 	check(cScene.playScale() === 32 && cui.get('playFaster').disabled,
 		'the lab ceiling is the same ×32 the loop caps');
-	console.log('0.4.17 verified: separate #flightHud panel · inline stranded buy/evacuate · ' +
+	console.log('0.4.17 verified: separate #flightHud panel · inline rail actions and evacuation menu · ' +
 		'career ×4..×32 playback (game seconds per real second) · net outcome / rate / TOF route prediction');
 		console.log('0.4.19 verified: commercial rail + EMC claims · ' +
 			'flying rival careers · the commercial fee / 6.00 evacuation');

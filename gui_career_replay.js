@@ -275,8 +275,7 @@ function applyCareerAct(data) {
 		}
 		return careerResearch();
 	}
-	if (data.act === 'evac' && (!Number.isSafeInteger(data.steps) || data.steps < 1 ||
-		data.step + data.steps > careerActionReplay.endStep)) return false;
+	if (data.act === 'evac' && (!Number.isSafeInteger(data.steps) || data.steps < 1)) return false;
 	return careerAct({ ...data, slot: data.targetSlot });
 }
 
