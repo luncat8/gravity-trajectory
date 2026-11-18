@@ -2894,8 +2894,8 @@ function protoOf(career, family, id) {
 	yClick({ act: 'bulk', kind: 'battery', item: 'R1' });
 	check(yCareer.pads[hq].battery === protoBattery && yCareer.pads[far].battery === protoBattery,
 		'bulk fitted the researched battery to every built pad');
-	check(Math.abs(yCareer.pads[far].chargeKwh - protoBattery.capacity) < 1e-9,
-		'a bulk battery upgrade arrives charged');
+	check(Math.abs(yCareer.pads[far].chargeKwh - yTech.BATTERIES[0].capacity) < 1e-9,
+		'a bulk battery upgrade keeps the charge the pad holds');
 	check(yCareer.ship.mass === yTech.shipMass(yCareer.ship, 0), 'a pad battery never adds ship mass');
 	check(/<i>built<\/i>/.test(yShop()) && !/data-act="build" data-kind="battery" data-item="R1"/.test(yShop()),
 		'a fitted prototype is marked instead of offered');

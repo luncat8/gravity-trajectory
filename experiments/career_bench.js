@@ -819,7 +819,10 @@ check('career bulk upgrade: total before, every built pad after, unbuilt untouch
 	assert.ok(GravityGame.bulkUpgrade(career, 'battery', BAT[2]));
 	assert.ok(Math.abs(ledger.purse) < 1e-9);
 	assert.ok(career.pads[career.hq].battery === BAT[2] && career.pads[other].battery === BAT[2]);
-	assert.ok(career.pads[career.hq].chargeKwh === BAT[2].capacity);
+	/* storage is bought, not energy: a fresh pad's BAT-1 charge is kept */
+	assert.ok(career.pads[career.hq].chargeKwh === BAT[0].capacity,
+		'a bulk battery upgrade must keep the charge the pad holds: ' +
+		career.pads[career.hq].chargeKwh + ' kWh');
 	assert.strictEqual(career.pads[(other + 1) % PLANETS].battery, null);
 	assert.strictEqual(GravityGame.bulkUpgradeCost(career, 'battery', BAT[2]), 0);
 });
@@ -1771,7 +1774,8 @@ check('battery science: seeded BAT-1..BAT-5 range, leak direction, and a pad-wid
 	assert.ok(GravityGame.bulkUpgrade(career, 'battery', proto));
 	assert.strictEqual(career.pads[hq].battery, proto);
 	assert.strictEqual(career.pads[far].battery, proto);
-	assert.strictEqual(career.pads[far].chargeKwh, proto.capacity, 'a fresh battery arrives charged');
+	assert.strictEqual(career.pads[far].chargeKwh, BAT[0].capacity,
+		'a fresh battery keeps the charge the pad holds');
 	assert.strictEqual(career.ship.mass, mass, 'pad batteries never add ship mass');
 	assert.strictEqual(GravityGame.bulkUpgradeCost(career, 'battery', proto), 0, 'nothing left to upgrade');
 	assert.ok(!GravityGame.buildGear(career, far, OrbitTech.KIND_BATTERY, proto), 'never a downgrade');

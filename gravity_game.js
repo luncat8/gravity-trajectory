@@ -3875,6 +3875,13 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return owner === OWNER_COMMERCIAL || owner === career.index;
 	}
 
+	/* a battery is storage, not energy: a bought one keeps the charge already in
+	 * the pad, clamped to its new capacity. Only a fresh pad (fitPad) starts
+	 * charged, because there is no earlier charge to keep. */
+	function chargeAfterBattery(pad, battery) {
+		pad.chargeKwh = pad.chargeKwh < battery.capacity ? pad.chargeKwh : battery.capacity;
+	}
+
 	/* a first catapult brings a starter panel and battery (charged) with it;
 	 * a panel or battery needs a pad to sit on */
 	function buildGear(career, planet, kind, item) {
@@ -3892,7 +3899,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			fitPad(career, planet, item, OrbitTech.PANELS[0], OrbitTech.BATTERIES[0]);
 		} else {
 			pad[kind] = item;
-			if (kind === OrbitTech.KIND_BATTERY) pad.chargeKwh = item.capacity;
+			if (kind === OrbitTech.KIND_BATTERY) chargeAfterBattery(pad, item);
 		}
 		if (planet === career.at) {
 			/* a fresh rail rescues stranding only when it can actually lift
@@ -3921,7 +3928,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			const pad = career.pads[i];
 			if (!OrbitTech.upgrades(pad, kind, item)) continue;
 			pad[kind] = item;
-			if (kind === OrbitTech.KIND_BATTERY) pad.chargeKwh = item.capacity;
+			if (kind === OrbitTech.KIND_BATTERY) chargeAfterBattery(pad, item);
 		}
 		career.ledger.purse -= cost;
 		career.buildSpent += cost;
