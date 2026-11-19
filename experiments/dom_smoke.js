@@ -68,9 +68,11 @@ for (const rec of mapList) {
 		throw new Error('saved map record shape: ' + rec.name);
 	}
 }
-for (const id of ['mapGroup', 'mapSave', 'mapSaveRun', 'mapLoad', 'mapLoadRun', 'mapNote']) {
+for (const id of ['mapGroup', 'mapSave', 'mapSaveRun', 'mapLoad', 'mapLoadRun', 'mapNote', 'mapPick']) {
 	if (!ui.get(id)) throw new Error('maps UI element missing: ' + id);
 }
+/* the picker names every record: `load map` can boot one specific map */
+if (ui.get('mapPick').value !== '') throw new Error('the saved-map picker must start at random');
 console.log('saved maps:', mapList.length, '· first', mapList[0].name,
 	'· file', Buffer.byteLength(pageMaps.fileText(mapList)), 'bytes');
 

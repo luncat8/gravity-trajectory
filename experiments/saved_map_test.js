@@ -169,6 +169,23 @@ assert.ok(lab.context.startMapRecord(reversed), 'a record starts a career from t
 assert.deepStrictEqual(plain(lab.context.GravityScene.game.galaxy.mapSeats), reversed.seats,
 	'the run is seated from the record, not searched');
 
+/* the picker (0.7.35): `load map` boots the record the player picked instead of
+ * a random one, and `random` is still the empty value it starts on */
+const picker = loadPage({ search: '?mode=lab&seed=1', random: () => 0.5 });
+const pickerEl = picker.elements.get('mapPick');
+assert.ok(pickerEl, 'index.html carries the saved-map picker');
+assert.strictEqual(pickerEl.value, '', 'the picker starts at random');
+assert.strictEqual(picker.context.mapPickedRecord('start'), null, 'random picks nothing');
+pickerEl.value = String(MAPS.length - 1);
+assert.strictEqual(picker.context.mapPickedRecord('start').name, MAPS[MAPS.length - 1].name,
+	'a picked record is the one the button loads');
+assert.ok(picker.context.loadSavedMap('start'), 'the picked map starts a career');
+assert.deepStrictEqual(plain(picker.context.GravityScene.game.galaxy.mapSeats),
+	MAPS[MAPS.length - 1].seats, 'the picked map seats the run');
+assert.ok(picker.elements.get('mapNote').textContent.includes(MAPS[MAPS.length - 1].name),
+	'the notice names the picked map: ' + picker.elements.get('mapNote').textContent);
+assert.strictEqual(pickerEl.value, String(MAPS.length - 1), 'the picker keeps the loaded record');
+
 /* the seed link plans the same run: the captured state at boot, the same after
  * a bot has flown both through a flight, and the page's random stream the
  * helpers draw from */

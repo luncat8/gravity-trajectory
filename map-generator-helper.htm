@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <title>Gravity Map</title>
 <style>
-  body { font-family: system-ui, sans-serif; margin: 20px; color: #222; }
+  body { font-family: system-ui, sans-serif; margin: 20px; color: #222; line-height: 1.4; }
+  h2 { margin: 0 0 4px; }
+  h2 span { font-size: 13px; font-weight: 400; color: #6b7280; }
   svg { width: 800px; max-width: 100%; height: auto; background: #fafafa; border: 1px solid #ddd; touch-action: none; user-select: none; }
   .axis { stroke: #444; stroke-width: 2; }
   .tick { stroke: #888; }
@@ -17,30 +19,54 @@
   .del { opacity: 1; cursor: pointer; }
   .del line { stroke: red; stroke-width: 2.5; stroke-linecap: round; pointer-events: none; }
   .del .hit { fill: transparent; pointer-events: all; }
-  table { border-collapse: collapse; margin-top: 16px; width: 800px; max-width: 100%; }
+  table { border-collapse: collapse; margin-top: 14px; width: 800px; max-width: 100%; }
   th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; font-size: 14px; }
-  th { background: #f3f4f6; }
+  th { background: #f3f4f6; font-weight: 600; }
   tr.sel td { background: #fff7e6; }
-  input { width: 80px; padding: 3px; }
+  input { padding: 3px; }
+  input.num { width: 76px; }
+  input[type=text] { width: 190px; }
+  select { padding: 3px; max-width: 100%; }
   .preview { font-family: monospace; }
   .hint { font-size: 13px; color: #666; margin: 6px 0; }
-  button { padding: 6px 12px; margin-top: 10px; cursor: pointer; }
+  button { padding: 6px 12px; cursor: pointer; }
+  button:disabled { color: #9ca3af; cursor: default; }
   .small { padding: 6px 12px; margin: 0; min-width: 70px; min-height: 30px; cursor: pointer; }
   .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 12px; color: #555; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .legend i { width: 13px; height: 13px; border-radius: 50%; display: inline-block; border: 1px solid #1e3a8a; }
+  .legend i.line { border-radius: 0; border: 0; height: 3px; width: 18px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; font-size: 13px; color: #444; margin: 10px 0; }
+  .controls label { display: inline-flex; align-items: center; gap: 6px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; font-size: 13px; color: #444; }
+  section { margin-top: 22px; }
+  .caption { font-size: 13px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: .04em; }
+  .caption span { font-weight: 400; text-transform: none; letter-spacing: 0; color: #6b7280; }
+  .stats { font-size: 13px; margin-top: 8px; }
+  .stats b { font-variant-numeric: tabular-nums; }
+  .warn { color: #b45309; }
+  .err { color: #b91c1c; }
+  .note { font-size: 12px; color: #6b7280; margin-top: 6px; }
+  .bar { fill: #93c5fd; stroke: #1e3a8a; stroke-width: 1; }
+  .axis2 { stroke: #cbd5e1; }
+  .tlabel2 { font-size: 10px; fill: #6b7280; text-anchor: middle; }
+  .zone { opacity: .10; }
+  pre { background: #f8fafc; border: 1px solid #e5e7eb; padding: 12px; font-size: 12px; overflow: auto; }
 </style>
 </head>
 <body>
 
-<h2>Gravity Map</h2>
-<p class="hint">Click on or above the line to add a planet. Drag to move. Arrow keys nudge the selected planet, Delete removes it, Escape deselects. Hover a planet and click its red cross to remove it. The shaded band is the gravity range (gravity ± margin).</p>
+<h2>Gravity Map <span>map generator helper</span></h2>
+<p class="hint">Click on or above the line to add a planet row. Drag to move. Arrow keys nudge the selected row, Delete removes it, Escape deselects. The shaded band is the row's gravity range (gravity ± margin). Colours are the launch tier of the well: what a starter rail of the given ship mass can climb out of to reach a typical neighbour.</p>
 
-<label class="hint">Default margin for new planets (±) <input id="defMargin" type="number" min="0" step="0.05" value="0.5"></label>
-<label class="hint">Gravity range <input id="gravMin" type="number" step="0.5" value="-1"> to <input id="gravMax" type="number" step="0.5" value="4"></label>
-<br>
-<svg id="map" viewBox="0 0 800 220"></svg>
+<div class="controls">
+  <label>Default margin (±) <input id="defMargin" class="num" type="number" min="0" step="0.05" value="0.5"></label>
+  <label>Design range <input id="gravMin" class="num" type="number" step="0.05" value="-1"> to <input id="gravMax" class="num" type="number" step="0.05" value="3.5"></label>
+  <label>Ship mass <input id="shipMass" class="num" type="number" min="1" step="0.5" value="10"></label>
+  <label>Neighbour gap <input id="gap" class="num" type="number" min="50" step="10" value="220"> px</label>
+</div>
 
+<svg id="map" viewBox="0 0 800 220" role="img" aria-label="gravity roster on the line"></svg>
 <div class="legend" id="legend"></div>
 
 <table>
@@ -52,309 +78,776 @@
       <th>Margin (±)</th>
       <th>Range</th>
       <th>Rolled preview</th>
+      <th>Launch</th>
       <th></th>
     </tr>
   </thead>
   <tbody id="rows"></tbody>
 </table>
-<button id="reroll">Re-roll</button>
+<div class="actions">
+  <button id="reroll">Re-roll</button>
+  <button id="addRow">Add row</button>
+  <span class="note" id="rosterNote"></span>
+</div>
 
+<section>
+  <div class="caption">generated field <span id="fieldTag"></span></div>
+  <svg id="dist" viewBox="0 0 800 210" role="img" aria-label="field distribution"></svg>
+  <div class="stats" id="fieldStats"></div>
+  <div class="actions">
+    <label>Draw seed <input id="drawSeed" class="num" type="number" min="0" step="1" value="1"></label>
+    <button id="redraw">New seed</button>
+    <label>Field name <input id="fieldName" type="text" value="field 1"></label>
+    <button id="saveField">Save field</button>
+  </div>
+  <div class="note" id="saveNote">Saving downloads <code>map_fields.js</code>; drop it beside this page to keep the design. A page opened from <code>file://</code> may ask where to put it instead of downloading.</div>
+</section>
+
+<section>
+  <div class="caption">saved maps <span>saved_maps.js · the fields the game actually plays</span></div>
+  <div class="actions">
+    <label>Map <select id="mapPick"><option value="all">all saved maps</option></select></label>
+    <span class="note" id="mapNote"></span>
+  </div>
+</section>
+
+<section>
+  <div class="caption">designed fields <span>map_fields.js · this page's registry</span></div>
+  <div class="actions">
+    <label>Field <select id="fieldPick"><option value="">— none —</option></select></label>
+    <button id="deleteField">Delete</button>
+  </div>
+</section>
+
+<details>
+<summary class="hint">design notes</summary>
 <pre>
 	minimal css html js
 
 	map generator helper
-	
+
 	horizontal line from negative to positive gravity of planet.
-	
+
 	user can position planet ico (simple circle) on this line: GUI allow set, drag move, remove
-	
+
 	margin of gravity from values, default is +-0.5, to generate randomness.
 	Configurable default gravity margin for new planets.
-	
+
 	Configurable gravity min/max , default is -1 .. +4
-	
+
+	→ the design range is clamped to the field's own range (−1 … 3.5, 0.05 grid);
+	  a design outside it cannot be generated, so the inputs refuse it.
+
 	click on or above line to add new, click below planet to remove (small red cross draw below)
-	
+
 	preview margin range on line
-	
+
 	color planet based on EMC-1 EMC-2 ability to typically launch from this planet (no hardcoded power, because EMC can be changed in new versions). typically mean on typical map, because it depends on near planet gravity. for my observation -0.2 ... 1.1 is green (EMC-1) and >2.5 || < -1 is red (cant on EMC-2). but this is subject to do some fast tests to find range.
-	
-	table of result 
+
+	→ the colour is the climb from the surface to a typical neighbour (`MapGen.launchSpeed`),
+	  compared against `OrbitTech.speedLimit` of EMC‑1 and EMC‑2 with the ship mass
+	  beside it, so a retuned rail recolours the roster. On a dry 10 t ship that is
+	  green to g 0.9 (the probe measures 100 % exits at g 1.0) and heavy above 3.4
+	  (measured 96 %); with a loaded 38 t ship green only to 0.2 — which is the
+	  "depends on the near planet gravity" the note calls out.
+
+	table of result
 	Planet | number to generate	| Gravity	| Margin (±)	| Range 	| Rolled preview
-	
+
+	→ the table keeps those columns and adds the launch tier of each row.
+
 	## integration:
 	- ability to load js that 'random saved maps' pre-generated maps to view distribution.
 	- press generate to make map from planet list and see result distribution (adjusted by generator).
 	- save result to pre-generated saved maps. to make this possible probably we need note this script should be run from http, otherwise file save dialog.
-	- to game add dropdown to select specific saved pre-generated map (near random)
+	- to game add dropdown to select specific saved pre-generated map (near random).
+
+	→ saved maps: `saved_maps.js` is loaded and its real `planetGravity` field is drawn
+	  over the design (orange line); "all saved maps" aggregates every record.
+	→ generate: the rows are drawn in order onto the field's 0.05 grid and the result is
+	  the blue histogram, with the generator's own draw (grey) behind it for comparison.
+	→ save: the design is written to `map_fields.js` beside this page (a data script
+	  like `saved_maps.js`). The game cannot play a designed field yet — that is
+	  `0.7.35-plan-playable-fields.md`, and it is the one open integration.
+	→ the game's saved-maps group has a picker beside `load map`, so a specific
+	  pre-generated map boots instead of a random one.
 </pre>
-<!-- EMC specs come from the real tech tables, so a retuned EMC recolors the map. -->
+</details>
+
+<script src="orbit_world.js"></script>
+<script src="planet_gravity.js"></script>
 <script src="orbit_science.js"></script>
 <script src="orbit_tech.js"></script>
+<script src="gravity_sim.js"></script>
+<script src="map_gen.js"></script>
+<script src="saved_maps.js"></script>
+<script src="map_fields.js"></script>
 <script>
+'use strict';
+
 const W = 800, H = 220, LY = 110, X0 = 50, X1 = 750;
 const NS = 'http://www.w3.org/2000/svg';
-const svg = document.getElementById('map');
-const tbody = document.getElementById('rows');
-const defMarginEl = document.getElementById('defMargin');
-const gravMinEl = document.getElementById('gravMin');
-const gravMaxEl = document.getElementById('gravMax');
-const gMin = () => Number(gravMinEl.value);
-const gMax = () => Number(gravMaxEl.value);
+const $ = id => document.getElementById(id);
+const svg = $('map');
+const distSvg = $('dist');
+const tbody = $('rows');
 
-/* Launch viability: a body of gravity strength g is a softened point mass
- * (gravity_sim.js: MU, SOFT). A ship sitting on it escapes when its launch
- * speed beats escape speed v_esc = sqrt(2·MU·g / SOFT); g ≤ 0 has no well.
- * The rail's reach is OrbitTech.maxSpeed(mass, catapult) — read from the live
- * CATAPULTS table, never hardcoded — for a typical loaded ship. */
-const MU = 400000;
-const SOFT = 60;
-const REF_MASS = OrbitTech.SHIP_DRY_MASS;   // reference ship (t); tune for loaded craft
-const EMC1 = OrbitTech.CATAPULTS[0];
-const EMC2 = OrbitTech.CATAPULTS[1];
-const V_EMC1 = OrbitTech.maxSpeed(REF_MASS, EMC1);
-const V_EMC2 = OrbitTech.maxSpeed(REF_MASS, EMC2);
+const COL_NONE = '#94a3b8';
+const COL_EMC1 = '#22c55e';
+const COL_EMC2 = '#f59e0b';
+const COL_HEAVY = '#ef4444';
+const TIER_CLASS = ['none', 'emc1', 'emc2', 'heavy'];
+const TIER_COLORS = [COL_NONE, COL_EMC1, COL_EMC2, COL_HEAVY];
 
-const COL_NONE = '#94a3b8';   // g ≤ 0: no well, trivially launchable
-const COL_EMC1 = '#22c55e';   // EMC-1 clears the well
-const COL_EMC2 = '#f59e0b';   // needs EMC-2
-const COL_HEAVY = '#ef4444';  // beyond EMC-2
-
-function escapeSpeed(g) {
-  return g > 0 ? Math.sqrt(2 * MU * g / SOFT) : 0;
-}
-
-function planetColor(g) {
-  if (g <= 0) return COL_NONE;
-  const v = escapeSpeed(g);
-  if (v <= V_EMC1) return COL_EMC1;
-  if (v <= V_EMC2) return COL_EMC2;
-  return COL_HEAVY;
-}
-
-function legendHtml() {
-  return '' +
-    `<span><i style="background:${COL_NONE}"></i>g ≤ 0 (no well)</span>` +
-    `<span><i style="background:${COL_EMC1}"></i>${EMC1.id} · ${REF_MASS} t</span>` +
-    `<span><i style="background:${COL_EMC2}"></i>${EMC2.id} · ${REF_MASS} t</span>` +
-    `<span><i style="background:${COL_HEAVY}"></i>beyond ${EMC2.id}</span>`;
-}
+/* --- state ------------------------------------------------------------- */
 
 let planets = [
-  { id: 1, name: 'P1', g: -0.5, m: 0.5, count: 3, rolled: null },
-  { id: 2, name: 'P2', g: 1,    m: 0.5, count: 2, rolled: null },
-  { id: 3, name: 'P3', g: 3,    m: 0.5, count: 1, rolled: null }
+	{ id: 1, g: -0.5, m: 0.5, count: 3, rolled: null },
+	{ id: 2, g: 1, m: 0.5, count: 2, rolled: null },
+	{ id: 3, g: 3, m: 0.5, count: 1, rolled: null }
 ];
-let nextId = 4, selectedId = null, dragId = null;
+let nextId = 4;
+let selectedId = null;
+let dragId = null;
+let field = { values: [], seed: 1, name: 'field 1' };
+let fields = [];
+let savedFields = [];
 
-const clamp = (v, lo = gMin(), hi = gMax()) => Math.min(hi, Math.max(lo, v));
-const round2 = (v) => Math.round(v * 100) / 100;
-const gToX = (g) => X0 + (g - gMin()) / (gMax() - gMin()) * (X1 - X0);
-const xToG = (x) => gMin() + (x - X0) / (X1 - X0) * (gMax() - gMin());
-const find = (id) => planets.find(p => p.id === id);
+const massEl = $('shipMass');
+const gapEl = $('gap');
+const defMarginEl = $('defMargin');
+const gravMinEl = $('gravMin');
+const gravMaxEl = $('gravMax');
+const drawSeedEl = $('drawSeed');
+const fieldNameEl = $('fieldName');
+const mapPickEl = $('mapPick');
+const fieldPickEl = $('fieldPick');
+
+const shipMass = () => Math.max(1, Number(massEl.value) || OrbitTech.SHIP_DRY_MASS);
+const gapPx = () => Math.max(50, Number(gapEl.value) || MapGen.NEIGHBOUR_GAP);
+const railCaps = () => MapGen.railCaps(shipMass());
+
+/* The design range never collapses (a zero-width axis has no mapping) and never
+ * leaves the field's own range (a value outside it cannot be generated). The
+ * inputs are rewritten to whatever this returns on `change`. */
+function rangeValue(input, fallback) {
+	const text = input.value.trim();
+	const value = text === '' ? NaN : Number(text);
+	if (!Number.isFinite(value)) return fallback;
+	return Math.min(PlanetGravity.MAX, Math.max(PlanetGravity.MIN, value));
+}
+
+function designRange() {
+	const lo = rangeValue(gravMinEl, PlanetGravity.MIN);
+	const hi = rangeValue(gravMaxEl, PlanetGravity.MAX);
+	if (hi - lo < 0.25) return { min: PlanetGravity.MIN, max: PlanetGravity.MAX };
+	return { min: lo, max: hi };
+}
+
+const range = () => designRange();
+
+function clampDesign(v) {
+	const r = range();
+	return Math.min(r.max, Math.max(r.min, v));
+}
+
+const round2 = v => Math.round(v * 100) / 100;
+const gToX = g => {
+	const r = range();
+	return X0 + (g - r.min) / (r.max - r.min) * (X1 - X0);
+};
+const xToG = x => {
+	const r = range();
+	return r.min + (x - X0) / (X1 - X0) * (r.max - r.min);
+};
+const findRow = id => planets.find(p => p.id === id);
+const rosterRows = () => planets.map(p => ({ g: p.g, m: p.m, count: p.count }));
 
 function el(tag, attrs, parent) {
-  const e = document.createElementNS(NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  if (parent) parent.appendChild(e);
-  return e;
+	const node = document.createElementNS(NS, tag);
+	for (const key in attrs) node.setAttribute(key, attrs[key]);
+	if (parent) parent.appendChild(node);
+	return node;
 }
 
-function pos(e) {
-  const r = svg.getBoundingClientRect();
-  return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+function label(node, text) {
+	node.textContent = text;
+	return node;
 }
+
+function tierText(tier) {
+	if (tier === 0) return 'no well';
+	if (tier === 3) return 'blocked';
+	return OrbitTech.CATAPULTS[tier - 1].id;
+}
+
+/* rows are a list: their order is the planet order, so a removal renumbers */
+function rowName(p) {
+	return 'P' + (planets.indexOf(p) + 1);
+}
+
+function refreshLegend() {
+	const caps = railCaps();
+	const parts = [];
+	parts.push(`<span><i style="background:${COL_NONE}"></i>g ≤ 0 · nothing to climb</span>`);
+	parts.push(`<span><i style="background:${COL_EMC1}"></i>${OrbitTech.CATAPULTS[0].id} · up to ${caps[0].toFixed(1)} px/s</span>`);
+	parts.push(`<span><i style="background:${COL_EMC2}"></i>${OrbitTech.CATAPULTS[1].id} · up to ${caps[1].toFixed(1)} px/s</span>`);
+	parts.push(`<span><i style="background:${COL_HEAVY}"></i>beyond ${OrbitTech.CATAPULTS[1].id}</span>`);
+	parts.push(`<span>ship ${shipMass().toFixed(2)} t · gap ${gapPx()} px</span>`);
+	$('legend').innerHTML = parts.join('');
+}
+
+/* --- the roster map ---------------------------------------------------- */
 
 function drawMap() {
-  svg.innerHTML = '';
-  el('line', { x1: X0, y1: LY, x2: X1, y2: LY, class: 'axis' }, svg);
-  el('line', { x1: gToX(0), y1: LY - 40, x2: gToX(0), y2: LY + 40, class: 'zero' }, svg);
+	const caps = railCaps();
+	const gap = gapPx();
+	svg.innerHTML = '';
+	const r = range();
+	el('line', { x1: X0, y1: LY, x2: X1, y2: LY, class: 'axis' }, svg);
+	if (r.min < 0 && r.max > 0) {
+		el('line', { x1: gToX(0), y1: LY - 40, x2: gToX(0), y2: LY + 40, class: 'zero' }, svg);
+	}
 
-  const lo = gMin(), hi = gMax();
-  for (let i = 0; i <= 8; i++) {
-    const v = lo + (hi - lo) * i / 8;
-    const x = gToX(v);
-    el('line', { x1: x, y1: LY - 5, x2: x, y2: LY + 5, class: 'tick' }, svg);
-    const t = el('text', { x: x, y: LY + 20, class: 'tlabel' }, svg);
-    t.textContent = v.toFixed(1);
-  }
+	for (let i = 0; i <= 8; i++) {
+		const value = r.min + (r.max - r.min) * i / 8;
+		const x = gToX(value);
+		el('line', { x1: x, y1: LY - 5, x2: x, y2: LY + 5, class: 'tick' }, svg);
+		label(el('text', { x: x, y: LY + 20, class: 'tlabel' }, svg), value.toFixed(1));
+	}
+	/* where the two rails stop climbing: the boundaries the colours follow */
+	const limits = MapGen.tierLimits(caps, gap);
+	for (let i = 0; i < limits.length; i++) {
+		const limit = limits[i];
+		if (!(limit > r.min && limit < r.max)) continue;
+		el('line', { x1: gToX(limit), y1: LY - 34, x2: gToX(limit), y2: LY + 6, class: 'zero' }, svg);
+	}
 
-  // Margin bands first, so planets sit on top
-  planets.forEach(p => {
-    const lo = clamp(p.g - p.m), hi = clamp(p.g + p.m);
-    el('rect', { x: gToX(lo), y: LY - 14, width: gToX(hi) - gToX(lo), height: 28, class: 'band' }, svg);
-  });
+	planets.forEach(p => {
+		const lo = clampDesign(p.g - p.m);
+		const hi = clampDesign(p.g + p.m);
+		el('rect', { x: gToX(lo), y: LY - 14, width: Math.max(1, gToX(hi) - gToX(lo)), height: 28, class: 'band' }, svg);
+	});
 
-  planets.forEach(p => {
-    const cx = gToX(p.g);
-    const g = el('g', { class: 'planet' + (p.id === selectedId ? ' selected' : '') }, svg);
-    const title = el('title', {}, g);
-    title.textContent = `${p.name}: gravity ${p.g.toFixed(2)}`;
+	planets.forEach(p => {
+		const cx = gToX(p.g);
+		const tier = MapGen.tierOf(p.g, caps, gap);
+		const g = el('g', { class: 'planet' + (p.id === selectedId ? ' selected' : '') }, svg);
+		label(el('title', {}, g),
+			`${rowName(p)}: gravity ${p.g.toFixed(2)} ± ${p.m.toFixed(2)} × ${p.count} · ${tierText(tier)}`);
+		el('circle', { cx: cx, cy: LY, r: 11, class: 'body', fill: TIER_COLORS[tier] }, g);
+		label(el('text', { x: cx, y: LY - 20, class: 'plabel' }, g), `${rowName(p)} ×${p.count}`);
 
-    el('circle', { cx: cx, cy: LY, r: 11, class: 'body', fill: planetColor(p.g) }, g);
-    const lbl = el('text', { x: cx, y: LY - 20, class: 'plabel' }, g);
-    lbl.textContent = `${p.name} (${p.g.toFixed(2)})`;
+		const del = el('g', { class: 'del' }, g);
+		el('rect', { x: cx - 12, y: LY + 20, width: 24, height: 24, class: 'hit' }, del);
+		el('line', { x1: cx - 5, y1: LY + 28, x2: cx + 5, y2: LY + 38 }, del);
+		el('line', { x1: cx + 5, y1: LY + 28, x2: cx - 5, y2: LY + 38 }, del);
 
-    const del = el('g', { class: 'del' }, g);
-    el('rect', { x: cx - 12, y: LY + 20, width: 24, height: 24, class: 'hit' }, del);
-    el('line', { x1: cx - 5, y1: LY + 28, x2: cx + 5, y2: LY + 38 }, del);
-    el('line', { x1: cx + 5, y1: LY + 28, x2: cx - 5, y2: LY + 38 }, del);
-
-    g.addEventListener('pointerdown', e => {
-      if (e.target.closest('.del')) return;
-      e.stopPropagation();
-      dragId = p.id;
-      selectedId = p.id;
-      svg.setPointerCapture(e.pointerId);
-      renderAll();
-    });
-    del.addEventListener('pointerdown', e => e.stopPropagation());
-    del.addEventListener('click', e => {
-      e.stopPropagation();
-      removePlanet(p.id);
-    });
-  });
+		g.addEventListener('pointerdown', e => {
+			if (e.target.closest('.del')) return;
+			e.stopPropagation();
+			dragId = p.id;
+			if (selectedId !== p.id) {
+				selectedId = p.id;
+				renderTable();
+			}
+			svg.setPointerCapture(e.pointerId);
+			drawMap();
+		});
+		del.addEventListener('pointerdown', e => e.stopPropagation());
+		del.addEventListener('click', e => {
+			e.stopPropagation();
+			removeRow(p.id);
+		});
+	});
 }
 
-function ensureRolled(p) {
-  if (p.rolled === null) {
-    p.rolled = [];
-    for (let i = 0; i < p.count; i++) {
-      p.rolled.push(round2(clamp(p.g - p.m + Math.random() * 2 * p.m)));
-    }
-  }
-  return p.rolled.length ? p.rolled.map(v => v.toFixed(2)).join(', ') : '—';
+/* --- the table --------------------------------------------------------- */
+
+function refreshRow(tr, p) {
+	const lo = round2(clampDesign(p.g - p.m));
+	const hi = round2(clampDesign(p.g + p.m));
+	tr.querySelector('.range').textContent = `${lo.toFixed(2)} to ${hi.toFixed(2)}`;
+	tr.querySelector('.preview-cell').textContent = rolledPreview(p);
+	const tier = MapGen.tierOf(p.g, railCaps(), gapPx());
+	const cell = tr.querySelector('.launch');
+	cell.textContent = tierText(tier);
+	cell.className = 'launch ' + TIER_CLASS[tier];
+	cell.title = p.g > 0
+		? `climb ${MapGen.launchSpeed(p.g, gapPx()).toFixed(1)} px/s`
+		: 'pushes out: no climb';
+}
+
+function rolledPreview(p) {
+	if (p.rolled === null) {
+		p.rolled = [];
+		for (let i = 0; i < p.count; i++) {
+			p.rolled.push(PlanetGravity.snap(p.g + (Math.random() * 2 - 1) * p.m));
+		}
+	}
+	return p.rolled.length ? p.rolled.map(v => v.toFixed(2)).join(', ') : '—';
 }
 
 function renderTable() {
-  tbody.innerHTML = '';
-  planets.forEach(p => {
-    const tr = document.createElement('tr');
-    if (p.id === selectedId) tr.className = 'sel';
-    tr.innerHTML = `
-      <td>${p.name}</td>
-      <td><input class="count" type="number" min="0" step="1"></td>
-      <td><input class="grav" type="number" min="${gMin()}" max="${gMax()}" step="0.01"></td>
-      <td><input class="margin" type="number" min="0" step="0.05"></td>
-      <td class="range"></td>
-      <td class="preview preview-cell"></td>
-      <td><button class="small remove">Remove</button></td>`;
+	tbody.innerHTML = '';
+	planets.forEach(p => {
+		const tr = document.createElement('tr');
+		if (p.id === selectedId) tr.className = 'sel';
+		tr.innerHTML =
+			`<td>${rowName(p)}</td>` +
+			`<td><input class="count num" type="number" min="0" step="1"></td>` +
+			`<td><input class="grav num" type="number" step="0.05"></td>` +
+			`<td><input class="margin num" type="number" min="0" step="0.05"></td>` +
+			`<td class="range"></td>` +
+			`<td class="preview preview-cell"></td>` +
+			`<td class="launch"></td>` +
+			`<td><button class="small remove">Remove</button></td>`;
 
-    const countI = tr.querySelector('.count');
-    const gravI = tr.querySelector('.grav');
-    const marI = tr.querySelector('.margin');
-    countI.value = p.count;
-    gravI.value = p.g.toFixed(2);
-    marI.value = p.m;
+		const countI = tr.querySelector('.count');
+		const gravI = tr.querySelector('.grav');
+		const marI = tr.querySelector('.margin');
+		countI.value = p.count;
+		gravI.value = p.g.toFixed(2);
+		marI.value = p.m.toFixed(2);
 
-    const refreshRow = () => {
-      tr.querySelector('.range').textContent =
-        `${round2(clamp(p.g - p.m)).toFixed(2)} to ${round2(clamp(p.g + p.m)).toFixed(2)}`;
-      tr.querySelector('.preview-cell').textContent = ensureRolled(p);
-    };
+		countI.addEventListener('input', () => {
+			p.count = Math.max(0, Math.floor(Number(countI.value) || 0));
+			p.rolled = null;
+			refreshRow(tr, p);
+			drawMap();
+			renderRosterNote();
+		});
+		gravI.addEventListener('input', () => {
+			if (gravI.value === '') return;
+			p.g = PlanetGravity.snap(clampDesign(Number(gravI.value)));
+			p.rolled = null;
+			refreshRow(tr, p);
+			drawMap();
+		});
+		marI.addEventListener('input', () => {
+			if (marI.value === '') return;
+			p.m = Math.max(0, Number(marI.value) || 0);
+			p.rolled = null;
+			refreshRow(tr, p);
+			drawMap();
+		});
+		/* the field's own grid: a typed value snaps, and the input shows where */
+		[countI, gravI, marI].forEach(input => input.addEventListener('change', () => {
+			countI.value = p.count;
+			gravI.value = p.g.toFixed(2);
+			marI.value = p.m.toFixed(2);
+		}));
 
-    countI.addEventListener('input', () => {
-      p.count = Math.max(0, Math.floor(Number(countI.value) || 0));
-      p.rolled = null;
-      refreshRow();
-      drawMap();
-    });
-    gravI.addEventListener('input', () => {
-      if (gravI.value === '' || isNaN(gravI.value)) return;
-      p.g = round2(clamp(Number(gravI.value)));
-      p.rolled = null;
-      refreshRow();
-      drawMap();
-    });
-    marI.addEventListener('input', () => {
-      p.m = Math.max(0, Number(marI.value) || 0);
-      p.rolled = null;
-      refreshRow();
-      drawMap();
-    });
-    [countI, gravI, marI].forEach(i => i.addEventListener('change', renderAll));
+		tr.addEventListener('click', e => {
+			if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+			if (selectedId === p.id) return;
+			selectedId = p.id;
+			renderTable();
+			drawMap();
+		});
+		tr.querySelector('.remove').addEventListener('click', () => removeRow(p.id));
 
-    tr.addEventListener('click', e => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
-      selectedId = p.id;
-      renderAll();
-    });
-    tr.querySelector('.remove').addEventListener('click', () => removePlanet(p.id));
-
-    refreshRow();
-    tbody.appendChild(tr);
-  });
+		refreshRow(tr, p);
+		tbody.appendChild(tr);
+	});
 }
+
+function renderRosterNote() {
+	const size = MapGen.rosterSize(rosterRows());
+	$('rosterNote').textContent = `${planets.length} rows · ${size} planets to generate` +
+		(size < 4 ? ' · a career needs at least 4' : '');
+	$('rosterNote').className = size >= 4 ? 'note' : 'note warn';
+}
+
+/* --- the generated field ----------------------------------------------- */
+
+function ensureField() {
+	field.seed = Math.max(0, Math.floor(Number(drawSeedEl.value) || 0));
+	field.name = fieldNameEl.value.trim() || 'field ' + field.seed;
+	field.mass = shipMass();
+	field.gap = gapPx();
+	field.rows = rosterRows();
+	field.values = MapGen.drawField(field.rows, field.seed);
+	return field;
+}
+
+function drawChart() {
+	const caps = railCaps();
+	const gap = gapPx();
+	const values = field.values;
+	const bins = MapGen.addToBins(MapGen.emptyBins(), values);
+	const total = Math.max(1, values.length);
+	const share = bins.map(n => n / total);
+	const baseline = MapGen.baselineShare(values.length || 13);
+	const saved = savedSeries();
+	const peak = Math.max(0.05, ...share, ...baseline, ...(saved ? saved.share : []));
+
+	const left = 46, right = 12, top = 14, bottom = 42;
+	const plotW = 800 - left - right;
+	const plotH = 210 - top - bottom;
+	const barW = plotW / MapGen.BIN_COUNT;
+	const yOf = v => top + plotH - (v / peak) * plotH;
+
+	distSvg.innerHTML = '';
+	/* launch-tier zones behind the bars, at the boundaries the map marks */
+	const limits = MapGen.tierLimits(caps, gap);
+	const r = { min: PlanetGravity.MIN, max: PlanetGravity.MAX };
+	const zoneX = g => left + (g - r.min) / (r.max - r.min) * plotW;
+	const zones = [
+		{ from: -Infinity, to: limits[0], fill: COL_EMC1 },
+		{ from: limits[0], to: limits[1], fill: COL_EMC2 },
+		{ from: limits[1], to: Infinity, fill: COL_HEAVY }
+	];
+	zones.forEach(z => {
+		const from = Math.max(r.min, z.from);
+		const to = Math.min(r.max, z.to);
+		if (!(to > from)) return;
+		el('rect', { x: zoneX(from), y: top, width: zoneX(to) - zoneX(from), height: plotH, class: 'zone', fill: z.fill }, distSvg);
+	});
+	el('line', { x1: left, y1: top + plotH, x2: left + plotW, y2: top + plotH, class: 'axis2' }, distSvg);
+
+	for (let i = 0; i < MapGen.BIN_COUNT; i++) {
+		const x = left + i * barW;
+		const value = share[i];
+		if (value > 0) {
+			el('rect', {
+				x: x + 1, y: yOf(value), width: Math.max(1, barW - 2),
+				height: top + plotH - yOf(value), class: 'bar'
+			}, distSvg);
+		}
+		if (i % 2 === 0) {
+			label(el('text', { x: x + barW / 2, y: top + plotH + 14, class: 'tlabel2' }, distSvg),
+				(PlanetGravity.MIN + i * MapGen.BIN_WIDTH).toFixed(2));
+		}
+	}
+	/* the game's own draw for the same universe size, and the saved map(s) */
+	el('polyline', {
+		points: baseline.map((v, i) => `${left + i * barW + barW / 2},${yOf(v)}`).join(' '),
+		fill: 'none', stroke: '#9ca3af', 'stroke-width': 2, 'stroke-dasharray': '5 3'
+	}, distSvg);
+	if (saved) {
+		el('polyline', {
+			points: saved.share.map((v, i) => `${left + i * barW + barW / 2},${yOf(v)}`).join(' '),
+			fill: 'none', stroke: '#f59e0b', 'stroke-width': 2
+		}, distSvg);
+	}
+	label(el('text', { x: left, y: top + 10, class: 'tlabel2' }, distSvg), `${(peak * 100).toFixed(0)} %`);
+	label(el('text', { x: left + plotW, y: top + 10, class: 'tlabel2' }, distSvg), 'gravity');
+
+	$('fieldTag').textContent = values.length
+		? `${values.length} planets · seed ${field.seed} · ${field.name}`
+		: 'add rows to generate a field';
+	renderStats(saved);
+}
+
+function savedSeries() {
+	const pick = mapPickEl.value;
+	if (pick === 'all') {
+		if (savedFields.length === 0) return null;
+		const bins = MapGen.emptyBins();
+		let total = 0;
+		savedFields.forEach(entry => {
+			MapGen.addToBins(bins, entry.values);
+			total += entry.values.length;
+		});
+		return { share: bins.map(n => n / Math.max(1, total)), label: `all ${savedFields.length} saved maps` };
+	}
+	const entry = savedFields[Number(pick)];
+	if (!entry) return null;
+	const bins = MapGen.addToBins(MapGen.emptyBins(), entry.values);
+	return { share: bins.map(n => n / Math.max(1, entry.values.length)), label: entry.name };
+}
+
+function renderStats(saved) {
+	const stats = MapGen.fieldStats(field.values, shipMass(), gapPx());
+	const rows = [];
+	if (field.values.length === 0) {
+		rows.push('no field yet');
+	} else {
+		rows.push(`<b>${stats.n}</b> planets`);
+		rows.push(`<b>${stats.tiers[0]}</b> no well`);
+		rows.push(`<b>${stats.tiers[1]}</b> ${OrbitTech.CATAPULTS[0].id}`);
+		rows.push(`<b>${stats.tiers[2]}</b> ${OrbitTech.CATAPULTS[1].id}`);
+		rows.push(`<b>${stats.tiers[3]}</b> blocked`);
+		rows.push(`<b>${stats.light}</b> at ≤ ${MapGen.LIGHT_GRAVITY_MAX.toFixed(1)} for a first landing`);
+	}
+	const text = rows.join(' · ');
+	const warn = field.values.length > 0 && stats.light < 3
+		? `<div class="warn">the default career (YOU + two rivals) needs 3 planets at ≤ ${MapGen.LIGHT_GRAVITY_MAX.toFixed(1)}, or the opening search finds no fair first landing</div>`
+		: '';
+	const caption = saved
+		? `<div class="note">orange line: ${saved.label}</div>`
+		: '';
+	$('fieldStats').innerHTML = `<div>${text}</div>${warn}${caption}`;
+}
+
+/* --- edits ------------------------------------------------------------- */
 
 function renderAll() {
-  drawMap();
-  renderTable();
-  document.getElementById('legend').innerHTML = legendHtml();
+	refreshLegend();
+	drawMap();
+	renderTable();
+	renderRosterNote();
+	ensureField();
+	drawChart();
 }
 
-function addPlanet(g, m) {
-  const margin = m === undefined ? Math.max(0, Number(defMarginEl.value) || 0) : Math.max(0, m);
-  const p = { id: nextId, name: 'P' + nextId, g: round2(clamp(g)), m: margin, count: 1, rolled: null };
-  nextId++;
-  planets.push(p);
-  selectedId = p.id;
-  renderAll();
+function addRow(g, m) {
+	const margin = m === undefined ? Math.max(0, Number(defMarginEl.value) || 0) : Math.max(0, m);
+	const row = {
+		id: nextId, g: PlanetGravity.snap(clampDesign(g)), m: margin,
+		count: 1, rolled: null
+	};
+	nextId += 1;
+	planets.push(row);
+	selectedId = row.id;
+	renderAll();
 }
 
-function removePlanet(id) {
-  planets = planets.filter(p => p.id !== id);
-  if (selectedId === id) selectedId = null;
-  renderAll();
+function removeRow(id) {
+	planets = planets.filter(p => p.id !== id);
+	if (selectedId === id) selectedId = null;
+	renderAll();
+}
+
+/* a new design range moves the roster with it: a row outside the axis would be
+ * drawn off the line and could never be generated */
+function applyRange() {
+	const r = designRange();
+	gravMinEl.value = r.min;
+	gravMaxEl.value = r.max;
+	planets.forEach(p => {
+		p.g = PlanetGravity.snap(clampDesign(p.g));
+		p.m = Math.min(p.m, PlanetGravity.MAX - PlanetGravity.MIN);
+		p.rolled = null;
+	});
+	renderAll();
+}
+
+/* --- input wiring ------------------------------------------------------ */
+
+function pointerPos(e) {
+	const box = svg.getBoundingClientRect();
+	return { x: (e.clientX - box.left) * W / box.width, y: (e.clientY - box.top) * H / box.height };
 }
 
 svg.addEventListener('pointerdown', e => {
-  if (e.target.closest('.planet')) return;
-  const { x, y } = pos(e);
-  if (y <= LY) {
-    addPlanet(xToG(x));
-  } else {
-    selectedId = null;
-    renderAll();
-  }
+	if (e.target.closest('.planet')) return;
+	const { x, y } = pointerPos(e);
+	if (y <= LY) addRow(xToG(x));
+	else if (selectedId !== null) {
+		selectedId = null;
+		renderTable();
+		drawMap();
+	}
 });
 
 svg.addEventListener('pointermove', e => {
-  if (dragId === null) return;
-  const p = find(dragId);
-  if (!p) return;
-  p.g = round2(clamp(xToG(pos(e).x)));
-  p.rolled = null;
-  drawMap();
+	if (dragId === null) return;
+	const row = findRow(dragId);
+	if (!row) return;
+	row.g = PlanetGravity.snap(clampDesign(xToG(pointerPos(e).x)));
+	row.rolled = null;
+	drawMap();
 });
 
 svg.addEventListener('pointerup', () => {
-  if (dragId === null) return;
-  dragId = null;
-  renderAll();
+	if (dragId === null) return;
+	dragId = null;
+	renderTable();
+	renderRosterNote();
+	ensureField();
+	drawChart();
 });
 
 window.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT') return;
-  const p = find(selectedId);
-  if (e.key === 'Escape') { selectedId = null; renderAll(); return; }
-  if (!p) return;
-  if (e.key === 'Delete' || e.key === 'Backspace') {
-    removePlanet(p.id);
-  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-    const step = e.key === 'ArrowLeft' ? -0.1 : 0.1;
-    p.g = round2(clamp(p.g + step));
-    p.rolled = null;
-    renderAll();
-  }
+	const tag = e.target.tagName;
+	if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+	if (e.key === 'Escape') {
+		selectedId = null;
+		renderTable();
+		drawMap();
+		return;
+	}
+	const row = findRow(selectedId);
+	if (!row) return;
+	if (e.key === 'Delete' || e.key === 'Backspace') {
+		e.preventDefault();
+		removeRow(row.id);
+		return;
+	}
+	if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+	e.preventDefault();
+	const step = (e.shiftKey ? 0.5 : 0.05) * (e.key === 'ArrowLeft' ? -1 : 1);
+	row.g = PlanetGravity.snap(clampDesign(row.g + step));
+	row.rolled = null;
+	renderTable();
+	renderRosterNote();
+	ensureField();
+	drawChart();
+	drawMap();
 });
 
-document.getElementById('reroll').addEventListener('click', () => {
-  planets.forEach(p => { p.rolled = null; });
-  renderTable();
+$('reroll').addEventListener('click', () => {
+	planets.forEach(p => { p.rolled = null; });
+	renderTable();
 });
 
-[gravMinEl, gravMaxEl].forEach(i => i.addEventListener('input', renderAll));
+$('addRow').addEventListener('click', () => addRow(1));
 
+$('redraw').addEventListener('click', () => {
+	drawSeedEl.value = Math.floor(Math.random() * 1e6);
+	ensureField();
+	drawChart();
+});
+
+[massEl, gapEl].forEach(input => input.addEventListener('change', renderAll));
+[gravMinEl, gravMaxEl].forEach(input => input.addEventListener('change', applyRange));
+drawSeedEl.addEventListener('change', () => {
+	ensureField();
+	drawChart();
+});
+fieldNameEl.addEventListener('input', () => {
+	field.name = fieldNameEl.value.trim() || 'field ' + field.seed;
+	$('fieldTag').textContent = `${field.values.length} planets · seed ${field.seed} · ${field.name}`;
+});
+
+/* --- saved maps -------------------------------------------------------- */
+
+function savedMapRecords() {
+	return typeof SAVED_MAPS !== 'undefined' && Array.isArray(SAVED_MAPS) ? SAVED_MAPS : [];
+}
+
+function fillMapPick() {
+	savedFields = MapGen.savedMapFields(savedMapRecords());
+	const keep = mapPickEl.value;
+	const options = ['<option value="all">all saved maps</option>'];
+	savedFields.forEach((entry, i) => {
+		options.push(`<option value="${i}">${escapeHtml(entry.name)}</option>`);
+	});
+	mapPickEl.innerHTML = options.join('');
+	if (keep === 'all' || (keep !== '' && savedFields[Number(keep)])) mapPickEl.value = keep;
+	$('mapNote').textContent = savedFields.length
+		? `${savedFields.length} maps · ${savedFields.reduce((n, entry) => n + entry.values.length, 0)} planets`
+		: 'saved_maps.js not found beside this page';
+	mapPickEl.disabled = savedFields.length === 0;
+}
+
+function escapeHtml(text) {
+	return String(text).replace(/[&<>"']/g, c => ({
+		'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+	})[c]);
+}
+
+mapPickEl.addEventListener('change', drawChart);
+
+/* --- designed fields --------------------------------------------------- */
+
+function fillFieldPick() {
+	const keep = fieldPickEl.value;
+	const options = ['<option value="">— none —</option>'];
+	fields.forEach((entry, i) => {
+		options.push(`<option value="${i}">${escapeHtml(entry.name)} · ${entry.universe}</option>`);
+	});
+	fieldPickEl.innerHTML = options.join('');
+	if (keep !== '' && fields[Number(keep)]) fieldPickEl.value = keep;
+	fieldPickEl.disabled = fields.length === 0;
+	$('deleteField').disabled = fields.length === 0;
+}
+
+function loadField(index) {
+	const entry = fields[index];
+	if (!entry) return;
+	gravMinEl.value = entry.rows.length ? Math.min(...entry.rows.map(r => r.g - r.m)) : -1;
+	gravMaxEl.value = entry.rows.length ? Math.max(...entry.rows.map(r => r.g + r.m)) : 3.5;
+	applyRange();
+	planets = entry.rows.map((row, i) => ({
+		id: i + 1, g: row.g, m: row.m, count: row.count, rolled: null
+	}));
+	nextId = planets.length + 1;
+	selectedId = null;
+	massEl.value = entry.mass;
+	gapEl.value = entry.gap;
+	drawSeedEl.value = entry.seed;
+	fieldNameEl.value = entry.name;
+	field.seed = entry.seed;
+	field.name = entry.name;
+	field.values = entry.gravity.slice();
+	field.rows = rosterRows();
+	refreshLegend();
+	drawMap();
+	renderTable();
+	renderRosterNote();
+	drawChart();
+}
+
+/* a page without object URLs (or an older browser) says so instead of throwing */
+function download(text, name) {
+	if (typeof Blob !== 'function' || !window.URL || typeof window.URL.createObjectURL !== 'function') {
+		return false;
+	}
+	const blob = new Blob([text], { type: 'text/javascript' });
+	const url = window.URL.createObjectURL(blob);
+	const link = document.createElement('a');
+	link.href = url;
+	link.download = name;
+	document.body.appendChild(link);
+	link.click();
+	document.body.removeChild(link);
+	window.URL.revokeObjectURL(url);
+	return true;
+}
+
+$('saveField').addEventListener('click', () => {
+	if (field.values.length === 0) {
+		$('saveNote').textContent = 'nothing to save: add rows with a count first';
+		return;
+	}
+	const record = MapGen.fieldRecord({
+		name: field.name, rows: field.rows, values: field.values,
+		seed: field.seed, mass: shipMass(), gap: gapPx(), note: 'designed in map-generator-helper'
+	});
+	const index = fields.findIndex(entry => entry.name === record.name);
+	if (index >= 0) fields[index] = record;
+	else fields.push(record);
+	const ok = download(MapGen.fieldsText(fields), 'map_fields.js');
+	$('saveNote').className = ok ? 'note' : 'note err';
+	$('saveNote').textContent = ok
+		? `saved "${record.name}" · ${fields.length} designed field(s) in map_fields.js`
+		: 'this browser cannot download the file; the design is in the registry of this page only';
+	fillFieldPick();
+	if (index >= 0) fieldPickEl.value = String(index);
+	else fieldPickEl.value = String(fields.length - 1);
+});
+
+fieldPickEl.addEventListener('change', () => {
+	const index = Number(fieldPickEl.value);
+	if (fieldPickEl.value === '' || !fields[index]) return;
+	loadField(index);
+});
+
+$('deleteField').addEventListener('click', () => {
+	const index = Number(fieldPickEl.value);
+	if (fieldPickEl.value === '' || !fields[index]) return;
+	fields.splice(index, 1);
+	fillFieldPick();
+	fieldPickEl.value = '';
+	const ok = download(MapGen.fieldsText(fields), 'map_fields.js');
+	$('saveNote').textContent = ok
+		? `${fields.length} designed field(s) left in map_fields.js`
+		: 'removed here only';
+});
+
+/* --- boot -------------------------------------------------------------- */
+
+fields = MapGen.readFields(typeof MAP_FIELDS !== 'undefined' ? MAP_FIELDS : []);
+if (fields.length) {
+	fieldNameEl.value = fields[0].name;
+	drawSeedEl.value = fields[0].seed;
+}
+fillMapPick();
+fillFieldPick();
+if (mapPickEl.value === 'all') mapPickEl.value = savedFields.length ? 'all' : '';
 renderAll();
 </script>
 </body>

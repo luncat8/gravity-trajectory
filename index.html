@@ -249,8 +249,13 @@
 		<div class="actions gameActions">
 			<button id="mapSave" class="miniBtn" title="append this career opening to saved_maps.js and download it">save map</button>
 			<button id="mapSaveRun" class="miniBtn" title="append an exact snapshot of this run to saved_maps.js and download it">save run</button>
-			<button id="mapLoad" class="miniBtn" title="start a career on a random saved map">load map</button>
-			<button id="mapLoadRun" class="miniBtn" title="continue a random saved run">load run</button>
+			<button id="mapLoad" class="miniBtn" title="start a career on the picked saved map, or a random one">load map</button>
+			<button id="mapLoadRun" class="miniBtn" title="continue the picked saved run, or a random one">load run</button>
+		</div>
+		<div class="actions gameActions">
+			<select id="mapPick" class="miniSelect" aria-label="saved map to load" title="which saved map the load buttons use">
+				<option value="">random</option>
+			</select>
 		</div>
 		<div id="mapNote" class="mapNote"></div>
 	</div>
@@ -545,6 +550,7 @@
 <script src="orbit_view.js"></script>
 <script src="orbit_science.js"></script>
 <script src="orbit_tech.js"></script>
+<script src="planet_gravity.js"></script>
 <script src="gravity_sim.js"></script>
 <script src="gravity_game.js"></script>
 <script src="gravity_bot.js"></script>

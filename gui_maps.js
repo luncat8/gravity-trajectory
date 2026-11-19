@@ -14,6 +14,7 @@ const mapSaveRunBtn = $('mapSaveRun');
 const mapLoadBtn = $('mapLoad');
 const mapLoadRunBtn = $('mapLoadRun');
 const mapNoteEl = $('mapNote');
+const mapPickEl = $('mapPick');
 
 /* the registry is `saved_maps.js`, a data script the page loads first; a save
  * appends here and downloads the regenerated file over it */
@@ -28,6 +29,52 @@ function mapNotice(text) {
 	refreshMapsUi();
 }
 
+/* The picker lists the registry in its own order, so an index is the record:
+ * `random` (the empty value) keeps the buttons' old behaviour, and a picked
+ * record is what a load button uses. It is rebuilt in place and keeps the
+ * player's choice, because every notice refreshes this panel. */
+function mapPickOption(record, index) {
+	const label = index + ' · ' + record.name + (record.kind === 'run' ? ' · run' : '');
+	const option = document.createElement('option');
+	option.value = String(index);
+	option.textContent = label;
+	return option;
+}
+
+let mapPickSignature = '';
+
+function refreshMapPick() {
+	if (!mapPickEl) return;
+	const records = savedMapList();
+	const keep = mapPickEl.value;
+	/* every notice refreshes this panel: rebuild the list only when the registry
+	 * itself changed, so an open dropdown is not closed under the pointer */
+	const signature = records.length + '|' +
+		records.map(record => record.name + ':' + record.kind).join('|');
+	if (signature !== mapPickSignature) {
+		mapPickSignature = signature;
+		while (mapPickEl.firstChild) mapPickEl.removeChild(mapPickEl.firstChild);
+		const random = document.createElement('option');
+		random.value = '';
+		random.textContent = 'random';
+		mapPickEl.appendChild(random);
+		for (let i = 0; i < records.length; i++) mapPickEl.appendChild(mapPickOption(records[i], i));
+	}
+	mapPickEl.value = keep !== '' && records[Number(keep)] ? keep : '';
+	mapPickEl.disabled = records.length === 0;
+	mapPickEl.title = records.length
+		? 'load the picked saved map, or a random one'
+		: 'saved_maps.js has no map to load';
+}
+
+/* the record the picker names, of `kind` when one is given */
+function mapPickedRecord(kind) {
+	if (!mapPickEl || mapPickEl.value === '') return null;
+	const record = savedMapList()[Number(mapPickEl.value)];
+	if (!record || (kind && record.kind !== kind)) return null;
+	return record;
+}
+
 function refreshMapsUi() {
 	const records = savedMapList();
 	const starts = GravityMaps.hasKind(records, 'start');
@@ -38,6 +85,7 @@ function refreshMapsUi() {
 	if (mapSaveRunBtn) {
 		mapSaveRunBtn.title = 'append an exact snapshot of this run to saved_maps.js and download it';
 	}
+	refreshMapPick();
 }
 
 /* the run's start fields plus the live objects a snapshot needs */
@@ -222,13 +270,17 @@ function startMapRecord(record) {
 	return true;
 }
 
+/* the picked record when it is what the button loads, otherwise a random one */
 function loadSavedMap(kind) {
-	const record = GravityMaps.pick(savedMapList(), kind, Math.random);
+	const picked = mapPickedRecord(kind);
+	const record = picked || GravityMaps.pick(savedMapList(), kind, Math.random);
 	if (!record) {
 		mapNotice('saved_maps.js has no ' + kind + ' map');
 		return false;
 	}
-	return startMapRecord(record);
+	const loaded = startMapRecord(record);
+	if (loaded && mapPickEl) mapPickEl.value = String(savedMapList().indexOf(record));
+	return loaded;
 }
 
 /* the record `?map=<index>` or `?map=<name>` names */

@@ -22,6 +22,9 @@
 	const OrbitScience = typeof module !== 'undefined' && module.exports
 		? require('./orbit_science.js')
 		: root.OrbitScience;
+	const PlanetGravity = typeof module !== 'undefined' && module.exports
+		? require('./planet_gravity.js')
+		: root.PlanetGravity;
 
 	const FORMAT = 1;
 	const ANGLE_STEPS = 1048576;
@@ -118,14 +121,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const SRC_PORTS = 1;
 	const SRC_CODES = 'pm';
 	const NO_ABORT = -1;
-	const SALT_GRAVITY = 0xce;
-	const PLANET_GRAVITY_MIN = -1;
-	const PLANET_GRAVITY_MAX = 3.5;
-	const PLANET_GRAVITY_STEPS = 20;
-	const PLANET_GRAVITY_CHOICES = (PLANET_GRAVITY_MAX - PLANET_GRAVITY_MIN) * PLANET_GRAVITY_STEPS + 1;
-	const GRAVITY_BIAS_START = 0.6;
-	const GRAVITY_BIAS_END = 2.8;
-	const GRAVITY_BIAS_STRENGTH = 0.3;
+	/* the seeded field lives in its own file (the map-generator helper reads the
+	 * same draw); these names stay the game's public ones */
+	const PLANET_GRAVITY_MIN = PlanetGravity.MIN;
+	const PLANET_GRAVITY_MAX = PlanetGravity.MAX;
+	const PLANET_GRAVITY_STEPS = PlanetGravity.STEPS;
+	const planetGravity = PlanetGravity.gravity;
 	const SHOT_FORM = /^([pm])(\d{1,2})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})(?:\.([0-9a-z]{1,4}))?$/;
 	const BURN_FORM = /^b([0-9a-z]{1,4})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})$/;
 	const END_FORM = /^(\d{1,2})\.(\d{1,9})$/;
@@ -133,19 +134,6 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* launch book: saved career trajectories and the visit log each one keeps */
 	const BOOK_MAX = 10;
 	const BOOK_LOG_MAX = 64;
-
-	/* Smoothly lighten the middle of the seeded range; the tails are unchanged
-	 * before rounding. The half-step edges retain the 0.05 grid. */
-	function planetGravity(seed, planet) {
-		const u = OrbitWorld.hash01(seed, planet, SALT_GRAVITY);
-		let g = PLANET_GRAVITY_MIN + (u * PLANET_GRAVITY_CHOICES - 0.5) / PLANET_GRAVITY_STEPS;
-		if (g > GRAVITY_BIAS_START && g < GRAVITY_BIAS_END) {
-			const wave = Math.sin(Math.PI * (g - GRAVITY_BIAS_START) / (GRAVITY_BIAS_END - GRAVITY_BIAS_START));
-			g -= GRAVITY_BIAS_STRENGTH * wave * wave;
-		}
-		g = Math.round(g * PLANET_GRAVITY_STEPS) / PLANET_GRAVITY_STEPS;
-		return g === 0 ? 0 : Math.max(PLANET_GRAVITY_MIN, Math.min(PLANET_GRAVITY_MAX, g));
-	}
 
 	function angleUnits(angle) {
 		return (Math.round(angle / ANGLE_UNIT) % ANGLE_STEPS + ANGLE_STEPS) % ANGLE_STEPS;

@@ -40,7 +40,8 @@ const FAST = [
 	['career_expansion_start_test.js', 10],
 	['fragile_test.js', 10],
 	['politics_test.js', 15],
-	['saved_map_test.js', 10]
+	['saved_map_test.js', 10],
+	['map_gen_test.js', 0.2]
 ];
 
 /* 100-seed sweeps, the seat search itself, and the page tests: those boot a
