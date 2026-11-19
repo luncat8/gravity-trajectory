@@ -95,6 +95,12 @@
 	const CAREER_STEEP_PAD_VALUE = 2;
 	/* a rival or rebel rail: a landing, a usage tax, and no claim on the planet */
 	const CAREER_FOREIGN_PAD_VALUE = 1;
+	/* an own pad lands full: its panel charges while the ship flies. A few
+	 * seconds of flight cannot refill a shot that is bigger than the battery
+	 * holds, so the exit an own pad promises must be the one it will have when
+	 * the ship arrives. Over a long flight the panel is given its sunlight;
+	 * a long flight is also long pad time, so the charge can reach the cap. */
+	const CAREER_PAD_SUN_SECONDS = 30;
 	const CAREER_GRAVITY_COST = 1.5;
 	/* breadth of one launch counts toward a pad's worth: sunlight alone would
 	 * put EMCs in wells the starter rail cannot leave, and those never earn */
@@ -1761,10 +1767,24 @@
 		return mass;
 	};
 
-	/* Normally quote the cheapest way off. A shopper/scorer seeking a claim
-	 * wants the cheapest *owned kit* instead. Keep the ticket as fallback if
-	 * there is no affordable kit, including on somebody else's ground. */
-	GravityBot.prototype.careerDeparture = function (career, planet, cash, mass, sourceSim, condition, seekClaim, afterLanding = false) {
+		/* Arrival charge of an own rail: the pad under the ship holds what it
+		 * holds, a remote pad charges while the ship flies — but only for the
+		 * flight's own length, measured on the pad clock. A three second hop
+		 * cannot refill a whole shot, so a forecast that lands on an empty bar
+		 * priced a launch the ship would not have. */
+		GravityBot.prototype.careerArrivalCharge = function (career, planet, flightSeconds) {
+			const pad = career.pads[planet];
+			if (planet === career.at || !(flightSeconds > 0)) return pad.battery.capacity;
+			const charge = Math.max(0, pad.chargeKwh - pad.reservedKwh);
+			const gained = OrbitTech.solarCharge(pad.panel, career.light[planet],
+				GravitySim.padSeconds(flightSeconds));
+			return Math.min(pad.battery.capacity, charge + gained) - pad.reservedKwh;
+		};
+
+		/* Normally quote the cheapest way off. A shopper/scorer seeking a claim
+		 * wants the cheapest *owned kit* instead. Keep the ticket as fallback if
+		 * there is no affordable kit, including on somebody else's ground. */
+		GravityBot.prototype.careerDeparture = function (career, planet, cash, mass, sourceSim, condition, seekClaim, afterLanding = false, flightSeconds = 0) {
 		const out = this.careerExit;
 		out.ok = false;
 		out.physical = false;
@@ -1810,7 +1830,9 @@
 
 		/* Our panel can recharge. A guest cannot count on charge its host has
 		 * already spent or promised to another barrel. */
-		const charge = owner === career.index ? pad.battery.capacity : Math.max(0, pad.chargeKwh - pad.reservedKwh);
+		const charge = owner === career.index
+			? this.careerArrivalCharge(career, planet, flightSeconds)
+			: Math.max(0, pad.chargeKwh - pad.reservedKwh);
 		const currentCap = OrbitTech.speedLimit(charge,
 			arrivalMass, pad.catapult, forceScale);
 		const currentSpeed = this.careerExitSpeed(planet, currentCap);
@@ -2619,7 +2641,8 @@
 		const arrivalMass = this.careerArrivalMass(career, body);
 		const contested = this.careerContested(career, body);
 		const departure = this.careerDeparture(career, body, exitCash, arrivalMass, this.probe,
-			arrivalCondition === 0 ? 1 : arrivalCondition, !contested, true);
+			arrivalCondition === 0 ? 1 : arrivalCondition, !contested, true,
+			GravitySim.gameSeconds(steps));
 		if (!departure.ok || exitCash + 1e-9 < departure.cost) {
 			this.careerEval.reject = departure.physical ? 'exit' : 'unlaunchable';
 			return -Infinity;
@@ -2635,7 +2658,11 @@
 			const owner = GravityGame.padOwner(career, body, false);
 			padValue = (owner >= 0 || owner === GravityGame.OWNER_REBEL ? CAREER_FOREIGN_PAD_VALUE : 0) - departure.cost;
 		}
-		if (contested) padValue -= CAREER_CONTESTED_COST;
+		/* A shared visit is missed harvest, not lost property: only ground the
+		 * landing could have taken loses its worth to the other ship. Charging
+		 * the contest on an own rail made a company refuse to go home, which is
+		 * exactly the pad it can always launch from. */
+		if (contested && !own.catapult) padValue -= CAREER_CONTESTED_COST;
 		padValue -= wear;
 		this.careerEval.builds = claim || (own.catapult !== null && departure.builds);
 		this.careerEval.exitCost = departure.cost;
@@ -3991,6 +4018,9 @@
 		const target = this.careerTarget(career);
 		const plan = this.careerPlan(career, sim, market, runStep, true, angles, true);
 		if (!plan) return null;
+		/* A relaxed fan that lands on neither the pickup nor the delivery is a
+		 * reposition, not a leg. A true bounce leaves the ship and the contract
+		 * where they were, so it cannot justify another search from this pad. */
 		if (plan.body !== plan.origin && plan.body !== target) {
 			this.traceAdd(r.index, 'open fan', 'contract wants P' + target +
 				' · next best is P' + plan.body, runStep);
@@ -4025,8 +4055,15 @@
 		}
 		if (plan) return this.careerReadyShot(r, plan, market, runStep, true);
 		if (career.contract >= 0) {
-			plan = this.careerOpenFan(r, market, runStep, angles);
-			if (plan) return this.careerReadyShot(r, plan, market, runStep, true);
+			const open = this.careerOpenFan(r, market, runStep, angles);
+			if (open) return this.careerReadyShot(r, open, market, runStep, true);
+			/* the board this job came from has no leg from here: dropping it is
+			 * the only thing that stops the next search from re-winning the same
+			 * unpayable route back. leave the fresh board for the cooldown. */
+			if (career.contract >= 0) {
+				this.careerDeferContract(career, runStep, 'no reachable leg from this pad');
+				GravityGame.refreshBoard(career, trade, runStep);
+			}
 		}
 		/* the own pad is only charging: a wait is cheaper than the commercial fee */
 		if (this.careerRechargeSit(r, runStep)) return null;
