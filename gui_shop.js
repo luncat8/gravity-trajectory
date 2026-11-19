@@ -453,7 +453,7 @@ function padBlockHtml(career) {
 	}
 	if (career.commercialPlanet === at) {
 		const lift = GravityGame.padLift(career, at);
-		html += '<div class="careerLine">commercial EMC-1 selected · ' +
+		html += '<div class="careerLine">' + GravityGame.railOwnerText(career, at) + ' selected · ' +
 			guestFeeClause(career, at) +
 			' · lifts to ' + Math.round(lift) + ' px/s</div>';
 	}
@@ -467,7 +467,7 @@ function padBlockHtml(career) {
 		const heavy = lift + 1e-9 < GravitySim.SPEED_MIN;
 		const claimOwnerIdx = GravityGame.claimOwner(game.galaxy, at);
 		html += '<div class="careerLine warn">no EMC here · ' +
-			(occupied ? claimTag(claimOwnerIdx) + ' rail' : 'commercial rail') +
+			(occupied ? claimTag(claimOwnerIdx) + ' rail' : GravityGame.railOwnerText(career, at)) +
 			' · ' + guestFeeClause(career, at) + '</div>' +
 			'<div class="careerLine dim">lifts ' + ship.mass.toFixed(1) + ' t to ' +
 			Math.round(lift) + ' px/s' + (heavy

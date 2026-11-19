@@ -168,4 +168,23 @@ land(-1);
 assert.strictEqual(visit('GravityGame.returnLandingVisit(playerCareer())'), null, 'an exit is not a return');
 assert.strictEqual(visit('commsState.callReason.id'), 'space');
 
+const ending = loadPage({ search: mapSearch(1) + '&rate=1' });
+const endgame = code => vm.runInContext(code, ending.context);
+ending.runFrames(2, 16);
+endgame(`playerCareer().ledger.purse = -1;
+	GravityGame.careerAdvance(playerCareer(), GravityGame.ENDGAME_WARNING_STEPS - 1);
+	game.clockSteps += GravityGame.ENDGAME_WARNING_STEPS - 1;
+	commsTick()`);
+assert.notStrictEqual(endgame('commsState.callReason?.id'), 'endgame-warning');
+endgame('advanceCareerOneStep(); commsTick()');
+assert.strictEqual(endgame('commsState.callReason.id'), 'endgame-warning');
+assert.match(ending.elements.get('commsCallReason').textContent, /480 game seconds/);
+ending.click('commsButton');
+assert.match(ending.elements.get('commsAnswer').textContent, /factories will become commercial/);
+endgame(`GravityGame.careerAdvance(playerCareer(),
+	GravityGame.ENDGAME_LIMIT_STEPS - GravityGame.ENDGAME_WARNING_STEPS - 1);
+	advanceCareerOneStep(); commsTick()`);
+assert.strictEqual(endgame('playerCareer().ended'), ending.context.GravityGame.CAREER_BROKE);
+assert.match(ending.elements.get('commsAnswer').textContent, /Career over/);
+
 console.log('COMMS CALL OK');

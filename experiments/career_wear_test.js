@@ -347,20 +347,79 @@ check('repair: 2.00 from 0, 1.00 from 0.5, free under communism, never twice', (
 	assert.strictEqual(c.ship.condition, 1);
 });
 
-check('a worn-out ship the purse cannot repair ends the company; a fresh start is a fresh ship', () => {
+check('an unrecovered worn-out ship ends the company at ten game minutes and liquidates its rail', () => {
 	const w = setup(29);
 	const career = w.career;
 	career.ledger.purse = 1.5;
 	const sim = begin(w, career, GravitySim.SPEED_MIN);
 	Game.setShipCondition(career, 0.05);
 	assert.strictEqual(Game.checkEnded(career), Game.CAREER_OPEN, 'not judged in flight');
-	assert.strictEqual(end(w, career, sim, GravitySim.END_IMPACT, career.hq), Game.CAREER_BROKE);
+	assert.strictEqual(end(w, career, sim, GravitySim.END_IMPACT, career.hq), Game.CAREER_OPEN);
+	const hq = career.hq;
+	const rival = w.careers[1];
+	career.ledger.purse = 100;
+	assert.ok(Game.buildGear(career, hq, Tech.KIND_CATAPULT, Tech.CATAPULTS[1]));
+	career.ledger.purse = 0;
+	assert.ok(!Game.planetBuildable(rival, hq));
+	Game.careerAdvance(career, Game.ENDGAME_LIMIT_STEPS - 1);
+	assert.strictEqual(career.ended, Game.CAREER_OPEN);
+	Game.careerAdvance(career, 1);
+	assert.strictEqual(career.ended, Game.CAREER_BROKE);
+	assert.strictEqual(career.padCount, 0);
+	assert.strictEqual(Game.padOwner(rival, hq), Game.OWNER_COMMERCIAL);
+	const rail = Game.padAt(rival, hq);
+	assert.strictEqual(rail.catapult, Tech.CATAPULTS[1]);
+	assert.strictEqual(rival.launchPads[hq], rail);
+	Game.reserveEnergy(rail, 1);
+	assert.strictEqual(rail.reservedKwh, 0);
+	rival.ledger.purse = 100;
+	assert.ok(Game.planetBuildable(rival, hq));
+	assert.ok(Game.buildGear(rival, hq, Tech.KIND_CATAPULT, Tech.CATAPULTS[0]));
+	assert.strictEqual(Game.padAt(rival, hq), rival.pads[hq]);
+	Game.setCommercial(rival, hq);
+	assert.strictEqual(Game.padAt(rival, hq), rail);
+	assert.strictEqual(Game.launchFee(rival, hq, 60), Game.commercialFee(rival, hq, 60));
 	assert.strictEqual(career.ship.condition, 0);
 	Game.startCareer(career, w.sim, 29, w.trade, null, w.galaxy, career.hq);
 	assert.strictEqual(career.ship.condition, 1);
 	assert.strictEqual(career.ledger.reports, true);
 	assert.strictEqual(career.repairs, 0);
 	assert.strictEqual(career.maintenanceSpent, 0);
+});
+
+check('recovered repair money clears the clock; a new insolvency starts from zero', () => {
+	const { career } = setup(29);
+	Game.setShipCondition(career, 0);
+	career.ledger.purse = 0;
+	Game.careerAdvance(career, Game.ENDGAME_LIMIT_STEPS - 1);
+	career.ledger.purse = Game.repairCost(career);
+	assert.ok(Game.repairCareer(career));
+	assert.strictEqual(career.recoverySteps, -1);
+	career.ledger.purse = -1;
+	Game.careerAdvance(career, 1);
+	assert.strictEqual(career.recoverySteps, 1);
+	assert.strictEqual(career.recoveryEpisode, 2);
+	assert.strictEqual(career.ended, Game.CAREER_OPEN);
+});
+
+check('a bankrupt rival bot stops permanently and leaves a commercial HQ', () => {
+	const w = setup(29);
+	const rival = w.careers[1];
+	const hq = rival.hq;
+	const bot = new GravityBot(World.WORLD_W, World.WORLD_H);
+	bot.count = 1;
+	bot.rivals[0].career = rival;
+	bot.rivals[0].sim = w.sims[1];
+	assert.ok(bot.isRivalBot(0));
+	rival.ledger.purse = -1;
+	Game.careerAdvance(rival, Game.ENDGAME_LIMIT_STEPS - 1);
+	bot.stepCareer(Game.ENDGAME_LIMIT_STEPS, w.market, w.trade, 1);
+	assert.strictEqual(rival.ended, Game.CAREER_BROKE);
+	bot.stepCareer(Game.ENDGAME_LIMIT_STEPS + Math.round(30 / DT), w.market, w.trade, 1);
+	assert.strictEqual(rival.ended, Game.CAREER_BROKE);
+	assert.strictEqual(rival.ledger.purse, -1);
+	assert.strictEqual(rival.padCount, 0);
+	assert.strictEqual(Game.padOwner(w.career, hq), Game.OWNER_COMMERCIAL);
 });
 
 check('every company: a rival wears by the same arithmetic and services at 0.7', () => {

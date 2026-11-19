@@ -734,7 +734,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * and the neutral commercial EMC-1 standing on every planet charges a fee
 	 * that scales with the shot. So a padless planet is no longer a dead end,
 	 * only an expensive one.
-	 * The run ends broke below zero or with an unrepairable ship, or complete
+	 * A company has ten game minutes to recover from insolvency, or completes
 	 * (a catapult on every planet; cheat runs never complete). Evacuation can
 	 * use the remaining purse and trades time for any unpaid fare.
 	 * Every `*Sec` below is flight seconds (`steps · DT`) — the clock the board,
@@ -885,12 +885,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * never reserves nor drains.
 	 */
 	function reserveEnergy(pad, energy) {
-		if (!pad || pad === COMMERCIAL_PAD || pad === CAPITAL_PAD || !(energy > 0)) return;
+		if (!pad || pad === COMMERCIAL_PAD || pad.commercial || pad === CAPITAL_PAD || !(energy > 0)) return;
 		pad.reservedKwh += energy;
 	}
 
 	function releaseEnergy(pad, energy) {
-		if (!pad || pad === COMMERCIAL_PAD || pad === CAPITAL_PAD || !(energy > 0)) return;
+		if (!pad || pad === COMMERCIAL_PAD || pad.commercial || pad === CAPITAL_PAD || !(energy > 0)) return;
 		pad.reservedKwh = pad.reservedKwh > energy ? pad.reservedKwh - energy : 0;
 	}
 
@@ -924,6 +924,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return {
 			seed: 0,
 			actors: [],
+			commercialPads: Array(OrbitWorld.PLANETS).fill(null),
 			mapSeats: null,
 			/* safe first-flight pay the initial seating was balanced around; live
 			 * expansion uses the same target when choosing a new rival's world */
@@ -938,6 +939,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	function resetGalaxy(galaxy, seed) {
 		galaxy.seed = seed >>> 0;
 		galaxy.actors.length = 0;
+		galaxy.commercialPads.fill(null);
 		galaxy.mapSeats = null;
 	galaxy.openingTargetPay = NaN;
 	galaxy.stats = {
@@ -985,15 +987,20 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * every planet and wins whenever it is the chosen rail, else your own EMC,
 	 * else the best rival EMC, else the commercial one again. Ignore the
 	 * one-shot override when forecasting the rail after a landing. */
+	function commercialPadAt(career, planet) {
+		const pads = career.galaxy ? career.galaxy.commercialPads : career.commercialPads;
+		return rebelRail(career, planet) || (pads && pads[planet]) || COMMERCIAL_PAD;
+	}
+
 	function padAt(career, planet, useCommercial = true) {
 		if (planet === career.capitalPlanet) return CAPITAL_PAD;
 		const rebel = rebelRail(career, planet);
 		if (rebel) return rebel;
-		if (useCommercial && career.commercialPlanet === planet) return COMMERCIAL_PAD;
+		if (useCommercial && career.commercialPlanet === planet) return commercialPadAt(career, planet);
 		if (career.pads[planet].catapult !== null) return career.pads[planet];
-		if (!career.galaxy) return COMMERCIAL_PAD;
+		if (!career.galaxy) return commercialPadAt(career, planet);
 		const owner = foreignOwner(career.galaxy, career, planet);
-		return owner === OWNER_COMMERCIAL ? COMMERCIAL_PAD : career.galaxy.actors[owner].pads[planet];
+		return owner === OWNER_COMMERCIAL ? commercialPadAt(career, planet) : career.galaxy.actors[owner].pads[planet];
 	}
 
 	/* owner index of that pad, -1 for the neutral commercial EMC, -2 for the
@@ -1091,7 +1098,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * aboard (a delivery's arrival); the live fee prices the ship as loaded.
 	 */
 	function commercialFee(career, planet, speed, mass) {
-		const pad = padAt(career, planet);
+		const pad = commercialPadAt(career, planet);
 		const shipMass = mass === undefined ? career.ship.mass : mass;
 		const energy = OrbitTech.launchEnergy(shipMass, pad.catapult, speed);
 		return price(career, COMMERCIAL_BASE + COMMERCIAL_KWH * energy);
@@ -1129,8 +1136,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (planet < 0) return price(career, CAREER.evacFee);
 		if (planet === career.capitalPlanet) return 0;
 		if (career.pads[planet].catapult !== null) return 0;
-		const rebel = rebelRail(career, planet);
-		const rail = rebel || COMMERCIAL_PAD;
+		const rail = commercialPadAt(career, planet);
 		const lift = OrbitTech.speedLimit(rail.battery.capacity,
 			mass, rail.catapult, career.forceScale);
 		const commercial = lift + 1e-9 >= GravitySim.SPEED_MIN
@@ -1166,7 +1172,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (owner === OWNER_COMMERCIAL && rebelRail(career, planet)) {
 			return 'seized EMC-' + tier;
 		}
-		if (owner === OWNER_COMMERCIAL) return 'commercial EMC-1';
+		if (owner === OWNER_COMMERCIAL) return 'commercial EMC-' + tier;
 		return (owner === 0 ? 'YOU' : 'R' + owner) + ' rail';
 	}
 
@@ -1357,6 +1363,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			/* the last launch broke a fragile load (the notice the HUD prints) */
 			fragileLost: false,
 			commercialPlanet: -1,
+			commercialPads: null,
 			capitalPlanet: -1,
 			arfPlanet: -1,
 			launchBook: createLaunchBook(),
@@ -1400,6 +1407,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			lastResearch: 0,
 			forceScale: 1,
 			ended: CAREER_OPEN,
+			recoverySteps: -1,
+			recoveryEpisode: 0,
 			market: null,
 			arrested: false,
 			arrestUntilStep: 0,
@@ -3373,6 +3382,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.stranded = false;
 		career.fragileLost = false;
 		career.commercialPlanet = -1;
+		career.commercialPads = null;
 		career.capitalPlanet = specialPlanets ? trade.world.capitalPlanet : -1;
 		career.arfPlanet = specialPlanets ? trade.world.arfPlanet : -1;
 		resetLaunchBook(career.launchBook);
@@ -3423,6 +3433,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.fuelSpent = 0;
 		career.forceScale = 1;
 		career.ended = CAREER_OPEN;
+		career.recoverySteps = -1;
 		career.arrested = false;
 		career.arrestUntilStep = 0;
 		career.evacuating = false;
@@ -3531,19 +3542,46 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return covered;
 	}
 
-	/* broke = negative purse or a worn-out ship the purse cannot repair */
+	const ENDGAME_WARNING_STEPS = Math.round(120 / GravitySim.DT);
+	const ENDGAME_LIMIT_STEPS = Math.round(600 / GravitySim.DT);
+
 	function checkEnded(career) {
 		if (career.ended !== CAREER_OPEN) return career.ended;
-		if (career.evacuating) return career.ended;
+		if (career.evacuating || career.flying) {
+			career.recoverySteps = -1;
+			return CAREER_OPEN;
+		}
 		const purse = career.ledger.purse;
-		if (purse < -1e-9 ||
-			(!career.flying && !careerShipUsable(career) &&
-				purse + 1e-9 < repairCost(career))) career.ended = CAREER_BROKE;
-		else if (career.cheat === null &&
-			career.padCount >= career.planetCount - coveredPlanets(career)) {
+		if (purse < -1e-9 || (!careerShipUsable(career) && purse + 1e-9 < repairCost(career))) {
+			if (career.recoverySteps < 0) {
+				career.recoverySteps = 0;
+				career.recoveryEpisode++;
+			}
+			return CAREER_OPEN;
+		}
+		career.recoverySteps = -1;
+		if (career.cheat === null && career.padCount >= career.planetCount - coveredPlanets(career)) {
 			career.ended = CAREER_COMPLETE;
 		}
 		return career.ended;
+	}
+
+	function liquidateCareer(career) {
+		career.ended = CAREER_BROKE;
+		const pads = career.galaxy ? career.galaxy.commercialPads :
+			(career.commercialPads = Array(OrbitWorld.PLANETS).fill(null));
+		for (let p = 0; p < career.pads.length; p++) {
+			const pad = career.pads[p];
+			if (!pad.catapult) continue;
+			const rail = pads[p];
+			if (!rail || pad.catapult.tier > rail.catapult.tier ||
+				(pad.catapult.tier === rail.catapult.tier && pad.battery.capacity > rail.battery.capacity)) {
+				pads[p] = { catapult: pad.catapult, panel: pad.panel, battery: pad.battery,
+					chargeKwh: pad.battery.capacity, reservedKwh: 0, commercial: true };
+			}
+			clearPad(career, p);
+		}
+		syncCareerNetwork(career);
 	}
 
 	/* --- politics: rot, bribes, arrest, rebellion (0.5.12) ---------------- */
@@ -3761,6 +3799,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.ledger.purse += amount;
 		career.bribes += 1;
 		career.bribeIncome += amount;
+		checkEnded(career);
 		if (!visitReports(career.ledger, market, planet)) {
 			/* an unreported value is cashed by the bribe, once: it regrows from here */
 			market.lastVisitStep[planet] = runStep;
@@ -3890,6 +3929,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* a first catapult brings a starter panel and battery (charged) with it;
 	 * a panel or battery needs a pad to sit on */
 	function buildGear(career, planet, kind, item) {
+		if (career.ended !== CAREER_OPEN) return false;
 		if (planet === career.capitalPlanet) return false;
 		if (rebelRail(career, planet)) return false;
 		const pad = career.pads[planet];
@@ -4463,6 +4503,15 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * SUN_SEC_PER_GAME_SEC pad seconds of sunlight per game second, so a step
 	 * buys DT of sunlight against the battery's leak in pad minutes */
 	function careerAdvance(career, steps, flightStep) {
+		if (career.ended !== CAREER_OPEN) return;
+		checkEnded(career);
+		if (career.recoverySteps >= 0) {
+			career.recoverySteps += steps;
+			if (career.recoverySteps >= ENDGAME_LIMIT_STEPS) {
+				liquidateCareer(career);
+				return;
+			}
+		}
 		const padSec = GravitySim.padSeconds(GravitySim.gameSeconds(steps));
 		const padMin = GravitySim.padMinutes(GravitySim.gameSeconds(steps));
 		for (let i = 0; i < career.pads.length; i++) {
@@ -4776,6 +4825,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		careerLandingFacts, careerGoalBodies,
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
 		createCareer, resetCareer, startCareer, checkEnded, placeShip,
+		ENDGAME_WARNING_STEPS, ENDGAME_LIMIT_STEPS, commercialPadAt,
 		COMMERCIAL_PAD, OWNER_COMMERCIAL, CAPITAL_PAD, OWNER_CAPITAL, OWNER_REBEL, capitalCovered,
 		createGalaxy, resetGalaxy, joinGalaxy, rivalSeed,
 		turretPeriod, turretAngle, padAt, padOwner, claimOwner, refreshNetwork, setCommercial,

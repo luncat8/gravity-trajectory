@@ -142,7 +142,6 @@
 	 * staggers the companies so they never all plan on the same world step */
 	const CAREER_RIVAL_GAP = Math.round(8 / GravitySim.DT);
 	const CAREER_RIVAL_PHASE = Math.round(3 / GravitySim.DT);
-	const CAREER_REBOOT_GAP = Math.round(30 / GravitySim.DT);
 	/* one way off any planet, priced honestly: the cheapest commercial shot
 	 * (a dry starter ship at the minimum speed on the starter rail) */
 	const CAREER_PURSE_RESERVE = GravityGame.commercialMinFee();
@@ -2414,6 +2413,17 @@
 		return false;
 	};
 
+	GravityBot.prototype.careerTryRecovery = function (r, runStep) {
+		const career = r.career;
+		if (career.recoverySteps < 0) {
+			if (career.at >= 0 && !GravityGame.careerShipUsable(career)) this.careerRepair(career, runStep);
+			return false;
+		}
+		this.careerBribe(career, r.sim, runStep);
+		r.readyStep = runStep + CAREER_RIVAL_GAP;
+		return true;
+	};
+
 	GravityBot.prototype.careerBribe = function (career, sim, runStep) {
 		const market = career.market;
 		const planet = career.at;
@@ -2494,7 +2504,7 @@
 			const career = r.career;
 			if (!career) return 'no company';
 			if (career.ended === GravityGame.CAREER_BROKE) {
-				return 'broke · restart in ' + Math.max(0, (r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s';
+				return 'broke · career over';
 			}
 			if (career.ended !== GravityGame.CAREER_OPEN) return 'complete';
 			if (career.evacuating) return 'evacuating · ' +
@@ -3505,15 +3515,12 @@
 				this.careerDropQueue(r);
 				GravityGame.setCommercial(career, -1);
 			}
-			if (career.ended === GravityGame.CAREER_BROKE) {
-				if (runStep >= r.readyStep) this.careerRestart(r, i, trade, runStep);
-				continue;
-			}
 			if (career.ended !== GravityGame.CAREER_OPEN) continue;
 			/* a company the page flies by hand keeps charging pads and flying
 			 * its own shots, but the bot never picks them */
 			if (!this.isRivalBot(i)) continue;
 			if (career.arrested || runStep < r.readyStep) continue;
+			if (this.careerTryRecovery(r, runStep)) continue;
 			this.careerLaunch(r, market, trade, fieldRate, runStep);
 		}
 	};
@@ -3566,6 +3573,7 @@
 			return false;
 		}
 		if (runStep < p.readyStep) return false;
+		if (this.careerTryRecovery(p, runStep)) return false;
 		const plan = this.careerNextShot(p, market, trade, runStep);
 		if (!plan) return false;
 		this.traceCareerPlan(p.index, plan, runStep);
@@ -4332,6 +4340,10 @@
 		 * in-game clock the player's turret uses; guest or owner of the pad does
 		 * not matter, the rail that fires spends its own charge */
 			if (runStep < r.turret.fireAt) return false;
+			if (GravityGame.padAt(career, r.turret.origin) !== r.turret.pad) {
+				this.careerDropQueue(r);
+				return false;
+			}
 			shot = r.turret;
 			r.turret = null;
 		} else {
@@ -4399,22 +4411,6 @@
 		this.careerBetweenFlights(career, r.sim, runStep);
 	};
 
-	/* a company that runs out of money is wound up and refinanced at its old HQ,
-	 * so the shared map never empties out of rival players */
-	GravityBot.prototype.careerRestart = function (r, index, trade, runStep) {
-		GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(this.seed, index), trade,
-			null, r.career.galaxy, r.career.hq);
-		r.basePlanet = r.career.hq;
-		r.shots.length = 0;
-		r.readyStep = runStep + CAREER_REBOOT_GAP + r.gapPhase;
-		r.idleTries = 0;
-		r.waitTries = 0;
-		r.panelTried = false;
-		this.careerDropQueue(r);
-		this.traceAdd(index, 'restart', 'broke · fresh HQ P' + r.career.hq +
-			' · retry in ' + ((r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s', runStep);
-	};
-
 	GravityBot.prototype.careerReady = function (index) {
 		const career = this.rivals[index] ? this.rivals[index].career : null;
 		return Boolean(career) && career.ended === GravityGame.CAREER_OPEN;
@@ -4426,7 +4422,6 @@
 	GravityBot.SLICE_CANDIDATES = SLICE_CANDIDATES;
 	GravityBot.CAREER_WAIT_SECONDS = CAREER_WAIT_SECONDS;
 	GravityBot.CAREER_RIVAL_GAP = CAREER_RIVAL_GAP;
-	GravityBot.CAREER_REBOOT_GAP = CAREER_REBOOT_GAP;
 	GravityBot.CAREER_PURSE_RESERVE = CAREER_PURSE_RESERVE;
 	GravityBot.CAREER_REPAIR_AT = CAREER_REPAIR_AT;
 	GravityBot.CAREER_ENERGY_WAIT_COST = CAREER_ENERGY_WAIT_COST;

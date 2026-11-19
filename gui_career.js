@@ -261,7 +261,7 @@ function toggleCommercialRail(selectOnly) {
 		careerNotice('standing rail on ' + planetName(career.at));
 	} else {
 		GravityGame.setCommercial(career, career.at);
-		careerNotice('commercial ' + GravityGame.COMMERCIAL_PAD.catapult.id +
+		careerNotice('commercial ' + GravityGame.commercialPadAt(career, career.at).catapult.id +
 			' · ' + planetName(career.at) + ' · drag to aim');
 	}
 	/* the drag range follows the newly selected rail's ceiling */

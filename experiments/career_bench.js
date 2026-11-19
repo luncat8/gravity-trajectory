@@ -521,11 +521,13 @@ check('career evacuation: full fare, partial fare and zero fare all return the s
 	assert.strictEqual(GravityGame.evacuationSeconds(career), GravityGame.CAREER.evacFreeSeconds);
 	assert.ok(GravityGame.evacuate(career, sim));
 	assert.strictEqual(ledger.purse, 0, 'zero-cost evacuation never makes the purse negative');
-	/* a negative purse is broke anywhere */
+	/* a negative purse starts the recovery window anywhere */
 	const v = makeWorld(7);
 	startCareer(v, 7);
 	v.ledger.purse = -0.01;
-	assert.strictEqual(GravityGame.checkEnded(v.career), GravityGame.CAREER_BROKE);
+	assert.strictEqual(GravityGame.checkEnded(v.career), GravityGame.CAREER_OPEN);
+	GravityGame.careerAdvance(v.career, GravityGame.ENDGAME_LIMIT_STEPS);
+	assert.strictEqual(v.career.ended, GravityGame.CAREER_BROKE);
 });
 
 check('commercial EMC-1: chosen on any planet, never claims or blocks building', () => {

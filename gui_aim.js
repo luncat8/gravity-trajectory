@@ -218,7 +218,12 @@ function tickTurrets() {
 
 function tickTurret() {
 	if (!turret.pending || game.clockSteps < turret.fireAt || careerPaused) return false;
-	/* Same-step clicks can occur on either side of a barrel firing, even
+		const career = playerCareer();
+	if (career.ended !== GravityGame.CAREER_OPEN || GravityGame.padAt(career, turret.body) !== turret.pad) {
+		cancelTurret();
+		return false;
+	}
+/* Same-step clicks can occur on either side of a barrel firing, even
 	 * while another player holds time. Keep the order without wall pauses. */
 	recordCareerAction('fireQueued');
 	turret.pending = false;

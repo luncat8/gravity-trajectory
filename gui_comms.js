@@ -10,8 +10,10 @@ const HH_FACTS = CommsCopy.HH_FACTS;
 const H_SLOTS = CommsCopy.H_SLOTS;
 const H_ACTIONS = CommsCopy.H_ACTIONS;
 const H_TOPICS = CommsCopy.H_TOPICS;
+const ENDGAME_WARNING = Object.freeze({ id: 'endgame-warning' });
 const RETURN_TOW = Object.freeze({ id: 'return-tow' });
 const commsOfferedTows = new WeakSet();
+const commsWarnedEpisodes = new WeakMap();
 
 const commsButton = $('commsButton');
 const commsBadge = $('commsBadge');
@@ -109,6 +111,7 @@ function commsEscapeHtml(text) {
 
 function commsFindingKey(reason, planet) {
 	if (!reason) return '';
+	if (reason === ENDGAME_WARNING) return reason.id + '|' + commsState.career.recoveryEpisode;
 	return reason.id + '|P' + planet + '|' +
 		(reason.need === null || reason.need === undefined ? '' : String(reason.need)) + '|' +
 		(reason.have === null || reason.have === undefined ? '' : String(reason.have)) + '|' +
@@ -132,8 +135,10 @@ function commsResetVisit(career, planet) {
 }
 
 function commsActiveFinding(career) {
-	if (!career || !careerRule() || replay.on || careerActionReplay.active || playerIsBot() ||
-		career.ended !== GravityGame.CAREER_OPEN ||
+	if (!career || !careerRule() || replay.on || careerActionReplay.active ||
+		career.ended !== GravityGame.CAREER_OPEN) return null;
+	if (career.recoverySteps >= GravityGame.ENDGAME_WARNING_STEPS) return ENDGAME_WARNING;
+	if (playerIsBot() ||
 		activeSim().status === STATUS_FLYING || careerWaitBusy() || turret.pending) return null;
 	const visit = CommsCopy.returnTowVisit(career);
 	if (visit && (commsState.callReason === RETURN_TOW || !commsOfferedTows.has(visit))) return RETURN_TOW;
@@ -183,7 +188,7 @@ function commsBuildSnapshot() {
 function commsRefreshLatest(snapshot) {
 	if (!commsState.exchanges.length) return;
 	const latest = commsState.exchanges[commsState.exchanges.length - 1];
-	const rendered = CommsCopy.renderTopic(latest.id, snapshot, commsState.asked);
+	const rendered = commsRenderTopic(latest.id, snapshot);
 	latest.question = rendered.question;
 	latest.answer = rendered.text;
 	latest.actions = rendered.actions;
@@ -204,11 +209,18 @@ function commsTick() {
 		commsState.snapshotDirty = true;
 	}
 	const second = game.on && !replay.on && !careerActionReplay.active ? Math.floor(game.clockSteps * DT) : 0;
+	const unwarned = reason === ENDGAME_WARNING && commsWarnedEpisodes.get(career) !== career.recoveryEpisode;
+	if (unwarned && commsState.open) {
+		commsWarnedEpisodes.set(career, career.recoveryEpisode);
+		commsAsk(reason.id);
+	}
 	if (key && !commsState.open && !commsState.callKey && second !== commsState.lastCallSecond &&
-		(reason === RETURN_TOW || (!commsState.seen[key] && !commsState.dismissed[key]))) {
+		(reason === ENDGAME_WARNING ? unwarned :
+			reason === RETURN_TOW || (!commsState.seen[key] && !commsState.dismissed[key]))) {
 		commsState.callKey = key;
 		commsState.callReason = reason;
 		if (reason === RETURN_TOW) commsOfferedTows.add(CommsCopy.returnTowVisit(career));
+		else if (unwarned) commsWarnedEpisodes.set(career, career.recoveryEpisode);
 		else commsState.seen[key] = true;
 		commsState.lastCallSecond = second;
 	}
@@ -230,7 +242,7 @@ function commsAsk(topicId) {
 	const id = typeof topicId === 'string' && topicId ? topicId : CommsCopy.H_META_ID;
 	const snapshot = commsBuildSnapshot();
 	if (id !== CommsCopy.H_META_ID && H_TOPICS[id]) commsState.asked[id] = true;
-	const rendered = CommsCopy.renderTopic(id, snapshot, commsState.asked);
+	const rendered = commsRenderTopic(id, snapshot);
 	const latest = commsState.exchanges[commsState.exchanges.length - 1];
 	if (latest && latest.id === rendered.id) {
 		latest.question = rendered.question;
@@ -279,7 +291,8 @@ function commsRunAction(actId) {
 
 function commsOpen() {
 	if (commsState.open) return;
-	const topic = commsState.callReason === RETURN_TOW ? RETURN_TOW.id : CommsCopy.H_META_ID;
+	const reason = commsState.callReason;
+	const topic = reason === RETURN_TOW || reason === ENDGAME_WARNING ? reason.id : CommsCopy.H_META_ID;
 	commsState.open = true;
 	commsState.collapsed = false;
 	commsState.callKey = '';
@@ -346,8 +359,23 @@ function commsCtasMarkup(actions) {
 	return html;
 }
 
+function commsRenderTopic(id, snapshot) {
+	if (id !== ENDGAME_WARNING.id) return CommsCopy.renderTopic(id, snapshot, commsState.asked);
+	return { id, question: 'What happens if I cannot recover?', text: commsEndgameText(), actions: null };
+}
+
+function commsEndgameText() {
+	const career = commsState.career;
+	if (career.ended === GravityGame.CAREER_BROKE) return 'Career over. Your factories are now commercial.';
+	if (career.recoverySteps < 0) return 'Your company has recovered. The endgame timer is cleared.';
+	const left = Math.ceil((GravityGame.ENDGAME_LIMIT_STEPS - career.recoverySteps) * DT);
+	return 'Endgame warning: recover within ' + left + ' game seconds or your career ends. ' +
+		'Your factories will become commercial and other players can build there.';
+}
+
 function commsReasonText(reason) {
 	if (!reason) return '';
+	if (reason === ENDGAME_WARNING) return commsEndgameText();
 	if (reason === RETURN_TOW) {
 		const career = commsState.career;
 		const gameSec = Math.round(GravityGame.evacuationSeconds(career));

@@ -379,7 +379,9 @@ function setCommercialOption(career, show, busy, commercialOn, usable) {
 	const commercial = show && at !== career.capitalPlanet;
 	launchCommercialBtn.hidden = !commercial;
 	if (!commercial) return { ready: false, shown: false };
-	const lift = padCap(career, GravityGame.COMMERCIAL_PAD.catapult, GravityGame.COMMERCIAL_PAD.battery);
+	const rail = GravityGame.commercialPadAt(career, at);
+	const label = 'commercial EMC-' + rail.catapult.tier;
+	const lift = padCap(career, rail.catapult, rail.battery);
 	const canLift = lift + 1e-9 >= SPEED_MIN;
 	const fire = commercialOn && armed && aimBody === at;
 	const fee = fire ? GravityGame.launchFee(career, at, aimSpeed)
@@ -388,14 +390,14 @@ function setCommercialOption(career, show, busy, commercialOn, usable) {
 	launchCommercialBtn.disabled = busy || !canLift;
 	launchCommercialBtn.classList.toggle('costly', poor);
 	launchCommercialBtn.classList.toggle('on', commercialOn);
-	launchCommercialBtn.textContent = (fire ? 'commercial launch · ' : 'commercial EMC-1 · ') + costText(fee);
+	launchCommercialBtn.textContent = (fire ? 'commercial launch · ' : label + ' · ') + costText(fee);
 	launchCommercialBtn.title = !canLift
-		? 'the commercial EMC-1 cannot lift ' + career.ship.mass.toFixed(1) +
+		? 'the ' + label + ' cannot lift ' + career.ship.mass.toFixed(1) +
 			' t (max ' + Math.round(lift) + ' px/s)'
-		: fire ? 'fire the armed shot from the commercial EMC-1 for ' + costText(fee)
-		: commercialOn ? 'commercial EMC-1 selected · drag from ' + planetName(at) +
+		: fire ? 'fire the armed shot from the ' + label + ' for ' + costText(fee)
+		: commercialOn ? label + ' selected · drag from ' + planetName(at) +
 			' to aim · click again for the standing rail'
-		: 'launch from the commercial EMC-1 on ' + planetName(at) +
+		: 'launch from the ' + label + ' on ' + planetName(at) +
 			' · always charged · lifts the ship to ' + Math.round(lift) +
 			' px/s · never claims the planet or blocks building yours';
 	return { ready: !launchCommercialBtn.disabled && !poor && usable, shown: true };
@@ -606,7 +608,7 @@ function launchRideTitle(career) {
 		return 'the imperial EMC-3 launches free and never runs dry';
 	}
 	if (owner === GravityGame.OWNER_COMMERCIAL) {
-		return 'the commercial EMC-1 charges ' +
+		return 'the ' + GravityGame.railOwnerText(career, aimBody) + ' charges ' +
 			costText(GravityGame.launchFee(career, aimBody, aimSpeed)) + ' and never runs dry';
 	}
 	return 'a rival EMC lifts this shot for a ' +
