@@ -120,6 +120,10 @@
 	const CAREER_ACCEPT_HOLD = Math.round(30 / GravitySim.DT);
 	/* no shot and no affordable departure for this many tries = a dead end */
 	const CAREER_STUCK_TRIES = 4;
+	/* The horizon a panel is priced over: a starter panel cannot open an
+	 * interplanetary shot inside the ordinary sit budget, and that is exactly
+	 * the pad worth refitting. */
+	const CAREER_RECHARGE_TRIES = 8;
 	/* a target another company is already queued for is worth this much less:
 	 * the first to queue harvests the landing, the second lands on a paid visit */
 	const CAREER_CONTESTED_COST = 2;
@@ -3312,6 +3316,7 @@
 			r.readyStep = r.gapPhase;
 			r.idleTries = 0;
 			r.waitTries = 0;
+			r.panelTried = false;
 			r.burn = 0;
 			r.burnTries = 0;
 			r.burnNext = CAREER_BURN_AT;
@@ -3460,6 +3465,7 @@
 					r.basePlanet = career.at;
 					r.idleTries = 0;
 					r.waitTries = 0;
+					r.panelTried = false;
 					this.traceAdd(i, 'evacuated', 'to HQ P' + career.hq, runStep);
 					if (this.isRivalBot(i)) {
 						r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
@@ -4114,25 +4120,33 @@
 
 	/* Accumulate the live leak-then-sun update over N game steps. Solar input
 	 * leaks too; treating the whole wait as one charging step overquotes it. */
-	function careerChargeAfter(pad, panel, light, steps) {
+	function careerChargeAfter(pad, panel, light, steps, ignoreReserve) {
 		const minutes = GravitySim.padMinutes(GravitySim.DT);
 		const decay = pad.battery.leak * minutes;
 		const sunSteps = decay ? Math.expm1(-decay * steps) / Math.expm1(-decay) : steps;
 		const next = OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, minutes * steps) +
 			OrbitTech.solarCharge(panel, light, GravitySim.padSeconds(GravitySim.DT) * sunSteps);
-		return Math.max(0, Math.min(next, pad.battery.capacity) - pad.reservedKwh);
+		return Math.max(0, Math.min(next, pad.battery.capacity) -
+			(ignoreReserve ? 0 : pad.reservedKwh));
 	}
 
 	/* Sample at the times we would actually retry. A higher speed ceiling
-	 * doesn't guarantee that the exit fan's new set of rungs hits a planet. */
-	GravityBot.prototype.careerRechargeExit = function (r, pad, panel, gap, tries) {
+	 * doesn't guarantee that the exit fan's new set of rungs hits a planet.
+	 * `ignoreReserve` asks what the pad holds, not what is left after promises:
+	 * only the panel-shop's sunk-cost question needs that reading. */
+	GravityBot.prototype.careerRechargeExit = function (r, pad, panel, gap, tries, ignoreReserve) {
 		const career = r.career;
 		const at = career.at;
-		const now = careerCargoSpeed(career, r.sim.speedLimit(at));
+		const source = this.departureSourceSim || this.probe;
+		/* For a *sit*, only a charge that beats the live rail is a gain: an
+		 * already-full pad has nothing to wait for. The panel shop asks a
+		 * different question (what would this pad fly if it were refitted),
+		 * so it must not apply the live-rail floor. */
+		const now = ignoreReserve ? 0 : careerCargoSpeed(career, r.sim.speedLimit(at));
 		for (let i = 1; i <= tries; i++) {
-			const free = careerChargeAfter(pad, panel, career.light[at], gap * i);
+			const free = careerChargeAfter(pad, panel, career.light[at], gap * i, ignoreReserve);
 			const cap = careerCargoSpeed(career, OrbitTech.speedLimit(free,
-				career.ship.mass, pad.catapult, r.sim.forceScale));
+				career.ship.mass, pad.catapult, source.forceScale));
 			if (Math.min(GravitySim.SPEED_MAX, cap) <= now + 1e-9) continue;
 			const speed = this.careerExitSpeed(at, cap);
 			if (speed && GravityGame.launchFee(career, at, speed) <= career.ledger.purse + 1e-9) return true;
@@ -4140,19 +4154,45 @@
 		return false;
 	};
 
+	/* A rail whose *live* charge cannot leave the pad is the pad the panel
+	 * shop exists for: sunlight and its next panel can still open it, and that
+	 * is cheaper than the tow. Only a label and a plan-reason need this
+	 * distinction; the sit budget itself is the ordinary one. */
+	GravityBot.prototype.careerRailBlocked = function (r) {
+		const career = r.career;
+		const at = career.at;
+		const pad = at < 0 ? null : GravityGame.padAt(career, at);
+		if (!pad || pad.catapult === null) return false;
+		if (GravityGame.padOwner(career, at) !== career.index) return false;
+		this.prepareCareerExitProbe(r.sim);
+		return this.careerExitSpeed(at, careerCargoSpeed(career, r.sim.speedLimit(at))) === 0;
+	};
+
 	/* Only invest when ordinary sunlight can't get us off this pad in time.
-	 * Keep the launch reserve and don't buy a panel to solve a weak rail. */
+	 * Keep the launch reserve and don't buy a panel to solve a weak rail.
+	 * Owned rails only: a guest cannot refit the host's pad. */
 	GravityBot.prototype.careerRechargePanel = function (r, pad, gap, tries, runStep) {
 		const career = r.career;
 		const at = career.at;
-		if (r.waitTries || pad !== career.pads[at]) return false;
+		if (pad !== career.pads[at] || GravityGame.padOwner(career, at) !== career.index) return false;
+		/* One decision per patience cycle: a sit that already chose a panel
+		 * does not re-shop on every retry. */
+		if (r.panelTried) return false;
 		const panel = careerNextItem(career, OrbitTech.KIND_PANEL, OrbitTech.PANELS, pad.panel);
 		if (!panel || !GravityGame.gearKnown(career, panel)) return false;
 		const cost = careerPrice(career, panel);
 		const fallback = GravityGame.canEvacuate(career) ? GravityGame.evacuationCost(career) : CAREER_PURSE_RESERVE;
+		/* Too poor to try: the pad's own wait is what makes the panel
+		 * affordable, so this refusal must not spend the cycle. */
 		if (cost >= fallback || career.ledger.purse + 1e-9 < cost + CAREER_PURSE_RESERVE) return false;
 		if (this.careerExitSpeed(at, careerCargoSpeed(career, r.sim.speedLimit(at)))) return false;
-		if (!this.careerRechargeExit(r, pad, panel, gap, tries)) return false;
+		/* Engaged from here: the cycle's one shop decision is spent whether a
+		 * panel is bought or the forecast refuses it. The forecast must still
+		 * see an exit — a panel is never bought on a promise sunlight cannot
+		 * keep. A backlog of promised charge is no reason to refuse: the panel
+		 * is exactly what makes that promise safe. */
+		r.panelTried = true;
+		if (!this.careerRechargeExit(r, pad, panel, gap, CAREER_RECHARGE_TRIES, true)) return false;
 		return this.careerBuyGear(career, at, OrbitTech.KIND_PANEL, panel, CAREER_PURSE_RESERVE,
 			runStep, 'recharge a blocked exit');
 	};
@@ -4162,24 +4202,40 @@
 	GravityBot.prototype.careerRechargeSit = function (r, runStep, losingFee = 0) {
 		const career = r.career;
 		const at = career.at;
-		if ((!losingFee && r.waitTries >= CAREER_SIT_TRIES) || at < 0 || !GravityGame.careerShipUsable(career) ||
-			GravityGame.padOwner(career, at) < 0) return false;
+		if (at < 0 || !GravityGame.careerShipUsable(career) || GravityGame.padOwner(career, at) < 0) return false;
 		const pad = GravityGame.padAt(career, at);
+		if (!losingFee && r.waitTries >= CAREER_SIT_TRIES) return false;
 		const tries = losingFee ? CAREER_SIT_TRIES : CAREER_SIT_TRIES - r.waitTries;
 		const gap = CAREER_SIT_GAP + (r.gapPhase || 0);
+		/* Fully promised: the pad's whole charge belongs to a launch that has
+		 * not flown, so waiting cannot free any of it and no shop decision
+		 * should spend the promise. Zero charge with no promise is still worth
+		 * a wait. */
+		if (pad.reservedKwh > 0 && pad.chargeKwh <= pad.reservedKwh + 1e-9) return false;
 		this.prepareCareerExitProbe(r.sim);
-		if (!this.careerRechargeExit(r, pad, pad.panel, gap, tries) &&
-			!this.careerRechargePanel(r, pad, gap, tries, runStep)) return false;
+		/* A panel answers the same exit question with a better answer (and it
+		 * is the cure for a rail whose own panel is too weak), so it is asked
+		 * before the resident forecast fills the exit cache with a 0. */
+		/* A commercial wait is a decision not to buy a ticket, not a decision
+		 * about the pad: the fare path never shops for a panel, because the
+		 * money it is protecting is exactly the money a panel would spend. */
+		const panel = losingFee ? false : this.careerRechargePanel(r, pad, gap, tries, runStep);
+		if (!panel && !this.careerRechargeExit(r, pad, pad.panel, gap, tries)) return false;
 		r.waitTries = Math.min(CAREER_SIT_TRIES, r.waitTries + 1);
-		/* Only the owner can upgrade the charging pad. */
 		this.careerBetweenFlights(career, r.sim, runStep);
 		r.readyStep = runStep + gap;
-		const why = losingFee ? 'wait instead of losing a ' + losingFee.toFixed(2) + ' commercial ticket' : 'drained pad';
+		const why = losingFee ? 'wait instead of losing a ' + losingFee.toFixed(2) + ' commercial ticket'
+			: this.careerRailBlocked(r) ? 'blocked rail' : 'drained pad';
+		const count = r.waitTries + '/' + CAREER_SIT_TRIES;
 		this.traceAdd(r.index, 'sit', why + ' · charge ' + pad.chargeKwh.toFixed(2) +
-			' kWh · sit ' + r.waitTries + '/' + CAREER_SIT_TRIES + ' · retry in ' +
+			' kWh · sit ' + count + ' · retry in ' +
 			((r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s', runStep);
 		return true;
 	};
+
+	/* A blocked owned rail with patience left: the ordinary recharge wait
+	 * (sunlight, or the next panel) is the way out, not the tow. Past the budget
+	 * it is a dead end and the evacuation may run. */
 
 	/* nothing flies from here: fly home out of a dead end after a couple of
 	 * tries, drop a contract whose target no trajectory reaches, then shop again */
@@ -4331,6 +4387,7 @@
 		r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
 		r.idleTries = 0;
 		r.waitTries = 0;
+		r.panelTried = false;
 		this.traceCareerLanding(career, r.sim, runStep);
 		this.careerBetweenFlights(career, r.sim, runStep);
 	};
@@ -4345,6 +4402,7 @@
 		r.readyStep = runStep + CAREER_REBOOT_GAP + r.gapPhase;
 		r.idleTries = 0;
 		r.waitTries = 0;
+		r.panelTried = false;
 		this.careerDropQueue(r);
 		this.traceAdd(index, 'restart', 'broke · fresh HQ P' + r.career.hq +
 			' · retry in ' + ((r.readyStep - runStep) * GravitySim.DT).toFixed(1) + ' s', runStep);
