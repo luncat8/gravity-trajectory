@@ -220,6 +220,13 @@ for (const condition of [0.6, 0]) {
 	market.lastVisitStep.fill(-100000);
 	assert.ok(bot.careerPlan(career, sim, market, 12, true).fromBook);
 	assert.strictEqual(bot.careerScan.tried, 0, 'a strong cash-paying book shot still saves the fan');
+	career.flights = 3;
+	assert.ok(bot.careerPlan(career, sim, market, 13, true));
+	assert.ok(bot.careerScan.book > 0 && bot.careerScan.tried > 0,
+		'every fourth departure must compare even a paying book shot with fresh harvest');
+	career.flights = 4;
+	assert.ok(bot.careerPlan(career, sim, market, 14, true).fromBook);
+	assert.strictEqual(bot.careerScan.tried, 0, 'ordinary departures keep the cheap book shortcut');
 	task.deadline = 14;
 	assert.strictEqual(bot.careerPlan(career, sim, market, 13, true), null, 'cannot pick up after the deadline');
 }
@@ -337,4 +344,35 @@ for (const [level, extra] of [['easy', 0], ['normal', 14], ['hard', 21]]) {
 	assert.strictEqual(career.contract, -1);
 	assert.ok(career.acceptAfterStep > 100 && !bot.careerAccept(career, 100, sim));
 }
-console.log('BOT GRAVITY OK · claims, exit kits, recharge, paid returns, book gate, refinements, shared shots and work legs');
+/* A Capital rail is free, but a payable landing may not exist. Contract
+ * churn on the third failed search must not reset the four-search tow clock. */
+{
+	const { bot, sim, career, Game } = opening();
+	const trade = bot.tradeSim;
+	const r = bot.careerPlayer;
+	career.at = career.capitalPlanet;
+	sim.relocate(career.at);
+	career.stranded = false;
+	career.ledger.purse = 0.54;
+	career.ship.condition = 0.07;
+	r.idleTries = 0;
+	for (let i = 1; i <= 4; i++) {
+		if (i === 3) {
+			career.contract = 0;
+			Object.assign(career.tasks[0], { kind: Game.TASK_DELIVERY, state: Game.TASK_ACCEPTED,
+				from: career.hq, to: career.capitalPlanet, tons: 2, reward: 1.7, deadline: 50000 });
+		}
+		bot.careerNoShot(r, trade, i * 100);
+		if (i < 4) assert.ok(!career.evacuating, 'give the free rail its bounded search budget');
+		if (i === 3) {
+			assert.strictEqual(career.contract, -1, 'the unreachable job was not dropped');
+			assert.strictEqual(r.idleTries, 3, 'dropping a job is not progress toward an exit');
+		}
+	}
+	assert.ok(career.evacuating, 'a non-stranded Capital landing must still get a tow');
+	assert.strictEqual(career.evacuations, 1);
+	assert.ok(Math.abs(career.evacLastPaid - 0.54) < 1e-9, 'tow uses the affordable quote');
+	assert.strictEqual(r.idleTries, 0, 'an actual recovery resets the no-exit clock');
+}
+
+console.log('BOT GRAVITY OK · claims, exit kits, recharge, paid returns, book exploration, refinements, shared shots, work legs and Capital recovery');

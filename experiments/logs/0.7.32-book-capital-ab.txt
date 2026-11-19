@@ -1,0 +1,33 @@
+# 0.7.32 book exploration / Capital recovery A-B
+# Baseline: 1bd3eb1; candidate: current working tree
+# SEEDS=1-12 SECONDS=1004 STATS=1 LOG=0 node experiments/career_gravity_bench.js
+BASELINE
+STATS seed 1 all · profit 0.030/s · property 53.07 · science 0.00 · flown 45.8 px/s · rot 330 · standing 27.35
+STATS seed 2 all · profit 0.021/s · property 50.77 · science 0.00 · flown 28.6 px/s · rot 217 · standing 16.35
+STATS seed 3 all · profit 0.016/s · property 32.63 · science 0.00 · flown 29.0 px/s · rot 411 · standing 19.72
+STATS seed 4 all · profit 0.023/s · property 44.22 · science 0.00 · flown 47.7 px/s · rot 257 · standing 29.29
+STATS seed 5 all · profit 0.036/s · property 59.64 · science 0.00 · flown 47.7 px/s · rot 238 · standing 27.98
+STATS seed 6 all · profit 0.018/s · property 39.56 · science 0.00 · flown 22.6 px/s · rot 339 · standing 26.04
+STATS seed 7 all · profit 0.024/s · property 41.31 · science 0.00 · flown 23.8 px/s · rot 355 · standing 29.30
+STATS seed 8 all · profit 0.009/s · property 29.59 · science 0.00 · flown 19.5 px/s · rot 430 · standing 34.90
+STATS seed 9 all · profit 0.017/s · property 43.61 · science 0.00 · flown 20.2 px/s · rot 274 · standing 19.06
+STATS seed 10 all · profit 0.023/s · property 37.46 · science 0.00 · flown 28.7 px/s · rot 299 · standing 14.84
+STATS seed 11 all · profit 0.026/s · property 49.62 · science 0.00 · flown 36.6 px/s · rot 264 · standing 21.15
+STATS seed 12 all · profit 0.022/s · property 42.88 · science 0.00 · flown 35.6 px/s · rot 305 · standing 22.21
+STATS TOTAL · profit 0.022/s · property 21.85 · science 0.00 · flown 32.1 px/s · rot 310 · standing 24.02 · visits 87% · contracts 4% · bribes 6% · tax 2%
+TOTAL rivals 24 · flights 366 · earned 39.06 · purse 158.60 · pads 115 · dead pads 1 · mean reach 5.06 · stuck 0 · rebel 10 · seized 10 · patients 80 · mean rot 23.8 · bribes 16 · arrests 0 · medic trips 0 · patients home 0
+CANDIDATE
+STATS seed 1 all · profit 0.032/s · property 53.07 · science 0.00 · flown 45.6 px/s · rot 333 · standing 26.93
+STATS seed 2 all · profit 0.021/s · property 50.77 · science 0.00 · flown 28.6 px/s · rot 217 · standing 16.35
+STATS seed 3 all · profit 0.016/s · property 32.63 · science 0.00 · flown 29.0 px/s · rot 411 · standing 19.72
+STATS seed 4 all · profit 0.023/s · property 44.22 · science 0.00 · flown 47.7 px/s · rot 257 · standing 29.29
+STATS seed 5 all · profit 0.028/s · property 47.51 · science 0.00 · flown 50.7 px/s · rot 191 · standing 30.60
+STATS seed 6 all · profit 0.018/s · property 39.56 · science 0.00 · flown 22.6 px/s · rot 339 · standing 26.04
+STATS seed 7 all · profit 0.024/s · property 41.31 · science 0.00 · flown 23.8 px/s · rot 355 · standing 29.30
+STATS seed 8 all · profit 0.009/s · property 29.59 · science 0.00 · flown 19.5 px/s · rot 430 · standing 34.90
+STATS seed 9 all · profit 0.021/s · property 37.97 · science 0.00 · flown 21.2 px/s · rot 292 · standing 11.74
+STATS seed 10 all · profit 0.024/s · property 54.34 · science 0.00 · flown 28.7 px/s · rot 305 · standing 14.22
+STATS seed 11 all · profit 0.026/s · property 49.62 · science 0.00 · flown 36.6 px/s · rot 264 · standing 21.15
+STATS seed 12 all · profit 0.022/s · property 42.88 · science 0.00 · flown 35.6 px/s · rot 305 · standing 22.21
+STATS TOTAL · profit 0.022/s · property 21.81 · science 0.00 · flown 32.5 px/s · rot 308 · standing 23.54 · visits 87% · contracts 4% · bribes 6% · tax 2%
+TOTAL rivals 24 · flights 368 · earned 36.41 · purse 162.51 · pads 117 · dead pads 1 · mean reach 5.08 · stuck 0 · rebel 10 · seized 10 · patients 80 · mean rot 23.7 · bribes 16 · arrests 0 · medic trips 0 · patients home 0

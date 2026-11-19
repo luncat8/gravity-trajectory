@@ -1188,20 +1188,24 @@ check('an unreachable contract is dropped instead of parking a company forever',
 		accepted = GravityGame.acceptTask(career, i);
 	}
 	assert.ok(accepted && career.contract >= 0, 'no contract to test with');
-	w.bot.careerPlan = () => null;
+	/* Exercise exhausted-search recovery directly: the open fan can drop
+	 * a job earlier, before the no-shot counter is involved. */
 	/* the idle shop would immediately take a fresh offer; this check is about
 	 * the planless recovery itself */
 	w.bot.careerBetweenFlights = () => 0;
 	w.bot.traceReset();
 	const step = 900;
 	for (let i = 0; i < 3; i++) {
-		assert.strictEqual(w.bot.careerLaunch(r, w.market, w.trade, FIELD_RATE, step + i * 600), false);
+		w.bot.careerNoShot(r, w.trade, step + i * 600);
 	}
 	assert.strictEqual(career.contract, -1, 'the stale contract was never dropped');
-	assert.strictEqual(r.idleTries, 0, 'a recovery must reset the idle counter');
+	assert.strictEqual(r.idleTries, 3, 'a contract drop must preserve the no-exit counter');
 	assert.ok(w.bot.trace.some(line => line.includes('dropped the unreachable contract')),
 		'the contract drop is missing from the decision trace');
 	assert.ok(r.readyStep <= step + 1201, 'the company must retry at once');
+	w.bot.careerNoShot(r, w.trade, step + 1800);
+	assert.strictEqual(r.idleTries, 4, 'another failed search must advance the counter');
+	assert.ok(!career.evacuating, 'an HQ no-shot must not tow the company to itself');
 });
 
 check('a finished career gives its queued pad charge back', () => {

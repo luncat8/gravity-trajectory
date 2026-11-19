@@ -185,6 +185,7 @@
 		(CAREER_BURN_ANGLES + 2 + 2 * CAREER_BURN_REFINE + 1);
 	/* Only a high-scoring AND profitable book shot can skip the fan. */
 	const CAREER_BOOK_ENOUGH = 6;
+	const CAREER_BOOK_EXPLORE_EVERY = 4;
 	const CAREER_BOOK_MIN_NET = CAREER_PURSE_RESERVE;
 	/* below this a plan is a donation unless it lands where an EMC can be built */
 	const CAREER_MIN_SCORE = 0;
@@ -3066,7 +3067,11 @@
 				bookNet = this.careerEval.cashNet - best.exitCost;
 			}
 		}
-		if (best.score >= CAREER_BOOK_ENOUGH && bookNet >= CAREER_BOOK_MIN_NET) return best;
+		/* Even a paying shuttle must compete with fresh harvest periodically.
+		 * Use completed flights, not planner calls: fallback scans and actors
+		 * sharing this controller must not spend each other's exploration turn. */
+		const explore = career.flights % CAREER_BOOK_EXPLORE_EVERY === CAREER_BOOK_EXPLORE_EVERY - 1;
+		if (!explore && best.score >= CAREER_BOOK_ENOUGH && bookNet >= CAREER_BOOK_MIN_NET) return best;
 
 		const level = career === this.careerPlayer.career ? this.specFor(PLAYER_INDEX) : this.spec();
 		const refines = level.careerRefines;
@@ -4258,7 +4263,9 @@
 		}
 		this.careerBetweenFlights(career, sim, runStep);
 		if (career.evacuating) recovery = 'evacuation started';
-		if (recovery) r.idleTries = 0;
+		/* Dropping a job changes the search, not the ship's ability to leave.
+		 * Resetting here lets repeated board churn postpone the tow forever. */
+		if (career.evacuating) r.idleTries = 0;
 		const gap = recovery ? 1 : CAREER_RIVAL_GAP + (r.gapPhase || 0);
 		r.readyStep = runStep + gap;
 		this.traceAdd(r.index, 'no shot', why + ' · idle ' + r.idleTries +
