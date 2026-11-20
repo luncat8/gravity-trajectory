@@ -19,6 +19,7 @@
   .del { opacity: 1; cursor: pointer; }
   .del line { stroke: red; stroke-width: 2.5; stroke-linecap: round; pointer-events: none; }
   .del .hit { fill: transparent; pointer-events: all; }
+  .origdot { fill: #fff; stroke: #334155; stroke-width: 2; }
   table { border-collapse: collapse; margin-top: 14px; width: 800px; max-width: 100%; }
   th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; font-size: 14px; }
   th { background: #f3f4f6; font-weight: 600; }
@@ -36,6 +37,7 @@
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .legend i { width: 13px; height: 13px; border-radius: 50%; display: inline-block; border: 1px solid #1e3a8a; }
   .legend i.line { border-radius: 0; border: 0; height: 3px; width: 18px; }
+  .panel { border: 1px solid #e5e7eb; background: #f9fafb; border-radius: 6px; padding: 10px 12px; margin-top: 14px; max-width: 800px; }
   .controls { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; font-size: 13px; color: #444; margin: 10px 0; }
   .controls label { display: inline-flex; align-items: center; gap: 6px; }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; font-size: 13px; color: #444; }
@@ -68,6 +70,17 @@
 
 <svg id="map" viewBox="0 0 800 220" role="img" aria-label="gravity roster on the line"></svg>
 <div class="legend" id="legend"></div>
+
+<div class="panel">
+  <div class="caption">original seed map <span>the game's own draw · no roster</span></div>
+  <div class="actions">
+    <label>Planets <input id="origPlanets" class="num" type="number" min="1" step="1" value="13"></label>
+    <label>Seed <input id="origSeed" class="num" type="number" min="0" step="1" value="1"></label>
+    <button id="origGen">Generate</button>
+    <button id="origClear">Clear</button>
+  </div>
+  <div class="stats" id="origNote"></div>
+</div>
 
 <table>
   <thead>
@@ -167,6 +180,10 @@
 	  over the design (orange line); "all saved maps" aggregates every record.
 	→ generate: the rows are drawn in order onto the field's 0.05 grid and the result is
 	  the blue histogram, with the generator's own draw (grey) behind it for comparison.
+	→ original seed map: Planets + Seed and Generate run `MapGen.originalDraw`
+	  (`gravity(seed, p)` for p in 0..n, no roster) and the values land on the line as
+	  hollow dots — duplicates stacked, values outside the design range counted in the
+	  note instead of drawn — so a seed's own field can be read against the design.
 	→ save: the design is written to `map_fields.js` beside this page (a data script
 	  like `saved_maps.js`). The game cannot play a designed field yet — that is
 	  `0.7.35-plan-playable-fields.md`, and it is the one open integration.
@@ -213,6 +230,8 @@ let dragId = null;
 let field = { values: [], seed: 1, name: 'field 1' };
 let fields = [];
 let savedFields = [];
+/* the seed-map panel's overlay: null until Generate runs it */
+let origMap = null;
 
 const massEl = $('shipMass');
 const gapEl = $('gap');
@@ -223,6 +242,8 @@ const drawSeedEl = $('drawSeed');
 const fieldNameEl = $('fieldName');
 const mapPickEl = $('mapPick');
 const fieldPickEl = $('fieldPick');
+const origPlanetsEl = $('origPlanets');
+const origSeedEl = $('origSeed');
 
 const shipMass = () => Math.max(1, Number(massEl.value) || OrbitTech.SHIP_DRY_MASS);
 const gapPx = () => Math.max(50, Number(gapEl.value) || MapGen.NEIGHBOUR_GAP);
@@ -294,6 +315,9 @@ function refreshLegend() {
 	parts.push(`<span><i style="background:${COL_EMC1}"></i>${OrbitTech.CATAPULTS[0].id} · up to ${caps[0].toFixed(1)} px/s</span>`);
 	parts.push(`<span><i style="background:${COL_EMC2}"></i>${OrbitTech.CATAPULTS[1].id} · up to ${caps[1].toFixed(1)} px/s</span>`);
 	parts.push(`<span><i style="background:${COL_HEAVY}"></i>beyond ${OrbitTech.CATAPULTS[1].id}</span>`);
+	if (origMap) {
+		parts.push(`<span><i style="background:#fff;border:2px solid #334155"></i>original seed map · ${origMap.values.length} planets · seed ${origMap.seed}</span>`);
+	}
 	parts.push(`<span>ship ${shipMass().toFixed(2)} t · gap ${gapPx()} px</span>`);
 	$('legend').innerHTML = parts.join('');
 }
@@ -361,6 +385,82 @@ function drawMap() {
 			removeRow(p.id);
 		});
 	});
+
+	drawOrigDots(caps, gap);
+}
+
+/* --- the original seed map --------------------------------------------- */
+
+/* the panel's inputs, corrected to what can be generated: a universe of
+ * 1..OrbitWorld.PLANETS planets, a seed as a non-negative whole number */
+function origUniverse() {
+	const text = origPlanetsEl.value.trim();
+	const value = text === '' ? NaN : Math.floor(Number(text));
+	const n = Number.isFinite(value) ? Math.min(OrbitWorld.PLANETS, Math.max(1, value)) : 13;
+	origPlanetsEl.value = n;
+	return n;
+}
+
+function origSeedValue() {
+	const text = origSeedEl.value.trim();
+	const value = text === '' ? NaN : Math.floor(Number(text));
+	const seed = (Number.isFinite(value) && value >= 0 ? value : 1) >>> 0;
+	origSeedEl.value = seed;
+	return seed;
+}
+
+function generateOrig() {
+	const seed = origSeedValue();
+	origMap = { seed: seed, values: MapGen.originalDraw(seed, origUniverse()) };
+	renderOrigNote();
+	refreshLegend();
+	drawMap();
+}
+
+function clearOrig() {
+	origMap = null;
+	renderOrigNote();
+	refreshLegend();
+	drawMap();
+}
+
+function renderOrigNote() {
+	const note = $('origNote');
+	if (!origMap) {
+		note.textContent = 'generate to overlay the game\'s own draw on the line';
+		return;
+	}
+	const stats = MapGen.fieldStats(origMap.values, shipMass(), gapPx());
+	const rows = [];
+	rows.push(`<b>${stats.n}</b> planets · seed ${origMap.seed}`);
+	rows.push(`<b>${stats.tiers[0]}</b> no well`);
+	rows.push(`<b>${stats.tiers[1]}</b> ${OrbitTech.CATAPULTS[0].id}`);
+	rows.push(`<b>${stats.tiers[2]}</b> ${OrbitTech.CATAPULTS[1].id}`);
+	rows.push(`<b>${stats.tiers[3]}</b> blocked`);
+	rows.push(`<b>${stats.light}</b> at ≤ ${MapGen.LIGHT_GRAVITY_MAX.toFixed(1)} for a first landing`);
+	const r = range();
+	const outside = origMap.values.filter(g => g < r.min || g > r.max).length;
+	if (outside) rows.push(`<span class="warn">${outside} outside the design range</span>`);
+	note.innerHTML = rows.join(' · ');
+}
+
+/* the overlay: one hollow dot per planet of the seed's own draw, duplicates
+ * stacked around the line; a value off the design range cannot be placed, so
+ * the note counts it instead */
+function drawOrigDots(caps, gap) {
+	if (!origMap) return;
+	const r = range();
+	const seen = new Map();
+	for (let p = 0; p < origMap.values.length; p++) {
+		const g = origMap.values[p];
+		if (g < r.min || g > r.max) continue;
+		const k = seen.get(g) || 0;
+		seen.set(g, k + 1);
+		const dy = k === 0 ? 0 : (k % 2 ? -1 : 1) * Math.ceil(k / 2) * 10;
+		const dot = el('circle', { cx: gToX(g), cy: LY + dy, r: 5, class: 'origdot' }, svg);
+		label(el('title', {}, dot),
+			`seed ${origMap.seed} · p${p + 1} · g ${g.toFixed(2)} · ${tierText(MapGen.tierOf(g, caps, gap))}`);
+	}
 }
 
 /* --- the table --------------------------------------------------------- */
@@ -587,6 +687,7 @@ function renderStats(saved) {
 function renderAll() {
 	refreshLegend();
 	drawMap();
+	renderOrigNote();
 	renderTable();
 	renderRosterNote();
 	ensureField();
@@ -633,6 +734,7 @@ function pointerPos(e) {
 }
 
 svg.addEventListener('pointerdown', e => {
+	if (e.target.closest('.origdot')) return;
 	if (e.target.closest('.planet')) return;
 	const { x, y } = pointerPos(e);
 	if (y <= LY) addRow(xToG(x));
@@ -695,6 +797,14 @@ $('reroll').addEventListener('click', () => {
 });
 
 $('addRow').addEventListener('click', () => addRow(1));
+
+$('origGen').addEventListener('click', generateOrig);
+$('origClear').addEventListener('click', clearOrig);
+/* no `change` handler here: editing a field must not redraw the line until
+ * Generate is pressed (Enter counts as pressing it) */
+[origPlanetsEl, origSeedEl].forEach(input => input.addEventListener('keydown', e => {
+	if (e.key === 'Enter') generateOrig();
+}));
 
 $('redraw').addEventListener('click', () => {
 	drawSeedEl.value = Math.floor(Math.random() * 1e6);
@@ -779,6 +889,7 @@ function loadField(index) {
 	drawMap();
 	renderTable();
 	renderRosterNote();
+	renderOrigNote();
 	drawChart();
 }
 

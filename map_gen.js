@@ -125,6 +125,16 @@
 		return values;
 	}
 
+	/* The game's own draw for one seed: `gravity(seed, p)` for p in 0..n — the
+	 * field a run of that universe plays, with no roster behind it. The helper's
+	 * seed-map panel puts this on the line to debug the generator itself. */
+	function originalDraw(seed, n) {
+		const count = Math.floor(clampNumber(n, 0, OrbitWorld.PLANETS, 0));
+		const values = [];
+		for (let p = 0; p < count; p++) values.push(PlanetGravity.gravity(seed >>> 0, p));
+		return values;
+	}
+
 	/* --- distributions --------------------------------------------------- */
 
 	const BIN_WIDTH = 0.25;
@@ -157,7 +167,7 @@
 		const count = seeds === undefined ? 120 : seeds;
 		const planets = Math.max(1, Math.min(universe | 0, OrbitWorld.PLANETS));
 		for (let seed = 1; seed <= count; seed++) {
-			for (let p = 0; p < planets; p++) bins[binOf(PlanetGravity.gravity(seed, p))] += 1;
+			addToBins(bins, originalDraw(seed, planets));
 		}
 		const total = count * planets;
 		for (let i = 0; i < BIN_COUNT; i++) bins[i] /= total;
@@ -170,11 +180,14 @@
 		if (!Array.isArray(records)) return out;
 		for (let i = 0; i < records.length; i++) {
 			const record = records[i] || {};
-			const universe = clampNumber(record.universe, 1, OrbitWorld.PLANETS, 0);
+			const universe = Math.floor(clampNumber(record.universe, 1, OrbitWorld.PLANETS, 0));
 			if (!(universe > 0)) continue;
-			const values = [];
-			for (let p = 0; p < universe; p++) values.push(PlanetGravity.gravity(record.seed >>> 0, p));
-			out.push({ name: record.name || 'map ' + i, seed: record.seed >>> 0, universe: universe, values: values });
+			out.push({
+				name: record.name || 'map ' + i,
+				seed: record.seed >>> 0,
+				universe: universe,
+				values: originalDraw(record.seed, universe)
+			});
 		}
 		return out;
 	}
@@ -277,7 +290,7 @@
 	const MapGen = {
 		SURFACE_R, NEIGHBOUR_GAP, BIN_WIDTH, BIN_COUNT, LIGHT_GRAVITY_MAX,
 		wellDepth, launchSpeed, gravityForSpeed, tierLimits, railCaps, tierOf,
-		normaliseRows, rosterSize, drawField,
+		normaliseRows, rosterSize, drawField, originalDraw,
 		emptyBins, binOf, addToBins, binLabel, baselineShare, savedMapFields,
 		fieldStats, fieldsText, fieldRecord, readFields
 	};

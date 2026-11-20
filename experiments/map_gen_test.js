@@ -163,6 +163,12 @@ saved.forEach((entry, i) => {
 			'the saved map reads the game\'s own draw');
 	}
 });
+/* the seed-map panel's draw: the game's own, one value per planet */
+assert.deepStrictEqual(MapGen.originalDraw(42, 3),
+	[0, 1, 2].map(p => GravityGame.planetGravity(42, p)), 'the original draw is the game\'s own');
+assert.deepStrictEqual(MapGen.originalDraw(42, 0), [], 'no planets, no draw');
+assert.strictEqual(MapGen.originalDraw(42, 999).length, PLANETS, 'a draw cannot exceed the field');
+assert.deepStrictEqual(MapGen.originalDraw(42, 'junk'), [], 'a non-number universe draws nothing');
 const bins = MapGen.addToBins(MapGen.emptyBins(), [0, 0.1, 3.4, 3.5]);
 assert.strictEqual(bins.reduce((a, b) => a + b, 0), 4, 'every value lands in one bin');
 assert.strictEqual(MapGen.binOf(-1), 0, 'the bottom of the field is the first bin');
@@ -232,12 +238,14 @@ for (const file of ['planet_gravity.js', 'map_gen.js', 'saved_maps.js', 'map_fie
 }
 assert.ok(html.indexOf('planet_gravity.js') < html.indexOf('gravity_game.js'),
 	'index.html loads the field before the rules that re-export it');
+assert.ok(/id="origGen"/.test(page), 'the helper page has the original seed map panel');
 assert.ok(/<select id="mapPick"/.test(html), 'the saved-maps group has a picker');
 
-/* every `MapGen.name` / `PlanetGravity.name` the page calls must exist: the
- * page is inline and untested in a browser, so a rename would only show there */
-const exported = { MapGen: MapGen, PlanetGravity: PlanetGravity };
-for (const name of ['MapGen', 'PlanetGravity']) {
+/* every `MapGen.name` / `PlanetGravity.name` / `OrbitWorld.name` the page calls
+ * must exist: the page is inline and untested in a browser, so a rename would
+ * only show there */
+const exported = { MapGen: MapGen, PlanetGravity: PlanetGravity, OrbitWorld: OrbitWorld };
+for (const name of ['MapGen', 'PlanetGravity', 'OrbitWorld']) {
 	const used = new Set([...page.matchAll(new RegExp('\\b' + name + '\\.([A-Za-z_$][A-Za-z0-9_$]*)', 'g'))]
 		.map(match => match[1]));
 	assert.ok(used.size > 0, 'the page uses ' + name);
