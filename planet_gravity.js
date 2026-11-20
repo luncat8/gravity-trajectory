@@ -34,7 +34,17 @@
 	const BIAS_END = 2.8;
 	const BIAS_STRENGTH = 0.3;
 
+	let activeField = null;
+
 	function gravity(seed, planet) {
+		if (activeField && (seed >>> 0) === activeField.seed &&
+			Number.isInteger(planet) && planet >= 0 && planet < activeField.values.length) {
+			return activeField.values[planet];
+		}
+		return seededGravity(seed, planet);
+	}
+
+	function seededGravity(seed, planet) {
 		const u = OrbitWorld.hash01(seed, planet, SALT_GRAVITY);
 		let g = MIN + (u * CHOICES - 0.5) / STEPS;
 		if (g > BIAS_START && g < BIAS_END) {
@@ -54,10 +64,40 @@
 		return g === 0 ? 0 : Math.max(MIN, Math.min(MAX, g));
 	}
 
+	/* The exact grid-index sequence is a collision-free identity for all opening
+	 * caches; it also distinguishes a short field from a longer one. */
+	function arm(values, seed) {
+		if (!values || !Number.isInteger(values.length) || values.length < 1 ||
+			values.length > OrbitWorld.PLANETS || !Number.isFinite(seed)) {
+			throw new RangeError('invalid planet gravity field');
+		}
+		const copy = new Float64Array(values.length);
+		let tag = '';
+		for (let i = 0; i < values.length; i++) {
+			if (!Number.isFinite(values[i])) throw new RangeError('invalid planet gravity value');
+			copy[i] = snap(values[i]);
+			tag += Math.round((copy[i] - MIN) * STEPS).toString(16).padStart(2, '0');
+		}
+		activeField = { values: copy, seed: seed >>> 0, tag: tag };
+	}
+
+	function disarm() {
+		activeField = null;
+	}
+
+	function armed() {
+		if (!activeField) return null;
+		return { values: Array.from(activeField.values), seed: activeField.seed, tag: activeField.tag };
+	}
+
+	function tagForSeed(seed) {
+		return activeField && (seed >>> 0) === activeField.seed ? activeField.tag : '';
+	}
+
 	const PlanetGravity = {
 		SALT_GRAVITY, MIN, MAX, STEPS, CHOICES,
 		BIAS_START, BIAS_END, BIAS_STRENGTH,
-		gravity, snap
+		gravity, seededGravity, snap, arm, disarm, armed, tagForSeed
 	};
 	if (typeof module !== 'undefined' && module.exports) module.exports = PlanetGravity;
 	else root.PlanetGravity = PlanetGravity;

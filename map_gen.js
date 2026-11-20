@@ -131,7 +131,7 @@
 	function originalDraw(seed, n) {
 		const count = Math.floor(clampNumber(n, 0, OrbitWorld.PLANETS, 0));
 		const values = [];
-		for (let p = 0; p < count; p++) values.push(PlanetGravity.gravity(seed >>> 0, p));
+		for (let p = 0; p < count; p++) values.push(PlanetGravity.seededGravity(seed >>> 0, p));
 		return values;
 	}
 

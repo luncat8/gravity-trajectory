@@ -1826,7 +1826,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* One world and one set of already-pinned HQs have the same opening table
 	 * for every actor; the company-specific seed only breaks equal choices. */
 	function careerOpenings(world, trade, mask, count, forcedHomes, sourceSim) {
-		const key = (world.seed >>> 0) + ':' + (trade.seed >>> 0) + ':' + trade.t.toFixed(3) + ':' +
+		const key = (world.seed >>> 0) + ':' + PlanetGravity.tagForSeed(world.seed) + ':' +
+			(trade.seed >>> 0) + ':' + trade.t.toFixed(3) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
 			openingMaskTag(mask, count) + ':' + openingMaskTag(forcedHomes, 0) + ':' +
@@ -1933,7 +1934,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const nAngles = angles || OPENING_ANGLES;
 		const nSpeeds = speeds || OPENING_SPEEDS;
 		const checkExit = strictExit !== false;
-		let key = (world.seed >>> 0) + ':' +
+		let key = (world.seed >>> 0) + ':' + PlanetGravity.tagForSeed(world.seed) + ':' +
 			(openingTrade ? (openingTrade.seed >>> 0) + ':' + openingTrade.t.toFixed(3) : '-') + ':' +
 			openingGravityScale + ':' + openingForceScale + ':' +
 			openingMaskTag(mask, openingMarket && Number.isFinite(openingMarket.planetCount)
@@ -2834,8 +2835,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	let resumeMemory = null;
 
 	function seatPlanKey(world, trade, mask, count, seatsWanted, sourceSim) {
-		return (world.seed >>> 0) + ':' + (trade.seed >>> 0) + ':' +
-			openingMaskTag(mask, count) + ':' + seatsWanted + ':' +
+		return (world.seed >>> 0) + ':' + PlanetGravity.tagForSeed(world.seed) + ':' +
+			(trade.seed >>> 0) + ':' + openingMaskTag(mask, count) + ':' + seatsWanted + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
 			(specialPlanets ? 1 : 0);

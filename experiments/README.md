@@ -74,7 +74,7 @@ with no fair opening: the registry is also the pool `load map` draws from, so
 | `gravity_bot` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
 | `gravity_gui`/`gui_*.js` page state | the one page test for the area (`politics_gui_test`, `obs_fragile_gui_test`, `career_pause_test`, `profit_monotonic_test`, …) |
 | saved maps: `saved_map.js`, `gui_maps.js`, the `?map=` boot, the map picker | `saved_map_test` |
-| `planet_gravity.js`, the map-generator helper page (`map_gen.js`, `map_fields.js`) | `map_gen_test` |
+| `planet_gravity.js`, the map-generator helper page (`map_gen.js`, `map_fields.js`) | `map_gen_test`, `planet_gravity_field_test` |
 | compact career playback and bot history | `career_actions_test`, `career_history_seed_test` (handover), `career_evacuation_test` (reported P8 returns and tow) |
 | full career save, clipboard fallback and H calls | `career_replay_test` |
 | `index.html`, script order, composer | `dom_smoke` once, plus the area test |
