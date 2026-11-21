@@ -28,19 +28,16 @@ const data = {
 		{ step: 8629, slot: 0, type: 'act', act: 'part', kind: 'tank', tier: 1 },
 		{ step: 8629, slot: 0, type: 'launch', origin: 8, angle: 1.6832083564071412, speed: 61.6279296875 },
 		{ step: 8717, slot: 0, type: 'fireQueued' },
-		{ step: 11145, slot: 0, type: 'act', act: 'part', kind: 'tank', tier: 0 },
-		{ step: 11145, slot: 0, type: 'act', act: 'part', kind: 'hold', tier: 0 }
+		{ step: 11145, slot: 0, type: 'act', act: 'part', kind: 'tank', tier: 0 }
 	],
 	events: [
 		[11, 0, 'fire', 'P1 · v53.7 · purse 6.00', 1, 5.692968222703228, 53.74609375],
 		[3167, 0, 'land', 'P8 · purse 7.48 · 1 pads', 8, 1, 3156],
-		[3167, 0, 'gear', 'P8 HOLD-8 · 8 t'],
-		[3167, 0, 'contract', 'P2→P5 · reward 1.94 · best board score +1.78'],
 		[3167, 0, 'ready', 'shop done · next try in 8.0 s'],
-		[3756, 0, 'fire', 'P8 · v65.0 · purse 0.14', 8, 2.136673450488476, 64.9814453125],
-		[8629, 0, 'land', 'P8 · purse 1.09 · 2 pads', 8, 1, 4873],
-		[8717, 0, 'fire', 'P8 · v61.6 · purse 0.48', 8, 1.6832083564071412, 61.6279296875],
-		[11145, 0, 'land', 'P8 · purse 0.95 · 2 pads', 8, 1, 2428]
+		[3756, 0, 'fire', 'P8 · v65.0 · purse 0.90', 8, 2.136673450488476, 64.9814453125],
+		[8629, 0, 'land', 'P8 · purse 1.73 · 2 pads', 8, 1, 4873],
+		[8717, 0, 'fire', 'P8 · v61.6 · purse 1.12', 8, 1.6832083564071412, 61.6279296875],
+		[11145, 0, 'land', 'P8 · purse 1.51 · 2 pads', 8, 1, 2428]
 	]
 };
 
@@ -69,11 +66,11 @@ assert.equal(env.context.CommsCopy.returnTowVisit(career), null, 'one return is 
 assert(el('commsBadge').hidden && el('launchMenuBtn').hidden, 'playback is not interactive');
 advance(data.steps);
 run('commsTick()');
-assert.match(el('careerMsg').textContent, /step 11145 · YOU history matches \(9 events\)/);
+assert.match(el('careerMsg').textContent, /step 11145 · YOU history matches \(7 events\)/);
 assert.equal(career.at, 8);
 assert.equal(career.stranded, false);
 assert(Game.careerCanFire(career, sim, 8, Sim.SPEED_MIN), 'the standing rail can still launch');
-const quote = 'evacuate · 0.95 · ' + Math.round(Game.evacuationSeconds(career)) + ' s';
+const quote = 'evacuate · 1.51 · ' + Math.round(Game.evacuationSeconds(career)) + ' s';
 assert.equal(el('launch').textContent, quote, 'tow is primary while no other launch action is ready');
 assert.equal(el('launch').disabled, false);
 assert.equal(el('launchMenuBtn').hidden, false);
@@ -91,10 +88,10 @@ run('cancelAim(); updateLiveHud()');
 assert.equal(el('launch').textContent, quote);
 
 const evacSec = Math.round(Game.evacuationSeconds(career));
-assert.match(el('commsCallReason').textContent, new RegExp('back to P8.*tow to HQ\\? 0\\.95 · ' + evacSec + ' s'));
+assert.match(el('commsCallReason').textContent, new RegExp('back to P8.*tow to HQ\\? 1\\.51 · ' + evacSec + ' s'));
 env.click('commsAnswerCall');
-assert.match(el('commsAnswer').textContent, new RegExp('HQ P1 for 0\\.95; it takes ' + evacSec + ' s'));
-assert.match(el('commsCtas').innerHTML, new RegExp('data-comms-act="evac">evacuate · 0\\.95 · ' + evacSec + ' s'));
+assert.match(el('commsAnswer').textContent, new RegExp('HQ P1 for 1\\.51; it takes ' + evacSec + ' s'));
+assert.match(el('commsCtas').innerHTML, new RegExp('data-comms-act="evac">evacuate · 1\\.51 · ' + evacSec + ' s'));
 const purse = career.ledger.purse;
 career.ledger.purse = 0;
 run('commsInvalidate(); commsTick(); updateLiveHud()');

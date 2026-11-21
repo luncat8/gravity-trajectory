@@ -60,7 +60,8 @@ const CONFIGS = [
 	{ universe: 26, seats: 4, want: 1, from: 5, note: 'four companies on 26' },
 	{ universe: 13, seats: 3, seeds: [42, 7, 3, 520383], note: 'career default · a page-test world' },
 	{ universe: 13, seats: 3, seeds: [93293], note: 'career default' },
-	{ universe: 13, seats: 2, want: 3, from: 6, note: 'YOU + one rival · a lite easy start' }
+	{ universe: 13, seats: 2, want: 3, from: 6, note: 'YOU + one rival · a lite easy start' },
+	{ universe: 13, seats: 4, want: 2, from: 6, note: 'four companies · a lite 4-seat start' }
 ];
 
 function tradeWorld(seed, universe) {

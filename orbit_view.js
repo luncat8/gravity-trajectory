@@ -195,6 +195,7 @@
 	let paints = 0;
 	const stillState = new Uint8Array(OrbitSim.PLANETS);
 	const stillPort = new Int32Array(OrbitSim.PLANETS);
+	const stillSpec = new Uint8Array(OrbitSim.PLANETS);
 
 	function makeGlow(fill) {
 		const sprite = document.createElement('canvas');
@@ -978,14 +979,20 @@
 		ctx.restore();
 		stillState.set(sim.planetState);
 		stillPort.set(sim.planetPort);
+		for (let p = 0; p < OrbitSim.PLANETS; p++) {
+			const port = sim.planetPort[p];
+			stillSpec[p] = port === NO_PORT ? 255 : sim.portSpec[port];
+		}
 		stillDirty = false;
 	}
 
-	/* a colony founded or lost recolours a planet and its orbit */
+	/* a colony founded, lost, or shifting export spec recolours its planet and orbit */
 	function stillStale() {
 		if (stillDirty) return true;
 		for (let p = 0; p < OrbitSim.PLANETS; p++) {
-			if (stillState[p] !== sim.planetState[p] || stillPort[p] !== sim.planetPort[p]) return true;
+			const port = sim.planetPort[p];
+			const spec = port === NO_PORT ? 255 : sim.portSpec[port];
+			if (stillState[p] !== sim.planetState[p] || stillPort[p] !== port || stillSpec[p] !== spec) return true;
 		}
 		return false;
 	}

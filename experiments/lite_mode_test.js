@@ -82,13 +82,19 @@ assert.ok(fullAudio.contexts > 0, 'a full page asks for audio on a gesture');
 console.log('boot: lite career on saved seed ' + liteScene.game.seed + ' in ' + bootMs +
 	' ms, 1 fast-forward, 0 AudioContext');
 
-/* each default difficulty with saved openings boots on one of them */
+/* each default difficulty with saved openings boots on one of them, as does a 4-seat roster */
 const easy = loadPage({ search: '?lite=1&mode=career&bot=easy' });
 assert.ok(savedSeeds(13, 2).includes(easy.context.GravityScene.game.seed), 'easy boots on a saved 2-seat opening');
 assert.strictEqual(easy.context.GravityScene.game.galaxy.mapSeats.length, 2, 'YOU + one rival');
 assert.strictEqual(easy.context.GravityMaps.armed(), null, 'easy used its record');
+const four = loadPage({ search: '?lite=1&mode=career&players=4' });
+const liteSeeds4 = savedSeeds(13, 4);
+assert.ok(liteSeeds4.includes(four.context.GravityScene.game.seed), '4-seat career boots on a saved opening');
+assert.strictEqual(four.context.GravityScene.game.galaxy.mapSeats.length, 4, 'four companies');
+assert.strictEqual(four.context.GravityMaps.armed(), null, '4-seat career used its record');
 
-/* `new seed` cycles the saved openings of the roster, Shift rolls any world */
+/* `new seed` cycles the saved openings of the roster, Shift rolls any world,
+ * and a single-record roster rolls fresh instead of repeating the current seed */
 const order = Array.from(new Set(liteSeeds3)).sort((a, b) => a - b);
 const before = liteScene.game.seed;
 lite.fireElement(lite.elements.get('gameNewSeed'), 'click', { shiftKey: false });
@@ -101,6 +107,11 @@ assert.deepStrictEqual(plain(liteScene.game.galaxy.mapSeats), nextRecord.seats, 
 assert.strictEqual(lite.context.newRunSeed(true) >= 1, true, 'Shift asks for a random world');
 lite.context.Math.random = () => 0.123456;
 assert.strictEqual(lite.context.newRunSeed(true), lite.context.randomSeed(), 'Shift is randomSeed');
+const oneRecord = loadPage({ search: '?lite=1&mode=career&universe=26' });
+assert.strictEqual(oneRecord.context.GravityScene.game.seed, 4, '26-world 3-seat boots on its single saved seed');
+oneRecord.context.Math.random = () => 0.25;
+assert.notStrictEqual(oneRecord.context.newRunSeed(false), 4,
+	'new seed never repeats the live seed when only one saved record fits');
 
 /* --- 2. same run, lite or not ------------------------------------------- */
 
@@ -150,6 +161,10 @@ paints = orbit.paints();
 still.fireWindow('resize', {});
 still.runFrames(10);
 assert.strictEqual(orbit.paints(), paints + 1, 'a resize repaints once');
+paints = orbit.paints();
+still.context.OrbitScene.sim.portSpec[0] = (still.context.OrbitScene.sim.portSpec[0] + 1) % 6;
+still.runFrames(10);
+assert.strictEqual(orbit.paints(), paints + 1, 'a colony export-spec change repaints once');
 still.choose('viewSpace');
 still.choose('srcPorts');
 assert.ok(!orbit.still(), 'moving ports are gravity bodies: live again');

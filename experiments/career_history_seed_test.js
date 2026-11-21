@@ -3,7 +3,7 @@
 
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { loadPage } = require('./dom_stub.js');
+const { loadPage, mapSearch } = require('./dom_stub.js');
 
 const ENDPOINT = 35922;
 const OPENING = '?rule=career&seed=671241&bot=normal&players=3';
@@ -49,7 +49,10 @@ for (const handover of [false, true]) {
 	assert.match(log, /YOU plan .*score.*fee/);
 	if (handover) {
 		assert.match(log, /YOU start · HQ P\d+ · human[\s\S]*YOU launch [\s\S]*YOU fire [\s\S]*YOU land [\s\S]*YOU controller · player=bot/);
-	} else assert.match(log, /YOU no shot .*retry/);
+	} else {
+		assert(flights >= 5);
+		assert.match(log, /YOU start · HQ P\d+ · bot[\s\S]*YOU ready · shop done[\s\S]*YOU queue [\s\S]*YOU gear · P\d+ EMC-1/);
+	}
 
 	live.click('gameCopy');
 	const text = live.clipboardText;
@@ -73,3 +76,26 @@ for (const handover of [false, true]) {
 	console.log('CAREER HISTORY OK · 671241 step ' + ENDPOINT + ' · ' + (handover ? 'human to bot' : 'bot opening') +
 		' · ' + flights + ' flights · ' + data.events.length + ' events matched · ' + text.length + ' chars');
 }
+
+/* Genuine dead end (heavy gravity + weak rail): YOU logs `no shot … retry` and replays cleanly. */
+const stuck = loadPage({ search: mapSearch(1) + '&you=bot' });
+get(stuck, 'setExperimentScales(9, 0.25, false, 1)');
+for (let i = 0; i < 20; i++) {
+	get(stuck, 'playAcc = 0; stepGame(performance.now(), (60 + 0.25) * DT / playScale())');
+}
+get(stuck, 'setSlotType(1, PLAYER_USER); setSlotType(2, PLAYER_USER)');
+stuck.click('botLog');
+assert.match(stuck.clipboardText, /YOU no shot .*retry/);
+stuck.click('gameCopy');
+const stuckText = stuck.clipboardText;
+const stuckData = stuck.context.CareerActions.decode(stuckText);
+assert(stuckData.events.some(e => e[1] === 0 && e[2] === 'no shot'), 'compact replay records YOU no shot');
+const stuckReplay = loadPage({ search: '?mode=lab&seed=7' });
+stuckReplay.elements.get('replayInput').value = stuckText;
+stuckReplay.click('replayLoad');
+assert.equal(stuckReplay.elements.get('replayLoadNote').textContent, 'replay opened');
+while (get(stuckReplay, 'game.clockSteps < ' + stuckData.steps + ' && careerActionReplay.active')) {
+	get(stuckReplay, 'playAcc = 0; stepGame(performance.now(), (80 + 0.25) * DT / playScale())');
+}
+assert.match(stuckReplay.elements.get('careerMsg').textContent, /history matches/);
+console.log('CAREER HISTORY NO-SHOT OK · YOU no shot logged and replayed');

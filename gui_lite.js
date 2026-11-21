@@ -62,10 +62,14 @@ function newRunSeed(fresh) {
 	const universe = game.planetUniverse > 0 ? game.planetUniverse : planetUniverseDefault(game.rule);
 	const seeds = liteSeeds(universe, playerCountShown());
 	if (!seeds.length) return randomSeed();
+	let next = seeds[0];
 	for (let i = 0; i < seeds.length; i++) {
-		if (seeds[i] > game.seed) return seeds[i];
+		if (seeds[i] > game.seed) {
+			next = seeds[i];
+			break;
+		}
 	}
-	return seeds[0];
+	return next === game.seed ? randomSeed() : next;
 }
 
 /* arms the saved opening of this run's world; `applySeats` still checks

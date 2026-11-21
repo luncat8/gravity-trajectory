@@ -326,6 +326,52 @@
 				weakest: 0.98,
 				sites: 2
 			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 6 · 13 planets · 4 seats",
+			seed: 6,
+			universe: 13,
+			seats: [4, 5, 2, 11],
+			targetPay: 3.4225657106209426,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "four companies · a lite 4-seat start",
+			stats: {
+				weakest: 0.55,
+				sites: 2
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 7 · 13 planets · 4 seats",
+			seed: 7,
+			universe: 13,
+			seats: [11, 6, 9, 0],
+			targetPay: 1.4448889971301857,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "four companies · a lite 4-seat start",
+			stats: {
+				weakest: 0.57,
+				sites: 1
+			}
 		}
 	];
 	if (typeof module !== 'undefined' && module.exports) module.exports = MAPS;
