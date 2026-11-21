@@ -159,9 +159,12 @@ burnBot.careerSiteValue = () => 0;
 burnBot.careerBurnLaunch({ sim: prefixWorld.sim, career: prefixCareer }, scratch, 0,
 	Game.angleUnits(0), Game.speedUnits(prefixSpeed));
 assert.strictEqual(scratch.status, Sim.STATUS_FLYING);
-assert.strictEqual(burnBot.careerBurnPrefix.count, 1);
-assert.strictEqual(burnBot.careerBurnPrefix.planet[0], 2);
-assert.strictEqual(burnBot.careerBurnPrefix.step[0], prefixSteps,
+/* the pad's own system opens a step-0 row, the prefix's entry closes it */
+assert.strictEqual(burnBot.careerBurnPrefix.count, 2);
+assert.strictEqual(burnBot.careerBurnPrefix.planet[0], 0);
+assert.strictEqual(burnBot.careerBurnPrefix.step[0], 0);
+assert.strictEqual(burnBot.careerBurnPrefix.planet[1], 2);
+assert.strictEqual(burnBot.careerBurnPrefix.step[1], prefixSteps,
 	'the last prefix step pays before an exhausting burn');
 burnBot.probe.predictBurnFast(scratch, 0, prefixDv);
 assert.strictEqual(burnBot.probe.predBody, 2);

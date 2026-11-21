@@ -33,6 +33,7 @@ sim.predCount = 2;
 sim.predLogCount = 1;
 sim.predLogPlanet[0] = body;
 sim.predLogStep[0] = 60;
+sim.predLogDwell[0] = 0;
 sim.predLength = 500;
 sim.routeActive = false;
 function render(steps) {
@@ -137,7 +138,12 @@ beginHelper();
 env.toggle('expHarvest');
 assert.strictEqual(vm.runInContext('helperState.active', ctx), false);
 assert.match(ui.get('careerMsg').textContent, /stay-pay changed · scan again/);
-assert.match(ui.get('careerLaunchList').innerHTML, /≥ticks/, 'the list must identify entry-only estimates');
+/* 0.7.39 prices the dwell trail exactly — the list and the aim label no
+ * longer carry the ≥ticks entry-only caveat */
+const tickLabel = render(4500);
+assert.ok(!tickLabel.includes('≥ticks'), tickLabel);
+assert.ok(!ui.get('careerLaunchList').innerHTML.includes('≥ticks'),
+	'the stay-pay list must not warn about entry-only estimates');
 env.toggle('expHarvest');
 assert.ok(!ui.get('careerLaunchList').innerHTML.includes('≥ticks'));
 
@@ -251,6 +257,7 @@ r.sim.predSteps = 120;
 r.sim.predLogCount = 1;
 r.sim.predLogPlanet[0] = visit;
 r.sim.predLogStep[0] = 60;
+r.sim.predLogDwell[0] = 0;
 vm.runInContext('aimBody = ' + rivalCareer.hq + '; aimSpeed = 60;', rivals.context);
 rivalCareer.ship.obs = rivals.context.OrbitTech.OBS[0];
 rivalGame.setShipCondition(rivalCareer, 1);

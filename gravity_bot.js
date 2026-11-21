@@ -441,12 +441,16 @@
 		/* the winning trace's visit log, copied before the fan moves on */
 		this.careerLogPlanet = new Int32Array(PRED_LOG_MAX);
 		this.careerLogStep = new Int32Array(PRED_LOG_MAX);
+		this.careerLogDwell = new Int32Array(PRED_LOG_MAX);
 		this.careerLogCount = 0;
 		/* Pre-launch burn pricing includes visits made before the impulse. */
 		this.careerBurnPrefix = {
 			sim: null, count: 0,
 			planet: new Int32Array(PRED_LOG_MAX), step: new Int32Array(PRED_LOG_MAX),
-			joinedPlanet: new Int32Array(PRED_LOG_MAX * 2), joinedStep: new Int32Array(PRED_LOG_MAX * 2)
+			dwell: new Int32Array(PRED_LOG_MAX),
+			open: new Int32Array(GravitySim.MAX_BODIES),
+			joinedPlanet: new Int32Array(PRED_LOG_MAX * 2), joinedStep: new Int32Array(PRED_LOG_MAX * 2),
+			joinedDwell: new Int32Array(PRED_LOG_MAX * 2)
 		};
 		this.careerBuilds = 0;
 		this.careerUpgrades = 0;
@@ -1229,6 +1233,9 @@
 		this.probe.predictFast(this.jobOrigin, angle, speed, this.jobHorizon);
 		this.lookMarket.lastVisitStep.set(this.jobMarket.lastVisitStep);
 		for (let i = 0; i < this.probe.predLogCount; i++) {
+			/* a spawn-inside row is not an encounter under the entry rule, so
+			 * it must not stamp the follow-up's market either */
+			if (this.probe.predLogStep[i] === 0) continue;
 			const p = this.probe.predLogPlanet[i];
 			this.lookMarket.lastVisitStep[p] = this.jobRunStep + this.probe.predLogStep[i];
 		}
@@ -2827,22 +2834,35 @@
 		const prefix = this.careerBurnPrefix;
 		const probe = this.probe;
 		const offset = sim.liveSteps;
+		const hasPrefix = prefix.sim === sim;
 		let count = 0;
-		if (prefix.sim === sim) {
+		if (hasPrefix) {
 			for (let i = 0; i < prefix.count; i++) {
 				prefix.joinedPlanet[count] = prefix.planet[i];
-				prefix.joinedStep[count++] = prefix.step[i];
+				prefix.joinedStep[count] = prefix.step[i];
+				prefix.joinedDwell[count] = prefix.dwell[i];
+				count += 1;
 			}
 		}
 		for (let i = 0; i < probe.predLogCount; i++) {
+			if (probe.predLogStep[i] === 0) {
+				/* still inside from the prefix: its open row continues, so the
+				 * dwell joins that row instead of planting a phantom entry */
+				if (!hasPrefix) continue;
+				const row = prefix.open[probe.predLogPlanet[i]];
+				if (row >= 0 && row < count) prefix.joinedDwell[row] += probe.predLogDwell[i];
+				continue;
+			}
 			prefix.joinedPlanet[count] = probe.predLogPlanet[i];
-			prefix.joinedStep[count++] = offset + probe.predLogStep[i];
+			prefix.joinedStep[count] = offset + probe.predLogStep[i];
+			prefix.joinedDwell[count] = probe.predLogDwell[i];
+			count += 1;
 		}
 		const until = career.ship.obs.fitted
 			? offset + Math.max(1, Math.ceil(reportUntil)) : 0;
 		return GravityGame.estimateProfitLog(market, runStep,
 			prefix.joinedPlanet, prefix.joinedStep, count, career.ledger, until,
-			this.careerLanding);
+			this.careerLanding, prefix.joinedDwell);
 	};
 
 	/* Score reports before failure and the eventual service. A scratch launch
@@ -2904,7 +2924,8 @@
 		landing.body = entry.body;
 		landing.value = 0;
 		const visitPay = GravityGame.estimateProfitLog(market, runStep,
-			entry.logPlanet, entry.logStep, entry.logCount, career.ledger, reportUntil, landing);
+			entry.logPlanet, entry.logStep, entry.logCount, career.ledger, reportUntil, landing,
+			entry.logDwell);
 		const arrival = GravityGame.forecastCondition(career, condition, entry.steps, speed, 0, true);
 		const wear = GravityGame.forecastWearCost(career, condition, entry.steps, speed, 0, true);
 		const base = this.careerScoreFacts(career, entry.origin, market, runStep, 0, fee,
@@ -2939,9 +2960,11 @@
 		const count = probe.predLogCount;
 		const logPlanet = this.careerLogPlanet;
 		const logStep = this.careerLogStep;
+		const logDwell = this.careerLogDwell;
 		for (let i = 0; i < count; i++) {
 			logPlanet[i] = probe.predLogPlanet[i];
 			logStep[i] = probe.predLogStep[i];
+			logDwell[i] = probe.predLogDwell[i];
 		}
 		this.careerLogCount = count;
 	};
@@ -2979,6 +3002,7 @@
 			body: best.body, steps: best.steps, time: best.steps * GravitySim.DT,
 			length: best.length, score: best.score, money: best.taskPay,
 			logPlanet: this.careerLogPlanet, logStep: this.careerLogStep,
+			logDwell: this.careerLogDwell,
 			logCount: this.careerLogCount
 		});
 	};
@@ -3203,8 +3227,17 @@
 				if (!refines || score === null) continue;
 				let rank = score;
 				const probe = this.probe;
-				/* An unfinished multi-visit trace is a search seed, not a payable shot. */
-				if (!fallback && probe.predReason === END_TIME && probe.predLogCount >= 2) {
+				/* An unfinished multi-visit trace is a search seed, not a payable shot.
+				 * Rows are time-ordered: the leading step-0 (spawn-inside) rows
+				 * are not visits made in flight, so they do not count here. */
+				const unfinished = !fallback && probe.predReason === END_TIME;
+				let seedVisits = probe.predLogCount;
+				if (unfinished) {
+					let spawn = 0;
+					while (spawn < seedVisits && probe.predLogStep[spawn] === 0) spawn++;
+					seedVisits -= spawn;
+				}
+				if (unfinished && seedVisits >= 2) {
 					const speed = GravityGame.speedOf(speedU);
 					const condition = career.ship.condition;
 					const until = GravityGame.forecastReportUntil(career, condition, speed, 0);
@@ -3741,14 +3774,34 @@
 		const prefix = this.careerBurnPrefix;
 		prefix.sim = src;
 		prefix.count = 0;
+		prefix.open.fill(-1);
 		src.predInside.fill(0);
 		src.markSystemsAt(src.cargo.x, src.cargo.y, src.predInside);
+		/* spawn-inside rows open at step 0, so the stay-pay trail survives the burn join */
+		for (let p = 0; p < src.planetCount && prefix.count < PRED_LOG_MAX; p++) {
+			if (!src.predInside[p]) continue;
+			prefix.planet[prefix.count] = p;
+			prefix.step[prefix.count] = 0;
+			prefix.dwell[prefix.count] = 0;
+			prefix.open[p] = prefix.count;
+			prefix.count += 1;
+		}
 		for (let s = 0; s < CAREER_BURN_AT && src.status === GravitySim.STATUS_FLYING; s++) {
 			src.stepOne();
 			const entered = src.stepInsideAt(src.cargo.x, src.cargo.y, src.predInside, src.predEntered);
+			for (let p = 0; p < src.planetCount; p++) {
+				const row = prefix.open[p];
+				if (row < 0) continue;
+				if (src.predInside[p]) prefix.dwell[row] += 1;
+				else prefix.open[p] = -1;
+			}
 			for (let i = 0; i < entered && prefix.count < PRED_LOG_MAX; i++) {
-				prefix.planet[prefix.count] = src.predEntered[i];
-				prefix.step[prefix.count++] = src.liveSteps;
+				const p = src.predEntered[i];
+				prefix.planet[prefix.count] = p;
+				prefix.step[prefix.count] = src.liveSteps;
+				prefix.dwell[prefix.count] = 0;
+				prefix.open[p] = prefix.count;
+				prefix.count += 1;
 			}
 		}
 	};

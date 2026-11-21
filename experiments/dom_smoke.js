@@ -3675,11 +3675,12 @@ function protoOf(career, family, id) {
 	/* 0.4.30 fix: dragging experiment sliders keeps stay-pay · per tick checked */
 	cui.get('expHarvest').checked = true;
 	cui.get('expHarvest').listeners.change[0]();
-	check(cSim.harvestMode === cleanEnv.context.GravitySim.HARVEST_TICK, 'harvest tick enabled');
+	check(cleanEnv.context.GravityGame.harvestMode() === cleanEnv.context.GravityGame.HARVEST_TICK,
+		'harvest tick enabled');
 	cui.get('expGravity').value = '1.05';
 	cui.get('expGravity').listeners.input[0]();
 	check(cui.get('expHarvest').checked === true &&
-		cSim.harvestMode === cleanEnv.context.GravitySim.HARVEST_TICK,
+		cleanEnv.context.GravityGame.harvestMode() === cleanEnv.context.GravityGame.HARVEST_TICK,
 		'slider input preserves stay-pay · per tick');
 	cui.get('expGravity').value = '1';
 	cui.get('expGravity').listeners.input[0]();
@@ -3693,17 +3694,25 @@ function protoOf(career, family, id) {
 
 	const hq = cg.career.hq;
 	const ceil = cg.speedCeiling(hq);
+	/* rows are time-ordered and open with the pad's own system (step 0); an
+	 * entry row is what "enters a system" means (0.7.39) */
+	function enteredSystem() {
+		for (let k = 0; k < cSim.predLogCount; k++) {
+			if (cSim.predLogStep[k] > 0) return true;
+		}
+		return false;
+	}
 	let hitAngle = 0;
 	for (let k = 0; k < 24; k++) {
 		const a = (k / 24) * Math.PI * 2;
 		cleanEnv.dragAim(hq, a, ceil * 0.85);
 		cleanEnv.runFrames(1, 16.0);
-		if (cSim.predLogCount > 0) {
+		if (enteredSystem()) {
 			hitAngle = a;
 			break;
 		}
 	}
-	check(cSim.predLogCount > 0, 'found aimed shot entering at least one planet system');
+	check(enteredSystem(), 'found aimed shot entering at least one planet system');
 
 	cleanEnv.calls.gEllipse = 0;
 	cleanEnv.calls.gArc = 0;

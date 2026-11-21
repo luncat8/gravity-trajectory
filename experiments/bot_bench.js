@@ -84,51 +84,58 @@ function benchEconomy() {
 		after2000s > 0.95 * GravityGame.MONEY.cap,
 		'asymptotic profit expected →4.00, got 200s=' + after200s + ' 2000s=' + after2000s);
 
-	/* exact parity between estimateProfit (from predictFast) and live stepHarvest */
+	/* exact parity between estimateProfit (from predictFast) and live
+	 * stepHarvest — every flight priced in both rules (0.7.39) */
 	const { sim } = buildStaticWorld(31);
-	let worstDiff = 0;
+	const worstDiff = [0, 0];
 	let checked = 0;
 	let runStep = 360;
 	const baseMarket = GravityGame.createMarket();
 	for (let i = 0; i < PLANETS; i++) baseMarket.lastVisitStep[i] = -i * 400;
 
-	for (let origin = 0; origin < PLANETS; origin += 2) {
-		for (let a = 0; a < 16; a++) {
-			const angleU = GravityGame.angleUnits((a + 0.35) / 16 * Math.PI * 2);
-			const speedU = GravityGame.speedUnits(110 + (a % 4) * 45);
-			const angle = GravityGame.angleOf(angleU);
-			const speed = GravityGame.speedOf(speedU);
+	const modes = [GravityGame.HARVEST_ENTRY, GravityGame.HARVEST_TICK];
+	for (let mi = 0; mi < modes.length; mi++) {
+		GravityGame.setHarvestMode(modes[mi]);
+		for (let origin = 0; origin < PLANETS; origin += 2) {
+			for (let a = 0; a < 16; a++) {
+				const angleU = GravityGame.angleUnits((a + 0.35) / 16 * Math.PI * 2);
+				const speedU = GravityGame.speedUnits(110 + (a % 4) * 45);
+				const angle = GravityGame.angleOf(angleU);
+				const speed = GravityGame.speedOf(speedU);
 
-			const mEst = GravityGame.createMarket();
-			mEst.lastVisitStep.set(baseMarket.lastVisitStep);
-			sim.clear();
-			sim.predictFast(origin, angle, speed, 45);
-			const est = GravityGame.estimateProfit(mEst, runStep, sim);
+				const mEst = GravityGame.createMarket();
+				mEst.lastVisitStep.set(baseMarket.lastVisitStep);
+				sim.clear();
+				sim.predictFast(origin, angle, speed, 45);
+				const est = GravityGame.estimateProfit(mEst, runStep, sim);
 
-			const mLive = GravityGame.createMarket();
-			mLive.lastVisitStep.set(baseMarket.lastVisitStep);
-			const ledger = GravityGame.createLedger();
-			sim.clear();
-			sim.stepLimit = Math.round(45 / DT);
-			sim.limitReason = GravitySim.END_TIME;
-			sim.launch(origin, angle, speed);
-			GravityGame.beginFlight(ledger, sim);
-			let step = runStep;
-			while (sim.status === STATUS_FLYING) {
-				step += 1;
-				sim.stepOne();
-				GravityGame.stepHarvest(ledger, mLive, sim, step);
+				const mLive = GravityGame.createMarket();
+				mLive.lastVisitStep.set(baseMarket.lastVisitStep);
+				const ledger = GravityGame.createLedger();
+				sim.clear();
+				sim.stepLimit = Math.round(45 / DT);
+				sim.limitReason = GravitySim.END_TIME;
+				sim.launch(origin, angle, speed);
+				GravityGame.beginFlight(ledger, sim);
+				let step = runStep;
+				while (sim.status === STATUS_FLYING) {
+					step += 1;
+					sim.stepOne();
+					GravityGame.stepHarvest(ledger, mLive, sim, step);
+				}
+				const earned = GravityGame.endFlight(ledger);
+				const diff = Math.abs(est - earned);
+				check(Number.isFinite(diff), 'non-finite diff');
+				if (diff > worstDiff[mi]) worstDiff[mi] = diff;
+				checked += 1;
 			}
-			const earned = GravityGame.endFlight(ledger);
-			const diff = Math.abs(est - earned);
-			check(Number.isFinite(diff), 'non-finite diff');
-			if (diff > worstDiff) worstDiff = diff;
-			checked += 1;
 		}
 	}
-	check(worstDiff < 1e-12, 'estimateProfit vs live stepHarvest drift ' + worstDiff);
-	console.log('1a. market curve & parity:', checked, 'flights, max |estimateProfit - stepHarvest| =',
-		worstDiff.toExponential(1));
+	GravityGame.setHarvestMode(GravityGame.HARVEST_ENTRY);
+	check(worstDiff[0] < 1e-12, 'entry rule estimateProfit vs live stepHarvest drift ' + worstDiff[0]);
+	check(worstDiff[1] < 1e-12, 'tick rule estimateProfit vs live stepHarvest drift ' + worstDiff[1]);
+	console.log('1a. market curve & parity:', checked, 'flights (both rules), max |estimateProfit - stepHarvest| = entry',
+		worstDiff[0].toExponential(1), ', tick', worstDiff[1].toExponential(1));
 
 
 	/* 4 player archetypes vs normal rival in money (10 shots) and tour */
@@ -488,9 +495,12 @@ function benchLadder() {
 	}
 }
 
-/* 3 & 4. sliced stepJob vs chooseSync identity, zero allocation, and slice timing */
+/* 3 & 4. sliced stepJob vs chooseSync identity, zero allocation, and slice
+ * timing. The identity runs under the stay-pay rule too (0.7.39): sliced and
+ * synchronous decisions must not diverge when the estimate prices dwells. */
 function benchSlicesAndPerf() {
 	const { trade } = buildStaticWorld(42);
+	GravityGame.setHarvestMode(GravityGame.HARVEST_TICK);
 	let checks = 0;
 	let worstSliceMs = 0;
 	const decisionMs = { easy: 0, normal: 0, hard: 0 };
@@ -556,6 +566,7 @@ function benchSlicesAndPerf() {
 		check(refs[i] === afterRefs[i], 'bot reallocated buffer #' + i);
 	}
 	check(worstSliceMs < 10, 'worst bot slice exceeded 10 ms: ' + worstSliceMs.toFixed(2));
+	GravityGame.setHarvestMode(GravityGame.HARVEST_ENTRY);
 	console.log('3 & 4. slices & perf:', checks, 'exact 1-cand === sync matches · buffers 0-alloc ·',
 		'full decision easy/normal/hard =',
 		decisionMs.easy.toFixed(2) + '/' + decisionMs.normal.toFixed(2) + '/' + decisionMs.hard.toFixed(2) +

@@ -192,7 +192,8 @@ function storedMoney(entry) {
 	const reportUntil = GravityGame.forecastReportUntil(career, condition, speed, 0);
 	return moneyFacts(entry.origin, speed, entry.body, entry.steps, entry.length,
 		GravityGame.estimateProfitLog(game.market, game.clockSteps,
-			entry.logPlanet, entry.logStep, entry.logCount, career.ledger, reportUntil));
+			entry.logPlanet, entry.logStep, entry.logCount, career.ledger, reportUntil,
+			undefined, entry.logDwell));
 }
 
 /* the two live gates the launch button applies: the fee is covered and the
@@ -218,7 +219,7 @@ function saveTrace(probe, origin, angleU, speedU) {
 		origin: origin, angleU: angleU, speedU: speedU, body: probe.predBody,
 		steps: probe.predSteps, time: probe.predTime, length: probe.predLength,
 		score: money.net, money: money.cash, logPlanet: probe.predLogPlanet,
-		logStep: probe.predLogStep, logCount: probe.predLogCount
+		logStep: probe.predLogStep, logDwell: probe.predLogDwell, logCount: probe.predLogCount
 	});
 	/* A bot can reuse a trace found by a human before the handover. Keep
 	 * only changes to the book, not the aim, scan or failed candidates. */
@@ -226,19 +227,26 @@ function saveTrace(probe, origin, angleU, speedU) {
 	recordCareerAction('bookTrace', { trace: [tag, origin, angleU, speedU, entry.body, entry.steps,
 		entry.time, entry.length, Number.isFinite(entry.score) ? entry.score : null, entry.money,
 		Array.from(entry.logPlanet.subarray(0, entry.logCount)),
-		Array.from(entry.logStep.subarray(0, entry.logCount))] });
+		Array.from(entry.logStep.subarray(0, entry.logCount)),
+		Array.from(entry.logDwell.subarray(0, entry.logCount))] });
 }
 
+/* A 13-element tuple carries `logDwell`; recordings from before the stay-pay
+ * trail (12 elements) re-price their rows with zero dwell. */
 function applyCareerBookTrace(trace) {
-	if (!Array.isArray(trace) || trace.length !== 12 || !trace.slice(0, 8).every(Number.isFinite) ||
+	if (!Array.isArray(trace) || (trace.length !== 12 && trace.length !== 13) ||
+		!trace.slice(0, 8).every(Number.isFinite) ||
 		(trace[8] !== null && !Number.isFinite(trace[8])) || !Number.isFinite(trace[9])) return false;
-	const [tag, origin, angleU, speedU, body, steps, time, length, score, money, logPlanet, logStep] = trace;
+	const [tag, origin, angleU, speedU, body, steps, time, length, score, money, logPlanet, logStep,
+		logDwell] = trace;
 	if (!Array.isArray(logPlanet) || !Array.isArray(logStep) || logPlanet.length !== logStep.length ||
 		logStep.length > GravityGame.BOOK_LOG_MAX ||
-		!logPlanet.every(p => Number.isInteger(p) && p >= 0 && p < PLANETS) || !logStep.every(Number.isInteger)) return false;
+		(logDwell !== undefined && logDwell.length !== logStep.length) ||
+		!logPlanet.every(p => Number.isInteger(p) && p >= 0 && p < PLANETS) || !logStep.every(Number.isInteger) ||
+		(logDwell !== undefined && !logDwell.every(Number.isInteger))) return false;
 	GravityGame.recordLaunch(activeCareer().launchBook, tag, {
 		origin, angleU, speedU, body, steps, time, length, score: score ?? -Infinity, money,
-		logPlanet, logStep, logCount: logStep.length
+		logPlanet, logStep, logDwell, logCount: logStep.length
 	});
 	return true;
 }
@@ -373,7 +381,7 @@ function launchRowsHtml(career) {
 	let fire = 0;
 	for (let i = 0; i < count; i++) fire += bookFire[i];
 	let html = '<div class="careerLine dim">' + count + ' saved · ' +
-		fire + ' fireable here · best money first' + (harvestTick ? ' · ≥ticks' : '') + '</div>';
+		fire + ' fireable here · best money first</div>';
 	for (let i = 0; i < count; i++) html += launchRowHtml(career, bookOrder[i], bookNet[i]);
 	return html;
 }
@@ -398,11 +406,13 @@ function refreshLaunchList(force) {
 	const career = activeCareer();
 	const sim = activeCareerSim();
 	const pad = career.at >= 0 ? GravityGame.padAt(career, career.at) : null;
+	/* the collection rule prices every row, so flipping it re-ranks the list */
 	const key = career.launchBook.version + '|' + pageBookTag() + '|' + career.at + '|' +
 		(sim.fieldStatic ? 1 : 0) + '|' + sim.status + '|' +
 		(turret.pending ? 1 : 0) + '|' + (careerWaitBusy() ? 1 : 0) + '|' +
 		(pad ? Math.round(pad.chargeKwh * 100) : -1) + '|' +
-		Math.round(career.ledger.purse * 100) + '|' + Math.round(game.clockSteps / 240);
+		Math.round(career.ledger.purse * 100) + '|' + Math.round(game.clockSteps / 240) + '|' +
+		(harvestTick ? 1 : 0);
 	if (!force && career === launchListCareer && key === launchListKey) return;
 	launchListCareer = career;
 	launchListKey = key;

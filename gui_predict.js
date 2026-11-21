@@ -144,12 +144,6 @@ function predRateText(sim) {
 	return '+' + rate.toFixed(2) + '/s';
 }
 
-/* The traced estimate prices the entry rule only; with the stay-pay on, a
- * shot pays at least that (0.7.39-plan-harvest-ticks.md). */
-function predTickNote() {
-	return harvestTick && careerRule() ? ' · ≥ticks' : '';
-}
-
 /* While aiming in career at the pickup planet of an accepted delivery that
  * is not yet loaded, note the cargo that will be picked up and whether a
  * starter EMC-1 there can lift the newly loaded ship. Returns '' when there
@@ -184,7 +178,7 @@ function refreshAimLabel() {
 		const visitNote = sim.predCount >= 2
 			? ' · ' + predProfitText(sim, economics) + ' · ' + predRateText(sim) +
 				' · ' + sim.predTime.toFixed(1) + ' s · +' + sim.predNewVisits +
-				' (' + sim.predVisits + ' sys)' + predTickNote()
+				' (' + sim.predVisits + ' sys)'
 			: '';
 		aimLabel = 'Δv ' + burnDv.toFixed(1) + ' px/s · ' + deg.toFixed(1) + '° · −' +
 			usedKg.toFixed(1) + ' kg / ' + costText(usedKg * GravityGame.fuelPrice(playerCareer())) +
@@ -207,7 +201,7 @@ function refreshAimLabel() {
 				(sim.routeActive ? ' · tracing' : '')
 			: (game.on ? ' · ' + predProfitText(sim, economics) + ' · ' + predRateText(sim) : '') +
 				' · ' + sim.predTime.toFixed(1) + ' s · +' +
-				sim.predNewVisits + ' (' + sim.predVisits + ' sys)' + predTickNote()
+				sim.predNewVisits + ' (' + sim.predVisits + ' sys)'
 		: '';
 	aimLabel = Math.round(aimSpeed) + ' px/s · ' + deg.toFixed(1) + '°' +
 		(fine ? ' · fine' : '') +

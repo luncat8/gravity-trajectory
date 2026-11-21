@@ -69,7 +69,9 @@
 	const END_TRUNCATED = 4;
 	const END_ABORT = 5;
 	const FULL_BUDGET_MS = 1e9;
-	const PRED_LOG_MAX = 64;
+	/* rows = spawn-inside systems (step 0) + entries, so long loop flights
+	 * keep every tail visit and its dwell */
+	const PRED_LOG_MAX = 96;
 
 	/* --- the clock (0.7.1) --------------------------------------------------
 	 * A game second is the unit of the whole game. One physics step is DT of a
@@ -205,6 +207,10 @@
 		this.predEntered = new Int32Array(MAX_BODIES);
 		this.predLogPlanet = new Int32Array(PRED_LOG_MAX);
 		this.predLogStep = new Int32Array(PRED_LOG_MAX);
+		/* flight steps the ship stayed inside each log row's system after the
+		 * row's step; predLogOpen[p] is p's open row or -1 when outside */
+		this.predLogDwell = new Int32Array(PRED_LOG_MAX);
+		this.predLogOpen = new Int32Array(MAX_BODIES);
 		this.predLogCount = 0;
 		this.predVisits = 0;
 		this.predNewVisits = 0;
@@ -666,6 +672,17 @@
 		this.markSystemsAt(state.x, state.y, visit);
 		this.predInside.set(visit);
 		this.predLogCount = 0;
+		this.predLogOpen.fill(-1);
+		/* systems the trace starts inside: a step-0 row waits for the first
+		 * step, where the stay-pay collects its lump (0.7.39) */
+		for (let p = 0; p < this.planetCount && this.predLogCount < PRED_LOG_MAX; p++) {
+			if (!this.predInside[p]) continue;
+			this.predLogPlanet[this.predLogCount] = p;
+			this.predLogStep[this.predLogCount] = 0;
+			this.predLogDwell[this.predLogCount] = 0;
+			this.predLogOpen[p] = this.predLogCount;
+			this.predLogCount += 1;
+		}
 		this.routeStorePath = true;
 		this.predX[0] = state.x;
 		this.predY[0] = state.y;
@@ -734,13 +751,23 @@
 			this.routeFieldT += DT * this.fieldRate;
 			this.routeSteps = step + 1;
 			const entered = this.stepInsideAt(state.x, state.y, inside, enteredBuf);
+			/* close what the ship left, drip one dwell step into what it kept */
+			for (let p = 0; p < this.planetCount; p++) {
+				const row = this.predLogOpen[p];
+				if (row < 0) continue;
+				if (inside[p]) this.predLogDwell[row] += 1;
+				else this.predLogOpen[p] = -1;
+			}
 			for (let e = 0; e < entered; e++) {
 				const p = enteredBuf[e];
 				visit[p] = 1;
 				if (this.predLogCount < PRED_LOG_MAX) {
-					this.predLogPlanet[this.predLogCount] = p;
-					this.predLogStep[this.predLogCount] = this.routeSteps;
-					this.predLogCount += 1;
+					const row = this.predLogCount;
+					this.predLogPlanet[row] = p;
+					this.predLogStep[row] = this.routeSteps;
+					this.predLogDwell[row] = 0;
+					this.predLogOpen[p] = row;
+					this.predLogCount = row + 1;
 				}
 			}
 			hit = this.impact(state.x, state.y);
@@ -752,6 +779,7 @@
 					if (this.predLogCount < PRED_LOG_MAX) {
 						this.predLogPlanet[this.predLogCount] = hit;
 						this.predLogStep[this.predLogCount] = this.routeSteps;
+						this.predLogDwell[this.predLogCount] = 0;
 						this.predLogCount += 1;
 					}
 				}

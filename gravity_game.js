@@ -105,8 +105,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * later collects what regrew in between. The experimental `HARVEST_TICK`
 	 * also pays, on every step the ship stays inside, what re-accrued during
 	 * that step — a slow or looping pass earns more than a fly-by. Career only;
-	 * the traces that price a shot still assume the entry rule (see
-	 * 0.7.39-plan-harvest-ticks.md).
+	 * `estimateProfit` prices whichever mode is active, from the trace's
+	 * dwell trail (0.7.39-plan-harvest-ticks.md).
 	 */
 	const HARVEST_ENTRY = 0;
 	const HARVEST_TICK = 1;
@@ -133,7 +133,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const estScratch = new Float64Array(OrbitWorld.PLANETS);
 	/* launch book: saved career trajectories and the visit log each one keeps */
 	const BOOK_MAX = 10;
-	const BOOK_LOG_MAX = 64;
+	const BOOK_LOG_MAX = GravitySim.PRED_LOG_MAX;
 
 	function angleUnits(angle) {
 		return (Math.round(angle / ANGLE_UNIT) % ANGLE_STEPS + ANGLE_STEPS) % ANGLE_STEPS;
@@ -659,31 +659,70 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * walk accrues on that body whether or not the visit reported it: the
 	 * rulers' bribe cashes exactly that value, so a dead device makes the visit
 	 * pay nothing while the bribe still prices it.
+	 *
+	 * `dwells` (optional, one per row) is the stay-pay trail: under
+	 * HARVEST_TICK each row also pays the steps its system stayed inside after
+	 * the row's step — a step-0 (spawn-inside) row pays steps 1 .. dwell, an
+	 * entry row pays its entry then steps + 1 .. steps + dwell — each gated by
+	 * reportUntil, until the trail runs out. The drip sum mirrors `harvestStay`
+	 * step by step: the exponential curve (and a rebel's fly-by ramp) is not
+	 * linear, so a closed form over `paidDwell` would not match within 1e-12.
+	 * Omitted `dwells`, or HARVEST_ENTRY, prices entries only — step-0 rows
+	 * then pay nothing, exactly as the live entry rule does.
+	 * `total` runs through the drip loop so every value joins the accumulator
+	 * in the live `stepHarvest` order and the sums match bit for bit.
 	 */
-	function estimateProfitLog(market, baseStep, planets, steps, count, ledger, reportUntil, landing) {
-		if (count === 0) return 0;
-		estScratch.set(market.lastVisitStep);
-		let total = 0;
-		for (let i = 0; i < count; i++) {
-			const planet = planets[i];
-			const special = planet === market.capitalPlanet || planet === market.arfPlanet;
-			const at = baseStep + steps[i];
+	function stayPayLog(market, planet, baseStep, from, to, reportUntil, total) {
+		for (let s = from; s <= to; s++) {
+			if (reportUntil !== undefined && s >= reportUntil) break;
+			const at = baseStep + s;
 			const value = planetProfitAt(market, planet, at, estScratch[planet]);
-			if (landing !== undefined && planet === landing.body) landing.value = value;
-			const reports = special ? true : reportUntil === undefined
-				? visitReports(ledger, market, planet)
-				: !(market.quiet[planet] || steps[i] >= reportUntil);
-			if (!reports) continue;
 			total += value;
 			estScratch[planet] = at;
 		}
 		return total;
 	}
 
-	/* exact predicted harvest along a traced probe, assuming the entry rule */
+	function estimateProfitLog(market, baseStep, planets, steps, count, ledger, reportUntil, landing, dwells) {
+		if (count === 0) return 0;
+		estScratch.set(market.lastVisitStep);
+		const ticks = harvestMode === HARVEST_TICK;
+		let total = 0;
+		for (let i = 0; i < count; i++) {
+			const planet = planets[i];
+			const s0 = steps[i];
+			const dwell = ticks && dwells !== undefined ? dwells[i] : 0;
+			const special = planet === market.capitalPlanet || planet === market.arfPlanet;
+			/* a spawn-inside row has no entry: the launch marked the system
+			 * inside before step 1. Only the stay-pay runs, and never on the
+			 * Capital (−3) or A.R.F. (0), whose pay would fail the drip gate. */
+			if (s0 === 0) {
+				if (dwell < 1 || special) continue;
+				if (reportUntil === undefined ? !visitReports(ledger, market, planet)
+					: market.quiet[planet]) continue;
+				total = stayPayLog(market, planet, baseStep, 1, dwell, reportUntil, total);
+				continue;
+			}
+			const at = baseStep + s0;
+			const value = planetProfitAt(market, planet, at, estScratch[planet]);
+			if (landing !== undefined && planet === landing.body) landing.value = value;
+			const reports = special ? true : reportUntil === undefined
+				? visitReports(ledger, market, planet)
+				: !(market.quiet[planet] || s0 >= reportUntil);
+			if (!reports) continue;
+			total += value;
+			estScratch[planet] = at;
+			if (dwell >= 1 && !special) {
+				total = stayPayLog(market, planet, baseStep, s0 + 1, s0 + dwell, reportUntil, total);
+			}
+		}
+		return total;
+	}
+
+	/* exact predicted harvest along a traced probe, dwell trail included */
 	function estimateProfit(market, baseStep, sim, ledger, reportUntil, landing) {
 		return estimateProfitLog(market, baseStep, sim.predLogPlanet, sim.predLogStep,
-			sim.predLogCount, ledger, reportUntil, landing);
+			sim.predLogCount, ledger, reportUntil, landing, sim.predLogDwell);
 	}
 
 	/* the generated universe is always PLANET_MAX planets; a run plays a subset.
@@ -4910,7 +4949,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (at >= 0 && (book.entries[at].score > trace.score ||
 			(book.entries[at].score === trace.score && book.entries[at].steps <= trace.steps))) return book.entries[at];
 		const entry = at >= 0 ? book.entries[at] : null;
-		const out = entry || { logPlanet: new Int32Array(BOOK_LOG_MAX), logStep: new Int32Array(BOOK_LOG_MAX) };
+		const out = entry || { logPlanet: new Int32Array(BOOK_LOG_MAX), logStep: new Int32Array(BOOK_LOG_MAX),
+			logDwell: new Int32Array(BOOK_LOG_MAX) };
+		if (!out.logDwell) out.logDwell = new Int32Array(BOOK_LOG_MAX);
 		out.origin = trace.origin;
 		out.angleU = trace.angleU;
 		out.speedU = trace.speedU;
@@ -4923,9 +4964,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		/* the cash the flight itself collected: launch time is priced against it */
 		out.money = trace.money === undefined ? trace.score : trace.money;
 		out.logCount = count;
+		const dwells = trace.logDwell;
 		for (let i = 0; i < count; i++) {
 			out.logPlanet[i] = trace.logPlanet[i];
 			out.logStep[i] = trace.logStep[i];
+			out.logDwell[i] = dwells === undefined ? 0 : dwells[i];
 		}
 		if (entry === null) {
 			book.entries.push(out);

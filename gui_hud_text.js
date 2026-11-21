@@ -290,7 +290,7 @@ function updateLiveHud() {
 	}
 	const profitText = game.on && !routeRule() && sim.predCount >= 2
 		? predProfitText(sim, economics) + ' · ' + predRateText(sim) +
-			' · ' + sim.predTime.toFixed(1) + ' s' + predTickNote()
+			' · ' + sim.predTime.toFixed(1) + ' s'
 		: '—';
 	if (profitText !== hudPredProfitText) {
 		hudPredProfitText = profitText;
