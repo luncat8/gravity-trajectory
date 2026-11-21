@@ -77,6 +77,7 @@ with no fair opening: the registry is also the pool `load map` draws from, so
 | `planet_gravity.js`, the map-generator helper page (`map_gen.js`, `map_fields.js`) | `map_gen_test` |
 | compact career playback and bot history | `career_actions_test`, `career_history_seed_test` (handover), `career_evacuation_test` (reported P8 returns and tow) |
 | full career save, clipboard fallback and H calls | `career_replay_test` |
+| the lite profile: `gui_lite.js`, the still backdrop in `orbit_view.js`, the boot pre-history, sound/postcard gates | `lite_mode_test` |
 | `index.html`, script order, composer | `dom_smoke` once, plus the area test |
 | docs, plans, worklogs, test files only | nothing |
 

@@ -1182,3 +1182,22 @@ be on, and a project list that looks the same but behaves differently is the
 thing that confuses. Discovery also belongs to a property of the file (a JSON
 with `name`, `prompts`, `workflows`, `output` at the top level) rather than to a
 filename pattern — the same directory holds ComfyUI graphs.
+
+## plans name things the code does not have
+
+A plan reviewed from memory can carry names that never existed: 0.7.38's draft
+spoke of a `#o` canvas (it is `#c`), a `viewMode === 'trade'` (the modes are
+space/field/potential), `gui_sound.js`, `new Image()` probes (the deck sets
+`photoImg.src`), a 4-seat `hard` career (`careerCount` is 2) and a 360-minute
+pre-history (`START_MINUTES` is 420). Grep every identifier a plan names before
+designing around it, and fix the plan in place so the archived copy is true.
+
+## keeping a page test honest about "nothing happened"
+
+To assert that a canvas stops painting or a fast-forward runs once, expose a
+plain counter on the scene object (`OrbitScene.paints()`, `fastForwards()`)
+instead of wrapping prototypes from the test: the vm realm defines its classes
+while the scripts load, so the test cannot patch them first. Inject constructors
+the page may call (a counting, throwing `AudioContext`) with
+`loadPage({ globals })`, and keep a positive control (a full page does reach
+the constructor) so a zero is not the stub's doing.

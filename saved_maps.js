@@ -257,6 +257,75 @@
 				weakest: 0.85,
 				sites: 2
 			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 6 · 13 planets · 2 seats",
+			seed: 6,
+			universe: 13,
+			seats: [4, 12],
+			targetPay: 5.444870618232786,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "YOU + one rival · a lite easy start",
+			stats: {
+				weakest: 0.99,
+				sites: 1
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 7 · 13 planets · 2 seats",
+			seed: 7,
+			universe: 13,
+			seats: [9, 7],
+			targetPay: 3.092031420760105,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "YOU + one rival · a lite easy start",
+			stats: {
+				weakest: 0.98,
+				sites: 1
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 8 · 13 planets · 2 seats",
+			seed: 8,
+			universe: 13,
+			seats: [11, 12],
+			targetPay: 2.0183928122434183,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ht: false,
+			note: "YOU + one rival · a lite easy start",
+			stats: {
+				weakest: 0.98,
+				sites: 2
+			}
 		}
 	];
 	if (typeof module !== 'undefined' && module.exports) module.exports = MAPS;

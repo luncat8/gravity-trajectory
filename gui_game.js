@@ -109,6 +109,7 @@ function startCareerRun(seed) {
 	cancelTurret();
 	GravityGame.resetGalaxy(game.galaxy, seed);
 	/* a saved map seats this run from its record and skips the opening search */
+	liteArmOpening(seed);
 	GravityMaps.applySeats(game.galaxy, tradeSim.world, tradeSim,
 		planetMask, planetCount, 1 + bot.count, cargoSim);
 	GravityGame.prepareCareerStarts(game.galaxy, tradeSim.world, tradeSim,

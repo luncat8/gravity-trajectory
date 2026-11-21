@@ -70,6 +70,7 @@ const SLOW = [
 	['comms_page_test.js', 1],
 	['profit_monotonic_test.js', 1],
 	['career_pause_test.js', 1],
+	['lite_mode_test.js', 6],
 	['career_departure_test.js', 85],
 	['career_start_seat_test.js', 8],
 	['career_start_fairness.js', 20],

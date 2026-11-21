@@ -58,7 +58,7 @@ experiments/logs/ - without long formatting, keep only useful data that helpful 
 
 ### gravity gui
 
-the gui is split one file per area (0.5, done): 22 `gui_*.js` classic scripts plus
+the gui is split one file per area (0.5, done): 25 `gui_*.js` classic scripts plus
 `gravity_gui.js` (1,074 lines: state, element refs, wiring, boot — not an IIFE, and never
 an empty re-export hub). never read the composer whole.
 the areas still inside it are indexed by a banner comment; one grep gives the table of contents with
@@ -76,7 +76,8 @@ every file below is in place. each area file reads the composer's state as ordin
 | `gui_tables.js` | 279 | constants, gear/tech/science/help tables, speed presets, rule copy, stats plot sizes/labels |
 | `gui_help.js` | 62 | rule help drawer: open, pin, hold to preview |
 | `gui_share.js` | 197 | url copy, replay/bot links, load from link, bot log |
-| `gui_maps.js` | 265 | saved maps: the four buttons, the `?map=` boot, run capture and restore, status line |
+| `gui_maps.js` | 505 | saved maps: the four buttons, the `?map=` boot, run capture and restore, status line |
+| `gui_lite.js` | 107 | lite profile: `?lite=` / stored choice, the `#liteMode` box, saved-opening seeds and arming, still backdrop, sound and postcard gates |
 | `gui_science.js` | 454 | hull plot geometry, merit and spec text, accept, sliders |
 | `gui_shop.js` | 752 | cost/cap/pad/gear text, purse checks, shop buttons, EMC claims, part and proto rows |
 | `gui_book.js` | 391 | task board, launch book, money trace, ranked launch list, rail lines |

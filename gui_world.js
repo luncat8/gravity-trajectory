@@ -268,7 +268,7 @@ function startupSeed() {
 		const seed = Number(value);
 		if (Number.isInteger(seed) && seed >= 1 && seed <= 0xffffffff) return seed;
 	}
-	return randomSeed();
+	return liteMode ? liteBootSeed(params) : randomSeed();
 }
 
 /* the universe a url should carry: the run's live subset, or the scoreboard
@@ -308,6 +308,8 @@ function syncSeedUrl(keepReplay = false) {
 	else params.delete('bot');
 	if (game.on && game.cheat) params.set('cheat', game.cheat);
 	else params.delete('cheat');
+	if (liteParam !== null) params.set('lite', liteParam);
+	else params.delete('lite');
 	/* a career's roster is a game.playerCount the boot honors; other rules
 	 * field their rivals from the level, so they carry no roster param */
 	if (game.on && careerRule() && game.playerCount > 0) params.set('players', String(game.playerCount));

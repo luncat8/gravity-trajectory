@@ -347,6 +347,7 @@ function applyMode() {
 	}
 	syncUserRivalFields();
 	syncPlanetGravity();
+	syncStillBackdrop();
 }
 
 function setBodyStrength(body, value) {

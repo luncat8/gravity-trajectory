@@ -112,7 +112,6 @@ FFT:
 
 | plan | group | draft sections it answers |
 |---|---|---|
-| `../0.7.38-plan-lite-profile.md` | `0.7` pre-FFT | `new/lite-version.md` (saved-map boot, quiet non-gameplay background, mute sound & photos) |
 | `../0.7.39-plan-harvest-ticks.md` | `0.7` pre-FFT | `career-economy.md` §2.11 (stay-pay forecast & book parity) |
 | `../0.7.40-plan-two-leg-quests.md` | `0.7` pre-FFT | `politics-quests.md` §3.5 (`careerLegPlan`, `plan quest`) |
 | `../0.7.41-plan-sport-competitions.md` | `0.7` pre-FFT | `rivals-sport-competitions.md` §5.2 (`galaxy.sport` countdown, pool, barrel hold) |
@@ -127,6 +126,7 @@ FFT:
 | `../0.8.4-plan-helper-dialog.md` | `0.8` after all | `helper-dialog-draft.md` / `helper-dialog/` (remaining M3 topic browser/art/delta & M4 non-career/rival-intent) |
 | `../0.8.5-plan-accessibility-readout.md` | `0.8` after all | `sound-and-photos.md` §7.1 (`#srStatus` & HUD landmarks) |
 | `../0.8.6-plan-improve-sound.md` | `0.8` after all | `sound-and-photos.md` §7.1 (Voronoi neighbor-scale consonance, toroidal/192-body adjacency, aim/arrival/block cues) |
+| `../archive/0.7.38-plan-lite-profile.md` (done) | — | `new/lite-version.md` (saved-map boot, still non-gameplay background, mute sound & photos) |
 | `../archive/0.7.35-plan-playable-fields.md` (done) | — | playable `map_fields.js` designed gravity fields from `map-generator-helper.htm` |
 | `../archive/0.7.16-plan-bribe-rot.md` (done) | — | `politics-quests.md` §3.1–3.2 (bribe rot & quiet restoration) |
 | `../archive/0.7.2-plan-ship-wear.md` (done) | — | `career-economy.md` §ship maintenance cost; `map.md` §add space weather (the wear hook) |

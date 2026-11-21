@@ -167,8 +167,13 @@ function bindFold(btn, panel) {
 }
 function refreshSoundToggle() {
 	if (!soundToggle) return;
-	soundToggle.textContent = soundEnabled ? 'sound on' : 'sound off';
-	soundToggle.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
+	const on = soundEnabled && !liteMode;
+	soundToggle.textContent = on ? 'sound on' : 'sound off';
+	soundToggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+	soundToggle.disabled = liteMode;
+	soundToggle.title = liteMode
+		? 'the lite profile keeps sound off; uncheck lite to hear it again'
+		: 'mute or unmute launch sounds';
 }
 const SOUND_ENGINE_LABELS = { voronoi: 'voronoi', trajectory: 'trajectory synth', samples: 'selected samples', fallback: 'classic synths' };
 const SOUND_AIM_HINTS = {

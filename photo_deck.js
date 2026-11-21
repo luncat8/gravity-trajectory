@@ -209,7 +209,7 @@
 	 * moment; the toast follows once it hides (a newer card then drops it).
 	 */
 	function toast(kicker, title, text) {
-		if (!refs.card) return;
+		if (!refs.card || !enabled) return;
 		toastKicker = kicker;
 		toastTitle = title;
 		toastText = text;
@@ -235,8 +235,16 @@
 		timer = setTimeout(hide, HIDE_MS);
 	}
 
+	/* off (lite profile): no card, no art request; a money toast only
+	 * repeats what the ledger already settled, so nothing is lost */
+	let enabled = true;
+	function setEnabled(on) {
+		enabled = Boolean(on);
+		if (!enabled) dismiss();
+	}
+
 	function show(kind, type, planet) {
-		if (!refs.card) return;
+		if (!refs.card || !enabled) return;
 		const landed = kind === 'landed';
 		const cls = slugOf(type);
 		refs.kicker.textContent = landed ? 'landed · surface' : 'from space · new system';
@@ -249,7 +257,7 @@
 	/* career art has scene keys, not planet types; one optional jpg/png per scene */
 	function showCareer(kind) {
 		const scene = CAREER_SCENES[kind];
-		if (!refs.card || !scene) return;
+		if (!refs.card || !enabled || !scene) return;
 		refs.kicker.textContent = scene.kicker;
 		refs.title.textContent = scene.title;
 		refs.caption.textContent = scene.caption;
@@ -260,7 +268,8 @@
 	const PhotoDeck = {
 		SLUGS, LABELS, CAREER_SLUGS, VARIANTS, TOAST_MS,
 		slugOf, captionFor, titleFor, variantOf, candidates, careerCandidates, needsCompact,
-		attach, show, showCareer, layout, hide, toast,
+		attach, show, showCareer, layout, hide, toast, setEnabled,
+		enabled: () => enabled,
 		toastQueued: () => toastPending,
 		visible: () => Boolean(refs.card) && !refs.card.hidden
 	};

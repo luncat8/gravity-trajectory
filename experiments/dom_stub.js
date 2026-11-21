@@ -159,6 +159,8 @@ function makeElement(spec, paint, webglFactory) {
  * options.hash: initial location hash ('' for none)
  * options.clipboard: false removes navigator.clipboard (insecure-context fallback)
  * options.random: replaces Math.random before boot (seed/startup tests)
+ * options.storage: plain object behind localStorage (absent = no localStorage)
+ * options.globals: extra window globals, e.g. a counting AudioContext
  */
 function loadPage(options = {}) {
 	const calls = {
@@ -262,7 +264,7 @@ function loadPage(options = {}) {
 	 * every global read (Math, the page's own top-level functions) through an
 	 * interceptor, which ran a career boot in 27 s instead of 3 s */
 	const context = vm.createContext(vm.constants.DONT_CONTEXTIFY);
-	Object.assign(context, globals);
+	Object.assign(context, globals, options.globals);
 	context.window = context;
 	if (typeof options.random === 'function') {
 		context.__testRandom = options.random;

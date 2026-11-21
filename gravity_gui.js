@@ -196,7 +196,7 @@ try {
 	if (stored !== null && Number.isFinite(value) && value >= 0.25 && value <= 2) soundDistanceScale = value;
 } catch (err) { /* default distance scale */ }
 const sound = root.GravitySound.createController({
-	enabled: soundEnabled,
+	enabled: soundEnabled && !liteMode,
 	volume: soundVolumePct / 100,
 	distanceScale: soundDistanceScale,
 	voronoiPreset: readSoundChoice('gravity-sound-voronoi-preset', 'point', ['point', 'distance']),
@@ -789,9 +789,9 @@ if (playerCountDownEl) playerCountDownEl.addEventListener('click', () => setPlay
 if (playerCountUpEl) playerCountUpEl.addEventListener('click', () => setPlayerCount(1));
 gameRestartBtn.addEventListener('click', () =>
 	startGame(game.seed, game.fixedRate, undefined, undefined, undefined, game.cheat));
-gameNewSeedBtn.addEventListener('click', () => {
+gameNewSeedBtn.addEventListener('click', event => {
 	clearMapField();
-	startGame(randomSeed(), false);
+	startGame(newRunSeed(event.shiftKey === true), false);
 });
 gameCopyBtn.addEventListener('click', copyLink);
 if (botCopyBtn) botCopyBtn.addEventListener('click', copyBotLink);
@@ -1013,6 +1013,7 @@ root.GravityScene = {
 	frame: () => scene.view.frame,
 	setFrame: setViewFrame,
 	cleanCareerView: () => cleanCareerView,
+	liteMode: () => liteMode,
 	fieldRenderer: () => fieldRenderer,
 	playMode: () => (game.on ? game.rule : PLAY_LAB),
 	setPlayMode,
@@ -1076,8 +1077,9 @@ mode = srcPortsEl.checked ? MODE_PORTS : MODE_PLANETS;
 cargoSim.fieldT = tradeSim.t;
 cargoSim.fieldRate = tradeRate();
 updateRuleHelp(selectedHelpRule());
-const bootSeed = startupSeed();
-if (tradeSim.seed !== bootSeed) scene.reset(bootSeed);
+applyLite();
+/* the boot world's pre-history waits: a run started below resets it anyway */
+scene.reset(startupSeed(), true);
 initPlanetUniverse(PLANET_DEFAULT);
 applyPlanetUniverse();
 attachWorld();
@@ -1093,6 +1095,8 @@ if (!loadLink() && !loadSearchParams()) {
 	else refreshGameUi();
 	syncSeedUrl();
 }
+/* no run started, so the lab world still owes its pre-history */
+if (scene.settle()) attachWorld();
 
 resizeOverlay();
 refreshSelected();

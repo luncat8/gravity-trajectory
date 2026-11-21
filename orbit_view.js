@@ -32,6 +32,7 @@
 	const DOCK_OFFSET = 15;
 	const HOVER_PX = 17;
 	const NO_DASH = [];
+	const IDLE_DASH = [3, 7];
 	const START_MINUTES = 420;
 	/* Raw orbit speed is trade minutes per real second in the idle lab, or per
 	 * game second in a flight (pace then converts to real time). Moving ports
@@ -124,6 +125,7 @@
 	}
 	function setPlanetMask(mask) {
 		planetMask = mask || null;
+		stillDirty = true;
 		/* the trade world must not colonise a planet the run does not play */
 		if (sim.setPlanetMask) sim.setPlanetMask(planetMask);
 	}
@@ -148,9 +150,11 @@
 		return portInPlay(sim.shipTarget[ship]);
 	}
 
+	/* the world waits for its first reset: the page boot names the seed, and
+	 * its pre-history then runs once instead of once per seed it passes */
 	const sim = new OrbitSim(7);
-	sim.step(START_MINUTES);
-	initMoonSystems();
+	let historyDue = true;
+	let fastForwards = 0;
 
 	let paused = false;
 	/*
@@ -180,6 +184,17 @@
 	let pulseFrozen = false;
 	let hudAt = -Infinity;
 	let lastFrame = performance.now();
+	/*
+	 * Still backdrop (lite profile over static planets): the trade traffic,
+	 * moons and pulses are decoration, so the canvas holds one static frame of
+	 * the planets and repaints only when something it shows changed. The world
+	 * clock is not this file's to skip: a run still advances `sim` itself.
+	 */
+	let still = false;
+	let stillDirty = true;
+	let paints = 0;
+	const stillState = new Uint8Array(OrbitSim.PLANETS);
+	const stillPort = new Int32Array(OrbitSim.PLANETS);
 
 	function makeGlow(fill) {
 		const sprite = document.createElement('canvas');
@@ -309,6 +324,7 @@
 		view.offY = VIEW_INSET + (availH - box.h * view.scale) / 2 - box.y * view.scale;
 		paintBackdrop(width, height);
 		hudAt = -Infinity;
+		stillDirty = true;
 	}
 
 	/* the zoom switch: `main` frames the planet field, `full` frames the whole
@@ -592,7 +608,7 @@
 		}
 	}
 
-	function drawOrbits() {
+	function drawOrbits(trails) {
 		ctx.lineWidth = 1;
 		for (let planet = 0; planet < OrbitSim.PLANETS; planet++) {
 			if (!planetInPlay(planet)) continue;
@@ -607,10 +623,9 @@
 			);
 			ctx.strokeStyle = colour;
 			ctx.globalAlpha = 0.17;
-			ctx.setLineDash(active ? NO_DASH : [3, 7]);
+			ctx.setLineDash(active ? NO_DASH : IDLE_DASH);
 			ctx.stroke();
-			if (!active) continue;
-			orbitTrail(planet, colour);
+			if (active && trails) orbitTrail(planet, colour);
 		}
 		ctx.globalAlpha = 1;
 		ctx.setLineDash(NO_DASH);
@@ -937,8 +952,10 @@
 
 	let showBackdrop = true;
 
-	function draw(now) {
-		if (!pulseFrozen) framePulse = 0.5 + 0.5 * Math.sin(now * 0.005);
+	/* clears to the sky (or the bare frame over the field view) and leaves
+	 * the world transform applied inside a save() */
+	function beginPaint() {
+		paints += 1;
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 		if (showBackdrop) ctx.drawImage(backdrop, 0, 0);
@@ -946,14 +963,37 @@
 		ctx.save();
 		ctx.translate(view.offX, view.offY);
 		ctx.scale(view.scale, view.scale);
-		if (!showBackdrop) {
-			ctx.strokeStyle = 'rgba(103, 224, 255, 0.08)';
-			ctx.lineWidth = 1;
-			ctx.strokeRect(AREA_BOX.x, AREA_BOX.y, AREA_BOX.w, AREA_BOX.h);
-			ctx.strokeStyle = 'rgba(103, 224, 255, 0.16)';
-			ctx.strokeRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+		if (showBackdrop) return;
+		ctx.strokeStyle = 'rgba(103, 224, 255, 0.08)';
+		ctx.lineWidth = 1;
+		ctx.strokeRect(AREA_BOX.x, AREA_BOX.y, AREA_BOX.w, AREA_BOX.h);
+		ctx.strokeStyle = 'rgba(103, 224, 255, 0.16)';
+		ctx.strokeRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+	}
+
+	function paintStill() {
+		beginPaint();
+		if (showOrbits) drawOrbits(false);
+		drawPlanets();
+		ctx.restore();
+		stillState.set(sim.planetState);
+		stillPort.set(sim.planetPort);
+		stillDirty = false;
+	}
+
+	/* a colony founded or lost recolours a planet and its orbit */
+	function stillStale() {
+		if (stillDirty) return true;
+		for (let p = 0; p < OrbitSim.PLANETS; p++) {
+			if (stillState[p] !== sim.planetState[p] || stillPort[p] !== sim.planetPort[p]) return true;
 		}
-		if (showOrbits) drawOrbits();
+		return false;
+	}
+
+	function draw(now) {
+		if (!pulseFrozen) framePulse = 0.5 + 0.5 * Math.sin(now * 0.005);
+		beginPaint();
+		if (showOrbits) drawOrbits(true);
 		if (showOrbits && showMoons) drawMoonTracks();
 		if (showLinks) drawLinks();
 		if (showMoons) drawMoons(false);
@@ -1070,24 +1110,44 @@
 			: 'Moving ports: rate and pause also affect gravity and trajectories.';
 	}
 
-	/* rebuilds the world in place, so OrbitScene.sim stays the same object */
-	function resetWorld(seed) {
+	/* rebuilds the world in place, so OrbitScene.sim stays the same object;
+	 * `deferHistory` leaves the fast-forward to `settle`, for a boot that may
+	 * reset again at once when it starts a run */
+	function resetWorld(seed, deferHistory) {
 		sim.reset(seed);
 		/* startGame has already selected the new rule's universe. Retire hidden
 		 * seed ports before the seven-minute fast-forward, so no background ship
 		 * can depart on a route that the career immediately removes. */
 		if (planetMask) sim.setPlanetMask(planetMask);
-		sim.step(START_MINUTES);
-		initMoonSystems();
-		moonClockT = sim.t;
+		historyDue = true;
+		if (!deferHistory) settleWorld();
 		hoverPort = -1;
 		updateHoverInfo();
 		hudAt = -Infinity;
+		stillDirty = true;
+	}
+
+	/* runs a deferred pre-history; true when it had one to run */
+	function settleWorld() {
+		if (!historyDue) return false;
+		historyDue = false;
+		sim.step(START_MINUTES);
+		fastForwards += 1;
+		initMoonSystems();
+		moonClockT = sim.t;
+		stillDirty = true;
+		return true;
 	}
 
 	function frame(now) {
 		const dt = Math.min(0.1, (now - lastFrame) / 1000);
 		lastFrame = now;
+		requestAnimationFrame(frame);
+		if (still) {
+			if (stillStale()) paintStill();
+			updateHud(now);
+			return;
+		}
 		const gameClock = tradeState.gameClock;
 		if (!gameClock && !paused && dt > 0) sim.step(dt * tradeState.speed);
 		if (showMoons && dt > 0 && (!gameClock || sim.t !== moonClockT)) stepMoons(dt);
@@ -1097,7 +1157,16 @@
 		updateHover();
 		draw(now);
 		updateHud(now);
-		requestAnimationFrame(frame);
+	}
+
+	function setStill(on) {
+		on = Boolean(on);
+		if (on === still) return;
+		still = on;
+		stillDirty = true;
+		hoverPort = -1;
+		/* moons resume from where they stopped, not from a jump over the pause */
+		moonClockT = sim.t;
 	}
 
 	speedSlider.addEventListener('input', () => {
@@ -1106,6 +1175,7 @@
 	pauseButton.addEventListener('click', () => setPaused(!paused));
 	orbitsBox.addEventListener('change', () => {
 		showOrbits = orbitsBox.checked;
+		stillDirty = true;
 	});
 	linksBox.addEventListener('change', () => {
 		showLinks = linksBox.checked;
@@ -1147,6 +1217,12 @@
 		planetG: planetG,
 		setPlanetMask: setPlanetMask,
 		reset: resetWorld,
+		settle: settleWorld,
+		setStill,
+		still: () => still,
+		/* test hooks: canvas paints and seven-hour fast-forwards so far */
+		paints: () => paints,
+		fastForwards: () => fastForwards,
 		setSpeed,
 		setGameClock: setGameClock,
 		lockSpeed: lockSpeed,
@@ -1155,7 +1231,9 @@
 			pulseFrozen = Boolean(on);
 		},
 		setBackdrop: on => {
-			showBackdrop = Boolean(on);
+			on = Boolean(on);
+			if (on !== showBackdrop) stillDirty = true;
+			showBackdrop = on;
 		},
 		backdropVisible: () => showBackdrop,
 		moons: {
