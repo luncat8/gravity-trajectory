@@ -145,7 +145,7 @@ function predRateText(sim) {
 }
 
 /* The traced estimate prices the entry rule only; with the stay-pay on, a
- * shot pays at least that (0.8.4-plan-harvest-ticks.md). */
+ * shot pays at least that (0.7.39-plan-harvest-ticks.md). */
 function predTickNote() {
 	return harvestTick && careerRule() ? ' · ≥ticks' : '';
 }

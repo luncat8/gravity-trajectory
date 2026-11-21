@@ -57,7 +57,7 @@ own rail; it leaves one under `BRIBE_MIN = 1`; it takes one under
 `CAREER_BRIBE_PAY = 2` only where the rot is already `CAREER_BRIBE_ROT = 25` or
 another company's launch is queued on that planet; and «the bot’s personality»
 is one seeded yes/no per rival (`CAREER_BRIBE_PRONE = 0.5`: half of them never
-take one). **open** → `../0.9.5-plan-rival-characters.md` makes that yes/no part
+take one). **open** → `../0.8.2-plan-rival-characters.md` makes that yes/no part
 of a named character (`rivals-sport-competitions.md` §5.1).
 
 When corruption is above 50%, accepting a bribe carries a chance of arrest up to 50% at 100% of corruption. arrested player is sent to the Capital for re-education via slow transport, costing time.
@@ -185,7 +185,7 @@ ranked by cash plus `10 ×` the leg credit, half of the aims pointed at the open
 work (`careerGoalBodies`). The "count taken quests as profit" half is the leg
 credit in `careerLandingFacts`.
 
-**open** → `../0.8.6-plan-two-leg-quests.md`: a *specialised* quest helper is
+**open** → `../0.7.40-plan-two-leg-quests.md`: a *specialised* quest helper is
 more than a re-ranked money scan when a contract has two legs. `quest scan` aims
 at the next body; it does not plan `load → fly → deliver` or price the second
 leg. The plan prices the second leg once, in the rules layer, so the helper and

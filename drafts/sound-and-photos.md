@@ -35,32 +35,29 @@ volume and pulsing.
 
 note voronoi seems need only to restrict notes to music scale (nearest planets form scale by design). TODO deferred: review and/or improve this here and/or in experiment project.
 
-**deferred, still open** — the Voronoi generator's tuning lives in the
-experiment project; nothing here re-derives the scale. Review both sides together
-(in this repo first, since the experiment has no bench): the claim "nearest
-planets form the scale by design" is worth one measurement over several seeds —
-if the nearest-neighbour cell set drifts off the pentatonic map on some seeds,
-that is the improvement, and it is a change to `gravity_voronoi_tones.js` alone.
+**open** → `../0.8.6-plan-improve-sound.md` — `zoneRoot` in
+`gravity_voronoi_tones.js` currently jumps across `FIFTHS` via an uncorrelated
+tile hash, creating minor-second clashes across `260×220` borders, and
+`adjacent` in `gravity_voronoi_sound.js` needs toroidal + pruned checks for
+`0.8.0`/`0.8.1`'s 78–192 body fields.
 
 think how blind people could play and think about trajectory (if we implement such in future)
 
-**open** → `../0.8.3-plan-accessibility-readout.md`, deferred by the note
-itself and not started. The honest first step is not new audio: it is a text
+**open** → `../0.8.5-plan-accessibility-readout.md`, deferred by the note
+itself and placed at the end of `0.8.*` alongside `0.8.6-plan-improve-sound.md`.
+The honest first step is not new audio: it is a text
 route — the aim line already prints length, time, visits and profit, so the
 missing piece is the same readout reachable without seeing the canvas (a
 live region on the aim line and the HUD's state tag). Design it as a screen-reader
 contract before any sonification change; the Voronoi generator is already the
 distance channel a blind player would need.
 
-**open**, no plan: the Voronoi generator does have an aim channel — the same sound object
+**open** → `../0.8.6-plan-improve-sound.md`: the Voronoi generator does have an aim channel — the same sound object
 plays the aim bus whether or not `useVoronoi` is on, so the profit chord, length
 ticks and the EMC beacon all sound under `voronoi` (`SOUND_AIM_HINTS.outcome`,
-`updateChord`, `emcBeacon`). What is missing is tuning that knows it: the chord
-is the pentatonic/profit mapping shared with the trajectory synth, while the
-flight side has a dedicated `voronoiPreset` with two voices. Decide whether the
-Voronoi preset should also bend its aim chord (a timbre per preset), or whether
-one aim mapping for every generator is the intended promise before porting
-anything.
+`updateChord`, `emcBeacon`). `0.8.6` aligns the arrival one-shot to the
+destination planet's Voronoi note, splits `emcBeacon` block pitches, and keeps a
+shared outcome grammar across generators.
 
 ## 7.2 more images ← `0.4-draft-career.md`
 

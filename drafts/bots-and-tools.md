@@ -26,8 +26,8 @@ What the benches say about «compete» (`archive/0.5.22-worklog.md`):
    it once in 24 games: it has to be accepted *on the Capital*, and no shot
    score carries its reward there.
 
-**open** → `0.9.6-plan-bot-balancing.md` (`hard` beat `easy` on 2 of 4 seeded
-fields) and `0.9.5-plan-rival-characters.md` (four companies that want different
+**open** → `0.8.3-plan-bot-balancing.md` (`hard` beat `easy` on 2 of 4 seeded
+fields) and `0.8.2-plan-rival-characters.md` (four companies that want different
 things).
 
 ## 8.2 balance_lab.html ← `archive/draft.txt`

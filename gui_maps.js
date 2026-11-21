@@ -42,20 +42,37 @@ function activeFieldMapName() {
 	return activeFieldMap;
 }
 
+function sameRecordField(a, b) {
+	const tagA = a && Array.isArray(a.gravity) ? PlanetGravity.fieldTag(a.gravity) : 0;
+	const tagB = b && Array.isArray(b.gravity) ? PlanetGravity.fieldTag(b.gravity) : 0;
+	return tagA === tagB;
+}
+
 function fieldParamKey(record) {
 	if (!record || !Array.isArray(record.gravity) || !record.gravity.length) return '';
-	if (record.name && savedMapParam(String(record.name))) return String(record.name);
+	const seed = record.seed >>> 0;
 	const tag = PlanetGravity.fieldTag(record.gravity);
+	if (record.name) {
+		const named = savedMapParam(String(record.name));
+		if (named && (named.seed >>> 0) === seed && Array.isArray(named.gravity) &&
+			PlanetGravity.fieldTag(named.gravity) === tag) {
+			return String(record.name);
+		}
+	}
 	const maps = savedMapList();
 	for (let i = 0; i < maps.length; i++) {
-		if (Array.isArray(maps[i].gravity) && PlanetGravity.fieldTag(maps[i].gravity) === tag) {
-			return maps[i].name ? String(maps[i].name) : String(i);
+		if ((maps[i].seed >>> 0) === seed && Array.isArray(maps[i].gravity) &&
+			PlanetGravity.fieldTag(maps[i].gravity) === tag) {
+			const name = maps[i].name ? String(maps[i].name) : '';
+			return name && savedMapParam(name) === maps[i] ? name : String(i);
 		}
 	}
 	const fields = savedFieldList();
 	for (let i = 0; i < fields.length; i++) {
-		if (Array.isArray(fields[i].gravity) && PlanetGravity.fieldTag(fields[i].gravity) === tag) {
-			return fields[i].name ? String(fields[i].name) : 'field:' + i;
+		if ((fields[i].seed >>> 0) === seed && Array.isArray(fields[i].gravity) &&
+			PlanetGravity.fieldTag(fields[i].gravity) === tag) {
+			const name = fields[i].name ? String(fields[i].name) : '';
+			return name && savedMapParam(name) === fields[i] ? name : 'field:' + i;
 		}
 	}
 	return '';
@@ -218,6 +235,7 @@ function mapsReady(what) {
 /* two records of the same world and seats are the same start map */
 function mapSameStart(a, b) {
 	if (a.seed !== b.seed || a.universe !== b.universe) return false;
+	if (!sameRecordField(a, b)) return false;
 	if (a.seats.length !== b.seats.length) return false;
 	for (let i = 0; i < a.seats.length; i++) {
 		if (a.seats[i] !== b.seats[i]) return false;
@@ -229,8 +247,8 @@ function mapAppend(record) {
 	const records = savedMapList();
 	for (let i = 0; i < records.length; i++) {
 		if (records[i].kind !== record.kind) continue;
-		if (record.kind === 'start' && mapSameStart(records[i], record)) return i;
-		if (record.kind === 'run' && records[i].name === record.name) return i;
+		if ((record.kind === 'start' || record.kind === 'field') && mapSameStart(records[i], record)) return i;
+		if (record.kind === 'run' && records[i].name === record.name && sameRecordField(records[i], record)) return i;
 	}
 	records.push(record);
 	return records.length - 1;
@@ -246,6 +264,10 @@ function saveStartMap() {
 	if (!mapsReady('save its map')) return null;
 	const record = GravityMaps.startRecord(mapRunInfo());
 	const index = mapAppend(record);
+	if (record.kind === 'field' && !activeFieldMap) {
+		activeFieldMap = fieldParamKey(savedMapList()[index]);
+		syncSeedUrl();
+	}
 	return mapSaved(record, index);
 }
 

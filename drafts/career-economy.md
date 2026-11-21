@@ -140,10 +140,8 @@ four, and `../archive/0.2.0-plan-colony-economy.md` is the spec:
 → 1, 2 and 4 shipped. 3 is decided and half built: `Sim.seedColony` is the whole
 founding law and nothing in the game calls it.
 
-**open** → `../0.9.2-plan-founding-colony.md`: the call site, as a button at the
-pad that spends a loaded delivery. On a 13-planet map 4 to 9 planets never get a
-colony on their own, and a planet without one is never a delivery's origin or
-destination.
+**open** → `../0.7.44-plan-founding-colony.md`: empty heavy worlds (`13 → 16`)
+without commercial EMC, founded via single-use heavy colonization equipment.
 
 ## 2.6 the pad ladder ← `archive/draft.txt`
 
@@ -258,13 +256,13 @@ limit range of drag ui to actual catapult strength. so player will not drag and 
 make new experimental settings panel add sliders to adjust system global gravity and catapult force.
 
 → `experimental`: `g field ×0…×9`, `catapult ×0.25…×3`, `stay-pay · per tick`.
-**open** → `../0.8.4-plan-harvest-ticks.md`: the stay-pay arithmetic.
+**open** → `../0.7.39-plan-harvest-ticks.md`: the stay-pay arithmetic.
 
 ## buy more ships
 settings checkbox:
 allow buy new automatic ship to earn money; acts like bot, shown under player name, shares player purse and all owned property (science/gear) without repaying research.
 
-→ **open** · `../0.9.3-plan-buy-ships.md` — a bought ship is a ship context
+→ **open** · `../0.7.45-plan-buy-ships.md` — a bought ship is a ship context
 inside the one company career, not a scoreboard slot: it shares purse, pads,
 science and owned gear, costs 30 cr, wears ×2, and appears under YOU. Unlimited;
 no new planet, no `MAX_RIVALS` change.
@@ -350,6 +348,5 @@ these three points are now answered, the rest below is still the spec's job.
   `GravityBot` calls `evacuate` directly in its broke/stranded paths, so the
   bot gets the trip for free — but its `fallbacks`/`evacuations` counters and
   the `career_stats_test` purse identity must hold across the wait.
-- **open** · `../0.7.5-plan-evacuation-trip.md` (to write): the trip state, the
-  price/time line, the two buttons and the bot's use of it. Open points so far
-  are collected in `../archive/0.7.5-worklog.md`.
+- **shipped** · `../archive/0.7.5-worklog.md`: the trip state, the
+  price/time line, the two buttons and the bot's use of it.

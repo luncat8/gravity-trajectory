@@ -519,8 +519,8 @@ list's own page test already covers most of it.
 4. **Does `launchReason` land first?** It touches `gravity_game.js`, which
    four callers share. My answer: yes, alone, in M0, with its test — and nothing
    else in that commit.
-5. **What is the file called?** `0.7.17-plan-helper-dialog.md` at the root
-   (0.7.16 is the highest open plan), code in `gui_comms.js` + `comms_copy.js`
+5. **What is the file called?** `0.8.4-plan-helper-dialog.md` at the root
+   (after all gameplay and balancing plans), code in `gui_comms.js` + `comms_copy.js`
    if the copy table outgrows it. The prefix is `comms`, never `helper` — that
    name belongs to the scan engine (`helperState`, `gui_helper.js`), and a
    dialog sharing a name with a scan is a support ticket. Player-facing name is

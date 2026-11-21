@@ -15,7 +15,7 @@ implement bot character that prefer
 → today one controller flies every rival, with two tunable *policies* inside it
 (`CAREER_BRIBE_PRONE`, the pad-gear payback rule) — not four characters.
 
-**open** → `0.9.5-plan-rival-characters.md`. It is the largest single thing left
+**open** → `0.8.2-plan-rival-characters.md`. It is the largest single thing left
 in the drafts. The four preferences are not four toggles: each one changes what
 the *opening* buys. `archive/0.5.16-plan-rival-first-shop.md` measured that gap —
 a rival that never buys a hold cannot take a quest, so half the board is
@@ -65,7 +65,7 @@ flight launched from a named planet that lands after at least `1500…3000 px`
 pays `2…4` within `180 s` (`makeCompete`, `TASK_COMPETE`, `LEG_COMPETE`). Nobody
 tells anyone it starts, there is no countdown, and a rival never enters.
 
-**open** → `0.8.7-plan-sport-competitions.md` — the timed event the note describes is
+**open** → `0.7.41-plan-sport-competitions.md` — the timed event the note describes is
 not built. The three states it needs are already in the code as *shapes*, so the
 plan grows the existing slot rather than adding a second one:
 
@@ -85,12 +85,13 @@ Variations (`from the Capital only`, `EMC only`, no impulse) are fields on the
 offer record, not branches in the flight code. **open**, no plan yet: the four
 game modes and the variations — which one becomes a mode-row entry first?
 
-→ the first one is `0.8.5-plan-max-distance-mode.md`: two rows,
-`maxdistEmc` (EMC only, farthest path point, return to the start) and
-`maxdistImp` (IMP-1 + big tank, first landing, score farthest), on a long
-non-wrapped strip. Career gets the same shape as a generated `SPORT_MAXDIST`
-rule after the timed-competition event; “max visits”, “land on an
-antigravity planet” and the Capital-only variants stay open.
+→ the first one is `0.8.1-plan-max-distance-mode.md`: two rows,
+`maxdistEmc` (EMC only, farthest path point, return to the start from either
+direction) and `maxdistImp` (IMP-1 + big tank, first landing, score farthest),
+placed right after `0.8.0-plan-periodic-fft.md` (`4800×1000`, periodic FFT wrap
+by default or open strip when `&fft=0`). Career gets `SPORT_MAXDIST` on top of
+`0.7.41`'s timed competition event; “max visits”, “land on an antigravity
+planet” and the Capital-only variants stay open.
 
 ## 5.3 map statistics plots ← `archive/draft.txt`
 

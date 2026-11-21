@@ -7,4 +7,4 @@ add this options also to settings
 
 use url  parameters to run lite profile
 
-→ **open** · `../../0.8.1-plan-lite-profile.md`
+→ **open** · `../../0.7.38-plan-lite-profile.md`

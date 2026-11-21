@@ -106,7 +106,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * also pays, on every step the ship stays inside, what re-accrued during
 	 * that step — a slow or looping pass earns more than a fly-by. Career only;
 	 * the traces that price a shot still assume the entry rule (see
-	 * 0.8.4-plan-harvest-ticks.md).
+	 * 0.7.39-plan-harvest-ticks.md).
 	 */
 	const HARVEST_ENTRY = 0;
 	const HARVEST_TICK = 1;

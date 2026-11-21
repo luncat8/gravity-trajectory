@@ -100,33 +100,33 @@ Search this table for a heading as it was written.
 The two specs written from `0.4-draft-career.md` are
 `../archive/0.4.0-plan-career-a.md` and `-b.md`.
 
-## the open plans, ordered to test in a simple environment first and balance once
+## the open plans, split into `0.7.*` (prior to FFT) and `0.8.*` (FFT and later)
 
-Plans are sequenced in four phases so new features land in a fast, low-coupling
-environment before map laws or multi-ship state grow, and Monte Carlo bot /
-economy balancing runs **once** at the end instead of after every mechanic:
+Plans continue `0.7.*` (`0.7.38`–`0.7.45`) for all classic bounded-map work
+prior to Periodic FFT, and use `0.8.*` (`0.8.0`–`0.8.6`) starting at Periodic
+FFT:
 
-1. **Phase 1 (`0.8.1`–`0.8.4`) — Fast testbed, UI readouts & exact forecast parity (zero balance drift).**
-2. **Phase 2 (`0.8.5`–`0.8.8`) — Isolated mode + core single-ship career mechanics on the classic 13-planet map, ending with `×1` balance sliders.**
-3. **Phase 3 (`0.9.1`–`0.9.4`) — Grouped map-law move (`+5` gravity + empty heavy worlds, regenerating `saved_maps.js` once), automatic fleet, and optional periodic FFT torus.**
-4. **Phase 4 (`0.9.5`–`0.9.6`) — Distinct rival characters across all mechanics, followed by the single final bot & economy calibration pass.**
+1. **Pre-FFT (`0.7.38`–`0.7.45`) — Fast testbed, exact forecast parity, core single-ship career (`two-leg-quests`, `sport-competitions`), `×1` balance sliders, grouped map-law expansion (`+5` gravity + empty heavy worlds), and automatic company fleet.**
+2. **FFT & gameplay completion (`0.8.0`–`0.8.3`) — Periodic FFT torus (`PLANETS = 192`), Max-Distance modes & `SPORT_MAXDIST` (building on FFT's 192-body arrays, non-shader field view, and `512×256` periodic wrap), Rival Characters, and the single final bot/economy calibration pass.**
+3. **Final UX, readout & sound polish (`0.8.4`–`0.8.6`, after all rules settle) — Helper Dialog (`H` M3/M4), Accessibility Live Readout (`#srStatus`), and Sound Improvements (Voronoi neighbor-scale consonance across 13–192 bodies/FFT, aim-channel cues).**
 
-| plan | phase | draft sections it answers |
+| plan | group | draft sections it answers |
 |---|---|---|
-| `../0.8.1-plan-lite-profile.md` | 1 | `new/lite-version.md` (saved-map boot, quiet non-gameplay background, mute sound & photos) |
-| `../0.8.2-plan-helper-dialog.md` | 1 | `helper-dialog-draft.md` / `helper-dialog/` (remaining M3 topic browser/art/delta & M4 non-career/rival-intent) |
-| `../0.8.3-plan-accessibility-readout.md` | 1 | `sound-and-photos.md` §7.1 |
-| `../0.8.4-plan-harvest-ticks.md` | 1 | `career-economy.md` §2.11 (stay-pay forecast & book parity) |
-| `../0.8.5-plan-max-distance-mode.md` | 2 | `flight-lab-and-modes.md` §1.2 (`max distance from start`); `rivals-sport-competitions.md` §5.2 (the first sport mode) |
-| `../0.8.6-plan-two-leg-quests.md` | 2 | `politics-quests.md` §3.5 |
-| `../0.8.7-plan-sport-competitions.md` | 2 | `rivals-sport-competitions.md` §5.2 |
-| `../0.8.8-plan-balance-knobs.md` | 2 | `career-economy.md` §2.9 / `time-scale-units.md` (`pads ×`, `rot ×`, `pay ×` alongside shipped `wear ×`) |
-| `../0.9.1-plan-seeded-map-opening.md` | 3 | `flight-lab-and-modes.md` §1.4, `hud-input-and-help.md` §6.2 (`2-4 of 10`, `+5` ceiling) |
-| `../0.9.2-plan-founding-colony.md` | 3 | `found-colony-land.md`, `career-economy.md` §2.5 |
-| `../0.9.3-plan-buy-ships.md` | 3 | `career-economy.md` §buy more ships |
-| `../0.9.4-plan-periodic-fft.md` | 3 | `map.md` §gravity |
-| `../0.9.5-plan-rival-characters.md` | 4 | `rivals-sport-competitions.md` §5.1, `bots-and-tools.md` §8.1, `politics-quests.md` §3.1 (`the bot’s personality`) |
-| `../0.9.6-plan-bot-balancing.md` | 4 | `flight-lab-and-modes.md` §1.4 (`hard bots…`), `bots-and-tools.md` §8.1 |
+| `../0.7.38-plan-lite-profile.md` | `0.7` pre-FFT | `new/lite-version.md` (saved-map boot, quiet non-gameplay background, mute sound & photos) |
+| `../0.7.39-plan-harvest-ticks.md` | `0.7` pre-FFT | `career-economy.md` §2.11 (stay-pay forecast & book parity) |
+| `../0.7.40-plan-two-leg-quests.md` | `0.7` pre-FFT | `politics-quests.md` §3.5 (`careerLegPlan`, `plan quest`) |
+| `../0.7.41-plan-sport-competitions.md` | `0.7` pre-FFT | `rivals-sport-competitions.md` §5.2 (`galaxy.sport` countdown, pool, barrel hold) |
+| `../0.7.42-plan-balance-knobs.md` | `0.7` pre-FFT | `career-economy.md` §2.9 / `time-scale-units.md` (`pads ×`, `rot ×`, `pay ×` alongside shipped `wear ×`) |
+| `../0.7.43-plan-seeded-map-opening.md` | `0.7` pre-FFT | `flight-lab-and-modes.md` §1.4, `hud-input-and-help.md` §6.2 (`2-4 of 10`, `+5` ceiling) |
+| `../0.7.44-plan-founding-colony.md` | `0.7` pre-FFT | `found-colony-land.md`, `career-economy.md` §2.5 |
+| `../0.7.45-plan-buy-ships.md` | `0.7` pre-FFT | `career-economy.md` §buy more ships |
+| `../0.8.0-plan-periodic-fft.md` | `0.8` FFT+ | `map.md` §gravity (`&fft=1`, `PLANETS = 192`, 256²/512×256 Plummer FFT) |
+| `../0.8.1-plan-max-distance-mode.md` | `0.8` FFT+ | `flight-lab-and-modes.md` §1.2 (`max distance from start`); `rivals-sport-competitions.md` §5.2 (`SPORT_MAXDIST`) |
+| `../0.8.2-plan-rival-characters.md` | `0.8` FFT+ | `rivals-sport-competitions.md` §5.1, `bots-and-tools.md` §8.1, `politics-quests.md` §3.1 (`the bot’s personality`) |
+| `../0.8.3-plan-bot-balancing.md` | `0.8` FFT+ | `flight-lab-and-modes.md` §1.4 (`hard bots…`), `bots-and-tools.md` §8.1 |
+| `../0.8.4-plan-helper-dialog.md` | `0.8` after all | `helper-dialog-draft.md` / `helper-dialog/` (remaining M3 topic browser/art/delta & M4 non-career/rival-intent) |
+| `../0.8.5-plan-accessibility-readout.md` | `0.8` after all | `sound-and-photos.md` §7.1 (`#srStatus` & HUD landmarks) |
+| `../0.8.6-plan-improve-sound.md` | `0.8` after all | `sound-and-photos.md` §7.1 (Voronoi neighbor-scale consonance, toroidal/192-body adjacency, aim/arrival/block cues) |
 | `../archive/0.7.35-plan-playable-fields.md` (done) | — | playable `map_fields.js` designed gravity fields from `map-generator-helper.htm` |
 | `../archive/0.7.16-plan-bribe-rot.md` (done) | — | `politics-quests.md` §3.1–3.2 (bribe rot & quiet restoration) |
 | `../archive/0.7.2-plan-ship-wear.md` (done) | — | `career-economy.md` §ship maintenance cost; `map.md` §add space weather (the wear hook) |
@@ -140,23 +140,23 @@ Open in the drafts and still without a plan of their own, and why:
   five pad tiers** (§4.6) — balance work with one home (`balance_lab.html`), not
   features; plan them together now that `0.6.2` has shipped.
 - **competition game modes and variations** (`rivals-sport-competitions.md` §5.2) —
-  deliberately out of `0.8.7`; each is the career rule with the board replaced.
-  The max-distance pair is `0.8.5`; “max visits”, “land on an antigravity
+  deliberately out of `0.7.41`; each is the career rule with the board replaced.
+  The max-distance pair is `0.8.1`; “max visits”, “land on an antigravity
   planet”, the Capital-only start and the other variations still have no plan.
 - **keyboard aim** (`sound-and-photos.md` §7.1) — the shape is written down in
-  `0.8.3` §3 as a deferred step, not a plan.
-- **the Voronoi scale review and its aim chord** (`sound-and-photos.md` §7.1) and
-  the **HQ-only refit** outside a casual mode (`flight-lab-and-modes.md` §1.5) —
-  both deferred by the notes themselves.
+  `0.8.5` §3 as a deferred step, not a plan.
+- **HQ-only refit** outside a casual mode (`flight-lab-and-modes.md` §1.5) —
+  deferred by the note itself (Voronoi scale & aim-channel tuning now have
+  `0.8.6-plan-improve-sound.md`).
 - **the evacuation trip** (`career-economy.md` §evacuation) — shipped
-  (`../archive/0.7.5-plan-evacuation-trip.md`): a visible career-ship ride on
+  (`../archive/0.7.5-worklog.md`): a visible career-ship ride on
   the world clock whose wait falls linearly from `12 s` at the full `6.00` to
   `240 s` free.
 - **the landed visit-growth half-rate** (`politics-quests.md` §3.2) — «2x less
   speed». Needs one decision on whether the half applies to the shared curve or
   to a landed term the `wait` preview also reads.
 - **space weather** (`map.md`) — no weather plan; the gravity option is
-  `0.9.4`, the wear hook is `0.7.2`, and the zone shape / observation-range /
+  `0.8.0`, the wear hook is `0.7.2`, and the zone shape / observation-range /
   jammer layers still need their own question answered first.
 - small checks, each one question in its section: the tourist / emissary line in
   the help drawer and the money rule's rate on a small universe
