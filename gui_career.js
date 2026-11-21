@@ -350,25 +350,35 @@ function careerFuelAction(career, produce) {
 
 function careerAccept(career, index) {
 	if (!GravityGame.acceptTask(career, index)) {
-		careerNotice('cannot take that delivery');
+		careerNotice('cannot take that offer');
 		return;
 	}
 	recordCareerAction('act', { act: 'accept', targetSlot: index });
 	const task = career.tasks[index];
-	careerNotice(task.state === GravityGame.TASK_LOADED
-		? 'contract accepted · cargo loaded at ' + planetName(task.from)
-		: 'contract accepted · load at ' + planetName(task.from));
+	const refund = task.capitalRefund > 0 ? ' · +' + task.capitalRefund.toFixed(2) + ' Capital refund' : '';
+	if (task.kind === GravityGame.TASK_COMPETE) {
+		careerNotice('entered competition at ' + planetName(task.planet) + refund);
+	} else {
+		careerNotice((task.state === GravityGame.TASK_LOADED
+			? 'contract accepted · cargo loaded at ' + planetName(task.from)
+			: 'contract accepted · load at ' + planetName(task.from)) + refund);
+	}
 	careerChanged();
 	return true;
 }
 
-function careerDrop(career) {
-	if (career.contract < 0) return;
-	recordCareerAction('act', { act: 'drop' });
-	GravityGame.dropContract(career);
+function careerDrop(career, slot) {
+	const index = Number.isInteger(slot) ? slot : career.contract;
+	if (index < 0 || index >= GravityGame.BOARD_SIZE) return;
+	const task = career.tasks[index];
+	const clawback = task ? task.capitalRefund : 0;
+	if (!GravityGame.dropTask(career, index)) return;
+	recordCareerAction('act', index === GravityGame.COMPETE_SLOT
+		? { act: 'drop', targetSlot: index } : { act: 'drop' });
 	/* a freed slot is offered again at once instead of after the next landing */
 	GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
-	careerNotice('contract dropped');
+	careerNotice((index === GravityGame.COMPETE_SLOT ? 'competition dropped' : 'contract dropped') +
+		(clawback > 0 ? ' · −' + clawback.toFixed(2) + ' Capital refund' : ''));
 	careerChanged();
 	return true;
 }
@@ -664,7 +674,7 @@ function careerAct(data) {
 	}
 	if (act === 'produceFuel') return careerFuelAction(career, true);
 	if (act === 'buyFuel') return careerFuelAction(career, false);
-	if (act === 'drop') return careerDrop(career);
+	if (act === 'drop') return careerDrop(career, data.slot !== undefined ? Number(data.slot) : undefined);
 	if (act === 'accept') return careerAccept(career, Number(data.slot));
 	if (!data.item && Math.round(Number(data.tier)) === NO_TIER) {
 		if (act === 'part') return careerPart(career, data.kind, null);

@@ -293,4 +293,39 @@ check(pillColourForAge(60) === '#8ef0c0', 'profit <= 1.00 (>= 0.50) should be mi
 check(pillColourForAge(150) === '#ffcf6e', 'profit in (1.00..2.00) should be amber/gold');
 check(pillColourForAge(320) === '#ff9478', 'profit >= 2.00 should be coral warn');
 
+/* --- Capital sport accept/drop refund and unaffordable medical clearing -- */
+
+Game.placeShip(career, scene.sim, career.capitalPlanet);
+const sportSlot = Game.COMPETE_SLOT;
+const sportTask = career.tasks[sportSlot];
+sportTask.kind = Game.TASK_COMPETE;
+sportTask.state = Game.TASK_OFFERED;
+sportTask.planet = career.capitalPlanet;
+sportTask.minLength = 1500;
+sportTask.reward = 3.5;
+sportTask.deadline = game.clockSteps + 5000;
+context.refreshCareerPanel();
+check(ui.get('careerTasks').innerHTML.includes('data-act="accept" data-slot="' + sportSlot + '"'),
+	'sport row missing accept button');
+const sportPurse = career.ledger.purse;
+act({ act: 'accept', slot: String(sportSlot) });
+check(Math.abs(career.ledger.purse - (sportPurse + Game.CAPITAL_REFUND)) < 1e-9,
+	'Capital sport accept did not refund 3');
+check(ui.get('careerMsg').textContent.includes('Capital refund'),
+	'Capital sport notice hid refund: ' + ui.get('careerMsg').textContent);
+context.refreshCareerPanel();
+check(ui.get('careerTasks').innerHTML.includes('data-act="drop" data-slot="' + sportSlot + '"'),
+	'accepted sport row missing drop button');
+act({ act: 'drop', slot: String(sportSlot) });
+check(Math.abs(career.ledger.purse - sportPurse) < 1e-9,
+	'Capital sport drop did not deduct 3');
+
+Game.seizePlanet(market, game.galaxy, rebelPlanet, game.clockSteps + 1);
+Game.placeShip(career, scene.sim, sitting);
+career.ledger.purse = 0.25;
+Game.refreshBoard(career, trade, game.clockSteps + 2);
+context.refreshCareerPanel();
+check(!ui.get('careerTasks').innerHTML.includes('patients '),
+	'unaffordable medical offer remained on the task board: ' + ui.get('careerTasks').innerHTML);
+
 console.log('POLITICS GUI OK · bribe, arrest, medical board and pills');

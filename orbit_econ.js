@@ -135,10 +135,11 @@
 	const FLYBY_RAMP_SECONDS = 240;       // game seconds for a rebel planet's payout to ramp
 	const FLYBY_MAX = 4;
 	const MEDIC_PATIENTS = 8;
-	/* (0.5.13) the Empire pays to have its frontier back: a full pacification
-	 * is worth two plain deliveries, so the rebellion is a contest the rivals
-	 * can win instead of a tax on the long run */
-	const MEDIC_REWARD_PER_PATIENT = 1;
+	/* (0.5.13, repriced 0.5.23) the Empire pays to have its frontier back: each
+	 * 4-patient trip on a starter hold pays the rebel commercial rail, Hull wear
+	 * and the Capital return tariff, so 2 cr per patient leaves a full two-trip
+	 * pacification worth about two plain deliveries instead of a net loss */
+	const MEDIC_REWARD_PER_PATIENT = 2;
 	const PACIFY_CORRUPTION_MAX = 40;
 
 	/*

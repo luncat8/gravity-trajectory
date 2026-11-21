@@ -500,7 +500,30 @@ function advanceCareerOneStep() {
 		GravityGame.careerWeatherWear(game.career, cargoSim);
 		GravityGame.stepHarvest(game.money, game.market, cargoSim, game.clockSteps);
 	}
+	const medicSlot = !flying && game.career ? game.career.tasks[GravityGame.MEDIC_SLOT] : null;
+	const medicKindBefore = medicSlot ? medicSlot.kind : -1;
+	const medicPatientsBefore = medicSlot ? medicSlot.patients : -1;
 	advanceCareerWorld();
+	if (!flying && game.career && game.career.ended === GravityGame.CAREER_OPEN) {
+		let dirtyTasks = medicSlot !== null &&
+			(medicSlot.kind !== medicKindBefore || medicSlot.patients !== medicPatientsBefore);
+		if (game.clockSteps % 60 === 0) {
+			for (let i = 0; i < GravityGame.BOARD_SIZE; i++) {
+				const task = game.career.tasks[i];
+				if (task.kind !== GravityGame.TASK_NONE && game.clockSteps > task.deadline) {
+					GravityGame.refreshBoard(game.career, tradeSim, game.clockSteps);
+					dirtyTasks = true;
+					break;
+				}
+			}
+		}
+		if (dirtyTasks) {
+			if (careerTaskEl && activeCareer() === game.career) {
+				careerTaskEl.innerHTML = taskBlockHtml(game.career);
+			}
+			updateLiveHud();
+		}
+	}
 	if (flying && cargoSim.status !== STATUS_FLYING) endGameFlight();
 	if (manualRivals) {
 		for (let i = 0; i < bot.count; i++) {

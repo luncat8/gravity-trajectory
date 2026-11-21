@@ -745,6 +745,166 @@ check('a medical offer needs the Capital, a free contract and live patients', ()
 	assert.strictEqual(career.tasks[Game.MEDIC_SLOT].kind, Game.TASK_NONE, 'offer without patients');
 });
 
+check('unaffordable medical offers clear from the board when landed and never update in flight', () => {
+	const w = setup(67);
+	const career = w.career;
+	const planet = normalPlanet(w);
+	const Tech = require(path.join(root, 'orbit_tech.js'));
+	Game.seizePlanet(w.market, w.galaxy, planet, 100);
+	career.ship.hold = Tech.HOLDS[1];
+	Game.placeShip(career, w.sim, career.hq);
+	career.ledger.purse = 10;
+	Game.refreshBoard(career, w.trade, 110);
+	assert.strictEqual(career.tasks[Game.MEDIC_SLOT].kind, Game.TASK_MEDIC, 'affordable offer missing');
+	/* while flying, spending or politics never rewrites MEDIC_SLOT */
+	career.flying = true;
+	career.ledger.purse = 0.5;
+	Game.refreshMedicSlot(career, w.market, 120);
+	assert.strictEqual(career.tasks[Game.MEDIC_SLOT].kind, Game.TASK_MEDIC, 'updated in flight');
+	/* once landed, an unaffordable purse clears the offer on refresh */
+	career.flying = false;
+	Game.refreshBoard(career, w.trade, 130);
+	assert.strictEqual(career.tasks[Game.MEDIC_SLOT].kind, Game.TASK_NONE, 'unaffordable offer stayed on board');
+	/* at the Capital, the +3.00 accept refund covers the rebel return rail */
+	Game.placeShip(career, w.sim, career.capitalPlanet);
+	Game.refreshBoard(career, w.trade, 140);
+	assert.strictEqual(career.tasks[Game.MEDIC_SLOT].kind, Game.TASK_MEDIC, 'Capital refund did not unlock offer');
+});
+
+check('accepting any quest or sport at the Capital refunds 3 and failing or removing deducts 3', () => {
+	const w = setup(71);
+	const career = w.career;
+	const planet = normalPlanet(w);
+	const Tech = require(path.join(root, 'orbit_tech.js'));
+	const starterPurse = Tech.starterGrant().purse;
+	function checkPurseIdentity() {
+		const net = starterPurse + career.visitIncome + career.earned + career.bribeIncome +
+			career.taxEarned - career.feesPaid - career.fuelSpent - career.maintenanceSpent -
+			career.evacuationSpent - career.buildSpent - career.sciSpent;
+		assert.ok(Math.abs(career.ledger.purse - net) < 1e-9,
+			'purse identity broken: ' + career.ledger.purse + ' vs ' + net);
+	}
+	career.ship.hold = Tech.HOLDS[2];
+	Game.placeShip(career, w.sim, career.capitalPlanet);
+	Game.refreshBoard(career, w.trade, 100);
+
+	/* 1. delivery accepted at Capital: +3 immediately, -3 on drop, +3 kept on delivery */
+	const d0 = career.tasks[0];
+	d0.kind = Game.TASK_DELIVERY;
+	d0.state = Game.TASK_OFFERED;
+	d0.from = career.capitalPlanet;
+	d0.to = planet;
+	d0.tons = 4;
+	d0.reward = 2.5;
+	d0.deadline = 5000;
+	const pBefore = career.ledger.purse;
+	const lastBefore = career.lastReward;
+	assert.ok(Game.acceptTask(career, 0));
+	assert.strictEqual(career.ledger.purse, pBefore + Game.CAPITAL_REFUND);
+	assert.strictEqual(career.lastReward, lastBefore, 'accept touched lastReward');
+	checkPurseIdentity();
+	assert.ok(Game.dropContract(career));
+	assert.strictEqual(career.ledger.purse, pBefore, 'drop did not claw back 3');
+	checkPurseIdentity();
+
+	/* fragile break claws back the Capital refund */
+	d0.kind = Game.TASK_DELIVERY;
+	d0.state = Game.TASK_OFFERED;
+	d0.from = career.capitalPlanet;
+	d0.to = planet;
+	d0.tons = 4;
+	d0.reward = 2.5;
+	d0.fragile = true;
+	d0.deadline = 5000;
+	assert.ok(Game.acceptTask(career, 0));
+	assert.strictEqual(career.ledger.purse, pBefore + Game.CAPITAL_REFUND);
+	w.sim.origin = career.capitalPlanet;
+	w.sim.speed = Game.FRAGILE_SPEED + 20;
+	Game.careerBeginFlight(career, w.sim);
+	career.flying = false;
+	assert.strictEqual(career.fragileLost, true);
+	assert.strictEqual(career.ledger.purse, pBefore, 'fragile break did not claw back 3');
+	checkPurseIdentity();
+
+	/* completing a Capital-accepted delivery keeps the +3 refund plus reward */
+	Game.placeShip(career, w.sim, career.capitalPlanet);
+	d0.kind = Game.TASK_DELIVERY;
+	d0.state = Game.TASK_OFFERED;
+	d0.from = career.capitalPlanet;
+	d0.to = planet;
+	d0.tons = 4;
+	d0.reward = 2.5;
+	d0.fragile = false;
+	d0.deadline = 5000;
+	assert.ok(Game.acceptTask(career, 0));
+	w.sim.origin = career.capitalPlanet;
+	w.sim.endReason = GravitySim.END_IMPACT;
+	w.sim.endBody = planet;
+	w.sim.flightLength = 400;
+	Game.careerEndFlight(career, w.sim, w.trade, 200);
+	assert.ok(Math.abs(career.ledger.purse - (pBefore + Game.CAPITAL_REFUND + 2.5 + career.visitIncome)) < 1e-9);
+	checkPurseIdentity();
+
+	/* 2. sport accepted at Capital alongside an open contract: +3, -3 on drop & expiry, kept on win */
+	Game.placeShip(career, w.sim, career.capitalPlanet);
+	const baseSport = career.ledger.purse;
+	const sport = career.tasks[Game.COMPETE_SLOT];
+	sport.kind = Game.TASK_COMPETE;
+	sport.state = Game.TASK_OFFERED;
+	sport.planet = career.capitalPlanet;
+	sport.minLength = 900;
+	sport.reward = 3.25;
+	sport.deadline = 400;
+	assert.ok(Game.acceptTask(career, Game.COMPETE_SLOT));
+	assert.strictEqual(career.ledger.purse, baseSport + Game.CAPITAL_REFUND);
+	assert.ok(Game.dropTask(career, Game.COMPETE_SLOT));
+	assert.strictEqual(career.ledger.purse, baseSport, 'sport drop did not claw back 3');
+	checkPurseIdentity();
+
+	sport.kind = Game.TASK_COMPETE;
+	sport.state = Game.TASK_OFFERED;
+	sport.planet = career.capitalPlanet;
+	sport.minLength = 900;
+	sport.reward = 3.25;
+	sport.deadline = 300;
+	assert.ok(Game.acceptTask(career, Game.COMPETE_SLOT));
+	Game.refreshBoard(career, w.trade, 301);
+	assert.strictEqual(career.ledger.purse, baseSport, 'sport expiry did not claw back 3');
+	checkPurseIdentity();
+
+	sport.kind = Game.TASK_COMPETE;
+	sport.state = Game.TASK_OFFERED;
+	sport.planet = career.capitalPlanet;
+	sport.minLength = 900;
+	sport.reward = 3.25;
+	sport.deadline = 900;
+	assert.ok(Game.acceptTask(career, Game.COMPETE_SLOT));
+	w.sim.origin = career.capitalPlanet;
+	w.sim.flightLength = 950;
+	w.sim.endReason = GravitySim.END_IMPACT;
+	w.sim.endBody = planet;
+	const vBefore = career.visitIncome;
+	Game.careerEndFlight(career, w.sim, w.trade, 350);
+	assert.ok(Math.abs(career.ledger.purse -
+		(baseSport + Game.CAPITAL_REFUND + 3.25 + (career.visitIncome - vBefore))) < 1e-9);
+	checkPurseIdentity();
+
+	/* 3. medical mission evacuation claws back the Capital refund */
+	Game.seizePlanet(w.market, w.galaxy, planet, 360);
+	Game.placeShip(career, w.sim, career.capitalPlanet);
+	w.market.politicsStep = 470;
+	Game.refreshBoard(career, w.trade, 470);
+	const mTask = career.tasks[Game.MEDIC_SLOT];
+	mTask.deadline = 475;
+	const baseMedic = career.ledger.purse;
+	assert.ok(Game.acceptTask(career, Game.MEDIC_SLOT));
+	assert.ok(mTask.deadline > 475, 'accept did not grant full medical deadline');
+	assert.strictEqual(career.ledger.purse, baseMedic + Game.CAPITAL_REFUND);
+	assert.ok(Game.evacuate(career, w.sim, 0));
+	assert.strictEqual(career.ledger.purse, baseMedic, 'evacuation did not claw back medical refund');
+	checkPurseIdentity();
+});
+
 /* --- §6 the colony side ------------------------------------------------ */
 
 check('rot is copied into the trade colonies on the political clock', () => {

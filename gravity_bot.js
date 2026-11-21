@@ -145,6 +145,13 @@
 	/* one way off any planet, priced honestly: the cheapest commercial shot
 	 * (a dry starter ship at the minimum speed on the starter rail) */
 	const CAREER_PURSE_RESERVE = GravityGame.commercialMinFee();
+
+	function careerRefundEscrow(career) {
+		let escrow = 0;
+		if (career.contract >= 0) escrow += career.tasks[career.contract].capitalRefund || 0;
+		escrow += career.tasks[GravityGame.COMPETE_SLOT].capitalRefund || 0;
+		return escrow;
+	}
 	/* pads after which the contract board is worth the 1.5 t hold */
 	const CAREER_HOLD_PADS = 2;
 	const CAREER_LOADED_SPEED = 75;
@@ -1764,8 +1771,28 @@
 
 	GravityBot.prototype.careerArrivalMass = function (career, planet) {
 		let mass = career.ship.mass;
-		if (career.contract < 0) return mass;
+		if (career.contract < 0) {
+			const medic = career.tasks[GravityGame.MEDIC_SLOT];
+			if (planet === career.capitalPlanet && medic.kind === GravityGame.TASK_MEDIC &&
+				medic.medics > 0) {
+				return OrbitTech.shipMass(career.ship, medic.medics);
+			}
+			return mass;
+		}
 		const task = career.tasks[career.contract];
+		if (task.kind === GravityGame.TASK_MEDIC) {
+			const market = career.market;
+			if (task.aboard === 0 && planet === task.to) {
+				const picked = market ? Math.min(task.medics, market.patients[task.to]) : task.medics;
+				return OrbitTech.shipMass(career.ship, picked);
+			}
+			if (task.aboard > 0 && planet === career.capitalPlanet) {
+				const left = market && market.patients[task.to] > task.aboard
+					? market.patients[task.to] - task.aboard : 0;
+				return OrbitTech.shipMass(career.ship, GravityGame.medicLoad(career, left));
+			}
+			return mass;
+		}
 		if (task.state === GravityGame.TASK_ACCEPTED && task.from === planet) mass += task.tons;
 		else if (task.state === GravityGame.TASK_LOADED && task.to === planet) mass -= task.tons;
 		return mass;
@@ -1923,7 +1950,8 @@
 	};
 
 	GravityBot.prototype.careerBuyGear = function (career, planet, kind, item, reserve, step, why) {
-		if (!item || career.ledger.purse + 1e-9 < careerPrice(career, item) + reserve) return false;
+		const keep = (reserve || 0) + careerRefundEscrow(career);
+		if (!item || career.ledger.purse + 1e-9 < careerPrice(career, item) + keep) return false;
 		const fresh = kind === OrbitTech.KIND_CATAPULT && career.pads[planet].catapult === null;
 		if (!GravityGame.buildGear(career, planet, kind, item)) return false;
 		if (fresh) this.careerBuilds += 1;
@@ -1937,7 +1965,8 @@
 	 * and at HQ unlock + fit a lightweight composite tank + thruster kit. */
 	GravityBot.prototype.careerResearch = function (career, sim, reserve) {
 		if (career.ended !== GravityGame.CAREER_OPEN) return null;
-		const keep = reserve === undefined ? CAREER_PURSE_RESERVE : reserve;
+		const keep = (reserve === undefined ? CAREER_PURSE_RESERVE : reserve) +
+			careerRefundEscrow(career);
 		if (GravityGame.prototypesOf(career, OrbitTech.KIND_CATAPULT).length === 0 &&
 			(sim.forceScale < 0.85 || career.ship.hold.capacity >= 8)) {
 			const fee = GravityGame.researchCost(career, OrbitTech.KIND_CATAPULT, RESEARCH_BRIDGE_RAIL);
@@ -2022,18 +2051,24 @@
 		return best;
 	};
 
-	/* A delivery starting here doesn't pay another fine for getting here. */
+	/* A delivery starting here doesn't pay another fine for getting here;
+	 * any quest accepted at the Capital also collects the immediate refund. */
 	function careerNetReward(career, task) {
 		const entries = Number(task.from === career.capitalPlanet && task.from !== career.at) +
 			Number(task.to === career.capitalPlanet);
-		return task.reward + entries * GravityGame.CAPITAL_VISIT_PAY;
+		const refund = career.capitalPlanet >= 0 && career.at === career.capitalPlanet
+			? GravityGame.CAPITAL_REFUND : 0;
+		return task.reward + refund + entries * GravityGame.CAPITAL_VISIT_PAY;
 	}
 
 	/* The pickup has to launch the loaded ship. Don't take a job whose
 	 * reward cannot even pay that ticket, or whose delivery is a dead end. */
 	GravityBot.prototype.careerDeliveryNet = function (career, task, hold, budget, sim) {
+		const refund = career.capitalPlanet >= 0 && career.at === career.capitalPlanet
+			? GravityGame.CAPITAL_REFUND : 0;
+		const purse = budget + refund;
 		const dry = OrbitTech.refitMass(career.ship, OrbitTech.KIND_HOLD, hold, 0);
-		const loaded = this.careerDeparture(career, task.from, budget, dry + task.tons, sim);
+		const loaded = this.careerDeparture(career, task.from, purse, dry + task.tons, sim);
 		const net = careerNetReward(career, task) - loaded.cost;
 		if (!loaded.ok || net <= 0) return -Infinity;
 		if (task.fragile && loaded.speed > GravityGame.FRAGILE_SPEED &&
@@ -2041,17 +2076,38 @@
 		return this.careerDeparture(career, task.to, budget + net, dry, sim).ok ? net : -Infinity;
 	};
 
+	GravityBot.prototype.careerMedicNet = function (career, planet, patients, hold, budget, sim) {
+		const medics = Math.min(Math.floor(hold.capacity / 2), patients);
+		if (medics < 1 || career.capitalPlanet < 0) return -Infinity;
+		const purse = budget + GravityGame.CAPITAL_REFUND;
+		const loadedMass = OrbitTech.refitMass(career.ship, OrbitTech.KIND_HOLD, hold, medics);
+		const out = this.careerDeparture(career, career.capitalPlanet, purse, loadedMass, sim);
+		if (!out.ok) return -Infinity;
+		const outCost = out.cost;
+		const back = this.careerDeparture(career, planet, purse - outCost, loadedMass, sim);
+		if (!back.ok) return -Infinity;
+		const backCost = back.cost;
+		const tripPay = medics * OrbitEcon.MEDIC_REWARD_PER_PATIENT;
+		const net = tripPay + GravityGame.CAPITAL_REFUND + GravityGame.CAPITAL_VISIT_PAY -
+			outCost - backCost;
+		return net > 0 ? net : -Infinity;
+	};
+
 	GravityBot.prototype.careerAccept = function (career, step = this.worldStep, sim = this.probe) {
 		if (career.contract >= 0 || step < career.acceptAfterStep) return false;
 		let best = -1;
 		let bestScore = -Infinity;
 		for (let i = 0; i < GravityGame.BOARD_SIZE; i++) {
-			if (!GravityGame.canAccept(career, i)) continue;
+			if (i === GravityGame.COMPETE_SLOT || !GravityGame.canAccept(career, i)) continue;
 			const task = career.tasks[i];
 			const net = task.kind === GravityGame.TASK_DELIVERY
-				? this.careerDeliveryNet(career, task, career.ship.hold, career.ledger.purse, sim) : task.reward;
+				? this.careerDeliveryNet(career, task, career.ship.hold, career.ledger.purse, sim)
+				: task.kind === GravityGame.TASK_MEDIC
+				? this.careerMedicNet(career, task.to, task.patients, career.ship.hold, career.ledger.purse, sim)
+				: task.reward;
 			if (!Number.isFinite(net)) continue;
-			let score = net - task.tons * 0.02;
+			const loadTons = task.kind === GravityGame.TASK_MEDIC ? task.medics : task.tons;
+			let score = net - loadTons * 0.02;
 			if (task.kind === GravityGame.TASK_MEDIC) score += CAREER_MEDIC_VALUE;
 			if (task.from === career.at) score += 0.75;
 			if (career.pads[task.from].catapult !== null) score += 0.25;
@@ -2059,6 +2115,25 @@
 			if (score > bestScore) {
 				bestScore = score;
 				best = i;
+			}
+		}
+		/* A medical offer can only be signed at the Capital: keep the contract
+		 * slot free when flying to the Capital for it beats the local board. */
+		const medic = career.tasks[GravityGame.MEDIC_SLOT];
+		if (career.at >= 0 && career.at !== career.capitalPlanet &&
+			medic.kind === GravityGame.TASK_MEDIC && medic.medics > 0) {
+			const depart = this.careerDeparture(career, career.at, career.ledger.purse,
+				career.ship.mass, sim);
+			const departOk = depart.ok;
+			const departCost = depart.cost;
+			const afterDepart = career.ledger.purse - departCost;
+			if (departOk && afterDepart + 1e-9 >= GravityGame.CAPITAL_REFUND) {
+				const medicNet = this.careerMedicNet(career, medic.to, medic.patients,
+					career.ship.hold, afterDepart, sim) - departCost;
+				if (Number.isFinite(medicNet)) {
+					const medicScore = medicNet - medic.medics * 0.02 + CAREER_MEDIC_VALUE - 1.5;
+					if (medicScore > bestScore) return false;
+				}
 			}
 		}
 		if (best < 0 || !GravityGame.acceptTask(career, best)) return false;
@@ -2232,7 +2307,7 @@
 	 * purse can still pay for with the launch reserve intact */
 	GravityBot.prototype.careerGearOffer = function (career, rate, cost, kind, item, mate, label) {
 		const best = this.careerGear;
-		if (cost + CAREER_PURSE_RESERVE > career.ledger.purse + 1e-9) return;
+		if (cost + CAREER_PURSE_RESERVE + careerRefundEscrow(career) > career.ledger.purse + 1e-9) return;
 		const value = (rate > 0 ? rate : 0) * CAREER_PAD_HORIZON;
 		if (value <= best.value) return;
 		best.value = value;
@@ -2250,7 +2325,7 @@
 		const condition = career.ship.condition;
 		if (condition > CAREER_REPAIR_AT) return false;
 		const cost = GravityGame.repairCost(career);
-		const reserve = condition > 0 ? CAREER_PURSE_RESERVE : 0;
+		const reserve = condition > 0 ? CAREER_PURSE_RESERVE + careerRefundEscrow(career) : 0;
 		if (career.ledger.purse + 1e-9 < cost + reserve) return false;
 		if (!GravityGame.repairCareer(career)) return false;
 		this.traceAdd(careerTraceIndex(career), 'repair', 'P' + career.at + ' · cond ' +
@@ -2275,6 +2350,13 @@
 			if (task.kind !== GravityGame.TASK_DELIVERY || task.state !== GravityGame.TASK_OFFERED) continue;
 			if (task.from !== career.at || task.tons > hold.capacity) continue;
 			if (this.careerDeliveryNet(career, task, hold, budget, sim) > price) return true;
+		}
+		if (career.at === career.capitalPlanet && career.market) {
+			const market = career.market;
+			for (let p = 0; p < OrbitWorld.PLANETS; p++) {
+				if (!market.rebel[p] || !market.patients[p] || !GravityGame.planetInPlay(career, p)) continue;
+				if (this.careerMedicNet(career, p, market.patients[p], hold, budget, sim) > price) return true;
+			}
 		}
 		return false;
 	};
@@ -2308,7 +2390,8 @@
 			actions++;
 		}
 		const at = career.at;
-		const departure = this.careerPadOffer(career, at, career.ledger.purse, sim);
+		const departure = this.careerPadOffer(career, at,
+			career.ledger.purse - careerRefundEscrow(career), sim);
 		if (this.careerBuyPad(career, at, departure, 0, runStep,
 			career.pads[at].catapult ? 'affordable exit' : 'claim an exitable landing')) actions++;
 		if (GravityGame.padLift(career, at, sim.forceScale) + 1e-9 < GravitySim.SPEED_MIN) {
@@ -2346,6 +2429,7 @@
 		 * first landing's EMC money at hand rather than claiming a remote site
 		 * and then having to pay the commercial rail under the ship. */
 		const reserve = CAREER_PURSE_RESERVE + GravityGame.repairCost(career) +
+			careerRefundEscrow(career) +
 			(career.flights === 0 ? careerPrice(career, OrbitTech.CATAPULTS[0]) : 0);
 		if (career.ended === GravityGame.CAREER_OPEN && career.ledger.purse >= reserve) {
 			const here = this.careerDeparture(career, career.at, career.ledger.purse, career.ship.mass, sim);
@@ -2364,7 +2448,7 @@
 		 * It follows the claim, so one pass can buy a pad and then kit out. */
 		if (career.at >= 0 && career.ship.hold === OrbitTech.HOLDS[0] &&
 			career.ledger.purse + 1e-9 >= careerPrice(career, OrbitTech.HOLDS[1]) +
-				CAREER_PURSE_RESERVE && this.careerWantHold(career, sim) &&
+				CAREER_PURSE_RESERVE + careerRefundEscrow(career) && this.careerWantHold(career, sim) &&
 			GravityGame.installPart(career, OrbitTech.KIND_HOLD, OrbitTech.HOLDS[1])) {
 			this.traceAdd(careerTraceIndex(career), 'gear', 'P' + career.at + ' ' +
 				OrbitTech.HOLDS[1].id + ' · ' + OrbitTech.HOLDS[1].capacity + ' t', runStep);
@@ -2627,7 +2711,10 @@
 		const bribe = this.careerBribeOffer(career, market, body, landingValue || 0);
 		this.careerEval.cash += bribe;
 		this.careerEval.bribe = bribe;
-		const taskPay = this.careerEval.cash + this.careerEval.credit;
+		let taskPay = this.careerEval.cash + this.careerEval.credit;
+		if (this.careerEval.leg === GravityGame.LEG_MEDICS && body === career.capitalPlanet) {
+			taskPay += CAREER_MEDIC_VALUE;
+		}
 		const cashPay = this.careerEval.cash;
 
 		const launchFee = fee || 0;
@@ -2646,7 +2733,15 @@
 		}
 		/* A dead ship must be repaired before it can take any departure. */
 		const mandatoryRepair = GravityGame.forecastRepairReserve(career, arrivalCondition);
-		const exitCash = career.ledger.purse + cashPay - launchFee - mandatoryRepair;
+		const completesEscrow = this.careerEval.leg === GravityGame.LEG_DELIVER ||
+			this.careerEval.leg === GravityGame.LEG_PATIENTS ||
+			this.careerEval.leg === GravityGame.LEG_COMPETE;
+		const escrow = completesEscrow ? 0 : careerRefundEscrow(career);
+		const exitCash = career.ledger.purse + cashPay - launchFee - mandatoryRepair - escrow;
+		if (escrow > 0 && career.ledger.purse - launchFee - mandatoryRepair - escrow < -1e-9) {
+			this.careerEval.reject = 'fee';
+			return -Infinity;
+		}
 		/* Other companies can harvest the projected visits before we do. A
 		 * fixed entry fine must be covered by cash or this landing's payout. */
 		if (landingValue < 0 && exitCash - visitPay + landingValue < -1e-9) {
@@ -2677,7 +2772,9 @@
 		 * landing could have taken loses its worth to the other ship. Charging
 		 * the contest on an own rail made a company refuse to go home, which is
 		 * exactly the pad it can always launch from. */
-		if (contested && !own.catapult) padValue -= CAREER_CONTESTED_COST;
+		if (contested && !own.catapult && body !== career.capitalPlanet) {
+			padValue -= CAREER_CONTESTED_COST;
+		}
 		padValue -= wear;
 		this.careerEval.builds = claim || (own.catapult !== null && departure.builds);
 		this.careerEval.exitCost = departure.cost;
@@ -2823,7 +2920,8 @@
 		if (career.contract >= 0) return goals[0];
 		for (let i = 0; i < goals.length; i++) {
 			const planet = goals[i];
-			if (planet !== career.at && career.pads[planet].catapult !== null) return planet;
+			if (planet !== career.at &&
+				(planet === career.capitalPlanet || career.pads[planet].catapult !== null)) return planet;
 		}
 		return -1;
 	};
@@ -3810,7 +3908,7 @@
 			quote.produceKg = Math.min(room, Math.floor(free * GravityGame.FUEL_KG_PER_KWH + 1e-9));
 		}
 		const reserve = GravityGame.launchFee(career, planet, GravityGame.padLift(career, planet)) +
-			(this.level === 'hard' ? 0 : CAREER_PURSE_RESERVE);
+			careerRefundEscrow(career) + (this.level === 'hard' ? 0 : CAREER_PURSE_RESERVE);
 		const cash = Math.max(0, career.ledger.purse - reserve);
 		const price = GravityGame.fuelPrice(career);
 		quote.buyKg = Math.min(room - quote.produceKg,
@@ -4028,6 +4126,17 @@
 	GravityBot.prototype.careerReadyShot = function (r, plan, market, runStep, priced) {
 		r.idleTries = 0;
 		if (priced) this.careerPriceBurn(r, plan, market, runStep);
+		const career = r.career;
+		if (plan && career.at === career.capitalPlanet) {
+			const compete = career.tasks[GravityGame.COMPETE_SLOT];
+			if (compete.kind === GravityGame.TASK_COMPETE &&
+				compete.state === GravityGame.TASK_OFFERED &&
+				compete.planet === career.capitalPlanet &&
+				plan.length >= compete.minLength &&
+				runStep + plan.steps <= compete.deadline) {
+				GravityGame.acceptTask(career, GravityGame.COMPETE_SLOT);
+			}
+		}
 		return plan;
 	};
 

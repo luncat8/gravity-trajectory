@@ -448,7 +448,8 @@ function padBlockHtml(career) {
 		html += '<div class="careerLine">free imperial EMC-3 · lifts to ' + Math.round(lift) +
 			' px/s · always charged</div>' +
 			'<div class="careerLine dim">the Empire owns this resort · no building, claims or upgrades · ' +
-			'entry ' + CAPITAL_PROFIT_TEXT + '</div>';
+			'entry ' + CAPITAL_PROFIT_TEXT + ' · taking work refunds +' +
+			GravityGame.CAPITAL_REFUND.toFixed(2) + '</div>';
 		return html;
 	}
 	if (career.commercialPlanet === at) {

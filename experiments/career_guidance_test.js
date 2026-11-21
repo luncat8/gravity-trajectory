@@ -280,6 +280,34 @@ scene.career.contract = -1;
 assert.deepStrictEqual(Array.from(gameApi.careerGoalBodies(scene.career)), [],
 	'an empty board still names a goal');
 
+/* An affordable untaken medical offer on MEDIC_SLOT points careerGoalBodies at
+ * the Capital and credits the Capital landing without inflating cash. */
+const untakenMedic = scene.career.tasks[gameApi.MEDIC_SLOT];
+const prevHold = scene.career.ship.hold;
+const prevPurse = scene.career.ledger.purse;
+scene.career.ship.hold = env.context.OrbitTech.HOLDS[1];
+scene.career.ledger.purse = 12;
+untakenMedic.kind = gameApi.TASK_MEDIC;
+untakenMedic.state = gameApi.TASK_OFFERED;
+untakenMedic.from = capital;
+untakenMedic.to = 12;
+untakenMedic.planet = 12;
+untakenMedic.patients = 8;
+untakenMedic.medics = 4;
+untakenMedic.reward = 8 * env.context.OrbitEcon.MEDIC_REWARD_PER_PATIENT;
+untakenMedic.deadline = careerAt() + 100000;
+assert.deepStrictEqual(Array.from(gameApi.careerGoalBodies(scene.career)), [capital],
+	'untaken medical offer does not guide quest scan / bot toward the Capital');
+factsOut = landing(origin, capital, 400, 100, -3);
+assert.strictEqual(factsOut.cash, -3, 'untaken medical offer inflated immediate Capital cash');
+assert.strictEqual(factsOut.leg, gameApi.LEG_MEDICS, 'untaken Capital pickup leg not tagged LEG_MEDICS');
+assert.ok(Math.abs(factsOut.credit -
+	(gameApi.CAPITAL_REFUND + 4 * env.context.OrbitEcon.MEDIC_REWARD_PER_PATIENT) * gameApi.LEG_CREDIT) < 1e-9,
+	'unexpected untaken Capital medical credit: ' + factsOut.credit);
+untakenMedic.kind = gameApi.TASK_NONE;
+scene.career.ship.hold = prevHold;
+scene.career.ledger.purse = prevPurse;
+
 /* The aim readout counts the taken medical quest too: a landing on the
  * (temporarily relocated) Capital pays the per-patient reward in predGain. */
 const realCapital = scene.career.capitalPlanet;

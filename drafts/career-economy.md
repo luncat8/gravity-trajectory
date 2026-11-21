@@ -104,8 +104,11 @@ Capital, ARF, all start HQ player's planets should have Gravity=1
 all three kinds of planet have their gravity pinned. A.R.F. pays `0` and takes no bribes, the
 Capital pays `−3` on every entry and its fixed imperial EMC-3 makes takeoff free,
 building is refused there, and tourists are offered at `2×` an ordinary endpoint
-— to A.R.F. as well as to and from the Capital resort (`0.5.11`). Nothing in this
-block is open.
+— to A.R.F. as well as to and from the Capital resort (`0.5.11`). Accepting any
+quest (`TASK_DELIVERY`, `TASK_MEDIC`) or sport (`TASK_COMPETE`) while landed on
+the Capital immediately refunds `+3.00` (`CAPITAL_REFUND`), clawed back (`−3.00`)
+if the task is dropped, expires, breaks, or aborts (`../archive/0.5.23-plan-medic-capital.md`).
+Nothing in this block is open.
 
 ### add quest
 

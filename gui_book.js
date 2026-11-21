@@ -40,12 +40,29 @@ function taskRowHtml(career, index) {
 			'</span><span class="careerNow">no offer</span></div>';
 	}
 	const left = Math.max(0, Math.round((task.deadline - game.clockSteps) * DT));
-	if (task.kind === GravityGame.TASK_MEDIC) return medicRowHtml(career, task, index, left);
+	const atCapital = career.capitalPlanet >= 0 && career.at === career.capitalPlanet;
+	const refundNote = atCapital
+		? ' · refunds +' + GravityGame.CAPITAL_REFUND.toFixed(2) + ' Capital entry fee (deducted if failed or dropped)'
+		: '';
+	if (task.kind === GravityGame.TASK_MEDIC) return medicRowHtml(career, task, index, left, refundNote);
 	if (task.kind === GravityGame.TASK_COMPETE) {
-		return '<div class="careerRow"><span class="careerKind">sport</span>' +
+		let sportHtml = '<div class="careerRow"><span class="careerKind">sport</span>' +
 			'<span class="careerNow">' + planetName(task.planet) + ' · land ≥ ' +
 			task.minLength + ' px</span><span class="careerBtns">+' + task.reward.toFixed(2) +
-			' · ' + left + ' s</span></div>';
+			' · ' + left + ' s';
+		if (task.state === GravityGame.TASK_OFFERED) {
+			const ok = GravityGame.canAccept(career, index);
+			sportHtml += '<button class="miniBtn" data-act="accept" data-slot="' + index + '"' +
+				(ok ? '' : ' disabled') +
+				' title="' + (ok ? 'enter this competition' + refundNote : 'land on a planet to enter') +
+				'">accept</button>';
+		} else {
+			sportHtml += '<button class="miniBtn" data-act="drop" data-slot="' + index +
+				'" title="withdraw from the competition' +
+				(task.capitalRefund > 0 ? ' · deducts −' + task.capitalRefund.toFixed(2) + ' Capital refund' : '') +
+				'">drop</button>';
+		}
+		return sportHtml + '</span></div>';
 	}
 	const good = OrbitEcon.GOODS_TABLE[task.good].id;
 	const state = task.state === GravityGame.TASK_LOADED
@@ -64,7 +81,7 @@ function taskRowHtml(career, index) {
 		const ok = GravityGame.canAccept(career, index);
 		html += '<button class="miniBtn" data-act="accept" data-slot="' + index + '"' +
 			(ok ? '' : ' disabled') +
-			' title="' + (ok ? 'take this delivery' + (task.fragile
+			' title="' + (ok ? 'take this delivery' + refundNote + (task.fragile
 				? ' · fragile: once loaded, a harder launch breaks it and voids the contract' : '')
 				+ (task.deep ? ' · deep origin: a load this heavy out of a deep well wants an EMC-3+ rail · pays +' +
 					Math.round(GravityGame.DEEP_BONUS * 100) + '%' : '')
@@ -72,13 +89,15 @@ function taskRowHtml(career, index) {
 				? 'needs a ' + task.tons + ' t hold (have ' + hold + ' t)'
 				: 'one contract at a time') + '">accept</button>';
 	} else {
-		html += '<button class="miniBtn" data-act="drop" title="drop the contract and its cargo">drop</button>';
+		html += '<button class="miniBtn" data-act="drop" title="drop the contract and its cargo' +
+			(task.capitalRefund > 0 ? ' · deducts −' + task.capitalRefund.toFixed(2) + ' Capital refund' : '') +
+			'">drop</button>';
 	}
 	return html + '</span></div>';
 }
 
 /* the medical mission row: patients at the rebellion, medics from the Capital */
-function medicRowHtml(career, task, index, left) {
+function medicRowHtml(career, task, index, left, refundNote) {
 	const state = task.state === GravityGame.TASK_LOADED || task.state === GravityGame.TASK_ACCEPTED
 		? (task.aboard > 0
 			? task.aboard + ' patients → ' + planetName(career.capitalPlanet)
@@ -91,11 +110,13 @@ function medicRowHtml(career, task, index, left) {
 		const ok = GravityGame.canAccept(career, index);
 		html += '<button class="miniBtn" data-act="accept" data-slot="' + index + '"' +
 			(ok ? '' : ' disabled') +
-			' title="' + (ok ? 'ferry medics out and patients home'
+			' title="' + (ok ? 'ferry medics out and patients home' + (refundNote || '')
 				: 'accept at the Capital ' + planetName(career.capitalPlanet) + ' with a free contract') +
 			'">accept</button>';
 	} else {
-		html += '<button class="miniBtn" data-act="drop" title="drop the mission and its cargo">drop</button>';
+		html += '<button class="miniBtn" data-act="drop" title="drop the mission and its cargo' +
+			(task.capitalRefund > 0 ? ' · deducts −' + task.capitalRefund.toFixed(2) + ' Capital refund' : '') +
+			'">drop</button>';
 	}
 	return html + '</span></div>';
 }

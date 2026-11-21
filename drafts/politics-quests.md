@@ -4,6 +4,10 @@ Rot, bribes, arrest, rebellion, the commission that reports back to the Capital,
 and the contract board around all of it. Text from `archive/draft.txt`; the
 built spec is `archive/0.5.12-plan-corruption-rebellion.md`.
 
+#### Capital balance
+
+Capital visit cost 3cr, accept quests and sport in capital refund 3cr immediately. fail/remove quest - deduct 3cr again.
+
 ## 3.1 Corruption (numbers are subject to balance) ← `archive/draft.txt`
 
 Corruption (disobedience to central laws) reduces population growth.
@@ -78,15 +82,23 @@ A rebellious planet’s flyby fee increases 4x slowly.
 
 When there are rebellious planets, a mission becomes available: load medics at the Capital, land on a rebellious planet, pick up patients automatically (same numbers as medics, technically half of the cargo hold), and deliver them to the Capital. Once the number of patients reaches zero (typically after 1–2 trips with a standard cargo hold), the planet loses its rebellious status. medics unloaded automatically when quest finished by any reason.
 
-→ `TASK_MEDIC`, `MEDIC_PATIENTS 8`, `MEDIC_REWARD_PER_PATIENT 1`, pacified at the
-last patient. A player can fly it.
-
-**open** → `../0.5.23-plan-medic-capital.md`: a rival takes it once in 24 games.
-Every rival now carries a hold, so the offer stands 29 % of the time, but it is
-the only contract that must be accepted *on a particular planet* — the Capital —
-and a rival stands there 2.7 % of the time, by accident. Naming the Capital as a
-goal was measured and changes nothing (`archive/0.5.22-worklog.md` §4): the
-reward is two legs away and belongs to no shot's score.
+→ `TASK_MEDIC`, `MEDIC_PATIENTS 8`, `MEDIC_REWARD_PER_PATIENT 2` (`+8.00` per
+4-patient `HOLD-8` trip), pacified at the last patient (`../archive/0.5.23-plan-medic-capital.md`,
+done):
+- Accepting *any* quest or sport while landed on the Capital immediately refunds
+  the `−3.00` entry fee (`CAPITAL_REFUND 3`, credited to `ledger.purse` and
+  `earned`). Completing the task keeps the `+3.00`; dropping, expiring, breaking
+  a fragile load, arrest, or evacuating off a medical run claws `−3.00` back.
+  Rival spending reserves escrow active `capitalRefund` until the task settles.
+- Unaffordable `MEDIC_SLOT` offers clear from the board on `refreshBoard` and
+  landed shop updates (never per-frame or in flight), and reappear once cash
+  recovers. Accepting `TASK_MEDIC` refreshes `deadline` to a full two-leg window
+  (`480 s`).
+- `careerGoalBodies` and `careerLandingFacts` value an untaken `MEDIC_SLOT` at
+  the Capital as `LEG_MEDICS` credit (`(CAPITAL_REFUND + medics · MEDIC_REWARD_PER_PATIENT) · LEG_CREDIT`)
+  without inflating immediate landing `cash`, and rivals reserve `career.contract`
+  for a stronger medical mission before flying to the Capital (`13` medic trips /
+  `44` patients home across the 30-seed `career_gravity_bench.js`).
 
 ## 3.2 bribe ← `archive/draft.txt`
 

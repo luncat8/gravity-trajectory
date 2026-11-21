@@ -823,6 +823,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	};
 	/* a fly-visit to the Capital pays this flat fee on each entry; A.R.F. pays 0 */
 	const CAPITAL_VISIT_PAY = -3;
+	/* accepting any quest or sport at the Capital refunds the entry fee at once;
+	 * failing or removing that quest or sport deducts the refund back */
+	const CAPITAL_REFUND = -CAPITAL_VISIT_PAY;
 	/* tourist-delivery bias: A.R.F. destinations and Capital resort origins and
 	 * destinations each weigh 2x an ordinary endpoint (0.5.11) */
 	const TOURIST_CHANCE = 0.35;
@@ -885,7 +888,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	function createTask() {
 		return { kind: TASK_NONE, state: TASK_OFFERED, good: 0, tons: 0, from: -1, to: -1,
 			planet: -1, minLength: 0, reward: 0, deadline: 0, tourist: false, fragile: false,
-			deep: false, medics: 0, patients: 0, aboard: 0 };
+			deep: false, medics: 0, patients: 0, aboard: 0, capitalRefund: 0 };
 	}
 
 	function clearTask(task) {
@@ -897,6 +900,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		task.medics = 0;
 		task.patients = 0;
 		task.aboard = 0;
+		task.capitalRefund = 0;
 	}
 
 	/* --- EMC network ------------------------------------------------------- */
@@ -1546,6 +1550,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.repairs += 1;
 		setShipCondition(career, 1);
 		checkEnded(career);
+		refreshCareerMedic(career);
 		return true;
 	}
 
@@ -1588,6 +1593,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.fuelBoughtKg += amount;
 		career.fuelSpent += cost;
 		checkEnded(career);
+		refreshCareerMedic(career);
 		return amount;
 	}
 
@@ -3682,6 +3688,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			clearPad(career, planet);
 		}
 		refreshNetwork(galaxy);
+		for (let i = 0; i < galaxy.actors.length; i++) {
+			refreshMedicSlot(galaxy.actors[i], market, runStep);
+		}
 		return market.rebelPads[planet];
 	}
 
@@ -3788,6 +3797,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.bribes += 1;
 		career.bribeIncome += amount;
 		checkEnded(career);
+		refreshCareerMedic(career);
 		if (!visitReports(career.ledger, market, planet)) {
 			/* an unreported value is cashed by the bribe, once: it regrows from here */
 			market.lastVisitStep[planet] = runStep;
@@ -3870,6 +3880,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			? OrbitEcon.PACIFY_CORRUPTION_MAX : market.corruption[planet];
 		/* a quelled world reports again: the quiet state is burnt down with the rot */
 		market.quiet[planet] = 0;
+		if (market.galaxy && market.galaxy.actors) {
+			for (let i = 0; i < market.galaxy.actors.length; i++) {
+				refreshMedicSlot(market.galaxy.actors[i], market, runStep);
+			}
+		}
 	}
 
 	/* --- building ------------------------------------------------------ */
@@ -3945,6 +3960,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (fresh && career.commercialPlanet === planet) career.commercialPlanet = -1;
 		syncCareerNetwork(career);
 		checkEnded(career);
+		refreshCareerMedic(career);
 		return true;
 	}
 
@@ -3966,6 +3982,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.ledger.purse -= cost;
 		career.buildSpent += cost;
 		syncCareerNetwork(career);
+		refreshCareerMedic(career);
 		return true;
 	}
 
@@ -3999,6 +4016,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.ship[kind] = item;
 		career.ship.fuelKg = Math.min(career.ship.fuelKg, career.ship.tank.fuelCap);
 		refitShip(career);
+		refreshCareerMedic(career);
 		return true;
 	}
 
@@ -4172,17 +4190,60 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	}
 
 	/*
-	 * The medical quest (0.5.12): a rebellious planet's patients have to reach
-	 * the Capital. Half the hold rides out as medics, the same number rides
-	 * back as patients, and the planet is quelled once its last patient lands.
-	 * The contract's kind is TASK_MEDIC, so every other rule ignores it.
+	 * The medical quest (0.5.12, repriced 0.5.23): a rebellious planet's
+	 * patients have to reach the Capital. Half the hold rides out as medics,
+	 * the same number rides back as patients, and the planet is quelled once
+	 * its last patient lands. An offer stands on the board only while the
+	 * landed company has a hold and can afford the mission's rail fees.
 	 */
+	function medicAffordable(career, planet, medics) {
+		if (!career || career.ended !== CAREER_OPEN || career.capitalPlanet < 0 ||
+			career.at < 0 || planet < 0 || medics < 1) return false;
+		const loadedMass = OrbitTech.shipMass(career.ship, medics);
+		const rebelPad = commercialPadAt(career, planet);
+		if (!rebelPad || !rebelPad.catapult || !rebelPad.battery) return false;
+		if (OrbitTech.speedLimit(rebelPad.battery.capacity, loadedMass,
+			rebelPad.catapult, career.forceScale) + 1e-9 < GravitySim.SPEED_MIN) return false;
+		const repairNeed = careerShipUsable(career) ? 0 : repairCost(career);
+		const rebelFee = commercialFee(career, planet, GravitySim.SPEED_MIN, loadedMass);
+		if (career.at === career.capitalPlanet) {
+			return career.ledger.purse + CAPITAL_REFUND - repairNeed + 1e-9 >= rebelFee;
+		}
+		const emptyMass = OrbitTech.shipMass(career.ship, 0);
+		const ownPad = career.pads[career.at];
+		const ownLifts = ownPad && ownPad.catapult &&
+			OrbitTech.speedLimit(ownPad.battery.capacity, emptyMass,
+				ownPad.catapult, career.forceScale) + 1e-9 >= GravitySim.SPEED_MIN;
+		let depart = 0;
+		if (!ownLifts) {
+			const commRail = commercialPadAt(career, career.at);
+			const commOk = commRail && OrbitTech.speedLimit(commRail.battery.capacity,
+				emptyMass, commRail.catapult, career.forceScale) + 1e-9 >= GravitySim.SPEED_MIN;
+			depart = commOk ? commercialFee(career, career.at, GravitySim.SPEED_MIN, emptyMass) : Infinity;
+			const owner = padOwner(career, career.at, false);
+			if (owner >= 0 && owner !== career.index) {
+				const hostPad = padAt(career, career.at, false);
+				if (hostPad && OrbitTech.speedLimit(hostPad.battery.capacity, emptyMass,
+					hostPad.catapult, career.forceScale) + 1e-9 >= GravitySim.SPEED_MIN) {
+					const tax = price(career, CAREER.taxPerKwh *
+						OrbitTech.launchEnergy(emptyMass, hostPad.catapult, GravitySim.SPEED_MIN) *
+						hostPad.catapult.tier);
+					if (tax < depart) depart = tax;
+				}
+			}
+			if (!Number.isFinite(depart)) return false;
+		}
+		return career.ledger.purse - depart - repairNeed + 1e-9 >= Math.max(CAPITAL_REFUND, rebelFee);
+	}
+
 	function medicPlanet(career, market) {
 		let best = -1;
 		let most = 0;
 		for (let p = 0; p < OrbitWorld.PLANETS; p++) {
 			if (!market.rebel[p] || !market.patients[p]) continue;
 			if (!planetInPlay(career, p)) continue;
+			const medics = medicLoad(career, market.patients[p]);
+			if (!medicAffordable(career, p, medics)) continue;
 			if (market.patients[p] <= most) continue;
 			best = p;
 			most = market.patients[p];
@@ -4191,9 +4252,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	}
 
 	function makeMedic(career, market, step, task) {
+		if (career.arrested) return false;
 		const planet = medicPlanet(career, market);
 		if (planet < 0 || career.capitalPlanet < 0) return false;
-		/* no hold, no medics: the offer waits in the slot until a hold fits */
 		const medics = medicLoad(career, market.patients[planet]);
 		if (medics < 1) return false;
 		task.kind = TASK_MEDIC;
@@ -4210,9 +4271,38 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		task.minLength = 0;
 		task.reward = round2(task.patients * OrbitEcon.MEDIC_REWARD_PER_PATIENT);
 		task.deep = false;
+		task.capitalRefund = 0;
 		/* two trips with the standard hold, one with a big one */
 		task.deadline = step + Math.round(CAREER.deliverySec * 2 / GravitySim.DT);
 		return true;
+	}
+
+	/* PRNG-free refresh of MEDIC_SLOT while landed; never runs in flight */
+	function refreshMedicSlot(career, market, step) {
+		if (!career || career.flying || !market || !market.galaxy) return;
+		const medic = career.tasks[MEDIC_SLOT];
+		if (medic.kind === TASK_MEDIC) {
+			if (career.contract === MEDIC_SLOT) {
+				if (medic.aboard === 0 && !market.patients[medic.to]) dropContract(career);
+				return;
+			}
+			const patients = market.rebel[medic.to] ? market.patients[medic.to] : 0;
+			const medics = medicLoad(career, patients);
+			if (!patients || !medicAffordable(career, medic.to, medics)) {
+				clearTask(medic);
+			} else {
+				medic.patients = patients;
+				medic.medics = medics;
+				medic.reward = round2(patients * OrbitEcon.MEDIC_REWARD_PER_PATIENT);
+			}
+		}
+		if (medic.kind === TASK_NONE) makeMedic(career, market, step, medic);
+	}
+
+	function refreshCareerMedic(career) {
+		if (career && !career.flying && career.market) {
+			refreshMedicSlot(career, career.market, Math.max(0, career.market.politicsStep));
+		}
 	}
 
 	/* half the hold rides as medics: no new ship stat, no full-hold dead end */
@@ -4229,12 +4319,58 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return task.medics;
 	}
 
-	function dropContract(career) {
+	function grantCapitalRefund(career, task) {
+		if (career.capitalPlanet < 0 || career.at !== career.capitalPlanet) return 0;
+		task.capitalRefund = CAPITAL_REFUND;
+		career.ledger.purse += CAPITAL_REFUND;
+		career.earned += CAPITAL_REFUND;
+		checkEnded(career);
+		return CAPITAL_REFUND;
+	}
+
+	function clawbackTaskRefund(career, task) {
+		const refund = task.capitalRefund;
+		if (!(refund > 0)) return 0;
+		task.capitalRefund = 0;
+		career.ledger.purse -= refund;
+		career.earned -= refund;
+		checkEnded(career);
+		return refund;
+	}
+
+	function finishContract(career) {
 		if (career.contract < 0) return;
-		clearTask(career.tasks[career.contract]);
+		const task = career.tasks[career.contract];
+		task.capitalRefund = 0;
+		clearTask(task);
 		career.contract = -1;
 		career.ship.cargoTons = 0;
 		refitShip(career);
+		refreshCareerMedic(career);
+	}
+
+	function dropTask(career, index) {
+		if (index < 0 || index >= BOARD_SIZE) return false;
+		const task = career.tasks[index];
+		if (task.kind === TASK_NONE) return false;
+		if (index === COMPETE_SLOT) {
+			if (task.state !== TASK_ACCEPTED) return false;
+			clawbackTaskRefund(career, task);
+			clearTask(task);
+			return true;
+		}
+		if (career.contract !== index) return false;
+		clawbackTaskRefund(career, task);
+		clearTask(task);
+		career.contract = -1;
+		career.ship.cargoTons = 0;
+		refitShip(career);
+		return true;
+	}
+
+	function dropContract(career) {
+		if (career.contract < 0) return false;
+		return dropTask(career, career.contract);
 	}
 
 	/* drops expired offers (and an expired contract with its cargo), refills the board */
@@ -4243,7 +4379,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			const task = career.tasks[i];
 			if (task.kind === TASK_NONE || step <= task.deadline) continue;
 			if (i === career.contract) dropContract(career);
-			else clearTask(task);
+			else {
+				clawbackTaskRefund(career, task);
+				clearTask(task);
+			}
 		}
 		for (let i = 0; i < CAREER.deliverySlots; i++) {
 			const task = career.tasks[i];
@@ -4253,33 +4392,31 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (compete.kind === TASK_NONE && draw01(career, SALT_TASK) * CAREER.competeEvery < 1) {
 			makeCompete(career, step, compete);
 		}
-		/* the medical mission is a standing offer while a rebellion has patients,
-		 * and a stale offer leaves as soon as the planet is quelled */
-		const medic = career.tasks[MEDIC_SLOT];
-		const market = career.market;
-		if (!market || !market.galaxy) return;
-		if (medic.kind === TASK_MEDIC && career.contract !== MEDIC_SLOT &&
-			(!market.rebel[medic.to] || !market.patients[medic.to])) {
-			clearTask(medic);
-		}
-		if (medic.kind === TASK_NONE) makeMedic(career, market, step, medic);
+		refreshMedicSlot(career, career.market, step);
 	}
 
 	function canAccept(career, index) {
+		if (!career || career.ended !== CAREER_OPEN || career.flying ||
+			career.evacuating || career.arrested) return false;
+		if (index < 0 || index >= BOARD_SIZE) return false;
 		const task = career.tasks[index];
-		if (career.contract >= 0 || career.arrested || task.state !== TASK_OFFERED) return false;
+		if (task.state !== TASK_OFFERED) return false;
+		if (task.kind === TASK_COMPETE) return career.at >= 0;
+		if (career.contract >= 0) return false;
 		if (task.kind === TASK_MEDIC) {
 			return career.capitalPlanet >= 0 && career.at === career.capitalPlanet &&
-				task.medics > 0 && task.patients > 0;
+				task.medics > 0 && task.patients > 0 &&
+				medicAffordable(career, task.to, task.medics);
 		}
 		return task.kind === TASK_DELIVERY && career.ship.hold.capacity >= task.tons;
 	}
 
 	/*
 	 * Where the open work wants the ship next, nearest leg first: the taken
-	 * contract's next stop, then the competition planet. Bots route to the
-	 * first entry, scans aim at all of them, and neither knows or cares which
-	 * contract kind it is. One scratch list — read it before calling again.
+	 * contract's next stop (or the Capital to take a standing medical mission),
+	 * then the competition planet. Bots route to the first entry, scans aim at
+	 * all of them, and neither knows or cares which contract kind it is. One
+	 * scratch list — read it before calling again.
 	 */
 	const goalBodies = [];
 	function careerGoalBodies(career) {
@@ -4288,6 +4425,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			const task = career.tasks[career.contract];
 			if (task.kind === TASK_MEDIC) goalBodies.push(task.aboard > 0 ? career.capitalPlanet : task.to);
 			else goalBodies.push(task.state === TASK_LOADED ? task.to : task.from);
+		} else if (career.tasks[MEDIC_SLOT].kind === TASK_MEDIC && career.capitalPlanet >= 0) {
+			goalBodies.push(career.capitalPlanet);
 		}
 		const compete = career.tasks[COMPETE_SLOT];
 		if (compete.kind === TASK_COMPETE) goalBodies.push(compete.planet);
@@ -4300,19 +4439,32 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		refitShip(career);
 	}
 
-	/* one contract at a time; cargo loads at once when the ship already sits at the origin */
+	/* one contract at a time; cargo loads at once when the ship already sits at
+	 * the origin, and any work accepted at the Capital refunds its entry fee */
 	function acceptTask(career, index) {
 		if (!canAccept(career, index)) return false;
 		const task = career.tasks[index];
+		if (task.kind === TASK_COMPETE) {
+			task.state = TASK_ACCEPTED;
+			grantCapitalRefund(career, task);
+			refreshCareerMedic(career);
+			return true;
+		}
 		career.contract = index;
 		if (task.kind === TASK_MEDIC) {
-			/* taken at the Capital, so the medics board at once */
+			/* taken at the Capital, so the medics board at once with a full window */
+			const nowStep = career.market ? Math.max(0, career.market.politicsStep) : 0;
+			const span = Math.round(CAREER.deliverySec * 2 / GravitySim.DT);
+			if (nowStep + span > task.deadline) task.deadline = nowStep + span;
 			task.state = TASK_LOADED;
 			loadMedics(career, task, task.patients);
+			grantCapitalRefund(career, task);
 			return true;
 		}
 		task.state = TASK_ACCEPTED;
 		if (career.at === task.from) loadCargo(career, task);
+		grantCapitalRefund(career, task);
+		refreshCareerMedic(career);
 		return true;
 	}
 
@@ -4360,11 +4512,24 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				out.credit += task.reward * LEG_CREDIT;
 				out.leg = LEG_LOAD;
 			}
+		} else if (career.contract < 0 && origin !== career.capitalPlanet &&
+			body === career.capitalPlanet) {
+			const medic = career.tasks[MEDIC_SLOT];
+			if (medic.kind === TASK_MEDIC && medic.medics > 0 &&
+				runStep + steps <= medic.deadline &&
+				medicAffordable(career, medic.to, medic.medics)) {
+				const tripPay = medic.medics * OrbitEcon.MEDIC_REWARD_PER_PATIENT;
+				out.credit += (CAPITAL_REFUND + tripPay) * LEG_CREDIT;
+				out.leg = LEG_MEDICS;
+			}
 		}
 		const compete = career.tasks[COMPETE_SLOT];
 		if (compete.kind === TASK_COMPETE && origin === compete.planet &&
 			(flownLen || 0) + length >= compete.minLength && runStep + steps <= compete.deadline) {
 			out.cash += compete.reward;
+			if (compete.state === TASK_OFFERED && origin === career.capitalPlanet) {
+				out.credit += CAPITAL_REFUND * LEG_CREDIT;
+			}
 			if (out.leg === LEG_NONE) out.leg = LEG_COMPETE;
 		}
 		return out;
@@ -4378,6 +4543,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			if (sim.flightLength < task.minLength || step > task.deadline) continue;
 			pay(career, task.reward);
 			career.competitions += 1;
+			task.capitalRefund = 0;
 			clearTask(task);
 		}
 		if (career.contract < 0) return;
@@ -4387,7 +4553,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		else if (task.state === TASK_LOADED && planet === task.to) {
 			pay(career, task.reward);
 			career.delivered += 1;
-			dropContract(career);
+			finishContract(career);
 		}
 	}
 
@@ -4398,6 +4564,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (!market) return false;
 		if (task.aboard === 0 && planet === task.to) {
 			const picked = Math.min(task.medics, market.patients[task.to]);
+			if (picked <= 0) {
+				dropContract(career);
+				return false;
+			}
 			task.aboard = picked;
 			career.ship.cargoTons = picked;
 			career.medicTrips += 1;
@@ -4415,12 +4585,19 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		refitShip(career);
 		pay(career, delivered * OrbitEcon.MEDIC_REWARD_PER_PATIENT);
 		if (left > 0) {
+			task.patients = left;
+			task.reward = round2(left * OrbitEcon.MEDIC_REWARD_PER_PATIENT);
 			loadMedics(career, task, left);
 			task.deadline = step + Math.round(CAREER.deliverySec * 2 / GravitySim.DT);
+			if (market.galaxy && market.galaxy.actors) {
+				for (let i = 0; i < market.galaxy.actors.length; i++) {
+					refreshMedicSlot(market.galaxy.actors[i], market, step);
+				}
+			}
 			return true;
 		}
 		pacifyPlanet(market, task.to, step);
-		dropContract(career);
+		finishContract(career);
 		return true;
 	}
 
@@ -4804,7 +4981,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		CAREER, FUEL_KG_PER_KWH, FUEL_PRICE, FUEL_BUY_STEP, fuelPrice, produceFuel, buyFuel,
 		COMMERCIAL_BASE, COMMERCIAL_KWH, commercialFee, commercialMinFee,
 		DEEP_G, DEEP_TONS, DEEP_BONUS, deepOrigin, deepText,
-		CAPITAL_VISIT_PAY, TOURIST_CHANCE, TOURIST_WEIGHT,
+		CAPITAL_VISIT_PAY, CAPITAL_REFUND, TOURIST_CHANCE, TOURIST_WEIGHT,
 		QUIET_MIN, FRAGILE_ACCEL, FRAGILE_SPEED, FRAGILE_G, FRAGILE_TONS, FRAGILE_PAY,
 		BOARD_SIZE, COMPETE_SLOT, MEDIC_SLOT, CARGO_TONS,
 		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_MEDIC,
@@ -4830,7 +5007,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		SCIENCE_FAMILIES, SCIENCE_KINDS, seedScience, researchPreview, researchCost, researchLabel, researchPoint,
 		prototypesOf, prototypeById, gearKnown, planetBuildable, planetSeized,
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart, partRefusal,
-		refreshBoard, canAccept, acceptTask, dropContract, medicLoad, settleMedic,
+		refreshBoard, refreshMedicSlot, medicAffordable, medicPlanet,
+		canAccept, acceptTask, dropTask, dropContract, medicLoad, settleMedic,
 		careerBeginFlight, careerBurn, careerAdvance, careerEndFlight, returnLandingVisit, evacuate
 	};
 

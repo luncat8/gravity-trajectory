@@ -115,7 +115,7 @@ The two specs written from `0.4-draft-career.md` are
 | `../0.7.6-plan-balance-knobs.md` | `career-economy.md` §2.9 / `time-scale-units.md` (pad, rot, pay and wear multipliers separate from the clock) |
 | `../0.4.27-plan-bot-balancing.md` | `flight-lab-and-modes.md` §1.4 (`hard bots…`), `bots-and-tools.md` §8.1 |
 | `../0.4.30-plan-harvest-ticks.md` | `career-economy.md` §2.11 (stay-pay) |
-| `../0.5.23-plan-medic-capital.md` | `politics-quests.md` §3.1 (the medical mission) |
+| `../archive/0.5.23-plan-medic-capital.md` (done) | `politics-quests.md` §3.1 (the medical mission), `career-economy.md` §2.4 (Capital accept refund) |
 
 Open in the drafts and still without a plan of their own, and why:
 
