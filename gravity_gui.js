@@ -311,6 +311,7 @@ const helperTweakBtn = $('helperTweak');
 const helperProfitBtn = $('helperProfit');
 const helperEmcBtn = $('helperEmc');
 const helperQuestBtn = $('helperQuest');
+const helperPlanQuestBtn = $('helperPlanQuest');
 const helperProgressEl = $('helperProgress');
 const helperProgressFillEl = $('helperProgressFill');
 const helperProgressTextEl = $('helperProgressText');
@@ -450,6 +451,7 @@ function makeAimSlot() {
  */
 const game = { on: false, seed: 0, fixedRate: false, rule: RULE_TOUR, bot: BOT_NORMAL,
 	player: PLAYER_USER, cheat: null, playerCount: 0, planetUniverse: 0,
+	gravityScale: 1, forceScale: 1, spaceWearScale: 1, harvestTick: false,
 	shots: [], steps: 0, clockSteps: 0, doneSteps: -1, length: 0,
 	market: GravityGame.createMarket(), money: GravityGame.createLedger(),
 	galaxy: GravityGame.createGalaxy() };
@@ -641,6 +643,7 @@ if (helperTweakBtn) helperTweakBtn.addEventListener('click', helperStartTweak);
 if (helperProfitBtn) helperProfitBtn.addEventListener('click', () => helperStartProfit(false));
 if (helperEmcBtn) helperEmcBtn.addEventListener('click', () => helperStartProfit(true));
 if (helperQuestBtn) helperQuestBtn.addEventListener('click', helperStartQuest);
+if (helperPlanQuestBtn) helperPlanQuestBtn.addEventListener('click', helperStartPlanQuest);
 if (helperStopBtn) helperStopBtn.addEventListener('click', stopHelper);
 clearButton.addEventListener('click', () => {
 	if (helperState.active) { stopHelper(); return; }
@@ -1025,7 +1028,7 @@ root.GravityScene = {
 	aimGuidance: () => aimGuidance,
 	predTime: () => activeSim().predTime,
 	speedCeiling,
-	experimentScales: () => ({ gravity: gravityScale, force: forceScale, spaceWear: spaceWearScale }),
+	experimentScales: () => ({ gravity: gravityScale, force: forceScale, spaceWear: spaceWearScale, harvestTick: harvestTick && careerRule() }),
 	/* the profit-pill highlight: systems a flying ship is inside vs the ones
 	 * the traced path ahead will enter */
 	harvestMarks: () => ({ inside: liveHarvestMask, route: predHarvestMask }),

@@ -231,21 +231,27 @@ function applyExperiment() {
 		if (career) career.forceScale = forceScale;
 	}
 	GravityGame.setSpaceWearScale(spaceWearScale);
-	GravityGame.setHarvestMode(harvestTick && careerRule()
+	const careerTicks = harvestTick && careerRule();
+	GravityGame.setHarvestMode(careerTicks
 		? GravityGame.HARVEST_TICK : GravityGame.HARVEST_ENTRY);
+	game.gravityScale = gravityScale;
+	game.forceScale = forceScale;
+	game.spaceWearScale = spaceWearScale;
+	game.harvestTick = careerTicks;
 }
 
 function refreshExperimentUi() {
 	const gravityText = '×' + gravityScale.toFixed(2);
 	const forceText = '×' + forceScale.toFixed(2);
+	const careerTicks = harvestTick && careerRule();
 	if (expGravityLabelEl) expGravityLabelEl.textContent = gravityText;
 	if (expForceLabelEl) expForceLabelEl.textContent = forceText;
 	if (expWearLabelEl) expWearLabelEl.textContent = '×' + spaceWearScale.toFixed(2);
-	if (expHarvestEl) expHarvestEl.checked = harvestTick;
+	if (expHarvestEl) expHarvestEl.checked = careerTicks;
 	if (expTagEl) {
 		expTagEl.textContent = 'g ' + gravityText + ' · force ' + forceText +
 			(careerRule() ? ' · wear ×' + spaceWearScale.toFixed(2) : '') +
-			(harvestTick ? ' · ticks' : '');
+			(careerTicks ? ' · ticks' : '');
 	}
 }
 
@@ -280,6 +286,7 @@ function onHarvestChange() {
 	careerRecordingMark();
 	applyExperiment();
 	refreshExperimentUi();
+	syncSeedUrl();
 	if (careerRule()) refreshLaunchList(true);
 	dirty = true;
 	hudAt = -Infinity;
@@ -296,7 +303,9 @@ function onWearInput() {
 	careerRecordingMark();
 	cancelHelperForChange('space wear');
 	GravityGame.setSpaceWearScale(spaceWearScale);
+	game.spaceWearScale = spaceWearScale;
 	refreshExperimentUi();
+	syncSeedUrl();
 	refreshLaunchList(true);
 	dirty = true;
 	hudAt = -Infinity;
@@ -324,6 +333,7 @@ function onExperimentInput() {
 		cancelHelperForChange('gravity or force');
 	}
 	setExperimentScales(nextGravity, nextForce, harvestTick);
+	syncSeedUrl();
 	clampArmedToPad();
 	/* the drawer prints the pad's cap: re-render it or the number goes stale */
 	if (careerRule()) refreshCareerPanel();

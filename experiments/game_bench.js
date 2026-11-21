@@ -149,6 +149,14 @@ function benchCodec() {
 		bot: GravityGame.BOT_OFF, player: GravityGame.PLAYER_USER, cheat: null,
 		gravityScale: 0.8, forceScale: 1.5, shots: [] }) ===
 		'game=1&seed=5&rate=1&rule=career&gs=0.8&fs=1.5', 'scales are not encoded');
+	check(GravityGame.encodeLink({ seed: 5, rate: 1, rule: GravityGame.RULE_CAREER,
+		bot: GravityGame.BOT_OFF, player: GravityGame.PLAYER_USER, cheat: null,
+		harvestTick: true, shots: [] }) ===
+		'game=1&seed=5&rate=1&rule=career&ht=1', 'career harvestTick is not encoded');
+	check(GravityGame.encodeLink({ seed: 5, rate: 1, rule: GravityGame.RULE_TOUR,
+		bot: GravityGame.BOT_OFF, player: GravityGame.PLAYER_USER,
+		harvestTick: true, shots: [] }) ===
+		'game=1&seed=5&rate=1', 'non-career link leaked &ht=1');
 	let worst = 0;
 	for (let n = 0; n < 100000; n++) {
 		const angle = rand() * 20 - 10;

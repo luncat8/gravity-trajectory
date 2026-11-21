@@ -141,8 +141,17 @@ function pageBookTag() {
 const shotMoney = {
 	cash: 0, credit: 0, leg: GravityGame.LEG_NONE, visit: 0,
 	fee: 0, exit: Infinity, net: -Infinity,
-	builds: false, launchable: false, source: ''
+	builds: false, launchable: false, source: '',
+	twoLegStop: false, leg2Feasible: true, hasSecond: false,
+	twoLegTotal: -Infinity, leg1StepNet: -Infinity, legPlan: null
 };
+const shotLegPlan = GravityGame.createLegPlan();
+const shotLegInput = {
+	origin: -1, body: -1, speed: 0, flownLen: 0, length: 0, steps: 0,
+	visitPay: 0, bribe: 0, condition: 1, burnDv: 0, fee: 0,
+	logPlanet: null, logStep: null, logDwell: null, logCount: 0
+};
+const shotLegOpts = { slot: -1, seekClaim: false, exitSpeedFn: null };
 
 /* A fresh trace and a stored visit log differ only in the harvest they
  * price, so both feed this table: the rule's landing factors (cash for the
@@ -151,28 +160,78 @@ const shotMoney = {
  * launch button pays first is the caller's separate choice, not the route's
  * cost, so `net` never carries it; it still gates `launchable` and the
  * budget handed to the exit. */
-function moneyFacts(origin, speed, body, steps, length, visitPay) {
+function moneyFacts(origin, speed, body, steps, length, visitPay, logPlanet, logStep, logDwell, logCount) {
 	const career = activeCareer();
+	const sim = activeCareerSim();
 	GravityGame.careerLandingFacts(shotMoney, career, origin, body, 0, length, steps,
 		game.clockSteps, visitPay, speed);
 	const fee = GravityGame.launchFee(career, origin, speed);
-	const condition = previewStartCondition(career, activeCareerSim(), origin, speed);
+	const condition = previewStartCondition(career, sim, origin, speed);
 	const repair = condition > career.ship.condition ? GravityGame.repairCost(career) : 0;
 	const arrival = GravityGame.forecastCondition(career, condition, steps, speed, 0, true);
 	const wear = GravityGame.forecastWearCost(career, condition, steps, speed, 0, true);
 	const mandatoryRepair = GravityGame.forecastRepairReserve(career, arrival);
 	const available = career.ledger.purse + shotMoney.cash - fee - repair - mandatoryRepair;
 	const mass = bot.careerArrivalMass(career, body);
-	const departure = bot.careerDeparture(career, body, available, mass, activeCareerSim(),
-		arrival === 0 ? 1 : arrival);
+	const departure = bot.careerDeparture(career, body, available, mass, sim,
+		arrival === 0 ? 1 : arrival, false, true, GravitySim.gameSeconds(steps));
 	const padless = career.pads[body].catapult === null;
 	shotMoney.visit = visitPay;
 	shotMoney.fee = fee;
 	shotMoney.exit = departure.ok ? departure.cost : Infinity;
 	shotMoney.net = departure.ok ? shotMoney.cash - fee - departure.cost - wear : -Infinity;
+	shotMoney.leg1StepNet = shotMoney.cash - fee - wear;
 	shotMoney.builds = padless && (departure.builds || departure.canBuildStarter);
 	shotMoney.launchable = career.ledger.purse + 1e-9 >= fee + repair && available >= -1e-9 && departure.ok;
 	shotMoney.source = departure.source;
+	shotMoney.twoLegStop = false;
+	shotMoney.leg2Feasible = shotMoney.launchable;
+	shotMoney.hasSecond = false;
+	shotMoney.twoLegTotal = shotMoney.launchable ? shotMoney.net + shotMoney.credit : -Infinity;
+	shotMoney.legPlan = null;
+
+	if (career.contract >= 0 && body >= 0) {
+		const task = career.tasks[career.contract];
+		if ((task.kind === GravityGame.TASK_DELIVERY &&
+			task.state === GravityGame.TASK_ACCEPTED && body === task.from) ||
+			(task.kind === GravityGame.TASK_MEDIC && task.aboard === 0 && body === task.to)) {
+			shotMoney.twoLegStop = true;
+			shotLegInput.origin = origin;
+			shotLegInput.body = body;
+			shotLegInput.speed = speed;
+			shotLegInput.flownLen = 0;
+			shotLegInput.length = length;
+			shotLegInput.steps = steps;
+			shotLegInput.visitPay = visitPay;
+			shotLegInput.bribe = 0;
+			shotLegInput.condition = condition;
+			shotLegInput.burnDv = 0;
+			shotLegInput.fee = fee;
+			shotLegInput.logPlanet = logPlanet || null;
+			shotLegInput.logStep = logStep || null;
+			shotLegInput.logDwell = logDwell || null;
+			shotLegInput.logCount = logCount || 0;
+			shotLegOpts.slot = -1;
+			shotLegOpts.seekClaim = false;
+			shotLegOpts.exitSpeedFn = bot.careerExitFn;
+			GravityGame.careerLegPlan(shotLegPlan, career, game.market, sim,
+				shotLegInput, game.clockSteps, shotLegOpts);
+			shotLegInput.logPlanet = null;
+			shotLegInput.logStep = null;
+			shotLegInput.logDwell = null;
+			shotLegInput.logCount = 0;
+			shotMoney.legPlan = shotLegPlan;
+			shotMoney.leg2Feasible = shotLegPlan.feasible;
+			shotMoney.hasSecond = shotLegPlan.hasSecond;
+			shotMoney.twoLegTotal = shotLegPlan.total;
+			if (!shotLegPlan.feasible) {
+				shotMoney.credit = 0;
+				shotMoney.leg = GravityGame.LEG_NONE;
+			} else if (shotLegPlan.hasSecond) {
+				shotMoney.credit = shotLegPlan.credit;
+			}
+		}
+	}
 	return shotMoney;
 }
 
@@ -181,7 +240,8 @@ function traceMoney(probe, origin, speed) {
 	const condition = previewStartCondition(career, activeCareerSim(), origin, speed);
 	const reportUntil = GravityGame.forecastReportUntil(career, condition, speed, 0);
 	return moneyFacts(origin, speed, probe.predBody, probe.predSteps, probe.predLength,
-		GravityGame.estimateProfit(game.market, game.clockSteps, probe, career.ledger, reportUntil));
+		GravityGame.estimateProfit(game.market, game.clockSteps, probe, career.ledger, reportUntil),
+		probe.predLogPlanet, probe.predLogStep, probe.predLogDwell, probe.predLogCount);
 }
 
 /* a saved trace priced at the live market: not one trace is spent */
@@ -193,7 +253,8 @@ function storedMoney(entry) {
 	return moneyFacts(entry.origin, speed, entry.body, entry.steps, entry.length,
 		GravityGame.estimateProfitLog(game.market, game.clockSteps,
 			entry.logPlanet, entry.logStep, entry.logCount, career.ledger, reportUntil,
-			undefined, entry.logDwell));
+			undefined, entry.logDwell),
+		entry.logPlanet, entry.logStep, entry.logDwell, entry.logCount);
 }
 
 /* the two live gates the launch button applies: the fee is covered and the
@@ -207,28 +268,35 @@ function escapeHtml(text) {
 		.replace(/"/g, '&quot;');
 }
 
+function saveBookTraceData(trace) {
+	if (!careerRule() || careerActionReplay.active || !activeCareerSim().fieldStatic) return null;
+	const book = activeCareer().launchBook;
+	const version = book.version;
+	const tag = pageBookTag();
+	const entry = GravityGame.recordLaunch(book, tag, trace);
+	/* A bot can reuse a trace found by a human before the handover. Keep
+	 * only changes to the book, not the aim, scan or failed candidates. */
+	if (book.version === version || !book.entries.includes(entry)) return entry;
+	recordCareerAction('bookTrace', { trace: [tag, trace.origin, trace.angleU, trace.speedU,
+		entry.body, entry.steps, entry.time, entry.length,
+		Number.isFinite(entry.score) ? entry.score : null, entry.money,
+		Array.from(entry.logPlanet.subarray(0, entry.logCount)),
+		Array.from(entry.logStep.subarray(0, entry.logCount)),
+		Array.from(entry.logDwell.subarray(0, entry.logCount))] });
+	return entry;
+}
+
 /* one finished page trace joins the career's book */
 function saveTrace(probe, origin, angleU, speedU) {
 	if (!careerRule() || careerActionReplay.active || !activeCareerSim().fieldStatic) return;
 	if (probe.predReason !== END_IMPACT || probe.predBody < 0) return;
 	const money = traceMoney(probe, origin, GravityGame.speedOf(speedU));
-	const book = activeCareer().launchBook;
-	const version = book.version;
-	const tag = pageBookTag();
-	const entry = GravityGame.recordLaunch(book, tag, {
+	saveBookTraceData({
 		origin: origin, angleU: angleU, speedU: speedU, body: probe.predBody,
 		steps: probe.predSteps, time: probe.predTime, length: probe.predLength,
 		score: money.net, money: money.cash, logPlanet: probe.predLogPlanet,
 		logStep: probe.predLogStep, logDwell: probe.predLogDwell, logCount: probe.predLogCount
 	});
-	/* A bot can reuse a trace found by a human before the handover. Keep
-	 * only changes to the book, not the aim, scan or failed candidates. */
-	if (book.version === version || !book.entries.includes(entry)) return;
-	recordCareerAction('bookTrace', { trace: [tag, origin, angleU, speedU, entry.body, entry.steps,
-		entry.time, entry.length, Number.isFinite(entry.score) ? entry.score : null, entry.money,
-		Array.from(entry.logPlanet.subarray(0, entry.logCount)),
-		Array.from(entry.logStep.subarray(0, entry.logCount)),
-		Array.from(entry.logDwell.subarray(0, entry.logCount))] });
 }
 
 /* A 13-element tuple carries `logDwell`; recordings from before the stay-pay

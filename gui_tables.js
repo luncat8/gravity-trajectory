@@ -330,6 +330,6 @@ const RULE_HELP = {
 			'Deep freight (' + GravityGame.DEEP_TONS + ' t or more from a well of g ≥ ' +
 			GravityGame.DEEP_G.toFixed(1) + ', pays \u00d7' + (1 + GravityGame.DEEP_BONUS).toFixed(1) +
 			') needs an EMC-3+ rail at its origin.',
-		controls: 'Wait charges pads. Fuel is bought or converted from your own pad battery; tanks never refill for free. With an impulse engine and fuel, pause time with Space / P or the game-bar time button, then drag the ship to aim a burn; a bot flying your company burns on its own.'
+		controls: 'Wait charges pads. Quest scan prices two-leg pickups through their real second leg; plan quest verifies a full two-leg route, writes both legs to the launch list and arms leg 1. Fuel is bought or converted from your own pad battery; tanks never refill for free. With an impulse engine and fuel, pause time with Space / P or the game-bar time button, then drag the ship to aim a burn; a bot flying your company burns on its own.'
 	}
 };

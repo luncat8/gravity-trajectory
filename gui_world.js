@@ -314,6 +314,14 @@ function syncSeedUrl(keepReplay = false) {
 	 * field their rivals from the level, so they carry no roster param */
 	if (game.on && careerRule() && game.playerCount > 0) params.set('players', String(game.playerCount));
 	else params.delete('players');
+	if (gravityScale !== 1) params.set('gs', String(gravityScale));
+	else params.delete('gs');
+	if (forceScale !== 1) params.set('fs', String(forceScale));
+	else params.delete('fs');
+	if (game.on && careerRule() && spaceWearScale !== 1) params.set('ws', String(spaceWearScale));
+	else params.delete('ws');
+	if (game.on && careerRule() && harvestTick) params.set('ht', '1');
+	else params.delete('ht');
 	if (game.on && game.fixedRate) {
 		params.set('rate', String(scene.trade.speed));
 		params.delete('speed');

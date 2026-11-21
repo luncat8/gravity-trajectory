@@ -115,8 +115,8 @@ function copyCareerReplay() {
 	const encoded = CareerReplay.encode(shared);
 	const head = GravityGame.encodeLink({
 		seed: game.seed, rate: scene.trade.speed, rule: game.rule, bot: game.bot,
-		player: game.player, cheat: game.cheat, gravityScale: gravityScale,
-		forceScale: forceScale, spaceWearScale: spaceWearScale, harvestTick: harvestTick,
+		player: game.player, cheat: game.cheat, gravityScale: game.gravityScale,
+		forceScale: game.forceScale, spaceWearScale: game.spaceWearScale, harvestTick: game.harvestTick,
 		shots: []
 	});
 	const url = location.href.split('#')[0] + '#' + head + '&replay=' + encoded;

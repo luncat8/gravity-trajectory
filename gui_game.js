@@ -391,6 +391,7 @@ function stopGame() {
 	clearBurnAim();
 	linkNote = '';
 	game.on = false;
+	applyExperiment();
 	activeSlot = 0;
 	turret = slotTurrets[0];
 	predGain = 0;

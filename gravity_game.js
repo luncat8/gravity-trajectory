@@ -196,7 +196,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			rulePart + botPart + playerPart + cheatPart +
 			scalePart('gs', game.gravityScale) + scalePart('fs', game.forceScale) +
 			(game.rule === RULE_CAREER ? scalePart('ws', game.spaceWearScale) : '') +
-			(game.harvestTick ? '&ht=1' : '');
+			(game.rule === RULE_CAREER && game.harvestTick ? '&ht=1' : '');
 		if (game.shots.length === 0 || game.rule === RULE_CAREER) return head;
 		const lengthPart = game.rule === RULE_ROUTE && Number.isFinite(game.length)
 			? '&len=' + Math.round(game.length) : '';
@@ -683,9 +683,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return total;
 	}
 
-	function estimateProfitLog(market, baseStep, planets, steps, count, ledger, reportUntil, landing, dwells) {
-		if (count === 0) return 0;
-		estScratch.set(market.lastVisitStep);
+	function walkProfitLog(market, baseStep, planets, steps, count, ledger, reportUntil, landing, dwells) {
 		const ticks = harvestMode === HARVEST_TICK;
 		let total = 0;
 		for (let i = 0; i < count; i++) {
@@ -717,6 +715,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			}
 		}
 		return total;
+	}
+
+	function estimateProfitLog(market, baseStep, planets, steps, count, ledger, reportUntil, landing, dwells) {
+		if (count === 0) return 0;
+		estScratch.set(market.lastVisitStep);
+		return walkProfitLog(market, baseStep, planets, steps, count, ledger, reportUntil, landing, dwells);
 	}
 
 	/* exact predicted harvest along a traced probe, dwell trail included */
@@ -1144,16 +1148,19 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	}
 
 	/* money the EMC owner charges for a launch at `speed`; 0 on your own pad
-	 * and on the Capital's free imperial rail */
-	function launchFee(career, planet, speed) {
-		const owner = padOwner(career, planet);
+	 * and on the Capital's free imperial rail. `mass` and `useCommercial`
+	 * price a forecast post-landing launch without mutating live ship state. */
+	function launchFee(career, planet, speed, mass, useCommercial) {
+		const comm = useCommercial === undefined ? true : useCommercial;
+		const owner = padOwner(career, planet, comm);
 		if (owner === career.index || owner === OWNER_CAPITAL) return 0;
+		const shipMass = mass === undefined ? career.ship.mass : mass;
 		if (owner === OWNER_COMMERCIAL || owner === OWNER_REBEL) {
-			return commercialFee(career, planet, speed);
+			return commercialFee(career, planet, speed, shipMass);
 		}
-		const pad = padAt(career, planet);
+		const pad = padAt(career, planet, comm);
 		return price(career, CAREER.taxPerKwh *
-			OrbitTech.launchEnergy(career.ship.mass, pad.catapult, speed) * pad.catapult.tier);
+			OrbitTech.launchEnergy(shipMass, pad.catapult, speed) * pad.catapult.tier);
 	}
 
 	/*
@@ -1826,7 +1833,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				sim.predictFast(home, angle, speed, OPENING_HORIZON);
 				if (sim.predReason !== GravitySim.END_IMPACT || sim.predBody < 0) continue;
 				const body = sim.predBody;
-				const earned = estimateProfit(openingMarket, 0, sim);
+				/* Seat fairness is keyed by (seed, mask, g, f) only, so price openings
+				 * on entry harvest regardless of the live stay-pay toggle. */
+				const earned = estimateProfitLog(openingMarket, 0,
+					sim.predLogPlanet, sim.predLogStep, sim.predLogCount);
 				if (earned > openingResult.pay) openingResult.pay = earned;
 				if (body === home) continue;
 				if (!openingSeen[body]) {
@@ -4576,6 +4586,945 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return out;
 	}
 
+	/* --- two-leg contract valuation & shared departure solvency ---------- */
+
+	const LEG_EXIT_ANGLES = 8;
+	const LEG_EXIT_FRACTIONS = [0.35, 0.65, 0.85, 1];
+	const LEG_EXIT_WAYS = 4;
+	const LEG_PAIR_SLOTS = 64;
+	const LEG_PAIR_WAYS = 6;
+	const LEG_SCAN_ALL_SPEEDS = [34, 42, 52, 66, 80, 96, 116, 138, 175, 230, 300];
+	const LEG_SCAN_CIRCLE_SPEEDS = [42, 60, 82, 108, 138, 195, 285];
+	const LEG_SCAN_CIRCLE_ANGLES = 28;
+	const LEG_SCAN_FAN_HALF = 8;
+	const LEG_SCAN_FAN_STEP = 0.065;
+	const LEG_SCAN_FINE_HALF = 12;
+	const LEG_SCAN_FINE_STEP = 0.02;
+	const LEG_SCAN_FINE_SPEEDS = [40, 56, 78, 108, 138, 200, 295];
+
+	let legProbe = null;
+	let legSourceSim = null;
+	const legExitCacheStamp = new Uint32Array(OrbitWorld.PLANETS * LEG_EXIT_WAYS);
+	const legExitCacheCap = new Int32Array(OrbitWorld.PLANETS * LEG_EXIT_WAYS);
+	legExitCacheCap.fill(-1);
+	const legExitCacheSpeed = new Float64Array(OrbitWorld.PLANETS * LEG_EXIT_WAYS);
+	const leg1VisitScratch = new Float64Array(OrbitWorld.PLANETS);
+	const legFactsScratch = { cash: 0, credit: 0, leg: LEG_NONE };
+
+	function createDepartureOut() {
+		return {
+			ok: false, physical: false, builds: false,
+			canBuildStarter: false, starterCanExit: false,
+			cost: Infinity, speed: 0, source: '',
+			catapult: null, battery: null, reason: ''
+		};
+	}
+
+	const legDepScratch1 = createDepartureOut();
+	const legDepScratch2 = createDepartureOut();
+
+	function makeLegTraceSlot() {
+		return {
+			valid: false, origin: -1, angleU: 0, speedU: 0, body: -1,
+			steps: 0, time: 0, length: 0,
+			logPlanet: new Int16Array(BOOK_LOG_MAX),
+			logStep: new Int32Array(BOOK_LOG_MAX),
+			logDwell: new Int32Array(BOOK_LOG_MAX),
+			logCount: 0
+		};
+	}
+
+	const legPairSlots = new Array(LEG_PAIR_SLOTS);
+	for (let i = 0; i < LEG_PAIR_SLOTS; i++) {
+		const ways = new Array(LEG_PAIR_WAYS);
+		for (let w = 0; w < LEG_PAIR_WAYS; w++) ways[w] = makeLegTraceSlot();
+		legPairSlots[i] = { valid: false, tag: 0, origin: -1, goal: -1, count: 0, ways: ways };
+	}
+	let legPairHand = 0;
+
+	function createLegPlan() {
+		return {
+			feasible: true,
+			hasSecond: false,
+			slot: -1,
+			prospective: false,
+			leg1Leg: LEG_NONE,
+			leg1Cash: 0,
+			leg1Fee: 0,
+			leg1Wear: 0,
+			leg1Exit: 0,
+			leg1Net: 0,
+			credit: 0,
+			total: 0,
+			purseDelta: 0,
+			leg2: {
+				origin: -1,
+				angleU: 0,
+				speedU: 0,
+				body: -1,
+				steps: 0,
+				time: 0,
+				length: 0,
+				visitPay: 0,
+				reward: 0,
+				cash: 0,
+				fee: 0,
+				wear: 0,
+				exit: 0,
+				net: 0,
+				leg: LEG_NONE,
+				commercial: false,
+				logPlanet: new Int16Array(BOOK_LOG_MAX),
+				logStep: new Int32Array(BOOK_LOG_MAX),
+				logDwell: new Int32Array(BOOK_LOG_MAX),
+				logCount: 0
+			}
+		};
+	}
+
+	function prepareLegProbe(sourceSim) {
+		if (!sourceSim) return null;
+		if (legProbe === null || legProbe.worldW !== sourceSim.worldW || legProbe.worldH !== sourceSim.worldH) {
+			legProbe = new GravitySim(sourceSim.worldW, sourceSim.worldH);
+			legSourceSim = null;
+		}
+		legProbe.fieldT = sourceSim.fieldT;
+		legProbe.fieldRate = sourceSim.fieldRate;
+		legProbe.setScales(sourceSim.gravityScale, sourceSim.forceScale);
+		if (legSourceSim !== sourceSim ||
+			legProbe.planetX !== sourceSim.planetX ||
+			legProbe.planetY !== sourceSim.planetY ||
+			legProbe.planetR !== sourceSim.planetR ||
+			legProbe.planetCapacity !== sourceSim.planetCapacity) {
+			legProbe.planetCapacity = sourceSim.planetCapacity;
+			legProbe.planetX = sourceSim.planetX;
+			legProbe.planetY = sourceSim.planetY;
+			legProbe.planetR = sourceSim.planetR;
+			legProbe.sysCos.set(sourceSim.sysCos);
+			legProbe.sysSin.set(sourceSim.sysSin);
+			legProbe.sysInvRX.set(sourceSim.sysInvRX);
+			legProbe.sysInvRY.set(sourceSim.sysInvRY);
+			legProbe.sysBoundR2.set(sourceSim.sysBoundR2);
+			legProbe.planetMinX = sourceSim.planetMinX;
+			legProbe.planetMaxX = sourceSim.planetMaxX;
+			legProbe.planetMinY = sourceSim.planetMinY;
+			legProbe.planetMaxY = sourceSim.planetMaxY;
+		}
+		legProbe.setPlanetMask(sourceSim.planetMask);
+		if (legSourceSim !== sourceSim ||
+			legProbe.bodyCount !== sourceSim.bodyCount ||
+			legProbe.bodyR !== sourceSim.bodyR ||
+			legProbe.strength !== sourceSim.strength ||
+			legProbe.fillField !== sourceSim.fillField ||
+			legProbe.fieldStatic !== sourceSim.fieldStatic) {
+			legProbe.setField(sourceSim.bodyCount, sourceSim.bodyR, sourceSim.strength,
+				sourceSim.fillField, sourceSim.fieldStatic);
+			legSourceSim = sourceSim;
+		} else {
+			legProbe.stepStale = true;
+			legProbe.refreshField();
+		}
+		return legProbe;
+	}
+
+	function legFieldTag(sim, fieldTime) {
+		let stamp = sim.fieldStatic ? 0x811c9dc5 : 0x9e3779b9;
+		stamp = Math.imul(stamp ^ sim.bodyCount, 0x01000193);
+		stamp = Math.imul(stamp ^ Math.round(sim.gravityScale * 100), 0x01000193);
+		for (let i = 0; i < sim.bodyCount; i++) {
+			stamp = Math.imul(stamp ^ (Math.round(sim.strength[i] * 100) + i * 31), 0x01000193);
+		}
+		for (let i = 0; i < sim.planetCapacity; i++) {
+			const active = !sim.planetMask || sim.planetMask[i] === 1 ? 1 : 0;
+			stamp = Math.imul(stamp ^ active, 0x01000193);
+			if (active && sim.planetX && sim.planetY) {
+				stamp = Math.imul(stamp ^ Math.round(sim.planetX[i]), 0x01000193);
+				stamp = Math.imul(stamp ^ Math.round(sim.planetY[i]), 0x01000193);
+			}
+		}
+		if (!sim.fieldStatic && sim.fieldRate !== 0) {
+			const t = fieldTime === undefined ? sim.fieldT : fieldTime;
+			stamp = Math.imul(stamp ^ Math.round(sim.fieldRate * 1000), 0x01000193);
+			stamp = Math.imul(stamp ^ Math.round(t * 20), 0x01000193);
+		}
+		return (stamp >>> 0) || 1;
+	}
+
+	function legExitSpeed(sim, planet, cap) {
+		const probe = prepareLegProbe(sim);
+		if (!probe || !Number.isFinite(cap) || !probe.planetActive(planet)) return 0;
+		const minU = GravitySim.SPEED_MIN * SPEED_STEPS;
+		let capU = Math.floor(cap * SPEED_STEPS + 1e-9);
+		const maxU = GravitySim.SPEED_MAX * SPEED_STEPS;
+		if (capU > maxU) capU = maxU;
+		if (capU < minU) return 0;
+		const stamp = legFieldTag(probe, probe.fieldT);
+		const slot = planet * LEG_EXIT_WAYS + capU % LEG_EXIT_WAYS;
+		if (legExitCacheCap[slot] === capU && legExitCacheStamp[slot] === stamp) {
+			return legExitCacheSpeed[slot];
+		}
+		let found = 0;
+		let previous = -1;
+		const span = capU - minU;
+		const tau = Math.PI * 2;
+		for (let f = 0; f < LEG_EXIT_FRACTIONS.length; f++) {
+			const speedU = f === LEG_EXIT_FRACTIONS.length - 1
+				? capU : minU + Math.round(span * LEG_EXIT_FRACTIONS[f]);
+			if (speedU === previous) continue;
+			previous = speedU;
+			const speed = speedU / SPEED_STEPS;
+			for (let a = 0; a < LEG_EXIT_ANGLES; a++) {
+				const angle = (a + 0.5) / LEG_EXIT_ANGLES * tau;
+				probe.predictFast(planet, angle, speed, CAP_SECONDS);
+				if (probe.predReason !== GravitySim.END_IMPACT ||
+					probe.predBody < 0 || probe.predBody === planet) continue;
+				found = speed;
+				break;
+			}
+			if (found > 0) break;
+		}
+		legExitCacheCap[slot] = capU;
+		legExitCacheStamp[slot] = stamp;
+		legExitCacheSpeed[slot] = found;
+		return found;
+	}
+
+	function careerRefundEscrow(career) {
+		let held = 0;
+		for (let i = 0; i < BOARD_SIZE; i++) {
+			const task = career.tasks[i];
+			if (task.kind === TASK_NONE || task.state === TASK_OFFERED) continue;
+			if (task.capitalRefund > 0) held += task.capitalRefund;
+		}
+		return held;
+	}
+
+	function careerArrivalMass(career, planet) {
+		let mass = career.ship.mass;
+		if (career.contract < 0) {
+			const medic = career.tasks[MEDIC_SLOT];
+			if (planet === career.capitalPlanet && medic.kind === TASK_MEDIC && medic.medics > 0) {
+				return OrbitTech.shipMass(career.ship, medic.medics);
+			}
+			return mass;
+		}
+		const task = career.tasks[career.contract];
+		if (task.kind === TASK_MEDIC) {
+			const market = career.market;
+			if (task.aboard === 0 && planet === task.to) {
+				const picked = market ? Math.min(task.medics, market.patients[task.to]) : task.medics;
+				return OrbitTech.shipMass(career.ship, picked);
+			}
+			if (task.aboard > 0 && planet === career.capitalPlanet) {
+				const left = market && market.patients[task.to] > task.aboard
+					? market.patients[task.to] - task.aboard : 0;
+				return OrbitTech.shipMass(career.ship, medicLoad(career, left));
+			}
+			return mass;
+		}
+		if (task.state === TASK_ACCEPTED && task.from === planet) mass += task.tons;
+		else if (task.state === TASK_LOADED && task.to === planet) mass -= task.tons;
+		return mass;
+	}
+
+	function careerArrivalCharge(career, planet, flightSeconds) {
+		const pad = career.pads[planet];
+		if (planet === career.at || !(flightSeconds > 0)) return pad.battery.capacity;
+		const charge = Math.max(0, pad.chargeKwh - pad.reservedKwh);
+		const gained = OrbitTech.solarCharge(pad.panel, career.light[planet],
+			GravitySim.padSeconds(flightSeconds));
+		return Math.min(pad.battery.capacity, charge + gained) - pad.reservedKwh;
+	}
+
+	function careerDeparture(out, career, planet, cash, mass, sourceSim, condition,
+		seekClaim, afterLanding, flightSeconds, exitSpeedFn) {
+		const res = out || legDepScratch1;
+		res.ok = false;
+		res.physical = false;
+		res.builds = false;
+		res.canBuildStarter = false;
+		res.starterCanExit = false;
+		res.cost = Infinity;
+		res.speed = 0;
+		res.source = '';
+		res.catapult = null;
+		res.battery = null;
+		res.reason = 'no affordable exit trajectory';
+		if (!sourceSim || !sourceSim.planetActive(planet)) {
+			res.reason = 'planet is not active';
+			return res;
+		}
+		const usable = condition === undefined ? careerShipUsable(career) : condition > 0;
+		if (planet === career.at && !usable) {
+			res.reason = 'ship worn out';
+			return res;
+		}
+		const checkExit = exitSpeedFn || function (p, cap) { return legExitSpeed(sourceSim, p, cap); };
+		const arrivalMass = Number.isFinite(mass) && mass > 0 ? mass : career.ship.mass;
+		const available = cash === Infinity ? Infinity : Number.isFinite(cash) ? cash : -Infinity;
+		const forceScale = sourceSim.forceScale;
+		const own = career.pads[planet];
+		const useComm = !afterLanding;
+		const pad = padAt(career, planet, useComm);
+		const owner = padOwner(career, planet, useComm);
+
+		const buildable = planetBuildable(career, planet);
+		if (own.catapult === null && buildable) {
+			const starterCap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
+				arrivalMass, OrbitTech.CATAPULTS[0], forceScale);
+			res.starterCanExit = checkExit(planet, starterCap) > 0;
+			res.canBuildStarter = res.starterCanExit &&
+				available + 1e-9 >= price(career, OrbitTech.CATAPULTS[0].buildCost);
+			if (res.starterCanExit) res.physical = true;
+		}
+
+		const secs = flightSeconds || 0;
+		const charge = owner === career.index
+			? careerArrivalCharge(career, planet, secs)
+			: Math.max(0, pad.chargeKwh - pad.reservedKwh);
+		const currentCap = OrbitTech.speedLimit(charge, arrivalMass, pad.catapult, forceScale);
+		const currentSpeed = checkExit(planet, currentCap);
+		let bestCost = Infinity;
+		if (currentSpeed > 0) {
+			res.physical = true;
+			const fee = owner === career.index || owner === OWNER_CAPITAL ? 0
+				: owner === OWNER_COMMERCIAL || owner === OWNER_REBEL
+				? commercialFee(career, planet, currentSpeed, arrivalMass)
+				: price(career, CAREER.taxPerKwh *
+					OrbitTech.launchEnergy(arrivalMass, pad.catapult, currentSpeed) * pad.catapult.tier);
+			if (available + 1e-9 >= fee) {
+				bestCost = fee;
+				res.ok = true;
+				res.cost = fee;
+				res.speed = currentSpeed;
+				res.source = owner === career.index ? 'own'
+					: owner === OWNER_CAPITAL ? 'capital'
+					: owner === OWNER_REBEL ? 'rebel'
+					: owner === OWNER_COMMERCIAL ? 'commercial' : 'rival';
+				res.catapult = pad.catapult;
+				res.battery = pad.battery;
+				res.reason = '';
+			}
+		}
+
+		if (seekClaim && !own.catapult) bestCost = Infinity;
+		if (bestCost === 0 || !buildable) return res;
+
+		const catPrototypes = career.prototypes ? career.prototypes[OrbitTech.KIND_CATAPULT] : null;
+		const batteryPrototypes = career.prototypes ? career.prototypes[OrbitTech.KIND_BATTERY] : null;
+		const catCount = OrbitTech.CATAPULTS.length + (catPrototypes ? catPrototypes.length : 0);
+		const batteryCount = OrbitTech.BATTERIES.length + (batteryPrototypes ? batteryPrototypes.length : 0);
+		const currentBattery = own.catapult === null ? OrbitTech.BATTERIES[0] : own.battery;
+		for (let ci = -1; ci < catCount; ci++) {
+			let catapult;
+			if (ci < 0) {
+				if (own.catapult === null) continue;
+				catapult = own.catapult;
+			} else if (ci < OrbitTech.CATAPULTS.length) catapult = OrbitTech.CATAPULTS[ci];
+			else catapult = catPrototypes[ci - OrbitTech.CATAPULTS.length];
+			const buildCatapult = catapult !== own.catapult;
+			if (own.catapult !== null && buildCatapult && catapult.tier <= own.catapult.tier) continue;
+			if (buildCatapult && !gearKnown(career, catapult)) continue;
+			const catCost = buildCatapult ? price(career, catapult.buildCost) : 0;
+			if (available + 1e-9 < catCost) continue;
+			for (let bi = -1; bi < batteryCount; bi++) {
+				let battery;
+				if (bi < 0) battery = currentBattery;
+				else if (bi < OrbitTech.BATTERIES.length) battery = OrbitTech.BATTERIES[bi];
+				else battery = batteryPrototypes[bi - OrbitTech.BATTERIES.length];
+				const buildBattery = battery !== currentBattery;
+				if (buildBattery && battery.tier <= currentBattery.tier) continue;
+				if (buildBattery && !gearKnown(career, battery)) continue;
+				if (!buildCatapult && !buildBattery) continue;
+				const totalCost = catCost + (buildBattery ? price(career, battery.buildCost) : 0);
+				if (available + 1e-9 < totalCost || totalCost + 1e-9 >= bestCost) continue;
+				const cap = OrbitTech.speedLimit(battery.capacity, arrivalMass, catapult, forceScale);
+				const speed = checkExit(planet, cap);
+				if (speed <= 0) continue;
+				res.physical = true;
+				bestCost = totalCost;
+				res.ok = true;
+				res.builds = true;
+				res.cost = totalCost;
+				res.speed = speed;
+				res.source = 'build';
+				res.catapult = catapult;
+				res.battery = battery;
+				res.reason = '';
+			}
+		}
+		if (!res.ok) {
+			res.reason = res.physical
+				? 'departure cost is unaffordable' : 'no launch trajectory within affordable gear';
+		}
+		return res;
+	}
+
+	function storeLegWay(way, probe, origin, angleU, speedU) {
+		way.valid = true;
+		way.origin = origin;
+		way.angleU = angleU;
+		way.speedU = speedU;
+		way.body = probe.predBody;
+		way.steps = probe.predSteps;
+		way.time = probe.predTime;
+		way.length = probe.predLength;
+		const count = probe.predLogCount < BOOK_LOG_MAX ? probe.predLogCount : BOOK_LOG_MAX;
+		way.logCount = count;
+		for (let i = 0; i < count; i++) {
+			way.logPlanet[i] = probe.predLogPlanet[i];
+			way.logStep[i] = probe.predLogStep[i];
+			way.logDwell[i] = probe.predLogDwell[i];
+		}
+	}
+
+	/* Keep up to 6 diverse impact ways for (origin → goal):
+	 *   0: minimum launch speed (heaviest loaded cargo / weakest rail)
+	 *   1: fastest fragile-safe (speed <= FRAGILE_SPEED)
+	 *   2: longest flyby path fragile-safe (speed <= FRAGILE_SPEED)
+	 *   3: fastest overall (tightest deadline)
+	 *   4: fastest medium-rail (speed <= 230)
+	 *   5: longest flyby path overall (richest harvest) */
+	function considerLegHit(ways, probe, origin, goal, angleU, speedU) {
+		const speed = speedOf(speedU);
+		const angle = angleOf(angleU);
+		probe.predictFast(origin, angle, speed, CAP_SECONDS);
+		if (probe.predReason !== GravitySim.END_IMPACT || probe.predBody !== goal) return false;
+		const steps = probe.predSteps;
+		const length = probe.predLength;
+		const fragile = speed <= FRAGILE_SPEED + 1e-9;
+		const medium = speed <= 230 + 1e-9;
+
+		const w0 = !ways[0].valid || speedU < ways[0].speedU ||
+			(speedU === ways[0].speedU && steps < ways[0].steps);
+		const w1 = fragile && (!ways[1].valid || steps < ways[1].steps ||
+			(steps === ways[1].steps && speedU < ways[1].speedU));
+		const w2 = fragile && (!ways[2].valid || length > ways[2].length);
+		const w3 = !ways[3].valid || steps < ways[3].steps ||
+			(steps === ways[3].steps && speedU < ways[3].speedU);
+		const w4 = medium && (!ways[4].valid || steps < ways[4].steps);
+		const w5 = !ways[5].valid || length > ways[5].length;
+		if (!w0 && !w1 && !w2 && !w3 && !w4 && !w5) return true;
+
+		probe.predict(origin, angle, speed, CAP_SECONDS);
+		if (probe.predReason !== GravitySim.END_IMPACT || probe.predBody !== goal) return false;
+		if (w0) storeLegWay(ways[0], probe, origin, angleU, speedU);
+		if (w1) storeLegWay(ways[1], probe, origin, angleU, speedU);
+		if (w2) storeLegWay(ways[2], probe, origin, angleU, speedU);
+		if (w3) storeLegWay(ways[3], probe, origin, angleU, speedU);
+		if (w4) storeLegWay(ways[4], probe, origin, angleU, speedU);
+		if (w5) storeLegWay(ways[5], probe, origin, angleU, speedU);
+		return true;
+	}
+
+	function lookupLegPairSlot(sourceSim, origin, goal, fieldTime) {
+		const probe = prepareLegProbe(sourceSim);
+		if (!probe || !probe.planetActive(origin) || !probe.planetActive(goal) || origin === goal) {
+			return null;
+		}
+		if (!probe.fieldStatic && fieldTime !== undefined) {
+			probe.fieldT = fieldTime;
+			probe.refreshField();
+		}
+		const tag = legFieldTag(probe, probe.fieldT);
+		for (let i = 0; i < LEG_PAIR_SLOTS; i++) {
+			const s = legPairSlots[i];
+			if (s.valid && s.tag === tag && s.origin === origin && s.goal === goal) return s;
+		}
+
+		const slot = legPairSlots[legPairHand];
+		legPairHand = (legPairHand + 1) % LEG_PAIR_SLOTS;
+		slot.valid = true;
+		slot.tag = tag;
+		slot.origin = origin;
+		slot.goal = goal;
+		slot.count = 0;
+		const ways = slot.ways;
+		for (let w = 0; w < LEG_PAIR_WAYS; w++) ways[w].valid = false;
+
+		const tau = Math.PI * 2;
+		const dx = probe.planetX[goal] - probe.planetX[origin];
+		const dy = probe.planetY[goal] - probe.planetY[origin];
+		const bearing = Math.atan2(dy, dx);
+		let anyHit = false;
+
+		for (let s = 0; s < LEG_SCAN_ALL_SPEEDS.length; s++) {
+			const speedU = speedUnits(LEG_SCAN_ALL_SPEEDS[s]);
+			for (let k = -LEG_SCAN_FAN_HALF; k <= LEG_SCAN_FAN_HALF; k++) {
+				const angleU = angleUnits(bearing + k * LEG_SCAN_FAN_STEP);
+				if (considerLegHit(ways, probe, origin, goal, angleU, speedU)) anyHit = true;
+			}
+		}
+		for (let s = 0; s < LEG_SCAN_CIRCLE_SPEEDS.length; s++) {
+			const speedU = speedUnits(LEG_SCAN_CIRCLE_SPEEDS[s]);
+			for (let a = 0; a < LEG_SCAN_CIRCLE_ANGLES; a++) {
+				const angleU = angleUnits((a + 0.5) / LEG_SCAN_CIRCLE_ANGLES * tau);
+				if (considerLegHit(ways, probe, origin, goal, angleU, speedU)) anyHit = true;
+			}
+		}
+		if (!anyHit) {
+			for (let s = 0; s < LEG_SCAN_FINE_SPEEDS.length; s++) {
+				const speedU = speedUnits(LEG_SCAN_FINE_SPEEDS[s]);
+				for (let k = -LEG_SCAN_FINE_HALF; k <= LEG_SCAN_FINE_HALF; k++) {
+					const angleU = angleUnits(bearing + k * LEG_SCAN_FINE_STEP);
+					if (considerLegHit(ways, probe, origin, goal, angleU, speedU)) anyHit = true;
+				}
+			}
+		}
+		for (let w = 0; w < LEG_PAIR_WAYS; w++) {
+			if (ways[w].valid) slot.count += 1;
+		}
+		return slot;
+	}
+
+	function postLandingRailCap(career, planet, mass, forceScale, flightSeconds) {
+		const pad = padAt(career, planet, false);
+		const owner = padOwner(career, planet, false);
+		let charge = pad.battery.capacity;
+		if (owner === career.index) {
+			const botCharge = careerArrivalCharge(career, planet, flightSeconds);
+			const raw = Math.max(0, pad.chargeKwh - pad.reservedKwh);
+			const leaked = OrbitTech.batteryLeak(raw, GravitySim.padMinutes(flightSeconds));
+			const gained = OrbitTech.solarCharge(pad.panel, career.light[planet],
+				GravitySim.padSeconds(flightSeconds));
+			const exact = Math.max(0, Math.min(pad.battery.capacity, raw - leaked + gained) - pad.reservedKwh);
+			charge = exact < botCharge ? exact : botCharge;
+		} else if (owner >= 0) {
+			charge = Math.max(0, pad.chargeKwh - pad.reservedKwh);
+		}
+		return OrbitTech.speedLimit(charge, mass, pad.catapult, forceScale);
+	}
+
+	function currentPadCapForMass(career, planet, mass, forceScale) {
+		const pad = padAt(career, planet, true);
+		const owner = padOwner(career, planet, true);
+		const charge = owner === OWNER_COMMERCIAL || owner === OWNER_CAPITAL || owner === OWNER_REBEL
+			? pad.battery.capacity : Math.max(0, pad.chargeKwh - pad.reservedKwh);
+		return OrbitTech.speedLimit(charge, mass, pad.catapult, forceScale);
+	}
+
+	function copyLeg2Candidate(dst, src, visitPay2, reward2, cash2, fee2, wear2, exit2, net2, legKind, commercial) {
+		dst.origin = src.origin;
+		dst.angleU = src.angleU;
+		dst.speedU = src.speedU;
+		dst.body = src.body;
+		dst.steps = src.steps;
+		dst.time = src.time;
+		dst.length = src.length;
+		dst.visitPay = visitPay2;
+		dst.reward = reward2;
+		dst.cash = cash2;
+		dst.fee = fee2;
+		dst.wear = wear2;
+		dst.exit = exit2;
+		dst.net = net2;
+		dst.leg = legKind;
+		dst.commercial = commercial;
+		const count = src.logCount < BOOK_LOG_MAX ? src.logCount : BOOK_LOG_MAX;
+		dst.logCount = count;
+		for (let i = 0; i < count; i++) {
+			dst.logPlanet[i] = src.logPlanet[i];
+			dst.logStep[i] = src.logStep[i];
+			dst.logDwell[i] = src.logDwell ? src.logDwell[i] : 0;
+		}
+	}
+
+	/* Quick non-mutating check used by board acceptance to ensure a pickup's
+	 * loaded second leg (from → to) physically exists before deadline. */
+	function hasFeasibleLeg(career, sim, from, to, loadedMass, fragile, remainingSteps) {
+		const slot = lookupLegPairSlot(sim, from, to);
+		if (!slot || slot.count === 0) return false;
+		const pad = padAt(career, from, false);
+		const owner = padOwner(career, from, false);
+		const charge = owner === OWNER_COMMERCIAL || owner === OWNER_CAPITAL || owner === OWNER_REBEL
+			? pad.battery.capacity
+			: owner === career.index ? pad.battery.capacity
+			: Math.max(0, pad.chargeKwh - pad.reservedKwh);
+		let cap = OrbitTech.speedLimit(charge, loadedMass, pad.catapult, sim.forceScale);
+		const commPad = commercialPadAt(career, from);
+		const commCap = OrbitTech.speedLimit(commPad.battery.capacity, loadedMass,
+			commPad.catapult, sim.forceScale);
+		if (commCap > cap) cap = commCap;
+		if (fragile && cap > FRAGILE_SPEED) cap = FRAGILE_SPEED;
+		if (cap + 1e-9 < GravitySim.SPEED_MIN) return false;
+		for (let w = 0; w < LEG_PAIR_WAYS; w++) {
+			const way = slot.ways[w];
+			if (!way.valid) continue;
+			if (speedOf(way.speedU) > cap + 1e-9) continue;
+			if (remainingSteps !== undefined && way.steps > remainingSteps) continue;
+			return true;
+		}
+		return false;
+	}
+
+	function resetLegPlanOut(out, slot, prospective) {
+		out.feasible = false;
+		out.hasSecond = false;
+		out.slot = slot;
+		out.prospective = prospective;
+		out.leg1Leg = LEG_NONE;
+		out.leg1Cash = 0;
+		out.leg1Fee = 0;
+		out.leg1Wear = 0;
+		out.leg1Exit = Infinity;
+		out.leg1Net = -Infinity;
+		out.credit = 0;
+		out.total = -Infinity;
+		out.purseDelta = -Infinity;
+		out.leg2.origin = -1;
+		out.leg2.body = -1;
+		out.leg2.net = -Infinity;
+		out.leg2.logCount = 0;
+		out.leg2.commercial = false;
+		return out;
+	}
+
+	/*
+	 * Zero-allocation two-leg contract evaluator shared by UI helpers (`quest scan`,
+	 * `plan quest`, `moneyFacts`) and `GravityBot`.
+	 *
+	 * `leg1` holds `{ origin, body, speed, flownLen, length, steps, visitPay,
+	 * bribe, condition, burnDv, fee, logPlanet, logStep, logDwell, logCount }`.
+	 * `opts` optionally passes `{ slot, seekClaim, exitSpeedFn }`.
+	 */
+	function careerLegPlan(out, career, market, sim, leg1, runStep, opts) {
+		const explicitSlot = opts && Number.isInteger(opts.slot) ? opts.slot : -1;
+		const prospective = explicitSlot >= 0 && career.contract < 0 &&
+			career.tasks[explicitSlot] && career.tasks[explicitSlot].state === TASK_OFFERED;
+		const slot = prospective ? explicitSlot : career.contract;
+		resetLegPlanOut(out, slot, prospective);
+		if (!career || !sim || leg1.body < 0 || !sim.planetActive(leg1.body)) return out;
+
+		const origin = leg1.origin;
+		const body = leg1.body;
+		const speed1 = leg1.speed || 0;
+		const flownLen = leg1.flownLen || 0;
+		const length1 = leg1.length || 0;
+		const steps1 = leg1.steps || 0;
+		const visitPay1 = leg1.visitPay || 0;
+		const bribe1 = leg1.bribe || 0;
+		const burnDv1 = leg1.burnDv || 0;
+		const cond0 = leg1.condition === undefined ? career.ship.condition : leg1.condition;
+		const repair0 = cond0 > career.ship.condition + 1e-9 ? repairCost(career) : 0;
+		const seekClaim = Boolean(opts && opts.seekClaim);
+		const exitSpeedFn = opts && opts.exitSpeedFn ? opts.exitSpeedFn : null;
+
+		let leg1Mass = career.ship.mass;
+		let acceptRefund = 0;
+		const task = slot >= 0 && slot < BOARD_SIZE ? career.tasks[slot] : null;
+		let effectiveDeadline = task ? task.deadline : 0;
+
+		if (prospective && task) {
+			if (!canAccept(career, slot)) return out;
+			if (origin === career.capitalPlanet) acceptRefund = CAPITAL_REFUND;
+			if (task.kind === TASK_MEDIC) {
+				leg1Mass = OrbitTech.shipMass(career.ship, task.medics);
+				const nowStep = market ? Math.max(0, market.politicsStep) : runStep;
+				const span = Math.round(CAREER.deliverySec * 2 / GravitySim.DT);
+				if (nowStep + span > effectiveDeadline) effectiveDeadline = nowStep + span;
+			} else if (task.kind === TASK_DELIVERY && origin === task.from) {
+				leg1Mass = OrbitTech.shipMass(career.ship, task.tons);
+			}
+			if (speed1 > 0 && leg1Mass > career.ship.mass + 1e-9) {
+				const postAcceptCap1 = currentPadCapForMass(career, origin, leg1Mass, sim.forceScale);
+				if (speed1 > postAcceptCap1 + 1e-9) return out;
+			}
+		}
+
+		const fee1 = leg1.fee !== undefined ? leg1.fee
+			: speed1 > 0 ? launchFee(career, origin, speed1, leg1Mass) : 0;
+		const arrival1 = forecastCondition(career, cond0, steps1, speed1, burnDv1, true);
+		const wear1 = forecastWearCost(career, cond0, steps1, speed1, burnDv1, true);
+		const mandatoryRepair1 = forecastRepairReserve(career, arrival1);
+		if (career.ledger.purse + acceptRefund - repair0 - fee1 < -1e-9) return out;
+
+		let cash1 = visitPay1 + bribe1;
+		let credit1 = 0;
+		let leg1Kind = LEG_NONE;
+		let twoLegStop = false;
+		let goal2 = -1;
+		let tons2 = 0;
+		let fragile2 = false;
+		let reward2 = 0;
+		let leg2Kind = LEG_NONE;
+		let endMass2 = OrbitTech.shipMass(career.ship, 0);
+
+		if (prospective && task) {
+			if (runStep + steps1 > effectiveDeadline) return out;
+			const compete = career.tasks[COMPETE_SLOT];
+			if (compete.kind === TASK_COMPETE && origin === compete.planet &&
+				flownLen + length1 >= compete.minLength && runStep + steps1 <= compete.deadline) {
+				cash1 += compete.reward;
+			}
+			if (task.kind === TASK_DELIVERY && origin === task.from) {
+				if (body !== task.to || (task.fragile && speed1 > FRAGILE_SPEED + 1e-9)) return out;
+				cash1 += task.reward;
+				leg1Kind = LEG_DELIVER;
+			} else if (task.kind === TASK_DELIVERY) {
+				if (body !== task.from) return out;
+				twoLegStop = true;
+				leg1Kind = LEG_LOAD;
+				goal2 = task.to;
+				tons2 = task.tons;
+				fragile2 = task.fragile === true;
+				reward2 = task.reward;
+				leg2Kind = LEG_DELIVER;
+			} else if (task.kind === TASK_MEDIC) {
+				if (body !== task.to) return out;
+				const picked = market
+					? Math.min(task.medics, market.patients[body], career.ship.hold.capacity) : task.medics;
+				if (!(picked > 0) || career.capitalPlanet < 0) return out;
+				twoLegStop = true;
+				leg1Kind = LEG_MEDICS;
+				goal2 = career.capitalPlanet;
+				tons2 = picked;
+				fragile2 = false;
+				reward2 = picked * OrbitEcon.MEDIC_REWARD_PER_PATIENT;
+				leg2Kind = LEG_PATIENTS;
+				const left = market && market.patients[body] > picked ? market.patients[body] - picked : 0;
+				endMass2 = OrbitTech.shipMass(career.ship, medicLoad(career, left));
+			} else {
+				return out;
+			}
+		} else {
+			careerLandingFacts(legFactsScratch, career, origin, body, flownLen, length1,
+				steps1, runStep, visitPay1, speed1);
+			cash1 = legFactsScratch.cash + bribe1;
+			credit1 = legFactsScratch.credit;
+			leg1Kind = legFactsScratch.leg;
+			if (career.contract >= 0 && task) {
+				if (task.kind === TASK_DELIVERY && task.state === TASK_ACCEPTED && body === task.from) {
+					if (runStep + steps1 > effectiveDeadline) {
+						/* Pickup reached after deadline: contract already expired. */
+						return out;
+					}
+					twoLegStop = true;
+					goal2 = task.to;
+					tons2 = task.tons;
+					fragile2 = task.fragile === true;
+					reward2 = task.reward;
+					leg2Kind = LEG_DELIVER;
+				} else if (task.kind === TASK_MEDIC && task.aboard === 0 && body === task.to) {
+					if (runStep + steps1 > effectiveDeadline) return out;
+					const picked = market
+						? Math.min(task.medics, market.patients[body], career.ship.hold.capacity) : task.medics;
+					if (!(picked > 0) || career.capitalPlanet < 0) return out;
+					twoLegStop = true;
+					goal2 = career.capitalPlanet;
+					tons2 = picked;
+					fragile2 = false;
+					reward2 = picked * OrbitEcon.MEDIC_REWARD_PER_PATIENT;
+					leg2Kind = LEG_PATIENTS;
+					const left = market && market.patients[body] > picked ? market.patients[body] - picked : 0;
+					endMass2 = OrbitTech.shipMass(career.ship, medicLoad(career, left));
+				}
+			}
+		}
+
+		out.leg1Leg = leg1Kind;
+		out.leg1Cash = cash1;
+		out.leg1Fee = fee1;
+		out.leg1Wear = wear1;
+
+		/* --- 1. Single-leg (completes contract, sport, or non-two-leg hop) --- */
+		if (!twoLegStop) {
+			const completesEscrow = leg1Kind === LEG_DELIVER ||
+				leg1Kind === LEG_PATIENTS || leg1Kind === LEG_COMPETE;
+			const escrow1 = completesEscrow ? 0 : careerRefundEscrow(career);
+			if (escrow1 > 0 && career.ledger.purse + acceptRefund - repair0 - fee1 - mandatoryRepair1 - escrow1 < -1e-9) {
+				return out;
+			}
+			const avail1 = career.ledger.purse + acceptRefund - repair0 + cash1 - fee1 - mandatoryRepair1 - escrow1;
+			const mass1 = prospective ? endMass2 : careerArrivalMass(career, body);
+			const dep1 = careerDeparture(legDepScratch1, career, body, avail1, mass1, sim,
+				arrival1 === 0 ? 1 : arrival1, seekClaim, true,
+				GravitySim.gameSeconds(steps1), exitSpeedFn);
+			if (!dep1.ok || avail1 + 1e-9 < dep1.cost) return out;
+			out.feasible = true;
+			out.hasSecond = false;
+			out.leg1Exit = dep1.cost;
+			out.leg1Net = cash1 - fee1 - dep1.cost - wear1 + (prospective ? acceptRefund : 0);
+			out.credit = credit1;
+			out.total = out.leg1Net + credit1;
+			out.purseDelta = acceptRefund - repair0 + cash1 - fee1 - mandatoryRepair1;
+			return out;
+		}
+
+		/* --- 2. Two-leg intermediate stop (`origin → body = stop1 → goal2`) --- */
+		const step2 = runStep + steps1;
+		const postMass = OrbitTech.shipMass(career.ship, tons2);
+		const postCond = arrival1 === 0 ? 1 : arrival1;
+		const taskEscrow = !prospective && task && task.capitalRefund > 0 ? task.capitalRefund : 0;
+		const otherEscrow = Math.max(0, careerRefundEscrow(career) - taskEscrow);
+		if (otherEscrow > 0 && career.ledger.purse + acceptRefund - repair0 - fee1 - mandatoryRepair1 - otherEscrow < -1e-9) {
+			return out;
+		}
+		const postPurse = career.ledger.purse + acceptRefund - repair0 + cash1 - fee1 - mandatoryRepair1;
+		const flightSec1 = GravitySim.gameSeconds(steps1);
+		const defaultCap2 = postLandingRailCap(career, body, postMass, sim.forceScale, flightSec1);
+		const commPad2 = commercialPadAt(career, body);
+		const commCap2 = OrbitTech.speedLimit(commPad2.battery.capacity, postMass,
+			commPad2.catapult, sim.forceScale);
+		let maxCap2 = commCap2 > defaultCap2 ? commCap2 : defaultCap2;
+		if (fragile2 && maxCap2 > FRAGILE_SPEED) maxCap2 = FRAGILE_SPEED;
+		if (maxCap2 + 1e-9 < GravitySim.SPEED_MIN) return out;
+
+		/* Advance market visit scratch through leg 1 so leg 2 never double-counts a flyby. */
+		if (market) {
+			estScratch.set(market.lastVisitStep);
+			if (leg1.logPlanet && leg1.logStep && leg1.logCount > 0) {
+				const reportUntil1 = forecastReportUntil(career, cond0, speed1, burnDv1);
+				walkProfitLog(market, runStep, leg1.logPlanet, leg1.logStep, leg1.logCount,
+					career.ledger, reportUntil1, undefined, leg1.logDwell);
+			} else if (visitReports(career.ledger, market, body) &&
+				body !== market.capitalPlanet && body !== market.arfPlanet) {
+				estScratch[body] = step2;
+			}
+			leg1VisitScratch.set(estScratch);
+		}
+
+		const fieldTime2 = sim.fieldStatic ? sim.fieldT : sim.fieldT + flightSec1 * sim.fieldRate;
+		const pairSlot = lookupLegPairSlot(sim, body, goal2, fieldTime2);
+		const bookTag = sim.fieldStatic ? launchBookTag(sim.fieldStatic, sim.gravityScale,
+			sim.forceScale, sim.strength, sim.bodyCount) : 0;
+		const bookEntries = career.launchBook && bookReady(career.launchBook, bookTag)
+			? career.launchBook.entries : null;
+		const bookLen = bookEntries ? bookEntries.length : 0;
+		const pairLen = pairSlot ? LEG_PAIR_WAYS : 0;
+		const totalCands = bookLen + pairLen;
+
+		/* Medical multi-trip: if patients remain on the rebel world after leg 2,
+		 * the Capital refund stays locked on the continuing medical contract. */
+		const medicContinues = task && task.kind === TASK_MEDIC && market &&
+			market.patients[body] > tons2;
+		const endEscrow = otherEscrow + (medicContinues ? (taskEscrow + acceptRefund) : 0);
+
+		let bestLeg2Net = -Infinity;
+		let bestSteps2 = Infinity;
+		let bestMandatory2 = 0;
+
+		for (let idx = 0; idx < totalCands; idx++) {
+			let cand;
+			if (idx < bookLen) {
+				cand = bookEntries[idx];
+				if (cand.origin !== body || cand.body !== goal2) continue;
+			} else {
+				cand = pairSlot.ways[idx - bookLen];
+				if (!cand.valid) continue;
+			}
+			const speed2 = speedOf(cand.speedU);
+			if (speed2 > maxCap2 + 1e-9) continue;
+			if (fragile2 && speed2 > FRAGILE_SPEED + 1e-9) continue;
+			if (step2 + cand.steps > effectiveDeadline) continue;
+
+			const needsCommercial = speed2 > defaultCap2 + 1e-9;
+			const fee2 = needsCommercial
+				? commercialFee(career, body, speed2, postMass)
+				: launchFee(career, body, speed2, postMass, false);
+			if (postPurse - fee2 - otherEscrow < -1e-9) continue;
+
+			const arrival2 = forecastCondition(career, postCond, cand.steps, speed2, 0, true);
+			const wear2 = forecastWearCost(career, postCond, cand.steps, speed2, 0, true);
+			const mandatory2 = forecastRepairReserve(career, arrival2);
+
+			let visitPay2 = 0;
+			if (market) {
+				estScratch.set(leg1VisitScratch);
+				const reportUntil2 = forecastReportUntil(career, postCond, speed2, 0);
+				visitPay2 = walkProfitLog(market, step2, cand.logPlanet, cand.logStep,
+					cand.logCount, career.ledger, reportUntil2, undefined, cand.logDwell);
+			}
+			let cash2 = visitPay2 + reward2;
+			const compete = career.tasks[COMPETE_SLOT];
+			if (compete.kind === TASK_COMPETE && body === compete.planet &&
+				cand.length >= compete.minLength && step2 + cand.steps <= compete.deadline) {
+				cash2 += compete.reward;
+			}
+
+			const avail2 = postPurse - fee2 + cash2 - mandatory2 - endEscrow;
+			if (avail2 < -1e-9) continue;
+			const dep2 = careerDeparture(legDepScratch2, career, goal2, avail2, endMass2, sim,
+				arrival2 === 0 ? 1 : arrival2, false, true,
+				flightSec1 + GravitySim.gameSeconds(cand.steps), exitSpeedFn);
+			if (!dep2.ok || avail2 + 1e-9 < dep2.cost) continue;
+
+			/* Prefer a shot that fires directly on stop1's default post-landing rail
+			 * over one that requires toggling the commercial override menu. */
+			const net2 = cash2 - fee2 - dep2.cost - wear2;
+			const better = !needsCommercial && out.leg2.commercial
+				? net2 >= bestLeg2Net - 0.05
+				: needsCommercial && !out.leg2.commercial && out.hasSecond
+				? net2 > bestLeg2Net + 0.05
+				: net2 > bestLeg2Net + 1e-12 ||
+					(Math.abs(net2 - bestLeg2Net) <= 1e-12 && cand.steps < bestSteps2);
+			if (!better) continue;
+
+			bestLeg2Net = net2;
+			bestSteps2 = cand.steps;
+			bestMandatory2 = mandatory2;
+			out.hasSecond = true;
+			copyLeg2Candidate(out.leg2, cand, visitPay2, reward2, cash2, fee2, wear2,
+				dep2.cost, net2, leg2Kind, needsCommercial);
+		}
+
+		if (!out.hasSecond) {
+			/* No single-flight `body → goal2` shot exists on the standing rail.
+			 * Check whether a multi-hop relay (or affordable pad build on `body`)
+			 * can still lift `postMass` safely inside the deadline; otherwise
+			 * `body` is a gravity/fragile/deadline trap (`feasible = false`). */
+			const depRelay = careerDeparture(legDepScratch1, career, body,
+				postPurse - otherEscrow, postMass, sim, postCond, seekClaim, true,
+				flightSec1, exitSpeedFn);
+			if (!depRelay.ok || postPurse - otherEscrow + 1e-9 < depRelay.cost) return out;
+			if (fragile2) {
+				const checkExit = exitSpeedFn || function (p, cap) { return legExitSpeed(sim, p, cap); };
+				const kitCap = depRelay.catapult && depRelay.battery
+					? OrbitTech.speedLimit(depRelay.battery.capacity, postMass,
+						depRelay.catapult, sim.forceScale)
+					: maxCap2;
+				const fragCap = kitCap < FRAGILE_SPEED ? kitCap : FRAGILE_SPEED;
+				if (checkExit(body, fragCap) <= 0) return out;
+			}
+			const dx = sim.planetX[goal2] - sim.planetX[body];
+			const dy = sim.planetY[goal2] - sim.planetY[body];
+			const spanPx = Math.max(0, Math.hypot(dx, dy) - sim.planetR[body] - sim.planetR[goal2]);
+			const topSpeed = fragile2 ? FRAGILE_SPEED : GravitySim.SPEED_MAX;
+			const minSteps2 = Math.max(2, Math.ceil(spanPx / (topSpeed * GravitySim.DT)));
+			if (step2 + minSteps2 > effectiveDeadline) return out;
+			const goalEntry = goal2 === career.capitalPlanet ? CAPITAL_VISIT_PAY : 0;
+			const relayAvail2 = postPurse - depRelay.cost + goalEntry + reward2 - endEscrow;
+			if (relayAvail2 < -1e-9) return out;
+			const depGoal = careerDeparture(legDepScratch2, career, goal2, relayAvail2,
+				endMass2, sim, postCond, false, true, flightSec1, exitSpeedFn);
+			if (!depGoal.ok || relayAvail2 + 1e-9 < depGoal.cost) return out;
+
+			out.feasible = true;
+			out.hasSecond = false;
+			out.leg1Exit = depRelay.cost;
+			out.leg1Net = cash1 - fee1 - depRelay.cost - wear1 + (prospective ? acceptRefund : 0);
+			out.credit = prospective ? reward2 * LEG_CREDIT : credit1;
+			out.total = out.leg1Net + out.credit;
+			out.purseDelta = acceptRefund - repair0 + cash1 - fee1 - mandatoryRepair1;
+			return out;
+		}
+
+		/* Also compute standalone leg-1 exit cost so callers that display or
+		 * subtract `leg1Exit` can cancel it cleanly (`leg1Net + credit === total`). */
+		const dep1 = careerDeparture(legDepScratch1, career, body, postPurse - otherEscrow,
+			postMass, sim, postCond, seekClaim, true, flightSec1, exitSpeedFn);
+		const exit1 = dep1.ok ? dep1.cost : out.leg2.fee;
+		const step1Net = cash1 - fee1 - wear1 + (prospective ? acceptRefund : 0);
+
+		out.feasible = true;
+		out.leg1Exit = exit1;
+		out.leg1Net = step1Net - exit1;
+		out.total = step1Net + out.leg2.net;
+		out.credit = out.leg2.net + exit1;
+		out.purseDelta = acceptRefund - repair0 + cash1 - fee1 - mandatoryRepair1 +
+			out.leg2.cash - out.leg2.fee - bestMandatory2;
+		return out;
+	}
+
 	/* landing on `planet`: cargo pickup, delivery payout, competition payout */
 	function settleLanding(career, sim, planet, step) {
 		for (let i = 0; i < BOARD_SIZE; i++) {
@@ -5033,6 +5982,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
 		LEG_NONE, LEG_LOAD, LEG_DELIVER, LEG_MEDICS, LEG_PATIENTS, LEG_COMPETE, LEG_CREDIT,
 		careerLandingFacts, careerGoalBodies,
+		careerRefundEscrow, careerArrivalMass, careerArrivalCharge,
+		createDepartureOut, careerDeparture, createLegPlan, careerLegPlan, hasFeasibleLeg,
 		CAREER_OPEN, CAREER_BROKE, CAREER_COMPLETE,
 		createCareer, resetCareer, startCareer, checkEnded, placeShip,
 		ENDGAME_WARNING_STEPS, ENDGAME_LIMIT_STEPS, commercialPadAt,

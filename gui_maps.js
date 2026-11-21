@@ -318,6 +318,12 @@ function pendingUniverse() {
 function applyRunRecord(record) {
 	const info = mapRunInfo();
 	if (!GravityMaps.applyState(info, record)) return false;
+	setExperimentScales(
+		record.gs === undefined ? 1 : record.gs,
+		record.fs === undefined ? 1 : record.fs,
+		record.ht === true,
+		record.ws === undefined ? 1 : record.ws
+	);
 	careerPaused = record.state.clock.paused === true;
 	if (record.state.page) {
 		playAcc = record.state.page.playAcc || 0;
@@ -491,6 +497,32 @@ function loadSavedMapParam(params) {
 	if (bot && bot in GravityGame.BOTS) options.bot = bot;
 	const cheat = params.get('cheat');
 	if (cheat && GravityGame.CHEATS[cheat]) options.cheat = cheat;
+	const exp = GravityGame.EXPERIMENT;
+	if (!Array.isArray(record.seats) || !record.seats.length) {
+		if (params.has('gs')) {
+			const gs = Number(params.get('gs'));
+			if (Number.isFinite(gs) && gs >= exp.gravityMin && gs <= exp.gravityMax) {
+				options.gs = Math.round(gs * 100) / 100;
+			}
+		}
+		if (params.has('fs')) {
+			const fs = Number(params.get('fs'));
+			if (Number.isFinite(fs) && fs >= exp.forceMin && fs <= exp.forceMax) {
+				options.fs = Math.round(fs * 100) / 100;
+			}
+		}
+	}
+	if (params.has('ws')) {
+		const ws = Number(params.get('ws'));
+		if (Number.isFinite(ws) && ws >= exp.spaceWearMin && ws <= exp.spaceWearMax) {
+			options.ws = Math.round(ws * 100) / 100;
+		}
+	}
+	if (params.has('ht')) {
+		const ht = params.get('ht');
+		if (ht === '1' || ht === 'true') options.ht = true;
+		else if (ht === '0' || ht === 'false') options.ht = false;
+	}
 	/* a roster or a universe in the url is the record's, not the address's: the
 	 * seats were proven on that world for that many companies. `syncSeedUrl`
 	 * writes the two back into the address at boot, so the url says what the run

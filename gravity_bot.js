@@ -147,10 +147,7 @@
 	const CAREER_PURSE_RESERVE = GravityGame.commercialMinFee();
 
 	function careerRefundEscrow(career) {
-		let escrow = 0;
-		if (career.contract >= 0) escrow += career.tasks[career.contract].capitalRefund || 0;
-		escrow += career.tasks[GravityGame.COMPETE_SLOT].capitalRefund || 0;
-		return escrow;
+		return GravityGame.careerRefundEscrow(career);
 	}
 	/* pads after which the contract board is worth the 1.5 t hold */
 	const CAREER_HOLD_PADS = 2;
@@ -434,8 +431,17 @@
 		this.careerEval = {
 			taskPay: 0, cashNet: 0, padValue: 0, builds: false, energy: 0, wait: 0,
 			fee: 0, exitCost: Infinity, exitSource: '', reject: '',
-			cash: 0, credit: 0, leg: GravityGame.LEG_NONE, bribe: 0
+			cash: 0, credit: 0, leg: GravityGame.LEG_NONE, bribe: 0,
+			legPlan: -Infinity, leg2Feasible: true
 		};
+		this.careerLeg = GravityGame.createLegPlan();
+		this.careerLegInput = {
+			origin: -1, body: -1, speed: 0, flownLen: 0, length: 0, steps: 0,
+			visitPay: 0, bribe: 0, condition: 1, burnDv: 0, fee: 0,
+			logPlanet: null, logStep: null, logDwell: null, logCount: 0
+		};
+		this.careerExitFn = (planet, cap) => this.careerExitSpeed(planet, cap);
+		this.careerLegOpts = { slot: -1, seekClaim: false, exitSpeedFn: this.careerExitFn };
 		/* the landing a visit-log walk prices the rulers' offer from */
 		this.careerLanding = { body: -1, value: 0 };
 		/* the winning trace's visit log, copied before the fan moves on */
@@ -1682,6 +1688,8 @@
 			this.departureSourceSim = sourceSim;
 			this.departureFieldVersion += 1;
 		}
+		sim.stepStale = true;
+		sim.refreshField();
 	};
 
 	GravityBot.prototype.careerExitFieldStamp = function () {
@@ -1777,183 +1785,18 @@
 	};
 
 	GravityBot.prototype.careerArrivalMass = function (career, planet) {
-		let mass = career.ship.mass;
-		if (career.contract < 0) {
-			const medic = career.tasks[GravityGame.MEDIC_SLOT];
-			if (planet === career.capitalPlanet && medic.kind === GravityGame.TASK_MEDIC &&
-				medic.medics > 0) {
-				return OrbitTech.shipMass(career.ship, medic.medics);
-			}
-			return mass;
-		}
-		const task = career.tasks[career.contract];
-		if (task.kind === GravityGame.TASK_MEDIC) {
-			const market = career.market;
-			if (task.aboard === 0 && planet === task.to) {
-				const picked = market ? Math.min(task.medics, market.patients[task.to]) : task.medics;
-				return OrbitTech.shipMass(career.ship, picked);
-			}
-			if (task.aboard > 0 && planet === career.capitalPlanet) {
-				const left = market && market.patients[task.to] > task.aboard
-					? market.patients[task.to] - task.aboard : 0;
-				return OrbitTech.shipMass(career.ship, GravityGame.medicLoad(career, left));
-			}
-			return mass;
-		}
-		if (task.state === GravityGame.TASK_ACCEPTED && task.from === planet) mass += task.tons;
-		else if (task.state === GravityGame.TASK_LOADED && task.to === planet) mass -= task.tons;
-		return mass;
+		return GravityGame.careerArrivalMass(career, planet);
 	};
 
-		/* Arrival charge of an own rail: the pad under the ship holds what it
-		 * holds, a remote pad charges while the ship flies — but only for the
-		 * flight's own length, measured on the pad clock. A three second hop
-		 * cannot refill a whole shot, so a forecast that lands on an empty bar
-		 * priced a launch the ship would not have. */
-		GravityBot.prototype.careerArrivalCharge = function (career, planet, flightSeconds) {
-			const pad = career.pads[planet];
-			if (planet === career.at || !(flightSeconds > 0)) return pad.battery.capacity;
-			const charge = Math.max(0, pad.chargeKwh - pad.reservedKwh);
-			const gained = OrbitTech.solarCharge(pad.panel, career.light[planet],
-				GravitySim.padSeconds(flightSeconds));
-			return Math.min(pad.battery.capacity, charge + gained) - pad.reservedKwh;
-		};
+	GravityBot.prototype.careerArrivalCharge = function (career, planet, flightSeconds) {
+		return GravityGame.careerArrivalCharge(career, planet, flightSeconds);
+	};
 
-		/* Normally quote the cheapest way off. A shopper/scorer seeking a claim
-		 * wants the cheapest *owned kit* instead. Keep the ticket as fallback if
-		 * there is no affordable kit, including on somebody else's ground. */
-		GravityBot.prototype.careerDeparture = function (career, planet, cash, mass, sourceSim, condition, seekClaim, afterLanding = false, flightSeconds = 0) {
-		const out = this.careerExit;
-		out.ok = false;
-		out.physical = false;
-		out.builds = false;
-		out.canBuildStarter = false;
-		out.starterCanExit = false;
-		out.cost = Infinity;
-		out.speed = 0;
-		out.source = '';
-		out.catapult = null;
-		out.battery = null;
-		out.reason = 'no affordable exit trajectory';
+	GravityBot.prototype.careerDeparture = function (career, planet, cash, mass, sourceSim, condition, seekClaim, afterLanding = false, flightSeconds = 0) {
 		this.prepareCareerExitProbe(sourceSim || this.probe);
-		const sim = this.exitProbe;
-		if (!sim.planetActive(planet)) {
-			out.reason = 'planet is not active';
-			return out;
-		}
-		/* a worn-out ship has no exit from where it stands: repair, not a rail */
-		const usable = condition === undefined ? GravityGame.careerShipUsable(career) : condition > 0;
-		if (planet === career.at && !usable) {
-			out.reason = 'ship worn out';
-			return out;
-		}
-		const arrivalMass = Number.isFinite(mass) && mass > 0 ? mass : career.ship.mass;
-		const available = cash === Infinity ? Infinity : Number.isFinite(cash) ? cash : -Infinity;
-		const forceScale = sim.forceScale;
-		const own = career.pads[planet];
-		const pad = GravityGame.padAt(career, planet, !afterLanding);
-		const owner = GravityGame.padOwner(career, planet, !afterLanding);
-
-		const buildable = GravityGame.planetBuildable(career, planet);
-		if (own.catapult === null && buildable) {
-			const starterCap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
-				arrivalMass, OrbitTech.CATAPULTS[0], forceScale);
-			out.starterCanExit = this.careerExitSpeed(planet, starterCap) > 0;
-			/* only claim an unclaimed (commercial) or own planet: you cannot
-			 * replace another player's EMC with your own */
-			out.canBuildStarter = out.starterCanExit &&
-				available + 1e-9 >= careerPrice(career, OrbitTech.CATAPULTS[0]);
-			if (out.starterCanExit) out.physical = true;
-		}
-
-		/* Our panel can recharge. A guest cannot count on charge its host has
-		 * already spent or promised to another barrel. */
-		const charge = owner === career.index
-			? this.careerArrivalCharge(career, planet, flightSeconds)
-			: Math.max(0, pad.chargeKwh - pad.reservedKwh);
-		const currentCap = OrbitTech.speedLimit(charge,
-			arrivalMass, pad.catapult, forceScale);
-		const currentSpeed = this.careerExitSpeed(planet, currentCap);
-		let bestCost = Infinity;
-		if (currentSpeed > 0) {
-			out.physical = true;
-			/* the imperial Capital rail (OWNER_CAPITAL) launches free, like your
-			 * own pad; commercial, rebel and rival rails charge a fee */
-			const fee = owner === career.index || owner === GravityGame.OWNER_CAPITAL ? 0
-				: owner === GravityGame.OWNER_COMMERCIAL || owner === GravityGame.OWNER_REBEL
-				? careerFee(career, GravityGame.commercialFee(career, planet, currentSpeed, arrivalMass))
-				: careerFee(career, GravityGame.CAREER.taxPerKwh *
-					OrbitTech.launchEnergy(arrivalMass, pad.catapult, currentSpeed) * pad.catapult.tier);
-			if (available + 1e-9 >= fee) {
-				bestCost = fee;
-				out.ok = true;
-				out.cost = fee;
-				out.speed = currentSpeed;
-				out.source = owner === career.index ? 'own'
-					: owner === GravityGame.OWNER_CAPITAL ? 'capital'
-					: owner === GravityGame.OWNER_REBEL ? 'rebel'
-					: owner === GravityGame.OWNER_COMMERCIAL ? 'commercial' : 'rival';
-				out.catapult = pad.catapult;
-				out.battery = pad.battery;
-				out.reason = '';
-			}
-		}
-
-		if (seekClaim && !own.catapult) bestCost = Infinity;
-		if (bestCost === 0 || !buildable) return out;
-
-		const catPrototypes = career.prototypes
-			? career.prototypes[OrbitTech.KIND_CATAPULT] : null;
-		const batteryPrototypes = career.prototypes
-			? career.prototypes[OrbitTech.KIND_BATTERY] : null;
-		const catCount = OrbitTech.CATAPULTS.length + (catPrototypes ? catPrototypes.length : 0);
-		const batteryCount = OrbitTech.BATTERIES.length +
-			(batteryPrototypes ? batteryPrototypes.length : 0);
-		const currentBattery = own.catapult === null ? OrbitTech.BATTERIES[0] : own.battery;
-		for (let ci = -1; ci < catCount; ci++) {
-			let catapult;
-			if (ci < 0) {
-				if (own.catapult === null) continue;
-				catapult = own.catapult;
-			} else if (ci < OrbitTech.CATAPULTS.length) catapult = OrbitTech.CATAPULTS[ci];
-			else catapult = catPrototypes[ci - OrbitTech.CATAPULTS.length];
-			const buildCatapult = catapult !== own.catapult;
-			if (own.catapult !== null && buildCatapult &&
-				catapult.tier <= own.catapult.tier) continue;
-			if (buildCatapult && !GravityGame.gearKnown(career, catapult)) continue;
-			const catCost = buildCatapult ? careerPrice(career, catapult) : 0;
-			if (available + 1e-9 < catCost) continue;
-			for (let bi = -1; bi < batteryCount; bi++) {
-				let battery;
-				if (bi < 0) battery = currentBattery;
-				else if (bi < OrbitTech.BATTERIES.length) battery = OrbitTech.BATTERIES[bi];
-				else battery = batteryPrototypes[bi - OrbitTech.BATTERIES.length];
-				const buildBattery = battery !== currentBattery;
-				if (buildBattery && battery.tier <= currentBattery.tier) continue;
-				if (buildBattery && !GravityGame.gearKnown(career, battery)) continue;
-				if (!buildCatapult && !buildBattery) continue;
-				const totalCost = catCost + (buildBattery ? careerPrice(career, battery) : 0);
-				if (available + 1e-9 < totalCost || totalCost + 1e-9 >= bestCost) continue;
-				/* the kit is ours: its panel fills the battery it buys, and a
-				 * fresh pad starts with the starter charge */
-				const cap = OrbitTech.speedLimit(battery.capacity, arrivalMass, catapult, forceScale);
-				const speed = this.careerExitSpeed(planet, cap);
-				if (speed <= 0) continue;
-				out.physical = true;
-				bestCost = totalCost;
-				out.ok = true;
-				out.builds = true;
-				out.cost = totalCost;
-				out.speed = speed;
-				out.source = 'build';
-				out.catapult = catapult;
-				out.battery = battery;
-				out.reason = '';
-			}
-		}
-		if (!out.ok) out.reason = out.physical
-			? 'departure cost is unaffordable' : 'no launch trajectory within affordable gear';
-		return out;
+		return GravityGame.careerDeparture(this.careerExit, career, planet, cash, mass,
+			this.exitProbe, condition, seekClaim, afterLanding, flightSeconds,
+			this.careerExitFn);
 	};
 
 	GravityBot.prototype.careerBuyGear = function (career, planet, kind, item, reserve, step, why) {
@@ -2710,6 +2553,8 @@
 		this.careerEval.builds = false;
 		this.careerEval.exitCost = Infinity;
 		this.careerEval.exitSource = '';
+		this.careerEval.legPlan = -Infinity;
+		this.careerEval.leg2Feasible = true;
 		/* the rule's one landing table: cash for the purse, credit for the leg */
 		GravityGame.careerLandingFacts(this.careerEval, career, origin, body,
 			flownLen, length, steps, runStep, visitPay, speed);
@@ -2718,16 +2563,57 @@
 		const bribe = this.careerBribeOffer(career, market, body, landingValue || 0);
 		this.careerEval.cash += bribe;
 		this.careerEval.bribe = bribe;
-		let taskPay = this.careerEval.cash + this.careerEval.credit;
-		if (this.careerEval.leg === GravityGame.LEG_MEDICS && body === career.capitalPlanet) {
-			taskPay += CAREER_MEDIC_VALUE;
-		}
 		const cashPay = this.careerEval.cash;
 
 		const launchFee = fee || 0;
 		const wear = wearCost || 0;
 		const cashNet = cashPay - launchFee - wear;
 		this.careerEval.cashNet = cashNet;
+
+		/* Two-leg contract stop (`LEG_LOAD` at `task.from`, or `LEG_MEDICS` at
+		 * `task.to` before patients board): verify and price the real second leg
+		 * through `careerLegPlan` instead of the flat `LEG_CREDIT` discount. */
+		let twoLegChecked = false;
+		let twoLegVerified = false;
+		if (career.contract >= 0 && body >= 0) {
+			const cTask = career.tasks[career.contract];
+			if ((cTask.kind === GravityGame.TASK_DELIVERY &&
+				cTask.state === GravityGame.TASK_ACCEPTED && body === cTask.from) ||
+				(cTask.kind === GravityGame.TASK_MEDIC && cTask.aboard === 0 && body === cTask.to)) {
+				twoLegChecked = true;
+				const inp = this.careerLegInput;
+				inp.origin = origin;
+				inp.body = body;
+				inp.speed = speed || 0;
+				inp.flownLen = flownLen || 0;
+				inp.length = length;
+				inp.steps = steps;
+				inp.visitPay = visitPay;
+				inp.bribe = bribe;
+				inp.condition = career.ship.condition;
+				inp.burnDv = 0;
+				inp.fee = launchFee;
+				this.careerLegOpts.slot = -1;
+				this.careerLegOpts.seekClaim = false;
+				this.prepareCareerExitProbe(this.probe);
+				GravityGame.careerLegPlan(this.careerLeg, career, market, this.exitProbe,
+					inp, runStep, this.careerLegOpts);
+				inp.logPlanet = null;
+				inp.logStep = null;
+				inp.logDwell = null;
+				inp.logCount = 0;
+				this.careerEval.legPlan = this.careerLeg.total;
+				this.careerEval.leg2Feasible = this.careerLeg.feasible;
+				if (!this.careerLeg.feasible) {
+					this.careerEval.credit = 0;
+					this.careerEval.leg = GravityGame.LEG_NONE;
+					this.careerEval.reject = 'leg2';
+					return -Infinity;
+				}
+				twoLegVerified = this.careerLeg.hasSecond;
+			}
+		}
+
 		/* A return can collect flybys and competitions, but it buys no new
 		 * ground. Don't burn the charge on an excursion that won't pay for itself. */
 		if (body === origin && cashNet <= 1e-9) {
@@ -2743,7 +2629,9 @@
 		const completesEscrow = this.careerEval.leg === GravityGame.LEG_DELIVER ||
 			this.careerEval.leg === GravityGame.LEG_PATIENTS ||
 			this.careerEval.leg === GravityGame.LEG_COMPETE;
-		const escrow = completesEscrow ? 0 : careerRefundEscrow(career);
+		const contractEscrow = twoLegVerified && career.contract >= 0
+			? (career.tasks[career.contract].capitalRefund || 0) : 0;
+		const escrow = completesEscrow ? 0 : Math.max(0, careerRefundEscrow(career) - contractEscrow);
 		const exitCash = career.ledger.purse + cashPay - launchFee - mandatoryRepair - escrow;
 		if (escrow > 0 && career.ledger.purse - launchFee - mandatoryRepair - escrow < -1e-9) {
 			this.careerEval.reject = 'fee';
@@ -2763,6 +2651,13 @@
 		if (!departure.ok || exitCash + 1e-9 < departure.cost) {
 			this.careerEval.reject = departure.physical ? 'exit' : 'unlaunchable';
 			return -Infinity;
+		}
+		if (twoLegChecked && twoLegVerified) {
+			this.careerEval.credit = this.careerLeg.leg2.net + departure.cost;
+		}
+		let taskPay = this.careerEval.cash + this.careerEval.credit;
+		if (this.careerEval.leg === GravityGame.LEG_MEDICS && body === career.capitalPlanet) {
+			taskPay += CAREER_MEDIC_VALUE;
 		}
 		const own = career.pads[body];
 		const claim = !contested && !own.catapult && departure.builds;
@@ -2853,6 +2748,7 @@
 				if (row >= 0 && row < count) prefix.joinedDwell[row] += probe.predLogDwell[i];
 				continue;
 			}
+			if (count >= prefix.joinedPlanet.length) break;
 			prefix.joinedPlanet[count] = probe.predLogPlanet[i];
 			prefix.joinedStep[count] = offset + probe.predLogStep[i];
 			prefix.joinedDwell[count] = probe.predLogDwell[i];
@@ -2885,6 +2781,12 @@
 		const visitPay = prefixSim
 			? this.careerBurnVisitPay(career, market, runStep, prefixSim, reportUntil)
 			: GravityGame.estimateProfit(market, runStep, probe, career.ledger, reportUntil, landing);
+		if (!prefixSim) {
+			this.careerLegInput.logPlanet = probe.predLogPlanet;
+			this.careerLegInput.logStep = probe.predLogStep;
+			this.careerLegInput.logDwell = probe.predLogDwell;
+			this.careerLegInput.logCount = probe.predLogCount;
+		}
 		const continuationStep = runStep + (prefixSim ? prefixSim.liveSteps : 0);
 		const launchSpeed = prefixSim ? prefixSim.speed : speed;
 		return this.careerScoreFacts(career, origin, market, continuationStep, flownLen, fee,
@@ -2907,6 +2809,7 @@
 
 	/* Scores the trace already in `probe`; `careerEval` exposes its money terms. */
 	GravityBot.prototype.careerScoreProbe = function (career, sim, origin, speed, market, runStep) {
+		this.prepareCareerExitProbe(sim);
 		const fee = GravityGame.launchFee(career, origin, speed);
 		const base = this.careerScoreFlight(career, origin, market, runStep, 0, fee, speed);
 		if (!Number.isFinite(base)) return -Infinity;
@@ -2916,6 +2819,7 @@
 	/* The same score for a stored trajectory: its visit log re-prices exactly at
 	 * the live market, so the book needs no trace (its CPU saving). */
 	GravityBot.prototype.careerScoreStored = function (career, sim, market, runStep, entry) {
+		this.prepareCareerExitProbe(sim);
 		const speed = GravityGame.speedOf(entry.speedU);
 		const fee = GravityGame.launchFee(career, entry.origin, speed);
 		const condition = career.ship.condition;
@@ -2928,6 +2832,10 @@
 			entry.logDwell);
 		const arrival = GravityGame.forecastCondition(career, condition, entry.steps, speed, 0, true);
 		const wear = GravityGame.forecastWearCost(career, condition, entry.steps, speed, 0, true);
+		this.careerLegInput.logPlanet = entry.logPlanet;
+		this.careerLegInput.logStep = entry.logStep;
+		this.careerLegInput.logDwell = entry.logDwell;
+		this.careerLegInput.logCount = entry.logCount;
 		const base = this.careerScoreFacts(career, entry.origin, market, runStep, 0, fee,
 			entry.body, visitPay, entry.length, entry.steps, speed, wear, arrival, landing.value);
 		if (!Number.isFinite(base)) return -Infinity;

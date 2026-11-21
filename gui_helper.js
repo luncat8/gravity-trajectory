@@ -82,8 +82,16 @@ function helperUpdateUi() {
 		helperQuestBtn.title = landed < 0
 			? 'career · land somewhere to scan'
 			: 'scan from ' + planetName(landed) + ' for the shot that advances the open work ' +
-				'(any contract leg or the competition) · money plus ' + HELPER_QUEST_CREDIT +
-				'× the leg credit, aimed straight at the planets it wants next';
+				'· prices two-leg pickups through their real second leg and refuses doomed pickups';
+	}
+	if (helperPlanQuestBtn) {
+		helperPlanQuestBtn.hidden = !career;
+		helperPlanQuestBtn.disabled = !profitOk;
+		helperPlanQuestBtn.textContent = 'plan quest';
+		helperPlanQuestBtn.title = landed < 0
+			? 'career · land somewhere to plan a quest route'
+			: 'plan a full two-leg quest route from ' + planetName(landed) +
+				', save both legs into the launch list and arm leg 1';
 	}
 	if (helperStopBtn) helperStopBtn.hidden = !helperState.active;
 	if (helperProgressEl) helperProgressEl.hidden = !helperState.active;
@@ -133,18 +141,153 @@ const HELPER_GOALS = {
 	score: { credit: 0, builds: false, label: '', empty: '' },
 	profit: { credit: 0, builds: false, label: 'best money shot', empty: 'no paying shot found' },
 	profitEmc: { credit: 0, builds: true, label: 'best money shot', empty: 'no EMC-buildable landing' },
-	quest: { credit: HELPER_QUEST_CREDIT, builds: false, label: 'quest shot', empty: 'no quest shot found' }
+	quest: { credit: HELPER_QUEST_CREDIT, builds: false, label: 'quest shot', empty: 'no quest shot found' },
+	planQuest: { credit: 1, builds: false, label: 'quest plan', empty: 'no quest route found' }
 };
-/* what the winning shot completes, printed after its cash */
+/* what the winning shot completes, printed after its planet */
 const HELPER_LEG_TEXT = ['', ' · load', ' · deliver', ' · medics', ' · patients', ' · sport'];
+const HELPER_LEG_VERB = ['', 'load', 'deliver', 'medics', 'patients', 'sport'];
 
 function helperLegText(leg) {
 	return HELPER_LEG_TEXT[leg] || '';
 }
 
+function helperLegVerb(leg) {
+	return HELPER_LEG_VERB[leg] || 'to';
+}
+
+function helperOfferTag(slot) {
+	return slot === GravityGame.MEDIC_SLOT ? 'medic offer' : 'offer #' + (slot + 1);
+}
+
+/* Preallocated two-leg scratch for quest scan & plan quest (zero per-step allocs). */
+const helperPlanScratch = GravityGame.createLegPlan();
+const helperPlanWin = GravityGame.createLegPlan();
+const helperPlanInput = {
+	origin: -1, body: -1, speed: 0, flownLen: 0, length: 0, steps: 0,
+	visitPay: 0, bribe: 0, condition: 1, burnDv: 0, fee: undefined,
+	logPlanet: null, logStep: null, logDwell: null, logCount: 0
+};
+const helperPlanOpts = { slot: -1, seekClaim: false, exitSpeedFn: null };
+const helperBestLeg1Log = {
+	time: 0, cash: 0, net: -Infinity,
+	logPlanet: new Int16Array(GravityGame.BOOK_LOG_MAX),
+	logStep: new Int32Array(GravityGame.BOOK_LOG_MAX),
+	logDwell: new Int32Array(GravityGame.BOOK_LOG_MAX),
+	logCount: 0
+};
+
 /* the money of the last scored candidate, so the notice prints cash and the
  * leg it completes instead of the ranking score */
-const helperLastMoney = { net: -Infinity, leg: 0 };
+const helperLastMoney = {
+	net: -Infinity, cash: 0, leg: 0, hasSecond: false, twoLegTotal: -Infinity,
+	leg1StepNet: -Infinity, leg2Body: -1, leg2Net: -Infinity, leg2Leg: 0,
+	slot: -1, prospective: false
+};
+
+function helperCareerGoalScore(careerMoney, goalKey) {
+	if (!moneyFlyable(careerMoney)) return -Infinity;
+	const goal = HELPER_GOALS[goalKey];
+	if (goal.builds && !careerMoney.builds) return -Infinity;
+	if (goalKey === 'quest') {
+		if (careerMoney.twoLegStop && !careerMoney.leg2Feasible) return -Infinity;
+		if (careerMoney.hasSecond) return careerMoney.twoLegTotal;
+	}
+	return careerMoney.net + careerMoney.credit * goal.credit;
+}
+
+function copyHelperLog(dst, logPlanet, logStep, logDwell, count) {
+	const n = count < GravityGame.BOOK_LOG_MAX ? count : GravityGame.BOOK_LOG_MAX;
+	dst.logCount = n;
+	for (let i = 0; i < n; i++) {
+		dst.logPlanet[i] = logPlanet[i];
+		dst.logStep[i] = logStep[i];
+		dst.logDwell[i] = logDwell ? logDwell[i] : 0;
+	}
+}
+
+function copyLegPlanSummary(dst, src) {
+	dst.feasible = src.feasible;
+	dst.hasSecond = src.hasSecond;
+	dst.slot = src.slot;
+	dst.prospective = src.prospective;
+	dst.leg1Leg = src.leg1Leg;
+	dst.leg1Cash = src.leg1Cash;
+	dst.leg1Fee = src.leg1Fee;
+	dst.leg1Wear = src.leg1Wear;
+	dst.leg1Exit = src.leg1Exit;
+	dst.leg1Net = src.leg1Net;
+	dst.credit = src.credit;
+	dst.total = src.total;
+	if (src.hasSecond) {
+		const d2 = dst.leg2;
+		const s2 = src.leg2;
+		d2.origin = s2.origin;
+		d2.angleU = s2.angleU;
+		d2.speedU = s2.speedU;
+		d2.body = s2.body;
+		d2.steps = s2.steps;
+		d2.time = s2.time;
+		d2.length = s2.length;
+		d2.cash = s2.cash;
+		d2.fee = s2.fee;
+		d2.wear = s2.wear;
+		d2.exit = s2.exit;
+		d2.net = s2.net;
+		d2.leg = s2.leg;
+		copyHelperLog(d2, s2.logPlanet, s2.logStep, s2.logDwell, s2.logCount);
+	}
+}
+
+function evaluatePlanQuestHit(career, sim, origin, speed, body, steps, length,
+	logPlanet, logStep, logDwell, logCount, outWin) {
+	const condition = previewStartCondition(career, sim, origin, speed);
+	const reportUntil = GravityGame.forecastReportUntil(career, condition, speed, 0);
+	const visitPay = GravityGame.estimateProfitLog(game.market, game.clockSteps,
+		logPlanet, logStep, logCount, career.ledger, reportUntil, undefined, logDwell);
+	helperPlanInput.origin = origin;
+	helperPlanInput.body = body;
+	helperPlanInput.speed = speed;
+	helperPlanInput.flownLen = 0;
+	helperPlanInput.length = length;
+	helperPlanInput.steps = steps;
+	helperPlanInput.visitPay = visitPay;
+	helperPlanInput.bribe = 0;
+	helperPlanInput.condition = condition;
+	helperPlanInput.burnDv = 0;
+	helperPlanInput.fee = undefined;
+	helperPlanInput.logPlanet = logPlanet;
+	helperPlanInput.logStep = logStep;
+	helperPlanInput.logDwell = logDwell;
+	helperPlanInput.logCount = logCount;
+	helperPlanOpts.seekClaim = false;
+	helperPlanOpts.exitSpeedFn = bot.careerExitFn;
+
+	let best = -Infinity;
+	const singleSlot = career.contract >= 0;
+	const startSlot = singleSlot ? career.contract : 0;
+	const endSlot = singleSlot ? career.contract + 1 : GravityGame.BOARD_SIZE;
+	for (let s = startSlot; s < endSlot; s++) {
+		if (!singleSlot && (s === GravityGame.COMPETE_SLOT || !GravityGame.canAccept(career, s))) {
+			continue;
+		}
+		helperPlanOpts.slot = singleSlot ? -1 : s;
+		GravityGame.careerLegPlan(helperPlanScratch, career, game.market, sim,
+			helperPlanInput, game.clockSteps, helperPlanOpts);
+		if (!helperPlanScratch.feasible) continue;
+		const completesOne = helperPlanScratch.leg1Leg === GravityGame.LEG_DELIVER ||
+			helperPlanScratch.leg1Leg === GravityGame.LEG_PATIENTS;
+		if (!helperPlanScratch.hasSecond && !completesOne) continue;
+		if (helperPlanScratch.total <= best) continue;
+		best = helperPlanScratch.total;
+		if (outWin) copyLegPlanSummary(outWin, helperPlanScratch);
+	}
+	helperPlanInput.logPlanet = null;
+	helperPlanInput.logStep = null;
+	helperPlanInput.logDwell = null;
+	helperPlanInput.logCount = 0;
+	return best;
+}
 
 function helperScore(probe, cand) {
 	const origin = cand.origin;
@@ -155,14 +298,46 @@ function helperScore(probe, cand) {
 	let careerMoney = null;
 	if (careerRule()) {
 		if (probe.predReason !== END_IMPACT || probe.predBody < 0) return -Infinity;
+		if (helperState.goal === 'planQuest') {
+			const career = activeCareer();
+			const sim = activeCareerSim();
+			const speed = GravityGame.speedOf(cand.speedU);
+			const total = evaluatePlanQuestHit(career, sim, origin, speed, probe.predBody,
+				probe.predSteps, probe.predLength, probe.predLogPlanet, probe.predLogStep,
+				probe.predLogDwell, probe.predLogCount, helperPlanScratch);
+			if (!Number.isFinite(total)) return -Infinity;
+			helperLastMoney.net = helperPlanScratch.leg1Net;
+			helperLastMoney.cash = helperPlanScratch.leg1Cash;
+			helperLastMoney.leg = helperPlanScratch.leg1Leg;
+			helperLastMoney.hasSecond = helperPlanScratch.hasSecond;
+			helperLastMoney.twoLegTotal = helperPlanScratch.total;
+			helperLastMoney.leg1StepNet = helperPlanScratch.leg1Cash -
+				helperPlanScratch.leg1Fee - helperPlanScratch.leg1Wear;
+			helperLastMoney.leg2Body = helperPlanScratch.hasSecond ? helperPlanScratch.leg2.body : -1;
+			helperLastMoney.leg2Net = helperPlanScratch.hasSecond ? helperPlanScratch.leg2.net : -Infinity;
+			helperLastMoney.leg2Leg = helperPlanScratch.hasSecond ? helperPlanScratch.leg2.leg : 0;
+			helperLastMoney.slot = helperPlanScratch.slot;
+			helperLastMoney.prospective = helperPlanScratch.prospective;
+			return total;
+		}
 		careerMoney = traceMoney(probe, origin, GravityGame.speedOf(cand.speedU));
 		if (!moneyFlyable(careerMoney)) return -Infinity;
 		helperLastMoney.net = careerMoney.net;
+		helperLastMoney.cash = careerMoney.cash;
 		helperLastMoney.leg = careerMoney.leg;
+		helperLastMoney.hasSecond = careerMoney.hasSecond;
+		helperLastMoney.twoLegTotal = careerMoney.twoLegTotal;
+		helperLastMoney.leg1StepNet = careerMoney.leg1StepNet;
+		helperLastMoney.leg2Body = careerMoney.hasSecond && careerMoney.legPlan
+			? careerMoney.legPlan.leg2.body : -1;
+		helperLastMoney.leg2Net = careerMoney.hasSecond && careerMoney.legPlan
+			? careerMoney.legPlan.leg2.net : -Infinity;
+		helperLastMoney.leg2Leg = careerMoney.hasSecond && careerMoney.legPlan
+			? careerMoney.legPlan.leg2.leg : 0;
+		helperLastMoney.slot = careerMoney.legPlan ? careerMoney.legPlan.slot : -1;
+		helperLastMoney.prospective = false;
 		if (helperState.goal !== 'score') {
-			const goal = HELPER_GOALS[helperState.goal];
-			if (goal.builds && !careerMoney.builds) return -Infinity;
-			return careerMoney.net + careerMoney.credit * goal.credit;
+			return helperCareerGoalScore(careerMoney, helperState.goal);
 		}
 	}
 	const profit = !careerMoney && game.on
@@ -362,15 +537,19 @@ function helperMakeProfit(origin, count, requireEmc) {
 }
 
 /* the seed slot: a saved shot priced for the scan, reused between presses */
-const helperSeed = { origin: -1, angleU: 0, speedU: 0, length: 0, steps: 0,
-	reason: END_IMPACT, body: -1, score: -Infinity, money: 0, credit: 0, leg: 0 };
+const helperSeed = {
+	origin: -1, angleU: 0, speedU: 0, length: 0, steps: 0,
+	reason: END_IMPACT, body: -1, score: -Infinity, money: 0, credit: 0, leg: 0,
+	hasSecond: false, twoLegTotal: -Infinity, leg1StepNet: -Infinity,
+	leg2Body: -1, leg2Net: -Infinity, leg2Leg: 0, slot: -1, prospective: false
+};
 
 /*
  * The best saved shot from this rail for a career button, priced at the live
  * market and the live cap without spending a trace. It seeds the scan on the
  * button's own goal, so a search only replaces it with a better shot.
  */
-function helperBookSeed(career, origin, requireEmc, creditWeight) {
+function helperBookSeed(career, origin, goalKey) {
 	if (!GravityGame.bookReady(career.launchBook, pageBookTag())) return null;
 	const entries = career.launchBook.entries;
 	const cap = speedCeiling(origin);
@@ -378,11 +557,43 @@ function helperBookSeed(career, origin, requireEmc, creditWeight) {
 	for (let i = 0; i < entries.length; i++) {
 		const entry = entries[i];
 		if (entry.origin !== origin) continue;
-		if (GravityGame.speedOf(entry.speedU) > cap + 1e-9) continue;
+		const speed = GravityGame.speedOf(entry.speedU);
+		if (speed > cap + 1e-9) continue;
+		if (goalKey === 'planQuest') {
+			const score = evaluatePlanQuestHit(career, activeCareerSim(), entry.origin, speed,
+				entry.body, entry.steps, entry.length, entry.logPlanet, entry.logStep,
+				entry.logDwell, entry.logCount, helperPlanScratch);
+			if (!Number.isFinite(score) || (best !== null && score <= best.score)) continue;
+			copyLegPlanSummary(helperPlanWin, helperPlanScratch);
+			helperBestLeg1Log.time = entry.time;
+			helperBestLeg1Log.cash = helperPlanScratch.leg1Cash;
+			helperBestLeg1Log.net = helperPlanScratch.leg1Net;
+			copyHelperLog(helperBestLeg1Log, entry.logPlanet, entry.logStep, entry.logDwell, entry.logCount);
+			helperSeed.origin = entry.origin;
+			helperSeed.angleU = entry.angleU;
+			helperSeed.speedU = entry.speedU;
+			helperSeed.length = entry.length;
+			helperSeed.steps = entry.steps;
+			helperSeed.body = entry.body;
+			helperSeed.score = score;
+			helperSeed.money = helperPlanScratch.leg1Net;
+			helperSeed.credit = helperPlanScratch.credit;
+			helperSeed.leg = helperPlanScratch.leg1Leg;
+			helperSeed.hasSecond = helperPlanScratch.hasSecond;
+			helperSeed.twoLegTotal = helperPlanScratch.total;
+			helperSeed.leg1StepNet = helperPlanScratch.leg1Cash -
+				helperPlanScratch.leg1Fee - helperPlanScratch.leg1Wear;
+			helperSeed.leg2Body = helperPlanScratch.hasSecond ? helperPlanScratch.leg2.body : -1;
+			helperSeed.leg2Net = helperPlanScratch.hasSecond ? helperPlanScratch.leg2.net : -Infinity;
+			helperSeed.leg2Leg = helperPlanScratch.hasSecond ? helperPlanScratch.leg2.leg : 0;
+			helperSeed.slot = helperPlanScratch.slot;
+			helperSeed.prospective = helperPlanScratch.prospective;
+			best = helperSeed;
+			continue;
+		}
 		const money = storedMoney(entry);
-		const score = money.net + money.credit * (creditWeight || 0);
-		if (!moneyFlyable(money)) continue;
-		if (requireEmc && !money.builds) continue;
+		const score = helperCareerGoalScore(money, goalKey);
+		if (!Number.isFinite(score)) continue;
 		if (best !== null && score <= best.score) continue;
 		helperSeed.origin = entry.origin;
 		helperSeed.angleU = entry.angleU;
@@ -394,6 +605,14 @@ function helperBookSeed(career, origin, requireEmc, creditWeight) {
 		helperSeed.money = money.net;
 		helperSeed.credit = money.credit;
 		helperSeed.leg = money.leg;
+		helperSeed.hasSecond = money.hasSecond;
+		helperSeed.twoLegTotal = money.twoLegTotal;
+		helperSeed.leg1StepNet = money.leg1StepNet;
+		helperSeed.leg2Body = money.hasSecond && money.legPlan ? money.legPlan.leg2.body : -1;
+		helperSeed.leg2Net = money.hasSecond && money.legPlan ? money.legPlan.leg2.net : -Infinity;
+		helperSeed.leg2Leg = money.hasSecond && money.legPlan ? money.legPlan.leg2.leg : 0;
+		helperSeed.slot = money.legPlan ? money.legPlan.slot : -1;
+		helperSeed.prospective = false;
 		best = helperSeed;
 	}
 	return best;
@@ -408,17 +627,19 @@ function helperStartCareer(goal, mode, build) {
 	const origin = career.at;
 	if (origin < 0 || activeSim().status === STATUS_FLYING) return;
 	if (career.ended !== GravityGame.CAREER_OPEN) return;
-	const rule = HELPER_GOALS[goal];
 	const cands = build(origin);
-	if (cands.length === 0) return;
-	let seed = helperBookSeed(career, origin, rule.builds, rule.credit);
+	if (cands.length === 0) {
+		careerNotice(HELPER_GOALS[goal].empty);
+		return;
+	}
+	let seed = helperBookSeed(career, origin, goal);
 	const sim = activeSim();
-	if (armed && aimBody === origin && !dirty && sim.predReason === END_IMPACT &&
-		sim.predBody >= 0 && aimSpeed <= speedCeiling(origin) + 1e-9) {
+	if (goal !== 'planQuest' && armed && aimBody === origin && !dirty &&
+		sim.predReason === END_IMPACT && sim.predBody >= 0 &&
+		aimSpeed <= speedCeiling(origin) + 1e-9) {
 		const money = traceMoney(sim, origin, aimSpeed);
-		const score = money.net + money.credit * rule.credit;
-		if (moneyFlyable(money) && (!rule.builds || money.builds) &&
-			(!seed || score > seed.score)) {
+		const score = helperCareerGoalScore(money, goal);
+		if (Number.isFinite(score) && (!seed || score > seed.score)) {
 			helperSeed.origin = origin;
 			helperSeed.angleU = GravityGame.angleUnits(aimAngle);
 			helperSeed.speedU = GravityGame.speedUnits(aimSpeed);
@@ -429,6 +650,14 @@ function helperStartCareer(goal, mode, build) {
 			helperSeed.money = money.net;
 			helperSeed.credit = money.credit;
 			helperSeed.leg = money.leg;
+			helperSeed.hasSecond = money.hasSecond;
+			helperSeed.twoLegTotal = money.twoLegTotal;
+			helperSeed.leg1StepNet = money.leg1StepNet;
+			helperSeed.leg2Body = money.hasSecond && money.legPlan ? money.legPlan.leg2.body : -1;
+			helperSeed.leg2Net = money.hasSecond && money.legPlan ? money.legPlan.leg2.net : -Infinity;
+			helperSeed.leg2Leg = money.hasSecond && money.legPlan ? money.legPlan.leg2.leg : 0;
+			helperSeed.slot = money.legPlan ? money.legPlan.slot : -1;
+			helperSeed.prospective = false;
 			seed = helperSeed;
 		}
 	}
@@ -468,6 +697,71 @@ function helperMakeQuest(origin, count) {
 
 function helperStartQuest() {
 	helperStartCareer('quest', 'quest scan', (origin) => helperMakeQuest(origin, 34));
+}
+
+function helperPlanStopBodies(career, origin) {
+	const stops = [];
+	const singleSlot = career.contract >= 0;
+	const startSlot = singleSlot ? career.contract : 0;
+	const endSlot = singleSlot ? career.contract + 1 : GravityGame.BOARD_SIZE;
+	for (let s = startSlot; s < endSlot; s++) {
+		if (!singleSlot && (s === GravityGame.COMPETE_SLOT || !GravityGame.canAccept(career, s))) {
+			continue;
+		}
+		const task = career.tasks[s];
+		let target = -1;
+		if (task.kind === GravityGame.TASK_DELIVERY) {
+			const loadedHere = task.state === GravityGame.TASK_LOADED ||
+				(task.state === GravityGame.TASK_OFFERED && origin === task.from);
+			target = loadedHere ? task.to : task.from;
+		} else if (task.kind === GravityGame.TASK_MEDIC) {
+			target = task.aboard > 0 ? career.capitalPlanet : task.to;
+		}
+		if (target >= 0 && target < PLANETS && target !== origin && planetMask[target] &&
+			!stops.includes(target)) {
+			stops.push(target);
+		}
+	}
+	return stops;
+}
+
+function helperMakePlanQuest(origin) {
+	const career = playerCareer();
+	const stops = helperPlanStopBodies(career, origin);
+	if (stops.length === 0) return [];
+	const out = [];
+	const cap = speedCeiling(origin);
+	const span = Math.max(0, cap - SPEED_MIN);
+	const fracs = [0.08, 0.24, 0.44, 0.68, 0.94];
+	for (let i = 0; i < stops.length; i++) {
+		const planet = stops[i];
+		const base = Math.atan2(tradeSim.planetY[planet] - tradeSim.planetY[origin],
+			tradeSim.planetX[planet] - tradeSim.planetX[origin]);
+		for (let f = 0; f < fracs.length; f++) {
+			const speedU = helperSnapSpeedUnits(origin, SPEED_MIN + span * fracs[f]);
+			for (let k = -4; k <= 4; k++) {
+				const a = (base + k * 0.055 + TAU) % TAU;
+				out.push({ origin: origin, angleU: GravityGame.angleUnits(a), speedU: speedU });
+			}
+		}
+	}
+	const circleAngles = 24;
+	const circleFracs = [0.18, 0.45, 0.78];
+	for (let f = 0; f < circleFracs.length; f++) {
+		const speedU = helperSnapSpeedUnits(origin, SPEED_MIN + span * circleFracs[f]);
+		for (let a = 0; a < circleAngles; a++) {
+			const angle = (a + 0.5) / circleAngles * TAU;
+			out.push({ origin: origin, angleU: GravityGame.angleUnits(angle), speedU: speedU });
+		}
+	}
+	return out;
+}
+
+function helperStartPlanQuest() {
+	helperPlanWin.feasible = false;
+	helperPlanWin.hasSecond = false;
+	helperBestLeg1Log.logCount = 0;
+	helperStartCareer('planQuest', 'plan quest', helperMakePlanQuest);
 }
 
 /*
@@ -532,15 +826,34 @@ function helperTick(budgetMs) {
 			if (idx < helperState.candidates.length) {
 				const cand = helperState.candidates[idx];
 				const score = helperScore(helperProbe, cand);
-				if (careerRule()) saveTrace(helperProbe, cand.origin, cand.angleU, cand.speedU);
+				if (careerRule() && helperState.goal !== 'planQuest') {
+					saveTrace(helperProbe, cand.origin, cand.angleU, cand.speedU);
+				}
 				if (score > helperState.bestScore) {
 					helperState.bestScore = score;
 					helperState.fromBook = false;
+					if (helperState.goal === 'planQuest') {
+						copyLegPlanSummary(helperPlanWin, helperPlanScratch);
+						helperBestLeg1Log.time = helperProbe.predTime;
+						helperBestLeg1Log.cash = helperLastMoney.cash;
+						helperBestLeg1Log.net = helperLastMoney.net;
+						copyHelperLog(helperBestLeg1Log, helperProbe.predLogPlanet,
+							helperProbe.predLogStep, helperProbe.predLogDwell,
+							helperProbe.predLogCount);
+					}
 					helperState.best = {
 						origin: cand.origin, angleU: cand.angleU, speedU: cand.speedU,
 						length: helperProbe.predLength, steps: helperProbe.predSteps,
 						reason: helperProbe.predReason, body: helperProbe.predBody,
-						score: score, money: helperLastMoney.net, leg: helperLastMoney.leg
+						score: score, money: helperLastMoney.net, leg: helperLastMoney.leg,
+						hasSecond: helperLastMoney.hasSecond,
+						twoLegTotal: helperLastMoney.twoLegTotal,
+						leg1StepNet: helperLastMoney.leg1StepNet,
+						leg2Body: helperLastMoney.leg2Body,
+						leg2Net: helperLastMoney.leg2Net,
+						leg2Leg: helperLastMoney.leg2Leg,
+						slot: helperLastMoney.slot,
+						prospective: helperLastMoney.prospective
 					};
 				}
 				helperState.index += 1;
@@ -555,12 +868,57 @@ function helperTick(budgetMs) {
 				helperState.candidates = null;
 				if (best && best.score > -1e11) {
 					if (careerRule()) {
-						const goal = HELPER_GOALS[helperState.goal];
-						const label = goal.label ? (helperState.fromBook ? 'launch list' : goal.label) : '';
-						/* the notice prints the purse money, not the ranking score */
-						const money = helperState.goal === 'score' ? best.score : best.money;
-						careerNotice((label ? label + ' · ' : '') + planetName(best.body) +
-							' · ' + signedMoney(money) + helperLegText(best.leg));
+						if (helperState.goal === 'planQuest') {
+							saveBookTraceData({
+								origin: best.origin, angleU: best.angleU, speedU: best.speedU,
+								body: best.body, steps: best.steps, time: helperBestLeg1Log.time,
+								length: best.length, score: helperBestLeg1Log.net,
+								money: helperBestLeg1Log.cash,
+								logPlanet: helperBestLeg1Log.logPlanet,
+								logStep: helperBestLeg1Log.logStep,
+								logDwell: helperBestLeg1Log.logDwell,
+								logCount: helperBestLeg1Log.logCount
+							});
+							if (helperPlanWin.hasSecond) {
+								const l2 = helperPlanWin.leg2;
+								saveBookTraceData({
+									origin: l2.origin, angleU: l2.angleU, speedU: l2.speedU,
+									body: l2.body, steps: l2.steps, time: l2.time,
+									length: l2.length, score: l2.net, money: l2.cash,
+									logPlanet: l2.logPlanet, logStep: l2.logStep,
+									logDwell: l2.logDwell, logCount: l2.logCount
+								});
+							}
+							refreshLaunchList(true);
+							const offerNote = best.prospective
+								? helperOfferTag(best.slot) + ' (accept to fly) · ' : '';
+							if (best.hasSecond && best.leg2Body >= 0) {
+								careerNotice('quest plan · ' + offerNote +
+									planetName(best.body) + ' (' + signedMoney(best.leg1StepNet) +
+									') \u2192 ' + helperLegVerb(best.leg2Leg) + ' ' +
+									planetName(best.leg2Body) + ' (' + signedMoney(best.leg2Net) +
+									') · net ' + signedMoney(best.twoLegTotal));
+							} else {
+								careerNotice('quest plan · ' + offerNote +
+									helperLegVerb(best.leg) + ' ' + planetName(best.body) +
+									' · net ' + signedMoney(best.twoLegTotal));
+							}
+						} else {
+							const goal = HELPER_GOALS[helperState.goal];
+							const label = goal.label ? (helperState.fromBook ? 'launch list' : goal.label) : '';
+							if (helperState.goal === 'quest' && best.hasSecond && best.leg2Body >= 0) {
+								careerNotice((label ? label + ' · ' : '') +
+									planetName(best.body) + ' (' + signedMoney(best.leg1StepNet) +
+									') \u2192 ' + helperLegVerb(best.leg2Leg) + ' ' +
+									planetName(best.leg2Body) + ' (' + signedMoney(best.leg2Net) +
+									') · net ' + signedMoney(best.twoLegTotal));
+							} else {
+								/* the notice prints the purse money, not the ranking score */
+								const money = helperState.goal === 'score' ? best.score : best.money;
+								careerNotice((label ? label + ' · ' : '') + planetName(best.body) +
+									helperLegText(best.leg) + ' · ' + signedMoney(money));
+							}
+						}
 					}
 					aimBody = best.origin;
 					aimAngle = GravityGame.angleOf(best.angleU);

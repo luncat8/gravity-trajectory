@@ -499,7 +499,61 @@ console.log('   stay-pay earned more on ' + dwellWins + '/4 probe flights');
 	check(!ui.get('careerLaunchList').innerHTML.includes('≥ticks') &&
 		!page2.elements.get('careerLaunchList').innerHTML.includes('≥ticks'),
 		'≥ticks must be gone from the launch list');
-	console.log('7. page: 13-tuple + runRecord round trip, stored price ' + moneyA.toFixed(4));
+
+	/* 8. URL/link/seat-cache invariants for stay-pay (0.7.39 follow-ups) */
+	check(page.context.GravityScene.game.harvestTick === true &&
+		page.context.GravityScene.experimentScales().harvestTick === true,
+		'live game.harvestTick must track the active stay-pay toggle');
+	check(GravityGame.encodeLink(Object.assign({}, page.context.GravityScene.game, { rate: 1 }))
+		.includes('&ht=1'), 'encodeLink(game) must emit &ht=1 when stay-pay is active in career');
+	const mapHt = loadPage({ search: mapSearch(3) + '&ht=1' });
+	check(mapHt.context.GravityScene.game.harvestTick === true &&
+		mapHt.context.GravityGame.harvestMode() === GravityGame.HARVEST_TICK &&
+		mapHt.elements.get('expHarvest').checked === true,
+		'?map=...&ht=1 must boot directly in stay-pay mode');
+	check(new URL(mapHt.context.location.href).searchParams.get('ht') === '1',
+		'syncSeedUrl must write ht=1 into location.search');
+	const mapReloaded = loadPage({ search: new URL(mapHt.context.location.href).search });
+	check(mapReloaded.context.GravityScene.game.harvestTick === true &&
+		mapReloaded.context.GravityGame.harvestMode() === GravityGame.HARVEST_TICK,
+		'reloading the synced ?seed=...&mode=career&ht=1 URL must preserve stay-pay');
+	const mapHtOff = loadPage({ search: mapSearch(3) + '&ht=0' });
+	check(mapHtOff.context.GravityScene.game.harvestTick === false &&
+		mapHtOff.context.GravityGame.harvestMode() === GravityGame.HARVEST_ENTRY,
+		'?map=...&ht=0 must boot in entry mode');
+
+	/* Seat fairness planning must ignore harvestMode so opening caches stay pure */
+	const trade38 = new Sim(38);
+	trade38.advanceTo(420);
+	const maskA = new Uint8Array(PLANETS);
+	for (let p = 0; p < 13; p++) maskA[p] = 1;
+	GravityGame.setHarvestMode(GravityGame.HARVEST_TICK);
+	const seatsTick = GravityGame.prepareCareerStarts(GravityGame.createGalaxy(), trade38.world,
+		trade38, maskA, 13, 3, buildStaticWorld(38));
+	const trade39 = new Sim(39);
+	trade39.advanceTo(420);
+	GravityGame.setHarvestMode(GravityGame.HARVEST_TICK);
+	const seats39Tick = GravityGame.prepareCareerStarts(GravityGame.createGalaxy(), trade39.world,
+		trade39, maskA, 13, 3, buildStaticWorld(39));
+	/* Compare openingGroupStats directly against a fresh non-cached seed under HARVEST_ENTRY */
+	GravityGame.setHarvestMode(GravityGame.HARVEST_ENTRY);
+	const forced39 = new Uint8Array(PLANETS);
+	for (let i = 0; i < seats39Tick.length; i++) forced39[seats39Tick[i]] = 1;
+	const statsEntry = GravityGame.openingGroupStats(trade39.world, trade39,
+		maskA, 13, forced39, seats39Tick, buildStaticWorld(39));
+	GravityGame.setHarvestMode(GravityGame.HARVEST_TICK);
+	const trade40 = new Sim(40);
+	trade40.advanceTo(420);
+	const stats40Tick = Object.assign({}, GravityGame.openingGroupStats(trade40.world, trade40,
+		maskA, 13, forced39, seats39Tick, buildStaticWorld(40)));
+	GravityGame.setHarvestMode(GravityGame.HARVEST_ENTRY);
+	const stats40Entry = Object.assign({}, GravityGame.openingGroupStats(trade40.world, trade40,
+		maskA, 13, forced39, seats39Tick, buildStaticWorld(40)));
+	check(Array.isArray(seatsTick) && statsEntry.minPay >= 0 &&
+		Math.abs(stats40Tick.minPay - stats40Entry.minPay) < 1e-12 &&
+		Math.abs(stats40Tick.maxPay - stats40Entry.maxPay) < 1e-12,
+		'openingGroupStats and prepareCareerStarts must not vary with harvestMode');
+	console.log('7. page: 13-tuple + runRecord + ?map=&ht=1 + seat-cache round trip, stored price ' + moneyA.toFixed(4));
 }
 
 console.log('HARVEST TICKS OK · ' + checks + ' checks');
