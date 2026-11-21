@@ -106,7 +106,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * also pays, on every step the ship stays inside, what re-accrued during
 	 * that step — a slow or looping pass earns more than a fly-by. Career only;
 	 * the traces that price a shot still assume the entry rule (see
-	 * 0.4.30-plan-harvest-ticks.md).
+	 * 0.8.4-plan-harvest-ticks.md).
 	 */
 	const HARVEST_ENTRY = 0;
 	const HARVEST_TICK = 1;
@@ -2840,11 +2840,13 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	let resumeMemory = null;
 
 	function seatPlanKey(world, trade, mask, count, seatsWanted, sourceSim) {
+		const field = PlanetGravity.armed();
+		const fieldTag = field && field.seed === (world.seed >>> 0) ? field.tag : 0;
 		return (world.seed >>> 0) + ':' + (trade.seed >>> 0) + ':' +
 			openingMaskTag(mask, count) + ':' + seatsWanted + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
-			(specialPlanets ? 1 : 0);
+			(specialPlanets ? 1 : 0) + (fieldTag ? ':' + fieldTag : '');
 	}
 
 	function seatPlanCached(key) {

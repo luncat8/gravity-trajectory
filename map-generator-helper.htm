@@ -113,7 +113,7 @@
     <label>Field name <input id="fieldName" type="text" value="field 1"></label>
     <button id="saveField">Save field</button>
   </div>
-  <div class="note" id="saveNote">Saving downloads <code>map_fields.js</code>; drop it beside this page to keep the design. A page opened from <code>file://</code> may ask where to put it instead of downloading.</div>
+  <div class="note" id="saveNote">Saving downloads <code>map_fields.js</code>; drop it beside this page to keep the design and boot it from the game's saved-maps picker (or <code>?map=&lt;name&gt;</code>). A page opened from <code>file://</code> may ask where to put it instead of downloading.</div>
 </section>
 
 <section>
@@ -185,8 +185,9 @@
 	  hollow dots — duplicates stacked, values outside the design range counted in the
 	  note instead of drawn — so a seed's own field can be read against the design.
 	→ save: the design is written to `map_fields.js` beside this page (a data script
-	  like `saved_maps.js`). The game cannot play a designed field yet — that is
-	  `0.7.35-plan-playable-fields.md`, and it is the one open integration.
+	  like `saved_maps.js`), which `index.html` loads into the saved-maps picker
+	  (`· field`, `?map=<name>`); `FIELDS=1 node experiments/make_saved_maps.js`
+	  proves and writes its career opening seats.
 	→ the game's saved-maps group has a picker beside `load map`, so a specific
 	  pre-generated map boots instead of a random one.
 </pre>
@@ -754,14 +755,16 @@ svg.addEventListener('pointermove', e => {
 	drawMap();
 });
 
-svg.addEventListener('pointerup', () => {
+function finishDrag() {
 	if (dragId === null) return;
 	dragId = null;
 	renderTable();
 	renderRosterNote();
 	ensureField();
 	drawChart();
-});
+}
+svg.addEventListener('pointerup', finishDrag);
+svg.addEventListener('pointercancel', finishDrag);
 
 window.addEventListener('keydown', e => {
 	const tag = e.target.tagName;
@@ -869,9 +872,15 @@ function fillFieldPick() {
 function loadField(index) {
 	const entry = fields[index];
 	if (!entry) return;
-	gravMinEl.value = entry.rows.length ? Math.min(...entry.rows.map(r => r.g - r.m)) : -1;
-	gravMaxEl.value = entry.rows.length ? Math.max(...entry.rows.map(r => r.g + r.m)) : 3.5;
-	applyRange();
+	const current = designRange();
+	const lo = entry.rows.length
+		? Math.min(current.min, ...entry.rows.map(r => r.g - r.m))
+		: PlanetGravity.MIN;
+	const hi = entry.rows.length
+		? Math.max(current.max, ...entry.rows.map(r => r.g + r.m))
+		: PlanetGravity.MAX;
+	gravMinEl.value = Math.max(PlanetGravity.MIN, lo);
+	gravMaxEl.value = Math.min(PlanetGravity.MAX, hi);
 	planets = entry.rows.map((row, i) => ({
 		id: i + 1, g: row.g, m: row.m, count: row.count, rolled: null
 	}));
@@ -915,11 +924,11 @@ $('saveField').addEventListener('click', () => {
 		$('saveNote').textContent = 'nothing to save: add rows with a count first';
 		return;
 	}
-	const record = MapGen.fieldRecord({
+	const index = fields.findIndex(entry => entry.name === field.name);
+	const record = MapGen.fieldRecord(Object.assign({}, index >= 0 ? fields[index] : null, {
 		name: field.name, rows: field.rows, values: field.values,
 		seed: field.seed, mass: shipMass(), gap: gapPx(), note: 'designed in map-generator-helper'
-	});
-	const index = fields.findIndex(entry => entry.name === record.name);
+	}));
 	if (index >= 0) fields[index] = record;
 	else fields.push(record);
 	const ok = download(MapGen.fieldsText(fields), 'map_fields.js');

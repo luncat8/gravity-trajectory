@@ -34,7 +34,60 @@
 	const BIAS_END = 2.8;
 	const BIAS_STRENGTH = 0.3;
 
+	/* One optional designed field (`map_fields.js`), armed for a single seed so
+	 * every reader (`gravity_game.js`, `gui_world.js`, the seat planner) sees it
+	 * without changing its call sites, and another seed never reads it. */
+	let armedField = null;
+	let armedSeed = 0;
+	let armedTag = 0;
+
+	/* snap any value to the field's grid and range: the one way a designed or
+	 * rolled gravity becomes a value the game can actually hold */
+	function snap(value) {
+		if (!Number.isFinite(value)) return 0;
+		const g = Math.round(value * STEPS) / STEPS;
+		return g === 0 ? 0 : Math.max(MIN, Math.min(MAX, g));
+	}
+
+	function fieldTag(values) {
+		if (!values || !(values.length > 0)) return 0;
+		let hash = 0x811c9dc5;
+		hash = Math.imul(hash ^ values.length, 0x01000193);
+		for (let i = 0; i < values.length; i++) {
+			const step = Math.round(snap(values[i]) * STEPS) + 1024;
+			hash = Math.imul(hash ^ step, 0x01000193);
+		}
+		return (hash >>> 0) || 1;
+	}
+
+	function arm(values, seed) {
+		if (!values || !(Array.isArray(values) || ArrayBuffer.isView(values)) || values.length === 0) {
+			disarm();
+			return null;
+		}
+		const copy = new Float64Array(values.length);
+		for (let i = 0; i < values.length; i++) copy[i] = snap(values[i]);
+		armedField = copy;
+		armedSeed = seed >>> 0;
+		armedTag = fieldTag(copy);
+		return armed();
+	}
+
+	function disarm() {
+		armedField = null;
+		armedSeed = 0;
+		armedTag = 0;
+	}
+
+	function armed() {
+		if (!armedField) return null;
+		return { values: armedField, seed: armedSeed, tag: armedTag };
+	}
+
 	function gravity(seed, planet) {
+		if (armedField && (seed >>> 0) === armedSeed && planet >= 0 && planet < armedField.length) {
+			return armedField[planet];
+		}
 		const u = OrbitWorld.hash01(seed, planet, SALT_GRAVITY);
 		let g = MIN + (u * CHOICES - 0.5) / STEPS;
 		if (g > BIAS_START && g < BIAS_END) {
@@ -46,18 +99,10 @@
 		return g === 0 ? 0 : Math.max(MIN, Math.min(MAX, g));
 	}
 
-	/* snap any value to the field's grid and range: the one way a designed or
-	 * rolled gravity becomes a value the game can actually hold */
-	function snap(value) {
-		if (!Number.isFinite(value)) return 0;
-		const g = Math.round(value * STEPS) / STEPS;
-		return g === 0 ? 0 : Math.max(MIN, Math.min(MAX, g));
-	}
-
 	const PlanetGravity = {
 		SALT_GRAVITY, MIN, MAX, STEPS, CHOICES,
 		BIAS_START, BIAS_END, BIAS_STRENGTH,
-		gravity, snap
+		gravity, snap, fieldTag, arm, disarm, armed
 	};
 	if (typeof module !== 'undefined' && module.exports) module.exports = PlanetGravity;
 	else root.PlanetGravity = PlanetGravity;

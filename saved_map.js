@@ -28,6 +28,9 @@
 	const OrbitSim = typeof module !== 'undefined' && module.exports
 		? require('./orbit_sim.js')
 		: root.OrbitSim;
+	const PlanetGravity = typeof module !== 'undefined' && module.exports
+		? require('./planet_gravity.js')
+		: root.PlanetGravity;
 
 	const FORMAT = 1;
 	const GEAR_ID = /^(OBS|EMC|SP|BAT|HOLD|IMP|FT|HELP)-\d+$/;
@@ -184,6 +187,13 @@
 		};
 	}
 
+	function activeGravity(seed, universe) {
+		const field = PlanetGravity.armed();
+		if (!field || field.seed !== (seed >>> 0)) return null;
+		const count = Math.max(0, Math.min(universe | 0, field.values.length));
+		return count > 0 ? Array.from(field.values.subarray(0, count)) : null;
+	}
+
 	function mapLabel(fields) {
 		return 'seed ' + fields.seed + ' · ' + fields.universe + ' planets · ' +
 			fields.seats.length + ' seats';
@@ -191,8 +201,10 @@
 
 	function startRecord(info) {
 		const fields = startFields(info);
-		const record = { v: FORMAT, kind: 'start', name: mapLabel(fields) };
+		const gravity = activeGravity(fields.seed, fields.universe);
+		const record = { v: FORMAT, kind: gravity ? 'field' : 'start', name: mapLabel(fields) };
 		for (const key in fields) record[key] = fields[key];
+		if (gravity) record.gravity = gravity;
 		return record;
 	}
 
@@ -362,12 +374,27 @@
 		return bits;
 	}
 
+	/* arm a designed field before anything reads a planet strength; every other
+	 * record disarms so a seed run after a field run reads the seeded draw */
+	function applyField(record) {
+		if (record && Array.isArray(record.gravity) && record.gravity.length > 0) {
+			return PlanetGravity.arm(record.gravity, record.seed);
+		}
+		PlanetGravity.disarm();
+		return null;
+	}
+
 	/* the record's plan is injected only into the world it was proven on */
 	function applySeats(galaxy, world, trade, mask, count, wanted, sourceSim) {
 		const record = armed;
 		if (!record || !record.seats || record.seats.length !== wanted) return null;
 		if ((world.seed >>> 0) !== (record.seed >>> 0) || count !== record.universe) return null;
 		if (record.state && record.state.mask && record.state.mask !== maskBits(mask)) return null;
+		const wantTag = Array.isArray(record.gravity) && record.gravity.length > 0
+			? PlanetGravity.fieldTag(record.gravity) : 0;
+		const liveField = PlanetGravity.armed();
+		const liveTag = liveField && liveField.seed === (world.seed >>> 0) ? liveField.tag : 0;
+		if (wantTag !== liveTag) return null;
 		const gs = scale(sourceSim && sourceSim.gravityScale);
 		const fs = scale(sourceSim && sourceSim.forceScale);
 		if (gs !== scale(record.gs) || fs !== scale(record.fs)) return null;
@@ -479,6 +506,7 @@
 		captureState,
 		runStateShapes,
 		applyState,
+		applyField,
 		applySeats,
 		arm,
 		armed: armedRecord,

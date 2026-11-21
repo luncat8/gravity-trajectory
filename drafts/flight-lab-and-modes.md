@@ -163,7 +163,7 @@ in career it is sport rules that randomly generate. in modes - make separate mod
 
 (deferred) add variant of rule for compatible game modes and sport competition: land on planet cause finish for this player | or can land
 
-→ **open** · `../0.7.4-plan-max-distance-mode.md` — two rows,
+→ **open** · `../0.8.5-plan-max-distance-mode.md` — two rows,
 `maxdistEmc` (no impulse, farthest path point, must return to the start) and
 `maxdistImp` (IMP-1 + big tank, first landing ends, scores farthest). The map is
 a 3-screen strip (4800×1000, 78 planets, no wrap) fitted to one screen; x-wrap
@@ -224,7 +224,7 @@ hard bots need give more search time then easy. probably measure in startup and 
 → today a harder level searches more candidates, not longer: `easy` tries 14
 launch angles and `hard` 32 (in `route`, `easy` stops after search stage 1 and
 `hard` after stage 5), all cut into the same frame slices. Nothing is measured at
-startup. **open** → `../0.4.27-plan-bot-balancing.md` — identical seeded fields,
+startup. **open** → `../0.9.6-plan-bot-balancing.md` — identical seeded fields,
 a measured seed/outcome table, no budget change before the table exists.
 
 ### random gravity of planets -1...+5
@@ -232,7 +232,7 @@ but 1st HQ is 1
 
 → field is `−1…+3.5` in `0.05` steps, with a smooth bias toward moderate
 positive gravity; HQ, Capital and A.R.F. are pinned to 1.
-**open** → `../0.6.8-plan-seeded-map-opening.md` §2: raising the draw ceiling to
+**open** → `../0.9.1-plan-seeded-map-opening.md` §2: raising the draw ceiling to
 `+5` is a one-constant change (`PLANET_GRAVITY_MAX`) that moves every seeded
 field, so it ships as a deliberate baseline break.
 
@@ -257,7 +257,7 @@ The rivals once seen «stuck on a `g 2.1` HQ» were not this rule failing:
 `career_gravity_bench` started careers without the page's seating, and was fixed
 to mirror it (`archive/0.5.22-worklog.md` §3).
 
-**open** → `../0.6.8-plan-seeded-map-opening.md` §1: the promise is asserted for
+**open** → `../0.9.1-plan-seeded-map-opening.md` §1: the promise is asserted for
 the default career only (13 planets, three companies). On 26 planets two of four
 seeds fall under the band (47 % and 51 %), and with five companies on 13 planets
 the same test finds no map where each has its own site.

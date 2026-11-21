@@ -174,7 +174,8 @@
 		return bins;
 	}
 
-	/* what each saved map in the registry really carries, by seed */
+	/* what each saved map in the registry really carries: a designed field keeps
+	 * its own `gravity` array, while a seed map draws from `seed` */
 	function savedMapFields(records) {
 		const out = [];
 		if (!Array.isArray(records)) return out;
@@ -182,11 +183,14 @@
 			const record = records[i] || {};
 			const universe = Math.floor(clampNumber(record.universe, 1, OrbitWorld.PLANETS, 0));
 			if (!(universe > 0)) continue;
+			const hasField = Array.isArray(record.gravity) && record.gravity.length >= universe;
 			out.push({
 				name: record.name || 'map ' + i,
 				seed: record.seed >>> 0,
 				universe: universe,
-				values: originalDraw(record.seed, universe)
+				values: hasField
+					? record.gravity.slice(0, universe).map(PlanetGravity.snap)
+					: originalDraw(record.seed, universe)
 			});
 		}
 		return out;
@@ -257,11 +261,13 @@
 	}
 
 	/* a record in the registry keeps its list under `gravity`; the page hands a
-	 * fresh design in as `values`. Either way the list is re-snapped here. */
+	 * fresh design in as `values`. Proven `seats` from `make_saved_maps.js` survive
+	 * reloads and unrelated saves as long as this field's own draw is unchanged. */
 	function fieldRecord(input) {
-		const source = Array.isArray(input.values) ? input.values : input.gravity;
+		const fresh = Array.isArray(input.values);
+		const source = fresh ? input.values : input.gravity;
 		const values = Array.isArray(source) ? source.map(PlanetGravity.snap) : [];
-		return {
+		const out = {
 			v: 1,
 			kind: 'field',
 			name: String(input.name || 'field'),
@@ -273,6 +279,29 @@
 			gravity: values,
 			note: String(input.note || '')
 		};
+		const sameField = !fresh ||
+			(Array.isArray(input.gravity) &&
+				PlanetGravity.fieldTag(values) === PlanetGravity.fieldTag(input.gravity));
+		if (sameField && Array.isArray(input.seats) && input.seats.length > 0) {
+			out.seats = input.seats.map(seat => Math.floor(Number(seat)));
+			out.targetPay = Number.isFinite(input.targetPay) ? input.targetPay : 0;
+			out.rule = String(input.rule || 'career');
+			out.bot = String(input.bot || 'normal');
+			out.player = String(input.player || 'user');
+			out.cheat = input.cheat || null;
+			out.rate = Math.round(clampNumber(input.rate, 0.5, 12, 1) * 1e6) / 1e6;
+			out.gs = Math.round(clampNumber(input.gs, 0, 9, 1) * 1e6) / 1e6;
+			out.fs = Math.round(clampNumber(input.fs, 0.25, 3, 1) * 1e6) / 1e6;
+			out.ws = Math.round(clampNumber(input.ws, 0, 3, 1) * 1e6) / 1e6;
+			out.ht = input.ht === true;
+			if (input.stats && typeof input.stats === 'object') {
+				out.stats = {
+					weakest: Number(input.stats.weakest) || 0,
+					sites: Math.floor(Number(input.stats.sites) || 0)
+				};
+			}
+		}
+		return out;
 	}
 
 	/* a file from disk (or a hand edit) is only trusted as far as it parses */

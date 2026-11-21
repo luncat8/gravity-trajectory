@@ -26,8 +26,8 @@ What the benches say about «compete» (`archive/0.5.22-worklog.md`):
    it once in 24 games: it has to be accepted *on the Capital*, and no shot
    score carries its reward there.
 
-**open** → `0.4.27-plan-bot-balancing.md` (`hard` beat `easy` on 2 of 4 seeded
-fields) and `0.6.6-plan-rival-characters.md` (four companies that want different
+**open** → `0.9.6-plan-bot-balancing.md` (`hard` beat `easy` on 2 of 4 seeded
+fields) and `0.9.5-plan-rival-characters.md` (four companies that want different
 things).
 
 ## 8.2 balance_lab.html ← `archive/draft.txt`
@@ -70,7 +70,7 @@ is cheaper and honest; pick one.
   `politics_test`, `politics_gui_test`, `special_planets_test`.
 
 → **shipped** (`../archive/0.6.10-plan-map-statistics.md` §5): `STATS=1` on
-`career_gravity_bench` prints the statistics of `rivals-competitions.md` §5.3 per
+`career_gravity_bench` prints the statistics of `rivals-sport-competitions.md` §5.3 per
 player and writes `experiments/logs/0.6.10-map-statistics.txt`.
 
 **open (small)**, no plan: seven `experiments/debug_*.js` (`debug_evac`,

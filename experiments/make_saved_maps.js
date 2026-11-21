@@ -18,6 +18,7 @@
  * Run: node experiments/make_saved_maps.js            (writes saved_maps.js)
  *      SEEDS=1-16 node experiments/make_saved_maps.js  (how far to sample)
  *      node experiments/make_saved_maps.js --check     (the registry against the search)
+ *      FIELDS=1 node experiments/make_saved_maps.js    (plan seats into map_fields.js)
  */
 'use strict';
 
@@ -30,6 +31,8 @@ const Sim = require(path.join(root, 'orbit_sim.js'));
 const GravitySim = require(path.join(root, 'gravity_sim.js'));
 const GravityGame = require(path.join(root, 'gravity_game.js'));
 const GravityMaps = require(path.join(root, 'saved_map.js'));
+const PlanetGravity = require(path.join(root, 'planet_gravity.js'));
+const MapGen = require(path.join(root, 'map_gen.js'));
 
 const PLANETS = OrbitWorld.PLANETS;
 const START_MINUTES = 420;
@@ -166,7 +169,34 @@ function recordsFor(config) {
 	return records;
 }
 
+function resolveFieldsPath(spec) {
+	if (!spec || spec === '0') return null;
+	if (spec === '1') return path.join(root, 'map_fields.js');
+	return path.resolve(spec);
+}
+
+function loadArrayModule(file) {
+	delete require.cache[require.resolve(file)];
+	return require(file);
+}
+
+function planForRecord(record, seatsWanted) {
+	const gs = record.gs === undefined ? 1 : record.gs;
+	const fs = record.fs === undefined ? 1 : record.fs;
+	try {
+		if (record.kind === 'field' && Array.isArray(record.gravity)) {
+			PlanetGravity.arm(record.gravity, record.seed);
+		} else {
+			PlanetGravity.disarm();
+		}
+		return planFor(record.seed, record.universe, seatsWanted, gs, fs);
+	} finally {
+		PlanetGravity.disarm();
+	}
+}
+
 function generate() {
+	PlanetGravity.disarm();
 	const records = CONFIGS.flatMap(config => recordsFor(config));
 	const wanted = CONFIGS.reduce((sum, config) => sum + seedPlan(config).want, 0);
 	console.log(records.length + ' maps');
@@ -178,23 +208,96 @@ function generate() {
 	return 0;
 }
 
+function generateFields(fieldsFile) {
+	const records = MapGen.readFields(loadArrayModule(fieldsFile));
+	const out = [];
+	let failed = false;
+	for (const record of records) {
+		const seats = Array.isArray(record.seats) && record.seats.length > 0
+			? record.seats.length
+			: Math.max(1, Math.floor(Number(process.env.SEATS) || 3));
+		const plan = planForRecord(record, seats);
+		if (!plan || !plan.check.ok) {
+			failed = true;
+			console.error('FAIL  ' + record.name + ' · no fair opening (' +
+				(plan ? 'ratio ' + plan.check.ratio.toFixed(2) +
+					' sites ' + plan.check.sites +
+					' exit ' + plan.check.exitOk : 'no plan') + ')');
+			continue;
+		}
+		out.push(MapGen.fieldRecord(Object.assign({}, record, {
+			seats: plan.seats,
+			targetPay: plan.targetPay,
+			rule: record.rule || GravityGame.RULE_CAREER,
+			bot: record.bot || GravityGame.BOT_NORMAL,
+			player: record.player || GravityGame.PLAYER_USER,
+			cheat: record.cheat || null,
+			rate: record.rate === undefined ? 1 : record.rate,
+			gs: record.gs === undefined ? 1 : record.gs,
+			fs: record.fs === undefined ? 1 : record.fs,
+			ws: record.ws === undefined ? 1 : record.ws,
+			ht: record.ht === true,
+			stats: {
+				weakest: Math.round(plan.check.ratio * 100) / 100,
+				sites: plan.check.sites
+			}
+		})));
+		console.log('keep  ' + record.name + ' · seed ' + record.seed +
+			' · seats ' + plan.seats.join(',') +
+			' · ratio ' + plan.check.ratio.toFixed(2) +
+			' · sites ' + plan.check.sites + ' · ' + plan.ms + ' ms');
+	}
+	if (failed) return 1;
+	fs.writeFileSync(fieldsFile, MapGen.fieldsText(out));
+	console.log('wrote ' + path.relative(root, fieldsFile) +
+		' (' + fs.statSync(fieldsFile).size + ' bytes)');
+	return 0;
+}
+
 /* what a record stores, and what the search returns now when that differs */
 function checkLine(record, plan, same) {
-	const stored = record.name + ' · seats ' + record.seats.join(',') + ' · pay ' + record.targetPay;
+	const seats = Array.isArray(record.seats) ? record.seats.join(',') : 'none';
+	const stored = record.name + ' · seats ' + seats + ' · pay ' + record.targetPay;
 	if (same) return 'ok    ' + stored + ' · ' + plan.ms + ' ms';
 	const now = plan ? 'seats ' + plan.seats.join(',') + ' · pay ' + plan.targetPay : 'no plan';
 	return 'FAIL  ' + stored + ' · stale, the search now returns ' + now;
 }
 
-function check() {
+function verifyRecord(record) {
+	if (!Array.isArray(record.seats) || record.seats.length === 0) {
+		console.log('FAIL  ' + record.name + ' · field has no seats');
+		return false;
+	}
+	const plan = planForRecord(record, record.seats.length);
+	const same = plan !== null && plan.check.ok &&
+		plan.seats.join() === record.seats.join() &&
+		plan.targetPay === record.targetPay;
+	console.log(checkLine(record, plan, same));
+	return same;
+}
+
+function check(fieldsFile) {
 	let stale = 0;
-	for (const record of require(path.join(root, 'saved_maps.js'))) {
-		if (record.kind !== 'start') continue;
-		const plan = planFor(record.seed, record.universe, record.seats.length, record.gs, record.fs);
-		const same = plan !== null && plan.seats.join() === record.seats.join() &&
-			plan.targetPay === record.targetPay;
-		if (!same) stale += 1;
-		console.log(checkLine(record, plan, same));
+	if (fieldsFile) {
+		for (const record of MapGen.readFields(loadArrayModule(fieldsFile))) {
+			if (!verifyRecord(record)) stale += 1;
+		}
+		if (stale > 0) {
+			console.error('FIELD MAPS CHECK FAILED (' + stale + ' stale): regenerate with ' +
+				'FIELDS=1 node experiments/make_saved_maps.js');
+		}
+		return stale > 0 ? 1 : 0;
+	}
+	for (const record of loadArrayModule(path.join(root, 'saved_maps.js'))) {
+		if (record.kind !== 'start' && record.kind !== 'field') continue;
+		if (!verifyRecord(record)) stale += 1;
+	}
+	const defaultFields = path.join(root, 'map_fields.js');
+	if (fs.existsSync(defaultFields)) {
+		for (const record of MapGen.readFields(loadArrayModule(defaultFields))) {
+			if (!Array.isArray(record.seats) || record.seats.length === 0) continue;
+			if (!verifyRecord(record)) stale += 1;
+		}
 	}
 	if (stale > 0) {
 		console.error('SAVED MAPS CHECK FAILED (' + stale + ' stale): regenerate with ' +
@@ -203,4 +306,7 @@ function check() {
 	return stale > 0 ? 1 : 0;
 }
 
-process.exitCode = CHECK ? check() : generate();
+const fieldsFile = resolveFieldsPath(process.env.FIELDS);
+process.exitCode = CHECK
+	? check(fieldsFile)
+	: fieldsFile ? generateFields(fieldsFile) : generate();

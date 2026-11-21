@@ -8,6 +8,8 @@
 'use strict';
 
 function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
+	const armedField = PlanetGravity.armed();
+	if (armedField && armedField.seed !== (seed >>> 0)) clearMapField();
 	careerRecordingClear();
 	const wasCareer = careerRule();
 	cancelCareerWait();

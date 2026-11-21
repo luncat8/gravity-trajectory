@@ -14,6 +14,8 @@
 		? require('./orbit_tech.js') : root.OrbitTech;
 	const GravityMaps = typeof module !== 'undefined' && module.exports
 		? require('./saved_map.js') : root.GravityMaps;
+	const PlanetGravity = typeof module !== 'undefined' && module.exports
+		? require('./planet_gravity.js') : root.PlanetGravity;
 	const FORMAT = 1;
 	const PREFIX = 'gravity-career:';
 	const REPLACE = 0;
@@ -152,6 +154,13 @@
 			!Object.prototype.hasOwnProperty.call(GravityGame.PLAYER_TYPES, snapshot.player) ||
 			(snapshot.cheat !== null && !Object.prototype.hasOwnProperty.call(GravityGame.CHEATS, snapshot.cheat)) ||
 			(snapshot.source !== 0 && snapshot.source !== 1)) return false;
+		if (snapshot.gravity !== undefined) {
+			if (!Array.isArray(snapshot.gravity) || snapshot.gravity.length !== snapshot.universe) return false;
+			for (let i = 0; i < snapshot.gravity.length; i++) {
+				const g = snapshot.gravity[i];
+				if (!Number.isFinite(g) || g < PlanetGravity.MIN || g > PlanetGravity.MAX) return false;
+			}
+		}
 		const state = snapshot.state;
 		if (!state || typeof state.mask !== 'string' || !/^[01]+$/.test(state.mask) ||
 			state.mask.length !== OrbitWorld.PLANETS || !state.clock ||

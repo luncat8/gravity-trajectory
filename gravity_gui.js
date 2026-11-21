@@ -790,6 +790,7 @@ if (playerCountUpEl) playerCountUpEl.addEventListener('click', () => setPlayerCo
 gameRestartBtn.addEventListener('click', () =>
 	startGame(game.seed, game.fixedRate, undefined, undefined, undefined, game.cheat));
 gameNewSeedBtn.addEventListener('click', () => {
+	clearMapField();
 	startGame(randomSeed(), false);
 });
 gameCopyBtn.addEventListener('click', copyLink);

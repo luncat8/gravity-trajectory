@@ -56,7 +56,7 @@ of the `−1…+3.5` field — 3.3 of 10, inside the note's 2–4 — with reach
 from 99 % at `g 1.25` to 52 % at `g 2.0` and 18 % at `g 2.5`. HQs sit at `g 1`
 (`HQ_GRAVITY_MAX`) and a first-flight build site at `g ≤ 1.5`.
 
-**open** → `../0.6.8-plan-seeded-map-opening.md` §2: the number is printed by a
+**open** → `../0.9.1-plan-seeded-map-opening.md` §2: the number is printed by a
 probe, not asserted by a test, and a uniform field up to `+5` would move it to
 about 5 of 10.
 
@@ -181,9 +181,9 @@ make by default random seed new startup unless url has seed
 ## 6.7 still open in this file (agent index, no source note)
 
 - The flight HUD has no `work` row for a competition that has not been accepted
-  → `../0.6.4-plan-competitions.md` (`rivals-competitions.md` §5.2).
+  → `../0.8.7-plan-sport-competitions.md` (`rivals-sport-competitions.md` §5.2).
 - → built (0.6.1): the help drawer previews a politics topic (bribe,
   corruption, the observation device) while the pointer is on the bribe or
   go-quiet row. The note's «short help drawer on hover bribe button» is
   `politics-quests.md` §3.4 → `../archive/0.6.1-plan-observation-device.md`.
-- The blocked share of §6.2 → `../0.6.8-plan-seeded-map-opening.md` §2.
+- The blocked share of §6.2 → `../0.9.1-plan-seeded-map-opening.md` §2.

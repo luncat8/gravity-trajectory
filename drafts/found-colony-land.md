@@ -22,6 +22,4 @@ i suggest +20% of all planets, increase default map i.e. 13->16, keep old seed, 
 
 optionally create few planets far from main screen, visible in the full view, extend full by ~20%. This is subject of gameplay and balance.
 
-
-
-
+→ **open** · `../0.9.2-plan-founding-colony.md`

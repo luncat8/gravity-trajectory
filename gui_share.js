@@ -184,6 +184,7 @@ function loadLink(hash = location.hash) {
 		return false;
 	}
 	loadingUrl = true;
+	clearMapField();
 	scene.setSpeed(link.rate);
 	setExperimentScales(link.gravityScale, link.forceScale, link.harvestTick, link.spaceWearScale);
 	startGame(link.seed, true, link.rule, link.bot, link.player, link.cheat);
@@ -244,12 +245,18 @@ function loadSearchParams() {
 	const sourceStr = params.get('src') || params.get('source');
 	if (!readUniverseParam(params)) return false;
 	if (modeParam === PLAY_LAB) {
+		const hadField = Boolean(PlanetGravity.armed());
 		loadingUrl = true;
+		clearMapField();
 		stopGame();
 		if (seedNum !== tradeSim.seed) {
 			scene.reset(seedNum);
 			clearCargo();
 			attachWorld();
+		} else if (hadField) {
+			attachWorld();
+			cargoSim.refreshField();
+			syncPlanetGravity();
 		}
 		if (sourceStr === 'ports' || sourceStr === 'port') setSource(MODE_PORTS);
 		else if (sourceStr === 'planets' || sourceStr === 'planet') setSource(MODE_PLANETS);
@@ -273,6 +280,7 @@ function loadSearchParams() {
 	if (params.has('players')) game.playerCount = 0;
 	if (!readPlayersParam(params, ruleStr)) return false;
 	loadingUrl = true;
+	clearMapField();
 	if (speedStr !== null) scene.setSpeed(rateNum);
 	startGame(seedNum, rateStr !== null, ruleStr, botStr || undefined, playerStr || undefined,
 		cheatStr || undefined);

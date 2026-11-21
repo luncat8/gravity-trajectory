@@ -439,4 +439,74 @@ stranded.click('commsAnswerCall');
 assert.match(stranded.elements.get('commsAnswer').textContent, /purse/i,
 	'the open answer names the shortfall');
 
+/* A career flown on a designed field carries that field in both replay formats
+ * and arms it when replayed on a seed-only page; malformed gravity is refused. */
+{
+	const customField = {
+		v: 1, kind: 'field', name: 'replay field', seed: 2, universe: 8,
+		seats: [4, 2], targetPay: 1.5, rule: 'career', bot: 'easy', player: 'bot',
+		cheat: null, rate: 1, gs: 1, fs: 1, ws: 1, ht: false,
+		gravity: [-0.4, 0.35, 1.4, -0.2, 0.65, 1.85, 0.2, 0.55]
+	};
+	const fieldRun = loadPage({ search: '?mode=lab&seed=1' });
+	get(fieldRun, 'startMapRecord(' + JSON.stringify(customField) + ')');
+	for (let i = 0; i < 600 && get(fieldRun, 'game.career.flights') === 0; i++) {
+		fieldRun.runFrames(4, 16);
+	}
+	assert.ok(get(fieldRun, 'game.career.flights') > 0, 'designed field run completed a flight');
+	fieldRun.click('gameCopy');
+	const actionsText = fieldRun.clipboardText;
+	assert.ok(actionsText.startsWith('GRAVITY_ACTIONS:'), 'copied compact actions replay');
+	const decodedActions = fieldRun.context.CareerActions.decode(actionsText);
+	assert.deepStrictEqual(Array.from(decodedActions.gravity), customField.gravity,
+		'compact actions replay carries the designed gravity array');
+
+	fieldRun.click('careerSaveCopy');
+	const fullMovieText = fieldRun.clipboardText;
+	const fullHashPayload = fullMovieText.includes('#')
+		? new URLSearchParams(fullMovieText.split('#')[1]).get('replay')
+		: fullMovieText.replace(/^gravity-career:/, '');
+	const decodedMovie = fieldRun.context.CareerReplay.decode(fullHashPayload);
+	assert.ok(decodedMovie, 'full career movie decodes');
+	assert.deepStrictEqual(Array.from(decodedMovie.start.gravity), customField.gravity,
+		'full career movie carries the designed gravity array');
+
+	/* Replay compact actions on a fresh seed-only page (MAP_FIELDS = []): arms field & matches events */
+	const seedOnlyActions = loadPage({ search: '?mode=lab&seed=1' });
+	seedOnlyActions.elements.get('replayInput').value = actionsText;
+	seedOnlyActions.click('replayLoad');
+	assert.strictEqual(seedOnlyActions.elements.get('replayLoadNote').textContent, 'replay opened');
+	assert.ok(get(seedOnlyActions, 'PlanetGravity.armed() !== null'),
+		'seed-only page armed the designed field from compact actions replay');
+	assert.strictEqual(get(seedOnlyActions, 'GravityGame.planetGravity(2, 0)'), -0.4,
+		'seed-only actions replay reads designed gravity instead of seed 2');
+	for (let i = 0; i < 800 && get(seedOnlyActions, 'careerActionReplay.active'); i++) {
+		seedOnlyActions.runFrames(4, 16);
+	}
+	assert.strictEqual(get(seedOnlyActions, 'careerActionReplay.active'), false,
+		'compact actions replay on designed field reached end');
+	assert.doesNotMatch(seedOnlyActions.elements.get('careerMsg').textContent, /diverged/i,
+		'compact actions replay on designed field matched recorded events');
+
+	/* Replay full movie on a fresh seed-only page: arms field too */
+	const seedOnlyFull = openCopy(fullMovieText);
+	assert.ok(get(seedOnlyFull, 'PlanetGravity.armed() !== null'),
+		'seed-only page armed the designed field from full career movie');
+	assert.strictEqual(get(seedOnlyFull, 'GravityGame.planetGravity(2, 5)'), 1.85,
+		'seed-only full movie reads designed gravity');
+
+	/* Tampered out-of-range gravity is refused by both validators */
+	const badActions = JSON.parse(JSON.stringify(decodedActions));
+	badActions.gravity[0] = 99;
+	seedOnlyActions.elements.get('replayInput').value =
+		seedOnlyActions.context.CareerActions.encode(badActions);
+	seedOnlyActions.click('replayLoad');
+	assert.match(seedOnlyActions.elements.get('replayLoadNote').textContent, /not a valid|invalid/i);
+
+	const badMovie = JSON.parse(JSON.stringify(decodedMovie));
+	badMovie.start.gravity[0] = -99;
+	assert.strictEqual(seedOnlyFull.context.CareerReplay.valid(badMovie), false,
+		'CareerReplay.valid rejects out-of-range start.gravity');
+}
+
 console.log('CAREER REPLAY OK · shared timeline, long import, selected bot logs, Helper calls');

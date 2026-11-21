@@ -227,6 +227,53 @@ assert.deepStrictEqual(MapGen.readFields([record, null, { gravity: [] }, { name:
 assert.strictEqual(MapGen.readFields([{ name: 'x', gravity: [1.234, 9] }])[0].gravity.join(','),
 	'1.25,3.5', 'a hand-edited field is snapped and clamped');
 
+/* armed field, seed scoping, and seated field preservation (0.7.35) */
+{
+	const GravityGame = require(path.join(root, 'gravity_game.js'));
+	assert.strictEqual(PlanetGravity.armed(), null, 'starts disarmed');
+	const rawSeed1 = MapGen.originalDraw(1, 8);
+	const custom = [0.25, -0.4, 1.5, 0, 2.2, 0.8, 1.1, -0.1];
+	const armed = PlanetGravity.arm(custom, 1);
+	assert.ok(armed && armed.seed === 1 && armed.tag !== 0, 'arm returns field and non-zero tag');
+	for (let p = 0; p < custom.length; p++) {
+		assert.strictEqual(PlanetGravity.gravity(1, p), PlanetGravity.snap(custom[p]),
+			'armed seed reads designed value at planet ' + p);
+		assert.strictEqual(GravityGame.planetGravity(1, p), PlanetGravity.snap(custom[p]),
+			'GravityGame.planetGravity reads armed field');
+	}
+	assert.strictEqual(PlanetGravity.gravity(2, 0), MapGen.originalDraw(2, 1)[0],
+		'another seed still reads its seeded draw while seed 1 is armed');
+	assert.strictEqual(PlanetGravity.gravity(1, 10), MapGen.originalDraw(1, 11)[10],
+		'planets past the designed universe fall back to the seeded draw');
+	PlanetGravity.disarm();
+	assert.strictEqual(PlanetGravity.armed(), null, 'disarmed');
+	for (let p = 0; p < rawSeed1.length; p++) {
+		assert.strictEqual(PlanetGravity.gravity(1, p), rawSeed1[p],
+			'disarm restores the seeded draw');
+	}
+
+	const seated = MapGen.fieldRecord({
+		name: 'seated field', seed: 2, mass: 10, gap: 220,
+		rows: [{ g: 0.5, m: 0.2, count: 8 }],
+		gravity: custom,
+		seats: [6, 0], targetPay: 1.75,
+		rule: 'career', bot: 'normal', player: 'user', cheat: null,
+		rate: 1, gs: 1, fs: 1, ws: 1, ht: false,
+		stats: { weakest: 0.88, sites: 5 }
+	});
+	const reloaded = MapGen.readFields(JSON.parse(JSON.stringify([seated])))[0];
+	assert.deepStrictEqual(reloaded.seats, [6, 0], 'readFields preserves proven seats');
+	assert.strictEqual(reloaded.targetPay, 1.75, 'readFields preserves targetPay');
+	const edited = MapGen.fieldRecord(Object.assign({}, seated, {
+		values: [0.3, -0.4, 1.5, 0, 2.2, 0.8, 1.1, -0.1]
+	}));
+	assert.strictEqual(edited.seats, undefined,
+		'editing or re-rolling a field drops stale seats until make_saved_maps re-plans');
+	const fromSaved = MapGen.savedMapFields([seated]);
+	assert.deepStrictEqual(fromSaved[0].values, custom.map(PlanetGravity.snap),
+		'savedMapFields reads record.gravity on a field record');
+}
+
 /* --- 6. the page -------------------------------------------------------- */
 
 const scripts = [...page.matchAll(/<script src="([^"]+)"><\/script>/g)].map(match => match[1]);
@@ -238,6 +285,8 @@ for (const file of ['planet_gravity.js', 'map_gen.js', 'saved_maps.js', 'map_fie
 }
 assert.ok(html.indexOf('planet_gravity.js') < html.indexOf('gravity_game.js'),
 	'index.html loads the field before the rules that re-export it');
+assert.ok(html.indexOf('map_fields.js') > 0 && html.indexOf('map_fields.js') < html.indexOf('gui_maps.js'),
+	'index.html loads map_fields.js before gui_maps.js');
 assert.ok(/id="origGen"/.test(page), 'the helper page has the original seed map panel');
 assert.ok(/<select id="mapPick"/.test(html), 'the saved-maps group has a picker');
 

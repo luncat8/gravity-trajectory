@@ -299,4 +299,117 @@ if (a !== b) {
 console.log('exact state: saved at step ' + savedStep + ', restored, ' + runFrames +
 	' frames identical · purse ' + savedPurse.toFixed(2));
 
+/* --- 6. playable designed fields (0.7.35) ------------------------------- */
+{
+	const os = require('os');
+	const { spawnSync } = require('child_process');
+	const PlanetGravity = require(path.join(root, 'planet_gravity.js'));
+	const MapGen = require(path.join(root, 'map_gen.js'));
+
+	const customGrav = [-0.4, 0.35, 1.4, -0.2, 0.65, 1.85, 0.2, 0.55];
+	const seededGrav = MapGen.originalDraw(2, 8);
+	assert.notDeepStrictEqual(customGrav, seededGrav, 'designed field differs from seed 2 draw');
+	const unseated = MapGen.fieldRecord({
+		name: 'designed 8',
+		seed: 2,
+		mass: 10,
+		gap: 220,
+		rows: [{ g: 0.55, m: 1.3, count: 8 }],
+		values: customGrav,
+		note: 'playable field test'
+	});
+
+	/* `FIELDS=<file> make_saved_maps.js` proves seats on a fair field and refuses a trapped one */
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gravity-fields-'));
+	try {
+		const tmpGood = path.join(tmpDir, 'good_fields.js');
+		fs.writeFileSync(tmpGood, MapGen.fieldsText([unseated]));
+		const genRes = spawnSync(process.execPath,
+			[path.join(root, 'experiments', 'make_saved_maps.js')],
+			{ env: Object.assign({}, process.env, { FIELDS: tmpGood, SEATS: '2' }), encoding: 'utf8' });
+		assert.strictEqual(genRes.status, 0, 'FIELDS generator succeeds: ' + genRes.stderr);
+		const checkRes = spawnSync(process.execPath,
+			[path.join(root, 'experiments', 'make_saved_maps.js'), '--check'],
+			{ env: Object.assign({}, process.env, { FIELDS: tmpGood }), encoding: 'utf8' });
+		assert.strictEqual(checkRes.status, 0, 'FIELDS --check succeeds: ' + checkRes.stderr);
+		const seatedList = require(tmpGood);
+		assert.strictEqual(seatedList.length, 1);
+		const seated = seatedList[0];
+		assert.strictEqual(seated.kind, 'field');
+		assert.ok(Array.isArray(seated.seats) && seated.seats.length === 2, 'field received 2 proven seats');
+		assert.ok(seated.targetPay > 0, 'field received proven targetPay');
+
+		const trapped = MapGen.fieldRecord({
+			name: 'all heavy', seed: 2, mass: 10, gap: 220,
+			rows: [{ g: 3.5, m: 0, count: 8 }],
+			values: [3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5]
+		});
+		const tmpBad = path.join(tmpDir, 'bad_fields.js');
+		fs.writeFileSync(tmpBad, MapGen.fieldsText([trapped]));
+		const badRes = spawnSync(process.execPath,
+			[path.join(root, 'experiments', 'make_saved_maps.js')],
+			{ env: Object.assign({}, process.env, { FIELDS: tmpBad, SEATS: '2' }), encoding: 'utf8' });
+		assert.notStrictEqual(badRes.status, 0, 'trapped heavy field is refused by make_saved_maps');
+
+		/* Seated field in MAP_FIELDS: picker lists `· field`, `load map` boots without searching,
+		 * HQs/specials pin to 1, other planets hold the designed gravities, and `map=` stays in URL. */
+		const fieldPage = loadPage({ search: '?mode=lab&seed=1' });
+		vm.runInContext('MAP_FIELDS.push(' + JSON.stringify(seated) + '); refreshMapsUi();',
+			fieldPage.context);
+		const pick = fieldPage.elements.get('mapPick');
+		const fieldOpt = fieldPage.context.mapPickOption(seated, 'field:0', 'f0');
+		assert.strictEqual(fieldOpt.value, 'field:0');
+		assert.match(fieldOpt.textContent, /designed 8 · field/);
+		pick.value = 'field:0';
+		assert.strictEqual(fieldPage.context.mapPickedRecord('start').name, 'designed 8');
+		assert.ok(fieldPage.context.loadSavedMap('start'), 'load map boots picked field');
+		const fScene = fieldPage.context.GravityScene;
+		assert.deepStrictEqual(plain(fScene.game.galaxy.mapSeats), seated.seats,
+			'seated field uses its saved seats');
+		const pinned = new Set(seated.seats);
+		pinned.add(fScene.career.capitalPlanet);
+		pinned.add(fScene.career.arfPlanet);
+		for (let p = 0; p < seated.universe; p++) {
+			assert.strictEqual(fieldPage.context.GravityGame.planetGravity(seated.seed, p),
+				PlanetGravity.snap(customGrav[p]),
+				'GravityGame.planetGravity reads designed value at planet ' + p);
+			const expected = pinned.has(p) ? 1 : PlanetGravity.snap(customGrav[p]);
+			assert.strictEqual(fScene.sim.strength[p], expected,
+				'live field strength at planet ' + p + ' matches designed field / HQ-special pin');
+		}
+		assert.strictEqual(new URL(fieldPage.context.location.href).searchParams.get('map'),
+			'designed 8', 'location.search preserves map= while a designed field is armed');
+
+		/* Unseated fair field plans its opening on the armed field; trapped field refuses cleanly. */
+		assert.strictEqual(fieldPage.context.startMapRecord(trapped), false,
+			'trapped unseated field refuses cleanly');
+		assert.match(fieldPage.elements.get('mapNote').textContent, /no fair opening in this field/);
+		assert.strictEqual(fieldPage.context.GravityScene.game.seed, seated.seed,
+			'refused field leaves the active session untouched');
+
+		const livePlanned = Object.assign({}, unseated, { bot: 'easy' });
+		assert.ok(fieldPage.context.startMapRecord(livePlanned), 'unseated fair field plans its opening');
+		assert.match(fieldPage.elements.get('mapNote').textContent, /saved map planned its opening/);
+
+		/* Disarming: booting a normal `?seed=` run on the same page after a field run matches a fresh page. */
+		const seedQuery = '?seed=2&rule=career&bot=normal&universe=8&players=2&rate=1&you=bot';
+		vm.runInContext('location.search = ' + JSON.stringify(seedQuery) + ';', fieldPage.context);
+		assert.ok(fieldPage.context.loadSearchParams(), '?seed= boots after a field run');
+		assert.strictEqual(fieldPage.context.PlanetGravity.armed(), null,
+			'PlanetGravity is disarmed on a seed boot');
+		assert.strictEqual(new URL(fieldPage.context.location.href).searchParams.get('map'), null,
+			'seed boot clears map= from location.search');
+		const freshSeedPage = loadPage({ search: '?mode=lab&seed=1' });
+		assert.ok(freshSeedPage.context.startMapRecord(MAPS[0]));
+		assert.ok(freshSeedPage.context.startMapRecord(MAPS[1]));
+		vm.runInContext('location.search = ' + JSON.stringify(seedQuery) + ';', freshSeedPage.context);
+		assert.ok(freshSeedPage.context.loadSearchParams());
+		assert.strictEqual(runState(fieldPage), runState(freshSeedPage),
+			'seed run after a field run is byte-identical to a seed-only page');
+		console.log('playable fields: seated, live-planned, trapped refusal, and seed disarm ok');
+	} finally {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	}
+}
+
 console.log('SAVED MAPS OK');

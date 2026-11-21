@@ -44,7 +44,7 @@ that is the improvement, and it is a change to `gravity_voronoi_tones.js` alone.
 
 think how blind people could play and think about trajectory (if we implement such in future)
 
-**open** → `../0.6.7-plan-accessibility-readout.md`, deferred by the note
+**open** → `../0.8.3-plan-accessibility-readout.md`, deferred by the note
 itself and not started. The honest first step is not new audio: it is a text
 route — the aim line already prints length, time, visits and profit, so the
 missing piece is the same readout reachable without seeing the canvas (a

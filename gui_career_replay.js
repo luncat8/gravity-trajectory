@@ -134,6 +134,7 @@ function careerOpening(start) {
 		mask: start.state.mask, seats: start.seats, targetPay: start.targetPay,
 		g: start.gs, f: start.fs, w: start.ws, h: start.ht,
 		source: start.source, corruption: start.state.market.permanentCorruption,
+		...(Array.isArray(start.gravity) ? { gravity: start.gravity } : {}),
 		...(start.cheat ? { cheat: start.cheat } : {})
 	};
 }
@@ -182,6 +183,13 @@ function validCareerActions(data) {
 		!Array.isArray(data.actions) || !Array.isArray(data.events)) return false;
 	const universe = data.mask.split('1').length - 1;
 	if (universe < PLANET_UNIVERSE_MIN || universe > PLANET_UNIVERSE_MAX) return false;
+	if (data.gravity !== undefined) {
+		if (!Array.isArray(data.gravity) || data.gravity.length !== universe) return false;
+		for (let i = 0; i < data.gravity.length; i++) {
+			const g = data.gravity[i];
+			if (!Number.isFinite(g) || g < PlanetGravity.MIN || g > PlanetGravity.MAX) return false;
+		}
+	}
 	let last = 0;
 	for (const entry of data.actions) {
 		if (!entry || !Number.isInteger(entry.step) || entry.step < last || entry.step > data.steps ||
@@ -204,8 +212,12 @@ function startCareerActionsReplay(data) {
 	if (!validCareerActions(data)) return false;
 	const universe = data.mask.split('1').length - 1;
 	careerActionReplayReset();
+	GravityMaps.applyField(data);
+	activeFieldMap = fieldParamKey(data);
 	GravityMaps.arm({ seed: data.seed, seats: data.seats, universe: universe,
-		gs: data.g, fs: data.f, targetPay: data.targetPay, state: { mask: data.mask } });
+		gs: data.g, fs: data.f, targetPay: data.targetPay,
+		...(Array.isArray(data.gravity) ? { gravity: data.gravity } : {}),
+		state: { mask: data.mask } });
 	game.planetUniverse = universe;
 	game.playerCount = data.players.length;
 	for (let i = 0; i < MAX_PLAYERS; i++) slotTypes[i] = data.players[i] || PLAYER_BOT;
