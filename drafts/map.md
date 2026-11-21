@@ -14,6 +14,7 @@ Add option for periodic FFT-based gravity solver. When enabled:
 - high-ship-wear zones (x,y offset += change )
 - zones where observation device report range is reduced or disabled; update area observation device render. (z+= change)
 - view option to show weather overlay.
+- high level observation device: endgame high cost, reduce weather (jammer) effect. 
 
 - corrupted planet (>50% corruption level) : has chance to install jammer reducing observation report range 4×. act similar to space weather so we can add it to same field as just another source of weather.
 - rebel planet: has chance to add high-ship-wear field to weather map every N frames: and it fly from planet with space wind. (storyline - it may be space debris)
