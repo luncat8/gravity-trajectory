@@ -29,13 +29,18 @@ const bot = new GravityBot(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
 /* the rail's fastest shot for the ship: the starter rail and a dry ship by default */
 const RAIL = Number(process.env.RAIL || 1);
 const MASS = Number(process.env.MASS || OrbitTech.SHIP_DRY_MASS);
+/* FS scales the rail force cap, GS every well's pull; the page's experiment
+ * panel uses the same two multipliers. */
+const FS = Number(process.env.FS || 1);
+const GS = Number(process.env.GS || 1);
 const STARTER_CAP = OrbitTech.speedLimit(OrbitTech.BATTERIES[RAIL - 1].capacity,
-	MASS, OrbitTech.CATAPULTS[RAIL - 1], 1);
+	MASS, OrbitTech.CATAPULTS[RAIL - 1], FS);
 
 function makeWorld(seed) {
 	const trade = new Sim(seed);
 	trade.advanceTo(420);
 	const sim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	sim.setScales(GS, FS);
 	sim.setPlanets(PLANETS, trade.planetX, trade.planetY, trade.planetR,
 		trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
 	const strength = new Float64Array(GravitySim.MAX_BODIES).fill(1);
@@ -49,6 +54,7 @@ function makeWorld(seed) {
 	sim.fieldRate = 1;
 	sim.setPlanetMask(mask);
 	bot.attachWorld(trade);
+	bot.setScales(GS, FS);
 	bot.setPlanetMask(mask, UNIVERSE);
 	return { trade, sim, strength };
 }

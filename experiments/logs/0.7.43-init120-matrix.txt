@@ -1,0 +1,12 @@
+career opening matrix · seeds 1-12 · ratio >= 0.55 · alt HQ check (limit 250, exhaustive <=13)
+C=13  S=4  | built  9/12 · exit  9/12 · fair  9/12 · worst   0% · light 4..11->2..7   · ms 2072/3354 | sameHQ  9/12 · altExit 10/12 · altFair  9/12 | seed 1: no distinct site (light 7->3) [best alt exit 0.31]
+C=13  S=5  | built  3/12 · exit  3/12 · fair  0/12 · worst   0% · light 4..11->2..6   · ms 610/732   | sameHQ  1/12 · altExit  9/12 · altFair  8/12 | seed 1: no distinct site (light 7->3) [0 built in all sets]
+C=13  S=6  | built  0/12 · exit  0/12 · fair  0/12 · worst   0% · light 4..11->2..5   · ms 728/867   | sameHQ  0/12 · altExit  5/12 · altFair  0/12 | seed 1: no distinct site (light 7->2) [0 built in all sets]
+C=20  S=4  | built 12/12 · exit 12/12 · fair 11/12 · worst  55% · light 9..16->6..13  · ms 1357/2658 | sameHQ 11/12 · altExit 12/12 · altFair 12/12 | seed 10: ratio 0.55 [alt HQ 9,12,14,4 oracle 0.61 · fair 1 first@6]
+C=20  S=5  | built 10/12 · exit 10/12 · fair  7/12 · worst   0% · light 9..16->6..11  · ms 1306/1661 | sameHQ  8/12 · altExit 12/12 · altFair 12/12 | seed 1: no distinct site (light 12->7) [alt HQ 17,2,11,0,19 oracle 0.57 · fair 1 first@14]
+C=20  S=6  | built  9/12 · exit  9/12 · fair  3/12 · worst   0% · light 9..16->5..10  · ms 1590/1994 | sameHQ  4/12 · altExit 12/12 · altFair 12/12 | seed 1: no distinct site (light 12->6) [alt HQ 6,16,2,0,9,19 oracle 0.57 · fair 1 first@26]
+C=26  S=4  | built 12/12 · exit 12/12 · fair 12/12 · worst  68% · light 12..19->9..17 · ms 1710/2058 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=26  S=5  | built 11/12 · exit 11/12 · fair  6/12 · worst   0% · light 12..19->8..15 · ms 2080/2489 | sameHQ  9/12 · altExit 12/12 · altFair 12/12 | seed 2: ratio 0.34 [same HQ oracle 0.57]
+C=26  S=6  | built 11/12 · exit 11/12 · fair  2/12 · worst   0% · light 12..19->8..14 · ms 2489/2938 | sameHQ  3/12 · altExit 12/12 · altFair 12/12 | seed 1: ratio 0.47 [alt HQ 6,16,12,8,2,20 oracle 0.59 · fair 1 first@0]
+
+9 cells · game fair 1/9 · sameHQ oracle fair 1/9 · alt HQ exitable 6/9 · alt HQ fair 6/9 · 402 s

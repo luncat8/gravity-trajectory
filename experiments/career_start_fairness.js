@@ -41,6 +41,31 @@ const COUNTS = process.env.COUNTS ? parseList(process.env.COUNTS)
 const SEATS_LIST = process.env.SEATS ? parseList(process.env.SEATS) : [2, 3, 4, 5, 6];
 const ALT = MATRIX && process.env.ALT !== '0';
 const ALT_LIMIT = Number(process.env.ALT_LIMIT || 1000);
+/* Physics knobs under test: GS scales every well's pull, FS scales the rail
+ * force cap. Both are passed through the shared sim, so the planner and the
+ * independent oracle price the same field. */
+const GS = Number(process.env.GS || 1);
+const FS = Number(process.env.FS || 1);
+/* ECONOMY knob: the age every planet starts with. A larger INIT_SEC lifts the
+ * first-arrival floor, which compresses the weakest/best opening ratio. */
+const INIT_SEC = Number(process.env.INIT_SEC || 0);
+if (INIT_SEC > 0) GravityGame.MONEY.initSec = INIT_SEC;
+/* SPREAD=1 ranks candidate HQ sets by their separation before the pay proxy:
+ * far-apart HQs own separate clusters, so their openings do not compete. */
+const SPREAD = process.env.SPREAD === '1';
+
+function spreadOf(world, homes) {
+	let min = Infinity;
+	for (let i = 0; i < homes.length; i++) {
+		for (let j = i + 1; j < homes.length; j++) {
+			const dx = world.trade.planetX[homes[i]] - world.trade.planetX[homes[j]];
+			const dy = world.trade.planetY[homes[i]] - world.trade.planetY[homes[j]];
+			const d2 = dx * dx + dy * dy;
+			if (d2 < min) min = d2;
+		}
+	}
+	return Math.sqrt(min);
+}
 
 function makeWorld(seed, count) {
 	const mask = new Uint8Array(P);
@@ -51,6 +76,7 @@ function makeWorld(seed, count) {
 	sim.setPlanets(P, trade.planetX, trade.planetY, trade.planetR,
 		trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
 	sim.setPlanetMask(mask);
+	sim.setScales(GS, FS);
 	const galaxy = GravityGame.createGalaxy();
 	GravityGame.resetGalaxy(galaxy, seed);
 	return { seed, mask, trade, sim, galaxy };
@@ -371,7 +397,8 @@ function findBetterHqSet(world, count, seats) {
 			for (const home of cur) occupied[home] = 1;
 			const stats = GravityGame.openingGroupStatsFromRows(world.mask, unpinned, cur, occupied);
 			const ratio = stats.distinct && stats.maxPay > 0.01 ? stats.minPay / stats.maxPay : -1;
-			sets.push({ homes: cur.slice(), distinct: stats.distinct, minPay: stats.minPay, ratio });
+			sets.push({ homes: cur.slice(), distinct: stats.distinct, minPay: stats.minPay,
+				ratio, spread: SPREAD ? spreadOf(world, cur) : 0 });
 			return;
 		}
 		const need = seats - cur.length;
@@ -387,6 +414,7 @@ function findBetterHqSet(world, count, seats) {
 	generate(0, 0);
 	sets.sort((a, b) => {
 		if (a.distinct !== b.distinct) return a.distinct ? -1 : 1;
+		if (SPREAD && a.spread !== b.spread) return b.spread - a.spread;
 		const aFair = a.ratio >= FAIR_RATIO;
 		const bFair = b.ratio >= FAIR_RATIO;
 		if (aFair !== bFair) return aFair ? -1 : 1;
@@ -394,14 +422,19 @@ function findBetterHqSet(world, count, seats) {
 	});
 	let best = { built: false, exitable: false, ratio: 0, set: null, exhaustive };
 	const limit = exhaustive ? sets.length : Math.min(sets.length, ALT_LIMIT);
+	let fairSets = 0, firstFair = -1;
 	for (let i = 0; i < limit; i++) {
 		const res = evaluateOracleSet(world, count, sets[i].homes);
+		if (res.exitable && res.ratio >= FAIR_RATIO) {
+			fairSets += 1;
+			if (firstFair < 0) firstFair = i;
+		}
 		if (res.ratio > best.ratio || (!best.set && res.exitable) || (!best.built && res.built)) {
 			best = { ...res, set: sets[i].homes, exhaustive };
 			if (best.exitable && best.ratio >= FAIR_RATIO) break;
 		}
 	}
-	return best;
+	return { ...best, fairSets, firstFair, tested: firstFair >= 0 ? firstFair + 1 : limit };
 }
 
 function failReason(sample, alt) {
@@ -414,7 +447,8 @@ function failReason(sample, alt) {
 	if (!ALT || !alt) return base;
 	if (alt.sameHq) return base + ' [same HQ oracle ' + sample.ratio.toFixed(2) + ']';
 	if (alt.exitable && alt.ratio >= FAIR_RATIO) {
-		return base + ' [alt HQ ' + alt.set.join(',') + ' oracle ' + alt.ratio.toFixed(2) + ']';
+		return base + ' [alt HQ ' + alt.set.join(',') + ' oracle ' + alt.ratio.toFixed(2) +
+			' · fair ' + alt.fairSets + ' first@' + alt.firstFair + ']';
 	}
 	if (alt.note) return base + ' [' + alt.note + ']';
 	if (alt.exitable) return base + ' [best alt exit ' + alt.ratio.toFixed(2) + ']';

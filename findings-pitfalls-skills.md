@@ -1213,3 +1213,25 @@ can fall inside a short measured loop. Warm up ≥ 3,000 calls and run
 sure any page helper that passes `bot.careerExitFn` calls
 `bot.prepareCareerExitProbe(sim)` first so `bot=off` solo runs never read an
 unattached `bot.exitProbe`.
+
+## opening fairness is a pay-ratio problem, not a gravity problem
+
+0.7.43's hard 20/6 seeds are not missing a fair HQ set. With `ALT=1` the
+independent oracle (`experiments/career_start_fairness.js`) finds one in the
+top 250 unpinned-ranked candidates on all 12 seeds; the two hard seeds rank at
+177 and 172. The planner's `OPENING_EXACT_MISS = 48` and the ~0.12 s exact
+check are what stop it, not the field.
+
+Physics knobs move the *rank* of the fair set (20/6 seeds 5 / 10, first fair
+index): baseline 177 / 172; `FS=1.2` (rail force +20 %) 24 / 26; `INIT_SEC=120`
+(first-visit market age) 28 / 26; `INIT_SEC=80` 32 / 246 (seed 10 falls off a
+250-candidate budget); `GS=1/1.2` no fair set in 1000 on seed 5; `FS=1/1.44`
+(≈ distance +20 %) none in 250. `INIT_SEC=120` with the existing joint search
+makes both seeds fair (64 % / 56 %) in 2.9 / 3.3 s. The heavy-world share is
+untouched because only the market clock moves; the EMC force +20 % moves it
+3.4 → 2.9 of 10, still inside the 2–4 band.
+
+The caveat: `INIT_SEC` breaks 0.7.7's "a quick hop pays what it always paid" —
+pay at t=0 rises from 0.24 to 0.68 — so it is an economy decision, not a free
+knob. Lower gravity and longer distances both reduce reach inside the 120 s
+horizon and made fairness worse in the matrix.
