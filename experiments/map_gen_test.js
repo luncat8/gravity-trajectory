@@ -41,16 +41,19 @@ const gridOf = g => Math.round(g * PlanetGravity.STEPS);
 
 /* --- 1. the field ------------------------------------------------------- */
 
-/* the draw as it was written inside gravity_game.js, so a move has to keep it */
+/* the draw as it was written inside gravity_game.js, so a move has to keep it;
+ * 0.7.43 stretched its heavy tail (from 2.8) to +5 and left the rest alone */
 function historicalGravity(seed, planet) {
 	const u = OrbitWorld.hash01(seed, planet, 0xce);
 	let g = -1 + (u * 91 - 0.5) / 20;
 	if (g > 0.6 && g < 2.8) {
 		const wave = Math.sin(Math.PI * (g - 0.6) / (2.8 - 0.6));
 		g -= 0.3 * wave * wave;
+	} else if (g >= 2.8) {
+		g = 2.8 + (g - 2.8) * (5 - 2.8) / (3.5 - 2.8);
 	}
 	g = Math.round(g * 20) / 20;
-	return g === 0 ? 0 : Math.max(-1, Math.min(3.5, g));
+	return g === 0 ? 0 : Math.max(-1, Math.min(5, g));
 }
 
 const values = new Set();
@@ -65,7 +68,7 @@ for (let seed = 0; seed < 300; seed++) {
 		values.add(g);
 	}
 }
-assert.strictEqual(values.size, 91, 'the draw spans every grid value');
+assert.strictEqual(values.size, PlanetGravity.CHOICES, 'the draw spans every grid value');
 assert.strictEqual(PlanetGravity.CHOICES, PlanetGravity.MAX * PlanetGravity.STEPS -
 	PlanetGravity.MIN * PlanetGravity.STEPS + 1, 'the choice count follows the range');
 assert.strictEqual(GravityGame.planetGravity, PlanetGravity.gravity,
@@ -172,7 +175,7 @@ assert.deepStrictEqual(MapGen.originalDraw(42, 'junk'), [], 'a non-number univer
 const bins = MapGen.addToBins(MapGen.emptyBins(), [0, 0.1, 3.4, 3.5]);
 assert.strictEqual(bins.reduce((a, b) => a + b, 0), 4, 'every value lands in one bin');
 assert.strictEqual(MapGen.binOf(-1), 0, 'the bottom of the field is the first bin');
-assert.strictEqual(MapGen.binOf(3.5), MapGen.BIN_COUNT - 1, 'the top is the last bin');
+assert.strictEqual(MapGen.binOf(PlanetGravity.MAX), MapGen.BIN_COUNT - 1, 'the top is the last bin');
 assert.ok(MapGen.binLabel(0).startsWith('-1.00'), 'a bin says where it starts');
 const baseline = MapGen.baselineShare(13);
 assert.ok(Math.abs(baseline.reduce((a, b) => a + b, 0) - 1) < 1e-9, 'the baseline is a share');
@@ -225,7 +228,7 @@ assert.strictEqual(MapGen.fieldsText([]), fs.readFileSync(path.join(root, 'map_f
 assert.deepStrictEqual(MapGen.readFields([record, null, { gravity: [] }, { name: 'x' }]).length, 1,
 	'a file is trusted only as far as it parses');
 assert.strictEqual(MapGen.readFields([{ name: 'x', gravity: [1.234, 9] }])[0].gravity.join(','),
-	'1.25,3.5', 'a hand-edited field is snapped and clamped');
+	'1.25,' + PlanetGravity.MAX, 'a hand-edited field is snapped and clamped');
 
 /* armed field, seed scoping, and seated field preservation (0.7.35) */
 {

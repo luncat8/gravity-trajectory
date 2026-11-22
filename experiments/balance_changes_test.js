@@ -42,10 +42,11 @@ for (const rot of [0, 5, 25, 50, 99, 100]) {
 assert.strictEqual(Econ.bribeValue(0), 0);
 assert.strictEqual(Econ.bribeValue(-1), 0);
 
-/* Compare the same deterministic seed stream before and after the smooth bias. */
-const before = [0, 0, 0, 0];
-const after = [0, 0, 0, 0];
-const ranges = [[0.9, 1.5], [1.8, 2.5], [-1, 0.55], [2.85, 3.5]];
+/* Compare the same deterministic seed stream before and after the smooth bias
+ * (and, from 0.7.43, the heavy tail stretched from 2.8 to the +5 ceiling). */
+const before = [0, 0, 0];
+const after = [0, 0, 0];
+const ranges = [[0.9, 1.5], [1.8, 2.5], [-1, 0.55]];
 const levels = new Set();
 for (let seed = 1; seed <= 5000; seed++) {
 	for (let p = 0; p < 26; p++) {
@@ -53,19 +54,24 @@ for (let seed = 1; seed <= 5000; seed++) {
 		const old = (Math.floor(u * 91) - 20) / 20;
 		const g = Game.planetGravity(seed, p);
 		levels.add(g);
-		assert.ok(g >= -1 && g <= 3.5 && Math.abs(g * 20 - Math.round(g * 20)) < 1e-9);
+		assert.ok(g >= -1 && g <= 5 && Math.abs(g * 20 - Math.round(g * 20)) < 1e-9);
 		assert.strictEqual(g, Game.planetGravity(seed, p));
-		if (old <= 0.55 || old >= 2.85) assert.strictEqual(g, old, 'tail changed');
+		if (old <= 0.55) assert.strictEqual(g, old, 'low tail changed');
+		if (old >= 2.85) {
+			const drawn = -1 + (u * 91 - 0.5) / 20;
+			const stretched = Math.round((2.8 + (drawn - 2.8) * 2.2 / 0.7) * 20) / 20;
+			assert.strictEqual(g, Math.min(5, stretched), 'top tail is not the stretched draw');
+		}
 		for (let r = 0; r < ranges.length; r++) {
 			if (old >= ranges[r][0] && old <= ranges[r][1]) before[r]++;
 			if (g >= ranges[r][0] && g <= ranges[r][1]) after[r]++;
 		}
 	}
 }
-assert.strictEqual(levels.size, 91, 'every grid value remains possible');
+assert.strictEqual(levels.size, 121, 'every grid value remains possible');
 assert.ok(after[0] > before[0] * 1.25, 'more useful middle worlds');
 assert.ok(after[1] < before[1] * 0.8, 'fewer heavy-middle worlds');
-assert.deepStrictEqual(after.slice(2), before.slice(2), 'low and top tails remain');
+assert.deepStrictEqual(after.slice(2), before.slice(2), 'the low tail remains');
 console.log('gravity bands % · before ' + before.map(n => (n / 1300).toFixed(1)).join(' / ') +
 	' · after ' + after.map(n => (n / 1300).toFixed(1)).join(' / '));
 

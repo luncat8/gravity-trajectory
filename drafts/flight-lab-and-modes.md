@@ -230,11 +230,11 @@ a measured seed/outcome table, no budget change before the table exists.
 ### random gravity of planets -1...+5
 but 1st HQ is 1
 
-→ field is `−1…+3.5` in `0.05` steps, with a smooth bias toward moderate
+→ field is `−1…+5` in `0.05` steps, with a smooth bias toward moderate
 positive gravity; HQ, Capital and A.R.F. are pinned to 1.
-**open** → `../0.7.43-plan-seeded-map-opening.md` §2: raising the draw ceiling to
-`+5` is a one-constant change (`PlanetGravity.MAX`) that moves every seeded
-field, so it ships as a deliberate baseline break.
+**done** → `../archive/0.7.43-plan-seeded-map-opening.md` §3: only the heavy
+tail from `2.8` is stretched to `+5`, so every lighter world keeps its draw;
+the benches were logged as the new baseline.
 
 slider G-field increase max to 9x
 
@@ -257,10 +257,11 @@ The rivals once seen «stuck on a `g 2.1` HQ» were not this rule failing:
 `career_gravity_bench` started careers without the page's seating, and was fixed
 to mirror it (`archive/0.5.22-worklog.md` §3).
 
-**open** → `../0.7.43-plan-seeded-map-opening.md` §1: the promise is asserted for
-the default career only (13 planets, three companies). On 26 planets two of four
-seeds fall under the band (47 % and 51 %), and with five companies on 13 planets
-the same test finds no map where each has its own site.
+**partly done** → `../archive/0.7.43-plan-seeded-map-opening.md` §1: every
+roster runs the seat search. From 20 planets up every seed is fair except
+20 planets / six companies (9 of 12). Cramped universes keep their best
+exit-safe set, shared if they must. The misses are
+`../0.7.46-plan-fair-start-fallback.md`.
 
 ## 1.5 what a career ignores on purpose ← `archive/draft.txt` (deferred)
 

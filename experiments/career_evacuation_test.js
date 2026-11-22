@@ -5,10 +5,13 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { loadPage } = require('./dom_stub.js');
 
-/* The reported replay without its unused book traces. */
+/* The reported replay without its unused book traces. It was recorded under
+ * the 0.7.42 `+3.5` draw; `gravity` pins that field (P4 and P10 are heavier
+ * under the 0.7.43 stretch, which sends the first shot home). */
 const data = {
 	v: 3, seed: 999064, rate: 0.5, bot: 'normal', players: ['user', 'bot', 'bot'],
 	mask: '1'.repeat(13) + '0'.repeat(35), seats: [1, 3, 12], targetPay: 1.4672744835753886,
+	gravity: [1, 1, 1, 1, 3.35, 1.1, 2.7, 0.95, 1.2, 0.4, 3.15, 1.25, 1],
 	g: 1, f: 1, w: 1, h: false, source: 0, corruption: false, steps: 11145, watch: 0,
 	actions: [
 		{ step: 0, slot: 0, type: 'launch', origin: 1, angle: 5.692968222703228, speed: 53.74609375 },

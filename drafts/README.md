@@ -112,7 +112,7 @@ FFT:
 
 | plan | group | draft sections it answers |
 |---|---|---|
-| `../0.7.43-plan-seeded-map-opening.md` | `0.7` pre-FFT | `flight-lab-and-modes.md` §1.4, `hud-input-and-help.md` §6.2 (`2-4 of 10`, `+5` ceiling) |
+| `../0.7.46-plan-fair-start-fallback.md` | `0.7` pre-FFT | `flight-lab-and-modes.md` §1.4 (the rosters `../archive/0.7.43-plan-seeded-map-opening.md` leaves short) |
 | `../0.7.44-plan-founding-colony.md` | `0.7` pre-FFT | `found-colony-land.md`, `career-economy.md` §2.5 |
 | `../0.7.45-plan-buy-ships.md` | `0.7` pre-FFT | `career-economy.md` §buy more ships |
 | `../0.8.0-plan-periodic-fft.md` | `0.8` FFT+ | `map.md` §gravity (`&fft=1`, `PLANETS = 192`, 256²/512×256 Plummer FFT) |

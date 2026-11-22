@@ -56,9 +56,9 @@ of the `−1…+3.5` field — 3.3 of 10, inside the note's 2–4 — with reach
 from 99 % at `g 1.25` to 52 % at `g 2.0` and 18 % at `g 2.5`. HQs sit at `g 1`
 (`HQ_GRAVITY_MAX`) and a first-flight build site at `g ≤ 1.5`.
 
-**open** → `../0.7.43-plan-seeded-map-opening.md` §2: the number is printed by a
-probe, not asserted by a test, and a uniform field up to `+5` would move it to
-about 5 of 10.
+**done** → `../archive/0.7.43-plan-seeded-map-opening.md` §2:
+`career_start_fairness.js` asserts 2–4 of 10. Under the stretched `+5` tail the
+drawn share is 2.3 of 10.
 
 ## 6.3 auto helper tools ← `archive/draft.txt`
 
@@ -187,4 +187,4 @@ make by default random seed new startup unless url has seed
   corruption, the observation device) while the pointer is on the bribe or
   go-quiet row. The note's «short help drawer on hover bribe button» is
   `politics-quests.md` §3.4 → `../archive/0.6.1-plan-observation-device.md`.
-- The blocked share of §6.2 → `../0.7.43-plan-seeded-map-opening.md` §2.
+- The blocked share of §6.2 → `../archive/0.7.43-plan-seeded-map-opening.md` §2.

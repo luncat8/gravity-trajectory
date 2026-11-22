@@ -23,9 +23,17 @@
 	/* The field's range and resolution. `STEPS` is draws per unit of gravity,
 	 * so the grid is 1/20 = 0.05 and `CHOICES` counts the reachable values. */
 	const MIN = -1;
-	const MAX = 3.5;
+	const MAX = 5;
 	const STEPS = 20;
 	const CHOICES = (MAX - MIN) * STEPS + 1;
+
+	/* The draw's body: the hash lands on the -1 … 3.5 grid, and the heavy tail
+	 * from `BIAS_END` up is stretched to `MAX`. Every world drawn below it keeps
+	 * the value it always had, so the light worlds (and the openings planned on
+	 * them) stay put while the heaviest reach +5. A uniform draw to +5 redraws
+	 * every planet and cost the default career two fair seeds. */
+	const BODY_MAX = 3.5;
+	const BODY_CHOICES = (BODY_MAX - MIN) * STEPS + 1;
 
 	/* The bias: between these values a sine wave pushes the drawn gravity down
 	 * by up to `STRENGTH`, so the middle of the grid (the worlds a starter rail
@@ -89,10 +97,12 @@
 			return armedField[planet];
 		}
 		const u = OrbitWorld.hash01(seed, planet, SALT_GRAVITY);
-		let g = MIN + (u * CHOICES - 0.5) / STEPS;
+		let g = MIN + (u * BODY_CHOICES - 0.5) / STEPS;
 		if (g > BIAS_START && g < BIAS_END) {
 			const wave = Math.sin(Math.PI * (g - BIAS_START) / (BIAS_END - BIAS_START));
 			g -= BIAS_STRENGTH * wave * wave;
+		} else if (g >= BIAS_END) {
+			g = BIAS_END + (g - BIAS_END) * (MAX - BIAS_END) / (BODY_MAX - BIAS_END);
 		}
 		g = Math.round(g * STEPS) / STEPS;
 		/* `=== 0` also folds the negative zero a rounded tiny value can carry */
@@ -100,7 +110,7 @@
 	}
 
 	const PlanetGravity = {
-		SALT_GRAVITY, MIN, MAX, STEPS, CHOICES,
+		SALT_GRAVITY, MIN, MAX, STEPS, CHOICES, BODY_MAX,
 		BIAS_START, BIAS_END, BIAS_STRENGTH,
 		gravity, snap, fieldTag, arm, disarm, armed
 	};

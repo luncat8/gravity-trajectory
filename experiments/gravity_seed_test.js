@@ -32,7 +32,7 @@ for (let seed = 1; seed <= 200; seed++) {
 	}
 }
 assert.ok(values.has(-1) && values.has(0) && values.has(3.5) &&
-	!values.has(5) && values.size === 91);
+	values.has(5) && values.size === 121);
 assert.ok(zeroSeed > 0);
 assert.ok(/id="gravity"[^>]*max="5"/.test(html));
 assert.ok(/id="expGravity"[^>]*max="9"/.test(html));

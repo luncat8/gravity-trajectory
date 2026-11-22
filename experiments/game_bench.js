@@ -402,12 +402,13 @@ function benchRoute() {
  * Two greedy tours on seed 31 rate 3 under the per-planet growing profit
  * market (purse0 = 3.00, cost = 1.00, initial slope k = 0.00625/s easing
  * asymptotically to the 4.00 cap), played at x8. Shot counts and purses are
- * the deterministic baseline of the current biased seeded gravity range and
- * 1.5× play area. The longer-horizon heuristic goes broke on this map.
+ * the deterministic baseline of the current biased seeded gravity range (the
+ * 0.7.43 `+5` stretched tail) and 1.5× play area. On the old `+3.5` field the
+ * longer-horizon heuristic went broke here (14 shots); now it completes in 6.
  */
 const MONEY_TOURS = [
-	{ horizon: 12, shots: 8, purse: 4.7926, complete: true },
-	{ horizon: 60, shots: 14, purse: 0.0817, complete: false }
+	{ horizon: 12, shots: 8, purse: 5.4894, complete: true },
+	{ horizon: 60, shots: 6, purse: 10.4439, complete: true }
 ];
 
 function playMoneyTour(horizon) {

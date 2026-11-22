@@ -132,10 +132,12 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   at the area's own edge, so a shot can leave the framed canvas and still land.
   The ratio is one constant in `orbit_world.js` (`AREA_SCALE`), and the sim, every
   prediction, every rival probe and the `full area` zoom derive from it.
-- **Seeded gravity**: each planet draws a deterministic value from `−1…+3.5`
+- **Seeded gravity**: each planet draws a deterministic value from `−1…+5`
   in `0.05` steps, independent of its position and other planets. A smooth
   middle-range bias makes `0.9…1.5` worlds more common and `1.8…2.5` less
-  common while retaining the low and high extremes. A new page
+  common while retaining the low and high extremes; the heavy tail from `2.8`
+  is stretched to `+5`, so worlds below it draw what they drew under the old
+  `+3.5` ceiling. A new page
   without a URL seed picks a random seed; `restart` keeps it, `new seed` redraws it. A career
   map plans the full HQ set together for comparable first-flight profits, preferring sunlit
   homes when enough seats are available. Each HQ is pinned to base strength 1, then the set is
@@ -276,7 +278,7 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
 - `balance_lab.html` — standalone single-screen balance lab: the sci fee surface of engine/catapult/tank/battery with the stock ladder tiers plotted and labelled (id · primary stat · build cost), the draft's fee/build/force callout, a vertical force line and the suggested rung, plus the live build cost of the ladder and the current draft, and balance sliders (frontier weights, metric scales, merit curves, k, base price, tier scale, merit band, build share) that re-draw the plot and the costs on every move; a **ladder gain** card reprices a whole tech table — pick a kind (the build-only panel and hold ladders included), keep one rung as the base, scale every step above it and read what each rung then buys in the player's unit (kWh per wait, px/s rail cap, kWh, t, Δv), the value-per-money curve with a `!` on any flat rung and `↓` on a thinning one, and the derived build cost against the shipped table, `copy table patch` handing back the ready `const PANELS = […]`-style block (specs only, since the game prices them); a collapsible help at the top explains the blocks and walks one such repricing end to end; copy-paste final settings for a balance chat; loads `orbit_science.js`/`orbit_tech.js`, file:// friendly, checked by `experiments/balance_lab_test.js` and `experiments/balance_lab_smoke.js`
 - `map-generator-helper.htm`, `map_gen.js`, `map_fields.js` — the gravity map generator's design tool: a roster of planet groups (gravity, ± margin, how many worlds) drawn on the field's line with a configurable ship mass, each group coloured by the rail its well needs, the concrete draw from that roster on the game's 0.05 grid as a histogram against the generator's own distribution and the real field of any saved map (`saved_maps.js` is loaded and its records are read through `planetGravity`, never a copy), an original-seed-map panel (planet count + seed + `Generate`) that puts the game's own `gravity(seed, p)` draw for that seed onto the line as hollow dots — the main generator read against the roster — and the design saved as a `map_fields.js` data script beside the page; loads `orbit_world.js`, `planet_gravity.js`, `orbit_science.js`, `orbit_tech.js`, `gravity_sim.js`, `map_gen.js`, `saved_maps.js` and `map_fields.js`, file:// friendly, checked by `experiments/map_gen_test.js`
 - `exec_queue.js` — binary min-heap event queue (vendored)
-- `planet_gravity.js` — the seeded planet gravity field alone (`gravity(seed, planet)` on the -1 … 3.5 range in 0.05 steps, the middle-band bias, `snap`, plus seed-keyed `arm`/`disarm`/`armed`/`fieldTag` for playable designed fields): the one draw the career rules re-export, the helper page designs against and the benches measure, so none of them can disagree
+- `planet_gravity.js` — the seeded planet gravity field alone (`gravity(seed, planet)` on the -1 … 5 range in 0.05 steps, the middle-band bias and stretched heavy tail, `snap`, plus seed-keyed `arm`/`disarm`/`armed`/`fieldTag` for playable designed fields): the one draw the career rules re-export, the helper page designs against and the benches measure, so none of them can disagree
 - `orbit_world.js` — planet geometry (the 1600×1000 field and the 1.5× `AREA_SCALE` play area every sim derives its bounds from), stations on their ellipses, natural traits
 - `orbit_econ.js` — colony economy laws: goods, resource map, growth
 - `orbit_sim.js` — orbital trade & colony simulation

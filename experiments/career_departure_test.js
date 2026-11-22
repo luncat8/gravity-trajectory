@@ -235,7 +235,7 @@ console.log('career departure calibration:', {
 	universe: UNIVERSE,
 	actors: 3,
 	freePlanets: 10,
-	gravity: 'seeded −1…+3.5 in 0.05 steps; every HQ is a seeded shallow planet',
+	gravity: 'seeded −1…+5 in 0.05 steps (tail from 2.8 stretched); every HQ is a seeded shallow planet',
 	meanStarterBlocked: +meanBlocked.toFixed(2),
 	seedsInTarget: inTargetRange + '/' + SEEDS,
 	histogram: histogram,

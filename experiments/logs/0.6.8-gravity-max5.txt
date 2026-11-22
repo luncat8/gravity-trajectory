@@ -1,0 +1,125 @@
+# 0.7.43 new baseline: the seeded gravity ceiling at +5 (stretched heavy tail)
+# planet_gravity.js MAX 5: the body draw stays on -1…3.5, values from BIAS_END (2.8)
+# up are stretched linearly to 5 before snapping; every world drawn below 2.8 keeps
+# its value, all 121 grid values are reachable, the light share (g <= 1.5) is
+# unchanged (0.629 of planets over seeds 1-400 × 48). 2 CPUs, node v22.
+
+## 1. choosing the shape (default career cell, COUNT=13 SEATS=3 SEEDS=1-8, §1 search)
+
+draw                          | default cell                          | drawn blocked share (seeds 1-12)
+uniform to +5                 | seed 1 no exit-safe site, seed 8 -72% | 3.6 of 10
+tail weight 0.5 (hash rescaled)| seed 8 54%                           | 3.1 of 10
+tail weight 0.3 (hash rescaled)| seeds 7, 8 at 50%, 52%               | 2.9 of 10
+stretch from 2.8 (shipped)    | 8/8 fair, weakest 72%                 | 2.3 of 10
+(the +3.5 field: 8/8 fair, weakest 65%, 2.6 of 10)
+
+A redrawn field moves every planet, so the default cell becomes a lottery over its
+eight seeds; the stretch keeps the light worlds where they were.
+
+## 2. node experiments/career_start_fairness.js (default cell + blocked-share assertion)
+
+seed 1 · HQs 6,9,12 → chosen sites 11,0,10 · pay 1.54…2.15 (weakest 72% of best) · 7319ms
+seed 2 · HQs 1,11,8 → chosen sites 4,3,0 · pay 1.80…1.92 (weakest 94% of best) · 3016ms
+seed 3 · HQs 9,8,0 → chosen sites 3,5,11 · pay 1.54…1.76 (weakest 88% of best) · 2573ms
+seed 4 · HQs 12,8,0 → chosen sites 5,11,7 · pay 3.42…3.74 (weakest 91% of best) · 2660ms
+seed 5 · HQs 4,5,8 → chosen sites 6,2,11 · pay 4.16…4.41 (weakest 94% of best) · 2586ms
+seed 6 · HQs 10,1,9 → chosen sites 11,6,0 · pay 1.52…1.92 (weakest 79% of best) · 2926ms
+seed 7 · HQs 12,1,0 → chosen sites 4,2,6 · pay 1.93…2.18 (weakest 89% of best) · 2905ms
+seed 8 · HQs 12,11,9 → chosen sites 10,5,0 · pay 0.54…0.64 (weakest 84% of best) · 3123ms
+starter cannot leave 23/100 drawn non-HQ planets (2.3 of 10) over seeds 1-12
+
+8 seeds · every seat buildable 8/8 · every site exitable 8/8 · within 0.55 band 8/8 · weakest 72%
+
+## 3. hq_gravity_probe.js SEEDS=12 STEP=0.5 (reach % of the rail's fastest shot)
+
+`sweep blocked` sets every planet to every grid value in turn (uniform over -1…5),
+so it is not the drawn share above.
+
+rail, ship            | cap   | g 1.0 | g 1.5 | g 2.0 | g 2.5 | g 3.0 | g 3.5 | g 4.0 | g 4.5 | g 5.0 | sweep blocked
+EMC-1 + BAT-1 10 t    |  91.7 |  100% |   87% |   53% |   22% |    9% |    3% |    1% |    1% |    0% | 4.8 of 10
+EMC-1 + BAT-1 19.5 t  |  65.6 |   85% |   46% |   16% |    6% |    2% |    1% |    0% |    0% |    0% | 5.8 of 10
+EMC-1 + BAT-1 38 t    |  47.0 |   57% |   22% |    7% |    2% |    1% |    0% |    0% |    0% |    0% | 6.3 of 10
+EMC-2 + BAT-2 10 t    | 168.5 |  100% |  100% |   99% |  100% |  100% |   94% |   72% |   51% |   31% | 1.2 of 10
+EMC-2 + BAT-2 38 t    |  86.5 |  100% |   79% |   46% |   17% |    7% |    3% |    1% |    0% |    0% | 5.0 of 10
+EMC-3 + BAT-3 38 t    | 129.8 |  100% |  100% |   99% |   85% |   56% |   32% |   13% |    6% |    3% | 3.1 of 10
+EMC-3 + BAT-3 10 t    | 253.0 |     - |     - |     - |     - |  100% |  100% |   96% |   96% |   98% | 0.1 of 10
+EMC-4 + BAT-4 38 t    | 155.9 |     - |     - |     - |     - |   97% |   76% |   54% |   31% |   13% | 1.8 of 10
+EMC-5 + BAT-5 38 t    | 162.9 |     - |     - |     - |     - |   99% |   88% |   64% |   40% |   21% | 1.5 of 10
+
+What a g 5 world is for: freight country. The starter rail leaves g 3.5 3 times in
+a hundred and g 5 never; a dry EMC-2 still leaves g 5 31 times, a dry EMC-3 98.
+A loaded HOLD-24 (38 t) needs EMC-3 to leave g 3.5 at all (32 %), and at g 5 only
+EMC-4 (13 %) and EMC-5 (21 %) lift it. Everything above 3.5 is the late-game
+heavy-lift demand that archive/0.6.2-plan-pad-fees.md §3 prices, and none of it
+touches an opening: openings are built on g <= 1.5, which this draw does not move.
+
+## 4. MATRIX=1 ALT=1 ASSERT=1 COUNTS=48,26,20,13,8 SEATS=2-6 SEEDS=1-12 (exits 1)
+
+career opening matrix · seeds 1-12 · ratio >= 0.55 · alt HQ check (limit 1000, exhaustive <=13)
+C=48  S=2  | built 12/12 · exit 12/12 · fair 12/12 · worst  87% · light 25..35->24..34 · ms 1695/2010 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=48  S=3  | built 12/12 · exit 12/12 · fair 12/12 · worst  81% · light 25..35->23..34 · ms 2237/2920 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=48  S=4  | built 12/12 · exit 12/12 · fair 12/12 · worst  76% · light 25..35->22..33 · ms 2655/2971 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=48  S=5  | built 12/12 · exit 12/12 · fair 12/12 · worst  66% · light 25..35->23..33 · ms 3056/3835 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=48  S=6  | built 12/12 · exit 12/12 · fair 12/12 · worst  65% · light 25..35->21..32 · ms 3667/4065 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=26  S=2  | built 12/12 · exit 12/12 · fair 12/12 · worst  91% · light 12..19->11..19 · ms 1776/2070 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=26  S=3  | built 12/12 · exit 12/12 · fair 12/12 · worst  74% · light 12..19->10..17 · ms 2190/2842 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=26  S=4  | built 12/12 · exit 12/12 · fair 12/12 · worst  74% · light 12..19->10..18 · ms 2900/3489 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=26  S=5  | built 12/12 · exit 12/12 · fair 12/12 · worst  55% · light 12..19->9..17 · ms 2215/3924 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=26  S=6  | built 12/12 · exit 12/12 · fair 12/12 · worst  56% · light 12..19->8..16 · ms 2921/6445 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=20  S=2  | built 12/12 · exit 12/12 · fair 12/12 · worst  92% · light 9..16->8..14  · ms 1275/1696 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=20  S=3  | built 12/12 · exit 12/12 · fair 12/12 · worst  74% · light 9..16->7..14  · ms 1687/2042 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=20  S=4  | built 12/12 · exit 12/12 · fair 12/12 · worst  61% · light 9..16->8..13  · ms 2041/2281 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=20  S=5  | built 12/12 · exit 12/12 · fair 12/12 · worst  56% · light 9..16->7..12  · ms 1611/3096 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=20  S=6  | built 12/12 · exit 12/12 · fair  9/12 · worst  37% · light 9..16->7..12  · ms 4544/11979 | sameHQ  9/12 · altExit 12/12 · altFair 11/12 | seed 1: ratio 0.37 [alt HQ 6,16,17,19,0,9 oracle 0.55 · fair 1 first@143]
+C=13  S=2  | built 12/12 · exit 12/12 · fair 12/12 · worst  95% · light 4..11->3..9   · ms 2822/3359 | sameHQ 12/12 · altExit 12/12 · altFair 12/12
+C=13  S=3  | built 11/12 · exit 11/12 · fair 11/12 · worst   0% · light 4..11->3..9   · ms 3824/9409 | sameHQ 11/12 · altExit 11/12 · altFair 11/12 | seed 10: no distinct site (light 4->3) [0 built in all sets]
+C=13  S=4  | built  9/12 · exit  9/12 · fair  9/12 · worst   0% · light 4..11->2..8   · ms 5176/9995 | sameHQ  9/12 · altExit 10/12 · altFair  9/12 | seed 1: no distinct site (light 7->4) [best alt exit 0.00]
+C=13  S=5  | built  9/12 · exit  9/12 · fair  4/12 · worst   0% · light 4..11->4..7   · ms 2727/4082 | sameHQ  4/12 · altExit  9/12 · altFair  5/12 | seed 1: no distinct site (light 7->5) [0 built in all sets]
+C=13  S=6  | built  4/12 · exit  4/12 · fair  0/12 · worst -30% · light 4..11->4..6   · ms 2738/3874 | sameHQ  0/12 · altExit  5/12 · altFair  0/12 | seed 1: no distinct site (light 7->6) [0 built in all sets]
+C=8   S=2  | built 11/12 · exit 11/12 · fair 10/12 · worst   0% · light 2..7->2..5    · ms 843/1307  | sameHQ 10/12 · altExit 11/12 · altFair 10/12 | seed 8: ratio 0.00 [best alt exit 0.00]
+C=8   S=3  | built  8/12 · exit  8/12 · fair  4/12 · worst   0% · light 2..7->1..4    · ms 1634/2457 | sameHQ  4/12 · altExit  8/12 · altFair  4/12 | seed 1: no distinct site (light 4->2) [0 built in all sets]
+C=8   S=4  | built  0/12 · exit  0/12 · fair  0/12 · worst   0% · light 2..7->1..3    · ms 2487/3467 | sameHQ  0/12 · altExit  0/12 · altFair  0/12 | seed 1: no distinct site (light 4->2) [nonCap 7<8]
+C=8   S=5  | built  0/12 · exit  0/12 · fair  0/12 · worst   0% · light 2..7->2..2    · ms 695/1178  | sameHQ  0/12 · altExit  0/12 · altFair  0/12 | seed 1: no distinct site (light 4->2) [light 4<5]
+C=8   S=6  | built  0/12 · exit  0/12 · fair  0/12 · worst   0% · light 2..7->1..1    · ms 431/601   | sameHQ  0/12 · altExit  0/12 · altFair  0/12 | seed 1: no distinct site (light 4->1) [light 4<6]
+
+25 cells · game fair 15/25 · sameHQ oracle fair 15/25 · alt HQ exitable 16/25 · alt HQ fair 15/25 · 1590 s
+FAIL C=20 S=6 seed 1: ratio 0.37 [alt HQ 6,16,17,19,0,9 oracle 0.55 · fair 1 first@143]
+FAIL C=20 S=6 seed 5: ratio 0.45 [alt HQ 14,19,13,15,8,4 oracle 0.62 · fair 1 first@457]
+FAIL C=20 S=6 seed 10: ratio 0.55 [best alt exit 0.55]
+FAIL C=20 S=6 plan time 4544 ms mean > 4000
+FAIL C=13 S=4 seed 1: no distinct site (light 7->4) [best alt exit 0.00] (oracle exits)
+FAIL C=13 S=4 plan time 5176 ms mean > 4000
+FAIL C=13 S=5 seed 11: ratio 0.50 [alt HQ 9,12,5,4,7 oracle 0.69 · fair 1 first@75] (oracle fair)
+FAIL C=13 S=6 seed 4: no distinct site (light 10->6) [best alt exit 0.12] (oracle exits)
+AssertionError: 8 roster contract failures
+
+## 5. benches on the +5 field (career_gravity_bench with LOG=0, so its historical logs stay)
+
+SEEDED GRAVITY / URL / HELP OK [gravity_seed_test exit 0, 40 s]
+BENCH OK [gravity_bench exit 0, 9 s]
+COLONY BENCH OK [colony_bench exit 0, 0 s]
+ROUTE BENCH OK [route_bench exit 0, 14 s]
+BOT BENCH OK [bot_bench exit 0, 49 s]
+GAME BENCH FAILED (4) [game_bench exit 1, 28 s] -> money-tour baseline re-pinned (12 s: 8 shots, purse 5.4894; 60 s: completes in 6 shots, purse 10.4439, was broke in 14), then GAME BENCH OK
+CAREER BENCH OK [career_bench exit 0, 26 s]
+CAREER BOT BENCH OK [career_bot_bench exit 0, 588 s]
+TOTAL rivals 24 · flights 160 · earned 8.19 · purse 117.65 · pads 101 · dead pads 1 · mean reach 5.02 · stuck 0 · rebel 0 · seized 0 · patients 0 · mean rot 8.7 · bribes 9 · arrests 0 · medic trips 0 · patients home 0 [career_gravity_bench exit 0, 107 s]
+
+career_gravity_bench SEEDS=1-12 SECONDS=400, per seed:
+seed 1 · HQ P6 g1.0 P9 g1.0 P12 g1.0 · R1 · P10 · purse 4.84 · earned 0.00 · 9 flights · 5 pads · reach 6.4 | R2 · P4 · purse 2.06 · earned 0.00 · 6 flights · 4 pads · reach 4.5
+seed 2 · HQ P1 g1.0 P11 g1.0 P8 g1.0 · R1 · P10 · purse 5.88 · earned 1.48 · 10 flights · 6 pads · reach 4.8 | R2 · P4 · purse 6.94 · earned 0.00 · 5 flights · 3 pads · reach 6.0
+seed 3 · HQ P9 g1.0 P8 g1.0 P0 g1.0 · R1 · P8 · purse 5.62 · earned 0.00 · 8 flights · 3 pads · reach 5.3 | R2 · P5 · purse 7.01 · earned 2.70 · 5 flights · 6 pads · reach 5.3
+seed 4 · HQ P12 g1.0 P8 g1.0 P0 g1.0 · R1 · P9 · purse 7.42 · earned 0.00 · 7 flights · 6 pads · reach 4.8 | R2 · P0 · purse 3.44 · earned 0.00 · 8 flights · 4 pads · reach 4.8
+seed 5 · HQ P4 g1.0 P5 g1.0 P8 g1.0 · R1 · P2 · purse 3.61 · earned 0.00 · 8 flights · 5 pads · reach 4.2 | R2 · P1 · purse 3.67 · earned 0.00 · 8 flights · 4 pads · reach 5.8
+seed 6 · HQ P10 g1.0 P1 g1.0 P9 g1.0 · R1 · P7 · purse 2.78 · earned 0.00 · 4 flights · 2 pads · reach 4.5 | R2 · P-1 · purse 0.00 · earned 0.00 · 4 flights · 3 pads · reach 3.7
+seed 7 · HQ P12 g1.0 P1 g1.0 P0 g1.0 · R1 · P-1 · purse 0.61 · earned 0.00 · 2 flights · 3 pads · reach 4.3 | R2 · P6 · purse 9.10 · earned 0.00 · 9 flights · 7 pads · reach 5.3
+seed 8 · HQ P12 g1.0 P11 g1.0 P9 g1.0 · R1 · P11 · purse 0.00 · earned 0.00 · 6 flights · 3 pads · reach 4.0 | R2 · P0 · purse 1.31 · earned 0.00 · 6 flights · 3 pads · reach 7.0
+seed 9 · HQ P7 g1.0 P11 g1.0 P0 g1.0 · R1 · P11 · purse 1.87 · earned 0.00 · 7 flights · 4 pads · reach 6.3 | R2 · P10 · purse 5.47 · earned 0.00 · 4 flights · 5 pads · reach 4.6
+seed 10 · HQ P8 g1.0 P7 g1.0 P9 g1.0 · R1 · P5 · purse 6.32 · earned 0.00 · 9 flights · 2 pads · reach 4.5 | R2 · P7 · purse 13.33 · earned 0.00 · 6 flights · 3 pads · reach 4.7
+seed 11 · HQ P2 g1.0 P10 g1.0 P4 g1.0 · R1 · P11 · purse 9.77 · earned 4.01 · 6 flights · 4 pads · reach 6.5 | R2 · P8 · purse 4.94 · earned 0.00 · 8 flights · 6 pads · reach 5.8
+seed 12 · HQ P7 g1.0 P3 g1.0 P5 g1.0 · R1 · P10 · purse 7.45 · earned 0.00 · 8 flights · 6 pads · reach 4.2 · dead 11(g 2.0) | R2 · P4 · purse 4.21 · earned 0.00 · 7 flights · 4 pads · reach 3.3
+
+After the gravity_bot.js hold guard (careerHoldLeaves), the bot benches were
+re-run: bot_bench, game_bench (OK after the re-pin), career_bench,
+career_gravity_bench and career_bot_bench (613 s). Every number is identical;
+only the timings differ. The section above stays the baseline.

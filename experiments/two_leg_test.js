@@ -75,7 +75,8 @@ function flyLiveShot(Game, Sim, career, market, sim, trade, startStep, angleU, s
 	sim.stepLimit = Math.round(Game.CAP_SECONDS / Sim.DT);
 	sim.limitReason = Sim.END_TIME;
 	sim.launch(origin, angle, speed);
-	Game.beginFlight(career.ledger, sim);
+	/* careerBeginFlight opens the ledger itself, as the game does: beginFlight's
+	 * free-flight shot cost is not a career charge */
 	Game.careerBeginFlight(career, sim, startStep);
 	let step = startStep;
 	while (sim.status === Sim.STATUS_FLYING) {
@@ -120,7 +121,9 @@ function unlockGear(career, item) {
 		if (!sim.planetActive(p) || p === career.at || p === career.capitalPlanet ||
 			p === career.arfPlanet || career.pads[p].catapult !== null) continue;
 		const h1 = findImpact(sim, Game, career.at, p, 60, 260);
-		if (!h1) continue;
+		/* the 3.2 purse below is tight: a leg 1 that loses money is a cash trap, not the shallow control */
+		if (!h1 || Game.estimateProfitLog(market, scene.game.clockSteps, h1.logPlanet, h1.logStep,
+			h1.logCount, career.ledger, undefined, undefined, h1.logDwell) < 0) continue;
 		for (let q = 0; q < sim.planetCount; q++) {
 			if (!sim.planetActive(q) || q === p || q === career.at || q === career.capitalPlanet) continue;
 			const h2 = findImpact(sim, Game, p, q, 55, 82);
@@ -381,8 +384,10 @@ for (const mode of ['entry', 'tick']) {
 		stepAfter1, postAcceptPlan.leg2.angleU, postAcceptPlan.leg2.speedU);
 	assert.strictEqual(career.at, cap);
 	assert.strictEqual(career.contract, -1, 'medical mission completed and cleared escrow');
-	check(Math.abs(career.ledger.purse - expectedFinalPurse) < 1e-9,
-		'live two-flight medic purse (' + career.ledger.purse + ') drifted from careerLegPlan (' +
+	/* the plan books the forced repair of a worn-out arrival; the game charges it at the next exit */
+	const livePurse = career.ledger.purse - Game.forecastRepairReserve(career, career.ship.condition);
+	check(Math.abs(livePurse - expectedFinalPurse) < 1e-9,
+		'live two-flight medic purse (' + livePurse + ') drifted from careerLegPlan (' +
 		expectedFinalPurse + ') in mode=' + mode);
 	console.log('3. Capital/medic/escrow two-flight parity (' + mode + '): purse ' +
 		career.ledger.purse.toFixed(4) + ' === forecast');

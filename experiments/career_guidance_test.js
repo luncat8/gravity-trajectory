@@ -104,7 +104,8 @@ const task = scene.career.tasks[0];
 task.kind = gameApi.TASK_DELIVERY;
 task.state = gameApi.TASK_ACCEPTED;
 task.from = origin;
-task.to = 12;
+/* the fixture's own green landing, so the seeded scan lands its first pick */
+task.to = safe.body;
 task.tons = 2;
 task.reward = 1;
 task.deadline = scene.game.clockSteps + 50000;
