@@ -121,10 +121,14 @@ function openingSites(bot, sim, planet, strength, occupied) {
 			const body = sim.predBody;
 			if (body === planet || seen[body]) continue;
 			seen[body] = 1;
-			const gravityLevel = strength[body];
-			if (occupied[body] || gravityLevel > 1.5) continue;
-			sites.push({ planet: body, gravity: gravityLevel,
-				buildable: bot.careerExitSpeed(body, STARTER_CAP) > 0 });
+			if (occupied[body]) continue;
+			/* 0.7.47: a site counts as buildable only where the starter rail
+			 * clears 75 % of its cap; reachable-but-blocked bodies are the
+			 * heavy column of the report */
+			const exitSpeed = bot.careerExitSpeed(body, STARTER_CAP);
+			sites.push({ planet: body, gravity: strength[body],
+				exitSpeed: exitSpeed,
+				buildable: GravityGame.exitSpeedHasMargin(exitSpeed, STARTER_CAP) });
 		}
 	}
 	return sites;
@@ -141,7 +145,7 @@ function report(name, world, career, sim, occupied, openings) {
 		hq: career.hq,
 		hqG: world.strength[career.hq],
 		light: sites.filter(s => s.buildable).length,
-		heavy: sites.filter(s => s.gravity > 1.5).length,
+		heavy: sites.filter(s => s.exitSpeed === 0).length,
 		reach: sites.length,
 		buildPay: openings.buildPay[career.hq],
 		profit: plan ? plan.score : -Infinity,

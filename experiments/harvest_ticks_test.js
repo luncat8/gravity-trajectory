@@ -444,7 +444,8 @@ console.log('   stay-pay earned more on ' + dwellWins + '/4 probe flights');
 		for (let i = 0; i < sim.predLogCount; i++) {
 			if (sim.predLogDwell[i] > 0) lingered = true;
 		}
-		if (sim.predReason === GravitySim.END_IMPACT && sim.predLogCount >= 2 && lingered) {
+		if (sim.predReason === GravitySim.END_IMPACT && sim.predLogCount >= 2 && lingered &&
+			Number.isFinite(ctx.traceMoney(sim, origin, speed).net)) {
 			pick = { angle: angle, body: sim.predBody };
 		}
 	}

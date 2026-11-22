@@ -26,6 +26,7 @@ Both originals were removed once their text was placed, and
 | 9 | `map.md` | periodic FFT gravity, space weather · new notes, not from the split |
 | 10 | `found-colony-land.md` | empty heavy planets without EMC (`13 → 16`) and single-use colonization equipment |
 | 11 | `new/lite-version.md` | lite profile (`?lite=1`): saved-map boot, quiet non-gameplay background, mute sound & photos |
+| 12 | `map-fair-start-modes.md` | the fair-start contract: composition rule, 75 % exit margin, background search, space & capital starts |
 
 What is *not* here:
 
@@ -112,7 +113,8 @@ FFT:
 
 | plan | group | draft sections it answers |
 |---|---|---|
-| `../0.7.46-plan-fair-start-fallback.md` | `0.7` pre-FFT | `flight-lab-and-modes.md` §1.4 (the rosters `../archive/0.7.43-plan-seeded-map-opening.md` leaves short) |
+| `../0.7.46-plan-fair-start-fallback.md` | `0.7` pre-FFT | `flight-lab-and-modes.md` §1.4 (the rosters `../archive/0.7.43-plan-seeded-map-opening.md` leaves short) — **superseded by `../0.7.47-plan-fair-start-modes.md`** |
+| `../0.7.47-plan-fair-start-modes.md` | `0.7` pre-FFT | `map-fair-start-modes.md` (composition rule, exit margin, background search, space & capital starts) |
 | `../0.7.44-plan-founding-colony.md` | `0.7` pre-FFT | `found-colony-land.md`, `career-economy.md` §2.5 |
 | `../0.7.45-plan-buy-ships.md` | `0.7` pre-FFT | `career-economy.md` §buy more ships |
 | `../0.8.0-plan-periodic-fft.md` | `0.8` FFT+ | `map.md` §gravity (`&fft=1`, `PLANETS = 192`, 256²/512×256 Plummer FFT) |

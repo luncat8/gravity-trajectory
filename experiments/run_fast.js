@@ -30,6 +30,7 @@ const FAST = [
 	['comms_topics_test.js', 0.4],
 	['comms_call_test.js', 1],
 	['balance_changes_test.js', 0.2],
+	['career_exit_margin_test.js', 0.5],
 	['bribe_score_test.js', 0.2],
 	['wear_flight_test.js', 0.2],
 	['harvest_ticks_test.js', 5],

@@ -109,7 +109,8 @@ function isSpecial(world, planet) {
 }
 
 /* Drawn planets of the final field the starter rail cannot leave, by the
- * bot's own departure probe (eight bearings × four speeds to the cap). */
+ * bot's own departure probe (sixteen bearings × two tiers: 75 % of the cap,
+ * then the cap — 0.7.47). */
 let exitBot = null;
 function blockedPlanets(world, homes, count) {
 	if (!exitBot) exitBot = new GravityBot(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
@@ -156,11 +157,80 @@ function freeSites(mask, homes) {
 	return sites;
 }
 
-function buildableSite(world, site) {
+/* Independent 0.7.47 margin mirror: a first landing counts only where the
+ * starter rail (EMC-1 + BAT-1, dry ship) clears 75 % of its cap over
+ * sixteen bearings. The probe flies the field the first flight sees — pass
+ * `homes` to pin the planned HQs at g 1.00 (the game's traces do exactly
+ * that; a drawn-heavy HQ well can block a 75 % escape), specials held, the
+ * rest drawn — and caches per world + pin set. Without homes the drawn
+ * field is probed (pre-plan site pools). A Capital never lands first. */
+const siteProbeSessions = new WeakMap();
+function buildableSite(world, site, homes) {
 	if (GravityGame.specialPlanets() && site === world.trade.world.capitalPlanet) return false;
-	const strength = GravityGame.specialPlanets() && site === world.trade.world.arfPlanet
-		? 1 : GravityGame.planetGravity(world.seed, site);
-	return strength <= 1.5;
+	const pinKey = homes && homes.length ? homes.join(',') : '';
+	let session = siteProbeSessions.get(world);
+	if (!session) {
+		const trade = world.trade;
+		const sim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+		sim.setPlanets(P, trade.planetX, trade.planetY, trade.planetR,
+			trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+		sim.setScales(GS, FS);
+		const base = new Float64Array(GravitySim.MAX_BODIES);
+		for (let planet = 0; planet < P; planet++) {
+			if (!world.mask[planet]) base[planet] = 0;
+			else if (GravityGame.specialPlanets() && (planet === world.trade.world.capitalPlanet ||
+				planet === world.trade.world.arfPlanet)) base[planet] = 1;
+			else base[planet] = GravityGame.planetGravity(world.seed, planet);
+		}
+		const strength = base.slice();
+		sim.setField(P, trade.planetR, strength, (t, outX, outY, n) => {
+			for (let i = 0; i < n; i++) { outX[i] = trade.planetX[i]; outY[i] = trade.planetY[i]; }
+		}, true);
+		sim.fieldT = trade.t;
+		sim.fieldRate = 1;
+		sim.setPlanetMask(world.mask);
+		sim.stepLimit = GravityGame.CAP_STEPS;
+		session = { sim, base, strength, pinKey: null, cache: new Map() };
+		siteProbeSessions.set(world, session);
+	}
+	let cache = session.cache.get(pinKey);
+	if (!cache) {
+		cache = new Int8Array(P).fill(-1);
+		session.cache.set(pinKey, cache);
+	}
+	if (cache[site] >= 0) return cache[site] === 1;
+	if (session.pinKey !== pinKey) {
+		session.strength.set(session.base);
+		if (homes) for (const home of homes) session.strength[home] = 1;
+		session.sim.setField(P, world.trade.planetR, session.strength, (t, outX, outY, n) => {
+			for (let i = 0; i < n; i++) { outX[i] = world.trade.planetX[i]; outY[i] = world.trade.planetY[i]; }
+		}, true);
+		session.pinKey = pinKey;
+	}
+	const sim = session.sim;
+	const cap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
+		OrbitTech.SHIP_DRY_MASS, OrbitTech.CATAPULTS[0], FS);
+	const steps = GravityGame.SPEED_STEPS;
+	const minU = GravitySim.SPEED_MIN * steps;
+	let capU = Math.floor(cap * steps + 1e-9);
+	const maxU = GravitySim.SPEED_MAX * steps;
+	if (capU > maxU) capU = maxU;
+	let ok = false;
+	if (capU >= minU) {
+		tier: for (let f = 0; f < 2; f++) {
+			const speedU = f === 0 ? Math.max(minU, Math.round(capU * 0.75)) : capU;
+			const speed = speedU / steps;
+			for (let a = 0; a < 16; a++) {
+				const angle = GravityGame.angleOf(GravityGame.angleUnits(
+					(a + 0.5) / 16 * Math.PI * 2));
+				sim.predictFast(site, angle, speed, GravityGame.CAP_SECONDS);
+				if (sim.predReason === GravitySim.END_IMPACT && sim.predBody >= 0 &&
+					sim.predBody !== site) { ok = f === 0; break tier; }
+			}
+		}
+	}
+	cache[site] = ok ? 1 : 0;
+	return ok;
 }
 
 function lightBeforeCount(world, count) {
@@ -320,8 +390,8 @@ function checkGameWitness(world, homes, rows, stats) {
 		seen.add(site);
 		assert.ok(Number.isFinite(rows.sitePay[row]) && rows.exitOk[row] === 1,
 			'seed ' + world.seed + ': game assignment is not an exit-safe traced landing');
-		assert.ok(buildableSite(world, site),
-			'seed ' + world.seed + ': first pad is too heavy or is the Capital');
+		assert.ok(buildableSite(world, site, homes),
+			'seed ' + world.seed + ': first pad is not margin-exitable or is the Capital');
 	}
 	const actual = describe(rows, homes, sites);
 	assert.ok(Math.abs(actual.min - stats.minPay) < 1e-8 &&
@@ -356,10 +426,11 @@ function checkOpening(world, homes, ms, count) {
 	const rows = GravityGame.careerOpenings(world.trade.world, world.trade,
 		world.mask, count, occupied, world.sim);
 	const sites = freeSites(world.mask, homes);
-	/* targetPay is every reachable non-HQ site; sitePay has already filtered out
-	 * heavy/Capital sites and landings from which an EMC-1 cannot leave. Use
-	 * the former for buildability so a dead end does not masquerade as a shortage. */
-	const buildable = sites.filter(site => buildableSite(world, site));
+	/* targetPay is every reachable non-HQ site; sitePay has already filtered
+	 * out Capital sites and landings from which an EMC-1 cannot leave with
+	 * margin. Use the former for buildability so a dead end does not
+	 * masquerade as a shortage. */
+	const buildable = sites.filter(site => buildableSite(world, site, homes));
 	const built = matchSites({ sitePay: rows.targetPay }, homes, buildable,
 		-Infinity, Infinity, false) !== null;
 	const safe = matchSites(rows, homes, sites, -Infinity, Infinity, true);
@@ -386,7 +457,7 @@ function evaluateOracleSet(world, count, homes) {
 	const occupied = new Uint8Array(P);
 	for (const home of homes) occupied[home] = 1;
 	const sites = freeSites(world.mask, homes);
-	const buildable = sites.filter(site => buildableSite(world, site));
+	const buildable = sites.filter(site => buildableSite(world, site, homes));
 	if (buildable.length < homes.length) return { built: false, exitable: false, ratio: 0 };
 	GravityGame.openingPrepare(world.trade.world, world.trade, world.mask, count,
 		occupied, world.sim);

@@ -1759,15 +1759,16 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	/*
 	 * A first flight needs to do two things: pay roughly as well as the other
-	 * companies' openings, and end on a free planet at G ≤ 1.5 where the starter
-	 * EMC-1 + BAT-1 can physically launch again. The exit probe matters more
-	 * than gravity alone: a new rail must not become a dead-end claim.
+	 * companies' openings, and end on a free planet the starter EMC-1 + BAT-1
+	 * can leave again — with margin. Eligibility is the exit probe, not a
+	 * gravity number: a new rail must not become a dead-end claim, and an
+	 * exit that only appears at full power (or on one lucky bearing) is not
+	 * an exit a first landing may rely on.
 	 */
 	const OPENING_ANGLES = 8;
 	const OPENING_SPEEDS = 4;
-	const OPENING_EXIT_ANGLES = 8;
-	const OPENING_EXIT_FRACTIONS = [0, 1 / 3, 2 / 3, 1];
-	const OPENING_BUILD_GRAVITY_MAX = 1.5;
+	const OPENING_EXIT_ANGLES = 16;
+	const OPENING_EXIT_FRACTIONS = [0.75, 1];
 	const OPENING_HORIZON = CAP_SECONDS;
 	const OPENING_BANDS = [0.85, 0.7, 0.5, 0.25, 0];
 	const OPENING_CACHE_MAX = 8;
@@ -1794,6 +1795,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	let openingTrade = null;
 	let openingGravityScale = 1;
 	let openingForceScale = 1;
+	let openingFieldMask = null;
 
 	function openingMaskTag(mask, count) {
 		let tag = Math.imul(count + 1, 0x01000193) >>> 0;
@@ -1839,6 +1841,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			? sourceSim.forceScale : 1;
 		openingSim.setScales(openingGravityScale, openingForceScale);
 		openingSim.setPlanetMask(mask);
+		openingFieldMask = mask;
 		openingExitMemo.fill(-1);
 		resetMarket(openingMarket);
 		applyMarketUniverse(openingMarket, mask, count);
@@ -1852,23 +1855,31 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		}
 	}
 
-	/* Mirror the bot's starter-departure probe: eight bearings and four snapped
-	 * speeds across the EMC-1 + BAT-1 cap, with a full flight horizon. */
-	function openingStarterCanExit(planet) {
+	/* Install the prepared strengths on the sim for probes outside a trace
+	 * (the light/home pools); every trace re-sets the field itself. */
+	function openingSyncField() {
+		openingSim.setField(openingExtent(openingFieldMask), openingTrade.planetR,
+			openingStrengths, openingFill, true);
+	}
+
+	/* Mirror the bot's starter-departure probe: sixteen bearings, 75 % of the
+	 * EMC-1 + BAT-1 cap first, the cap only where 75 % fails (a high-G world
+	 * therefore ends up probed at max), full flight horizon. Returns the
+	 * escaping speed, 0 when no bearing leaves. */
+	function openingExitSpeed(planet) {
 		const sim = openingSim;
-		if (!sim.planetActive(planet)) return false;
+		if (!sim.planetActive(planet)) return 0;
 		const cap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
 			OrbitTech.SHIP_DRY_MASS, OrbitTech.CATAPULTS[0], openingForceScale);
 		const minU = GravitySim.SPEED_MIN * SPEED_STEPS;
 		let capU = Math.floor(cap * SPEED_STEPS + 1e-9);
 		const maxU = GravitySim.SPEED_MAX * SPEED_STEPS;
 		if (capU > maxU) capU = maxU;
-		if (capU < minU) return false;
-		const span = capU - minU;
+		if (capU < minU) return 0;
 		let previous = -1;
 		for (let f = 0; f < OPENING_EXIT_FRACTIONS.length; f++) {
 			const speedU = f === OPENING_EXIT_FRACTIONS.length - 1
-				? capU : minU + Math.round(span * OPENING_EXIT_FRACTIONS[f]);
+				? capU : Math.max(minU, Math.round(capU * OPENING_EXIT_FRACTIONS[f]));
 			if (speedU === previous) continue;
 			previous = speedU;
 			const speed = speedU / SPEED_STEPS;
@@ -1876,10 +1887,26 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				const angle = angleOf(angleUnits((a + 0.5) / OPENING_EXIT_ANGLES * Math.PI * 2));
 				sim.predictFast(planet, angle, speed, OPENING_HORIZON);
 				if (sim.predReason === GravitySim.END_IMPACT && sim.predBody >= 0 &&
-					sim.predBody !== planet) return true;
+					sim.predBody !== planet) return speed;
 			}
 		}
-		return false;
+		return 0;
+	}
+
+	/* An exit counts for a *new* rail only with a quarter of the kit's power
+	 * in hand; the half-step slack absorbs the speed-snap. Capability callers
+	 * (an existing rail, a heavy classification) only ask speed > 0. */
+	function exitSpeedHasMargin(speed, cap) {
+		return speed > 0 && speed <= 0.75 * cap + 0.5 / SPEED_STEPS + 1e-9;
+	}
+
+	/* Margin law for anything that would *create* a rail or accept a first
+	 * landing: the starter must clear 75 % of its cap there, so an exit that
+	 * only appears at full power never seats a company. */
+	function openingStarterCanExit(planet) {
+		const cap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
+			OrbitTech.SHIP_DRY_MASS, OrbitTech.CATAPULTS[0], openingForceScale);
+		return exitSpeedHasMargin(openingExitSpeed(planet), cap);
 	}
 
 	function openingExitOf(planet, pinned) {
@@ -1888,9 +1915,24 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return openingExitMemo[planet] === 1;
 	}
 
+	/* The buildable-target gate and the exit-safe gate ask the same question
+	 * in the trace's own field; a trace keeps its unpinned answers (pinned
+	 * answers are shared through openingExitMemo by the prepared field). */
+	const openingTraceExit = new Uint8Array(OrbitWorld.PLANETS);
+	const openingTraceExitFor = new Int32Array(OrbitWorld.PLANETS);
+
+	function openingTraceExitable(body, pinned, seq) {
+		if (pinned) return openingExitOf(body, true);
+		if (openingTraceExitFor[body] === seq) return openingTraceExit[body] === 1;
+		const ok = openingStarterCanExit(body);
+		openingTraceExitFor[body] = seq;
+		openingTraceExit[body] = ok ? 1 : 0;
+		return ok;
+	}
+
 	/* Trace one company's starter-speed fan. A safe landing is a free planet
-	 * the other starting HQs do not occupy, below the heavy-world cutoff, and
-	 * from which an EMC-1 can actually leave again. */
+	 * the other starting HQs do not occupy and from which an EMC-1 can leave
+	 * again with margin. */
 	function openingTraceHome(world, mask, forcedHomes, home, strictExit, sitePay, targetPay,
 		exitOk, angles, speeds) {
 		openingTraceCount += 1;
@@ -1948,7 +1990,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				}
 				if (body === world.capitalPlanet && specialPlanets) continue;
 				if (forcedHomes && forcedHomes[body]) continue;
-				if (openingStrengths[body] > OPENING_BUILD_GRAVITY_MAX) continue;
+				if (!openingTraceExitable(body, pinned, openingTraceCount)) continue;
 				if (earned > openingTargetPay[body]) openingTargetPay[body] = earned;
 			}
 		}
@@ -1960,7 +2002,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			}
 			const earned = openingTargetPay[body];
 			if (!Number.isFinite(earned)) continue;
-			const exitable = !strictExit || openingExitOf(body, pinned);
+			const exitable = !strictExit || openingTraceExitable(body, pinned, openingTraceCount);
 			/* the assignment needs to know *which* targets a seat could use
 			 * without painting itself into a dead-end claim */
 			if (exitOk) exitOk[home * OrbitWorld.PLANETS + body] = exitable ? 1 : 0;
@@ -3007,13 +3049,13 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* proposals a wide walk ranks; the pool shrinks until its sets fit */
 	const OPENING_WIDE_PROPOSALS = 20000;
 
-	/* a free planet a first EMC can be built on: not the Capital, not heavy */
+	/* A free planet a first EMC can leave with margin: not the Capital, and
+	 * the starter rail clears 75 % of its cap from there on the prepared
+	 * drawn field — callers openingPrepare (+ openingSyncField) first. */
 	function openingSiteLight(world, mask, planet) {
 		if (!planetInMask(mask, planet)) return false;
 		if (specialPlanets && planet === world.capitalPlanet) return false;
-		const strength = specialPlanets && planet === world.arfPlanet
-			? 1 : planetGravity(world.seed, planet);
-		return strength <= OPENING_BUILD_GRAVITY_MAX;
+		return openingStarterCanExit(planet);
 	}
 
 	function choose(n, k) {
@@ -3068,6 +3110,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	function planHomeSet(world, trade, mask, count, candidates, seatsWanted, sourceSim,
 		sunlit, law) {
 		if (candidates.length < seatsWanted) return null;
+		/* the light/heavy split reads the drawn field's own 75 % exits */
+		openingPrepare(world, trade, mask, count, null, sourceSim);
+		openingSyncField();
 		const light = new Uint8Array(OrbitWorld.PLANETS);
 		let lightSites = 0;
 		let heavyHomes = 0;
@@ -5320,7 +5365,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (own.catapult === null && buildable) {
 			const starterCap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
 				arrivalMass, OrbitTech.CATAPULTS[0], forceScale);
-			res.starterCanExit = checkExitSpeed(exitSpeedFn, sourceSim, planet, starterCap) > 0;
+			/* margin law: a starter rail is only worth building where it
+			 * leaves with a quarter of its power in hand */
+			res.starterCanExit = exitSpeedHasMargin(
+				checkExitSpeed(exitSpeedFn, sourceSim, planet, starterCap), starterCap);
 			res.canBuildStarter = res.starterCanExit &&
 				available + 1e-9 >= price(career, OrbitTech.CATAPULTS[0].buildCost);
 			if (res.starterCanExit) res.physical = true;
@@ -5384,6 +5432,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				if (buildBattery && battery.tier <= currentBattery.tier) continue;
 				if (buildBattery && !gearKnown(career, battery)) continue;
 				if (!buildCatapult && !buildBattery) continue;
+				/* A newly built starter must satisfy the margin, even if a
+				 * full-power commercial rail can physically depart. */
+				if (own.catapult === null && catapult === OrbitTech.CATAPULTS[0] &&
+					battery === OrbitTech.BATTERIES[0] && !res.starterCanExit) continue;
 				const totalCost = catCost + (buildBattery ? price(career, battery.buildCost) : 0);
 				if (available + 1e-9 < totalCost || totalCost + 1e-9 >= bestCost) continue;
 				const cap = OrbitTech.speedLimit(battery.capacity, arrivalMass, catapult, forceScale);
@@ -6486,7 +6538,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		refreshBoard, refreshMedicSlot, medicAffordable, medicPlanet,
 		canAccept, acceptTask, dropTask, dropContract, medicLoad, settleMedic,
 		sportStateOf, sportHoldStep, sportMirrorStale,
-		careerBeginFlight, careerBurn, careerAdvance, careerEndFlight, returnLandingVisit, evacuate
+		careerBeginFlight, careerBurn, careerAdvance, careerEndFlight, returnLandingVisit, evacuate,
+		exitSpeedHasMargin
 	};
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = GravityGame;

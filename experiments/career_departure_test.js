@@ -80,7 +80,11 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 		if (planet === player.capitalPlanet) continue;
 		const departure = bot.careerDeparture(player, planet, player.ledger.purse,
 			player.ship.mass, bot.probe);
-		if (departure.starterCanExit) continue;
+		/* The share is physical capability, not the stricter build margin:
+		 * a full-power commercial exit can remain affordable. */
+		const cap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
+			player.ship.mass, OrbitTech.CATAPULTS[0], bot.probe.forceScale);
+		if (bot.careerExitSpeed(planet, cap) > 0) continue;
 		blocked += 1;
 		assert.ok(!departure.ok,
 			'seed ' + seed + ' P' + planet + ': starter-blocked planet became affordable at the starter purse');

@@ -401,7 +401,7 @@ for (const mode of ['entry', 'tick']) {
 	const sim = scene.sim;
 	const market = scene.game.market;
 	assert.ok(Game.installPart(career, 'hold', Tech.HOLDS[1]));
-	/* Place on Capital (zero solar-recharge wait penalty) with purse = 2.2
+	/* Place on Capital (zero solar-recharge wait penalty) with purse = 2.95
 	 * (< EMC-1 buildCost 3.04) and fresh visit stamps so `claim` is false:
 	 * both bot and helper evaluate pure two-leg trajectory net with zero
 	 * pad-building bonus or solar-wait offset. */
@@ -412,6 +412,12 @@ for (const mode of ['entry', 'tick']) {
 	/* Pick an unowned commercial world where `purse < EMC-1.buildCost (3.04)`
 	 * and `visitPay === 0` from Capital (zero solar wait), so `claim === false`
 	 * and both bot and helper evaluate pure two-leg trajectory net (`hasSecond`). */
+	/* Select a genuinely affordable two-leg fixture rather than the first
+	 * geometrically reachable pair: the latter can be an exit-cost trap. */
+	for (const t of career.tasks) t.kind = Game.TASK_NONE;
+	const initialPurse = career.ledger.purse;
+	career.contract = 0;
+	career.ledger.purse = 2.95;
 	let pickup = -1;
 	let dropoff = -1;
 	let candShot = null;
@@ -419,11 +425,26 @@ for (const mode of ['entry', 'tick']) {
 		if (!sim.planetActive(p) || p === career.at || p === career.capitalPlanet ||
 			Game.padOwner(career, p, false) !== Game.OWNER_COMMERCIAL) continue;
 		market.corruption[p] = 0;
+		/* Keep the commercial exit affordable below the build price even when
+		 * the bot's first probe is 75% of its rail cap. */
+		const battery = Object.assign({}, Tech.BATTERIES[0], { capacity: 0.65 });
+		career.galaxy.commercialPads[p] = { catapult: Tech.CATAPULTS[0], battery: battery,
+			panel: Tech.PANELS[0], chargeKwh: battery.capacity, reservedKwh: 0 };
 		const h1 = findImpact(sim, Game, career.at, p, 50, 140);
 		if (!h1) continue;
 		for (let q = 0; q < sim.planetCount; q++) {
 			if (!sim.planetActive(q) || q === p || q === career.at || q === career.capitalPlanet) continue;
 			if (Game.hasFeasibleLeg(career, sim, p, q, Tech.shipMass(career.ship, 1), false, 45000)) {
+				Object.assign(career.tasks[0], {
+					kind: Game.TASK_DELIVERY, state: Game.TASK_ACCEPTED,
+					from: p, to: q, tons: 1, fragile: false,
+					reward: 6.5, deadline: scene.game.clockSteps + 45000, capitalRefund: 0
+				});
+				scene.bot.probe.predict(career.at, h1.angle, h1.speed, Game.CAP_SECONDS);
+				const score = scene.bot.careerScoreProbe(career, sim, career.at,
+					h1.speed, market, scene.game.clockSteps);
+				if (!Number.isFinite(score) || !scene.bot.careerLeg.hasSecond ||
+					scene.bot.careerEval.builds) continue;
 				pickup = p;
 				dropoff = q;
 				candShot = h1;
@@ -434,6 +455,7 @@ for (const mode of ['entry', 'tick']) {
 	assert.ok(candShot && dropoff >= 0, 'expected Capital -> commercial -> dropoff candidate');
 	for (const t of career.tasks) t.kind = Game.TASK_NONE;
 	career.contract = -1;
+	career.ledger.purse = initialPurse;
 	Object.assign(career.tasks[0], {
 		kind: Game.TASK_DELIVERY, state: Game.TASK_OFFERED,
 		from: pickup, to: dropoff, tons: 1, fragile: false,
@@ -447,6 +469,8 @@ for (const mode of ['entry', 'tick']) {
 	scene.bot.probe.predict(career.at, candShot.angle, candShot.speed, Game.CAP_SECONDS);
 	const botScore = scene.bot.careerScoreProbe(career, sim, career.at,
 		candShot.speed, market, scene.game.clockSteps);
+	check(scene.bot.careerLeg.hasSecond && !scene.bot.careerEval.builds,
+		'parity fixture must price a second leg without a claim bonus');
 
 	/* Score the identical candidate through gui_helper (`helperScore` with goal='quest') */
 	const helperQuestScore = get(env, `(() => {
@@ -544,7 +568,7 @@ for (const mode of ['entry', 'tick']) {
 	 * setup mutation goes through recorded careerAct calls. */
 	let chosenSlot = -1;
 	let runEnv = null;
-	for (const mapId of [1, 2, 3, 7, 42, 93293, 520383]) {
+	for (const mapId of [1, 2, 3, 9, 42, 93293, 520383]) {
 		const candEnv = loadPage({ search: mapSearch(mapId) + '&cheat=communism' });
 		get(candEnv, "careerAct({act:'part',kind:'hold',tier:2}); careerAct({act:'build',kind:'catapult',tier:2}); careerAct({act:'build',kind:'battery',tier:2}); careerAct({act:'careerTab',tab:'shots'});");
 		const cs = candEnv.context.GravityScene;
@@ -558,8 +582,14 @@ for (const mode of ['entry', 'tick']) {
 			const h1 = findImpact(cs.sim, cg, cs.career.at, t.from, 30, cs.sim.speedLimit(cs.career.at));
 			const loadedMass = candEnv.context.OrbitTech.shipMass(cs.career.ship, t.tons);
 			if (h1 && cg.hasFeasibleLeg(cs.career, cs.sim, t.from, t.to, loadedMass, t.fragile, 40000)) {
-				chosenSlot = s;
-				runEnv = candEnv;
+				assert.ok(get(candEnv, `careerAct({act:'accept',slot:${s}})`), 'accept delivery');
+				candEnv.click('helperPlanQuest');
+				until(candEnv, 'helperStopBtn.hidden');
+				if (/^quest plan · P\d+ \([^)]+\) \u2192 deliver P\d+ \([^)]+\) · net /.test(
+					candEnv.elements.get('careerMsg').textContent)) {
+					chosenSlot = s;
+					runEnv = candEnv;
+				}
 				break;
 			}
 		}
@@ -573,10 +603,6 @@ for (const mode of ['entry', 'tick']) {
 	const contractTask = rScene.career.tasks[chosenSlot];
 	const stop1 = contractTask.from;
 	const goal2 = contractTask.to;
-
-	assert.ok(get(runEnv, `careerAct({act:'accept',slot:${chosenSlot}})`), 'accept delivery');
-	runEnv.click('helperPlanQuest');
-	until(runEnv, 'helperStopBtn.hidden');
 
 	const notice = runEnv.elements.get('careerMsg').textContent;
 	check(/^quest plan · P\d+ \([^)]+\) \u2192 deliver P\d+ \([^)]+\) · net /.test(notice),

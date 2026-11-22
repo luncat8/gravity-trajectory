@@ -21,7 +21,8 @@ const RATE = 1;
 const TAU = Math.PI * 2;
 const OPENING_SPEEDS = 4;
 const OPENING_ANGLES = 8;
-const EXIT_FRACTIONS = [0, 1 / 3, 2 / 3, 1];
+const EXIT_ANGLES = 16;
+const EXIT_FRACTIONS = [0.75, 1];
 
 function parseSeeds(value) {
 	const parts = value.split('-');
@@ -141,19 +142,22 @@ function starterCanExit(world, planet) {
 	const maxU = GravitySim.SPEED_MAX * steps;
 	if (capU > maxU) capU = maxU;
 	if (capU < minU) return false;
-	const span = capU - minU;
 	let previous = -1;
 	for (let f = 0; f < EXIT_FRACTIONS.length; f++) {
+		/* 0.7.47 margin law: 75 % of the cap first, the cap only where 75 %
+		 * fails, sixteen bearings — and only a 75 % escape counts */
 		const speedU = f === EXIT_FRACTIONS.length - 1
-			? capU : minU + Math.round(span * EXIT_FRACTIONS[f]);
+			? capU : Math.max(minU, Math.round(capU * EXIT_FRACTIONS[f]));
 		if (speedU === previous) continue;
 		previous = speedU;
 		const speed = speedU / steps;
-		for (let a = 0; a < OPENING_ANGLES; a++) {
-			const angle = GravityGame.angleOf(GravityGame.angleUnits((a + 0.5) / OPENING_ANGLES * TAU));
+		for (let a = 0; a < EXIT_ANGLES; a++) {
+			const angle = GravityGame.angleOf(GravityGame.angleUnits((a + 0.5) / EXIT_ANGLES * TAU));
 			sim.predictFast(planet, angle, speed, GravityGame.CAP_SECONDS);
 			if (sim.predReason === GravitySim.END_IMPACT && sim.predBody >= 0 &&
-				sim.predBody !== planet) return true;
+				sim.predBody !== planet) {
+				return GravityGame.exitSpeedHasMargin(speed, cap);
+			}
 		}
 	}
 	return false;

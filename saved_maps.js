@@ -11,8 +11,8 @@
 			name: "seed 1 · 13 planets · 3 seats",
 			seed: 1,
 			universe: 13,
-			seats: [6, 9, 12],
-			targetPay: 1.8221612910157015,
+			seats: [2, 6, 11],
+			targetPay: 3.0536165767107137,
 			rule: "career",
 			bot: "normal",
 			player: "user",
@@ -27,7 +27,7 @@
 			ht: false,
 			note: "career default",
 			stats: {
-				weakest: 0.72,
+				weakest: 0.8,
 				sites: 1
 			}
 		},
@@ -63,8 +63,8 @@
 			name: "seed 3 · 13 planets · 2 seats",
 			seed: 3,
 			universe: 13,
-			seats: [11, 9],
-			targetPay: 1.1009840957906616,
+			seats: [5, 0],
+			targetPay: 2.470512645565031,
 			rule: "career",
 			bot: "normal",
 			player: "user",
@@ -79,7 +79,7 @@
 			ht: false,
 			note: "YOU + one rival",
 			stats: {
-				weakest: 0.96,
+				weakest: 0.98,
 				sites: 1
 			}
 		},
@@ -89,8 +89,8 @@
 			name: "seed 4 · 26 planets · 3 seats",
 			seed: 4,
 			universe: 26,
-			seats: [16, 10, 2],
-			targetPay: 4.385323426120762,
+			seats: [7, 6, 0],
+			targetPay: 3.177637263837122,
 			rule: "career",
 			bot: "normal",
 			player: "user",
@@ -106,7 +106,7 @@
 			note: "the old 26-world subset",
 			stats: {
 				weakest: 0.93,
-				sites: 7
+				sites: 5
 			}
 		},
 		{
@@ -141,8 +141,8 @@
 			name: "seed 5 · 26 planets · 4 seats",
 			seed: 5,
 			universe: 26,
-			seats: [21, 25, 9, 10],
-			targetPay: 1.2257046025747986,
+			seats: [11, 25, 8, 9],
+			targetPay: 1.9209458041336616,
 			rule: "career",
 			bot: "normal",
 			player: "user",
@@ -157,8 +157,8 @@
 			ht: false,
 			note: "four companies on 26",
 			stats: {
-				weakest: 0.79,
-				sites: 2
+				weakest: 0.61,
+				sites: 3
 			}
 		},
 		{
@@ -190,11 +190,11 @@
 		{
 			v: 1,
 			kind: "start",
-			name: "seed 7 · 13 planets · 3 seats",
-			seed: 7,
+			name: "seed 9 · 13 planets · 3 seats",
+			seed: 9,
 			universe: 13,
-			seats: [12, 1, 0],
-			targetPay: 2.054042642896873,
+			seats: [5, 6, 0],
+			targetPay: 3.4115357250391516,
 			rule: "career",
 			bot: "normal",
 			player: "user",
@@ -209,8 +209,8 @@
 			ht: false,
 			note: "career default · a page-test world",
 			stats: {
-				weakest: 0.89,
-				sites: 1
+				weakest: 0.63,
+				sites: 2
 			}
 		},
 		{
@@ -219,8 +219,8 @@
 			name: "seed 3 · 13 planets · 3 seats",
 			seed: 3,
 			universe: 13,
-			seats: [9, 8, 0],
-			targetPay: 1.6454373771491568,
+			seats: [11, 10, 7],
+			targetPay: 3.4150667348416297,
 			rule: "career",
 			bot: "normal",
 			player: "user",
@@ -235,8 +235,8 @@
 			ht: false,
 			note: "career default · a page-test world",
 			stats: {
-				weakest: 0.88,
-				sites: 1
+				weakest: 0.95,
+				sites: 2
 			}
 		},
 		{
@@ -245,8 +245,8 @@
 			name: "seed 520383 · 13 planets · 3 seats",
 			seed: 520383,
 			universe: 13,
-			seats: [4, 10, 11],
-			targetPay: 2.0082260696753766,
+			seats: [8, 9, 10],
+			targetPay: 2.0986571762505895,
 			rule: "career",
 			bot: "normal",
 			player: "user",
@@ -261,8 +261,8 @@
 			ht: false,
 			note: "career default · a page-test world",
 			stats: {
-				weakest: 0.78,
-				sites: 1
+				weakest: 0.57,
+				sites: 2
 			}
 		},
 		{
@@ -297,8 +297,8 @@
 			name: "seed 6 · 13 planets · 2 seats",
 			seed: 6,
 			universe: 13,
-			seats: [4, 12],
-			targetPay: 5.444870618232786,
+			seats: [7, 10],
+			targetPay: 2.740311557052502,
 			rule: "career",
 			bot: "normal",
 			player: "user",
@@ -314,7 +314,7 @@
 			note: "YOU + one rival · a lite easy start",
 			stats: {
 				weakest: 0.99,
-				sites: 1
+				sites: 2
 			}
 		},
 		{
@@ -323,8 +323,8 @@
 			name: "seed 7 · 13 planets · 2 seats",
 			seed: 7,
 			universe: 13,
-			seats: [9, 7],
-			targetPay: 3.1313885232447194,
+			seats: [11, 7],
+			targetPay: 0.5501969456654078,
 			rule: "career",
 			bot: "normal",
 			player: "user",
@@ -339,8 +339,8 @@
 			ht: false,
 			note: "YOU + one rival · a lite easy start",
 			stats: {
-				weakest: 0.99,
-				sites: 3
+				weakest: 0.79,
+				sites: 1
 			}
 		},
 		{
@@ -375,8 +375,34 @@
 			name: "seed 6 · 13 planets · 4 seats",
 			seed: 6,
 			universe: 13,
-			seats: [4, 5, 2, 11],
-			targetPay: 3.4225657106209426,
+			seats: [4, 7, 2, 9],
+			targetPay: 3.764840514154531,
+			rule: "career",
+			bot: "normal",
+			player: "user",
+			cheat: null,
+			rate: 1,
+			gs: 1,
+			fs: 1,
+			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
+			ht: false,
+			note: "four companies · a lite 4-seat start",
+			stats: {
+				weakest: 0.75,
+				sites: 2
+			}
+		},
+		{
+			v: 1,
+			kind: "start",
+			name: "seed 9 · 13 planets · 4 seats",
+			seed: 9,
+			universe: 13,
+			seats: [5, 12, 6, 9],
+			targetPay: 2.357503803233909,
 			rule: "career",
 			bot: "normal",
 			player: "user",
@@ -392,32 +418,6 @@
 			note: "four companies · a lite 4-seat start",
 			stats: {
 				weakest: 0.55,
-				sites: 2
-			}
-		},
-		{
-			v: 1,
-			kind: "start",
-			name: "seed 7 · 13 planets · 4 seats",
-			seed: 7,
-			universe: 13,
-			seats: [10, 8, 9, 0],
-			targetPay: 2.357679379415629,
-			rule: "career",
-			bot: "normal",
-			player: "user",
-			cheat: null,
-			rate: 1,
-			gs: 1,
-			fs: 1,
-			ws: 1,
-			ps: 1,
-			rs: 1,
-			ys: 1,
-			ht: false,
-			note: "four companies · a lite 4-seat start",
-			stats: {
-				weakest: 0.7,
 				sites: 2
 			}
 		}

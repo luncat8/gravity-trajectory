@@ -27,10 +27,11 @@ const { loadPage, mapSearch } = require('./dom_stub.js');
 
 /* Pre-0.7.42 SHA-256 of GravityMaps.captureState(mapRunInfo()) at clockSteps=600
  * on `mapSearch(3) + '&you=bot&rate=1'` (`50 × 25 ms` frames). Re-pinned in
- * 0.7.43: the stretched gravity draw (MAX 5) changed map 3's field; the knobs
- * code is untouched, so ×1.00 must still reproduce this state bit-for-bit. */
+ * 0.7.43 for the stretched gravity draw and in 0.7.47 for the changed bot exit
+ * probe and regenerated seats; the knobs code is untouched, so ×1.00 still
+ * reproduces this state. */
 const PRE_0742_STEP600_SHA256 =
-	'74374e45d26cfe4ce4eecf4bf925040bb5704dbeeea96488116ee2293c703f18';
+	'482994b73893e10ba7a3f7ee6a49f21d5f16067f1e82886c7a488670baa42977';
 
 let failures = 0;
 

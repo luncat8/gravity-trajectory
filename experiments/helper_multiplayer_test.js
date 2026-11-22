@@ -135,7 +135,8 @@ function helperState(ui) {
 
 /* --- 5. a career keeps its companies on a level switch -------------------- */
 {
-	const env = loadPage({ search: mapSearch(7) + '&rate=0.5' });
+	/* Seed 7 no longer has a fair saved opening under the margin law. */
+	const env = loadPage({ search: '?rule=career&seed=7&rate=0.5' });
 	env.runFrames(8, 16);
 	const scene = env.context.GravityScene;
 	const hqs = [0, 1, 2].map(s => scene.slotCareer(s) ? scene.slotCareer(s).hq : -1);

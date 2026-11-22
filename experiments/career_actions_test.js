@@ -116,7 +116,8 @@ verify(record.text, handover, 0, 87);
 
 /* A different player can fly by hand without disappearing from the replay
  * when another row is selected. This also checks moving gravity at a different FPS. */
-const crews = loadPage({ search: mapSearch(7) });
+/* Seed 7 no longer has a fair saved opening under the margin law. */
+const crews = loadPage({ search: '?rule=career&seed=7&rate=1' });
 get(crews, 'setSource(MODE_PORTS); setSlotType(1, PLAYER_USER); selectSlot(1); setCareerPaused(false, 0)');
 queue(crews, 0.4, 58);
 until(crews, 'bot.rivals[0].shots.length > 0');

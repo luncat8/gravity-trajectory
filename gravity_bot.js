@@ -74,8 +74,8 @@
 
 	/* Career is a solo economic controller, not another shared-market rival. */
 	const CAREER_ANGLES = 32;
-	const CAREER_EXIT_ANGLES = 8;
-	const CAREER_EXIT_SPEED_FRACTIONS = [0, 1 / 3, 2 / 3, 1];
+	const CAREER_EXIT_ANGLES = 16;
+	const CAREER_EXIT_SPEED_FRACTIONS = [0.75, 1];
 	const CAREER_EXIT_CACHE_WAYS = 32;
 	const CAREER_FALLBACK_SCALE = 2.25;
 	const CAREER_HORIZON = 45;
@@ -1712,7 +1712,8 @@
 		return stamp >>> 0;
 	};
 
-	/* Eight bearings × four snapped speeds keep one cached exit check inexpensive. */
+	/* Sixteen bearings × two tiers (75 % of the cap, then the cap) keep one
+	 * cached exit check cheap; the game's opening probe mirrors this law. */
 	GravityBot.prototype.careerExitSpeed = function (planet, cap) {
 		if (!Number.isFinite(cap) || !this.exitProbe.planetActive(planet)) return 0;
 		const minU = GravitySim.SPEED_MIN * GravityGame.SPEED_STEPS;
@@ -1727,10 +1728,11 @@
 
 		let found = 0;
 		let previous = -1;
-		const span = capU - minU;
 		for (let f = 0; f < CAREER_EXIT_SPEED_FRACTIONS.length; f++) {
+			/* 75 % of the cap first, the cap only where 75 % fails: a high-G
+			 * world ends up probed at max (0.7.47 margin law) */
 			const speedU = f === CAREER_EXIT_SPEED_FRACTIONS.length - 1
-				? capU : minU + Math.round(span * CAREER_EXIT_SPEED_FRACTIONS[f]);
+				? capU : Math.max(minU, Math.round(capU * CAREER_EXIT_SPEED_FRACTIONS[f]));
 			if (speedU === previous) continue;
 			previous = speedU;
 			const speed = speedU / GravityGame.SPEED_STEPS;

@@ -44,7 +44,9 @@ function makeWorld(seed) {
 	Game.bindRun(market, galaxy, trade.world);
 	const career = Game.createCareer(Game.createLedger());
 	Game.setCareerUniverse(career, mask, UNIVERSE);
-	Game.startCareer(career, sim, seed, trade, market, galaxy);
+	/* pinned home: these chip fixtures depend on the HQ's planet (the A.R.F.
+	 * refuses bribes), not on whichever planet the seat law picks today */
+	Game.startCareer(career, sim, seed, trade, market, galaxy, 7);
 	sim.attachCareer(career);
 	return { trade, sim, market, galaxy, career, clockSteps: Math.round(420 / GravitySim.DT) };
 }

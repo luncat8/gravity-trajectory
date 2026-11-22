@@ -287,7 +287,8 @@ for (const career of prior.state.careers) {
 assert.ok(codec.valid(codec.create(prior)), 'an earlier full save must still open');
 
 /* Reject malformed payloads without resetting the current career. */
-const target = loadPage({ search: mapSearch(7) });
+/* Seed 7 no longer has a fair saved opening under the margin law. */
+const target = loadPage({ search: '?rule=career&seed=7&rate=1' });
 const seed = get(target, 'game.seed');
 const initialSteps = get(target, 'game.clockSteps');
 for (const bad of ['', 'not a replay', 'gravity-career:garbage', '#game=1&replay=bad']) {
