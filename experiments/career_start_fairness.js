@@ -5,8 +5,20 @@
  * matcher checks the seats; it must not maximize only the weakest payout,
  * because an unnecessarily rich winner can make a fair map look unfair.
  *
+ * The default run also asserts the heavy-world share of the drawn field: over
+ * SHARE_SEEDS, between 2 and 4 of every 10 drawn non-HQ planets (the Capital
+ * and the A.R.F. hold g 1.00 by law) cannot be left by the starter rail
+ * (EMC-1 + BAT-1, dry ship) in the final HQ-pinned field.
+ *
+ * MATRIX=1 runs every roster the page can start (COUNTS × SEATS); ALT=1 adds
+ * the independent alternative-HQ oracle, ASSERT=1 the roster contract: a plan
+ * whenever the universe has a seat per company, every seed fair from 20 worlds
+ * up, and on a cramped universe an exit-safe (fair) opening wherever the
+ * oracle finds one, within the plan-time budget (MEAN_MS per cell).
+ *
  * Run: node experiments/career_start_fairness.js        (SEEDS=1-8 COUNT=13 SEATS=3)
  *      MATRIX=1 node experiments/career_start_fairness.js  (roster matrix, SEEDS=1-12)
+ *      MATRIX=1 ALT=1 ASSERT=1 node experiments/career_start_fairness.js
  */
 'use strict';
 
@@ -15,6 +27,8 @@ const OrbitWorld = require('../orbit_world.js');
 const OrbitSim = require('../orbit_sim.js');
 const GravitySim = require('../gravity_sim.js');
 const GravityGame = require('../gravity_game.js');
+const GravityBot = require('../gravity_bot.js');
+const OrbitTech = require('../orbit_tech.js');
 
 const P = OrbitWorld.PLANETS;
 
@@ -66,6 +80,13 @@ function spreadOf(world, homes) {
 	}
 	return Math.sqrt(min);
 }
+const ASSERT = process.env.ASSERT === '1';
+const MEAN_MS = Number(process.env.MEAN_MS || 4000);
+const SHARE_SEEDS = parseRange(process.env.SHARE_SEEDS || '1-12');
+const SHARE_MIN = 0.2;
+const SHARE_MAX = 0.4;
+const STARTER_CAP = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
+	OrbitTech.SHIP_DRY_MASS, OrbitTech.CATAPULTS[0], FS);
 
 function makeWorld(seed, count) {
 	const mask = new Uint8Array(P);
@@ -80,6 +101,49 @@ function makeWorld(seed, count) {
 	const galaxy = GravityGame.createGalaxy();
 	GravityGame.resetGalaxy(galaxy, seed);
 	return { seed, mask, trade, sim, galaxy };
+}
+
+function isSpecial(world, planet) {
+	return GravityGame.specialPlanets() &&
+		(planet === world.trade.world.capitalPlanet || planet === world.trade.world.arfPlanet);
+}
+
+/* Drawn planets of the final field the starter rail cannot leave, by the
+ * bot's own departure probe (eight bearings × four speeds to the cap). */
+let exitBot = null;
+function blockedPlanets(world, homes, count) {
+	if (!exitBot) exitBot = new GravityBot(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	const trade = world.trade;
+	const sim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	sim.setPlanets(P, trade.planetX, trade.planetY, trade.planetR,
+		trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+	sim.setScales(GS, FS);
+	const pinned = new Uint8Array(P);
+	for (const home of homes) pinned[home] = 1;
+	const strength = new Float64Array(GravitySim.MAX_BODIES).fill(1);
+	for (let planet = 0; planet < P; planet++) {
+		if (!world.mask[planet]) strength[planet] = 0;
+		else if (!pinned[planet] && !isSpecial(world, planet)) {
+			strength[planet] = GravityGame.planetGravity(world.seed, planet);
+		}
+	}
+	sim.setField(P, trade.planetR, strength, (t, outX, outY, n) => {
+		for (let i = 0; i < n; i++) { outX[i] = trade.planetX[i]; outY[i] = trade.planetY[i]; }
+	}, true);
+	sim.fieldT = trade.t;
+	sim.fieldRate = 1;
+	sim.setPlanetMask(world.mask);
+	exitBot.attachWorld(trade);
+	exitBot.setScales(GS, FS);
+	exitBot.setPlanetMask(world.mask, count);
+	exitBot.prepareCareerExitProbe(sim);
+	let drawn = 0, blocked = 0;
+	for (let planet = 0; planet < count; planet++) {
+		if (pinned[planet] || isSpecial(world, planet)) continue;
+		drawn += 1;
+		if (!(exitBot.careerExitSpeed(planet, STARTER_CAP) > 0)) blocked += 1;
+	}
+	return { drawn, blocked };
 }
 
 function freeSites(mask, homes) {
@@ -303,7 +367,7 @@ function checkOpening(world, homes, ms, count) {
 	const witness = best || (safe ? describe(rows, homes, safe) : null);
 	const ratio = best ? best.ratio : 0;
 	const exact = GravityGame.openingGroupStats(world.trade.world, world.trade,
-		world.mask, count, occupied, homes, world.sim);
+		world.mask, count, occupied, homes, world.sim, true);
 	const game = checkGameWitness(world, homes, rows, exact);
 	if (game) {
 		assert.ok(ratio + 1e-9 >= game.ratio,
@@ -462,9 +526,14 @@ function runCell(count, seats, seeds) {
 	let minBefore = Infinity, maxBefore = -Infinity;
 	let minAfter = Infinity, maxAfter = -Infinity;
 	let firstFail = '';
+	const broken = [];
+	const nonCap = count - (GravityGame.specialPlanets() ? 1 : 0);
 	for (const seed of seeds) {
 		const plan = planWorld(seed, count, seats, true);
 		const missingPlan = !plan.homes || plan.homes.length !== seats;
+		if (nonCap >= seats && (missingPlan || new Set(plan.homes).size !== seats)) {
+			broken.push('seed ' + seed + ': no plan for ' + seats + ' seats on ' + nonCap + ' homes');
+		}
 		const sample = checkOpening(plan.world, missingPlan ? null : plan.homes, plan.ms, count);
 		sumMs += sample.ms;
 		if (sample.ms > maxMs) maxMs = sample.ms;
@@ -493,6 +562,16 @@ function runCell(count, seats, seeds) {
 			}
 		}
 		if (!sample.fair && !firstFail) firstFail = failReason(sample, alt);
+		if (!sample.fair && count >= 20) broken.push(failReason(sample, alt));
+		if (count < 20 && alt && !alt.sameHq) {
+			if (alt.exitable && !sample.exitable) broken.push(failReason(sample, alt) + ' (oracle exits)');
+			if (alt.exitable && alt.ratio >= FAIR_RATIO && !sample.fair) {
+				broken.push(failReason(sample, alt) + ' (oracle fair)');
+			}
+		}
+	}
+	if (sumMs / seeds.length > MEAN_MS) {
+		broken.push('plan time ' + Math.round(sumMs / seeds.length) + ' ms mean > ' + MEAN_MS);
 	}
 	const n = seeds.length;
 	const col = (k) => (k + '/' + n).padStart(5);
@@ -507,7 +586,7 @@ function runCell(count, seats, seeds) {
 		(ALT ? ' | sameHQ ' + col(sameHqN) + ' · altExit ' + col(altExitN) + ' · altFair ' + col(altFairN) : '') +
 		(firstFail ? ' | ' + firstFail : '');
 	console.log(line);
-	return { count, seats, builtN, exitN, fairN, sameHqN, altExitN, altFairN, worst, n };
+	return { count, seats, builtN, exitN, fairN, sameHqN, altExitN, altFairN, worst, n, broken };
 }
 
 function runMatrix() {
@@ -527,9 +606,14 @@ function runMatrix() {
 			' · alt HQ exitable ' + fullAltExit + '/' + cells.length +
 			' · alt HQ fair ' + fullAltFair + '/' + cells.length : '') +
 		' · ' + Math.round((Date.now() - t0) / 1000) + ' s');
-	if (process.env.ASSERT === '1') {
-		assert.strictEqual(fullGame, cells.length, 'every matrix cell must pass fairness');
+	if (!ASSERT) return;
+	const broken = [];
+	for (const cell of cells) {
+		for (const why of cell.broken) broken.push('C=' + cell.count + ' S=' + cell.seats + ' ' + why);
 	}
+	for (const why of broken) console.log('FAIL ' + why);
+	assert.strictEqual(broken.length, 0, broken.length + ' roster contract failures');
+	console.log('ROSTER CONTRACT OK');
 }
 
 function runDefault() {
@@ -570,6 +654,21 @@ function runDefault() {
 			' · ' + plan.ms + ' ms');
 	}
 
+	/* the share is a property of the drawn field, so it reads every share seed
+	 * whether or not that world seats fairly */
+	let drawn = 0, blocked = 0;
+	for (const seed of SHARE_SEEDS) {
+		const known = samples.find(row => row.seed === seed);
+		const plan = known ? null : planWorld(seed, COUNT, SEATS, true);
+		const world = known ? makeWorld(seed, COUNT) : plan.world;
+		const share = blockedPlanets(world, known ? known.homes : plan.homes || [], COUNT);
+		drawn += share.drawn;
+		blocked += share.blocked;
+	}
+	console.log('starter cannot leave ' + blocked + '/' + drawn + ' drawn non-HQ planets (' +
+		(10 * blocked / drawn).toFixed(1) + ' of 10) over seeds ' +
+		SHARE_SEEDS[0] + '-' + SHARE_SEEDS[SHARE_SEEDS.length - 1]);
+
 	const buildable = samples.filter(row => row.built).length;
 	const exitable = samples.filter(row => row.exitable).length;
 	const fair = samples.filter(row => row.fair).length;
@@ -585,6 +684,9 @@ function runDefault() {
 		'every planned first landing must be able to launch again');
 	assert.strictEqual(fair, samples.length,
 		'every planned map must keep the weakest opening within the fair band');
+	assert.ok(blocked >= SHARE_MIN * drawn && blocked <= SHARE_MAX * drawn,
+		'between 2 and 4 of every 10 drawn planets must hold the starter rail (' +
+		(10 * blocked / drawn).toFixed(1) + ' of 10)');
 }
 
 checkMatcherFixtures();

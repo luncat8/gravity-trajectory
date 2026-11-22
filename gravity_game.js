@@ -1783,6 +1783,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const openingTargetPay = new Float64Array(OrbitWorld.PLANETS);
 	const openingAnyTargetPay = new Float64Array(OrbitWorld.PLANETS);
 	const openingResult = { reach: 0, light: 0, pay: 0, openPay: 0, buildable: 0, buildPay: 0 };
+	/* Starter exits of the prepared field (-1 unknown). A pinned home's trace
+	 * flies that very field, so every seat of one set shares the answer. */
+	const openingExitMemo = new Int8Array(OrbitWorld.PLANETS);
+	/* fans flown so far: the wide walk's budget is counted in them */
+	let openingTraceCount = 0;
 	let openingSim = null;
 	let openingMarket = null;
 	let openingStrengths = null;
@@ -1834,6 +1839,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			? sourceSim.forceScale : 1;
 		openingSim.setScales(openingGravityScale, openingForceScale);
 		openingSim.setPlanetMask(mask);
+		openingExitMemo.fill(-1);
 		resetMarket(openingMarket);
 		applyMarketUniverse(openingMarket, mask, count);
 		applyMarketSpecials(openingMarket, world);
@@ -1876,15 +1882,23 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return false;
 	}
 
+	function openingExitOf(planet, pinned) {
+		if (!pinned) return openingStarterCanExit(planet);
+		if (openingExitMemo[planet] < 0) openingExitMemo[planet] = openingStarterCanExit(planet) ? 1 : 0;
+		return openingExitMemo[planet] === 1;
+	}
+
 	/* Trace one company's starter-speed fan. A safe landing is a free planet
 	 * the other starting HQs do not occupy, below the heavy-world cutoff, and
 	 * from which an EMC-1 can actually leave again. */
 	function openingTraceHome(world, mask, forcedHomes, home, strictExit, sitePay, targetPay,
 		exitOk, angles, speeds) {
+		openingTraceCount += 1;
 		const nAngles = angles || OPENING_ANGLES;
 		const nSpeeds = speeds || OPENING_SPEEDS;
 		const sim = openingSim;
 		const savedStrength = openingStrengths[home];
+		const pinned = savedStrength === 1 && !!forcedHomes && forcedHomes[home] === 1;
 		openingStrengths[home] = 1;
 		sim.setField(openingExtent(mask), openingTrade.planetR,
 			openingStrengths, openingFill, true);
@@ -1946,7 +1960,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			}
 			const earned = openingTargetPay[body];
 			if (!Number.isFinite(earned)) continue;
-			const exitable = !strictExit || openingStarterCanExit(body);
+			const exitable = !strictExit || openingExitOf(body, pinned);
 			/* the assignment needs to know *which* targets a seat could use
 			 * without painting itself into a dead-end claim */
 			if (exitOk) exitOk[home * OrbitWorld.PLANETS + body] = exitable ? 1 : 0;
@@ -2229,7 +2243,19 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return stats;
 	}
 
-	function openingGroupStats(world, trade, mask, count, forcedHomes, homes, sourceSim) {
+	/*
+	 * `windowed` reads a set through `seatFairAssignment`: the wide walk and the
+	 * acceptance of its plans. The ordinary walk keeps the highest floor.
+	 *
+	 * `cutoff` lets a walk drop a set that cannot beat its best one: seats are
+	 * traced in `order`, and the traced seats already bound the whole set (more
+	 * seats only narrow the matchings), so the set is abandoned (null) as soon
+	 * as they have no distinct exit-safe seating, or none whose ratio reaches
+	 * `cutoff`. Undefined traces every seat and always returns the stats.
+	 */
+	function openingGroupStats(world, trade, mask, count, forcedHomes, homes, sourceSim, windowed,
+		cutoff, order) {
+		const assign = windowed ? seatFairAssignment : seatAssignment;
 		openingPrepare(world, trade, mask, count, forcedHomes, sourceSim);
 		const siteList = [];
 		for (let body = 0; body < OrbitWorld.PLANETS; body++) {
@@ -2256,12 +2282,24 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const sitePay = new Float64Array(OrbitWorld.PLANETS * OrbitWorld.PLANETS);
 		const exitOk = new Uint8Array(OrbitWorld.PLANETS * OrbitWorld.PLANETS);
 		sitePay.fill(-Infinity);
-		for (let i = 0; i < homes.length; i++) {
-			const profile = openingTraceHome(world, mask, forcedHomes, homes[i], true,
+		const rows = { sitePay: sitePay, exitOk: exitOk };
+		const openPays = new Float64Array(homes.length);
+		const buildables = new Int32Array(homes.length);
+		const traced = [];
+		for (let n = 0; n < homes.length; n++) {
+			const seat = order ? order[n] : n;
+			const profile = openingTraceHome(world, mask, forcedHomes, homes[seat], true,
 				sitePay, null, exitOk);
-			if (profile.openPay < stats.minAnyPay) stats.minAnyPay = profile.openPay;
-			if (profile.openPay > stats.maxAnyPay) stats.maxAnyPay = profile.openPay;
-			if (profile.buildable <= 0) {
+			openPays[seat] = profile.openPay;
+			buildables[seat] = profile.buildable;
+			if (cutoff === undefined) continue;
+			traced.push(homes[seat]);
+			if (!openingSeatsCanReach(rows, traced, siteList, mask, cutoff)) return null;
+		}
+		for (let i = 0; i < homes.length; i++) {
+			if (openPays[i] < stats.minAnyPay) stats.minAnyPay = openPays[i];
+			if (openPays[i] > stats.maxAnyPay) stats.maxAnyPay = openPays[i];
+			if (buildables[i] <= 0) {
 				stats.missing += 1;
 				stats.missingHomes.push(homes[i]);
 				continue;
@@ -2273,14 +2311,13 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			}
 			if (sites < stats.minSites) stats.minSites = sites;
 		}
-		const rows = { sitePay: sitePay, exitOk: exitOk };
 		if (stats.missing === 0) {
 			/* first ask for a map whose every first landing can launch again */
-			let assignment = seatAssignment(rows, homes, siteList, mask, exitOk);
+			let assignment = assign(rows, homes, siteList, mask, exitOk);
 			if (assignment) {
 				stats.exitOk = true;
 			} else {
-				assignment = seatAssignment(rows, homes, siteList, mask, null);
+				assignment = assign(rows, homes, siteList, mask, null);
 				stats.exitOk = assignment !== null && seatsCanExit(rows, homes, assignment);
 			}
 			stats.distinct = assignment !== null;
@@ -2322,13 +2359,23 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return stats;
 	}
 
+	/* can these traced seats still sit on distinct exit-safe sites, at a
+	 * weakest/best ratio of at least `cutoff`? */
+	function openingSeatsCanReach(rows, traced, siteList, mask, cutoff) {
+		const sites = seatSites(traced, siteList, mask);
+		if (sites.length < traced.length) return false;
+		if (!seatMatcher(rows, traced, sites, rows.exitOk)(-Infinity, Infinity)) return false;
+		if (!(cutoff > -Infinity)) return true;
+		return assignmentRatio(seatWindowAssignment(rows, traced, siteList, mask, rows.exitOk)) >= cutoff;
+	}
+
 	/*
 	 * Cheap group score over the once-traced opening table: each seat must reach
 	 * a *different* buildable site, so this asks for the best such assignment
 	 * rather than for each seat's private favourite. `assign` carries the sites
 	 * so the exact re-trace can check that every chosen site can also be left.
 	 */
-	function openingGroupStatsFromRows(mask, rows, homes, occupied) {
+	function openingGroupStatsFromRows(mask, rows, homes, occupied, windowed) {
 		const stats = {
 			missing: 0,
 			missingHomes: [],
@@ -2359,7 +2406,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			if (anyPay < stats.minAnyPay) stats.minAnyPay = anyPay;
 			if (anyPay > stats.maxAnyPay) stats.maxAnyPay = anyPay;
 		}
-		const assignment = seatAssignment(rows, homes, siteList, mask);
+		const assignment = windowed ? seatFairAssignment(rows, homes, siteList, mask)
+			: seatAssignment(rows, homes, siteList, mask);
 		stats.distinct = assignment !== null;
 		stats.peak = seatPeakRatio(rows, homes, siteList, mask);
 		if (!assignment) {
@@ -2476,6 +2524,96 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return 0;
 	}
 
+	/* the free in-play sites a set of seats can claim (never another seat's HQ) */
+	function seatSites(homes, siteList, mask) {
+		const occupied = new Uint8Array(OrbitWorld.PLANETS);
+		for (let i = 0; i < homes.length; i++) occupied[homes[i]] = 1;
+		const sites = [];
+		for (let i = 0; i < siteList.length; i++) {
+			const site = siteList[i];
+			if (!planetInMask(mask, site) || occupied[site]) continue;
+			sites.push(site);
+		}
+		return sites;
+	}
+
+	/* Kuhn matching: every seat on its own site paying inside [floor, ceiling]
+	 * (unreachable pairs are -Infinity, never inside a window). Returns the
+	 * site of each seat, or null when some seat cannot be placed. */
+	function seatMatcher(rows, homes, sites, exitOk) {
+		const seats = homes.length;
+		const siteOfSeat = new Int16Array(seats);
+		const seatOfSite = new Int32Array(OrbitWorld.PLANETS);
+		const seen = new Uint8Array(OrbitWorld.PLANETS);
+		let floor = -Infinity;
+		let ceiling = Infinity;
+		function augment(seat) {
+			const row = homes[seat] * OrbitWorld.PLANETS;
+			for (let s = 0; s < sites.length; s++) {
+				const site = sites[s];
+				if (seen[site]) continue;
+				const pay = rows.sitePay[row + site];
+				if (!Number.isFinite(pay) || pay < floor || pay > ceiling) continue;
+				if (exitOk && exitOk[row + site] !== 1) continue;
+				seen[site] = 1;
+				const holder = seatOfSite[site];
+				if (holder < 0 || augment(holder)) {
+					seatOfSite[site] = seat;
+					siteOfSeat[seat] = site;
+					return true;
+				}
+			}
+			return false;
+		}
+		return function match(low, high) {
+			floor = low;
+			ceiling = high;
+			siteOfSeat.fill(-1);
+			seatOfSite.fill(-1);
+			for (let seat = 0; seat < seats; seat++) {
+				seen.fill(0);
+				if (!augment(seat)) return null;
+			}
+			return siteOfSeat.slice();
+		};
+	}
+
+	/* every finite pay a seat could match, ascending; `positive` keeps only
+	 * openings that earn something, the only ones a ratio can describe */
+	function seatPays(rows, homes, sites, exitOk, positive) {
+		const values = [];
+		for (let seat = 0; seat < homes.length; seat++) {
+			const row = homes[seat] * OrbitWorld.PLANETS;
+			for (let s = 0; s < sites.length; s++) {
+				if (exitOk && exitOk[row + sites[s]] !== 1) continue;
+				const pay = rows.sitePay[row + sites[s]];
+				if (Number.isFinite(pay) && (!positive || pay > 0)) values.push(pay);
+			}
+		}
+		return values.sort((left, right) => left - right);
+	}
+
+	function seatAssignmentOf(rows, homes, sites) {
+		let minPay = Infinity;
+		let maxPay = -Infinity;
+		let sumPay = 0;
+		const pays = new Float64Array(homes.length);
+		for (let seat = 0; seat < homes.length; seat++) {
+			const pay = rows.sitePay[homes[seat] * OrbitWorld.PLANETS + sites[seat]];
+			pays[seat] = pay;
+			if (pay < minPay) minPay = pay;
+			if (pay > maxPay) maxPay = pay;
+			sumPay += pay;
+		}
+		return { min: minPay, max: maxPay, sum: sumPay, spread: maxPay - minPay, sites: sites,
+			pays: pays };
+	}
+
+	function assignmentRatio(assignment) {
+		if (!assignment || !(assignment.max > OPENING_COMPARE_EPS)) return -Infinity;
+		return assignment.min / assignment.max;
+	}
+
 	/*
 	 * Fairness is an assignment, not a per-seat maximum.
 	 *
@@ -2501,49 +2639,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	function seatAssignment(rows, homes, siteList, mask, exitOk, fixedFloor) {
 		const seats = homes.length;
 		if (seats === 0) return null;
-		const occupied = new Uint8Array(OrbitWorld.PLANETS);
-		for (let i = 0; i < seats; i++) occupied[homes[i]] = 1;
-		const sites = [];
-		for (let i = 0; i < siteList.length; i++) {
-			const site = siteList[i];
-			if (!planetInMask(mask, site) || occupied[site]) continue;
-			sites.push(site);
-		}
+		const sites = seatSites(homes, siteList, mask);
 		if (sites.length < seats) return null;
-		const siteOfSeat = new Int16Array(seats).fill(-1);
-		const seatOfSite = new Int32Array(OrbitWorld.PLANETS).fill(-1);
-		const seen = new Uint8Array(OrbitWorld.PLANETS);
-		let ceiling = Infinity;
-		/* one augmenting path from `seat`; a site must pay within [floor, ceiling] */
-		function augment(seat, floor) {
-			const row = homes[seat] * OrbitWorld.PLANETS;
-			for (let s = 0; s < sites.length; s++) {
-				const site = sites[s];
-				if (seen[site]) continue;
-				const pay = rows.sitePay[row + site];
-				/* unreachable pairs are -Infinity, which is not >= -Infinity */
-				if (!Number.isFinite(pay) || pay < floor || pay > ceiling) continue;
-				if (exitOk && exitOk[row + site] !== 1) continue;
-				seen[site] = 1;
-				const holder = seatOfSite[site];
-				if (holder < 0 || augment(holder, floor)) {
-					seatOfSite[site] = seat;
-					siteOfSeat[seat] = site;
-					return true;
-				}
-			}
-			return false;
-		}
-		/* every seat matched, and the weakest return it can guarantee */
-		function match(floor) {
-			siteOfSeat.fill(-1);
-			seatOfSite.fill(-1);
-			for (let seat = 0; seat < seats; seat++) {
-				seen.fill(0);
-				if (!augment(seat, floor)) return null;
-			}
-			return siteOfSeat.slice();
-		}
+		const match = seatMatcher(rows, homes, sites, exitOk);
 		function weakest(sitesOfSeat) {
 			let low = Infinity;
 			for (let seat = 0; seat < seats; seat++) {
@@ -2552,26 +2650,17 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			}
 			return low;
 		}
-		const anyMatch = match(-Infinity);
+		const anyMatch = match(-Infinity, Infinity);
 		if (!anyMatch) return null;
 		/* the highest floor every seat can still reach */
-		const values = [];
-		for (let seat = 0; seat < seats; seat++) {
-			const row = homes[seat] * OrbitWorld.PLANETS;
-			for (let s = 0; s < sites.length; s++) {
-				if (exitOk && exitOk[row + sites[s]] !== 1) continue;
-				const pay = rows.sitePay[row + sites[s]];
-				if (Number.isFinite(pay)) values.push(pay);
-			}
-		}
-		values.sort((left, right) => left - right);
+		const values = seatPays(rows, homes, sites, exitOk, false);
 		let low = 0;
 		let high = values.length - 1;
 		let best = anyMatch;
 		let floor = weakest(anyMatch);
 		while (low <= high) {
 			const mid = (low + high) >> 1;
-			const found = match(values[mid]);
+			const found = match(values[mid], Infinity);
 			if (found) {
 				best = found;
 				floor = values[mid];
@@ -2582,39 +2671,59 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		}
 		/* tighten the band: pull the best-paid seat down while the floor holds */
 		for (let round = 0; !fixedFloor && round < OPENING_BALANCE_ROUNDS; round++) {
-			let highSeat = -1;
 			let highPay = -Infinity;
 			for (let seat = 0; seat < seats; seat++) {
 				const pay = rows.sitePay[homes[seat] * OrbitWorld.PLANETS + best[seat]];
-				if (pay > highPay) {
-					highPay = pay;
-					highSeat = seat;
-				}
+				if (pay > highPay) highPay = pay;
 			}
-			if (highSeat < 0) break;
-			ceiling = highPay - OPENING_COMPARE_EPS;
+			const ceiling = highPay - OPENING_COMPARE_EPS;
 			if (ceiling < floor) break;
-			const tighter = match(floor);
+			const tighter = match(floor, ceiling);
 			if (!tighter) break;
 			best = tighter;
 		}
-		ceiling = Infinity;
-		let minPay = Infinity;
-		let maxPay = -Infinity;
-		let sumPay = 0;
-		for (let seat = 0; seat < seats; seat++) {
-			const pay = rows.sitePay[homes[seat] * OrbitWorld.PLANETS + best[seat]];
-			if (pay < minPay) minPay = pay;
-			if (pay > maxPay) maxPay = pay;
-			sumPay += pay;
+		return seatAssignmentOf(rows, homes, best);
+	}
+
+	/*
+	 * The best ratio any distinct assignment reaches, by pay window: for each
+	 * positive floor the lowest ceiling that still seats everybody. The lowest
+	 * feasible ceiling never falls as the floor rises, so one two-pointer sweep
+	 * visits every window. The highest-floor match above can hold a needlessly
+	 * rich seat (its floor is fixed before the ceiling is pulled down), which
+	 * made a fair seating of the very same HQs read as unfair.
+	 */
+	function seatWindowAssignment(rows, homes, siteList, mask, exitOk) {
+		const sites = seatSites(homes, siteList, mask);
+		if (homes.length === 0 || sites.length < homes.length) return null;
+		const values = seatPays(rows, homes, sites, exitOk, true);
+		const match = seatMatcher(rows, homes, sites, exitOk);
+		let best = null;
+		let bestRatio = -Infinity;
+		for (let i = 0, j = 0; i < values.length; i++) {
+			if (i > 0 && values[i] === values[i - 1]) continue;
+			if (j < i) j = i;
+			let found = null;
+			while (j < values.length && !(found = match(values[i], values[j]))) j++;
+			if (!found) break;
+			const candidate = seatAssignmentOf(rows, homes, found);
+			const ratio = assignmentRatio(candidate);
+			if (ratio > bestRatio + 1e-12 ||
+				(Math.abs(ratio - bestRatio) <= 1e-12 && candidate.min > best.min)) {
+				best = candidate;
+				bestRatio = ratio;
+			}
 		}
-		return {
-			min: minPay,
-			max: maxPay,
-			sum: sumPay,
-			spread: maxPay - minPay,
-			sites: best
-		};
+		return bestRatio > -Infinity ? best : null;
+	}
+
+	/* The highest-floor match while it is fair, so a fair map reads exactly as
+	 * before; the pay-window match only where that one misses the band. */
+	function seatFairAssignment(rows, homes, siteList, mask, exitOk) {
+		const floorFirst = seatAssignment(rows, homes, siteList, mask, exitOk);
+		if (!floorFirst || assignmentRatio(floorFirst) >= OPENING_FAIR_RATIO) return floorFirst;
+		const window = seatWindowAssignment(rows, homes, siteList, mask, exitOk);
+		return window && assignmentRatio(window) > assignmentRatio(floorFirst) ? window : floorFirst;
 	}
 
 	/*
@@ -2785,13 +2894,13 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	}
 
 	/* Baseline rank for a large custom pool: one unpinned trace table. */
-	function rankOpeningSetsCold(world, trade, mask, count, sets, sourceSim) {
+	function rankOpeningSetsCold(world, trade, mask, count, sets, sourceSim, windowed) {
 		const rows = careerOpenings(world, trade, mask, count, null, sourceSim);
 		for (let i = 0; i < sets.length; i++) {
 			const proposal = sets[i];
 			const occupied = new Uint8Array(OrbitWorld.PLANETS);
 			for (let h = 0; h < proposal.homes.length; h++) occupied[proposal.homes[h]] = 1;
-			proposal.rank = openingGroupStatsFromRows(mask, rows, proposal.homes, occupied);
+			proposal.rank = openingGroupStatsFromRows(mask, rows, proposal.homes, occupied, windowed);
 			proposal.rank.dim = proposal.dim || 0;
 		}
 		return diverseOpeningOrder(sets);
@@ -2804,7 +2913,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * sets in front of the exact scorer, never to approve a map itself.
 	 */
 	function rankOpeningSetsByPairs(world, trade, mask, count, sets, candidates,
-		sourceSim) {
+		sourceSim, windowed) {
 		const planets = OrbitWorld.PLANETS;
 		const pairTracks = new Array(planets * planets);
 		const pairMask = new Uint8Array(planets);
@@ -2845,18 +2954,27 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				}
 			}
 			proposal.rank = openingGroupStatsFromRows(mask,
-				{ sitePay: sitePay, targetPay: sitePay }, homes, occupied);
+				{ sitePay: sitePay, targetPay: sitePay }, homes, occupied, windowed);
 			proposal.rank.dim = proposal.dim || 0;
 		}
 		return diverseOpeningOrder(sets);
 	}
 
+	/* Pair tracks cost a fifth of a full trace per set but fly every pair of a
+	 * small pool. The ordinary walk always pays for them; a wide walk reuses
+	 * them where that walk ran first, and ranks cold otherwise. */
+	function openingPairRanked(candidates, seatsWanted, count, windowed) {
+		if (seatsWanted <= 1 || candidates.length > OPENING_PAIR_CANDIDATES_MAX) return false;
+		return !windowed || (seatsWanted <= 4 && count <= 26);
+	}
+
 	function rankOpeningSets(world, trade, mask, count, sets, candidates, seatsWanted,
-		sourceSim) {
-		if (seatsWanted > 1 && candidates.length <= OPENING_PAIR_CANDIDATES_MAX) {
-			return rankOpeningSetsByPairs(world, trade, mask, count, sets, candidates, sourceSim);
+		sourceSim, windowed) {
+		if (openingPairRanked(candidates, seatsWanted, count, windowed)) {
+			return rankOpeningSetsByPairs(world, trade, mask, count, sets, candidates, sourceSim,
+				windowed);
 		}
-		return rankOpeningSetsCold(world, trade, mask, count, sets, sourceSim);
+		return rankOpeningSetsCold(world, trade, mask, count, sets, sourceSim, windowed);
 	}
 
 	function openingGroupAccepted(stats) {
@@ -2864,13 +2982,112 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			openingRatio(stats) >= OPENING_FAIR_RATIO;
 	}
 
+	/*
+	 * How a seat walk runs. `floor` is the ordinary career's walk exactly as
+	 * measured (every set of the pool, highest-floor scoring, the miss bound).
+	 * `wide` serves every roster: it prunes sets that leave fewer light sites
+	 * than companies, ranks a bounded pool where a universe has too many sets,
+	 * reads every set by pay window and stops on a body-trace budget, so a
+	 * 48-world or six-company start costs about what the ordinary one does.
+	 * A world without a distinct seating still gets its best set (`relaxed`).
+	 * From `roomyCount` worlds up every seed holds a fair seating, often deep
+	 * in the proxy's order, so the walk spends `roomyTraces` there; a cramped
+	 * universe stops at `traces` and keeps its best set.
+	 */
+	const OPENING_LAW_FLOOR = {
+		windowed: false, prune: false, batch: OPENING_EXACT_BATCH,
+		sets: OPENING_EXACT_SETS, miss: OPENING_EXACT_MISS, traces: Infinity, relaxed: false,
+		roomyCount: Infinity, roomyTraces: Infinity
+	};
+	const OPENING_LAW_WIDE = {
+		windowed: true, prune: true, batch: 4,
+		sets: OPENING_EXACT_SETS, miss: Infinity, traces: 2400, relaxed: true,
+		roomyCount: 20, roomyTraces: 8000
+	};
+	/* proposals a wide walk ranks; the pool shrinks until its sets fit */
+	const OPENING_WIDE_PROPOSALS = 20000;
+
+	/* a free planet a first EMC can be built on: not the Capital, not heavy */
+	function openingSiteLight(world, mask, planet) {
+		if (!planetInMask(mask, planet)) return false;
+		if (specialPlanets && planet === world.capitalPlanet) return false;
+		const strength = specialPlanets && planet === world.arfPlanet
+			? 1 : planetGravity(world.seed, planet);
+		return strength <= OPENING_BUILD_GRAVITY_MAX;
+	}
+
+	function choose(n, k) {
+		let total = 1;
+		for (let i = 0; i < k; i++) total = total * (n - i) / (i + 1);
+		return total;
+	}
+
+	/*
+	 * The homes a wide walk combines. A heavy home is pinned to g 1.00 and
+	 * costs no light site, a light home takes one away from the first
+	 * landings, so heavy and light homes are ranked apart by their unpinned
+	 * opening and the pool keeps the best of each until its sets fit.
+	 */
+	function openingWidePool(world, trade, mask, count, candidates, seatsWanted, sourceSim,
+		light) {
+		if (choose(candidates.length, seatsWanted) <= OPENING_WIDE_PROPOSALS) return candidates;
+		const rows = careerOpenings(world, trade, mask, count, null, sourceSim);
+		const byOpening = (a, b) => (rows.buildable[b] > 0) - (rows.buildable[a] > 0) ||
+			rows.buildPay[b] - rows.buildPay[a] || a - b;
+		const heavy = candidates.filter(home => !light[home]).sort(byOpening);
+		const lit = candidates.filter(home => light[home]).sort(byOpening);
+		let size = seatsWanted;
+		while (size < candidates.length && choose(size + 1, seatsWanted) <= OPENING_WIDE_PROPOSALS) {
+			size += 1;
+		}
+		const keepHeavy = Math.min(heavy.length, Math.max(seatsWanted + 2, Math.ceil(size / 2)));
+		const pool = heavy.slice(0, keepHeavy).concat(lit.slice(0, size - keepHeavy));
+		return pool.length >= seatsWanted ? pool : candidates.slice(0, size);
+	}
+
+	/*
+	 * Once a wide walk holds a distinct exit-safe seating only a better ratio
+	 * matters: a set below the best by more than the tie band loses the
+	 * comparison, so its trace can stop early. Before that every set is read
+	 * whole, since a cramped world's fallback ranks the shared seatings too.
+	 */
+	function openingCutoff(bestStats) {
+		if (!bestStats || !bestStats.distinct || !bestStats.exitOk) return undefined;
+		return openingRatio(bestStats) - OPENING_RATIO_EPS;
+	}
+
+	/* seats in the order most likely to sink the set: the proxy's poorest first */
+	function openingRiskOrder(proposal) {
+		const order = [];
+		for (let seat = 0; seat < proposal.homes.length; seat++) order.push(seat);
+		const assign = proposal.rank && proposal.rank.assign;
+		if (!assign) return order;
+		return order.sort((a, b) => assign.pays[a] - assign.pays[b] || a - b);
+	}
+
 	function planHomeSet(world, trade, mask, count, candidates, seatsWanted, sourceSim,
-		sunlit, resume) {
+		sunlit, law) {
 		if (candidates.length < seatsWanted) return null;
+		const light = new Uint8Array(OrbitWorld.PLANETS);
+		let lightSites = 0;
+		let heavyHomes = 0;
+		for (let planet = 0; planet < OrbitWorld.PLANETS; planet++) {
+			if (!openingSiteLight(world, mask, planet)) continue;
+			light[planet] = 1;
+			lightSites += 1;
+		}
+		for (let c = 0; c < candidates.length; c++) if (!light[candidates[c]]) heavyHomes += 1;
+		/* a light home is one first landing fewer; where too few remain for a
+		 * distinct seating, spend as few as the roster allows */
+		const lightBudget = !law.prune ? Infinity
+			: Math.max(lightSites - seatsWanted, seatsWanted - heavyHomes, 0);
+		const pool = law.prune ? openingWidePool(world, trade, mask, count, candidates,
+			seatsWanted, sourceSim, light) : candidates;
 		const forcedHomes = new Uint8Array(OrbitWorld.PLANETS);
 		const chosen = [];
 		const sets = [];
-		function searchSets(from) {
+		function searchSets(from, lightUsed) {
+			if (lightUsed > lightBudget) return;
 			if (chosen.length === seatsWanted) {
 				let tie = OrbitWorld.hashBits(world.seed, seatsWanted, SALT_HQ);
 				let dim = 0;
@@ -2882,61 +3099,51 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				return;
 			}
 			const need = seatsWanted - chosen.length;
-			for (let c = from; c <= candidates.length - need; c++) {
-				chosen.push(candidates[c]);
-				searchSets(c + 1);
+			for (let c = from; c <= pool.length - need; c++) {
+				chosen.push(pool[c]);
+				searchSets(c + 1, lightUsed + light[pool[c]]);
 				chosen.pop();
 			}
 		}
-		searchSets(0);
+		searchSets(0, 0);
 		if (!sets.length) return null;
 
 		/* Proxy order first, exact final-field authority second. Complete each
 		 * batch before accepting it so all ranking families get an equal chance;
 		 * a world with no fair set walks the head of the ranking, not all of it
-		 * (see `OPENING_EXACT_MISS`).
-		 *
-		 * `resume` is the caller's own place in that walk. The page asks for the
-		 * same map twice on one click (the scoreboard plans it, then the run
-		 * rebuilds it); a second request resumes at the batch it stopped on instead
-		 * of flying every pair trace again. The ranking is a pure function of the
-		 * same inputs, so resuming lands on the same sets and the same answer. */
-		const consider = sets.length <= OPENING_EXACT_BATCH
+		 * (see `OPENING_EXACT_MISS` and the wide law's trace budget). */
+		const consider = sets.length <= law.batch
 			? sets : rankOpeningSets(world, trade, mask, count, sets, candidates,
-				seatsWanted, sourceSim);
-		const exactLimit = Math.min(consider.length, OPENING_EXACT_SETS);
-		const resumable = resume && resume.consider === consider;
-		const from = resumable ? resume.exactAt : 0;
-		let bestHomes = resumable ? resume.homes : null;
-		let bestStats = resumable ? resume.stats : null;
-		let bestTie = resumable ? resume.tie : 0xffffffff;
-		for (let i = from; i < exactLimit; i++) {
+				seatsWanted, sourceSim, law.windowed);
+		const exactLimit = Math.min(consider.length, law.sets);
+		let bestHomes = null;
+		let bestStats = null;
+		let bestTie = 0xffffffff;
+		const tracedFrom = openingTraceCount;
+		const traceBudget = count >= law.roomyCount ? law.roomyTraces : law.traces;
+		for (let i = 0; i < exactLimit; i++) {
 			const proposal = consider[i];
 			const proposalMask = new Uint8Array(OrbitWorld.PLANETS);
 			for (let j = 0; j < proposal.homes.length; j++) proposalMask[proposal.homes[j]] = 1;
+			const cutoff = law.windowed ? openingCutoff(bestStats) : undefined;
 			const exact = openingGroupStats(world, trade, mask, count,
-				proposalMask, proposal.homes, sourceSim);
-			exact.dim = proposal.dim || 0;
-			const better = compareOpeningGroups(exact, bestStats);
+				proposalMask, proposal.homes, sourceSim, law.windowed, cutoff,
+				cutoff === undefined ? null : openingRiskOrder(proposal));
+			if (exact) exact.dim = proposal.dim || 0;
+			const better = exact ? compareOpeningGroups(exact, bestStats) : -1;
 			if (better > 0 || (better === 0 && proposal.tie < bestTie)) {
 				bestHomes = proposal.homes.slice();
 				bestStats = exact;
 				bestTie = proposal.tie;
 			}
-			const batchDone = (i + 1) % OPENING_EXACT_BATCH === 0 || i + 1 === exactLimit;
+			const traced = (openingTraceCount - tracedFrom) * count;
+			const batchDone = (i + 1) % law.batch === 0 || i + 1 === exactLimit;
 			/* an accepted batch ends the walk; a world that has not produced one
 			 * by the miss bound keeps the best set found so far */
-			if (batchDone && (openingGroupAccepted(bestStats) || i + 1 >= OPENING_EXACT_MISS)) break;
+			if (batchDone && (openingGroupAccepted(bestStats) || i + 1 >= law.miss ||
+				traced >= traceBudget)) break;
 		}
 		if (!bestHomes) return null;
-		if (resume) {
-			resume.consider = consider;
-			/* an accepted batch ends the walk; the plan is complete as it stands */
-			resume.exactAt = exactLimit;
-			resume.homes = bestHomes;
-			resume.stats = bestStats;
-			resume.tie = bestTie;
-		}
 		const homes = bestHomes;
 		for (let i = 0; i < homes.length; i++) forcedHomes[homes[i]] = 1;
 		let exact = bestStats;
@@ -2955,9 +3162,18 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			}
 			homes[seat] = replacement;
 			forcedHomes[replacement] = 1;
-			exact = openingGroupStats(world, trade, mask, count, forcedHomes, homes, sourceSim);
+			const repaired = openingGroupStats(world, trade, mask, count, forcedHomes, homes,
+				sourceSim, law.windowed);
+			if (law.relaxed && compareOpeningGroups(repaired, exact) < 0) {
+				/* a cramped world: the repair made it worse, keep the walk's set */
+				forcedHomes[replacement] = 0;
+				forcedHomes[badHome] = 1;
+				homes[seat] = badHome;
+				break;
+			}
+			exact = repaired;
 		}
-		if (exact.missing > 0) return null;
+		if (exact.missing > 0 && !law.relaxed) return null;
 		return { homes: homes, stats: exact };
 	}
 
@@ -2971,8 +3187,6 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 */
 	const SEAT_PLAN_CACHE_MAX = 4;
 	const seatPlanCache = [];
-	/* the search a repeat request resumes, dropped when a later one replaces it */
-	let resumeMemory = null;
 
 	function seatPlanKey(world, trade, mask, count, seatsWanted, sourceSim) {
 		const field = PlanetGravity.armed();
@@ -3014,20 +3228,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			seatPlanApply(galaxy, memo.plan);
 			return memo.plan.homes.slice();
 		}
-		const resume = resumeMemory && resumeMemory.key === key ? resumeMemory : null;
-		/* the boxes may accept the first plan a restarted search then rejects */
-		if (resume && resume.plan && resume.plan.homes && resume.plan.stats) {
-			seatPlanApply(galaxy, resume.plan);
-			seatPlanRemember(key, resume.plan);
-			resumeMemory = null;
-			return resume.plan.homes.slice();
-		}
-		const slot = { key: key, seats: seatsWanted, plan: resume ? resume.plan : null };
-		resumeMemory = slot;
-		const plan = planCareerSeats(world, trade, mask, count, seatsWanted, sourceSim, slot);
-		/* a failed search is kept too: asking again resumes at its tail */
+		const plan = planCareerSeats(world, trade, mask, count, seatsWanted, sourceSim);
 		if (!plan) return null;
-		resumeMemory = null;
 		seatPlanRemember(key, plan);
 		seatPlanApply(galaxy, plan);
 		return plan.homes.slice();
@@ -3059,44 +3261,30 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return plan.homes.slice();
 	}
 
-	function planCareerSeats(world, trade, mask, count, seatsWanted, sourceSim, resume) {
+	/*
+	 * The ordinary career (up to four companies on up to 26 worlds) keeps its
+	 * measured walk, so every map it already seats fairly stays as it is. Any
+	 * roster beyond it, and any world that walk cannot seat fairly, gets the
+	 * wide walk; the better of the two plans wins.
+	 */
+	function planCareerSeats(world, trade, mask, count, seatsWanted, sourceSim) {
 		const pools = startCandidatePools(world, mask, seatsWanted);
 		/* a universe that cannot seat this many companies is a refusal, not a
 		 * crash: seats are capped by the planet count, not by the pool */
 		if (pools[0].length < seatsWanted) return null;
-		const forcedHomes = new Uint8Array(OrbitWorld.PLANETS);
-		let homes = null;
-		let openingStats = null;
-		if (seatsWanted <= 4 && count <= 26) {
-			/* Every candidate home is searched together and the sunlit planets are
-			 * only a tie-break. Filtering the search to sunlit homes used to throw
-			 * away the fair map outright: on one world the sunlit pool's best
-			 * exit-safe seating paid its weakest company 11% of its best, while the
-			 * same world seated everybody at 84% once the dimmer planets were in. */
-			const plan = planHomeSet(world, trade, mask, count, pools[0], seatsWanted,
-				sourceSim, pools.length > 1 ? pools[1] : null, resume && resume.seats === seatsWanted
-					? resume.plan : null);
-			if (!plan) return null;
-			homes = plan.homes;
-			openingStats = plan.stats;
-		} else {
-			for (let pool = 0; pool < pools.length && !homes; pool++) {
-				const attempt = [];
-				for (let seat = 0; seat < seatsWanted; seat++) {
-					const home = pickFairHq(world.seed + seat, world, forcedHomes, mask,
-						count, trade, sourceSim);
-					/* pickFairHq walks every in-play planet, so a home outside the
-					 * pool is only accepted when it is the pool's own last resort */
-					/* the dim pool is null when every in-play planet is sunlit */
-					if (home < 0 || (pools[pool] && pools[pool].indexOf(home) < 0)) break;
-					forcedHomes[home] = 1;
-					attempt.push(home);
-				}
-				if (attempt.length === seatsWanted) homes = attempt;
-				else for (let i = 0; i < attempt.length; i++) forcedHomes[attempt[i]] = 0;
-			}
+		const sunlit = pools.length > 1 ? pools[1] : null;
+		let plan = seatsWanted <= 4 && count <= 26
+			? planHomeSet(world, trade, mask, count, pools[0], seatsWanted, sourceSim, sunlit,
+				OPENING_LAW_FLOOR)
+			: null;
+		if (!plan || !openingGroupAccepted(plan.stats)) {
+			const wide = planHomeSet(world, trade, mask, count, pools[0], seatsWanted, sourceSim,
+				sunlit, OPENING_LAW_WIDE);
+			if (wide && compareOpeningGroups(wide.stats, plan ? plan.stats : null) > 0) plan = wide;
 		}
-		if (!homes) return null;
+		if (!plan) return null;
+		const homes = plan.homes;
+		const openingStats = plan.stats;
 		for (let i = homes.length - 1; i > 0; i--) {
 			const j = OrbitWorld.hashBits(world.seed, i, SALT_HQ + homes.length) % (i + 1);
 			const home = homes[i];
