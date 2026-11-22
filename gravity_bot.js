@@ -2289,6 +2289,17 @@
 		return false;
 	};
 
+	/* The 1.5 t must not strand the ship: a kit priced for the dry hull can
+	 * sit right at its limit on a heavy world, so the heavier hull has to
+	 * leave where it stands on the rails already there. */
+	GravityBot.prototype.careerHoldLeaves = function (career, sim) {
+		const hold = OrbitTech.HOLDS[1];
+		const mass = OrbitTech.refitMass(career.ship, OrbitTech.KIND_HOLD, hold, 0);
+		const cash = career.ledger.purse - careerPrice(career, hold) - careerRefundEscrow(career);
+		const exit = this.careerDeparture(career, career.at, cash, mass, sim);
+		return exit.ok && !exit.builds;
+	};
+
 	/* Install exactly the kit the exit probe priced, even when just its
 	 * battery is missing. A fresh rail comes with BAT-1 (and its charge). */
 	GravityBot.prototype.careerBuyPad = function (career, planet, exit, reserve, step, why) {
@@ -2377,6 +2388,7 @@
 		if (career.at >= 0 && career.ship.hold === OrbitTech.HOLDS[0] &&
 			career.ledger.purse + 1e-9 >= careerPrice(career, OrbitTech.HOLDS[1]) +
 				CAREER_PURSE_RESERVE + careerRefundEscrow(career) && this.careerWantHold(career, sim) &&
+			this.careerHoldLeaves(career, sim) &&
 			GravityGame.installPart(career, OrbitTech.KIND_HOLD, OrbitTech.HOLDS[1])) {
 			this.traceAdd(careerTraceIndex(career), 'gear', 'P' + career.at + ' ' +
 				OrbitTech.HOLDS[1].id + ' · ' + OrbitTech.HOLDS[1].capacity + ' t', runStep);
