@@ -437,7 +437,7 @@
 		this.careerLeg = GravityGame.createLegPlan();
 		this.careerLegInput = {
 			origin: -1, body: -1, speed: 0, flownLen: 0, length: 0, steps: 0,
-			visitPay: 0, bribe: 0, condition: 1, burnDv: 0, fee: 0,
+			visitPay: 0, bribe: 0, condition: undefined, burnDv: 0, fee: 0,
 			logPlanet: null, logStep: null, logDwell: null, logCount: 0
 		};
 		this.careerExitFn = (planet, cap) => this.careerExitSpeed(planet, cap);
@@ -1911,11 +1911,59 @@
 		return task.reward + refund + entries * GravityGame.CAPITAL_VISIT_PAY;
 	}
 
+	function minSpanSteps(sim, from, to, topSpeed) {
+		if (!sim || from < 0 || to < 0 || from === to || !sim.planetX || !sim.planetY) return 0;
+		const dx = sim.planetX[to] - sim.planetX[from];
+		const dy = sim.planetY[to] - sim.planetY[from];
+		const r = sim.planetR ? sim.planetR[from] + sim.planetR[to] : 0;
+		const span = Math.max(0, Math.hypot(dx, dy) - r);
+		return Math.max(2, Math.ceil(span / (topSpeed * GravitySim.DT)));
+	}
+
 	/* The pickup has to launch the loaded ship. Don't take a job whose
 	 * reward cannot even pay that ticket, or whose delivery is a dead end. */
-	GravityBot.prototype.careerDeliveryNet = function (career, task, hold, budget, sim) {
+	GravityBot.prototype.careerDeliveryNet = function (career, task, hold, budget, sim, step = this.worldStep, slot = -1) {
+		const min1 = career.at >= 0 && career.at !== task.from
+			? minSpanSteps(sim, career.at, task.from, GravitySim.SPEED_MAX) : 0;
+		const min2 = minSpanSteps(sim, task.from, task.to,
+			task.fragile ? GravityGame.FRAGILE_SPEED : GravitySim.SPEED_MAX);
+		if (Number.isFinite(task.deadline) && step + min1 + min2 > task.deadline) return -Infinity;
 		const refund = career.capitalPlanet >= 0 && career.at === career.capitalPlanet
 			? GravityGame.CAPITAL_REFUND : 0;
+		if (slot >= 0 && hold === career.ship.hold && budget === career.ledger.purse &&
+			career.contract < 0 && career.at >= 0 && career.at !== task.from) {
+			const depart1 = this.careerDeparture(career, career.at, budget + refund,
+				career.ship.mass, sim);
+			if (!depart1.ok) return -Infinity;
+			const inp = this.careerLegInput;
+			inp.origin = career.at;
+			inp.body = task.from;
+			inp.speed = 0;
+			inp.flownLen = 0;
+			inp.length = 0;
+			inp.steps = min1;
+			inp.visitPay = task.from === career.capitalPlanet ? GravityGame.CAPITAL_VISIT_PAY : 0;
+			inp.bribe = 0;
+			inp.condition = career.ship.condition;
+			inp.burnDv = 0;
+			inp.fee = depart1.cost;
+			inp.logPlanet = null;
+			inp.logStep = null;
+			inp.logDwell = null;
+			inp.logCount = 0;
+			this.careerLegOpts.slot = slot;
+			this.careerLegOpts.seekClaim = false;
+			this.careerLegOpts.exitSpeedFn = this.careerExitFn;
+			GravityGame.careerLegPlan(this.careerLeg, career, career.market, this.exitProbe,
+				inp, step, this.careerLegOpts);
+			inp.condition = undefined;
+			if (!this.careerLeg.feasible) return -Infinity;
+			if (this.careerLeg.hasSecond) {
+				return this.careerLeg.total > 0 ? this.careerLeg.total : -Infinity;
+			}
+			const relayNet = careerNetReward(career, task) - depart1.cost - this.careerLeg.leg1Exit;
+			return relayNet > 0 ? relayNet : -Infinity;
+		}
 		const purse = budget + refund;
 		const dry = OrbitTech.refitMass(career.ship, OrbitTech.KIND_HOLD, hold, 0);
 		const loaded = this.careerDeparture(career, task.from, purse, dry + task.tons, sim);
@@ -1926,7 +1974,7 @@
 		return this.careerDeparture(career, task.to, budget + net, dry, sim).ok ? net : -Infinity;
 	};
 
-	GravityBot.prototype.careerMedicNet = function (career, planet, patients, hold, budget, sim) {
+	GravityBot.prototype.careerMedicNet = function (career, planet, patients, hold, budget, sim, step = this.worldStep, slot = -1) {
 		const medics = Math.min(Math.floor(hold.capacity / 2), patients);
 		if (medics < 1 || career.capitalPlanet < 0) return -Infinity;
 		const purse = budget + GravityGame.CAPITAL_REFUND;
@@ -1934,6 +1982,36 @@
 		const out = this.careerDeparture(career, career.capitalPlanet, purse, loadedMass, sim);
 		if (!out.ok) return -Infinity;
 		const outCost = out.cost;
+		if (slot === GravityGame.MEDIC_SLOT && career.at === career.capitalPlanet &&
+			hold === career.ship.hold && budget === career.ledger.purse && career.contract < 0) {
+			const min1 = minSpanSteps(sim, career.capitalPlanet, planet, GravitySim.SPEED_MAX);
+			const inp = this.careerLegInput;
+			inp.origin = career.capitalPlanet;
+			inp.body = planet;
+			inp.speed = 0;
+			inp.flownLen = 0;
+			inp.length = 0;
+			inp.steps = min1;
+			inp.visitPay = 0;
+			inp.bribe = 0;
+			inp.condition = career.ship.condition;
+			inp.burnDv = 0;
+			inp.fee = outCost;
+			inp.logPlanet = null;
+			inp.logStep = null;
+			inp.logDwell = null;
+			inp.logCount = 0;
+			this.careerLegOpts.slot = slot;
+			this.careerLegOpts.seekClaim = false;
+			this.careerLegOpts.exitSpeedFn = this.careerExitFn;
+			GravityGame.careerLegPlan(this.careerLeg, career, career.market, this.exitProbe,
+				inp, step, this.careerLegOpts);
+			inp.condition = undefined;
+			if (!this.careerLeg.feasible) return -Infinity;
+			if (this.careerLeg.hasSecond) {
+				return this.careerLeg.total > 0 ? this.careerLeg.total : -Infinity;
+			}
+		}
 		const back = this.careerDeparture(career, planet, purse - outCost, loadedMass, sim);
 		if (!back.ok) return -Infinity;
 		const backCost = back.cost;
@@ -1951,9 +2029,9 @@
 			if (i === GravityGame.COMPETE_SLOT || !GravityGame.canAccept(career, i)) continue;
 			const task = career.tasks[i];
 			const net = task.kind === GravityGame.TASK_DELIVERY
-				? this.careerDeliveryNet(career, task, career.ship.hold, career.ledger.purse, sim)
+				? this.careerDeliveryNet(career, task, career.ship.hold, career.ledger.purse, sim, step, i)
 				: task.kind === GravityGame.TASK_MEDIC
-				? this.careerMedicNet(career, task.to, task.patients, career.ship.hold, career.ledger.purse, sim)
+				? this.careerMedicNet(career, task.to, task.patients, career.ship.hold, career.ledger.purse, sim, step, i)
 				: task.reward;
 			if (!Number.isFinite(net)) continue;
 			const loadTons = task.kind === GravityGame.TASK_MEDIC ? task.medics : task.tons;
@@ -2590,14 +2668,17 @@
 				inp.steps = steps;
 				inp.visitPay = visitPay;
 				inp.bribe = bribe;
-				inp.condition = career.ship.condition;
-				inp.burnDv = 0;
+				if (inp.condition === undefined) inp.condition = career.ship.condition;
+				if (inp.burnDv === undefined) inp.burnDv = 0;
 				inp.fee = launchFee;
 				this.careerLegOpts.slot = -1;
 				this.careerLegOpts.seekClaim = false;
+				this.careerLegOpts.exitSpeedFn = this.careerExitFn;
 				this.prepareCareerExitProbe(this.probe);
 				GravityGame.careerLegPlan(this.careerLeg, career, market, this.exitProbe,
 					inp, runStep, this.careerLegOpts);
+				inp.condition = undefined;
+				inp.burnDv = 0;
 				inp.logPlanet = null;
 				inp.logStep = null;
 				inp.logDwell = null;
@@ -2781,6 +2862,8 @@
 		const visitPay = prefixSim
 			? this.careerBurnVisitPay(career, market, runStep, prefixSim, reportUntil)
 			: GravityGame.estimateProfit(market, runStep, probe, career.ledger, reportUntil, landing);
+		this.careerLegInput.condition = condition;
+		this.careerLegInput.burnDv = burnDv || 0;
 		if (!prefixSim) {
 			this.careerLegInput.logPlanet = probe.predLogPlanet;
 			this.careerLegInput.logStep = probe.predLogStep;
@@ -2789,9 +2872,16 @@
 		}
 		const continuationStep = runStep + (prefixSim ? prefixSim.liveSteps : 0);
 		const launchSpeed = prefixSim ? prefixSim.speed : speed;
-		return this.careerScoreFacts(career, origin, market, continuationStep, flownLen, fee,
+		const res = this.careerScoreFacts(career, origin, market, continuationStep, flownLen, fee,
 			probe.predBody, visitPay, probe.predLength, probe.predSteps, launchSpeed, wear,
 			arrival, landing.value);
+		this.careerLegInput.condition = undefined;
+		this.careerLegInput.burnDv = 0;
+		this.careerLegInput.logPlanet = null;
+		this.careerLegInput.logStep = null;
+		this.careerLegInput.logDwell = null;
+		this.careerLegInput.logCount = 0;
+		return res;
 	};
 
 	/* pad energy, the recharge wait it costs and the EMC fee of one shot */

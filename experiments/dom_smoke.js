@@ -3270,11 +3270,14 @@ function protoOf(career, family, id) {
 		lui.get('careerLaunchList').innerHTML.includes('empty'),
 		'a fresh career lists nothing: ' + lui.get('careerLaunchList').innerHTML);
 	check(!lui.get('helperProfit').hidden && !lui.get('helperEmc').hidden &&
+		!lui.get('helperQuest').hidden && !lui.get('helperPlanQuest').hidden &&
 		lui.get('helperProfit').textContent === 'best profit' &&
-		lui.get('helperEmc').textContent === 'profit + EMC',
-		'career shows the two profit helpers: ' + lui.get('helperProfit').textContent +
+		lui.get('helperEmc').textContent === 'profit + EMC' &&
+		lui.get('helperPlanQuest').textContent === 'plan quest',
+		'career shows the profit and quest helpers: ' + lui.get('helperProfit').textContent +
 			' / ' + lui.get('helperEmc').textContent);
-	check(!lui.get('helperProfit').disabled, 'the profit helper is ready on a landed ship');
+	check(!lui.get('helperProfit').disabled && !lui.get('helperPlanQuest').disabled,
+		'the career helpers are ready on a landed ship');
 
 	/* an armed preview that lands joins the list */
 	let lAngle = null;

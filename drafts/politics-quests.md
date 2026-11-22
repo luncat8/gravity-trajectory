@@ -185,8 +185,11 @@ ranked by cash plus `10 ×` the leg credit, half of the aims pointed at the open
 work (`careerGoalBodies`). The "count taken quests as profit" half is the leg
 credit in `careerLandingFacts`.
 
-**open** → `../0.7.40-plan-two-leg-quests.md`: a *specialised* quest helper is
-more than a re-ranked money scan when a contract has two legs. `quest scan` aims
-at the next body; it does not plan `load → fly → deliver` or price the second
-leg. The plan prices the second leg once, in the rules layer, so the helper and
-the rival both read it.
+→ `../archive/0.7.40-plan-two-leg-quests.md` (done): `careerLegPlan` in
+`gravity_game.js` prices intermediate two-leg stops (`at → pickup → dropoff`
+and `Capital → rebel → Capital`) across post-pickup mass, fragile ceiling,
+fees, wear, deadline and Capital refund escrow, shared by `quest scan`,
+`GravityBot` (shot scoring and board acceptance), and the new `plan quest`
+button (`#helperPlanQuest`, `gui_helper.js`), which runs a sliced two-leg search,
+writes both legs to `career.launchBook` with 13-tuple `bookTrace` replay
+actions, and arms leg 1.

@@ -1201,3 +1201,15 @@ while the scripts load, so the test cannot patch them first. Inject constructors
 the page may call (a counting, throwing `AudioContext`) with
 `loadPage({ globals })`, and keep a positive control (a full page does reach
 the constructor) so a zero is not the stub's doing.
+
+## `--expose-gc` heap checks vs V8 Maglev / TurboFan tier-up
+
+A hot helper warmed up for only 20–500 calls is still in Ignition or Maglev; V8
+compiles it to TurboFan around ~2,000–2,500 invocations and retains ~60–100 kB
+of native `Code` / `FeedbackVector` objects that `global.gc()` never collects.
+Under parallel CPU load (`run_fast.js`), background compilation lands later and
+can fall inside a short measured loop. Warm up ≥ 3,000 calls and run
+`global.gc()` twice before sampling `process.memoryUsage().heapUsed`; also make
+sure any page helper that passes `bot.careerExitFn` calls
+`bot.prepareCareerExitProbe(sim)` first so `bot=off` solo runs never read an
+unattached `bot.exitProbe`.

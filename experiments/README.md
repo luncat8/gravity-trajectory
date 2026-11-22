@@ -71,6 +71,7 @@ with no fair opening: the registry is also the pool `load map` draws from, so
 | `gravity_field` CPU raster and palette | `gravity_bench` (color + budget), `gravity_view_test` |
 | `gravity_game` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
 | the stay-pay trace price (`estimateProfitLog` dwells) and launch-book `logDwell` | `harvest_ticks_test` (both rules, book round trip, heap), `bot_bench` (both-rule parity) |
+| two-leg quest valuation (`careerLegPlan`) and `plan quest` (`#helperPlanQuest`) | `two_leg_test` (heavy/fragile/deadline gates, Capital escrow parity, bot/helper parity, `bookTrace` replay, heap) |
 | career opening and the seat search | `career_start_fairness` (independent exit-safe pay band), `career_start_seat_test`, `make_saved_maps.js --check` (stale records) |
 | `gravity_bot` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
 | `gravity_gui`/`gui_*.js` page state | the one page test for the area (`politics_gui_test`, `obs_fragile_gui_test`, `career_pause_test`, `profit_monotonic_test`, …) |

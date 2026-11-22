@@ -189,9 +189,8 @@ function helperCareerGoalScore(careerMoney, goalKey) {
 	if (!moneyFlyable(careerMoney)) return -Infinity;
 	const goal = HELPER_GOALS[goalKey];
 	if (goal.builds && !careerMoney.builds) return -Infinity;
-	if (goalKey === 'quest') {
-		if (careerMoney.twoLegStop && !careerMoney.leg2Feasible) return -Infinity;
-		if (careerMoney.hasSecond) return careerMoney.twoLegTotal;
+	if (goalKey === 'quest' && careerMoney.twoLegStop) {
+		return careerMoney.leg2Feasible ? careerMoney.twoLegTotal : -Infinity;
 	}
 	return careerMoney.net + careerMoney.credit * goal.credit;
 }
@@ -241,6 +240,7 @@ function copyLegPlanSummary(dst, src) {
 
 function evaluatePlanQuestHit(career, sim, origin, speed, body, steps, length,
 	logPlanet, logStep, logDwell, logCount, outWin) {
+	bot.prepareCareerExitProbe(sim);
 	const condition = previewStartCondition(career, sim, origin, speed);
 	const reportUntil = GravityGame.forecastReportUntil(career, condition, speed, 0);
 	const visitPay = GravityGame.estimateProfitLog(game.market, game.clockSteps,

@@ -197,10 +197,29 @@ function unlockGear(career, item) {
 	if (scene.aimState().armed) {
 		check(sim.predBody !== pickup, 'quest scan must not arm a doomed heavy pickup');
 	}
+
+	/* Board acceptance (`careerAccept`) rejects gravity-trapped and deadline-impossible offers. */
+	Game.dropContract(career);
+	career.acceptAfterStep = 0;
+	Object.assign(career.tasks[0], {
+		kind: Game.TASK_DELIVERY, state: Game.TASK_OFFERED,
+		from: pickup, to: dropoff, tons: 3, fragile: false,
+		reward: 5.5, deadline: scene.game.clockSteps + 40000
+	});
+	check(scene.bot.careerAccept(career, scene.game.clockSteps, sim) === false,
+		'careerAccept must refuse a gravity-trapped pickup on the board');
+
 	sim.strength[pickup] = savedStrength;
 	sim.stepStale = true;
 	sim.refreshField();
-	console.log('1. heavy pickup rejection: feasible=false, bot & quest scan refuse doomed pickup');
+	scene.bot.probe.strength[pickup] = savedStrength;
+	scene.bot.probe.stepStale = true;
+	scene.bot.probe.refreshField();
+	career.tasks[0].tons = 2;
+	career.tasks[0].deadline = scene.game.clockSteps + 5;
+	check(scene.bot.careerAccept(career, scene.game.clockSteps, sim) === false,
+		'careerAccept must refuse a deadline-impossible delivery on the board');
+	console.log('1. heavy/deadline pickup rejection: feasible=false, bot & quest scan refuse doomed pickup');
 }
 
 /* --- 2. Fragile delivery: fast unloaded leg 1, gentle (<= 140) leg 2 ---- */
@@ -493,6 +512,29 @@ for (const mode of ['entry', 'tick']) {
 		'prospective plan quest must name the planned board offer: ' +
 		env.elements.get('careerMsg').textContent);
 
+	/* Solo (`bot=off`) career without active rivals must still prime exitProbe in plan quest. */
+	const soloEnv = loadPage({ search: mapSearch(1) + '&bot=off' });
+	const soloScene = soloEnv.context.GravityScene;
+	const soloGame = soloEnv.context.GravityGame;
+	const soloTech = soloEnv.context.OrbitTech;
+	assert.ok(soloGame.installPart(soloScene.career, 'hold', soloTech.HOLDS[1]));
+	soloScene.career.ledger.purse = 25;
+	assert.ok(soloGame.buildGear(soloScene.career, soloScene.career.at, 'catapult', soloTech.CATAPULTS[1]));
+	assert.ok(soloGame.buildGear(soloScene.career, soloScene.career.at, 'battery', soloTech.BATTERIES[1]));
+	soloScene.career.pads[soloScene.career.at].chargeKwh =
+		soloScene.career.pads[soloScene.career.at].battery.capacity;
+	for (const t of soloScene.career.tasks) t.kind = soloGame.TASK_NONE;
+	Object.assign(soloScene.career.tasks[0], {
+		kind: soloGame.TASK_DELIVERY, state: soloGame.TASK_OFFERED,
+		from: pickup, to: dropoff, tons: 2, fragile: false,
+		reward: 7.5, deadline: soloScene.game.clockSteps + 50000
+	});
+	soloEnv.click('helperPlanQuest');
+	until(soloEnv, 'helperStopBtn.hidden');
+	check(/^quest plan · offer #1/.test(soloEnv.elements.get('careerMsg').textContent),
+		'solo bot=off plan quest must find route without unprimed exitProbe: ' +
+		soloEnv.elements.get('careerMsg').textContent);
+
 	/* 5b. Full recorded session for CareerActions replay: fresh page so every
 	 * setup mutation goes through recorded careerAct calls. */
 	let chosenSlot = -1;
@@ -632,14 +674,18 @@ for (const mode of ['entry', 'tick']) {
 		logPlanet: shot.logPlanet, logStep: shot.logStep,
 		logDwell: shot.logDwell, logCount: shot.logCount
 	};
-	for (let i = 0; i < 20; i++) Game.careerLegPlan(out, career, market, sim, inp, 100);
+	/* Warm past V8 Maglev/TurboFan tier-up (~2500 calls) so native Code objects
+	 * do not land inside the measured allocation window under CPU load. */
+	for (let i = 0; i < 3000; i++) Game.careerLegPlan(out, career, market, sim, inp, 100 + (i & 7));
+	global.gc();
 	global.gc();
 	const before = process.memoryUsage().heapUsed;
-	for (let i = 0; i < 500; i++) Game.careerLegPlan(out, career, market, sim, inp, 100 + (i & 7));
+	for (let i = 0; i < 2000; i++) Game.careerLegPlan(out, career, market, sim, inp, 100 + (i & 7));
+	global.gc();
 	global.gc();
 	const deltaKb = (process.memoryUsage().heapUsed - before) / 1024;
 	check(deltaKb < 64, 'careerLegPlan retained heap grew by ' + deltaKb.toFixed(1) + ' kB');
-	console.log('6. heap flat over 500 careerLegPlan calls: ' + deltaKb.toFixed(1) + ' kB');
+	console.log('6. heap flat over 2000 careerLegPlan calls: ' + deltaKb.toFixed(1) + ' kB');
 }
 
 console.log('TWO-LEG QUESTS OK · ' + checks + ' checks');

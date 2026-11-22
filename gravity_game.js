@@ -4836,6 +4836,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return Math.min(pad.battery.capacity, charge + gained) - pad.reservedKwh;
 	}
 
+	function checkExitSpeed(exitSpeedFn, sourceSim, planet, cap) {
+		return exitSpeedFn ? exitSpeedFn(planet, cap) : legExitSpeed(sourceSim, planet, cap);
+	}
+
 	function careerDeparture(out, career, planet, cash, mass, sourceSim, condition,
 		seekClaim, afterLanding, flightSeconds, exitSpeedFn) {
 		const res = out || legDepScratch1;
@@ -4859,7 +4863,6 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			res.reason = 'ship worn out';
 			return res;
 		}
-		const checkExit = exitSpeedFn || function (p, cap) { return legExitSpeed(sourceSim, p, cap); };
 		const arrivalMass = Number.isFinite(mass) && mass > 0 ? mass : career.ship.mass;
 		const available = cash === Infinity ? Infinity : Number.isFinite(cash) ? cash : -Infinity;
 		const forceScale = sourceSim.forceScale;
@@ -4872,7 +4875,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (own.catapult === null && buildable) {
 			const starterCap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
 				arrivalMass, OrbitTech.CATAPULTS[0], forceScale);
-			res.starterCanExit = checkExit(planet, starterCap) > 0;
+			res.starterCanExit = checkExitSpeed(exitSpeedFn, sourceSim, planet, starterCap) > 0;
 			res.canBuildStarter = res.starterCanExit &&
 				available + 1e-9 >= price(career, OrbitTech.CATAPULTS[0].buildCost);
 			if (res.starterCanExit) res.physical = true;
@@ -4883,7 +4886,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			? careerArrivalCharge(career, planet, secs)
 			: Math.max(0, pad.chargeKwh - pad.reservedKwh);
 		const currentCap = OrbitTech.speedLimit(charge, arrivalMass, pad.catapult, forceScale);
-		const currentSpeed = checkExit(planet, currentCap);
+		const currentSpeed = checkExitSpeed(exitSpeedFn, sourceSim, planet, currentCap);
 		let bestCost = Infinity;
 		if (currentSpeed > 0) {
 			res.physical = true;
@@ -4939,7 +4942,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				const totalCost = catCost + (buildBattery ? price(career, battery.buildCost) : 0);
 				if (available + 1e-9 < totalCost || totalCost + 1e-9 >= bestCost) continue;
 				const cap = OrbitTech.speedLimit(battery.capacity, arrivalMass, catapult, forceScale);
-				const speed = checkExit(planet, cap);
+				const speed = checkExitSpeed(exitSpeedFn, sourceSim, planet, cap);
 				if (speed <= 0) continue;
 				res.physical = true;
 				bestCost = totalCost;
@@ -5477,13 +5480,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				flightSec1, exitSpeedFn);
 			if (!depRelay.ok || postPurse - otherEscrow + 1e-9 < depRelay.cost) return out;
 			if (fragile2) {
-				const checkExit = exitSpeedFn || function (p, cap) { return legExitSpeed(sim, p, cap); };
 				const kitCap = depRelay.catapult && depRelay.battery
 					? OrbitTech.speedLimit(depRelay.battery.capacity, postMass,
 						depRelay.catapult, sim.forceScale)
 					: maxCap2;
 				const fragCap = kitCap < FRAGILE_SPEED ? kitCap : FRAGILE_SPEED;
-				if (checkExit(body, fragCap) <= 0) return out;
+				if (checkExitSpeed(exitSpeedFn, sim, body, fragCap) <= 0) return out;
 			}
 			const dx = sim.planetX[goal2] - sim.planetX[body];
 			const dy = sim.planetY[goal2] - sim.planetY[body];
