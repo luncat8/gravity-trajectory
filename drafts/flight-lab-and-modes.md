@@ -169,7 +169,7 @@ either direction) and `maxdistImp` (IMP-1 + big tank, first landing ends, scores
 farthest), placed immediately after `0.8.0-plan-periodic-fft.md` (`4800×1000`,
 78 planets, periodic FFT wrap by default or open strip when `&fft=0`, fitted to
 one screen). The KSP planner and the relaunch variant stay deferred; career
-`SPORT_MAXDIST` plugs into `0.7.41-plan-sport-competitions.md`.
+`SPORT_MAXDIST` plugs into `../archive/0.7.41-plan-sport-competitions.md`.
 
 ## 1.3 the seed, the roster, the map ← `archive/draft.txt`
 

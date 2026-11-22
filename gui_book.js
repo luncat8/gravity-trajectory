@@ -57,16 +57,21 @@ function taskRowHtml(career, index) {
 			task.reward.toFixed(2);
 		if (task.state === GravityGame.TASK_OFFERED) {
 			const ok = GravityGame.canAccept(career, index);
+			const refuseWhy = career.at < 0 ? 'land on a planet to enter'
+				: career.arrested ? 'cannot enter under arrest'
+				: left <= 0 ? 'race closed'
+				: 'needs ' + GravityGame.COMPETE_ENTRY.toFixed(2) + ' stake in the purse';
 			sportHtml += '<button class="miniBtn" data-act="accept" data-slot="' + index + '"' +
 				(ok ? '' : ' disabled') +
 				' title="' + (ok ? 'enter this race · pays the ' +
 					GravityGame.COMPETE_ENTRY.toFixed(2) + ' stake into the pool (kept by the winner)' + refundNote
-					: 'land on a planet to enter') +
+					: refuseWhy) +
 				'">accept −' + GravityGame.COMPETE_ENTRY.toFixed(2) + '</button>';
 		} else {
 			sportHtml += ' · ' + (live ? 'entered' : 'entered · gun in ' + toGun + ' s') +
-				'<button class="miniBtn" data-act="drop" data-slot="' + index +
-				'" title="withdraw · the stake stays in the pool' +
+				'<button class="miniBtn" data-act="drop" data-slot="' + index + '"' +
+				(career.flying ? ' disabled' : '') +
+				' title="withdraw · the stake stays in the pool' +
 				(task.capitalRefund > 0 ? ' · deducts −' + task.capitalRefund.toFixed(2) + ' Capital refund' : '') +
 				'">drop</button>';
 		}

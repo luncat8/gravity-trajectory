@@ -449,7 +449,8 @@
 			padCapacity: activePad && activePad.battery ? activePad.battery.capacity : 0,
 			ownFreeKwh: ownFreeKwh,
 			waitGainKwh: ownPadHere
-				? OrbitTech.solarCharge(ownPad.panel, career.light[at], GravitySim.WAIT_PAD_SEC) : 0,
+				? OrbitTech.solarCharge(ownPad.panel, career.light[at],
+					GravityGame.careerWaitPadSeconds()) : 0,
 			minFee: at >= 0 ? GravityGame.launchFee(career, at, speedMin) : 0,
 			commercialBase: commercialBase,
 			commercialKwh: commercialKwh,

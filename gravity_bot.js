@@ -2148,7 +2148,7 @@
 		const free = pad.chargeKwh - pad.reservedKwh;
 		/* the launch cycle is priced on the pad clock: the flight's pad
 		 * seconds plus the pad seconds the panel needs to replace the shot */
-		const flownSec = GravitySim.padSeconds(GravitySim.gameSeconds(record.steps));
+		const flownSec = GravityGame.careerPadSeconds(GravitySim.gameSeconds(record.steps));
 		const speed = GravityGame.speedOf(record.speedU);
 		const energy = OrbitTech.launchEnergy(mass, pad.catapult, speed);
 		const missed = energy > free ? energy - free : 0;
@@ -2236,7 +2236,7 @@
 	GravityBot.prototype.careerGearOffer = function (career, rate, cost, kind, item, mate, label) {
 		const best = this.careerGear;
 		if (cost + CAREER_PURSE_RESERVE + careerRefundEscrow(career) > career.ledger.purse + 1e-9) return;
-		const value = (rate > 0 ? rate : 0) * CAREER_PAD_HORIZON;
+		const value = (rate > 0 ? rate : 0) * CAREER_PAD_HORIZON * GravityGame.padScaleOf();
 		if (value <= best.value) return;
 		best.value = value;
 		best.rate = rate;
@@ -2593,7 +2593,7 @@
 		if (!(energy > 0)) return 0;
 		const pad = sourcePad || GravityGame.padAt(career, planet);
 		const gain = OrbitTech.solarCharge(pad.panel, career.light[planet],
-			GravitySim.padSeconds(CAREER_WAIT_SECONDS));
+			GravityGame.careerPadSeconds(CAREER_WAIT_SECONDS));
 		return gain > 0 ? energy / gain : Infinity;
 	};
 
@@ -3713,6 +3713,7 @@
 			return false;
 		}
 		if (!requested) this.careerPrepareFuel(p, plan, market, runStep);
+		this.careerRaceEntry(career, p.sim, plan, runStep);
 		p.readyStep = runStep + CAREER_RIVAL_GAP;
 		const out = p.plan;
 		out.origin = plan.origin;
@@ -4177,28 +4178,45 @@
 	GravityBot.prototype.careerReadyShot = function (r, plan, market, runStep, priced) {
 		r.idleTries = 0;
 		if (priced) this.careerPriceBurn(r, plan, market, runStep);
-		const career = r.career;
-		if (plan) this.careerRaceEntry(career, plan, runStep);
 		return plan;
 	};
 
 	/*
-	 * Enter the shared race when the ready shot already starts where it starts
-	 * and clears its length inside the window: the entry pays for itself while
-	 * the pool still covers the stake with the entered rivals to split it.
-	 * The queued shot then holds on the barrel until the gun (0.7.41).
+	 * Enter the shared race once the shot is committed (past sit and fuel prep)
+	 * and starts on the race planet inside the window: the entry pays for
+	 * itself while the pool still covers the stake with the entered rivals to
+	 * split it, and only when the remaining purse still covers the rail fee and
+	 * arrival departure. The queued shot then holds on the barrel until the gun.
 	 */
-	GravityBot.prototype.careerRaceEntry = function (career, plan, runStep) {
+	GravityBot.prototype.careerRaceEntry = function (career, sim, plan, runStep) {
 		const sport = GravityGame.sportStateOf(career);
 		if (sport.kind !== GravityGame.TASK_COMPETE ||
 			(sport.enteredMask & (1 << career.index)) !== 0 ||
 			plan.origin !== sport.planet || plan.length < sport.minLength) return false;
-		const launchStep = runStep < sport.startsAt ? sport.startsAt : runStep;
-		if (launchStep + plan.steps > sport.deadline) return false;
+		if (sim && !sim.fieldStatic && runStep < sport.startsAt) return false;
+		const holdStep = runStep < sport.startsAt ? sport.startsAt : runStep;
+		const period = GravityGame.turretPeriod(career.galaxy, plan.origin);
+		const gun = GravityGame.turretAngle(career.galaxy, plan.origin, holdStep * GravitySim.DT);
+		let delta = plan.angle - gun;
+		delta -= Math.floor(delta / TAU) * TAU;
+		const wait = delta < 0.02 ? 0 : delta / TAU * period;
+		const fireAt = holdStep + Math.ceil(wait / GravitySim.DT);
+		if (fireAt + plan.steps > sport.deadline) return false;
+		const atCapital = career.capitalPlanet >= 0 && plan.origin === career.capitalPlanet;
+		const afterStake = career.ledger.purse + (atCapital ? GravityGame.CAPITAL_REFUND : 0) -
+			GravityGame.COMPETE_ENTRY;
+		const escrow = GravityGame.careerRefundEscrow(career);
+		const fee = plan.fee || 0;
+		if (afterStake - fee - escrow < -1e-9) return false;
+		if (afterStake + (plan.cashNet || 0) - escrow < (plan.exitCost || 0) - 1e-9) return false;
 		let entered = 0;
 		for (let mask = sport.enteredMask & ~(1 << career.index); mask; mask &= mask - 1) entered += 1;
 		if (sport.pool / (1 + entered) - GravityGame.COMPETE_ENTRY <= 0) return false;
-		return GravityGame.acceptTask(career, GravityGame.COMPETE_SLOT);
+		if (!GravityGame.acceptTask(career, GravityGame.COMPETE_SLOT)) return false;
+		this.traceAdd(careerTraceIndex(career), 'sport', 'entered at P' + sport.planet +
+			' · −' + GravityGame.COMPETE_ENTRY.toFixed(2) + ' stake · pool +' +
+			sport.pool.toFixed(2), runStep);
+		return true;
 	};
 
 	GravityBot.prototype.careerOpenFan = function (r, market, runStep, angles) {
@@ -4304,11 +4322,11 @@
 	/* Accumulate the live leak-then-sun update over N game steps. Solar input
 	 * leaks too; treating the whole wait as one charging step overquotes it. */
 	function careerChargeAfter(pad, panel, light, steps, ignoreReserve) {
-		const minutes = GravitySim.padMinutes(GravitySim.DT);
+		const minutes = GravityGame.careerPadMinutes(GravitySim.DT);
 		const decay = pad.battery.leak * minutes;
 		const sunSteps = decay ? Math.expm1(-decay * steps) / Math.expm1(-decay) : steps;
 		const next = OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, minutes * steps) +
-			OrbitTech.solarCharge(panel, light, GravitySim.padSeconds(GravitySim.DT) * sunSteps);
+			OrbitTech.solarCharge(panel, light, GravityGame.careerPadSeconds(GravitySim.DT) * sunSteps);
 		return Math.max(0, Math.min(next, pad.battery.capacity) -
 			(ignoreReserve ? 0 : pad.reservedKwh));
 	}
@@ -4528,6 +4546,7 @@
 				return false;
 			}
 			if (!requested) this.careerPrepareFuel(r, plan, market, runStep);
+			this.careerRaceEntry(career, sim, plan, runStep);
 			/* queue the shot: the first to queue claims the pad charge, then the
 			 * barrel turns on the same in-game clock the player's turret uses —
 			 * an entered race shot waits for the gun when it queues early */

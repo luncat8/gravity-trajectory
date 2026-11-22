@@ -140,6 +140,12 @@ const expForceEl = $('expForce');
 const expForceLabelEl = $('expForceLabel');
 const expWearEl = $('expWear');
 const expWearLabelEl = $('expWearLabel');
+const expPadsEl = $('expPads');
+const expPadsLabelEl = $('expPadsLabel');
+const expRotEl = $('expRot');
+const expRotLabelEl = $('expRotLabel');
+const expPayEl = $('expPay');
+const expPayLabelEl = $('expPayLabel');
 const expHarvestEl = $('expHarvest');
 const expTagEl = $('expTag');
 const launchButton = $('launch');
@@ -368,10 +374,13 @@ let hudFolded = false;
 let fine = false;
 let dirty = false;
 let trimLast = 0;
-/* experimental gravity, rail force, career space ageing and stay-pay */
+/* experimental gravity, rail force, career space ageing, pads, rot, pay and stay-pay */
 let gravityScale = 1;
 let forceScale = 1;
 let spaceWearScale = 1;
+let padScale = 1;
+let rotScale = 1;
+let payScale = 1;
 let harvestTick = false;
 let experimentTouched = false;
 let hudAt = -Infinity;
@@ -451,7 +460,7 @@ function makeAimSlot() {
  */
 const game = { on: false, seed: 0, fixedRate: false, rule: RULE_TOUR, bot: BOT_NORMAL,
 	player: PLAYER_USER, cheat: null, playerCount: 0, planetUniverse: 0,
-	gravityScale: 1, forceScale: 1, spaceWearScale: 1, harvestTick: false,
+	gravityScale: 1, forceScale: 1, spaceWearScale: 1, padScale: 1, rotScale: 1, payScale: 1, harvestTick: false,
 	shots: [], steps: 0, clockSteps: 0, doneSteps: -1, length: 0,
 	market: GravityGame.createMarket(), money: GravityGame.createLedger(),
 	galaxy: GravityGame.createGalaxy() };
@@ -609,6 +618,9 @@ if (expForceEl) {
 	expForceEl.addEventListener('change', onExperimentChange);
 }
 if (expWearEl) expWearEl.addEventListener('input', onWearInput);
+if (expPadsEl) expPadsEl.addEventListener('input', onPadsInput);
+if (expRotEl) expRotEl.addEventListener('input', onRotInput);
+if (expPayEl) expPayEl.addEventListener('input', onPayInput);
 if (expHarvestEl) expHarvestEl.addEventListener('change', onHarvestChange);
 horizonSlider.addEventListener('input', () => {
 	cargoSim.horizon = Number(horizonSlider.value);
@@ -1028,7 +1040,10 @@ root.GravityScene = {
 	aimGuidance: () => aimGuidance,
 	predTime: () => activeSim().predTime,
 	speedCeiling,
-	experimentScales: () => ({ gravity: gravityScale, force: forceScale, spaceWear: spaceWearScale, harvestTick: harvestTick && careerRule() }),
+	experimentScales: () => ({
+		gravity: gravityScale, force: forceScale, spaceWear: spaceWearScale,
+		pad: padScale, rot: rotScale, pay: payScale, harvestTick: harvestTick && careerRule()
+	}),
 	/* the profit-pill highlight: systems a flying ship is inside vs the ones
 	 * the traced path ahead will enter */
 	harvestMarks: () => ({ inside: liveHarvestMask, route: predHarvestMask }),

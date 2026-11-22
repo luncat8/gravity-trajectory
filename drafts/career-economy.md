@@ -255,8 +255,11 @@ limit range of drag ui to actual catapult strength. so player will not drag and 
 
 make new experimental settings panel add sliders to adjust system global gravity and catapult force.
 
-→ `experimental`: `g field ×0…×9`, `catapult ×0.25…×3`, `stay-pay · per tick`.
-**open** → `../0.7.39-plan-harvest-ticks.md`: the stay-pay arithmetic.
+→ **shipped** (`../archive/0.7.39-plan-harvest-ticks.md`,
+`../archive/0.7.42-plan-balance-knobs.md`): `experimental` holds `g field ×0…×9`,
+`catapult ×0.25…×3`, `space wear ×0…×3` (`&ws=`), `pads ×0.25…×4` (`&ps=`),
+`rot ×0…×3` (`&rs=`), `pay ×0.25…×3` (`&ys=`) and `stay-pay · per tick`
+(`&ht=1`), with exact forecast, launch-book and replay parity.
 
 ## buy more ships
 settings checkbox:

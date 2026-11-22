@@ -150,6 +150,9 @@
 			!Number.isFinite(snapshot.gs) || snapshot.gs < 0 || snapshot.gs > 9 ||
 			!Number.isFinite(snapshot.fs) || snapshot.fs < 0.25 || snapshot.fs > 3 ||
 			!Number.isFinite(snapshot.ws) || snapshot.ws < 0 || snapshot.ws > 3 ||
+			(snapshot.ps !== undefined && (!Number.isFinite(snapshot.ps) || snapshot.ps < 0.25 || snapshot.ps > 4)) ||
+			(snapshot.rs !== undefined && (!Number.isFinite(snapshot.rs) || snapshot.rs < 0 || snapshot.rs > 3)) ||
+			(snapshot.ys !== undefined && (!Number.isFinite(snapshot.ys) || snapshot.ys < 0.25 || snapshot.ys > 3)) ||
 			!Object.prototype.hasOwnProperty.call(GravityGame.BOTS, snapshot.bot) ||
 			!Object.prototype.hasOwnProperty.call(GravityGame.PLAYER_TYPES, snapshot.player) ||
 			(snapshot.cheat !== null && !Object.prototype.hasOwnProperty.call(GravityGame.CHEATS, snapshot.cheat)) ||

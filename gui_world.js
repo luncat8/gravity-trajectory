@@ -320,6 +320,12 @@ function syncSeedUrl(keepReplay = false) {
 	else params.delete('fs');
 	if (game.on && careerRule() && spaceWearScale !== 1) params.set('ws', String(spaceWearScale));
 	else params.delete('ws');
+	if (game.on && careerRule() && padScale !== 1) params.set('ps', String(padScale));
+	else params.delete('ps');
+	if (game.on && careerRule() && rotScale !== 1) params.set('rs', String(rotScale));
+	else params.delete('rs');
+	if (game.on && careerRule() && payScale !== 1) params.set('ys', String(payScale));
+	else params.delete('ys');
 	if (game.on && careerRule() && harvestTick) params.set('ht', '1');
 	else params.delete('ht');
 	if (game.on && game.fixedRate) {

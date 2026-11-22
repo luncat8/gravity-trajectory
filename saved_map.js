@@ -183,6 +183,9 @@
 			gs: scale(info.gs),
 			fs: scale(info.fs),
 			ws: scale(info.ws),
+			ps: scale(info.ps),
+			rs: scale(info.rs),
+			ys: scale(info.ys),
 			ht: info.ht === true
 		};
 	}
@@ -397,7 +400,10 @@
 		if (wantTag !== liveTag) return null;
 		const gs = scale(sourceSim && sourceSim.gravityScale);
 		const fs = scale(sourceSim && sourceSim.forceScale);
-		if (gs !== scale(record.gs) || fs !== scale(record.fs)) return null;
+		const ps = scale(GravityGame.padScaleOf());
+		const ys = scale(GravityGame.payScaleOf());
+		if (gs !== scale(record.gs) || fs !== scale(record.fs) ||
+			ps !== scale(record.ps) || ys !== scale(record.ys)) return null;
 		armed = null;
 		return GravityGame.rememberSeatPlan(galaxy, world, trade, mask, count, wanted,
 			sourceSim, record.seats, record.targetPay);

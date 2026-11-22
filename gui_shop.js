@@ -56,7 +56,7 @@ function padCap(career, catapult, battery) {
 /* kWh one wait of sunlight buys on that pad's panel */
 function panelWaitKwh(career, planet, panel) {
 	return panel
-		? OrbitTech.solarCharge(panel, career.light[planet], GravitySim.WAIT_PAD_SEC)
+		? OrbitTech.solarCharge(panel, career.light[planet], GravityGame.careerWaitPadSeconds())
 		: 0;
 }
 

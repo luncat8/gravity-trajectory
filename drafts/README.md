@@ -112,8 +112,6 @@ FFT:
 
 | plan | group | draft sections it answers |
 |---|---|---|
-| `../0.7.41-plan-sport-competitions.md` | `0.7` pre-FFT | `rivals-sport-competitions.md` §5.2 (`galaxy.sport` countdown, pool, barrel hold) |
-| `../0.7.42-plan-balance-knobs.md` | `0.7` pre-FFT | `career-economy.md` §2.9 / `time-scale-units.md` (`pads ×`, `rot ×`, `pay ×` alongside shipped `wear ×`) |
 | `../0.7.43-plan-seeded-map-opening.md` | `0.7` pre-FFT | `flight-lab-and-modes.md` §1.4, `hud-input-and-help.md` §6.2 (`2-4 of 10`, `+5` ceiling) |
 | `../0.7.44-plan-founding-colony.md` | `0.7` pre-FFT | `found-colony-land.md`, `career-economy.md` §2.5 |
 | `../0.7.45-plan-buy-ships.md` | `0.7` pre-FFT | `career-economy.md` §buy more ships |
@@ -124,6 +122,8 @@ FFT:
 | `../0.8.4-plan-helper-dialog.md` | `0.8` after all | `helper-dialog-draft.md` / `helper-dialog/` (remaining M3 topic browser/art/delta & M4 non-career/rival-intent) |
 | `../0.8.5-plan-accessibility-readout.md` | `0.8` after all | `sound-and-photos.md` §7.1 (`#srStatus` & HUD landmarks) |
 | `../0.8.6-plan-improve-sound.md` | `0.8` after all | `sound-and-photos.md` §7.1 (Voronoi neighbor-scale consonance, toroidal/192-body adjacency, aim/arrival/block cues) |
+| `../archive/0.7.42-plan-balance-knobs.md` (done) | — | `career-economy.md` §2.9 / `time-scale-units.md` (`pads ×`, `rot ×`, `pay ×` alongside shipped `wear ×`) |
+| `../archive/0.7.41-plan-sport-competitions.md` (done) | — | `rivals-sport-competitions.md` §5.2 (`galaxy.sport` countdown, pool, barrel hold) |
 | `../archive/0.7.40-plan-two-leg-quests.md` (done) | — | `politics-quests.md` §3.5 (`careerLegPlan`, `plan quest`) |
 | `../archive/0.7.39-plan-harvest-ticks.md` (done) | — | `career-economy.md` §2.11 (stay-pay forecast & book parity) |
 | `../archive/0.7.38-plan-lite-profile.md` (done) | — | `new/lite-version.md` (saved-map boot, still non-gameplay background, mute sound & photos) |

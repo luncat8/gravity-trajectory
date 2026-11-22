@@ -202,6 +202,9 @@ function mapRunInfo() {
 		gs: gravityScale,
 		fs: forceScale,
 		ws: spaceWearScale,
+		ps: padScale,
+		rs: rotScale,
+		ys: payScale,
 		ht: harvestTick,
 		game: game,
 		market: game.market,
@@ -240,7 +243,8 @@ function mapSameStart(a, b) {
 	for (let i = 0; i < a.seats.length; i++) {
 		if (a.seats[i] !== b.seats[i]) return false;
 	}
-	return a.gs === b.gs && a.fs === b.fs;
+	return a.gs === b.gs && a.fs === b.fs &&
+		(a.ps ?? 1) === (b.ps ?? 1) && (a.ys ?? 1) === (b.ys ?? 1);
 }
 
 function mapAppend(record) {
@@ -322,7 +326,10 @@ function applyRunRecord(record) {
 		record.gs === undefined ? 1 : record.gs,
 		record.fs === undefined ? 1 : record.fs,
 		record.ht === true,
-		record.ws === undefined ? 1 : record.ws
+		record.ws === undefined ? 1 : record.ws,
+		record.ps === undefined ? 1 : record.ps,
+		record.rs === undefined ? 1 : record.rs,
+		record.ys === undefined ? 1 : record.ys
 	);
 	careerPaused = record.state.clock.paused === true;
 	if (record.state.page) {
@@ -348,7 +355,7 @@ function applyRunRecord(record) {
 
 const FIELD_FAIR_MIN_RATIO = 0.55;
 
-function planFieldOpening(record, wantedSeats, gs, fs) {
+function planFieldOpening(record, wantedSeats, gs, fs, ps, ys) {
 	if (!Number.isInteger(record.universe) ||
 		record.universe < PLANET_UNIVERSE_MIN || record.universe > PLANET_UNIVERSE_MAX ||
 		!Array.isArray(record.gravity) || record.gravity.length < record.universe) {
@@ -364,13 +371,24 @@ function planFieldOpening(record, wantedSeats, gs, fs) {
 	GravityGame.resetGalaxy(galaxy, record.seed);
 	const probe = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
 	probe.setScales(gs, fs);
-	const homes = GravityGame.prepareCareerStarts(
-		galaxy, sim.world, sim, mask, record.universe, wantedSeats, probe);
-	if (!homes) return null;
-	const forced = new Uint8Array(PLANETS);
-	for (let i = 0; i < homes.length; i++) forced[homes[i]] = 1;
-	const stats = GravityGame.openingGroupStats(
-		sim.world, sim, mask, record.universe, forced, homes, probe);
+	const prevPs = GravityGame.padScaleOf();
+	const prevYs = GravityGame.payScaleOf();
+	GravityGame.setPadScale(ps === undefined ? 1 : ps);
+	GravityGame.setPayScale(ys === undefined ? 1 : ys);
+	let homes = null;
+	let stats = null;
+	try {
+		homes = GravityGame.prepareCareerStarts(
+			galaxy, sim.world, sim, mask, record.universe, wantedSeats, probe);
+		if (!homes) return null;
+		const forced = new Uint8Array(PLANETS);
+		for (let i = 0; i < homes.length; i++) forced[homes[i]] = 1;
+		stats = GravityGame.openingGroupStats(
+			sim.world, sim, mask, record.universe, forced, homes, probe);
+	} finally {
+		GravityGame.setPadScale(prevPs);
+		GravityGame.setPayScale(prevYs);
+	}
 	const ratio = stats.maxPay > 0 ? stats.minPay / stats.maxPay : 0;
 	if (stats.missing !== 0 || !stats.distinct || !stats.exitOk || ratio < FIELD_FAIR_MIN_RATIO) {
 		return null;
@@ -390,6 +408,9 @@ function startMapRecord(record) {
 	const gs = record.gs === undefined ? 1 : record.gs;
 	const fs = record.fs === undefined ? 1 : record.fs;
 	const ws = record.ws === undefined ? 1 : record.ws;
+	const ps = record.ps === undefined ? 1 : record.ps;
+	const rs = record.rs === undefined ? 1 : record.rs;
+	const ys = record.ys === undefined ? 1 : record.ys;
 	const ht = record.ht === true;
 	const hasSeats = Array.isArray(record.seats) && record.seats.length > 0;
 	let plannedCount = hasSeats ? record.seats.length : 0;
@@ -407,7 +428,7 @@ function startMapRecord(record) {
 			? (Number.isInteger(record.players) && record.players >= 1 && record.players <= MAX_PLAYERS
 				? record.players : defaultPlayers)
 			: 1;
-		const homes = rule === RULE_CAREER ? planFieldOpening(record, wanted, gs, fs) : [0];
+		const homes = rule === RULE_CAREER ? planFieldOpening(record, wanted, gs, fs, ps, ys) : [0];
 		if (!homes) {
 			if (prevField) PlanetGravity.arm(prevField.values, prevField.seed);
 			else PlanetGravity.disarm();
@@ -423,7 +444,7 @@ function startMapRecord(record) {
 	}
 	activeFieldMap = fieldParamKey(record);
 	if (record.rate) scene.setSpeed(record.rate);
-	setExperimentScales(gs, fs, ht, ws);
+	setExperimentScales(gs, fs, ht, ws, ps, rs, ys);
 	game.playerCount = plannedCount;
 	game.planetUniverse = record.universe;
 	startGame(record.seed, true, rule, botLevel, player, cheat);
@@ -516,6 +537,24 @@ function loadSavedMapParam(params) {
 		const ws = Number(params.get('ws'));
 		if (Number.isFinite(ws) && ws >= exp.spaceWearMin && ws <= exp.spaceWearMax) {
 			options.ws = Math.round(ws * 100) / 100;
+		}
+	}
+	if (params.has('ps')) {
+		const ps = Number(params.get('ps'));
+		if (Number.isFinite(ps) && ps >= exp.padMin && ps <= exp.padMax) {
+			options.ps = Math.round(ps * 100) / 100;
+		}
+	}
+	if (params.has('rs')) {
+		const rs = Number(params.get('rs'));
+		if (Number.isFinite(rs) && rs >= exp.rotMin && rs <= exp.rotMax) {
+			options.rs = Math.round(rs * 100) / 100;
+		}
+	}
+	if (params.has('ys')) {
+		const ys = Number(params.get('ys'));
+		if (Number.isFinite(ys) && ys >= exp.payMin && ys <= exp.payMax) {
+			options.ys = Math.round(ys * 100) / 100;
 		}
 	}
 	if (params.has('ht')) {

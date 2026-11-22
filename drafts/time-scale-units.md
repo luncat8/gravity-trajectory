@@ -13,6 +13,7 @@ balanced at, there is no “world minute” left to explain, and a `1 h` goal is
 it buys) and its tooltip carries the real cost. The background orbit knob is
 **not decoration-only in moving-port mode**: the ports are gravity sources, so
 orbit rate and pause change trajectories. Keep the shared clock and disclose
-the effect in the panel; pad/politics/profit balance sliders are a separate
-subject in `../0.7.42-plan-balance-knobs.md`. `../archive/0.7.1-worklog.md`
-records the unit corrections and the shared-clock decision.
+the effect in the panel; pad/politics/profit balance sliders shipped in
+`../archive/0.7.42-plan-balance-knobs.md` (`../archive/0.7.42-worklog.md`).
+`../archive/0.7.1-worklog.md` records the unit corrections and the shared-clock
+decision.

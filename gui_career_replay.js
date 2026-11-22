@@ -116,7 +116,9 @@ function copyCareerReplay() {
 	const head = GravityGame.encodeLink({
 		seed: game.seed, rate: scene.trade.speed, rule: game.rule, bot: game.bot,
 		player: game.player, cheat: game.cheat, gravityScale: game.gravityScale,
-		forceScale: game.forceScale, spaceWearScale: game.spaceWearScale, harvestTick: game.harvestTick,
+		forceScale: game.forceScale, spaceWearScale: game.spaceWearScale,
+		padScale: game.padScale, rotScale: game.rotScale, payScale: game.payScale,
+		harvestTick: game.harvestTick,
 		shots: []
 	});
 	const url = location.href.split('#')[0] + '#' + head + '&replay=' + encoded;
@@ -132,7 +134,8 @@ function careerOpening(start) {
 		seed: start.seed, rate: start.rate, bot: start.bot,
 		players: start.state.run.slots.slice(0, start.seats.length),
 		mask: start.state.mask, seats: start.seats, targetPay: start.targetPay,
-		g: start.gs, f: start.fs, w: start.ws, h: start.ht,
+		g: start.gs, f: start.fs, w: start.ws,
+		p: start.ps ?? 1, r: start.rs ?? 1, y: start.ys ?? 1, h: start.ht,
 		source: start.source, corruption: start.state.market.permanentCorruption,
 		...(Array.isArray(start.gravity) ? { gravity: start.gravity } : {}),
 		...(start.cheat ? { cheat: start.cheat } : {})
@@ -169,7 +172,11 @@ function validCareerActions(data) {
 		!Number.isFinite(data.rate) || data.rate < 0.5 || data.rate > 12 ||
 		!Number.isFinite(data.g) || data.g < 0 || data.g > 9 ||
 		!Number.isFinite(data.f) || data.f < 0.25 || data.f > 3 ||
-		!Number.isFinite(data.w) || data.w < 0 || data.w > 3 || typeof data.h !== 'boolean' ||
+		!Number.isFinite(data.w) || data.w < 0 || data.w > 3 ||
+		(data.p !== undefined && (!Number.isFinite(data.p) || data.p < 0.25 || data.p > 4)) ||
+		(data.r !== undefined && (!Number.isFinite(data.r) || data.r < 0 || data.r > 3)) ||
+		(data.y !== undefined && (!Number.isFinite(data.y) || data.y < 0.25 || data.y > 3)) ||
+		typeof data.h !== 'boolean' ||
 		!Object.hasOwn(GravityGame.BOTS, data.bot) ||
 		(data.cheat !== undefined && !Object.hasOwn(GravityGame.CHEATS, data.cheat)) ||
 		(data.source !== MODE_PLANETS && data.source !== MODE_PORTS) || typeof data.corruption !== 'boolean' ||
@@ -214,15 +221,18 @@ function startCareerActionsReplay(data) {
 	careerActionReplayReset();
 	GravityMaps.applyField(data);
 	activeFieldMap = fieldParamKey(data);
+	const pScale = data.p === undefined ? 1 : data.p;
+	const rScale = data.r === undefined ? 1 : data.r;
+	const yScale = data.y === undefined ? 1 : data.y;
 	GravityMaps.arm({ seed: data.seed, seats: data.seats, universe: universe,
-		gs: data.g, fs: data.f, targetPay: data.targetPay,
+		gs: data.g, fs: data.f, ps: pScale, ys: yScale, targetPay: data.targetPay,
 		...(Array.isArray(data.gravity) ? { gravity: data.gravity } : {}),
 		state: { mask: data.mask } });
 	game.planetUniverse = universe;
 	game.playerCount = data.players.length;
 	for (let i = 0; i < MAX_PLAYERS; i++) slotTypes[i] = data.players[i] || PLAYER_BOT;
 	$('permanentCorruption').checked = data.corruption;
-	setExperimentScales(data.g, data.f, data.h, data.w);
+	setExperimentScales(data.g, data.f, data.h, data.w, pScale, rScale, yScale);
 	scene.setSpeed(data.rate);
 	setSource(data.source, false);
 	startGame(data.seed, true, RULE_CAREER, data.bot, data.players[0], data.cheat);
@@ -339,7 +349,14 @@ function applyCareerAction(entry) {
 		if (!Object.hasOwn(GravityGame.BOTS, entry.bot) || entry.bot === BOT_OFF) return false;
 		setBot(entry.bot); return true;
 	}
-	if (entry.type === 'scales') { setExperimentScales(entry.g, entry.f, entry.h, entry.w); return true; }
+	if (entry.type === 'scales') {
+		setExperimentScales(entry.g, entry.f, entry.h, entry.w, entry.p, entry.r, entry.y);
+		if (careerRule()) {
+			refreshCareerPanel();
+			refreshLaunchList(true);
+		}
+		return true;
+	}
 	if (entry.type === 'source') {
 		if (entry.mode !== MODE_PLANETS && entry.mode !== MODE_PORTS) return false;
 		setSource(entry.mode);
@@ -446,9 +463,14 @@ function restoreCareerReplayField(field) {
 function applyCareerReplaySnapshot(snapshot) {
 	careerReplayRoster(snapshot);
 	if (snapshot.source !== mode) setSource(snapshot.source);
+	const snapPs = snapshot.ps === undefined ? 1 : snapshot.ps;
+	const snapRs = snapshot.rs === undefined ? 1 : snapshot.rs;
+	const snapYs = snapshot.ys === undefined ? 1 : snapshot.ys;
 	if (snapshot.gs !== gravityScale || snapshot.fs !== forceScale ||
-		snapshot.ws !== spaceWearScale || snapshot.ht !== harvestTick) {
-		setExperimentScales(snapshot.gs, snapshot.fs, snapshot.ht, snapshot.ws);
+		snapshot.ws !== spaceWearScale || snapPs !== padScale ||
+		snapRs !== rotScale || snapYs !== payScale || snapshot.ht !== harvestTick) {
+		setExperimentScales(snapshot.gs, snapshot.fs, snapshot.ht, snapshot.ws,
+			snapPs, snapRs, snapYs);
 	}
 	if (!GravityMaps.applyState(mapRunInfo(), snapshot)) throw new Error('invalid career state');
 	restoreCareerReplayField(snapshot.state.field);

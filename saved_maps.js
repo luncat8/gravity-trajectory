@@ -21,6 +21,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "career default",
 			stats: {
@@ -44,6 +47,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "career default",
 			stats: {
@@ -67,6 +73,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "YOU + one rival",
 			stats: {
@@ -90,6 +99,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "the old 26-world subset",
 			stats: {
@@ -113,6 +125,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "the small universe",
 			stats: {
@@ -136,6 +151,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "four companies on 26",
 			stats: {
@@ -159,6 +177,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "career default · a page-test world",
 			stats: {
@@ -182,6 +203,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "career default · a page-test world",
 			stats: {
@@ -205,6 +229,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "career default · a page-test world",
 			stats: {
@@ -228,6 +255,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "career default · a page-test world",
 			stats: {
@@ -251,6 +281,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "career default",
 			stats: {
@@ -274,6 +307,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "YOU + one rival · a lite easy start",
 			stats: {
@@ -297,6 +333,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "YOU + one rival · a lite easy start",
 			stats: {
@@ -320,6 +359,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "YOU + one rival · a lite easy start",
 			stats: {
@@ -343,6 +385,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "four companies · a lite 4-seat start",
 			stats: {
@@ -366,6 +411,9 @@
 			gs: 1,
 			fs: 1,
 			ws: 1,
+			ps: 1,
+			rs: 1,
+			ys: 1,
 			ht: false,
 			note: "four companies · a lite 4-seat start",
 			stats: {

@@ -226,7 +226,10 @@ function drawPlanetProfits() {
 		const seized = career && game.market.seized[i] === 1;
 		const quiet = career && game.market.quiet[i] === 1;
 		const rotCents = career && !isCapital && !isArf && !rebel
-			? Math.round(rawVal * 100) : cents;
+			? (GravityGame.rotScaleOf() > 0
+				? Math.round(GravityGame.planetProfitUnscaledAt(game.market, i, step,
+					game.market.lastVisitStep[i]) * 100) : 0)
+			: cents;
 		const rotHigh = rotCents >= PROFIT_ROT_MID_CENTS;
 		const rotGrowing = rotCents > PROFIT_ROT_START_CENTS;
 		const border = rebel ? REBEL

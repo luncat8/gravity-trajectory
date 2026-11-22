@@ -364,4 +364,111 @@ check('a stale mirror is detectable and a refresh heals it', () => {
 	assert.strictEqual(GravityGame.sportMirrorStale(w.career), false, 'fresh again');
 });
 
+/* --- 6. forecast, escrow, bot solvency & GUI barrel gates (review) ------- */
+
+check('mid-flight careerLandingFacts never credits pool to a pre-gun launch', () => {
+	const w = makeWorld(23);
+	const host = w.career;
+	GravityGame.placeShip(host, w.sim, host.hq);
+	const sport = w.galaxy.sport;
+	seedEvent(sport, host.hq, 300, 2.5, 50, 10000);
+	GravityGame.refreshBoard(host, w.trade, 5);
+	assert.ok(GravityGame.acceptTask(host, GravityGame.COMPETE_SLOT));
+	w.sim.launch(host.hq, 0, 80);
+	GravityGame.careerBeginFlight(host, w.sim, 10);
+	host.flying = true;
+	const facts = { cash: 0, credit: 0, leg: 0 };
+	GravityGame.careerLandingFacts(facts, host, host.hq, (host.hq + 1) % UNIVERSE,
+		200, 200, 30, 60, 0, 80);
+	assert.strictEqual(facts.cash, 0, 'pre-gun flight in space cannot forecast pool');
+	host.flightStartStep = 50;
+	GravityGame.careerLandingFacts(facts, host, host.hq, (host.hq + 1) % UNIVERSE,
+		200, 200, 30, 60, 0, 80);
+	assert.ok(Math.abs(facts.cash - sport.pool) < 1e-9, 'post-gun flight forecasts pool');
+});
+
+check('single-leg careerLegPlan preserves contract escrow when only sport completes', () => {
+	const w = makeWorld(23);
+	const host = w.career;
+	GravityGame.placeShip(host, w.sim, host.capitalPlanet);
+	/* fit hold so a delivery can be accepted at the Capital alongside sport */
+	host.ship.hold = OrbitTech.HOLDS[1];
+	const deliv = host.tasks[0];
+	deliv.kind = GravityGame.TASK_DELIVERY;
+	deliv.state = GravityGame.TASK_OFFERED;
+	deliv.from = (host.hq + 1) % UNIVERSE;
+	deliv.to = (host.hq + 2) % UNIVERSE;
+	deliv.tons = 4;
+	deliv.reward = 2;
+	deliv.deadline = 10000;
+	const sport = w.galaxy.sport;
+	seedEvent(sport, host.hq, 300, 2.0, 0, 10000);
+	GravityGame.refreshBoard(host, w.trade, 5);
+	assert.ok(GravityGame.acceptTask(host, 0), 'accepted delivery at Capital');
+	assert.ok(GravityGame.acceptTask(host, GravityGame.COMPETE_SLOT), 'accepted sport at Capital');
+	assert.strictEqual(GravityGame.careerRefundEscrow(host), 6, 'both refunds in escrow');
+	GravityGame.placeShip(host, w.sim, host.hq);
+	host.ledger.purse = 2.5;
+	w.sim.setPlanets(OrbitWorld.PLANETS, w.trade.planetX, w.trade.planetY, w.trade.planetR,
+		w.trade.orbitRX, w.trade.orbitRY, w.trade.orbitTiltCos, w.trade.orbitTiltSin);
+	w.sim.setPlanetMask(universe());
+	const out = GravityGame.createLegPlan();
+	const opts = { exitSpeedFn: () => 60 };
+	/* landing back on owned HQ has exit cost 0, isolating the remaining +3 delivery escrow */
+	GravityGame.careerLegPlan(out, host, w.market, w.sim, {
+		origin: host.hq, body: host.hq, speed: 60, steps: 40, length: 400, visitPay: 0, fee: 0
+	}, 10, opts);
+	assert.strictEqual(out.feasible, false,
+		'purse 2.5 < remaining 3.0 delivery escrow must reject hop');
+	host.ledger.purse = 3.5;
+	GravityGame.careerLegPlan(out, host, w.market, w.sim, {
+		origin: host.hq, body: host.hq, speed: 60, steps: 40, length: 400, visitPay: 0, fee: 0
+	}, 10, opts);
+	assert.strictEqual(out.feasible, true,
+		'purse 3.5 >= remaining 3.0 delivery escrow allows hop');
+});
+
+check('bot careerRaceEntry refuses stake when remaining purse cannot cover rail fee', () => {
+	const GravityBot = require(path.join(root, 'gravity_bot.js'));
+	const w = makeWorld(23);
+	const host = w.career;
+	GravityGame.placeShip(host, w.sim, host.arfPlanet);
+	const sport = w.galaxy.sport;
+	seedEvent(sport, host.arfPlanet, 300, 3.0, 0, 10000);
+	GravityGame.refreshBoard(host, w.trade, 5);
+	const bot = new GravityBot();
+	const plan = { origin: host.arfPlanet, body: host.hq, angle: 0, speed: 70,
+		length: 500, steps: 40, fee: 1.4, cashNet: 0.2, exitCost: 0 };
+	host.ledger.purse = 1.6;
+	assert.strictEqual(bot.careerRaceEntry(host, w.sim, plan, 5), false,
+		'1.60 - 0.50 stake < 1.40 fee must refuse entry');
+	host.ledger.purse = 2.5;
+	assert.strictEqual(bot.careerRaceEntry(host, w.sim, plan, 5), true,
+		'2.50 - 0.50 stake covers 1.40 fee and enters');
+});
+
+check('GUI careerAct allows late race accept (re-floors barrel) and race drop (cancels barrel)', () => {
+	const vm = require('vm');
+	const { loadPage, mapSearch } = require('./dom_stub.js');
+	const page = loadPage({ search: mapSearch(3) + '&bot=off' });
+	const ctx = page.context;
+	const career = ctx.GravityScene.career;
+	const sport = ctx.GravityScene.game.galaxy.sport;
+	seedEvent(sport, career.hq, 300, 3.0, 500, 5000);
+	ctx.GravityGame.refreshBoard(career, ctx.tradeSim, ctx.GravityScene.game.clockSteps);
+	vm.runInContext('aimBody = game.career.hq; aimAngle = 0.5; aimSpeed = 60; armed = true; queueTurretShot();', ctx);
+	const beforeFireAt = vm.runInContext('turret.fireAt', ctx);
+	assert.ok(beforeFireAt < 500, 'unentered shot queues before gun');
+	ctx.careerAct({ act: 'accept', slot: String(GravityGame.COMPETE_SLOT) });
+	assert.strictEqual(career.tasks[GravityGame.COMPETE_SLOT].state, GravityGame.TASK_ACCEPTED,
+		'careerAct accepted COMPETE_SLOT while barrel pending');
+	const heldFireAt = vm.runInContext('turret.fireAt', ctx);
+	assert.ok(heldFireAt >= 500, 'late accept re-floored queued barrel to >= startsAt');
+	ctx.careerAct({ act: 'drop', slot: String(GravityGame.COMPETE_SLOT) });
+	assert.strictEqual(career.tasks[GravityGame.COMPETE_SLOT].state, GravityGame.TASK_OFFERED,
+		'careerAct dropped COMPETE_SLOT while barrel held');
+	assert.strictEqual(vm.runInContext('turret.pending', ctx), false,
+		'dropping COMPETE_SLOT canceled the held barrel');
+});
+
 finish();

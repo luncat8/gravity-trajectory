@@ -68,6 +68,9 @@ function refreshGameUi() {
 	if (expGravityEl) expGravityEl.disabled = experimentLock;
 	if (expForceEl) expForceEl.disabled = experimentLock;
 	if (expWearEl) expWearEl.disabled = experimentLock || !career;
+	if (expPadsEl) expPadsEl.disabled = experimentLock || !career;
+	if (expRotEl) expRotEl.disabled = experimentLock || !career;
+	if (expPayEl) expPayEl.disabled = experimentLock || !career;
 	/* the stay-pay only exists in career: outside it the box is off and dim */
 	if (expHarvestEl) expHarvestEl.disabled = experimentLock || !career;
 	/* Moving ports share the orbit clock with gravity. Keep that clock fixed

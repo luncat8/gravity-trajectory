@@ -230,46 +230,73 @@ function applyExperiment() {
 		const career = slotCareer(s);
 		if (career) career.forceScale = forceScale;
 	}
+	const career = careerRule();
 	GravityGame.setSpaceWearScale(spaceWearScale);
-	const careerTicks = harvestTick && careerRule();
+	GravityGame.setPadScale(padScale);
+	GravityGame.setRotScale(rotScale);
+	GravityGame.setPayScale(career ? payScale : 1);
+	const careerTicks = harvestTick && career;
 	GravityGame.setHarvestMode(careerTicks
 		? GravityGame.HARVEST_TICK : GravityGame.HARVEST_ENTRY);
 	game.gravityScale = gravityScale;
 	game.forceScale = forceScale;
 	game.spaceWearScale = spaceWearScale;
+	game.padScale = padScale;
+	game.rotScale = rotScale;
+	game.payScale = payScale;
 	game.harvestTick = careerTicks;
 }
 
 function refreshExperimentUi() {
 	const gravityText = '×' + gravityScale.toFixed(2);
 	const forceText = '×' + forceScale.toFixed(2);
-	const careerTicks = harvestTick && careerRule();
+	const career = careerRule();
+	const careerTicks = harvestTick && career;
 	if (expGravityLabelEl) expGravityLabelEl.textContent = gravityText;
 	if (expForceLabelEl) expForceLabelEl.textContent = forceText;
 	if (expWearLabelEl) expWearLabelEl.textContent = '×' + spaceWearScale.toFixed(2);
+	if (expPadsLabelEl) expPadsLabelEl.textContent = '×' + padScale.toFixed(2);
+	if (expRotLabelEl) expRotLabelEl.textContent = '×' + rotScale.toFixed(2);
+	if (expPayLabelEl) expPayLabelEl.textContent = '×' + payScale.toFixed(2);
 	if (expHarvestEl) expHarvestEl.checked = careerTicks;
 	if (expTagEl) {
 		expTagEl.textContent = 'g ' + gravityText + ' · force ' + forceText +
-			(careerRule() ? ' · wear ×' + spaceWearScale.toFixed(2) : '') +
+			(career ? ' · wear ×' + spaceWearScale.toFixed(2) +
+				(padScale !== 1 ? ' · pads ×' + padScale.toFixed(2) : '') +
+				(rotScale !== 1 ? ' · rot ×' + rotScale.toFixed(2) : '') +
+				(payScale !== 1 ? ' · pay ×' + payScale.toFixed(2) : '') : '') +
 			(careerTicks ? ' · ticks' : '');
 	}
 }
 
 /* one entry point for the sliders and for a link that carries the scales */
-function setExperimentScales(nextGravity, nextForce, nextHarvest, nextWear) {
+function setExperimentScales(nextGravity, nextForce, nextHarvest, nextWear, nextPad, nextRot, nextPay) {
+	const gVal = Math.round(nextGravity * 100) / 100;
+	const fVal = Math.round(nextForce * 100) / 100;
+	const hVal = nextHarvest === true;
+	const wVal = nextWear === undefined ? spaceWearScale : Math.round(nextWear * 100) / 100;
+	const pVal = nextPad === undefined ? padScale : Math.round(nextPad * 100) / 100;
+	const rVal = nextRot === undefined ? rotScale : Math.round(nextRot * 100) / 100;
+	const yVal = nextPay === undefined ? payScale : Math.round(nextPay * 100) / 100;
 	if (careerRule() && game.on && careerRecording.record &&
-		(nextGravity !== gravityScale || nextForce !== forceScale || nextHarvest !== harvestTick ||
-		(nextWear !== undefined && nextWear !== spaceWearScale))) {
-		recordCareerAction('scales', { g: nextGravity, f: nextForce, h: nextHarvest === true, w: nextWear === undefined ? spaceWearScale : nextWear });
+		(gVal !== gravityScale || fVal !== forceScale || hVal !== harvestTick ||
+		wVal !== spaceWearScale || pVal !== padScale || rVal !== rotScale || yVal !== payScale)) {
+		recordCareerAction('scales', { g: gVal, f: fVal, h: hVal, w: wVal, p: pVal, r: rVal, y: yVal });
 	}
 	careerRecordingMark();
-	gravityScale = Math.round(nextGravity * 100) / 100;
-	forceScale = Math.round(nextForce * 100) / 100;
-	if (nextWear !== undefined) spaceWearScale = Math.round(nextWear * 100) / 100;
-	harvestTick = nextHarvest === true;
+	gravityScale = gVal;
+	forceScale = fVal;
+	spaceWearScale = wVal;
+	padScale = pVal;
+	rotScale = rVal;
+	payScale = yVal;
+	harvestTick = hVal;
 	if (expGravityEl) expGravityEl.value = String(gravityScale);
 	if (expForceEl) expForceEl.value = String(forceScale);
 	if (expWearEl) expWearEl.value = String(spaceWearScale);
+	if (expPadsEl) expPadsEl.value = String(padScale);
+	if (expRotEl) expRotEl.value = String(rotScale);
+	if (expPayEl) expPayEl.value = String(payScale);
 	applyExperiment();
 	refreshExperimentUi();
 }
@@ -281,7 +308,12 @@ function onHarvestChange() {
 	if (careerInputLocked()) return;
 	const next = Boolean(expHarvestEl && expHarvestEl.checked) && careerRule();
 	if (next !== harvestTick) cancelHelperForChange('stay-pay');
-	if (next !== harvestTick) recordCareerAction('scales', { g: gravityScale, f: forceScale, h: next, w: spaceWearScale });
+	if (next !== harvestTick) {
+		recordCareerAction('scales', {
+			g: gravityScale, f: forceScale, h: next,
+			w: spaceWearScale, p: padScale, r: rotScale, y: payScale
+		});
+	}
 	harvestTick = next;
 	careerRecordingMark();
 	applyExperiment();
@@ -293,23 +325,54 @@ function onHarvestChange() {
 	careerRecordingCapture(true);
 }
 
+function applyCareerScaleChange(label) {
+	recordCareerAction('scales', {
+		g: gravityScale, f: forceScale, h: harvestTick,
+		w: spaceWearScale, p: padScale, r: rotScale, y: payScale
+	});
+	careerRecordingMark();
+	cancelHelperForChange(label);
+	applyExperiment();
+	refreshExperimentUi();
+	syncSeedUrl();
+	refreshCareerPanel();
+	refreshLaunchList(true);
+	dirty = true;
+	hudAt = -Infinity;
+	careerRecordingCapture(true);
+}
+
 /* Ageing affects every company and any active preview, not the field itself. */
 function onWearInput() {
 	if (!careerRule() || careerInputLocked()) return;
 	const next = Math.round(Number(expWearEl.value) * 100) / 100;
 	if (next === spaceWearScale) return;
-	recordCareerAction('scales', { g: gravityScale, f: forceScale, h: harvestTick, w: next });
 	spaceWearScale = next;
-	careerRecordingMark();
-	cancelHelperForChange('space wear');
-	GravityGame.setSpaceWearScale(spaceWearScale);
-	game.spaceWearScale = spaceWearScale;
-	refreshExperimentUi();
-	syncSeedUrl();
-	refreshLaunchList(true);
-	dirty = true;
-	hudAt = -Infinity;
-	careerRecordingCapture(true);
+	applyCareerScaleChange('space wear');
+}
+
+function onPadsInput() {
+	if (!careerRule() || careerInputLocked()) return;
+	const next = Math.round(Number(expPadsEl.value) * 100) / 100;
+	if (next === padScale) return;
+	padScale = next;
+	applyCareerScaleChange('pads');
+}
+
+function onRotInput() {
+	if (!careerRule() || careerInputLocked()) return;
+	const next = Math.round(Number(expRotEl.value) * 100) / 100;
+	if (next === rotScale) return;
+	rotScale = next;
+	applyCareerScaleChange('rot');
+}
+
+function onPayInput() {
+	if (!careerRule() || careerInputLocked()) return;
+	const next = Math.round(Number(expPayEl.value) * 100) / 100;
+	if (next === payScale) return;
+	payScale = next;
+	applyCareerScaleChange('pay');
 }
 
 /* a pad can lose its ceiling while a shot is armed (drained battery, lowered

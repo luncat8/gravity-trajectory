@@ -14,8 +14,8 @@
 function waitSettlement(career) {
 	const steps = GravitySim.stepsForGameSeconds(GravitySim.WAIT_SEC);
 	const gameSec = Math.round(GravitySim.gameSeconds(steps));
-	const padSec = GravitySim.padSeconds(DT);
-	const padMin = GravitySim.padMinutes(DT);
+	const padSec = GravityGame.careerPadSeconds(DT);
+	const padMin = GravityGame.careerPadMinutes(DT);
 	/* what the same span costs to watch instead of fast-forwarding */
 	const watchSec = GravitySim.wallSeconds(steps, playPace());
 	const nextStep = game.clockSteps + steps;
@@ -358,8 +358,14 @@ function careerAccept(career, index) {
 	const refund = task.capitalRefund > 0 ? ' · +' + task.capitalRefund.toFixed(2) + ' Capital refund' : '';
 	if (task.kind === GravityGame.TASK_COMPETE) {
 		/* entering while a shot is already queued on the race planet before the
-		 * gun holds that barrel too: an entrant never fires before the start */
-		reFloorTurretForRace(task);
+		 * gun holds that barrel too (or drops it if the remaining purse can no
+		 * longer cover the rail fee): an entrant never fires before the start */
+		if (turret.pending &&
+			career.ledger.purse + 1e-9 < GravityGame.launchFee(career, turret.body, turret.speed)) {
+			cancelTurret();
+		} else {
+			reFloorTurretForRace(task);
+		}
 		careerNotice('entered race at ' + planetName(task.planet) +
 			' · −' + GravityGame.COMPETE_ENTRY.toFixed(2) + ' stake' + refund);
 	} else {
@@ -376,7 +382,13 @@ function careerDrop(career, slot) {
 	if (index < 0 || index >= GravityGame.BOARD_SIZE) return;
 	const task = career.tasks[index];
 	const clawback = task ? task.capitalRefund : 0;
+	const racePlanet = index === GravityGame.COMPETE_SLOT && task ? task.planet : -1;
 	if (!GravityGame.dropTask(career, index)) return;
+	if (index === GravityGame.COMPETE_SLOT && turret.pending &&
+		(turret.body === racePlanet ||
+			career.ledger.purse + 1e-9 < GravityGame.launchFee(career, turret.body, turret.speed))) {
+		cancelTurret();
+	}
 	recordCareerAction('act', index === GravityGame.COMPETE_SLOT
 		? { act: 'drop', targetSlot: index } : { act: 'drop' });
 	/* a freed slot is offered again at once instead of after the next landing */
@@ -660,8 +672,12 @@ function careerAct(data) {
 		}
 		return careerResearch();
 	}
-	/* the eased world clock owns the career for its 2 s */
-	if (careerWaitBusy() || turret.pending || activeSim().status === STATUS_FLYING) return;
+	/* the eased world clock owns the career for its 2 s; a queued barrel locks
+	 * ship/shop state except entering or withdrawing from the parallel race */
+	const sportSlotAct = (act === 'accept' || act === 'drop') &&
+		Number(data.slot) === GravityGame.COMPETE_SLOT;
+	if (careerWaitBusy() || activeSim().status === STATUS_FLYING ||
+		(turret.pending && !sportSlotAct)) return;
 	if (act === 'wait') return waitCareer();
 	if (career.arrested) {
 		const left = Math.max(0, Math.round((career.arrestUntilStep - game.clockSteps) * DT));

@@ -60,26 +60,18 @@ visit specific planet and return back - from exactly planet that is far from tar
 
 #### think about new competitions or variations if found really interesting
 
-→ a **first, much simpler** competition ships: one slot on the board in which a
-flight launched from a named planet that lands after at least `1500…3000 px`
-pays `2…4` within `180 s` (`makeCompete`, `TASK_COMPETE`, `LEG_COMPETE`). Nobody
-tells anyone it starts, there is no countdown, and a rival never enters.
+→ **shipped** (`../archive/0.7.41-plan-sport-competitions.md`,
+`../archive/0.7.41-worklog.md`): one shared galaxy-wide race (`galaxy.sport`,
+`SPORT_LENGTH`) mirrored into `COMPETE_SLOT` for every company. Entering pays
+`0.50` into `sport.pool` (`COMPETE_ENTRY`, eligible for Capital's `+3.00`
+refund, forfeited with refund clawback on drop); queuing a shot on the race
+planet before `startsAt` holds the barrel (`sportHoldStep`, `race · N s`) until
+the gun; the first entrant to launch at or after `startsAt` and land after at
+least `minLength` inside `deadline` takes the pool and schedules the next race.
+Rivals enter when their committed shot clears the distance/deadline and the
+remaining purse covers rail fees and arrival departure.
 
-**open** → `0.7.41-plan-sport-competitions.md` — the timed event the note describes is
-not built. The three states it needs are already in the code as *shapes*, so the
-plan grows the existing slot rather than adding a second one:
-
-1. **a start**: `TASK_OFFERED` → `TASK_ACCEPTED` already exists for contracts;
-   a competition gets the same accept step plus a `startsAtStep` the board
-   prints as a countdown.
-2. **an arm window**: the career already has a queued launch that fires on the
-   barrel's alignment (`gun · N s`). "Armed before the countdown, fires at it"
-   is that exact queue with `startsAtStep` as a floor on `turretAngle` — no new
-   launch path.
-3. **a price pool**: one purse per entrant, paid on landing; the note's own
-   «see map statistics» is §5.3, the per-time profit table to price it against.
-
-The separate game modes can wait for (1)–(3): each is the career rule with the
+The separate game modes and variations stay **open**: each is the career rule with the
 board replaced by one contract, which is a mode-row change and not a new rule.
 Variations (`from the Capital only`, `EMC only`, no impulse) are fields on the
 offer record, not branches in the flight code. **open**, no plan yet: the four

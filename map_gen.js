@@ -293,6 +293,9 @@
 			out.gs = Math.round(clampNumber(input.gs, 0, 9, 1) * 1e6) / 1e6;
 			out.fs = Math.round(clampNumber(input.fs, 0.25, 3, 1) * 1e6) / 1e6;
 			out.ws = Math.round(clampNumber(input.ws, 0, 3, 1) * 1e6) / 1e6;
+			out.ps = Math.round(clampNumber(input.ps, 0.25, 4, 1) * 1e6) / 1e6;
+			out.rs = Math.round(clampNumber(input.rs, 0, 3, 1) * 1e6) / 1e6;
+			out.ys = Math.round(clampNumber(input.ys, 0.25, 3, 1) * 1e6) / 1e6;
 			out.ht = input.ht === true;
 			if (input.stats && typeof input.stats === 'object') {
 				out.stats = {

@@ -180,8 +180,9 @@ make by default random seed new startup unless url has seed
 
 ## 6.7 still open in this file (agent index, no source note)
 
-- The flight HUD has no `work` row for a competition that has not been accepted
-  → `../0.7.41-plan-sport-competitions.md` (`rivals-sport-competitions.md` §5.2).
+- → built (0.7.41): the flight HUD shows a `work` row for both open and
+  entered competitions (`../archive/0.7.41-plan-sport-competitions.md`,
+  `rivals-sport-competitions.md` §5.2).
 - → built (0.6.1): the help drawer previews a politics topic (bribe,
   corruption, the observation device) while the pointer is on the bribe or
   go-quiet row. The note's «short help drawer on hover bribe button» is

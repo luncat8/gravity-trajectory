@@ -33,6 +33,7 @@ const FAST = [
 	['bribe_score_test.js', 0.2],
 	['wear_flight_test.js', 0.2],
 	['harvest_ticks_test.js', 5],
+	['balance_knobs_test.js', 5],
 	['two_leg_test.js', 6],
 	['trade_route_mask_test.js', 0.6],
 	['balance_lab_test.js', 2],

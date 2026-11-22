@@ -115,7 +115,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const EXPERIMENT = {
 		gravityMin: 0, gravityMax: 9,
 		forceMin: 0.25, forceMax: 3,
-		spaceWearMin: 0, spaceWearMax: 3
+		spaceWearMin: 0, spaceWearMax: 3,
+		padMin: 0.25, padMax: 4,
+		rotMin: 0, rotMax: 3,
+		payMin: 0.25, payMax: 3
 	};
 	const SRC_PLANETS = 0;
 	const SRC_PORTS = 1;
@@ -195,7 +198,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const head = 'game=' + FORMAT + '&seed=' + game.seed + '&rate=' + game.rate +
 			rulePart + botPart + playerPart + cheatPart +
 			scalePart('gs', game.gravityScale) + scalePart('fs', game.forceScale) +
-			(game.rule === RULE_CAREER ? scalePart('ws', game.spaceWearScale) : '') +
+			(game.rule === RULE_CAREER
+				? scalePart('ws', game.spaceWearScale) + scalePart('ps', game.padScale) +
+					scalePart('rs', game.rotScale) + scalePart('ys', game.payScale)
+				: '') +
 			(game.rule === RULE_CAREER && game.harvestTick ? '&ht=1' : '');
 		if (game.shots.length === 0 || game.rule === RULE_CAREER) return head;
 		const lengthPart = game.rule === RULE_ROUTE && Number.isFinite(game.length)
@@ -266,7 +272,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const gravityScale = decodeScale(params.get('gs'), EXPERIMENT.gravityMin, EXPERIMENT.gravityMax);
 		const forceScale = decodeScale(params.get('fs'), EXPERIMENT.forceMin, EXPERIMENT.forceMax);
 		const spaceWearScale = decodeScale(params.get('ws'), EXPERIMENT.spaceWearMin, EXPERIMENT.spaceWearMax);
-		if (gravityScale === null || forceScale === null || spaceWearScale === null) return null;
+		const padScale = decodeScale(params.get('ps'), EXPERIMENT.padMin, EXPERIMENT.padMax);
+		const rotScale = decodeScale(params.get('rs'), EXPERIMENT.rotMin, EXPERIMENT.rotMax);
+		const payScale = decodeScale(params.get('ys'), EXPERIMENT.payMin, EXPERIMENT.payMax);
+		if (gravityScale === null || forceScale === null || spaceWearScale === null ||
+			padScale === null || rotScale === null || payScale === null) return null;
 		const harvestText = params.get('ht');
 		if (harvestText !== null && harvestText !== '1' && harvestText !== '0') return null;
 		const harvestTick = harvestText === '1';
@@ -289,7 +299,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const endMatch = END_FORM.exec(params.get('end') || '');
 		const end = endMatch ? { visited: Number(endMatch[1]), steps: Number(endMatch[2]) } : null;
 		return { seed: seed, rate: rate, rule: rule.name, bot: bot, player: player, cheat: cheat,
-			gravityScale: gravityScale, forceScale: forceScale, spaceWearScale: spaceWearScale, harvestTick: harvestTick,
+			gravityScale: gravityScale, forceScale: forceScale, spaceWearScale: spaceWearScale,
+			padScale: padScale, rotScale: rotScale, payScale: payScale, harvestTick: harvestTick,
 			shots: shots, end: end, length: length };
 	}
 
@@ -334,6 +345,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* Repeated fixed-step subtraction must exhaust at the mathematical boundary. */
 	const WEAR_EPS = 1e-10;
 	let spaceWearScale = 1;
+	let padScale = 1;
+	let rotScale = 1;
+	let payScale = 1;
 	const WORN_OUT_BLOCK = 'ship worn out — repair before launch';
 	/* offered only from planets this light and for loads this heavy at most
 	 * (a gentle shot must be able to leave); pays FRAGILE_PAY × an ordinary
@@ -481,7 +495,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * value by the fly-by ramp. Every planet still stamps lastVisitStep, so
 	 * the market clock advances exactly as a normal visit would.
 	 */
-	function planetProfitAt(market, planet, at, lastStep) {
+	/* Unscaled visit curve: neglect rot reads this so `pay ×` stays orthogonal
+	 * to `rot ×` even when low `pay ×` caps collected payouts below 1.00. */
+	function planetProfitUnscaledAt(market, planet, at, lastStep) {
 		if (planet === market.capitalPlanet) return CAPITAL_VISIT_PAY;
 		if (planet === market.arfPlanet) return 0;
 		const pay = planetProfitAtStep(lastStep, at, market.k);
@@ -489,6 +505,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const age = politicsSeconds(market, at) -
 			politicsSeconds(market, market.rebelSinceStep[planet]);
 		return pay * OrbitEcon.flybyMultiplier(age);
+	}
+
+	function planetProfitAt(market, planet, at, lastStep) {
+		if (planet === market.capitalPlanet) return CAPITAL_VISIT_PAY;
+		if (planet === market.arfPlanet) return 0;
+		return planetProfitUnscaledAt(market, planet, at, lastStep) * payScale;
 	}
 
 	/* the planet's value: what the next visitor collects. The rot reads
@@ -1552,6 +1574,48 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	function spaceWearScaleOf() {
 		return spaceWearScale;
+	}
+
+	function setPadScale(value) {
+		if (!Number.isFinite(value)) return padScale;
+		padScale = Math.max(EXPERIMENT.padMin, Math.min(EXPERIMENT.padMax, value));
+		return padScale;
+	}
+
+	function padScaleOf() {
+		return padScale;
+	}
+
+	function setRotScale(value) {
+		if (!Number.isFinite(value)) return rotScale;
+		rotScale = Math.max(EXPERIMENT.rotMin, Math.min(EXPERIMENT.rotMax, value));
+		return rotScale;
+	}
+
+	function rotScaleOf() {
+		return rotScale;
+	}
+
+	function setPayScale(value) {
+		if (!Number.isFinite(value)) return payScale;
+		payScale = Math.max(EXPERIMENT.payMin, Math.min(EXPERIMENT.payMax, value));
+		return payScale;
+	}
+
+	function payScaleOf() {
+		return payScale;
+	}
+
+	function careerPadSeconds(gameSec) {
+		return GravitySim.padSeconds(gameSec) * padScale;
+	}
+
+	function careerPadMinutes(gameSec) {
+		return GravitySim.padMinutes(gameSec) * padScale;
+	}
+
+	function careerWaitPadSeconds() {
+		return GravitySim.WAIT_PAD_SEC * padScale;
 	}
 
 	function launchWear(career, speed) {
@@ -2917,6 +2981,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			openingMaskTag(mask, count) + ':' + seatsWanted + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
+			padScale + ':' + payScale + ':' +
 			(specialPlanets ? 1 : 0) + (fieldTag ? ':' + fieldTag : '');
 	}
 
@@ -3708,10 +3773,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			}
 			if (!market.rebel[p] && dtSec > 0 && reporting) {
 				market.corruption[p] = Math.max(market.corruptionFloor[p],
-					market.corruption[p] - OrbitEcon.CORRUPTION_REPORT_RATE * dtSec);
+					market.corruption[p] - OrbitEcon.CORRUPTION_REPORT_RATE * rotScale * dtSec);
 			} else if (!market.rebel[p] && dtSec > 0) {
 				const rate = OrbitEcon.passiveCorruptionRate(
-					planetProfitAt(market, p, runStep, market.reportStep[p]));
+					planetProfitUnscaledAt(market, p, runStep, market.reportStep[p])) * rotScale;
 				if (rate > 0) raiseCorruption(market, p, rate * dtSec);
 			}
 			if (market.rebel[p] || runStep < market.rebelCooldownStep[p]) continue;
@@ -4758,10 +4823,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		}
 		const compete = career.tasks[COMPETE_SLOT];
 		if (compete.kind === TASK_COMPETE && origin === compete.planet &&
-			(flownLen || 0) + length >= compete.minLength) {
-			/* the barrel hold puts an entered company's launch at the gun; an
-			 * offer without the entry behind it is priced as its accept alone */
-			const launchStep = compete.state === TASK_ACCEPTED && runStep < compete.startsAt
+			(flownLen || 0) + length >= compete.minLength &&
+			!(career.flying && career.flightStartStep < compete.startsAt)) {
+			/* the barrel hold puts an on-pad launch at the gun; a flight
+			 * already in space keeps its actual launch stamp */
+			const launchStep = !career.flying && runStep < compete.startsAt
 				? compete.startsAt : runStep;
 			if (launchStep + steps <= compete.deadline) {
 				if (compete.state === TASK_ACCEPTED) {
@@ -5023,7 +5089,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (planet === career.at || !(flightSeconds > 0)) return pad.battery.capacity;
 		const charge = Math.max(0, pad.chargeKwh - pad.reservedKwh);
 		const gained = OrbitTech.solarCharge(pad.panel, career.light[planet],
-			GravitySim.padSeconds(flightSeconds));
+			careerPadSeconds(flightSeconds));
 		return Math.min(pad.battery.capacity, charge + gained) - pad.reservedKwh;
 	}
 
@@ -5278,9 +5344,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (owner === career.index) {
 			const botCharge = careerArrivalCharge(career, planet, flightSeconds);
 			const raw = Math.max(0, pad.chargeKwh - pad.reservedKwh);
-			const leaked = OrbitTech.batteryLeak(raw, GravitySim.padMinutes(flightSeconds));
+			const leaked = OrbitTech.batteryLeak(raw, careerPadMinutes(flightSeconds));
 			const gained = OrbitTech.solarCharge(pad.panel, career.light[planet],
-				GravitySim.padSeconds(flightSeconds));
+				careerPadSeconds(flightSeconds));
 			const exact = Math.max(0, Math.min(pad.battery.capacity, raw - leaked + gained) - pad.reservedKwh);
 			charge = exact < botCharge ? exact : botCharge;
 		} else if (owner >= 0) {
@@ -5447,8 +5513,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			if (runStep + steps1 > effectiveDeadline) return out;
 			const compete = career.tasks[COMPETE_SLOT];
 			if (compete.kind === TASK_COMPETE && compete.state === TASK_ACCEPTED &&
-				origin === compete.planet && flownLen + length1 >= compete.minLength) {
-				const launchStep = runStep < compete.startsAt ? compete.startsAt : runStep;
+				origin === compete.planet && flownLen + length1 >= compete.minLength &&
+				!(career.flying && career.flightStartStep < compete.startsAt)) {
+				const launchStep = !career.flying && runStep < compete.startsAt
+					? compete.startsAt : runStep;
 				if (launchStep + steps1 <= compete.deadline) cash1 += compete.reward;
 			}
 			if (task.kind === TASK_DELIVERY && origin === task.from) {
@@ -5523,9 +5591,22 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 		/* --- 1. Single-leg (completes contract, sport, or non-two-leg hop) --- */
 		if (!twoLegStop) {
-			const completesEscrow = leg1Kind === LEG_DELIVER ||
-				leg1Kind === LEG_PATIENTS || leg1Kind === LEG_COMPETE;
-			const escrow1 = completesEscrow ? 0 : careerRefundEscrow(career);
+			let releasedEscrow = 0;
+			const contractTask = !prospective && career.contract >= 0 ? career.tasks[career.contract] : null;
+			if (contractTask && contractTask.capitalRefund > 0) {
+				const patientsRemain = leg1Kind === LEG_PATIENTS && market &&
+					market.patients[contractTask.to] > contractTask.aboard;
+				if (leg1Kind === LEG_DELIVER || (leg1Kind === LEG_PATIENTS && !patientsRemain)) {
+					releasedEscrow += contractTask.capitalRefund;
+				}
+			}
+			const compete1 = career.tasks[COMPETE_SLOT];
+			if (compete1.kind === TASK_COMPETE && compete1.state === TASK_ACCEPTED &&
+				compete1.capitalRefund > 0 && origin === compete1.planet &&
+				!(career.flying && career.flightStartStep < compete1.startsAt)) {
+				releasedEscrow += compete1.capitalRefund;
+			}
+			const escrow1 = Math.max(0, careerRefundEscrow(career) - releasedEscrow);
 			if (escrow1 > 0 && career.ledger.purse + acceptRefund - repair0 - fee1 - mandatoryRepair1 - escrow1 < -1e-9) {
 				return out;
 			}
@@ -5874,8 +5955,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				return;
 			}
 		}
-		const padSec = GravitySim.padSeconds(GravitySim.gameSeconds(steps));
-		const padMin = GravitySim.padMinutes(GravitySim.gameSeconds(steps));
+		const padSec = careerPadSeconds(GravitySim.gameSeconds(steps));
+		const padMin = careerPadMinutes(GravitySim.gameSeconds(steps));
 		for (let i = 0; i < career.pads.length; i++) {
 			const pad = career.pads[i];
 			if (pad.catapult === null) continue;
@@ -6163,7 +6244,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		PLANET_GRAVITY_MIN, PLANET_GRAVITY_MAX, PLANET_GRAVITY_STEPS, HQ_GRAVITY_MAX,
 		planetGravity, angleUnits, angleOf, speedUnits, speedOf,
 		createBurn, encodeBurn, createShot, encodeShot, encodeLink, decodeShot, decodeLink, isGameLink,
-		initSteps, createMarket, resetMarket, planetProfit, planetProfitAt, applyMarketSpecials,
+		initSteps, createMarket, resetMarket, planetProfit, planetProfitAt, planetProfitUnscaledAt, applyMarketSpecials,
 		bindRun, politicsSeconds, rebelRail, setPolitics, politicsOn,
 		advancePolitics, acceptBribe, bribeAmount, bribeWindowOpen, bribeRefusal,
 		stampReport,
@@ -6203,7 +6284,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		launchReason, launchReasons, formatLaunchReason,
 		WEAR_SPACE, WEAR_LANDING, WEAR_EMC, WEAR_EMC_REF, WEAR_EMC_MAX, WEAR_IMP, WEAR_IMP_DV,
 		WEAR_FLEET, WEAR_SCIENCE_MIN, WEAR_SCIENCE_STEP, WEAR_REPAIR_COST, WORN_OUT_BLOCK,
-		wearFactor, setSpaceWearScale, spaceWearScaleOf, launchWear, spaceWear, impulseWear, landingWear,
+		wearFactor, setSpaceWearScale, spaceWearScaleOf,
+		setPadScale, padScaleOf, setRotScale, rotScaleOf, setPayScale, payScaleOf,
+		careerPadSeconds, careerPadMinutes, careerWaitPadSeconds,
+		launchWear, spaceWear, impulseWear, landingWear,
 		forecastCondition, forecastReportUntil, forecastRepairReserve, forecastWearCost,
 		careerShipUsable, setShipCondition, careerWearAt, careerWeatherWear,
 		repairCost, repairCareer, canEvacuate, evacuationCost, evacuationSeconds,

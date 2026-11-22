@@ -31,7 +31,8 @@ function liteRecords(universe, seats) {
 	return savedMapList().filter(record => record.kind === 'start' &&
 		record.universe === universe && record.seats.length === seats &&
 		!Array.isArray(record.gravity) &&
-		(record.gs ?? 1) === gravityScale && (record.fs ?? 1) === forceScale);
+		(record.gs ?? 1) === gravityScale && (record.fs ?? 1) === forceScale &&
+		(record.ps ?? 1) === padScale && (record.ys ?? 1) === payScale);
 }
 
 function liteSeeds(universe, seats) {

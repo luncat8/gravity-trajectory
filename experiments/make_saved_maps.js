@@ -125,7 +125,7 @@ function recordFor(plan, note) {
 		player: GravityGame.PLAYER_USER,
 		cheat: null,
 		rate: 1,
-		gs: 1, fs: 1, ws: 1, ht: false
+		gs: 1, fs: 1, ws: 1, ps: 1, rs: 1, ys: 1, ht: false
 	};
 	const record = GravityMaps.startRecord(info);
 	record.note = note;
@@ -238,6 +238,9 @@ function generateFields(fieldsFile) {
 			gs: record.gs === undefined ? 1 : record.gs,
 			fs: record.fs === undefined ? 1 : record.fs,
 			ws: record.ws === undefined ? 1 : record.ws,
+			ps: record.ps === undefined ? 1 : record.ps,
+			rs: record.rs === undefined ? 1 : record.rs,
+			ys: record.ys === undefined ? 1 : record.ys,
 			ht: record.ht === true,
 			stats: {
 				weakest: Math.round(plan.check.ratio * 100) / 100,

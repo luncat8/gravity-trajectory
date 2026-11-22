@@ -146,8 +146,9 @@ const ROUTE_FIELD_DELTA = 4;
 /* rival search slice budget per frame so frame work stays well under 16.7 ms */
 const BOT_STEP_MS = 3;
 const MAX_GAME_STEPS = 256;
-/* rebel worlds can ramp to FLYBY_MAX × MONEY.cap (+16.00) */
-const PROFIT_MAX_CENTS = Math.round(GravityGame.MONEY.cap * OrbitEcon.FLYBY_MAX * 100);
+/* rebel worlds can ramp to FLYBY_MAX × MONEY.cap × EXPERIMENT.payMax (+48.00) */
+const PROFIT_MAX_CENTS = Math.round(GravityGame.MONEY.cap * OrbitEcon.FLYBY_MAX *
+	GravityGame.EXPERIMENT.payMax * 100);
 const PROFIT_STRINGS = new Array(PROFIT_MAX_CENTS + 1);
 for (let c = 0; c <= PROFIT_MAX_CENTS; c++) {
 	PROFIT_STRINGS[c] = '+' + (c / 100).toFixed(2);
