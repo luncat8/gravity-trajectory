@@ -4178,17 +4178,27 @@
 		r.idleTries = 0;
 		if (priced) this.careerPriceBurn(r, plan, market, runStep);
 		const career = r.career;
-		if (plan && career.at === career.capitalPlanet) {
-			const compete = career.tasks[GravityGame.COMPETE_SLOT];
-			if (compete.kind === GravityGame.TASK_COMPETE &&
-				compete.state === GravityGame.TASK_OFFERED &&
-				compete.planet === career.capitalPlanet &&
-				plan.length >= compete.minLength &&
-				runStep + plan.steps <= compete.deadline) {
-				GravityGame.acceptTask(career, GravityGame.COMPETE_SLOT);
-			}
-		}
+		if (plan) this.careerRaceEntry(career, plan, runStep);
 		return plan;
+	};
+
+	/*
+	 * Enter the shared race when the ready shot already starts where it starts
+	 * and clears its length inside the window: the entry pays for itself while
+	 * the pool still covers the stake with the entered rivals to split it.
+	 * The queued shot then holds on the barrel until the gun (0.7.41).
+	 */
+	GravityBot.prototype.careerRaceEntry = function (career, plan, runStep) {
+		const sport = GravityGame.sportStateOf(career);
+		if (sport.kind !== GravityGame.TASK_COMPETE ||
+			(sport.enteredMask & (1 << career.index)) !== 0 ||
+			plan.origin !== sport.planet || plan.length < sport.minLength) return false;
+		const launchStep = runStep < sport.startsAt ? sport.startsAt : runStep;
+		if (launchStep + plan.steps > sport.deadline) return false;
+		let entered = 0;
+		for (let mask = sport.enteredMask & ~(1 << career.index); mask; mask &= mask - 1) entered += 1;
+		if (sport.pool / (1 + entered) - GravityGame.COMPETE_ENTRY <= 0) return false;
+		return GravityGame.acceptTask(career, GravityGame.COMPETE_SLOT);
 	};
 
 	GravityBot.prototype.careerOpenFan = function (r, market, runStep, angles) {
@@ -4519,9 +4529,11 @@
 			}
 			if (!requested) this.careerPrepareFuel(r, plan, market, runStep);
 			/* queue the shot: the first to queue claims the pad charge, then the
-			 * barrel turns on the same in-game clock the player's turret uses */
+			 * barrel turns on the same in-game clock the player's turret uses —
+			 * an entered race shot waits for the gun when it queues early */
 			const period = GravityGame.turretPeriod(career.galaxy, plan.origin);
-			const gun = GravityGame.turretAngle(career.galaxy, plan.origin, runStep * GravitySim.DT);
+			const holdStep = GravityGame.sportHoldStep(career, plan.origin, runStep);
+			const gun = GravityGame.turretAngle(career.galaxy, plan.origin, holdStep * GravitySim.DT);
 			let delta = plan.angle - gun;
 			delta -= Math.floor(delta / TAU) * TAU;
 			const wait = delta < 0.02 ? 0 : delta / TAU * period;
@@ -4535,7 +4547,7 @@
 				speed: plan.speed,
 				body: plan.body,
 				score: plan.score,
-				fireAt: runStep + Math.ceil(wait / GravitySim.DT),
+				fireAt: holdStep + Math.ceil(wait / GravitySim.DT),
 				pad: pad,
 				energy: energy
 			};
@@ -4550,10 +4562,10 @@
 		if (fieldRate !== undefined) sim.fieldRate = fieldRate;
 		sim.stepLimit = GravityGame.CAP_STEPS;
 		sim.limitReason = END_TIME;
-		r.shots.push(GravityGame.createShot(GravityGame.SRC_PLANETS, origin,
-			GravityGame.angleUnits(angle), GravityGame.speedUnits(speed), GravityGame.NO_ABORT));
-		sim.launch(origin, angle, speed);
-		GravityGame.careerBeginFlight(career, sim);
+	r.shots.push(GravityGame.createShot(GravityGame.SRC_PLANETS, origin,
+		GravityGame.angleUnits(angle), GravityGame.speedUnits(speed), GravityGame.NO_ABORT));
+	sim.launch(origin, angle, speed);
+	GravityGame.careerBeginFlight(career, sim, runStep);
 		r.basePlanet = origin;
 		this.traceCareerFire(career, sim, runStep);
 		return true;

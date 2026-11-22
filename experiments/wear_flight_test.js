@@ -72,7 +72,7 @@ for (const [start, fitted, name] of [
 	const gain = Game.estimateProfit(w.market, 0, w.sim, w.career.ledger, reportUntil);
 	const end = Game.forecastCondition(w.career, start, steps, 100, 0, true);
 	w.sim.launch(0, 0, 100);
-	Game.careerBeginFlight(w.career, w.sim);
+	Game.careerBeginFlight(w.career, w.sim, 0);
 	finish(w);
 	assert.strictEqual(w.sim.liveSteps, steps, name + ' steps');
 	near(w.career.ledger.shotGain, gain, name + ' harvest');
@@ -112,7 +112,7 @@ for (const exhaustedByBurn of [false, true]) {
 	ship.tank = Tech.TANKS[3];
 	ship.fuelKg = ship.tank.fuelCap;
 	w.sim.launch(0, 0, 100);
-	Game.careerBeginFlight(w.career, w.sim);
+	Game.careerBeginFlight(w.career, w.sim, 0);
 	for (let i = 0; i < 240; i++) oneStep(w);
 	if (exhaustedByBurn) Game.setShipCondition(w.career, 0.004);
 	const before = w.career.ledger.shotGain;
@@ -214,7 +214,7 @@ near(burnBot.careerBurnVisitPay(prefixCareer, prefixWorld.market, 0, scratch, 0)
 prefixShip.obs = Tech.OBS[1];
 
 prefixWorld.sim.launch(0, 0, prefixSpeed);
-Game.careerBeginFlight(prefixCareer, prefixWorld.sim);
+Game.careerBeginFlight(prefixCareer, prefixWorld.sim, 0);
 for (let i = 0; i < prefixSteps; i++) oneStep(prefixWorld);
 assert.ok(prefixCareer.ledger.shotGain > 0);
 assert.ok(Game.careerBurn(prefixCareer, prefixWorld.sim, 0, prefixDv));
@@ -231,7 +231,7 @@ w.career.ship.engine = Tech.ENGINES[2];
 w.career.ship.tank = Tech.TANKS[3];
 w.career.ship.fuelKg = w.career.ship.tank.fuelCap;
 w.sim.launch(0, 0, 100);
-Game.careerBeginFlight(w.career, w.sim);
+Game.careerBeginFlight(w.career, w.sim, 0);
 Game.setShipCondition(w.career, Game.spaceWear(w.career, 1) * 0.75);
 const bot = new Bot(World.WORLD_W, World.WORLD_H);
 bot.count = 1;
@@ -252,7 +252,7 @@ assert.strictEqual(w.career.ship.condition, 0, 'space wear follows the burn on t
 /* A hand-flown rival must not receive an automatic impulse. */
 const human = world(1, true);
 human.sim.launch(0, 0, 100);
-Game.careerBeginFlight(human.career, human.sim);
+Game.careerBeginFlight(human.career, human.sim, 0);
 bot.rivals[0] = { sim: human.sim, career: human.career, ledger: human.career.ledger, steps: 0, shots: [] };
 bot.rivalTypes[0] = Game.PLAYER_USER;
 burned = false;
@@ -266,7 +266,7 @@ bot.rivalTypes[0] = Game.PLAYER_BOT;
 /* Finishing at a flight cap is not an extra flight step, even in stay-pay. */
 const capped = world(1, true);
 capped.sim.launch(0, 0, 100);
-Game.careerBeginFlight(capped.career, capped.sim);
+Game.careerBeginFlight(capped.career, capped.sim, 0);
 Game.setShipCondition(capped.career, 0.5);
 capped.sim.stepLimit = capped.sim.liveSteps;
 const actor = { sim: capped.sim, career: capped.career, ledger: capped.career.ledger, steps: 0, shots: [] };

@@ -89,7 +89,7 @@ function flightSim(origin, speed) {
 
 function begin(w, career, speed) {
 	const sim = flightSim(career.at, speed);
-	Game.careerBeginFlight(career, sim);
+	Game.careerBeginFlight(career, sim, 0);
 	return sim;
 }
 

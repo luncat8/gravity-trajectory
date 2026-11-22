@@ -512,13 +512,19 @@ function advanceCareerOneStep() {
 		let dirtyTasks = medicSlot !== null &&
 			(medicSlot.kind !== medicKindBefore || medicSlot.patients !== medicPatientsBefore);
 		if (game.clockSteps % 60 === 0) {
+			let expired = false;
 			for (let i = 0; i < GravityGame.BOARD_SIZE; i++) {
 				const task = game.career.tasks[i];
 				if (task.kind !== GravityGame.TASK_NONE && game.clockSteps > task.deadline) {
-					GravityGame.refreshBoard(game.career, tradeSim, game.clockSteps);
-					dirtyTasks = true;
+					expired = true;
 					break;
 				}
+			}
+			/* a rival's entry (or an event announcing or closing) moves the
+			 * shared sport offer behind the rendered board row */
+			if (expired || GravityGame.sportMirrorStale(game.career)) {
+				GravityGame.refreshBoard(game.career, tradeSim, game.clockSteps);
+				dirtyTasks = true;
 			}
 		}
 		if (dirtyTasks) {

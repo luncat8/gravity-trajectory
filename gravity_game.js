@@ -801,6 +801,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const COMPETE_SLOT = CAREER.deliverySlots;
 	const MEDIC_SLOT = CAREER.deliverySlots + 1;
 	const BOARD_SIZE = CAREER.deliverySlots + 2;
+	/* the shared race (0.7.41): one galaxy-wide event announced on a board
+	 * refresh, `ANNOUNCE_SEC` of countdown before the starting gun, and a
+	 * `COMPETE_ENTRY` stake every entrant pays into the prize pool */
+	const ANNOUNCE_SEC = 45;
+	const COMPETE_ENTRY = 0.5;
+	const SPORT_LENGTH = 0;
 	const TASK_NONE = 0;
 	const TASK_DELIVERY = 1;
 	const TASK_COMPETE = 2;
@@ -930,8 +936,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	function createTask() {
 		return { kind: TASK_NONE, state: TASK_OFFERED, good: 0, tons: 0, from: -1, to: -1,
-			planet: -1, minLength: 0, reward: 0, deadline: 0, tourist: false, fragile: false,
-			deep: false, medics: 0, patients: 0, aboard: 0, capitalRefund: 0 };
+			planet: -1, minLength: 0, reward: 0, deadline: 0, startsAt: 0, tourist: false,
+			fragile: false, deep: false, medics: 0, patients: 0, aboard: 0, capitalRefund: 0 };
 	}
 
 	function clearTask(task) {
@@ -944,6 +950,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		task.patients = 0;
 		task.aboard = 0;
 		task.capitalRefund = 0;
+		task.startsAt = 0;
 	}
 
 	/* --- EMC network ------------------------------------------------------- */
@@ -965,7 +972,22 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			 * expansion uses the same target when choosing a new rival's world */
 			openingTargetPay: NaN,
 			period: new Float64Array(OrbitWorld.PLANETS),
-			phase: new Float64Array(OrbitWorld.PLANETS)
+			phase: new Float64Array(OrbitWorld.PLANETS),
+			/* the one galaxy-wide competition event every board mirrors */
+			sport: createSportRecord(),
+			sportSerial: 0
+		};
+	}
+
+	/* the shared race record (0.7.41): announced at a colonized planet, `startsAt`
+	 * is the starting gun, the pool grows by one stake per entrant and the first
+	 * qualifying flight launched at or after the gun takes it all. `GALAXY_SKIP`
+	 * does not list it, so SavedMap runs and CareerReplay frames carry it. */
+	function createSportRecord() {
+		return {
+			kind: TASK_NONE, serial: 0, discipline: SPORT_LENGTH, planet: -1,
+			minLength: 0, startsAt: 0, deadline: 0, baseReward: 0, pool: 0,
+			enteredMask: 0, attemptedMask: 0, winner: -1, nextAt: 0
 		};
 	}
 
@@ -976,16 +998,18 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		galaxy.actors.length = 0;
 		galaxy.commercialPads.fill(null);
 		galaxy.mapSeats = null;
-	galaxy.openingTargetPay = NaN;
-	galaxy.stats = {
-		every: STATS_EVERY,
-		count: 0,
-		nextStep: STATS_EVERY,
-		series: [
-			new Float32Array(STATS_SAMPLES), /* map rot */
-			new Float32Array(STATS_SAMPLES)  /* map standing */
-		]
-	};
+		galaxy.openingTargetPay = NaN;
+		galaxy.sport = createSportRecord();
+		galaxy.sportSerial = 0;
+		galaxy.stats = {
+			every: STATS_EVERY,
+			count: 0,
+			nextStep: STATS_EVERY,
+			series: [
+				new Float32Array(STATS_SAMPLES), /* map rot */
+				new Float32Array(STATS_SAMPLES)  /* map standing */
+			]
+		};
 	for (let p = 0; p < OrbitWorld.PLANETS; p++) {
 			galaxy.period[p] = CAREER.turretMinSec + CAREER.turretSpanSec *
 				(OrbitWorld.hashBits(galaxy.seed, p, SALT_TURRET) / 4294967296);
@@ -1123,6 +1147,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			}
 		}
 		refreshNetwork(galaxy);
+		/* a company joining mid-run mirrors the live event at once */
+		syncSportSlot(career, galaxy.sport);
 	}
 
 	/*
@@ -1432,6 +1458,14 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			evacuationSpent: 0,
 			delivered: 0,
 			competitions: 0,
+			/* the 0.50 race stakes this company paid into the shared pool, so the
+			 * purse identity and the map statistics keep balancing */
+			stakeSpent: 0,
+			/* the world step this company's current flight launched at (the race
+			 * judges it against `startsAt`, so the stamp rides on the career) */
+			flightStartStep: 0,
+			/* solo fallback event: headless careers without a galaxy race here */
+			sport: createSportRecord(),
 			earned: 0,
 			taxPaid: 0,
 			taxEarned: 0,
@@ -1465,12 +1499,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			bribes: 0,
 			bribeIncome: 0,
 			patientsDelivered: 0,
-		medicTrips: 0,
-		/* where the run's money came from and where it went:
-		 * visitIncome + earned + bribeIncome + taxEarned is what flying brought in;
-		 * feesPaid + fuelSpent + evacuations is what flying cost;
-		 * buildSpent and sciSpent are where profit was put.
-		 * purse = starter purse + profit − property − science */
+	medicTrips: 0,
+	/* where the run's money came from and where it went:
+	 * visitIncome + earned + bribeIncome + taxEarned is what flying brought in;
+	 * feesPaid + fuelSpent + evacuations + stakeSpent is what flying cost;
+	 * buildSpent and sciSpent are where profit was put.
+	 * purse = starter purse + profit − property − science */
 		visitIncome: 0,
 		flownPx: 0,
 		feesPaid: 0,
@@ -1646,18 +1680,6 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	function draw01(career, salt) {
 		career.serial += 1;
 		return OrbitWorld.hashBits(career.seed, career.serial, salt) / 4294967296;
-	}
-
-	/* a uniform draw over the run's in-play planets */
-	function activePlanetDraw(career) {
-		const count = career.planetCount || OrbitWorld.PLANETS;
-		let pick = Math.floor(draw01(career, SALT_TASK) * count);
-		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
-			if (career.planetMask && career.planetMask[i] === 0) continue;
-			if (pick === 0) return i;
-			pick -= 1;
-		}
-		return 0;
 	}
 
 	/* a colony sits on a planet of the run only when that planet is in play */
@@ -3336,7 +3358,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	function careerStats(out, career) {
 		out.income = career.visitIncome + career.earned + career.bribeIncome + career.taxEarned;
 		out.running = career.feesPaid + career.fuelSpent + career.maintenanceSpent +
-			career.evacuationSpent;
+			career.evacuationSpent + career.stakeSpent;
 		out.profit = out.income - out.running;
 		out.property = career.buildSpent;
 		out.science = career.sciSpent;
@@ -3466,6 +3488,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.evacuationSpent = 0;
 		career.delivered = 0;
 		career.competitions = 0;
+		career.stakeSpent = 0;
+		career.flightStartStep = 0;
+		career.sport = createSportRecord();
 		career.earned = 0;
 		career.taxPaid = 0;
 		career.taxEarned = 0;
@@ -4224,21 +4249,153 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return true;
 	}
 
-	/* competition: one flight launched from `planet` that lands after at least `minLength` px */
-	function makeCompete(career, step, task) {
-		task.kind = TASK_COMPETE;
-		task.state = TASK_OFFERED;
-		task.planet = activePlanetDraw(career);
-		task.deep = false;
-		task.minLength = Math.round((CAREER.competeMinPx + draw01(career, SALT_TASK) * CAREER.competeSpanPx) / 50) * 50;
-		task.reward = round2(CAREER.competeBase + draw01(career, SALT_TASK) * CAREER.competeSpan);
-		task.from = -1;
-		task.to = -1;
-		task.good = 0;
-		task.tons = 0;
-		task.tourist = false;
-		task.deadline = step + Math.round(CAREER.competeSec / GravitySim.DT);
+	/* --- the shared sport event (0.7.41) ----------------------------------- */
+
+	/*
+	 * One galaxy-wide competition lives on `galaxy.sport` and mirrors itself
+	 * into every company's `COMPETE_SLOT` (the shape `MEDIC_SLOT` already uses
+	 * across actors), so player and rivals see the same race. The event record
+	 * owns the money (pool, entry masks); the mirror task carries the offer a
+	 * shot prices against. Headless careers without a galaxy race on their own
+	 * `career.sport` through `sportStateOf`.
+	 */
+
+	function sportStateOf(career) {
+		return career.galaxy ? career.galaxy.sport : career.sport;
 	}
+
+	/* one draw from the event's own stream: the galaxy's, or the solo career's
+	 * task stream — announce and close draws never touch the careers' own rolls */
+	function sportDraw(career) {
+		const galaxy = career.galaxy;
+		if (!galaxy) return draw01(career, SALT_TASK);
+		galaxy.sportSerial += 1;
+		return OrbitWorld.hashBits(galaxy.seed, galaxy.sportSerial, SALT_TASK) / 4294967296;
+	}
+
+	/* mirror the shared event into one company's slot: the event owns kind,
+	 * planet, length, window and pool; the company keeps its own entry state */
+	function syncSportSlot(career, sport) {
+		const task = career.tasks[COMPETE_SLOT];
+		if (sport.kind === TASK_NONE) {
+			clearTask(task);
+			return;
+		}
+		task.kind = TASK_COMPETE;
+		task.planet = sport.planet;
+		task.minLength = sport.minLength;
+		task.reward = sport.pool;
+		task.startsAt = sport.startsAt;
+		task.deadline = sport.deadline;
+	}
+
+	function syncSportMirrors(career) {
+		const sport = sportStateOf(career);
+		const galaxy = career.galaxy;
+		const count = galaxy ? galaxy.actors.length : 1;
+		for (let i = 0; i < count; i++) {
+			syncSportSlot(galaxy ? galaxy.actors[i] : career, sport);
+		}
+	}
+
+	/* a rival's entry (or a fresh event) changed the shared offer behind the
+	 * company's rendered board row */
+	function sportMirrorStale(career) {
+		const sport = sportStateOf(career);
+		const task = career.tasks[COMPETE_SLOT];
+		if (sport.kind !== task.kind) return true;
+		return sport.kind === TASK_COMPETE &&
+			(task.reward !== sport.pool || task.startsAt !== sport.startsAt ||
+				task.deadline !== sport.deadline);
+	}
+
+	/* the race planet: a colonized, in-play planet with people still on it */
+	function sportPlanetDraw(career, trade) {
+		const colonies = trade && trade.colonies;
+		const count = colonies ? colonies.length : 0;
+		if (count < 1) return -1;
+		const pick = Math.floor(sportDraw(career) * count);
+		for (let k = 0; k < count; k++) {
+			const colony = colonies[(pick + k) % count];
+			if (!colonyInPlay(career, colony) || OrbitEcon.isAbandoned(colony)) continue;
+			return colony.planet;
+		}
+		return -1;
+	}
+
+	/* announce the next event on a board refresh once the idle wait drawn at the
+	 * last close has run out — a timed gate, not a per-refresh roll, so the
+	 * race cadence follows the world clock and not how often companies land */
+	function announceSport(career, trade, step) {
+		const sport = sportStateOf(career);
+		if (sport.kind !== TASK_NONE || step < sport.nextAt) return;
+		const planet = sportPlanetDraw(career, trade);
+		if (planet < 0) return;
+		sport.kind = TASK_COMPETE;
+		sport.serial += 1;
+		sport.discipline = SPORT_LENGTH;
+		sport.planet = planet;
+		sport.minLength = Math.round((CAREER.competeMinPx +
+			sportDraw(career) * CAREER.competeSpanPx) / 50) * 50;
+		sport.baseReward = round2(CAREER.competeBase + sportDraw(career) * CAREER.competeSpan);
+		sport.pool = sport.baseReward;
+		sport.startsAt = step + Math.round(ANNOUNCE_SEC / GravitySim.DT);
+		sport.deadline = sport.startsAt + Math.round(CAREER.competeSec / GravitySim.DT);
+		sport.enteredMask = 0;
+		sport.attemptedMask = 0;
+		sport.winner = -1;
+		syncSportMirrors(career);
+	}
+
+	/* every entrant settles when the race closes: the winner takes the pool, a
+	 * racer who genuinely launched from the planet keeps the Capital refund,
+	 * an idle no-show pays it back; forfeited stakes stay in the pool */
+	function closeSport(career, sport, winner, step) {
+		const galaxy = career.galaxy;
+		const count = galaxy ? galaxy.actors.length : 1;
+		for (let i = 0; i < count; i++) {
+			const actor = galaxy ? galaxy.actors[i] : career;
+			const task = actor.tasks[COMPETE_SLOT];
+			if (actor === winner) {
+				pay(actor, sport.pool);
+				actor.competitions += 1;
+				task.capitalRefund = 0;
+			} else if ((sport.attemptedMask & (1 << actor.index)) === 0) {
+				clawbackTaskRefund(actor, task);
+			} else {
+				task.capitalRefund = 0;
+			}
+			clearTask(task);
+		}
+		sport.kind = TASK_NONE;
+		sport.planet = -1;
+		sport.pool = 0;
+		sport.enteredMask = 0;
+		sport.attemptedMask = 0;
+		sport.winner = winner ? winner.index : -1;
+		/* the next event waits a few competition windows before it announces */
+		sport.nextAt = step + Math.round(CAREER.competeEvery * CAREER.competeSec *
+			(0.5 + sportDraw(career)) / GravitySim.DT);
+	}
+
+	/* the race expires at its deadline: no winner, the stakes stay forfeited */
+	function expireSport(career, step) {
+		const sport = sportStateOf(career);
+		if (sport.kind === TASK_NONE || step <= sport.deadline) return;
+		closeSport(career, sport, null, step);
+	}
+
+	/* the barrel hold: an entered company queued on the race planet before the
+	 * gun waits for it — the first barrel alignment at or after `startsAt` */
+	function sportHoldStep(career, planet, step) {
+		const sport = sportStateOf(career);
+		if (sport.kind === TASK_COMPETE && planet === sport.planet &&
+			career.tasks[COMPETE_SLOT].state === TASK_ACCEPTED && step < sport.startsAt) {
+			return sport.startsAt;
+		}
+		return step;
+	}
+
 
 	/*
 	 * The medical quest (0.5.12, repriced 0.5.23): a rebellious planet's
@@ -4407,7 +4564,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (index === COMPETE_SLOT) {
 			if (task.state !== TASK_ACCEPTED) return false;
 			clawbackTaskRefund(career, task);
-			clearTask(task);
+			/* the stake stays in the pool; the company may pay in again while
+			 * the window is open, so the mirror keeps showing the shared offer */
+			const sport = sportStateOf(career);
+			sport.enteredMask &= ~(1 << career.index);
+			task.state = TASK_OFFERED;
+			syncSportSlot(career, sport);
 			return true;
 		}
 		if (career.contract !== index) return false;
@@ -4424,9 +4586,15 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return dropTask(career, career.contract);
 	}
 
-	/* drops expired offers (and an expired contract with its cargo), refills the board */
+	/* drops expired offers (and an expired contract with its cargo), refills the
+	 * board; the shared sport event expires, announces and syncs here first —
+	 * one galaxy-wide event, whoever's refresh sees it first */
 	function refreshBoard(career, trade, step) {
+		expireSport(career, step);
+		announceSport(career, trade, step);
+		syncSportMirrors(career);
 		for (let i = 0; i < BOARD_SIZE; i++) {
+			if (i === COMPETE_SLOT) continue; /* the shared event settles itself */
 			const task = career.tasks[i];
 			if (task.kind === TASK_NONE || step <= task.deadline) continue;
 			if (i === career.contract) dropContract(career);
@@ -4439,10 +4607,6 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			const task = career.tasks[i];
 			if (task.kind === TASK_NONE) makeDelivery(career, trade, step, task);
 		}
-		const compete = career.tasks[COMPETE_SLOT];
-		if (compete.kind === TASK_NONE && draw01(career, SALT_TASK) * CAREER.competeEvery < 1) {
-			makeCompete(career, step, compete);
-		}
 		refreshMedicSlot(career, career.market, step);
 	}
 
@@ -4452,7 +4616,17 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (index < 0 || index >= BOARD_SIZE) return false;
 		const task = career.tasks[index];
 		if (task.state !== TASK_OFFERED) return false;
-		if (task.kind === TASK_COMPETE) return career.at >= 0;
+		if (task.kind === TASK_COMPETE) {
+			if (career.at < 0) return false;
+			const sport = sportStateOf(career);
+			if (sport.kind !== TASK_COMPETE) return false;
+			/* entry stays open to the deadline; the shared clock gates it when
+			 * the career has one (headless boards settle on their next refresh) */
+			const step = career.market ? Math.max(0, career.market.politicsStep) : 0;
+			if (step >= sport.deadline) return false;
+			const atCapital = career.capitalPlanet >= 0 && career.at === career.capitalPlanet;
+			return career.ledger.purse + (atCapital ? CAPITAL_REFUND : 0) + 1e-9 >= COMPETE_ENTRY;
+		}
 		if (career.contract >= 0) return false;
 		if (task.kind === TASK_MEDIC) {
 			return career.capitalPlanet >= 0 && career.at === career.capitalPlanet &&
@@ -4496,7 +4670,15 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (!canAccept(career, index)) return false;
 		const task = career.tasks[index];
 		if (task.kind === TASK_COMPETE) {
+			/* entering the shared race: the stake goes from the purse into the
+			 * pool and every board's mirror shows the grown prize at once */
+			const sport = sportStateOf(career);
+			career.ledger.purse -= COMPETE_ENTRY;
+			career.stakeSpent += COMPETE_ENTRY;
+			sport.pool = round2(sport.pool + COMPETE_ENTRY);
+			sport.enteredMask |= 1 << career.index;
 			task.state = TASK_ACCEPTED;
+			syncSportMirrors(career);
 			grantCapitalRefund(career, task);
 			refreshCareerMedic(career);
 			return true;
@@ -4576,12 +4758,21 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		}
 		const compete = career.tasks[COMPETE_SLOT];
 		if (compete.kind === TASK_COMPETE && origin === compete.planet &&
-			(flownLen || 0) + length >= compete.minLength && runStep + steps <= compete.deadline) {
-			out.cash += compete.reward;
-			if (compete.state === TASK_OFFERED && origin === career.capitalPlanet) {
-				out.credit += CAPITAL_REFUND * LEG_CREDIT;
+			(flownLen || 0) + length >= compete.minLength) {
+			/* the barrel hold puts an entered company's launch at the gun; an
+			 * offer without the entry behind it is priced as its accept alone */
+			const launchStep = compete.state === TASK_ACCEPTED && runStep < compete.startsAt
+				? compete.startsAt : runStep;
+			if (launchStep + steps <= compete.deadline) {
+				if (compete.state === TASK_ACCEPTED) {
+					out.cash += compete.reward;
+					if (out.leg === LEG_NONE) out.leg = LEG_COMPETE;
+				} else if (origin === career.capitalPlanet) {
+					/* entering at the Capital before this shot nets the refund
+					 * less the stake, and the win would pay the pool on top */
+					out.credit += (CAPITAL_REFUND - COMPETE_ENTRY) * LEG_CREDIT;
+				}
 			}
-			if (out.leg === LEG_NONE) out.leg = LEG_COMPETE;
 		}
 		return out;
 	}
@@ -5255,9 +5446,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (prospective && task) {
 			if (runStep + steps1 > effectiveDeadline) return out;
 			const compete = career.tasks[COMPETE_SLOT];
-			if (compete.kind === TASK_COMPETE && origin === compete.planet &&
-				flownLen + length1 >= compete.minLength && runStep + steps1 <= compete.deadline) {
-				cash1 += compete.reward;
+			if (compete.kind === TASK_COMPETE && compete.state === TASK_ACCEPTED &&
+				origin === compete.planet && flownLen + length1 >= compete.minLength) {
+				const launchStep = runStep < compete.startsAt ? compete.startsAt : runStep;
+				if (launchStep + steps1 <= compete.deadline) cash1 += compete.reward;
 			}
 			if (task.kind === TASK_DELIVERY && origin === task.from) {
 				if (body !== task.to || (task.fragile && speed1 > FRAGILE_SPEED + 1e-9)) return out;
@@ -5439,9 +5631,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			}
 			let cash2 = visitPay2 + reward2;
 			const compete = career.tasks[COMPETE_SLOT];
-			if (compete.kind === TASK_COMPETE && body === compete.planet &&
-				cand.length >= compete.minLength && step2 + cand.steps <= compete.deadline) {
-				cash2 += compete.reward;
+			if (compete.kind === TASK_COMPETE && compete.state === TASK_ACCEPTED &&
+				body === compete.planet && cand.length >= compete.minLength) {
+				const launchStep = step2 < compete.startsAt ? compete.startsAt : step2;
+				if (launchStep + cand.steps <= compete.deadline) cash2 += compete.reward;
 			}
 
 			const avail2 = postPurse - fee2 + cash2 - mandatory2 - endEscrow;
@@ -5527,17 +5720,21 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return out;
 	}
 
+	/* the race judged at a landing: an entered company that launched from the
+	 * race planet at or after the gun, flew the discipline length and lands
+	 * inside the window takes the pool and closes the event for every actor */
+	function settleSport(career, sim, step) {
+		const sport = sportStateOf(career);
+		if (sport.kind !== TASK_COMPETE) return;
+		if (career.tasks[COMPETE_SLOT].state !== TASK_ACCEPTED) return;
+		if (sim.origin !== sport.planet || career.flightStartStep < sport.startsAt ||
+			sim.flightLength < sport.minLength || step > sport.deadline) return;
+		closeSport(career, sport, career, step);
+	}
+
 	/* landing on `planet`: cargo pickup, delivery payout, competition payout */
 	function settleLanding(career, sim, planet, step) {
-		for (let i = 0; i < BOARD_SIZE; i++) {
-			const task = career.tasks[i];
-			if (task.kind !== TASK_COMPETE || sim.origin !== task.planet) continue;
-			if (sim.flightLength < task.minLength || step > task.deadline) continue;
-			pay(career, task.reward);
-			career.competitions += 1;
-			task.capitalRefund = 0;
-			clearTask(task);
-		}
+		settleSport(career, sim, step);
 		if (career.contract < 0) return;
 		const task = career.tasks[career.contract];
 		if (task.kind === TASK_MEDIC) return settleMedic(career, task, planet, step);
@@ -5600,9 +5797,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * the launcher owns the rail or is only a guest on it. The neutral
 	 * commercial EMC-1, kept charged by its operator, never runs dry and
 	 * charges a flat fee instead. A rival-owned rail also charges its usage tax
-	 * (the energy of the shot, paid to that player's purse).
+	 * (the energy of the shot, paid to that player's purse). `runStep` is the
+	 * world step of the launch: the race judges flights by it, so the stamp
+	 * rides on the career and every replay or run snapshot carries it.
 	 */
-	function careerBeginFlight(career, sim) {
+	function careerBeginFlight(career, sim, runStep) {
 		const planet = sim.origin;
 		const pad = padAt(career, planet);
 		const owner = padOwner(career, planet);
@@ -5617,6 +5816,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const fee = launchFee(career, planet, sim.speed);
 		career.ledger.purse -= fee;
 		career.feesPaid += fee;
+		career.flightStartStep = runStep;
+		const sport = sportStateOf(career);
+		if (sport.kind === TASK_COMPETE && planet === sport.planet &&
+			(sport.enteredMask & (1 << career.index)) !== 0 && runStep >= sport.startsAt) {
+			sport.attemptedMask |= 1 << career.index;
+		}
 		if (!freeRail && owner !== career.index) {
 			const host = career.galaxy.actors[owner];
 			host.ledger.purse += fee;
@@ -5968,7 +6173,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		estimateProfit, estimateProfitLog, compareScores,
 		careerStats, mapStats, sampleStats,
 		setSpecialPlanets, specialPlanets: specialPlanetsOn,
-		setCareerUniverse, applyMarketUniverse, planetInPlay, colonyInPlay, activePlanetDraw,
+		setCareerUniverse, applyMarketUniverse, planetInPlay, colonyInPlay,
 		openingGroupStats, openingStatsFromTracks, openingTracks, openingPrepare,
 		openingGroupStatsFromRows, compareOpeningGroups, seatAssignment,
 		careerOpenings, prepareCareerStarts, rememberSeatPlan, planCareerExpansion, OPENING_BANDS,
@@ -5980,6 +6185,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		CAPITAL_VISIT_PAY, CAPITAL_REFUND, TOURIST_CHANCE, TOURIST_WEIGHT,
 		QUIET_MIN, FRAGILE_ACCEL, FRAGILE_SPEED, FRAGILE_G, FRAGILE_TONS, FRAGILE_PAY,
 		BOARD_SIZE, COMPETE_SLOT, MEDIC_SLOT, CARGO_TONS,
+		ANNOUNCE_SEC, COMPETE_ENTRY, SPORT_LENGTH,
 		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_MEDIC,
 		TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
 		LEG_NONE, LEG_LOAD, LEG_DELIVER, LEG_MEDICS, LEG_PATIENTS, LEG_COMPETE, LEG_CREDIT,
@@ -6007,6 +6213,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		buildGear, bulkUpgradeCost, bulkUpgrade, installPart, partRefusal,
 		refreshBoard, refreshMedicSlot, medicAffordable, medicPlanet,
 		canAccept, acceptTask, dropTask, dropContract, medicLoad, settleMedic,
+		sportStateOf, sportHoldStep, sportMirrorStale,
 		careerBeginFlight, careerBurn, careerAdvance, careerEndFlight, returnLandingVisit, evacuate
 	};
 

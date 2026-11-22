@@ -110,7 +110,7 @@ function findShot(w, from, want) {
 function fly(w, from, angle, speed) {
     const { sim, career, trade } = w;
     sim.launch(from, angle, speed);
-    GravityGame.careerBeginFlight(career, sim);
+    GravityGame.careerBeginFlight(career, sim, w.step);
     while (sim.status === STATUS_FLYING) {
         w.step += 1;
         sim.stepOne();

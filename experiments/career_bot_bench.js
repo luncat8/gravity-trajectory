@@ -165,7 +165,7 @@ function fly(w, plan) {
 	sim.stepLimit = GravityGame.CAP_STEPS;
 	sim.limitReason = GravitySim.END_TIME;
 	sim.launch(plan.origin, plan.angle, plan.speed);
-	GravityGame.careerBeginFlight(career, sim);
+	GravityGame.careerBeginFlight(career, sim, w.step);
 	while (sim.status === GravitySim.STATUS_FLYING) {
 		w.step += 1;
 		/* the same mid-flight impulse policy the page's bot flies */
@@ -547,7 +547,7 @@ check('careerBurnPlan: rescues a missed contract or map exit and never breaks a 
 	career.ship.mass = OrbitTech.shipMass(career.ship, 4);
 
 	sim.launch(career.hq, hitAngle, hitSpeed);
-	GravityGame.careerBeginFlight(career, sim);
+	GravityGame.careerBeginFlight(career, sim, w.step);
 	for (let i = 0; i < 20; i++) {
 		w.step += 1;
 		sim.stepOne();
@@ -559,7 +559,7 @@ check('careerBurnPlan: rescues a missed contract or map exit and never breaks a 
 	/* 2. Perturb velocity so coasting misses `target`: burn rescues the delivery */
 	const missAngle = hitAngle + 0.14;
 	sim.launch(career.hq, missAngle, hitSpeed);
-	GravityGame.careerBeginFlight(career, sim);
+	GravityGame.careerBeginFlight(career, sim, w.step);
 	for (let i = 0; i < 18 && sim.status === GravitySim.STATUS_FLYING; i++) {
 		w.step += 1;
 		sim.stepOne();
@@ -596,7 +596,7 @@ check('careerBurnPlan: rescues a missed contract or map exit and never breaks a 
 		sim.cargo.x = sim.planetX[career.hq] + 40;
 		sim.cargo.y = sim.planetY[career.hq];
 		sim.launch(career.hq, exitAngle, 120);
-		GravityGame.careerBeginFlight(career, sim);
+		GravityGame.careerBeginFlight(career, sim, w.step);
 		for (let i = 0; i < 20 && sim.status === GravitySim.STATUS_FLYING; i++) sim.stepOne();
 		bot.probe.predictBurnFast(sim, 0, 0);
 		if (bot.probe.predReason !== GravitySim.END_IMPACT) {
@@ -630,7 +630,7 @@ function flyOpening(w, state, gain) {
 	sim.fieldRate = FIELD_RATE;
 	sim.stepLimit = GravityGame.CAP_STEPS;
 	sim.launch(plan.origin, plan.angle, plan.speed);
-	GravityGame.careerBeginFlight(career, sim);
+	GravityGame.careerBeginFlight(career, sim, w.step);
 	const burns = [];
 	while (sim.status === GravitySim.STATUS_FLYING) {
 		w.step += 1;
@@ -677,7 +677,7 @@ check('rescueOnly pays one coast trace and leaves a healthy flight alone', () =>
 	sim.fieldRate = FIELD_RATE;
 	sim.stepLimit = GravityGame.CAP_STEPS;
 	sim.launch(plan.origin, plan.angle, plan.speed);
-	GravityGame.careerBeginFlight(career, sim);
+	GravityGame.careerBeginFlight(career, sim, w.step);
 	for (let i = 0; i < 20 && sim.status === GravitySim.STATUS_FLYING; i++) {
 		w.step += 1;
 		sim.stepOne();

@@ -329,7 +329,10 @@ const RULE_HELP = {
 			Math.floor(GravityGame.FRAGILE_SPEED) + ' px/s: a full-force EMC-1 is gentle enough, a stronger rail must be aimed softer. ' +
 			'Deep freight (' + GravityGame.DEEP_TONS + ' t or more from a well of g ≥ ' +
 			GravityGame.DEEP_G.toFixed(1) + ', pays \u00d7' + (1 + GravityGame.DEEP_BONUS).toFixed(1) +
-			') needs an EMC-3+ rail at its origin.',
+			') needs an EMC-3+ rail at its origin. A race is announced on the board: pay ' +
+			GravityGame.COMPETE_ENTRY.toFixed(2) + ' to enter, a queued barrel at the event planet ' +
+			'holds until the gun, and landing a flight of at least the shown length from that planet ' +
+			'before the deadline takes the whole pool — a drop or an expired race forfeits the stake.',
 		controls: 'Wait charges pads. Quest scan prices two-leg pickups through their real second leg; plan quest verifies a full two-leg route, writes both legs to the launch list and arms leg 1. Fuel is bought or converted from your own pad battery; tanks never refill for free. With an impulse engine and fuel, pause time with Space / P or the game-bar time button, then drag the ship to aim a burn; a bot flying your company burns on its own.'
 	}
 };

@@ -183,7 +183,7 @@ for (const seed of SEEDS) {
 		assert.strictEqual(career.ship.mass, OrbitTech.SHIP_DRY_MASS);
 
 		sim.launch(career.hq, route.angle, route.speed);
-		GravityGame.careerBeginFlight(career, sim);
+		GravityGame.careerBeginFlight(career, sim, 0);
 		let step = 0;
 		while (sim.status === GravitySim.STATUS_FLYING && step < GravityGame.CAP_STEPS) {
 			sim.stepOne();

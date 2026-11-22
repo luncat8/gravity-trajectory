@@ -470,8 +470,16 @@ function setLaunchState(blocked, exitWarning) {
 		hidePlanetActions();
 		launchButton.disabled = false;
 		launchButton.classList.remove('costly', 'exitWarning');
-		launchButton.textContent = 'gun · ' + left.toFixed(1) + ' s';
-		launchButton.title = 'The EMC turns its barrel to the aim · click or Esc to cancel';
+		const sport = playerCareer().tasks[GravityGame.COMPETE_SLOT];
+		const held = sport.kind === GravityGame.TASK_COMPETE &&
+			sport.state === GravityGame.TASK_ACCEPTED && turret.body === sport.planet &&
+			game.clockSteps < sport.startsAt;
+		launchButton.textContent = held
+			? 'armed · race gun in ' + left.toFixed(1) + ' s'
+			: 'gun · ' + left.toFixed(1) + ' s';
+		launchButton.title = held
+			? 'The barrel waits for the starting gun, then turns to the aim · click or Esc to cancel'
+			: 'The EMC turns its barrel to the aim · click or Esc to cancel';
 		launchState = -1;
 		return;
 	}

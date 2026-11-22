@@ -349,6 +349,7 @@ function statsStripHtml(galaxy, market, step) {
 	let fees = 0;
 	let fuel = 0;
 	let evac = 0;
+	let stakes = 0;
 	for (let i = 0; i < n; i++) {
 		const career = galaxy.actors[i];
 		GravityGame.careerStats(careerRow, career);
@@ -369,6 +370,7 @@ function statsStripHtml(galaxy, market, step) {
 		fees += career.feesPaid;
 		fuel += career.fuelSpent;
 		evac += career.evacuationSpent;
+		stakes += career.stakeSpent;
 		const base = 2 + i * 4;
 		profitData.push(statsRateRow(stats.series[base], count, seconds));
 		propertyData.push(stats.series[base + 1]);
@@ -383,7 +385,8 @@ function statsStripHtml(galaxy, market, step) {
 	GravityGame.mapStats(mapRow, market, step);
 	const profitTitle = 'visits ' + visits.toFixed(1) + ' · contracts ' + contracts.toFixed(1) +
 		' · bribes ' + bribes.toFixed(1) + ' · tax ' + tax.toFixed(1) +
-		' · fees ' + fees.toFixed(1) + ' · fuel ' + fuel.toFixed(1) + ' · evac ' + evac.toFixed(1);
+		' · fees ' + fees.toFixed(1) + ' · fuel ' + fuel.toFixed(1) + ' · evac ' + evac.toFixed(1) +
+		' · stakes ' + stakes.toFixed(1);
 	const profitRows = profitData.map((values, i) => ({ colour: statsCompanyColour(i), values }));
 	const propertyRows = propertyData.map((values, i) => ({ colour: statsCompanyColour(i), values }));
 	const scienceRows = scienceData.map((values, i) => ({ colour: statsCompanyColour(i), values }));

@@ -73,13 +73,24 @@ function flightQuestLegs(career, out) {
 const questScratch = new Int32Array(4);
 
 /* rows are a flat table: rebuild only when the work itself changed */
+/* the race row counts to the gun while the entrant waits, then to the window */
+function flightCompeteLeft(career, bucket) {
+	const compete = career.tasks[GravityGame.COMPETE_SLOT];
+	if (compete.kind !== GravityGame.TASK_COMPETE) return -1;
+	const steps = compete.state === GravityGame.TASK_ACCEPTED && game.clockSteps < compete.startsAt
+		? compete.startsAt - game.clockSteps
+		: compete.deadline - game.clockSteps;
+	return Math.max(0, Math.round(steps * DT / bucket));
+}
+
 function flightQuestKey(career) {
 	flightQuestLegs(career, questScratch);
 	const left = career.contract >= 0
 		? Math.max(0, Math.round((career.tasks[career.contract].deadline - game.clockSteps) * DT / 15))
 		: -1;
 	return questScratch[0] + ':' + questScratch[1] + ':' + questScratch[2] + ':' +
-		questScratch[3] + ':' + left + ':' + (career.ended === GravityGame.CAREER_OPEN ? 0 : 1);
+		questScratch[3] + ':' + left + ':' + flightCompeteLeft(career, 15) + ':' +
+		(career.ended === GravityGame.CAREER_OPEN ? 0 : 1);
 }
 
 function flightQuestHtml(slot, body, leg, left) {
@@ -100,9 +111,7 @@ function rebuildFlightQuests(career) {
 	const contractLeft = career.contract >= 0
 		? Math.max(0, Math.round((career.tasks[career.contract].deadline - game.clockSteps) * DT))
 		: -1;
-	const competeLeft = career.tasks[GravityGame.COMPETE_SLOT].kind === GravityGame.TASK_COMPETE
-		? Math.max(0, Math.round((career.tasks[GravityGame.COMPETE_SLOT].deadline - game.clockSteps) * DT))
-		: -1;
+	const competeLeft = flightCompeteLeft(career, 1);
 	if (questScratch[0] >= 0) {
 		html += flightQuestHtml(0, questScratch[0], questScratch[1], contractLeft);
 		rows += 1;

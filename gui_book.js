@@ -46,19 +46,27 @@ function taskRowHtml(career, index) {
 		: '';
 	if (task.kind === GravityGame.TASK_MEDIC) return medicRowHtml(career, task, index, left, refundNote);
 	if (task.kind === GravityGame.TASK_COMPETE) {
+		const toGun = Math.ceil(Math.max(0, task.startsAt - game.clockSteps) * DT);
+		const live = toGun <= 0;
+		const when = live
+			? 'live ' + Math.max(0, Math.round((task.deadline - game.clockSteps) * DT)) + ' s left'
+			: 'starts in ' + toGun + ' s';
 		let sportHtml = '<div class="careerRow"><span class="careerKind">sport</span>' +
-			'<span class="careerNow">' + planetName(task.planet) + ' · land ≥ ' +
-			task.minLength + ' px</span><span class="careerBtns">+' + task.reward.toFixed(2) +
-			' · ' + left + ' s';
+			'<span class="careerNow">' + planetName(task.planet) + ' · ' + when +
+			' · land ≥ ' + task.minLength + ' px</span><span class="careerBtns">pool +' +
+			task.reward.toFixed(2);
 		if (task.state === GravityGame.TASK_OFFERED) {
 			const ok = GravityGame.canAccept(career, index);
 			sportHtml += '<button class="miniBtn" data-act="accept" data-slot="' + index + '"' +
 				(ok ? '' : ' disabled') +
-				' title="' + (ok ? 'enter this competition' + refundNote : 'land on a planet to enter') +
-				'">accept</button>';
+				' title="' + (ok ? 'enter this race · pays the ' +
+					GravityGame.COMPETE_ENTRY.toFixed(2) + ' stake into the pool (kept by the winner)' + refundNote
+					: 'land on a planet to enter') +
+				'">accept −' + GravityGame.COMPETE_ENTRY.toFixed(2) + '</button>';
 		} else {
-			sportHtml += '<button class="miniBtn" data-act="drop" data-slot="' + index +
-				'" title="withdraw from the competition' +
+			sportHtml += ' · ' + (live ? 'entered' : 'entered · gun in ' + toGun + ' s') +
+				'<button class="miniBtn" data-act="drop" data-slot="' + index +
+				'" title="withdraw · the stake stays in the pool' +
 				(task.capitalRefund > 0 ? ' · deducts −' + task.capitalRefund.toFixed(2) + ' Capital refund' : '') +
 				'">drop</button>';
 		}

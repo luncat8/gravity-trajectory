@@ -344,7 +344,7 @@ function fly(w, from, angle, speed, afterBegin) {
 	const taxEarned = career.taxEarned;
 	assert.ok(sim.canFire(from, speed), 'pad refused the shot at ' + speed);
 	sim.launch(from, angle, speed);
-	GravityGame.careerBeginFlight(career, sim);
+	GravityGame.careerBeginFlight(career, sim, w.step);
 	if (afterBegin) afterBegin();
 	while (sim.status === GravitySim.STATUS_FLYING) {
 		w.step += 1;
@@ -720,25 +720,35 @@ check('career competition: pays once for a long enough landing flight from its p
 	const w = makeWorld(42);
 	startCareer(w, 42);
 	const { career, sim, ledger } = w;
+	const event = career.sport;
 	const task = career.tasks[GravityGame.COMPETE_SLOT];
-	task.kind = GravityGame.TASK_COMPETE;
-	task.planet = career.hq;
-	task.minLength = 300;
-	task.reward = 2.5;
-	task.deadline = 10000;
-	const purse = ledger.purse;
+	event.kind = GravityGame.TASK_COMPETE;
+	event.planet = career.hq;
+	event.minLength = 300;
+	event.baseReward = event.pool = 2.5;
+	event.startsAt = 0;
+	event.deadline = 10000;
+	event.enteredMask = 0;
+	event.attemptedMask = 0;
+	GravityGame.refreshBoard(career, w.trade, 1);
+	const beforeEntry = ledger.purse;
+	assert.ok(GravityGame.acceptTask(career, GravityGame.COMPETE_SLOT), 'entry refused');
+	assert.ok(Math.abs(ledger.purse - (beforeEntry - GravityGame.COMPETE_ENTRY)) < 1e-9,
+		'entry did not pay the stake');
+	assert.ok(Math.abs(event.pool - 3) < 1e-9, 'the stake did not join the pool');
 	sim.origin = career.hq;
 	sim.flightLength = 299;
 	sim.endReason = GravitySim.END_IMPACT;
 	sim.endBody = career.hq;
+	career.flightStartStep = 2;
 	GravityGame.careerEndFlight(career, sim, w.trade, 5);
-	assert.ok(Math.abs(ledger.purse - purse) < 1e-9 && task.kind === GravityGame.TASK_COMPETE, 'too short');
+	assert.ok(Math.abs(ledger.purse - (beforeEntry - GravityGame.COMPETE_ENTRY)) < 1e-9 &&
+		task.kind === GravityGame.TASK_COMPETE, 'too short');
 	sim.flightLength = 300;
 	GravityGame.careerEndFlight(career, sim, w.trade, 6);
-	assert.ok(Math.abs(ledger.purse - (purse + 2.5)) < 1e-9, 'prize paid');
-	assert.ok(career.tasks[GravityGame.COMPETE_SLOT].reward !== 2.5 ||
-		career.tasks[GravityGame.COMPETE_SLOT].kind !== GravityGame.TASK_COMPETE ||
-		career.tasks[GravityGame.COMPETE_SLOT].deadline !== 10000, 'offer cleared');
+	assert.ok(Math.abs(ledger.purse - (beforeEntry + 2.5)) < 1e-9, 'prize paid');
+	assert.strictEqual(career.tasks[GravityGame.COMPETE_SLOT].kind, GravityGame.TASK_NONE,
+		'a win closes the event');
 	let seen = 0;
 	for (let seed = 1; seed <= 12; seed++) {
 		const v = makeWorld(seed);
@@ -752,7 +762,7 @@ check('career competition: pays once for a long enough landing flight from its p
 			assert.ok(c.minLength % 50 === 0);
 		}
 	}
-	assert.ok(seen >= 6, 'competitions appear sometimes: ' + seen);
+	assert.ok(seen >= 6, 'competitions appear: ' + seen);
 });
 
 check('career ship refit: reversible to any owned tier, mass feeds the HQ cap, Δv from tank × engine', () => {
@@ -932,7 +942,7 @@ check('career in-flight burn: predictBurn & predictBurnFast match stepOne, fuel 
 	const origin = career.hq;
 	const launchSpeed = Math.min(72, sim.speedLimit(origin));
 	sim.launch(origin, 0.7, launchSpeed);
-	GravityGame.careerBeginFlight(career, sim);
+	GravityGame.careerBeginFlight(career, sim, w.step);
 	for (let i = 0; i < 45 && sim.status === GravitySim.STATUS_FLYING; i++) sim.stepOne();
 	assert.strictEqual(sim.status, GravitySim.STATUS_FLYING);
 
@@ -1827,7 +1837,7 @@ check('guest launch: a rival rail lifts the shot, drains its own battery and pay
 	const guestPurse0 = guest.ledger.purse;
 	assert.ok(pad.chargeKwh >= energy, 'the rival pad holds the charge for this shot');
 	guest.sim.launch(planet, shot.angle, shot.speed);
-	GravityGame.careerBeginFlight(guest.career, guest.sim);
+	GravityGame.careerBeginFlight(guest.career, guest.sim, 0);
 	assert.ok(pad.chargeKwh <= hostCharge0 - energy + 1e-9,
 		'guest launch must drain the host battery: ' + hostCharge0 + ' -> ' + pad.chargeKwh);
 	assert.ok(Math.abs(host.ledger.purse - (hostPurse0 + fee)) < 1e-9, 'usage tax reaches the owner');

@@ -274,7 +274,7 @@ for (const [level, extra] of [['easy', 0], ['normal', 14], ['hard', 21]]) {
 	rival.sim.relocate(plan.origin);
 	Game.setCommercial(rival.career, plan.origin);
 	rival.sim.launch(plan.origin, plan.angle, plan.speed);
-	Game.careerBeginFlight(rival.career, rival.sim);
+	Game.careerBeginFlight(rival.career, rival.sim, 0);
 	assert.ok(bot.careerShotBusy(career, plan.origin, plan.angleU, plan.speedU), 'a coasting rival still harvests that route');
 	rival.career.flying = false;
 	rival.career.plannedLanding = -1;

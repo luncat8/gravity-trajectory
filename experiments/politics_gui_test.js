@@ -297,28 +297,34 @@ check(pillColourForAge(320) === '#ff9478', 'profit >= 2.00 should be coral warn'
 
 Game.placeShip(career, scene.sim, career.capitalPlanet);
 const sportSlot = Game.COMPETE_SLOT;
+const sport = game.galaxy.sport;
+sport.kind = Game.TASK_COMPETE;
+sport.discipline = Game.SPORT_LENGTH;
+sport.planet = career.capitalPlanet;
+sport.minLength = 1500;
+sport.baseReward = sport.pool = 3.5;
+sport.startsAt = game.clockSteps;
+sport.deadline = game.clockSteps + 5000;
+sport.enteredMask = 0;
+sport.attemptedMask = 0;
+Game.refreshBoard(career, trade, game.clockSteps + 1);
 const sportTask = career.tasks[sportSlot];
-sportTask.kind = Game.TASK_COMPETE;
-sportTask.state = Game.TASK_OFFERED;
-sportTask.planet = career.capitalPlanet;
-sportTask.minLength = 1500;
-sportTask.reward = 3.5;
-sportTask.deadline = game.clockSteps + 5000;
 context.refreshCareerPanel();
 check(ui.get('careerTasks').innerHTML.includes('data-act="accept" data-slot="' + sportSlot + '"'),
 	'sport row missing accept button');
 const sportPurse = career.ledger.purse;
 act({ act: 'accept', slot: String(sportSlot) });
-check(Math.abs(career.ledger.purse - (sportPurse + Game.CAPITAL_REFUND)) < 1e-9,
-	'Capital sport accept did not refund 3');
+check(Math.abs(career.ledger.purse - (sportPurse + Game.CAPITAL_REFUND - Game.COMPETE_ENTRY)) < 1e-9,
+	'Capital sport accept did not refund 3 and take the stake');
+check(Math.abs(sport.pool - 4) < 1e-9, 'the stake did not join the pool');
 check(ui.get('careerMsg').textContent.includes('Capital refund'),
 	'Capital sport notice hid refund: ' + ui.get('careerMsg').textContent);
 context.refreshCareerPanel();
 check(ui.get('careerTasks').innerHTML.includes('data-act="drop" data-slot="' + sportSlot + '"'),
 	'accepted sport row missing drop button');
 act({ act: 'drop', slot: String(sportSlot) });
-check(Math.abs(career.ledger.purse - sportPurse) < 1e-9,
-	'Capital sport drop did not deduct 3');
+check(Math.abs(career.ledger.purse - (sportPurse - Game.COMPETE_ENTRY)) < 1e-9,
+	'Capital sport drop did not deduct 3 and keep the stake');
 
 Game.seizePlanet(market, game.galaxy, rebelPlanet, game.clockSteps + 1);
 Game.placeShip(career, scene.sim, sitting);

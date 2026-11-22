@@ -357,7 +357,11 @@ function careerAccept(career, index) {
 	const task = career.tasks[index];
 	const refund = task.capitalRefund > 0 ? ' · +' + task.capitalRefund.toFixed(2) + ' Capital refund' : '';
 	if (task.kind === GravityGame.TASK_COMPETE) {
-		careerNotice('entered competition at ' + planetName(task.planet) + refund);
+		/* entering while a shot is already queued on the race planet before the
+		 * gun holds that barrel too: an entrant never fires before the start */
+		reFloorTurretForRace(task);
+		careerNotice('entered race at ' + planetName(task.planet) +
+			' · −' + GravityGame.COMPETE_ENTRY.toFixed(2) + ' stake' + refund);
 	} else {
 		careerNotice((task.state === GravityGame.TASK_LOADED
 			? 'contract accepted · cargo loaded at ' + planetName(task.from)

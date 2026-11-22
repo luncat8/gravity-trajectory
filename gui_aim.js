@@ -162,12 +162,14 @@ function cancelTurret(queued = turret) {
 
 /* the barrel turns with the in-game career clock, so a queued launch fires
  * when the barrel lines up with the aim on world time, not on wall clock,
- * and the aimed shot's energy is reserved from the pad battery at the click */
+ * and the aimed shot's energy is reserved from the pad battery at the click;
+ * an entered race shot queued on the race planet holds until the gun */
 function queueTurretShot(plannedLanding = -1) {
 	playerCareer().plannedLanding = plannedLanding;
 	if (!slotIsBot(activeSlotIndex())) recordCareerAction('launch', { origin: aimBody, angle: aimAngle, speed: aimSpeed });
 	const period = GravityGame.turretPeriod(game.galaxy, aimBody);
-	const seconds = game.clockSteps * DT;
+	const startStep = GravityGame.sportHoldStep(playerCareer(), aimBody, game.clockSteps);
+	const seconds = startStep * DT;
 	const gun = GravityGame.turretAngle(game.galaxy, aimBody, seconds);
 	let delta = aimAngle - gun;
 	delta -= Math.floor(delta / TAU) * TAU;
@@ -181,7 +183,7 @@ function queueTurretShot(plannedLanding = -1) {
 	turret.pad = GravityGame.padAt(playerCareer(), aimBody);
 	turret.energy = activeCareerSim().launchEnergy(aimBody, aimSpeed);
 	GravityGame.reserveEnergy(turret.pad, turret.energy);
-	turret.fireAt = game.clockSteps + Math.ceil(wait / DT);
+	turret.fireAt = startStep + Math.ceil(wait / DT);
 	if (slotIsBot(activeSlotIndex())) bot.traceCareerQueue(playerCareer(), aimBody, aimAngle, aimSpeed,
 		turret.energy, turret.fireAt, game.clockSteps);
 	/* the barrel only turns while the world clock runs */
@@ -193,6 +195,20 @@ function queueTurretShot(plannedLanding = -1) {
 	hudAt = -Infinity;
 	refreshGameUi();
 	careerWaitBtn.disabled = true;
+}
+
+/* entering the race while a shot is already queued on its planet before the
+ * gun re-floors that barrel: an entrant never fires before the start. Pure
+ * timing math on the queued aim, so a recording replays it step for step. */
+function reFloorTurretForRace(task) {
+	if (!turret.pending || turret.body !== task.planet || game.clockSteps >= task.startsAt) return;
+	const period = GravityGame.turretPeriod(game.galaxy, turret.body);
+	const gun = GravityGame.turretAngle(game.galaxy, turret.body, task.startsAt * DT);
+	let delta = turret.angle - gun;
+	delta -= Math.floor(delta / TAU) * TAU;
+	const wait = delta < 0.02 ? 0 : delta / TAU * period;
+	const floored = task.startsAt + Math.ceil(wait / DT);
+	if (floored > turret.fireAt) turret.fireAt = floored;
 }
 
 /* the world clock turns the barrel; once it reaches the aligned step the
@@ -467,7 +483,7 @@ function fire(abortStep) {
 	}
 	if (game.on) {
 		if (careerRule()) {
-			GravityGame.careerBeginFlight(playerCareer(), sim);
+			GravityGame.careerBeginFlight(playerCareer(), sim, game.clockSteps);
 			bot.traceCareerFire(playerCareer(), sim, game.clockSteps);
 			if (playerCareer().fragileLost) {
 				careerNotice('fragile load lost · fired at ' + Math.round(aimSpeed) +

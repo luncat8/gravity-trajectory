@@ -76,7 +76,7 @@ function flyLiveShot(Game, Sim, career, market, sim, trade, startStep, angleU, s
 	sim.limitReason = Sim.END_TIME;
 	sim.launch(origin, angle, speed);
 	Game.beginFlight(career.ledger, sim);
-	Game.careerBeginFlight(career, sim);
+	Game.careerBeginFlight(career, sim, startStep);
 	let step = startStep;
 	while (sim.status === Sim.STATUS_FLYING) {
 		step += 1;

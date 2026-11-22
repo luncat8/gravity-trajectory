@@ -114,7 +114,7 @@ check('a gentle launch keeps the contract on any rail', () => {
 	career.ledger.purse = 99;
 	assert.ok(Game.buildGear(career, planet, Tech.KIND_CATAPULT, Tech.CATAPULTS[1]), 'own EMC-2 here');
 	w.sim.speed = GENTLE;
-	Game.careerBeginFlight(career, w.sim);
+	Game.careerBeginFlight(career, w.sim, 0);
 	assert.strictEqual(career.fragileLost, false);
 	assert.strictEqual(career.contract, 0, 'contract still alive');
 	assert.strictEqual(career.ship.cargoTons, task.tons);
@@ -124,7 +124,7 @@ check('a hard launch voids the loaded contract and drops the cargo; the rail sti
 	const w = setup(43);
 	const { career } = fragileCareer(w);
 	w.sim.speed = HARD;
-	Game.careerBeginFlight(career, w.sim);
+	Game.careerBeginFlight(career, w.sim, 0);
 	assert.strictEqual(career.fragileLost, true);
 	assert.strictEqual(career.flights, 1);
 	assert.strictEqual(career.contract, -1, 'contract dropped');
@@ -132,7 +132,7 @@ check('a hard launch voids the loaded contract and drops the cargo; the rail sti
 	assert.strictEqual(career.tasks[0].fragile, false, 'the cleared slot forgets the flag');
 	/* the flag is the last launch only */
 	w.sim.speed = HARD;
-	Game.careerBeginFlight(career, w.sim);
+	Game.careerBeginFlight(career, w.sim, 0);
 	assert.strictEqual(career.fragileLost, false);
 });
 
@@ -142,7 +142,7 @@ check('a hard flight to the pickup breaks nothing', () => {
 	task.state = Game.TASK_ACCEPTED;
 	career.ship.cargoTons = 0;
 	w.sim.speed = HARD;
-	Game.careerBeginFlight(career, w.sim);
+	Game.careerBeginFlight(career, w.sim, 0);
 	assert.strictEqual(career.fragileLost, false);
 	assert.strictEqual(career.contract, 0);
 });

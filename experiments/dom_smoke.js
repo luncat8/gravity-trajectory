@@ -2354,8 +2354,10 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 		' / ' + hudUi.get('flightEngine').textContent);
 	check(hudUi.get('flightRefuelRow').hidden && hudUi.get('flightFuelRow').hidden &&
 		!hudUi.has('flightPauseBtn') && !hudUi.get('flightQuestGroup').hidden &&
-		hudUi.get('flightQuests').innerHTML.includes('no contract open'),
-		'the fuel row needs a drive; the work rows always list');
+		hudUi.get('flightQuests').innerHTML.includes('>sport</span>') &&
+		hudUi.get('flightQuests').innerHTML.includes('P' +
+			hudCareer.tasks[hudGame.COMPETE_SLOT].planet),
+		'the fuel row needs a drive; the work rows list the announced race');
 	check(hudUi.get('flightState').textContent !== 'coasting' &&
 		hudUi.get('flightActionTag').textContent === 'enter',
 		'the action caption names the shortcut: ' + hudUi.get('flightActionTag').textContent);
@@ -2379,8 +2381,9 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	hudEnv.runFrames(2, 16.0);
 	const questHtml = hudUi.get('flightQuests').innerHTML;
 	check(questHtml.includes('data-quest="5"') && questHtml.includes('>load<') &&
-		hudUi.get('flightQuestTag').textContent === 'load',
-		'the open contract lists its next stop: ' + questHtml);
+		questHtml.includes('>sport</span>') &&
+		hudUi.get('flightQuestTag').textContent === 'contract + sport',
+		'the open contract lists its next stop beside the race row: ' + questHtml);
 	/* the guide is only drawn for the row under the pointer */
 	hudEnv.calls.texts.length = 0;
 	hudEnv.calls.gStrokeStyles.length = 0;
@@ -3839,6 +3842,7 @@ function protoOf(career, family, id) {
 	let fees = 0;
 	let fuel = 0;
 	let evac = 0;
+	let stakes = 0;
 	for (let i = 0; i < n; i++) {
 		const career = sg.game.galaxy.actors[i];
 		sGame.careerStats(row, career);
@@ -3861,6 +3865,7 @@ function protoOf(career, family, id) {
 		fees += career.feesPaid;
 		fuel += career.fuelSpent;
 		evac += career.evacuationSpent;
+		stakes += career.stakeSpent;
 	}
 	const allSigned = (allProfitRate / n < 0 ? '' : '+') + (allProfitRate / n).toFixed(2);
 	check(html.includes('>all</span> ' + allSigned + '/s'), 'profit caption carries all ' + allSigned + '/s');
@@ -3873,7 +3878,8 @@ function protoOf(career, family, id) {
 		'standing caption carries ' + mapRow.standing.toFixed(2));
 	const title = 'visits ' + visits.toFixed(1) + ' · contracts ' + contracts.toFixed(1) +
 		' · bribes ' + bribes.toFixed(1) + ' · tax ' + tax.toFixed(1) +
-		' · fees ' + fees.toFixed(1) + ' · fuel ' + fuel.toFixed(1) + ' · evac ' + evac.toFixed(1);
+		' · fees ' + fees.toFixed(1) + ' · fuel ' + fuel.toFixed(1) + ' · evac ' + evac.toFixed(1) +
+		' · stakes ' + stakes.toFixed(1);
 	check(html.includes('title="' + title + '"'), 'profit caption tooltips the income/running splits');
 	check(storage['gravity.statsOpen'] === '1', 'opening the strip stores gravity.statsOpen');
 	sui.get('statsStrip').open = false;

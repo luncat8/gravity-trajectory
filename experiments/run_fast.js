@@ -43,6 +43,7 @@ const FAST = [
 	['fragile_test.js', 10],
 	['politics_test.js', 15],
 	['saved_map_test.js', 10],
+	['competition_test.js', 0.5],
 	['map_gen_test.js', 0.2]
 ];
 

@@ -780,7 +780,7 @@ check('accepting any quest or sport at the Capital refunds 3 and failing or remo
 	function checkPurseIdentity() {
 		const net = starterPurse + career.visitIncome + career.earned + career.bribeIncome +
 			career.taxEarned - career.feesPaid - career.fuelSpent - career.maintenanceSpent -
-			career.evacuationSpent - career.buildSpent - career.sciSpent;
+			career.evacuationSpent - career.buildSpent - career.sciSpent - career.stakeSpent;
 		assert.ok(Math.abs(career.ledger.purse - net) < 1e-9,
 			'purse identity broken: ' + career.ledger.purse + ' vs ' + net);
 	}
@@ -820,7 +820,7 @@ check('accepting any quest or sport at the Capital refunds 3 and failing or remo
 	assert.strictEqual(career.ledger.purse, pBefore + Game.CAPITAL_REFUND);
 	w.sim.origin = career.capitalPlanet;
 	w.sim.speed = Game.FRAGILE_SPEED + 20;
-	Game.careerBeginFlight(career, w.sim);
+	Game.careerBeginFlight(career, w.sim, 0);
 	career.flying = false;
 	assert.strictEqual(career.fragileLost, true);
 	assert.strictEqual(career.ledger.purse, pBefore, 'fragile break did not claw back 3');
@@ -845,48 +845,70 @@ check('accepting any quest or sport at the Capital refunds 3 and failing or remo
 	assert.ok(Math.abs(career.ledger.purse - (pBefore + Game.CAPITAL_REFUND + 2.5 + career.visitIncome)) < 1e-9);
 	checkPurseIdentity();
 
-	/* 2. sport accepted at Capital alongside an open contract: +3, -3 on drop & expiry, kept on win */
+	/* 2. sport accepted at Capital alongside an open contract: the stake goes
+	 * into the shared pool, +3 on accept, -3 on drop & expiry, kept on a win;
+	 * a forfeited stake never comes back */
 	Game.placeShip(career, w.sim, career.capitalPlanet);
 	const baseSport = career.ledger.purse;
-	const sport = career.tasks[Game.COMPETE_SLOT];
-	sport.kind = Game.TASK_COMPETE;
-	sport.state = Game.TASK_OFFERED;
-	sport.planet = career.capitalPlanet;
-	sport.minLength = 900;
-	sport.reward = 3.25;
-	sport.deadline = 400;
+	const event = w.galaxy.sport;
+	const mirror = career.tasks[Game.COMPETE_SLOT];
+	event.kind = Game.TASK_COMPETE;
+	event.discipline = Game.SPORT_LENGTH;
+	event.planet = career.capitalPlanet;
+	event.minLength = 900;
+	event.baseReward = 3.25;
+	event.pool = 3.25;
+	event.startsAt = 100;
+	event.deadline = 400;
+	event.enteredMask = 0;
+	event.attemptedMask = 0;
+	Game.refreshBoard(career, w.trade, 50);
+	assert.strictEqual(mirror.kind, Game.TASK_COMPETE, 'the event did not mirror');
+	assert.strictEqual(mirror.reward, 3.25, 'the mirror does not show the pool');
 	assert.ok(Game.acceptTask(career, Game.COMPETE_SLOT));
-	assert.strictEqual(career.ledger.purse, baseSport + Game.CAPITAL_REFUND);
+	assert.strictEqual(career.ledger.purse, baseSport + Game.CAPITAL_REFUND - Game.COMPETE_ENTRY,
+		'entry did not pay the stake with the refund');
+	assert.strictEqual(event.pool, 3.75, 'the stake did not join the pool');
+	assert.strictEqual(mirror.reward, 3.75, 'the mirror did not follow the pool');
 	assert.ok(Game.dropTask(career, Game.COMPETE_SLOT));
-	assert.strictEqual(career.ledger.purse, baseSport, 'sport drop did not claw back 3');
+	assert.strictEqual(career.ledger.purse, baseSport - Game.COMPETE_ENTRY,
+		'sport drop must claw back 3 and keep the forfeited stake');
+	assert.strictEqual(mirror.state, Game.TASK_OFFERED, 'the shared offer did not reopen');
 	checkPurseIdentity();
 
-	sport.kind = Game.TASK_COMPETE;
-	sport.state = Game.TASK_OFFERED;
-	sport.planet = career.capitalPlanet;
-	sport.minLength = 900;
-	sport.reward = 3.25;
-	sport.deadline = 300;
 	assert.ok(Game.acceptTask(career, Game.COMPETE_SLOT));
-	Game.refreshBoard(career, w.trade, 301);
-	assert.strictEqual(career.ledger.purse, baseSport, 'sport expiry did not claw back 3');
+	Game.refreshBoard(career, w.trade, 401);
+	assert.strictEqual(career.ledger.purse, baseSport - 2 * Game.COMPETE_ENTRY,
+		'sport expiry must claw back 3 and keep both stakes');
+	assert.strictEqual(mirror.kind, Game.TASK_NONE, 'the expired event did not close');
+	assert.strictEqual(event.nextAt > 401, true, 'the next race was not scheduled');
 	checkPurseIdentity();
 
-	sport.kind = Game.TASK_COMPETE;
-	sport.state = Game.TASK_OFFERED;
-	sport.planet = career.capitalPlanet;
-	sport.minLength = 900;
-	sport.reward = 3.25;
-	sport.deadline = 900;
+	event.kind = Game.TASK_COMPETE;
+	event.planet = career.capitalPlanet;
+	event.deadline = 900;
+	event.pool = event.baseReward = 3.25;
+	event.startsAt = 100;
+	event.enteredMask = 0;
+	event.attemptedMask = 0;
+	Game.refreshBoard(career, w.trade, 402);
 	assert.ok(Game.acceptTask(career, Game.COMPETE_SLOT));
+	assert.strictEqual(career.stakeSpent, 3 * Game.COMPETE_ENTRY, 'stake counter lost a stake');
 	w.sim.origin = career.capitalPlanet;
 	w.sim.flightLength = 950;
 	w.sim.endReason = GravitySim.END_IMPACT;
 	w.sim.endBody = planet;
+	career.flightStartStep = 120;
 	const vBefore = career.visitIncome;
+	const winsBefore = career.competitions;
 	Game.careerEndFlight(career, w.sim, w.trade, 350);
+	assert.strictEqual(career.competitions, winsBefore + 1, 'the win did not count');
 	assert.ok(Math.abs(career.ledger.purse -
-		(baseSport + Game.CAPITAL_REFUND + 3.25 + (career.visitIncome - vBefore))) < 1e-9);
+		(baseSport + Game.CAPITAL_REFUND + 3.75 - 3 * Game.COMPETE_ENTRY +
+			(career.visitIncome - vBefore))) < 1e-9,
+		'the win must pay the pool and keep the refund');
+	assert.strictEqual(mirror.kind, Game.TASK_NONE, 'the win did not close the event');
+	assert.strictEqual(event.winner, career.index, 'the winner was not recorded');
 	checkPurseIdentity();
 
 	/* 3. medical mission evacuation claws back the Capital refund */
