@@ -224,6 +224,16 @@ function readPlayersParam(params, rule) {
 	return true;
 }
 
+/* 0.7.47 WS5: a career address may name its start mode; anything else is
+ * refused rather than silently falling back to a mode the link did not ask for. */
+function readStartParam(params, rule) {
+	if (!params.has('start') || rule !== RULE_CAREER) return true;
+	const mode = params.get('start');
+	if (!GravityGame.START_MODES[mode]) return false;
+	game.startMode = mode;
+	return true;
+}
+
 function readUrlScale(params, name, min, max) {
 	if (!params.has(name)) return 1;
 	const value = Number(params.get(name));
@@ -242,7 +252,7 @@ function loadSearchParams() {
 	const hasGameHint = params.has('mode') || params.has('game') || params.has('rule') ||
 		params.has('seed') || params.has('rate') || params.has('bot') || params.has('src') ||
 		params.has('source') || params.has('player') || params.has('you') || params.has('shots') ||
-		params.has('universe') || params.has('players') ||
+		params.has('universe') || params.has('players') || params.has('start') ||
 		params.has('gs') || params.has('fs') || params.has('ws') ||
 		params.has('ps') || params.has('rs') || params.has('ys') || params.has('ht');
 	if (!hasGameHint) return false;
@@ -314,6 +324,7 @@ function loadSearchParams() {
 	/* a roster the url names replaces whatever the previous run left set */
 	if (params.has('players')) game.playerCount = 0;
 	if (!readPlayersParam(params, ruleStr)) return false;
+	if (!readStartParam(params, ruleStr)) return false;
 	loadingUrl = true;
 	clearMapField();
 	if (speedStr !== null) scene.setSpeed(rateNum);

@@ -484,7 +484,18 @@ function refreshLaunchList(force) {
 		}
 		return;
 	}
+	/* 0.7.47 WS4: a career still choosing its opening seat has no record yet,
+	 * so hold the previous list until the run starts */
+	if (typeof GravityScene !== 'undefined' && GravityScene.careerPlanning()) return;
 	const career = activeCareer();
+	if (!career) {
+		if (launchListCareer !== null) {
+			careerLaunchListEl.innerHTML = '';
+			launchListKey = '';
+			launchListCareer = null;
+		}
+		return;
+	}
 	const sim = activeCareerSim();
 	const pad = career.at >= 0 ? GravityGame.padAt(career, career.at) : null;
 	/* the collection rule prices every row, so flipping it re-ranks the list */

@@ -283,6 +283,14 @@ const botOffEl = $('botOff');
 const botEasyEl = $('botEasy');
 const botNormalEl = $('botNormal');
 const botHardEl = $('botHard');
+const startRowEl = $('startRow');
+const playerCountRowEl = $('playerCountRow');
+const planetRowEl = $('planetRow');
+const startEls = [
+	[GravityGame.START_PLANET, $('startPlanet')],
+	[GravityGame.START_SPACE, $('startSpace')],
+	[GravityGame.START_CAPITAL, $('startCapital')]
+];
 const gameScoreEl = $('gameScore');
 const gamePurseEl = $('gamePurse');
 const purseRowEl = $('purseRow');
@@ -460,6 +468,7 @@ function makeAimSlot() {
  */
 const game = { on: false, seed: 0, fixedRate: false, rule: RULE_TOUR, bot: BOT_NORMAL,
 	player: PLAYER_USER, cheat: null, playerCount: 0, planetUniverse: 0,
+	startMode: GravityGame.START_PLANET,
 	gravityScale: 1, forceScale: 1, spaceWearScale: 1, padScale: 1, rotScale: 1, payScale: 1, harvestTick: false,
 	shots: [], steps: 0, clockSteps: 0, doneSteps: -1, length: 0,
 	market: GravityGame.createMarket(), money: GravityGame.createLedger(),
@@ -506,6 +515,14 @@ function saveStatsOpen() {
 /* career world clock: runs while unpaused; by default it pauses when your
  * flight ends so you can aim in peace (launching resumes it) */
 let careerPaused = false;
+/* 0.7.47 WS4: a career whose seat search has not accepted inside the
+ * synchronous budget keeps the run open and plans in the background. The
+ * driver lives in gui_game.js; this flag gates every roster/input change
+ * while it is active so the search is never invalidated under it. */
+let careerPlanning = false;
+let careerPlanSearch = null;
+let careerPlanSeed = 0;
+let careerPlanMode = GravityGame.START_PLANET;
 const slotPaused = new Array(MAX_PLAYERS).fill(false);
 /* wall-clock instant the career clock was paused; draw ticks freeze on it
  * so nothing animates while the world clock holds still */
@@ -671,6 +688,14 @@ for (let mIdx = 0; mIdx < modeEls.length; mIdx++) {
 		if (el.checked) setPlayMode(value);
 	});
 }
+for (let sIdx = 0; sIdx < startEls.length; sIdx++) {
+	const el = startEls[sIdx][1];
+	if (!el) continue;
+	const value = startEls[sIdx][0];
+	el.addEventListener('change', () => {
+		if (el.checked) setStartMode(value);
+	});
+}
 if (careerBoxEl) {
 	careerBoxEl.addEventListener('click', event => {
 		const data = careerEventData(event);
@@ -794,6 +819,13 @@ if (planetCountInputEl) {
 		const value = Math.round(Number(planetCountInputEl.value));
 		if (!Number.isFinite(value) || !setPlanetUniverseSize(value)) {
 			planetCountInputEl.value = planetCount;
+			return;
+		}
+		/* a planet-count change is the other half of the unfair-roster fix:
+		 * it cancels the live search and restarts it on the wider world */
+		if (careerPlanning) {
+			cancelCareerPlanning();
+			startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player, game.cheat);
 			return;
 		}
 		if (careerRule()) recordCareerAction('universe', { mask: Array.from(planetMask).join('') });
@@ -1008,6 +1040,10 @@ root.GravityScene = {
 	rule: () => game.rule,
 	botLevel: () => game.bot,
 	playerType: () => game.player,
+	startMode: () => game.startMode,
+	setStartMode,
+	careerPlanning: () => careerPlanning,
+	drainCareerPlanning,
 	slotType: slot => slotTypes[slot],
 	setSlotType: setSlotType,
 	activeSlot: () => activeSlotIndex(),

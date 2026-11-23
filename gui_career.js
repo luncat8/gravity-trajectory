@@ -61,7 +61,7 @@ function waitSettlement(career) {
 		padMin,
 		watchSec,
 		here,
-		hereHasPad: career.pads[here].catapult !== null,
+		hereHasPad: here >= 0 && career.pads[here].catapult !== null,
 		hereGain,
 		totalGain,
 		chargingPads,
@@ -223,6 +223,23 @@ function refreshCareerPanel() {
 		return;
 	}
 	const career = activeCareer();
+	/* WS4: while the opening search is still planning, no career exists yet,
+	 * so the panel says so instead of rendering an un-reset career */
+	if (careerPlanning) {
+		if (careerTagEl) careerTagEl.textContent = 'fair start · searching';
+		careerPadEl.innerHTML = '';
+		careerTaskEl.innerHTML = '';
+		careerShopEl.innerHTML = '';
+		if (careerScienceEl) careerScienceEl.innerHTML = '';
+		refreshLaunchList(true);
+		if (careerWaitInfoEl) {
+			careerWaitInfoEl.textContent = 'searching the world for a fair opening';
+			careerWaitInfoEl.hidden = false;
+		}
+		launchState = -1;
+		updateLiveHud();
+		return;
+	}
 	if (careerTagEl) careerTagEl.textContent = careerTagText();
 	fillCareerPlanets(career);
 	careerPadEl.innerHTML = padBlockHtml(career);

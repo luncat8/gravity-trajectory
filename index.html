@@ -203,6 +203,11 @@
 			<label title="plan the longest single trajectory"><input id="modeRoute" type="radio" name="playMode" value="route"> route length</label>
 			<label title="collect planet visit profit for 10 launches"><input id="modeMoney" type="radio" name="playMode" value="money"> money for visit</label>
 		</div>
+		<div id="startRow" class="radioRow startRow" role="radiogroup" aria-label="start" hidden>
+			<label title="seat every company on its own HQ and plan the opening"><input id="startPlanet" type="radio" name="startMode" value="planet" checked> planet HQ</label>
+			<label title="no HQ: every company spawns in flight near the world centre"><input id="startSpace" type="radio" name="startMode" value="space"> space</label>
+			<label title="no HQ: every company starts landed on the Capital"><input id="startCapital" type="radio" name="startMode" value="capital"> capital</label>
+		</div>
 	</div>
 
 	<div id="runBox" class="group" hidden>

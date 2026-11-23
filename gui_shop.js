@@ -129,11 +129,20 @@ function tierIndex(table, item) {
 
 function careerPickPlanet() {
 	const career = activeCareer();
-	if (careerFollow) return career.at >= 0 ? career.at : career.hq;
+	if (careerFollow) return careerPickFallback(career);
 	const raw = careerPlanetEl ? careerPlanetEl.value : '';
 	const picked = raw === '' ? -1 : Math.round(Number(raw));
 	if (picked >= 0 && picked < PLANETS) return picked;
-	return career.at >= 0 ? career.at : career.hq;
+	return careerPickFallback(career);
+}
+
+/* the planet the shop and pad blocks address: the ship's planet, else its HQ,
+ * else the Capital (a no-HQ space/capital start has neither a home nor a
+ * landed planet while it is in flight) */
+function careerPickFallback(career) {
+	if (career.at >= 0) return career.at;
+	if (career.hq >= 0) return career.hq;
+	return career.capitalPlanet >= 0 ? career.capitalPlanet : 0;
 }
 
 function careerNotice(text) {

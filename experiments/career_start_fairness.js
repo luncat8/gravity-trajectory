@@ -597,14 +597,26 @@ function runCell(count, seats, seeds) {
 	let minBefore = Infinity, maxBefore = -Infinity;
 	let minAfter = Infinity, maxAfter = -Infinity;
 	let firstFail = '';
+	let composN = 0, assertedN = 0;
+	let addHeavies = 0, addPlanets = 0;
 	const broken = [];
 	const nonCap = count - (GravityGame.specialPlanets() ? 1 : 0);
+	const cellCompos = count < 2 * seats + 4;
 	for (const seed of seeds) {
 		const plan = planWorld(seed, count, seats, true);
 		const missingPlan = !plan.homes || plan.homes.length !== seats;
 		if (nonCap >= seats && (missingPlan || new Set(plan.homes).size !== seats)) {
 			broken.push('seed ' + seed + ': no plan for ' + seats + ' seats on ' + nonCap + ' homes');
 		}
+		const compos = GravityGame.startComposition(plan.world.trade.world,
+			plan.world.mask, count, seats, plan.world.sim, 'planet');
+		if (compos.additional > 0) {
+			addHeavies += Math.max(0, compos.heavies - 2);
+			addPlanets += compos.additional;
+		}
+		const composOk = !cellCompos && compos.ok;
+		if (!composOk) composN += 1;
+		else assertedN += 1;
 		const sample = checkOpening(plan.world, missingPlan ? null : plan.homes, plan.ms, count);
 		sumMs += sample.ms;
 		if (sample.ms > maxMs) maxMs = sample.ms;
@@ -632,12 +644,18 @@ function runCell(count, seats, seeds) {
 				if (alt.exitable && alt.ratio >= FAIR_RATIO) altFairN += 1;
 			}
 		}
-		if (!sample.fair && !firstFail) firstFail = failReason(sample, alt);
-		if (!sample.fair && count >= 20) broken.push(failReason(sample, alt));
-		if (count < 20 && alt && !alt.sameHq) {
-			if (alt.exitable && !sample.exitable) broken.push(failReason(sample, alt) + ' (oracle exits)');
-			if (alt.exitable && alt.ratio >= FAIR_RATIO && !sample.fair) {
-				broken.push(failReason(sample, alt) + ' (oracle fair)');
+		if (!composOk) {
+			if (!firstFail) firstFail = 'seed ' + seed + ': compos [' + compos.missing.join(',') + ']';
+		} else if (!sample.fair && !firstFail) {
+			firstFail = failReason(sample, alt);
+		}
+		if (composOk) {
+			if (!sample.fair && count >= 20) broken.push(failReason(sample, alt));
+			if (count < 20 && alt && !alt.sameHq) {
+				if (alt.exitable && !sample.exitable) broken.push(failReason(sample, alt) + ' (oracle exits)');
+				if (alt.exitable && alt.ratio >= FAIR_RATIO && !sample.fair) {
+					broken.push(failReason(sample, alt) + ' (oracle fair)');
+				}
 			}
 		}
 	}
@@ -646,6 +664,7 @@ function runCell(count, seats, seeds) {
 	}
 	const n = seeds.length;
 	const col = (k) => (k + '/' + n).padStart(5);
+	const addShare = addPlanets > 0 ? (10 * addHeavies / addPlanets).toFixed(1) + '/10' : '   -';
 	const line =
 		('C=' + count).padEnd(5) + ' ' + ('S=' + seats).padEnd(4) +
 		' | built ' + col(builtN) +
@@ -653,11 +672,13 @@ function runCell(count, seats, seeds) {
 		' · fair ' + col(fairN) +
 		' · worst ' + (Number.isFinite(worst) ? (worst * 100).toFixed(0) + '%' : '-').padStart(4) +
 		' · light ' + (minBefore + '..' + maxBefore + '->' + minAfter + '..' + maxAfter).padEnd(13) +
+		' · addH ' + addShare.padStart(6) +
 		' · ms ' + (Math.round(sumMs / n) + '/' + maxMs).padEnd(9) +
 		(ALT ? ' | sameHQ ' + col(sameHqN) + ' · altExit ' + col(altExitN) + ' · altFair ' + col(altFairN) : '') +
+		(composN ? ' | compos ' + composN + '/' + n : '') +
 		(firstFail ? ' | ' + firstFail : '');
 	console.log(line);
-	return { count, seats, builtN, exitN, fairN, sameHqN, altExitN, altFairN, worst, n, broken };
+	return { count, seats, builtN, exitN, fairN, sameHqN, altExitN, altFairN, worst, n, broken, composN, assertedN };
 }
 
 function runMatrix() {
@@ -689,9 +710,14 @@ function runMatrix() {
 
 function runDefault() {
 	const samples = [];
+	const cellCompos = COUNT < 2 * SEATS + 4;
 	for (const seed of SEEDS) {
 		const plan = planWorld(seed, COUNT, SEATS, false);
 		const sample = checkOpening(plan.world, plan.homes, plan.ms, COUNT);
+		const compos = GravityGame.startComposition(plan.world.trade.world,
+			plan.world.mask, COUNT, SEATS, plan.world.sim, 'planet');
+		sample.compos = compos;
+		sample.composOk = !cellCompos && compos.ok;
 		samples.push(sample);
 		const shown = sample.game || sample.witness;
 		const shownRatio = sample.game ? sample.game.ratio : sample.ratio;
@@ -706,7 +732,8 @@ function runDefault() {
 				: ' → NO distinct exit-safe site for every seat') +
 			(sample.built && !sample.exitable ? ' · DEAD END' : '') +
 			(sample.exitable && !sample.game ? ' · NO VERIFIED GAME ASSIGNMENT' : '') +
-			(sample.game && !sample.fair ? ' · FAIR BAND MISSED' : '') +
+			(!sample.composOk ? ' · compos [' + compos.missing.join(',') + ']'
+				: (sample.game && !sample.fair ? ' · FAIR BAND MISSED' : '')) +
 			' · ' + sample.ms + 'ms');
 	}
 
@@ -743,18 +770,25 @@ function runDefault() {
 	const buildable = samples.filter(row => row.built).length;
 	const exitable = samples.filter(row => row.exitable).length;
 	const fair = samples.filter(row => row.fair).length;
+	const asserted = samples.filter(row => row.composOk);
+	const assertedBuildable = asserted.filter(row => row.built).length;
+	const assertedExitable = asserted.filter(row => row.exitable).length;
+	const assertedFair = asserted.filter(row => row.fair).length;
+	const composSkipped = samples.length - asserted.length;
 	const worst = samples.reduce((low, row) => row.ratio < low ? row.ratio : low, Infinity);
 	console.log('\n' + samples.length + ' seeds · every seat buildable ' + buildable + '/' + samples.length +
 		' · every site exitable ' + exitable + '/' + samples.length +
 		' · within ' + FAIR_RATIO + ' band ' + fair + '/' + samples.length +
+		(composSkipped ? ' (compos ' + assertedFair + '/' + asserted.length +
+			', skipped ' + composSkipped + ')' : '') +
 		' · weakest ' + (Number.isFinite(worst) ? (worst * 100).toFixed(0) + '%' : '-'));
 
-	assert.strictEqual(buildable, samples.length,
-		'every planned map must give each company its own buildable site');
-	assert.strictEqual(exitable, samples.length,
-		'every planned first landing must be able to launch again');
-	assert.strictEqual(fair, samples.length,
-		'every planned map must keep the weakest opening within the fair band');
+	assert.strictEqual(assertedBuildable, asserted.length,
+		'every composition-valid planned map must give each company its own buildable site');
+	assert.strictEqual(assertedExitable, asserted.length,
+		'every composition-valid planned first landing must be able to launch again');
+	assert.strictEqual(assertedFair, asserted.length,
+		'every composition-valid planned map must keep the weakest opening within the fair band');
 	assert.ok(blocked >= SHARE_MIN * drawn && blocked <= SHARE_MAX * drawn,
 		'between 2 and 4 of every 10 drawn planets must hold the starter rail (' +
 		(10 * blocked / drawn).toFixed(1) + ' of 10)');

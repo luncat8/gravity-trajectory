@@ -493,6 +493,22 @@ body {
 	color: var(--dim);
 }
 
+/* 0.7.47 WS3: a roster that no fair opening can seat highlights its counters
+ * amber so the fix (fewer companies, or more planets) reads at a glance. The
+ * counters stay editable: the class is a signal, not a lock. */
+.playerCountRow.rosterUnfair,
+.planetRow.rosterUnfair {
+	border-color: var(--warn);
+	background: rgba(255, 148, 120, 0.10);
+	color: var(--warn);
+}
+
+.playerCountRow.rosterUnfair .playerCountLabel b,
+.planetRow.rosterUnfair .planetPadsLabel b,
+.planetRow.rosterUnfair .planetPlanetsLabel {
+	color: var(--warn);
+}
+
 .scoreEntry {
 	display: grid;
 	grid-template-columns: 42px minmax(0, 1fr);

@@ -312,7 +312,17 @@
 			contractTarget: -1,
 			contractReward: 0,
 			offeredCount: 0,
-			offeredTopReward: 0
+			offeredTopReward: 0,
+			/* 0.7.47 WS3/WS4: the live roster's fairness and the seat-search
+			 * report, fed in by the page (opts.roster / opts.search) */
+			rosterOk: true,
+			rosterPlanets: 0,
+			rosterPlayers: 0,
+			searchActive: false,
+			searchTier: 0,
+			searchWeakest: 0,
+			searchUnmet: '',
+			searchProgress: 0
 		};
 	}
 
@@ -490,7 +500,18 @@
 			bribeAfterPct: Math.round(bribeAfter),
 			bribeArrestPct: career.capitalPlanet >= 0
 				? Math.round(OrbitEcon.arrestChance(bribeAfter) * CENT) : 0
-		}, boardSummary(career, clockSteps)));
+		}, boardSummary(career, clockSteps), {
+			/* 0.7.47 WS3/WS4: the page feeds the live roster's fairness and the
+			 * seat-search report in, so H can report them */
+			rosterOk: opts.rosterOk !== false,
+			rosterPlanets: opts.rosterPlanets || 0,
+			rosterPlayers: opts.rosterPlayers || 0,
+			searchActive: Boolean(opts.searchActive),
+			searchTier: opts.searchTier || 0,
+			searchWeakest: opts.searchWeakest || 0,
+			searchUnmet: opts.searchUnmet || '',
+			searchProgress: opts.searchProgress || 0
+		}));
 	}
 
 	function canPay(purse, amount) {
@@ -788,6 +809,40 @@
 		'step-charge-fuel': Object.freeze({
 			test: s => fuelNeed(s) && !(s.buyKg > EPS) && s.produceKg > 0,
 			why: () => ''
+		}),
+		/* 0.7.47 WS3/WS4: the roster fairness and seat-search report */
+		'roster-unfair': Object.freeze({
+			test: s => s.careerMode && s.rosterOk === false,
+			why: s => whole(s.rosterPlayers) + ' companies need more than ' +
+				whole(s.rosterPlanets) + ' planets to start fairly'
+		}),
+		'search-active': Object.freeze({
+			test: s => s.searchActive,
+			why: () => 'no search is running'
+		}),
+		'can-drop-player': Object.freeze({
+			test: s => s.careerMode && s.rosterOk === false && s.rosterPlayers > 1,
+			why: () => 'already one company'
+		}),
+		'can-add-planet': Object.freeze({
+			test: s => s.careerMode && s.rosterOk === false && s.rosterPlanets > 0,
+			why: () => 'world is full'
+		}),
+		'search-has-plan': Object.freeze({
+			test: s => s.searchActive && s.searchUnmet === '',
+			why: s => s.searchUnmet ? 'still searching · ' + s.searchUnmet : 'nothing to start'
+		}),
+		'can-advance-tier': Object.freeze({
+			test: s => s.searchActive && s.searchTier < 2,
+			why: s => 'last tier already searched'
+		}),
+		'search-unmet': Object.freeze({
+			test: s => s.searchActive && Boolean(s.searchUnmet),
+			why: () => ''
+		}),
+		'search-settled': Object.freeze({
+			test: s => s.searchActive && !s.searchUnmet,
+			why: () => ''
 		})
 	});
 
@@ -885,7 +940,14 @@
 			? 'active to ' + planetLabel(s.contractTarget) + ' for +' + money(s.contractReward)
 			: s.offeredCount > 0
 			? whole(s.offeredCount) + ' offered, up to +' + money(s.offeredTopReward)
-			: 'none offered now'
+			: 'none offered now',
+		/* 0.7.47 WS3/WS4 */
+		rosterPlanets: s => whole(s.rosterPlanets),
+		rosterPlayers: s => whole(s.rosterPlayers),
+		searchTier: s => 'T' + whole(s.searchTier),
+		searchWeakest: s => whole(s.searchWeakest) + '%',
+		searchUnmet: s => s.searchUnmet || 'fair',
+		searchProgress: s => whole(s.searchProgress) + '%'
 	});
 
 	/* Verified CTA metadata: gui_comms maps each id to its real page handler. */
@@ -951,6 +1013,35 @@
 			label: 'bribe rulers · +{bribeAmount}',
 			when: 'bribe-topic-open',
 			enabled: 'bribe-open',
+			costly: false
+		}),
+		/* 0.7.47 WS3/WS4: the unfair-roster and seat-search decisions */
+		'fair-less-players': Object.freeze({
+			id: 'fair-less-players',
+			label: 'one fewer company',
+			when: 'roster-unfair',
+			enabled: 'can-drop-player',
+			costly: false
+		}),
+		'fair-more-planets': Object.freeze({
+			id: 'fair-more-planets',
+			label: 'one more planet',
+			when: 'roster-unfair',
+			enabled: 'can-add-planet',
+			costly: false
+		}),
+		'fair-play-as-is': Object.freeze({
+			id: 'fair-play-as-is',
+			label: 'start as planned',
+			when: 'search-active',
+			enabled: 'search-has-plan',
+			costly: false
+		}),
+		'fair-wait-more': Object.freeze({
+			id: 'fair-wait-more',
+			label: 'search more',
+			when: 'search-active',
+			enabled: 'can-advance-tier',
 			costly: false
 		})
 	});
@@ -1403,6 +1494,58 @@
 			refWhen: null,
 			chips: Object.freeze(['money']),
 			actions: Object.freeze(['bribe'])
+		}),
+
+		/* 0.7.47 WS3: the live roster cannot be seated fairly */
+		'fair-roster': Object.freeze({
+			id: 'fair-roster',
+			ask: 'unfair roster?',
+			rank: 2,
+			when: 'roster-unfair',
+			steps: Object.freeze(['non-career', 'career-ended']),
+			lines: Object.freeze([
+				Object.freeze({
+					text: '{rosterPlayers} companies cannot start fairly on {rosterPlanets} planets.',
+					when: 'roster-unfair'
+				}),
+				Object.freeze({
+					text: 'Drop a company, or open another planet so the opening search has room to seat everyone.',
+					when: 'roster-unfair'
+				})
+			]),
+			lookAhead: Object.freeze([]),
+			ref: Object.freeze([]),
+			refWhen: null,
+			chips: Object.freeze([]),
+			actions: Object.freeze(['fair-less-players', 'fair-more-planets'])
+		}),
+
+		/* 0.7.47 WS4: the background seat search is still running */
+		'fair-search': Object.freeze({
+			id: 'fair-search',
+			ask: 'fair opening search?',
+			rank: 1,
+			when: 'search-active',
+			steps: Object.freeze(['non-career', 'career-ended']),
+			lines: Object.freeze([
+				Object.freeze({
+					text: 'Searching tier {searchTier} · weakest share {searchWeakest} · {searchProgress} done.',
+					when: 'search-active'
+				}),
+				Object.freeze({
+					text: 'Still missing: {searchUnmet}.',
+					when: 'search-unmet'
+				}),
+				Object.freeze({
+					text: 'A fair set is ready at this tier — start with it, search more, or change the roster.',
+					when: 'search-has-plan'
+				})
+			]),
+			lookAhead: Object.freeze([]),
+			ref: Object.freeze(['fair-roster']),
+			refWhen: 'roster-unfair',
+			chips: Object.freeze([]),
+			actions: Object.freeze(['fair-play-as-is', 'fair-wait-more'])
 		})
 	});
 
@@ -1526,6 +1669,10 @@
 		if (!snapshot.careerMode || snapshot.ended !== GravityGame.CAREER_OPEN || snapshot.flying) {
 			return 'leave';
 		}
+		/* 0.7.47 WS4/WS3: the opening search and an unfair roster outrank the
+		 * run's own gates while they are the live finding */
+		if (snapshot.searchActive) return 'fair-search';
+		if (snapshot.rosterOk === false) return 'fair-roster';
 		if (snapshot.returnTow) return 'return-tow';
 		if (snapshot.reasons.length > 0) return 'leave';
 		if (HH_FACTS['ship-worn'].test(snapshot)) return 'repair';

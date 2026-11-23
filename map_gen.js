@@ -202,7 +202,7 @@
 	 * first flights on: fewer than one per company is a map nobody can open on. */
 	const LIGHT_GRAVITY_MAX = 1.5;
 
-	function fieldStats(values, mass, gap) {
+	function fieldStats(values, mass, gap, players) {
 		const caps = railCaps(mass || OrbitTech.SHIP_DRY_MASS);
 		const tiers = [0, 0, 0, 0];
 		let light = 0;
@@ -210,7 +210,16 @@
 			tiers[tierOf(values[i], caps, gap)] += 1;
 			if (values[i] <= LIGHT_GRAVITY_MAX) light += 1;
 		}
-		return { n: values.length, tiers: tiers, light: light, caps: caps };
+		const roster = Math.max(1, Math.floor(Number(players) || 3));
+		const minimal = 2 * roster + 4;
+		const additional = Math.max(0, values.length - minimal);
+		const extraHeavies = Math.max(0, tiers[2] + tiers[3] - 2);
+		const extraHeavyPer10 = additional > 0 ? extraHeavies * 10 / additional : 0;
+		return {
+			n: values.length, tiers: tiers, light: light, caps: caps,
+			minimal: minimal, additional: additional,
+			extraHeavies: extraHeavies, extraHeavyPer10: extraHeavyPer10
+		};
 	}
 
 	/* --- the registry ---------------------------------------------------- */

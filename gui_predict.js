@@ -683,10 +683,13 @@ function runOver() {
 function gameLocked() {
 	if (!game.on) return false;
 	if (careerWaitBusy()) return true;
+	/* 0.7.47 WS4: a career still deciding its opening seat has no career
+	 * record yet — that counts as locked so panels hold during planning */
+	if (typeof GravityScene !== 'undefined' && GravityScene.careerPlanning()) return true;
 	const slot = activeSlotIndex();
 	const sim = slotSim(slot);
 	if (replay.on || careerInputLocked() || sim.status === STATUS_FLYING ||
-		(careerRule() && slotCareer(slot).evacuating) || slotIsBot(slot)) return true;
+		(careerRule() && slotCareer(slot) && slotCareer(slot).evacuating) || slotIsBot(slot)) return true;
 	if (routeRule()) return false;
 	return slotFlownDone(slot);
 }

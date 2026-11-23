@@ -281,6 +281,12 @@ function loadPage(options = {}) {
 	}
 	SCRIPTS.forEach((file, i) => vm.runInContext(SOURCES[i], context, { filename: file }));
 
+	/* 0.7.47 WS4: a career whose opening seat search is still planning has no
+	 * career record yet, so panels crash and shots refuse. Drain it with the
+	 * planning-only driver (no game step) so the clock is not advanced ahead
+	 * of a fresh replay, then a loaded career page always presents a started run. */
+	vm.runInContext('GravityScene.drainCareerPlanning()', context);
+
 	function fire(listeners, type, event) {
 		for (const fn of listeners[type] || []) fn(event);
 	}
@@ -291,7 +297,13 @@ function loadPage(options = {}) {
 		calls,
 		fireWindow(type, event) { fire(windowListeners, type, event); },
 		fireElement(element, type, event) { fire(element.listeners, type, event || {}); },
-		click(id) { fire(elements.get(id).listeners, 'click', {}); },
+		click(id) {
+			fire(elements.get(id).listeners, 'click', {});
+			/* 0.7.47 WS4: a restart/roster click can enter the planning state;
+			 * the real page resolves it on the next animation frame, so drain
+			 * it here (planning-only, no game step) before the caller reads state */
+			vm.runInContext('GravityScene.drainCareerPlanning()', context);
+		},
 		/* change event for radios/checkboxes and input event for ranges, like a user edit */
 		choose(id) {
 			const element = elements.get(id);
@@ -359,6 +371,10 @@ function loadPage(options = {}) {
 				rafQueue = [];
 				for (const fn of queue) fn(now);
 			}
+			/* 0.7.47 WS4: a career whose opening seat search is still planning
+			 * holds the run. Drain it with the planning-only driver so the
+			 * clock is not advanced ahead of a fresh replay. */
+			vm.runInContext('GravityScene.drainCareerPlanning()', context);
 		},
 		now() { return now; },
 		advance(ms) { now += ms; }

@@ -179,6 +179,9 @@
 			bot: info.bot,
 			player: info.player,
 			cheat: info.cheat || null,
+			/* 0.7.47 WS5: the start mode the run used; a record owns its seats,
+			 * so loading one always forces a planet start */
+			startMode: info.startMode || 'planet',
 			rate: round(finite(info.rate, 1)),
 			gs: scale(info.gs),
 			fs: scale(info.fs),

@@ -198,6 +198,7 @@ function mapRunInfo() {
 		bot: game.bot,
 		player: game.player,
 		cheat: game.cheat,
+		startMode: game.startMode,
 		rate: scene.trade.speed,
 		gs: gravityScale,
 		fs: forceScale,
@@ -447,6 +448,9 @@ function startMapRecord(record) {
 	setExperimentScales(gs, fs, ht, ws, ps, rs, ys);
 	game.playerCount = plannedCount;
 	game.planetUniverse = record.universe;
+	/* a record owns its seats, so a saved map always starts on a planet HQ
+	 * (WS5): the selector is hidden and the mode forced */
+	game.startMode = GravityGame.START_PLANET;
 	startGame(record.seed, true, rule, botLevel, player, cheat);
 	if (record.kind !== 'run') {
 		mapNotice('loaded ' + record.name + (plannedLive ? ' · saved map planned its opening' : ''));

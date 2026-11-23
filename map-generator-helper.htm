@@ -439,6 +439,9 @@ function renderOrigNote() {
 	rows.push(`<b>${stats.tiers[2]}</b> ${OrbitTech.CATAPULTS[1].id}`);
 	rows.push(`<b>${stats.tiers[3]}</b> blocked`);
 	rows.push(`<b>${stats.light}</b> at ≤ ${MapGen.LIGHT_GRAVITY_MAX.toFixed(1)} for a first landing`);
+	if (stats.additional > 0) {
+		rows.push(`extra heavies <b>${stats.extraHeavyPer10.toFixed(1)}/10</b> (+${stats.additional})`);
+	}
 	const r = range();
 	const outside = origMap.values.filter(g => g < r.min || g > r.max).length;
 	if (outside) rows.push(`<span class="warn">${outside} outside the design range</span>`);
@@ -672,6 +675,9 @@ function renderStats(saved) {
 		rows.push(`<b>${stats.tiers[2]}</b> ${OrbitTech.CATAPULTS[1].id}`);
 		rows.push(`<b>${stats.tiers[3]}</b> blocked`);
 		rows.push(`<b>${stats.light}</b> at ≤ ${MapGen.LIGHT_GRAVITY_MAX.toFixed(1)} for a first landing`);
+		if (stats.additional > 0) {
+			rows.push(`extra heavies <b>${stats.extraHeavyPer10.toFixed(1)}/10</b> (+${stats.additional})`);
+		}
 	}
 	const text = rows.join(' · ');
 	const warn = field.values.length > 0 && stats.light < 3

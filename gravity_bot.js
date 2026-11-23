@@ -1831,7 +1831,8 @@
 				}
 			}
 		}
-		if (career.at !== career.hq) return null;
+		const researchBase = GravityGame.evacTarget(career);
+		if (career.at < 0 || career.at !== researchBase) return null;
 		if (career.ship.tank.tier === 0 &&
 			GravityGame.prototypesOf(career, OrbitTech.KIND_TANK).length === 0) {
 			const fee = GravityGame.researchCost(career, OrbitTech.KIND_TANK, RESEARCH_LIGHT_TANK);
@@ -2343,7 +2344,8 @@
 		}
 		if (this.careerRepair(career, runStep)) actions += 1;
 
-		if (this.careerUseResearch && career.at === career.hq) {
+		const researchBase = GravityGame.evacTarget(career);
+		if (this.careerUseResearch && career.at >= 0 && career.at === researchBase) {
 			let part;
 			while ((part = this.careerResearch(career, sim, CAREER_PURSE_RESERVE))) {
 				this.traceAdd(careerTraceIndex(career), 'research', part + ' · HQ gear', runStep);
@@ -2404,12 +2406,17 @@
 		return actions;
 	};
 
+	function evacTargetLabel(career) {
+		const target = GravityGame.evacTarget(career);
+		return career.hq >= 0 ? 'HQ P' + target : 'Capital P' + target;
+	}
+
 	GravityBot.prototype.careerRecover = function (career, sim, step, why) {
 		const from = career.at;
 		const paid = GravityGame.evacuationCost(career);
 		if (!career.stranded || !GravityGame.evacuate(career, sim, paid, step)) return false;
 		this.traceAdd(careerTraceIndex(career), 'evac',
-			(from < 0 ? 'space' : 'P' + from) + ' → HQ P' + career.hq +
+			(from < 0 ? 'space' : 'P' + from) + ' → ' + evacTargetLabel(career) +
 			' · ' + why + ' · ' + paid.toFixed(2) + ' paid', step);
 		return true;
 	};
@@ -3411,6 +3418,98 @@
 		return best;
 	};
 
+	const CAREER_SPACE_OPEN_ANGLES = 32;
+	const CAREER_SPACE_OPEN_FRACTIONS = [0.25, 0.5, 0.75, 1];
+	const CAREER_SPACE_OPEN_REFINE = 4;
+
+	/* Full-parity space-start opening (0.7.47 WS5): fan the granted impulse kit
+	 * from the spawn state over a 32-bearing ring plus direct planet bearings,
+	 * refine around the winner, and score reachable landings with the bot's own
+	 * mid-flight evaluator. */
+	GravityBot.prototype.careerSpaceOpenPlan = function (career, sim, market, runStep) {
+		const best = this.careerBurnBest;
+		best.body = -1;
+		best.score = -Infinity;
+		best.taskPay = 0;
+		best.bribe = 0;
+		best.padValue = 0;
+		best.builds = false;
+		best.exitCost = Infinity;
+		best.exitSource = '';
+		if (career.ended !== GravityGame.CAREER_OPEN || sim.status !== GravitySim.STATUS_FLYING) {
+			return null;
+		}
+		this.probe.fieldT = sim.fieldT;
+		this.probe.fieldRate = sim.fieldRate;
+		this.probe.setScales(sim.gravityScale, sim.forceScale);
+		if (this.probe.bodyCount !== sim.bodyCount || this.probe.fillField !== sim.fillField ||
+			this.probe.fieldStatic !== sim.fieldStatic) {
+			this.probe.setField(sim.bodyCount, sim.bodyR, sim.strength,
+				sim.fillField, sim.fieldStatic);
+		}
+		this.prepareCareerExitProbe(sim);
+
+		const limit = sim.burnLimit();
+		const capU = Math.floor(limit * GravityGame.SPEED_STEPS + 1e-9);
+		if (capU < 1) return null;
+
+		this.probe.predictBurnFast(sim, 0, 0);
+		let coastScore = -Infinity;
+		if (this.probe.predReason === END_IMPACT && this.probe.predBody >= 0) {
+			coastScore = this.careerScoreFlight(career, sim.origin, market, runStep,
+				sim.flightLength, 0, 0, 0, 0, null);
+		}
+		best.coastScore = coastScore;
+
+		const rungs = [];
+		for (let f = 0; f < CAREER_SPACE_OPEN_FRACTIONS.length; f++) {
+			const rung = Math.max(1, Math.min(capU,
+				Math.round(capU * CAREER_SPACE_OPEN_FRACTIONS[f])));
+			if (rungs.length === 0 || rungs[rungs.length - 1] !== rung) rungs.push(rung);
+		}
+
+		const ringStep = TAU / CAREER_SPACE_OPEN_ANGLES;
+		let bestAngleU = -1;
+		const offer = (angleU, dvU) => {
+			const score = this.careerBurnScore(career, sim, market, runStep,
+				angleU, dvU, -1, coastScore, 0, 0, null);
+			if (!(score > best.score + 1e-12)) return;
+			bestAngleU = angleU;
+			best.body = this.probe.predBody;
+			best.score = score;
+			best.angleU = angleU;
+			best.dvU = dvU;
+			best.steps = this.probe.predSteps;
+			this.careerBurnFacts();
+		};
+
+		for (let r = 0; r < rungs.length; r++) {
+			for (let a = 0; a < CAREER_SPACE_OPEN_ANGLES; a++) {
+				offer(GravityGame.angleUnits((a + 0.5) * ringStep), rungs[r]);
+			}
+			for (let p = 0; p < PLANETS; p++) {
+				if (this.probe.planetMask && this.probe.planetMask[p] === 0) continue;
+				const ang = Math.atan2(sim.planetY[p] - sim.cargo.y,
+					sim.planetX[p] - sim.cargo.x);
+				offer(GravityGame.angleUnits(ang), rungs[r]);
+			}
+		}
+		if (bestAngleU < 0) return null;
+
+		const refineStep = ringStep / (CAREER_SPACE_OPEN_REFINE + 1);
+		const centerAngle = GravityGame.angleOf(bestAngleU);
+		for (let r = 0; r < rungs.length; r++) {
+			for (let k = -CAREER_SPACE_OPEN_REFINE; k <= CAREER_SPACE_OPEN_REFINE; k++) {
+				offer(GravityGame.angleUnits(centerAngle + k * refineStep), rungs[r]);
+			}
+		}
+		best.angle = GravityGame.angleOf(best.angleU);
+		best.dv = GravityGame.speedOf(best.dvU);
+		best.fuelKg = OrbitTech.impulseFuel(best.dv, career.ship.engine,
+			career.ship.mass, career.ship.fuelKg);
+		return best;
+	};
+
 	/*
 	 * One flight's impulse use. The first window is the nudge that re-targets
 	 * the whole flight; later windows only rescue a coast that would be lost.
@@ -3429,12 +3528,28 @@
 		if (career.ended !== GravityGame.CAREER_OPEN || !ship.engine || !(ship.fuelKg > 0)) {
 			return null;
 		}
+		const who = careerTraceIndex(career);
+		if (career.hq < 0 && sim.origin < 0 && state.burn === 0 && state.burnTries === 0) {
+			state.burnTries = 1;
+			state.burnNext = sim.liveSteps + CAREER_BURN_EVERY;
+			const openPlan = this.careerSpaceOpenPlan(career, sim, market, runStep);
+			if (!openPlan) {
+				this.traceAdd(who, 'coast', 'no space opening burn found', runStep);
+				return null;
+			}
+			if (!GravityGame.careerBurn(career, sim, openPlan.angle, openPlan.dv)) return null;
+			state.burn = 1;
+			career.plannedLanding = openPlan.body;
+			this.careerBurnsPlanned += 1;
+			this.traceCareerBurn(career, sim, openPlan.angle, openPlan.dv, runStep,
+				'space open → P' + openPlan.body + ' · score ' + signed(openPlan.score));
+			return openPlan;
+		}
 		if (state.burn >= CAREER_BURNS_MAX || sim.liveSteps < state.burnNext) return null;
 		if (sim.liveSteps > sim.stepLimit - CAREER_BURN_TAIL) return null;
 		const nudge = state.burn === 0;
 		state.burnTries += 1;
 		state.burnNext = sim.liveSteps + CAREER_BURN_EVERY;
-		const who = careerTraceIndex(career);
 		const plan = this.careerBurnPlan(career, sim, market, runStep, !nudge);
 		if (!plan) {
 			if (state.burnTries === 1) this.traceAdd(who, 'coast', 'no improving burn found', runStep);
@@ -3465,7 +3580,19 @@
 	 * whether or not your ship is in the air; after landing a rival sits out
 	 * CAREER_RIVAL_GAP world seconds (plus its phase) before the next attempt.
 	 */
-	GravityBot.prototype.startCareers = function (galaxy, seed, trade) {
+	function careerStartTraceText(career, readySecText) {
+		if (career.hq >= 0) {
+			return 'HQ P' + career.hq + ' · purse ' + career.ledger.purse.toFixed(2) +
+				(readySecText ? ' · first try in ' + readySecText : '');
+		}
+		if (career.flying) {
+			return 'space · purse ' + career.ledger.purse.toFixed(2);
+		}
+		return 'Capital P' + career.at + ' · purse ' + career.ledger.purse.toFixed(2) +
+			(readySecText ? ' · first try in ' + readySecText : '');
+	}
+
+	GravityBot.prototype.startCareers = function (galaxy, seed, trade, startMode) {
 		for (let i = 0; i < this.rivals.length; i++) {
 			const r = this.rivals[i];
 			r.steps = 0;
@@ -3485,6 +3612,8 @@
 				continue;
 			}
 			r.sim.setScales(this.probe.gravityScale, this.probe.forceScale);
+			r.sim.fieldT = trade.t;
+			r.sim.fieldRate = this.probe.fieldRate;
 			if (!r.career) r.career = GravityGame.createCareer(r.ledger);
 			/* rivals are created after the universe is set, so give them the
 			 * mask before startCareer picks an HQ from the in-play planets */
@@ -3492,16 +3621,14 @@
 				GravityGame.setCareerUniverse(r.career, this.probe.planetMask,
 					this.planetUniverseCount || OrbitWorld.PLANETS);
 			}
-			GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(seed, i), trade, null, galaxy);
+			GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(seed, i),
+				trade, null, galaxy, undefined, startMode);
 			/* whoever flies this company by hand needs the live rail gate */
 			r.sim.attachCareer(r.career);
 			r.career.bribeProne = this.careerBribeProne(i);
-			r.sim.fieldT = trade.t;
-			r.sim.fieldRate = this.probe.fieldRate;
-			r.basePlanet = r.career.hq;
-			this.traceAdd(i, 'start', 'HQ P' + r.career.hq + ' · purse ' +
-				r.career.ledger.purse.toFixed(2) + ' · first try in ' +
-				(r.readyStep * GravitySim.DT).toFixed(1) + ' s', 0);
+			r.basePlanet = r.career.at >= 0 ? r.career.at : GravityGame.evacTarget(r.career);
+			this.traceAdd(i, 'start', careerStartTraceText(r.career,
+				(r.readyStep * GravitySim.DT).toFixed(1) + ' s'), 0);
 		}
 	};
 
@@ -3527,14 +3654,17 @@
 		this.routeCandActor = -1;
 	};
 
-	GravityBot.prototype.addCareerRival = function (galaxy, trade, planet, step) {
+	GravityBot.prototype.addCareerRival = function (galaxy, trade, planet, step, startMode) {
+		const mode = startMode || GravityGame.START_PLANET;
+		const base = planet >= 0 ? planet
+			: (trade.world && trade.world.capitalPlanet >= 0 ? trade.world.capitalPlanet : 0);
 		const i = this.count;
 		this.traceByActor[i].length = 0;
 		this.lastDecision[i] = '';
 		this.ensureRivals(i + 1);
 		const r = this.rivals[i];
 		this.rivalTypes[i] = GravityGame.PLAYER_BOT;
-		this.resetActor(r, planet);
+		this.resetActor(r, base);
 		r.gapPhase = i * CAREER_RIVAL_PHASE;
 		r.readyStep = step + r.gapPhase;
 		r.idleTries = 0;
@@ -3544,17 +3674,19 @@
 		r.burnNext = CAREER_BURN_AT;
 		r.burnStep = 0;
 		this.careerDropQueue(r);
+		r.sim.fieldT = trade.t;
+		r.sim.fieldRate = this.probe.fieldRate;
 		r.career = GravityGame.createCareer(r.ledger);
 		GravityGame.setCareerUniverse(r.career, this.probe.planetMask, this.planetUniverseCount);
 		GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(this.seed, i),
-			trade, null, galaxy, planet);
+			trade, null, galaxy, mode === GravityGame.START_PLANET ? planet : -1, mode);
 		r.sim.attachCareer(r.career);
 		r.career.bribeProne = this.careerBribeProne(i);
-		r.sim.fieldT = trade.t;
-		r.sim.fieldRate = this.probe.fieldRate;
-		r.basePlanet = planet;
+		r.basePlanet = r.career.at >= 0 ? r.career.at : GravityGame.evacTarget(r.career);
 		this.count += 1;
-		this.traceAdd(i, 'start', 'HQ P' + planet, step);
+		this.traceAdd(i, 'start', mode === GravityGame.START_PLANET
+			? 'HQ P' + planet
+			: (r.career.flying ? 'space' : 'Capital P' + r.career.at), step);
 	};
 
 	GravityBot.prototype.removeCareerRival = function () {
@@ -3624,7 +3756,7 @@
 					r.idleTries = 0;
 					r.waitTries = 0;
 					r.panelTried = false;
-					this.traceAdd(i, 'evacuated', 'to HQ P' + career.hq, runStep);
+					this.traceAdd(i, 'evacuated', 'to ' + evacTargetLabel(career), runStep);
 					if (this.isRivalBot(i)) {
 						r.readyStep = runStep + CAREER_RIVAL_GAP + r.gapPhase;
 						this.careerBetweenFlights(career, r.sim, runStep);

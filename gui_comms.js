@@ -12,6 +12,9 @@ const H_ACTIONS = CommsCopy.H_ACTIONS;
 const H_TOPICS = CommsCopy.H_TOPICS;
 const ENDGAME_WARNING = Object.freeze({ id: 'endgame-warning' });
 const RETURN_TOW = Object.freeze({ id: 'return-tow' });
+/* 0.7.47 WS3/WS4: the unfair-roster warning and the seat-search report */
+const FAIR_ROSTER = Object.freeze({ id: 'fair-roster' });
+const FAIR_SEARCH = Object.freeze({ id: 'fair-search' });
 const commsOfferedTows = new WeakSet();
 const commsWarnedEpisodes = new WeakMap();
 
@@ -98,6 +101,19 @@ const COMMS_HANDLERS = Object.freeze({
 	},
 	bribe() {
 		careerAct({ act: 'bribe' });
+	},
+	/* 0.7.47 WS3/WS4: the roster and search decisions */
+	'fair-less-players'() {
+		setPlayerCount(-1);
+	},
+	'fair-more-planets'() {
+		addPlanetForRoster();
+	},
+	'fair-play-as-is'() {
+		playFairSearchAsIs();
+	},
+	'fair-wait-more'() {
+		advanceFairSearchTier();
 	}
 });
 
@@ -112,6 +128,16 @@ function commsEscapeHtml(text) {
 function commsFindingKey(reason, planet) {
 	if (!reason) return '';
 	if (reason === ENDGAME_WARNING) return reason.id + '|' + commsState.career.recoveryEpisode;
+	/* WS4: the search report changes as tiers advance, so the key follows it
+	 * and the live card refreshes; WS3 keys the roster call per roster */
+	if (reason === FAIR_SEARCH) {
+		const report = seatSearchReport();
+		return reason.id + '|T' + report.tier + '|W' + report.weakest + '|' + report.unmet;
+	}
+	if (reason === FAIR_ROSTER) {
+		const report = rosterFairnessReport();
+		return reason.id + '|P' + report.players + '|N' + report.planets;
+	}
 	return reason.id + '|P' + planet + '|' +
 		(reason.need === null || reason.need === undefined ? '' : String(reason.need)) + '|' +
 		(reason.have === null || reason.have === undefined ? '' : String(reason.have)) + '|' +
@@ -137,6 +163,11 @@ function commsResetVisit(career, planet) {
 function commsActiveFinding(career) {
 	if (!career || !careerRule() || replay.on || careerActionReplay.active ||
 		career.ended !== GravityGame.CAREER_OPEN) return null;
+	/* WS4: while the opening search is planning, the roster/search report is
+	 * the live finding; the career's own gates do not apply yet */
+	if (careerPlanning) return FAIR_SEARCH;
+	/* WS3: an unfair roster is the finding before the run's own gates */
+	if (!rosterFairnessReport().ok) return FAIR_ROSTER;
 	if (career.recoverySteps >= GravityGame.ENDGAME_WARNING_STEPS) return ENDGAME_WARNING;
 	if (playerIsBot() ||
 		activeSim().status === STATUS_FLYING || careerWaitBusy() || turret.pending) return null;
@@ -173,7 +204,11 @@ function commsBuildSnapshot() {
 		armed: armed,
 		aimBody: aimBody,
 		aimSpeed: aimSpeed,
-		waitLocked: careerWaitBusy() || turret.pending || sim.status === STATUS_FLYING
+		waitLocked: careerWaitBusy() || turret.pending || sim.status === STATUS_FLYING,
+		/* 0.7.47 WS3/WS4: the live roster's fairness and the seat-search
+		 * report, so H can raise the fair-roster and fair-search cards */
+		roster: rosterFairnessReport(),
+		search: seatSearchReport()
 	});
 	commsState.snapshot = snapshot;
 	commsState.snapshotDirty = false;
@@ -292,7 +327,9 @@ function commsRunAction(actId) {
 function commsOpen() {
 	if (commsState.open) return;
 	const reason = commsState.callReason;
-	const topic = reason === RETURN_TOW || reason === ENDGAME_WARNING ? reason.id : CommsCopy.H_META_ID;
+	const topic = reason && (reason === RETURN_TOW || reason === ENDGAME_WARNING ||
+		reason === FAIR_SEARCH || reason === FAIR_ROSTER)
+		? reason.id : CommsCopy.H_META_ID;
 	commsState.open = true;
 	commsState.collapsed = false;
 	commsState.callKey = '';
@@ -376,6 +413,17 @@ function commsEndgameText() {
 function commsReasonText(reason) {
 	if (!reason) return '';
 	if (reason === ENDGAME_WARNING) return commsEndgameText();
+	if (reason === FAIR_SEARCH) {
+		const report = seatSearchReport();
+		return 'Fair-start search · tier ' + report.tier + ' · weakest ' + report.weakest +
+			'% · ' + report.progress + '% done' +
+			(report.unmet ? ' · still missing ' + report.unmet : ' · a fair set is ready');
+	}
+	if (reason === FAIR_ROSTER) {
+		const report = rosterFairnessReport();
+		return report.players + ' companies cannot start fairly on ' + report.planets +
+			' planets · drop a company or open another planet';
+	}
 	if (reason === RETURN_TOW) {
 		const career = commsState.career;
 		const gameSec = Math.round(GravityGame.evacuationSeconds(career));

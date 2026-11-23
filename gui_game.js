@@ -8,6 +8,7 @@
 'use strict';
 
 function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
+	cancelCareerPlanning();
 	const armedField = PlanetGravity.armed();
 	if (armedField && armedField.seed !== (seed >>> 0)) clearMapField();
 	careerRecordingClear();
@@ -108,15 +109,67 @@ function pinCareerStrengths() {
 function startCareerRun(seed) {
 	cancelTurret();
 	GravityGame.resetGalaxy(game.galaxy, seed);
+	/* 0.7.47 WS4: the opening seat search is a resumable walk. Run it
+	 * synchronously for the synchronous budget; a roster that cannot be
+	 * seated fairly inside it becomes the planning state instead. */
+	const startMode = game.startMode;
 	/* a saved map seats this run from its record and skips the opening search */
 	liteArmOpening(seed);
-	GravityMaps.applySeats(game.galaxy, tradeSim.world, tradeSim,
-		planetMask, planetCount, 1 + bot.count, cargoSim);
-	GravityGame.prepareCareerStarts(game.galaxy, tradeSim.world, tradeSim,
-		planetMask, planetCount, 1 + bot.count, cargoSim);
-	GravityGame.startCareer(game.career, cargoSim, seed, tradeSim, game.cheat, game.galaxy);
+	if (startMode === GravityGame.START_PLANET) {
+		if (GravityMaps.applySeats(game.galaxy, tradeSim.world, tradeSim,
+			planetMask, planetCount, 1 + bot.count, cargoSim)) {
+			/* applySeats already remembered the record's plan */
+			startCareerWithPlan(null, seed, GravityGame.START_PLANET);
+			return;
+		}
+		const search = GravityGame.createSeatSearch(tradeSim.world, tradeSim,
+			planetMask, planetCount, 1 + bot.count, cargoSim);
+		const out = search.step(CAREER_SEARCH_SYNC_MS);
+		if (out.accepted) {
+			applySeatPlan(search, seed);
+			return;
+		}
+		if (out.done && !search.bestPlan()) {
+			/* no set at any tier can be seated: start planet anyway below the
+			 * minimal line and let the weak roster warning carry the news */
+			startCareerWithPlan(null, seed, startMode);
+			return;
+		}
+		beginCareerPlanning(search, seed, startMode);
+		return;
+	}
+	/* no-HQ starts seat nothing: the spawn or the Capital is the opening */
+	startCareerWithPlan(null, seed, startMode);
+}
+
+/* take a completed, accepted search's plan and finish the start exactly as
+ * the synchronous path does today */
+function applySeatPlan(search, seed) {
+	const plan = search.bestPlan();
+	GravityGame.rememberSeatPlan(game.galaxy, tradeSim.world, tradeSim,
+		planetMask, planetCount, 1 + bot.count, cargoSim, plan.homes, plan.targetPay);
+	startCareerWithPlan(plan, seed, GravityGame.START_PLANET);
+}
+
+/* hand the run its galaxy and seats, then start every career. The plan's
+ * homes live on `galaxy.mapSeats` (rememberSeatPlan / prepareCareerStarts
+ * set it); `startCareer` reads one home per company from there, so no single
+ * homePlanet is passed here. A no-HQ start seats nothing, so its galaxy is
+ * opened without any seat search (WS5). */
+function startCareerWithPlan(plan, seed, startMode) {
+	if (startMode === GravityGame.START_PLANET) {
+		GravityGame.prepareCareerStarts(game.galaxy, tradeSim.world, tradeSim,
+			planetMask, planetCount, 1 + bot.count, cargoSim);
+	}
+	GravityGame.startCareer(game.career, cargoSim, seed, tradeSim, game.cheat,
+		game.galaxy, undefined, startMode);
+	finishCareerStart(seed);
+}
+
+/* the common tail after seats and the first career exist */
+function finishCareerStart(seed) {
 	bot.onCareerTrace = recordCareerTrace;
-	bot.startCareers(game.galaxy, seed, tradeSim);
+	bot.startCareers(game.galaxy, seed, tradeSim, game.startMode);
 	pinCareerStrengths();
 	bot.setPlanetMask(planetMask, planetCount);
 	/* YOU as a bot: the page keeps the ship, the bot plans and shops for it */
@@ -129,12 +182,167 @@ function startCareerRun(seed) {
 	if (careerPaused) careerPauseNow = performance.now();
 	if (scene.setFrozen) scene.setFrozen(careerPaused);
 	refreshCareerClockUi();
+	/* 0.7.47 WS4: the planning path starts the career asynchronously (after
+	 * startGame's tail), so the recording is created here — after the rivals
+	 * exist — not only in startGame. The synchronous path re-creates it right
+	 * after, which is harmless and keeps the full roster in the snapshot. */
+	careerRecordingReset();
+}
+
+/* 0.7.47 WS4: the seat search is a resumable walk, so a roster the
+ * synchronous budget cannot seat fairly does not block the page. The run
+ * enters a planning state, the frame loop advances the search a few
+ * milliseconds at a time, and H reports the live best until a tier accepts
+ * or the player decides. Only a completed tier can become a plan. */
+
+/* H's roster fix (WS3): one more planet. The planet input's own change
+ * handler restarts the search, so this only widens the world first. */
+function addPlanetForRoster() {
+	if (!careerRule()) return;
+	if (planetCount >= PLANET_UNIVERSE_MAX) return;
+	if (!setPlanetUniverseSize(planetCount + 1)) return;
+	if (careerPlanning) {
+		cancelCareerPlanning();
+		startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player, game.cheat);
+	}
+}
+
+/* H's search decision (WS4): start with the tier that was complete when the
+ * card offered it. The search is work-deterministic, so the completed plan
+ * is whatever the search holds right now. */
+function playFairSearchAsIs() {
+	if (!careerPlanning || !careerPlanSearch) return;
+	const search = careerPlanSearch;
+	const seed = careerPlanSeed;
+	cancelCareerPlanning();
+	if (search.bestPlan()) applySeatPlan(search, seed);
+	else startCareerWithPlan(null, seed, GravityGame.START_PLANET);
+}
+
+/* H's search decision (WS4): search one tier deeper. */
+function advanceFairSearchTier() {
+	if (!careerPlanning || !careerPlanSearch) return;
+	if (!careerPlanSearch.advanceTier()) return;
+	commsInvalidate();
+	refreshGameUi();
+}
+
+/* the live roster's fairness for H (WS3). Only a planet start that is not
+ * already planning is judged: a saved-map boot or a no-HQ start owns its
+ * opening, so the roster is not the deciding factor. */
+function rosterFairnessReport() {
+	if (!careerRule() || careerPlanning || game.startMode !== GravityGame.START_PLANET ||
+		!tradeSim.world || !planetMask) {
+		return { ok: true, planets: planetCount, players: playerCountShown() };
+	}
+	const comp = GravityGame.startComposition(tradeSim.world, planetMask, planetCount,
+		playerCountShown(), cargoSim, game.startMode);
+	return { ok: comp.ok, planets: planetCount, players: playerCountShown() };
+}
+
+/* the live seat-search report for H (WS4). A completed tier that accepted
+ * clears the report; while planning it names the tier, the best weakest
+ * share so far, and which criterion is still unmet. `step(0)` is a no-op
+ * that only reads the current best, so it never advances the walk. */
+function seatSearchReport() {
+	if (!careerPlanning || !careerPlanSearch) {
+		return { active: false, tier: 0, weakest: 0, unmet: '', progress: 0 };
+	}
+	const out = careerPlanSearch.step(0);
+	const best = out.best;
+	const weakest = best && best.stats ? Math.round(best.ratio * 100) : 0;
+	return {
+		active: true,
+		tier: out.tier,
+		weakest: weakest,
+		unmet: best && best.unmet ? best.unmet : '',
+		progress: Math.round(out.progress * 100)
+	};
+}
+const CAREER_SEARCH_SYNC_MS = 2000;
+const CAREER_SEARCH_FRAME_MS = 8;
+
+/* enter the planning state with a live search and a frozen run */
+function beginCareerPlanning(search, seed, startMode) {
+	careerPlanning = true;
+	careerPlanSearch = search;
+	careerPlanSeed = seed;
+	careerPlanMode = startMode;
+	/* the run is open but the careers are not started yet: hold the clock */
+	careerPaused = true;
+	careerPauseNow = performance.now();
+	if (scene.setFrozen) scene.setFrozen(true);
+	refreshCareerClockUi();
+	refreshGameUi();
+	commsInvalidate();
+}
+
+/* advance the open search by one frame budget. A tier that accepts finishes
+ * the start; a tier that completes without accepting auto-advances to the
+ * next one, so the walk tries every tier without a click. When the last tier
+ * is exhausted the run resolves: the best plan if one was found, else the
+ * ordinary pickHq fallback (the roster is simply unfair — WS3 warns). */
+function stepCareerPlanning(budgetMs) {
+	if (!careerPlanning || !careerPlanSearch) return;
+	const out = careerPlanSearch.step(budgetMs);
+	if (out.accepted) {
+		const search = careerPlanSearch;
+		const seed = careerPlanSeed;
+		cancelCareerPlanning();
+		applySeatPlan(search, seed);
+		return;
+	}
+	if (out.done) {
+		if (careerPlanSearch.bestPlan()) {
+			/* a completed tier has a plan, even if it missed the band: the
+			 * player may start on it (play-as-is) — do so automatically once
+			 * the walk has nothing better to offer */
+			if (!careerPlanSearch.advanceTier()) {
+				const search = careerPlanSearch;
+				const seed = careerPlanSeed;
+				cancelCareerPlanning();
+				applySeatPlan(search, seed);
+				return;
+			}
+		} else if (!careerPlanSearch.advanceTier()) {
+			/* no tier produced any plan: start anyway on a picked HQ */
+			const seed = careerPlanSeed;
+			const mode = careerPlanMode;
+			cancelCareerPlanning();
+			startCareerWithPlan(null, seed, mode);
+			return;
+		}
+	}
+	commsInvalidate();
+	refreshGameUi();
+}
+
+/* cancel the planning state: called on restart, a roster change, or a decision */
+function cancelCareerPlanning() {
+	careerPlanning = false;
+	careerPlanSearch = null;
+	careerPlanSeed = 0;
+	careerPlanMode = GravityGame.START_PLANET;
+}
+
+/* the planning driver: ~6-10 ms per frame from the frame loop */
+function tickCareerPlanning() {
+	if (careerPlanning) stepCareerPlanning(CAREER_SEARCH_FRAME_MS);
+}
+
+/* 0.7.47 WS4: advance the opening seat search without stepping the game.
+ * The harness uses this to resolve planning at load without letting the
+ * career clock run ahead of a fresh replay. */
+function drainCareerPlanning() {
+	let guard = 0;
+	while (careerPlanning && guard++ < 600) stepCareerPlanning(CAREER_SEARCH_FRAME_MS);
 }
 
 /* one flat row: lab stops the run, every other mode starts its rule at once */
 function setPlayMode(next) {
 	if (next === PLAY_LAB) {
 		if (game.on) stopGame();
+		cancelCareerPlanning();
 		saveLastMode(PLAY_LAB);
 		updateRuleHelp(PLAY_LAB);
 		syncModeRadios();
@@ -148,6 +356,7 @@ function setPlayMode(next) {
 		updateRuleHelp(next);
 		return;
 	}
+	cancelCareerPlanning();
 	saveLastMode(next);
 	updateRuleHelp(next);
 	startGame(game.on ? game.seed : tradeSim.seed, game.on ? game.fixedRate : false, next);
@@ -163,6 +372,13 @@ function setPlayMode(next) {
  */
 function setBot(next) {
 	if (replay.on || careerInputLocked() || next === game.bot) return;
+	/* a live search is bound to the current roster: a difficulty change
+	 * cancels it and restarts the run with the new level */
+	if (careerPlanning) {
+		cancelCareerPlanning();
+		startGame(game.seed, game.fixedRate, game.rule, next, game.player, game.cheat);
+		return;
+	}
 	game.bot = next;
 	if (!game.on) {
 		syncBotRadios();
@@ -202,6 +418,16 @@ function playerCountShown() {
 
 function setPlayerCount(delta, replayPlanet) {
 	if (replay.on || careerInputLocked()) return false;
+	/* a roster edit is the fix for an unfair roster: apply the delta and
+	 * cancel the live search, restarting it with the new count (WS4 guards) */
+	if (careerPlanning) {
+		const current = playerCountShown();
+		const next = Math.max(1, Math.min(MAX_PLAYERS, current + Math.sign(delta)));
+		if (next !== current) game.playerCount = next;
+		cancelCareerPlanning();
+		startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player, game.cheat);
+		return true;
+	}
 	careerRecordingMark();
 	const current = playerCountShown();
 	const count = Math.max(1, Math.min(MAX_PLAYERS, current + Math.sign(delta)));
@@ -290,6 +516,26 @@ function refreshPlanetUniverseUi() {
 	if (playerCountDownEl) playerCountDownEl.disabled = replay.on || careerActionReplay.active || shown <= 1;
 	if (playerCountUpEl) playerCountUpEl.disabled = replay.on || careerActionReplay.active || shown >= MAX_PLAYERS ||
 		planetCount >= PLANET_UNIVERSE_MAX;
+	syncRosterFairness(shown);
+}
+
+/* 0.7.47 WS3: highlight the roster counters when no fair opening can seat the
+ * live companies. The composition rule (WS2) is evaluated on the live world
+ * and mask; a saved-map boot (fixed seats) or a no-HQ start never highlights,
+ * because the roster is not the thing that decides the opening. */
+function syncRosterFairness(shown) {
+	const unfair = careerRule() && !careerPlanning &&
+		game.startMode === GravityGame.START_PLANET &&
+		tradeSim.world && planetMask;
+	let ok = true;
+	if (unfair) {
+		const comp = GravityGame.startComposition(tradeSim.world, planetMask, planetCount,
+			shown, cargoSim, game.startMode);
+		ok = comp.ok;
+	}
+	const cls = 'rosterUnfair';
+	if (playerCountRowEl) playerCountRowEl.classList.toggle(cls, !ok);
+	if (planetRowEl) planetRowEl.classList.toggle(cls, !ok);
 }
 
 function setSlotType(slot, next) {
@@ -580,7 +826,10 @@ function stepGame(now, dt) {
 		advanceCareerReplay(dt, false);
 		return;
 	}
+	/* WS4: while the opening search is still planning, the run is open but
+	 * no career exists yet, so the career clock holds */
 	if (careerRule() && !replay.on) {
+		if (careerPlanning) return;
 		stepCareerGame(dt);
 		return;
 	}

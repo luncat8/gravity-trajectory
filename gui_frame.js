@@ -66,6 +66,7 @@ function frame(now) {
 	lastFrame = now;
 
 	if (careerWaitBusy()) careerWaitTick(now);
+	tickCareerPlanning();
 	if (game.on) stepGame(now, dt);
 	careerRecordingCapture(false);
 	if (helperState.active) helperTick(HELPER_BUDGET_MS);

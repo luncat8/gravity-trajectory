@@ -204,6 +204,7 @@ function syncModeRadios() {
 		const el = modeEls[i][1];
 		if (el) el.checked = modeEls[i][0] === current;
 	}
+	syncStartRadios();
 }
 
 function syncBotRadios() {
@@ -211,6 +212,30 @@ function syncBotRadios() {
 	if (botEasyEl) botEasyEl.checked = game.bot === BOT_EASY;
 	if (botNormalEl) botNormalEl.checked = game.bot === BOT_NORMAL;
 	if (botHardEl) botHardEl.checked = game.bot === BOT_HARD;
+}
+
+/* 0.7.47 WS5: the start-mode row is career-only and mirrors `game.startMode`.
+ * A change mid-run restarts the career, because the spawn, grants and HQ
+ * seating are all defined by the mode. */
+function syncStartRadios() {
+	const career = careerRule();
+	if (startRowEl) startRowEl.hidden = !career;
+	for (let i = 0; i < startEls.length; i++) {
+		const el = startEls[i][1];
+		if (el) el.checked = startEls[i][0] === game.startMode;
+	}
+}
+
+function setStartMode(mode) {
+	if (!GravityGame.START_MODES[mode] || game.startMode === mode) return;
+	cancelCareerPlanning();
+	game.startMode = mode;
+	syncStartRadios();
+	if (game.on && careerRule()) {
+		startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player, game.cheat);
+	} else {
+		syncSeedUrl();
+	}
 }
 
 /* every row is a player: the bot box always flips that player between the
@@ -288,7 +313,7 @@ function universeParam() {
  * is the one exception: it is read at boot and this editor does not know the
  * live view mode, so it is left alone. */
 function syncSeedUrl(keepReplay = false) {
-	if (loadingUrl) return;
+	if (loadingUrl || careerPlanning) return;
 	const params = new URLSearchParams(location.search);
 	params.set('seed', String(game.on ? game.seed : tradeSim.seed));
 	params.set('mode', game.on ? game.rule : PLAY_LAB);
@@ -314,6 +339,9 @@ function syncSeedUrl(keepReplay = false) {
 	 * field their rivals from the level, so they carry no roster param */
 	if (game.on && careerRule() && game.playerCount > 0) params.set('players', String(game.playerCount));
 	else params.delete('players');
+	/* 0.7.47 WS5: the start mode is part of a career run's address */
+	if (game.on && careerRule()) params.set('start', game.startMode);
+	else params.delete('start');
 	if (gravityScale !== 1) params.set('gs', String(gravityScale));
 	else params.delete('gs');
 	if (forceScale !== 1) params.set('fs', String(forceScale));
