@@ -3860,7 +3860,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			const limit = budgetMs === undefined ? Infinity : budgetMs;
 			const checkClock = Number.isFinite(limit);
 			const started = checkClock ? performance.now() : 0;
-			while (!tierDone) {
+			while (limit > 0 && !tierDone) {
 				const active = walks[walkIdx];
 				if (active.stepUnit()) {
 					const out = active.result();

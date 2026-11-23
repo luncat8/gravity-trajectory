@@ -211,6 +211,8 @@
 		 * row's step; predLogOpen[p] is p's open row or -1 when outside */
 		this.predLogDwell = new Int32Array(PRED_LOG_MAX);
 		this.predLogOpen = new Int32Array(MAX_BODIES);
+		this.predOpenPlanets = new Int32Array(MAX_BODIES);
+		this.predOpenCount = 0;
 		this.predLogCount = 0;
 		this.predVisits = 0;
 		this.predNewVisits = 0;
@@ -673,6 +675,7 @@
 		this.predInside.set(visit);
 		this.predLogCount = 0;
 		this.predLogOpen.fill(-1);
+		this.predOpenCount = 0;
 		/* systems the trace starts inside: a step-0 row waits for the first
 		 * step, where the stay-pay collects its lump (0.7.39) */
 		for (let p = 0; p < this.planetCount && this.predLogCount < PRED_LOG_MAX; p++) {
@@ -681,6 +684,7 @@
 			this.predLogStep[this.predLogCount] = 0;
 			this.predLogDwell[this.predLogCount] = 0;
 			this.predLogOpen[p] = this.predLogCount;
+			this.predOpenPlanets[this.predOpenCount++] = p;
 			this.predLogCount += 1;
 		}
 		this.routeStorePath = true;
@@ -726,18 +730,22 @@
 		const visit = this.predVisit;
 		const inside = this.predInside;
 		const enteredBuf = this.predEntered;
+		const openPlanets = this.predOpenPlanets;
+		let openCount = this.predOpenCount;
 		const storePath = this.routeStorePath;
 		const maxSteps = this.routeMaxSteps;
 		const moving = !this.fieldStatic && this.fieldRate !== 0;
 		const fieldStride = moving ? this.fieldStride() : FIELD_STRIDE;
 		const capMs = budgetMs > 0 ? budgetMs : BUDGET_MS;
+		const checkClock = capMs < FULL_BUDGET_MS;
 		const started = performance.now();
 		let reason = END_OPEN;
 		let hit = NO_BODY;
 
 		while (this.routeSteps < maxSteps) {
 			const step = this.routeSteps;
-			if ((step & (BUDGET_EVERY - 1)) === 0 && performance.now() - started > capMs) break;
+			if (checkClock && (step & (BUDGET_EVERY - 1)) === 0 &&
+				performance.now() - started > capMs) break;
 			if (moving && step > 0 && (this.routeStartStep + step) % fieldStride === 0) {
 				this.fillStep(this.routeFieldT);
 			}
@@ -752,11 +760,17 @@
 			this.routeSteps = step + 1;
 			const entered = this.stepInsideAt(state.x, state.y, inside, enteredBuf);
 			/* close what the ship left, drip one dwell step into what it kept */
-			for (let p = 0; p < this.planetCount; p++) {
+			let o = 0;
+			while (o < openCount) {
+				const p = openPlanets[o];
 				const row = this.predLogOpen[p];
-				if (row < 0) continue;
-				if (inside[p]) this.predLogDwell[row] += 1;
-				else this.predLogOpen[p] = -1;
+				if (inside[p]) {
+					this.predLogDwell[row] += 1;
+					o += 1;
+					continue;
+				}
+				this.predLogOpen[p] = -1;
+				openPlanets[o] = openPlanets[--openCount];
 			}
 			for (let e = 0; e < entered; e++) {
 				const p = enteredBuf[e];
@@ -767,6 +781,7 @@
 					this.predLogStep[row] = this.routeSteps;
 					this.predLogDwell[row] = 0;
 					this.predLogOpen[p] = row;
+					openPlanets[openCount++] = p;
 					this.predLogCount = row + 1;
 				}
 			}
@@ -791,6 +806,8 @@
 			}
 			if (reason !== END_OPEN) break;
 		}
+
+		this.predOpenCount = openCount;
 
 		let totalVisits = 0;
 		let newVisits = 0;

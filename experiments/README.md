@@ -72,7 +72,8 @@ with no fair opening: the registry is also the pool `load map` draws from, so
 | `gravity_game` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
 | the stay-pay trace price (`estimateProfitLog` dwells) and launch-book `logDwell` | `harvest_ticks_test` (both rules, book round trip, heap), `bot_bench` (both-rule parity) |
 | two-leg quest valuation (`careerLegPlan`) and `plan quest` (`#helperPlanQuest`) | `two_leg_test` (heavy/fragile/deadline gates, Capital escrow parity, bot/helper parity, `bookTrace` replay, heap) |
-| career opening and the seat search | `career_start_fairness` (independent exit-safe pay band), `career_start_seat_test`, `make_saved_maps.js --check` (stale records) |
+| career opening and the seat search | `seat_search_test` (read-only reports, sliced determinism), `career_start_fairness` (independent exit-safe pay band), `career_start_seat_test`, `make_saved_maps.js --check` (stale records) |
+| route visit-log tracking | `route_log_test` (overlap, re-entry, masks, overflow, slice parity), `harvest_ticks_test` (economic parity) |
 | `gravity_bot` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
 | `gravity_gui`/`gui_*.js` page state | the one page test for the area (`politics_gui_test`, `obs_fragile_gui_test`, `career_pause_test`, `profit_monotonic_test`, …) |
 | saved maps: `saved_map.js`, `gui_maps.js`, the `?map=` boot, the map picker | `saved_map_test` |

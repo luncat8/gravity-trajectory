@@ -115,6 +115,19 @@ function bootCareer(search) {
 	assert.ok(topics.includes('fair-roster'), 'the fair-roster topic exists');
 	const snap = get(ctx, 'commsBuildSnapshot()');
 	assert.ok(snap && snap.careerMode, 'the snapshot is a career snapshot');
+
+	/* Keep planning open: the normal harness drain must not hide report work. */
+	get(ctx, 'beginCareerPlanning(GravityGame.createSeatSearch(tradeSim.world, tradeSim,' +
+		'planetMask, planetCount, 1 + bot.count, cargoSim), game.seed, game.startMode)');
+	const before = JSON.stringify(get(ctx, 'careerPlanSearch.step(0)'));
+	assert.strictEqual(get(ctx, 'careerPlanSearch.step(0).progress'), 0,
+		'entering planning and painting H do not run search units');
+	for (let i = 0; i < 10; i++) {
+		get(ctx, 'seatSearchReport(); commsBuildSnapshot(); commsInvalidate(); refreshGameUi()');
+		assert.strictEqual(JSON.stringify(get(ctx, 'careerPlanSearch.step(0)')), before,
+			'repeated H reporting leaves the search untouched');
+	}
+	get(ctx, 'cancelCareerPlanning()');
 }
 
 /* 7. the planning state drains bounded: the run starts either way */
