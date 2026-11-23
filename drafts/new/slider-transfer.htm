@@ -1,0 +1,143 @@
+compact canvas slider, useful to transfer energy or any value between 2 storages.
+
+<div id="level-control"></div>
+
+<script>
+function createLevelControl(container, options = {}) {
+  const settings = {
+    min: 0,
+    max: 100,
+    shipCap: 100,
+    planetCap: 300,
+    width: 400,
+    height: 80,
+    value: 0,
+    ...options
+  };
+
+  if (!(settings.max > settings.min)) {
+    throw new Error("max must be greater than min");
+  }
+
+  const doc = container.ownerDocument;
+  const wrapper = doc.createElement("div");
+  Object.assign(wrapper.style, {
+    position: "relative",
+    width: `${settings.width}px`,
+    height: `${settings.height}px`,
+    margin: "0 auto"
+  });
+
+  const canvas = doc.createElement("canvas");
+  Object.assign(canvas.style, {
+    position: "absolute",
+    inset: "0",
+    width: "100%",
+    height: "100%"
+  });
+
+  const slider = doc.createElement("input");
+  slider.type = "range";
+  slider.min = settings.min;
+  slider.max = settings.max;
+  slider.step = settings.step ?? 1;
+  slider.value = clamp(settings.value, settings.min, settings.max);
+  slider.setAttribute("aria-label", settings.label ?? "Level control");
+  Object.assign(slider.style, {
+    position: "absolute",
+    left: "5%",
+    top: "31.25%",
+    width: "90%",
+    height: "37.5%",
+    margin: "0",
+    opacity: "0.01",
+    cursor: "pointer"
+  });
+
+  wrapper.append(canvas, slider);
+  container.append(wrapper);
+
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = settings.width * dpr;
+  canvas.height = settings.height * dpr;
+  ctx.scale(dpr, dpr);
+
+  const X = settings.width * 0.05;
+  const W = settings.width * 0.9;
+  const H = settings.height * 0.375;
+  const Y = (settings.height - H) / 2;
+  const CX = X + W / 2;
+
+  function draw() {
+    const value = Number(slider.value);
+    const shipPct = ((value - settings.min) / (settings.max - settings.min)) * 100;
+    const moved = (shipPct / 100) * settings.shipCap;
+    const planetPct = clamp(100 - (moved / settings.planetCap) * 100, 0, 100);
+    const half = W / 2;
+    const textY = Y + H / 2;
+
+    ctx.clearRect(0, 0, settings.width, settings.height);
+
+    ctx.strokeStyle = "#000";
+    ctx.strokeRect(X, Y, W, H);
+
+    ctx.fillStyle = settings.planetColor ?? "#e67e22";
+    ctx.fillRect(CX - half * planetPct / 100, Y, half * planetPct / 100, H);
+
+    ctx.fillStyle = settings.shipColor ?? "#3a7bd5";
+    ctx.fillRect(CX, Y, half * shipPct / 100, H);
+
+    ctx.fillStyle = "#000";
+    ctx.fillRect(CX - 1, Y - 8, 2, H + 16);
+
+    ctx.font = "12px sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#000";
+
+    ctx.textAlign = "left";
+    ctx.fillText(settings.planetLabel ?? "Planet", X + 10, textY);
+
+    ctx.textAlign = "right";
+    ctx.fillText(`${planetPct.toFixed(1)}%`, CX - 12, textY);
+
+    ctx.textAlign = "left";
+    ctx.fillText(`${shipPct.toFixed(1)}%`, CX + 12, textY);
+    ctx.fillText(settings.shipLabel ?? "Ship", X + W - 30, textY);
+  }
+
+  function onInput() {
+    draw();
+    settings.onChange?.(Number(slider.value));
+  }
+
+  slider.addEventListener("input", onInput);
+  draw();
+
+  return {
+    getValue: () => Number(slider.value),
+    setValue(value) {
+      slider.value = clamp(value, settings.min, settings.max);
+      draw();
+    },
+    draw,
+    destroy() {
+      slider.removeEventListener("input", onInput);
+      wrapper.remove();
+    }
+  };
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, Number(value)));
+}
+
+// Example:
+const control = createLevelControl(document.querySelector("#level-control"), {
+  value: 25,
+  onChange: value => console.log("Slider value:", value)
+});
+
+// control.setValue(50);
+// control.destroy();
+</script>
