@@ -249,6 +249,7 @@ const GRIP_DASH = [0, 0];
 const REPEL_DASH = [0, 0];
 const SYS_DASH = [0, 0];
 const LOCK_DASH = [0, 0];
+const RADAR_DASH = [0, 0];
 const COMMON_HELP = 'Drag from a planet or pad to aim; hold Shift for 1/20 fine control. ' +
 	'Release to preview; in flight modes, Enter or launch fires and landing stages the next shot. ' +
 	'Esc cancels an aim or queued launch. Planet gravity is seeded from −1 to +5; ' +

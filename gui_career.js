@@ -669,6 +669,22 @@ function careerQuiet() {
 	return true;
 }
 
+/* the HQ facility (0.7.49): the flag is the asset, the checkbox is the view */
+function careerRadar() {
+	const career = activeCareer();
+	if (career.radar) return false;
+	if (!GravityGame.buildRadar(career)) {
+		careerNotice('cannot build radar · ' + costText(careerCost(career, GravityGame.RADAR_COST)) +
+			' at the HQ, while the career is open');
+		return;
+	}
+	recordCareerAction('act', { act: 'radar' });
+	careerNotice('radar built at HQ · every ship\u2019s predicted landing is on the radar · ' +
+		'tick the view-bar checkbox to see it');
+	careerChanged();
+	return true;
+}
+
 /* every shop / board button carries data-act (and its args) */
 function careerAct(data) {
 	if (!careerRule() || careerInputLocked()) return;
@@ -703,6 +719,7 @@ function careerAct(data) {
 	}
 	if (act === 'bribe') return careerBribe();
 	if (act === 'quiet') return careerQuiet();
+	if (act === 'radar') return careerRadar();
 	if (act === 'evac') return careerEvacuate(data.steps);
 	if (act === 'repair') return careerRepair();
 	if (career.ended !== GravityGame.CAREER_OPEN) {

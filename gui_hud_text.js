@@ -166,6 +166,7 @@ function draw(now) {
 	drawWells();
 	drawPortVelocities();
 	if (game.on && bot.count > 0) drawRivalsWorld(tickNow);
+	if (careerRule()) drawRadar();
 	drawPrediction();
 	drawTrail();
 	drawLandedBase(tickNow);
@@ -183,6 +184,7 @@ function draw(now) {
 	if (game.on && !routeRule()) drawPlanetProfits();
 	if (careerRule()) drawCareerPad();
 	if (game.on && bot.count > 0) drawRivalTags();
+	if (careerRule()) drawRadarLabels();
 	if (hoverBody >= 0 && hoverBody !== selected && !aiming) {
 		drawLabel(hoverLabel, cargoSim.bodyX[hoverBody],
 			cargoSim.bodyY[hoverBody], ICE);

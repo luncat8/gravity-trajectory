@@ -39,6 +39,7 @@ function refreshGameUi() {
 	if (careerCleanLabelEl) careerCleanLabelEl.hidden = !career;
 	if (gameHudEl) gameHudEl.hidden = !career;
 	if (careerCleanEl) careerCleanEl.checked = cleanCareerView;
+	syncRadarViewUi(career && !careerPlanning ? activeCareer() : null);
 	refreshCareerClockUi();
 	if (rivalGroupEl) rivalGroupEl.hidden = !game.on || RULES[game.rule].solo;
 	syncModeRadios();

@@ -480,6 +480,11 @@
 			step: -1, tried: 0, impacts: 0, finite: 0, bounce: 0, exit: 0,
 			noImpact: 0, book: 0, busy: 0, burn: 0, rescue: 0
 		};
+		/* radar (0.7.49): the planets another ship's predicted trajectory lands
+		 * on inside the horizon, refreshed once per scanned company and step */
+		this.radarHot = new Uint8Array(PLANETS);
+		this.radarHotStep = -1;
+		this.radarHotCareer = null;
 		/* bounded decision trace and the last line per actor */
 		this.trace = [];
 		this.traceRevision = 0;
@@ -2785,7 +2790,54 @@
 		this.careerEval.exitSource = departure.source;
 		this.careerEval.taskPay = taskPay;
 		this.careerEval.padValue = padValue;
-		return taskPay + padValue;
+		return taskPay + padValue -
+			this.careerRadarAvoid(career, body, runStep, taskPay + padValue);
+	};
+
+	/* the planets another ship's predicted trajectory lands on inside the
+	 * radar horizon, once per scanned company and world step; the shared
+	 * radar memo keeps the per-ship predictions themselves cheap */
+	GravityBot.prototype.careerRadarHot = function (career, runStep) {
+		if (this.radarHotStep === runStep && this.radarHotCareer === career) {
+			return this.radarHot;
+		}
+		this.radarHotStep = runStep;
+		this.radarHotCareer = career;
+		const hot = this.radarHot;
+		hot.fill(0);
+		const actors = career.galaxy ? career.galaxy.actors : null;
+		for (let i = 0; actors && i < actors.length; i++) {
+			const other = actors[i];
+			if (other === career || !other.sim) continue;
+			/* the page keeps its own ship's buffers (aim trace, flight coast):
+			 * read them, never re-predict over them */
+			const keep = other === this.careerPlayer.career ? this.careerPlayer.sim : null;
+			if (!GravityGame.radarPredict(other, keep)) continue;
+			if (other.sim.predReason !== END_IMPACT || other.sim.predBody < 0) continue;
+			if (other.sim.predSteps * GravitySim.DT > GravityGame.RADAR_HORIZON) continue;
+			hot[other.sim.predBody] = 1;
+		}
+		return hot;
+	};
+
+	/* radar (0.7.49): what a radar company's launch scoring adds — a fraction
+	 * of the landing's value off a destination another ship is about to take:
+	 * one whose predicted trajectory lands there inside the horizon, one
+	 * parked on it now, or one whose rail already owns it. Without radar the
+	 * score is exactly what it was. */
+	GravityBot.prototype.careerRadarAvoid = function (career, body, runStep, score) {
+		if (!career.radar || body < 0 || !(score > 0) || !career.galaxy) return 0;
+		const owner = GravityGame.claimOwner(career.galaxy, body);
+		if (owner >= 0 && owner !== career.index) return GravityGame.RADAR_AVOID * score;
+		if (this.careerRadarHot(career, runStep)[body]) return GravityGame.RADAR_AVOID * score;
+		const actors = career.galaxy.actors;
+		for (let i = 0; i < actors.length; i++) {
+			const other = actors[i];
+			if (other !== career && !other.flying && other.at === body) {
+				return GravityGame.RADAR_AVOID * score;
+			}
+		}
+		return 0;
 	};
 
 	/* A claimed trajectory, not a speculative fan winner. Remains contested

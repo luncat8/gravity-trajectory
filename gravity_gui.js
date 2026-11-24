@@ -123,6 +123,8 @@ const potentialLegendEl = $('potentialLegend');
 const zoneBarEl = $('zoneBar');
 const careerCleanEl = $('careerClean');
 const careerCleanLabelEl = $('careerCleanLabel');
+const radarViewEl = $('radarView');
+const radarLabelEl = $('radarLabel');
 const sourceTagEl = $('sourceTag');
 const srcPlanetsEl = $('srcPlanets');
 const srcPortsEl = $('srcPorts');
@@ -360,6 +362,9 @@ let viewMode = VIEW_SPACE;
 let viewDesired = VIEW_SPACE;
 /* career clean canvas: hides thick orbit visit highlights + past flight trails */
 let cleanCareerView = true;
+/* the radar overlay (0.7.49): off even when the facility is built — the
+ * checkbox is the view, the facility is the asset */
+let radarViewOn = false;
 let pressing = false;
 let pressPlanet = -1;
 let pressClientX = 0;
@@ -638,6 +643,11 @@ if (viewFullEl) {
 if (careerCleanEl) {
 	careerCleanEl.addEventListener('change', () => {
 		cleanCareerView = careerCleanEl.checked;
+	});
+}
+if (radarViewEl) {
+	radarViewEl.addEventListener('change', () => {
+		radarViewOn = radarViewEl.checked;
 	});
 }
 srcPlanetsEl.addEventListener('change', () => setSource(MODE_PLANETS));
@@ -1085,6 +1095,7 @@ root.GravityScene = {
 	frame: () => scene.view.frame,
 	setFrame: setViewFrame,
 	cleanCareerView: () => cleanCareerView,
+	radarView: () => radarViewOn,
 	liteMode: () => liteMode,
 	fieldRenderer: () => fieldRenderer,
 	playMode: () => (game.on ? game.rule : PLAY_LAB),

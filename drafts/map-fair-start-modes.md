@@ -105,6 +105,6 @@ Space start needs bot companies to burn from rest to a planet — how much bot s
 - Full parity burn search. Bots look for best planet to start.
 
 TODO advanced bots with radar equipment may wait and look where other players move to not sit on same planet later right after another bot got visit profit or build EMC and captured planet. This is also for space-start mode and for colonies found may be useful. Radar cost balance for mid-game i suggest 6cr - so better firstly build EMC1 before spend money for it.
-→ planned in `../0.7.49-plan-radar.md`: reveals every ship's predicted trajectory and time to landing as ghost icons, and a radar-aware bot that avoids a planet another ship is heading to, just profited from, or captured.
+→ `0.7.49` (`../archive/0.7.49-plan-radar.md`): reveals every ship's predicted trajectory and time to landing as ghost icons, and a radar-aware bot that avoids a planet another ship is heading to, just profited from, or captured.
 TODO implement start game option to make some random gifts to players: example: 6cr, IMP, tech-unlock EMC3, radar. think about to be more-or less balanced.
 → `0.7.48` (`../archive/0.7.48-plan-start-gifts.md`): a start-gift budget (three sliders, 0–20 cr) drawn per company — random 1+ gifts from a pool (an engine kit IMP + FT, a science product = one free invention, radar once `0.7.49` lands) plus the rest of the budget as cash. EMC-3 research costs ~28 cr at the starter hull, so a science gift is a step toward it (6 cr ≈ a 100 kN rail), not the stock unlock.

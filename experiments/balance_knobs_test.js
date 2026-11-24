@@ -91,15 +91,18 @@ function makeWorld(seed) {
 /* --- 1. Default ×1.00 zero-drift identity -------------------------------- */
 
 /* 0.7.48 added three start-gift keys to every career; at the default zero
- * budgets they must be empty, and without them the state is the baseline's */
+ * budgets they must be empty, and without them the state is the baseline's.
+ * 0.7.49 added the radar flag; a default run has none. */
 function withoutGiftKeys(state) {
 	const copy = JSON.parse(JSON.stringify(state));
 	for (const career of copy.careers) {
 		assert.ok(career.giftCredit === 0 && career.giftCash === 0 && career.giftDrawn.length === 0,
 			'default run draws no start gift');
+		assert.strictEqual(career.radar, false, 'default run owns no radar');
 		delete career.giftCredit;
 		delete career.giftCash;
 		delete career.giftDrawn;
+		delete career.radar;
 	}
 	return copy;
 }

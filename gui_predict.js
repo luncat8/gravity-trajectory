@@ -328,7 +328,8 @@ function onGiftInput() {
 }
 
 function giftEntryText(entry) {
-	return entry.kind === 'part' ? entry.items.join(' + ') : 'science ' + entry.value + ' cr';
+	if (entry.kind === 'part') return entry.items.join(' + ');
+	return entry.kind === 'radar' ? 'radar at HQ' : 'science ' + entry.value + ' cr';
 }
 
 /* a sample draw on a seed no company uses, so the example never tells

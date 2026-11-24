@@ -471,6 +471,91 @@ function drawPrediction() {
 	}
 }
 
+/*
+ * Radar ghosts (0.7.49): the HQ facility's reveal, an overlay distinct from
+ * the aim trace and the trail — every ship's predicted path as a thin dashed
+ * line in the owner's colour at lowered alpha, a translucent chevron at the
+ * landing point, and a screen-space `+N s` / `landed` label on it. The
+ * records come pooled from GravityGame.radarShips; the operator's checkbox
+ * is the view, the facility is the asset.
+ */
+const radarOut = [];
+let radarOutCount = 0;
+
+function radarGhostColour(career) {
+	const index = career ? career.index : 0;
+	return index === 0 || index > RIVAL_COLOURS.length ? MINT : RIVAL_COLOURS[index - 1];
+}
+
+function drawRadar() {
+	const career = careerRule() && radarViewOn ? activeCareer() : null;
+	radarOutCount = career && career.radar
+		? GravityGame.radarShips(radarOut, career, tradeSim, activeSim()) : 0;
+	const px = 1 / view.scale;
+	for (let i = 0; i < radarOutCount; i++) {
+		const record = radarOut[i];
+		if (record.predCount < 2) continue;
+		const colour = radarGhostColour(record.career);
+		RADAR_DASH[0] = 3 * px;
+		RADAR_DASH[1] = 5 * px;
+		const stride = record.predCount > 6000 ? 4 : record.predCount > 1400 ? 2 : 1;
+		ctx.beginPath();
+		ctx.moveTo(record.predX[0], record.predY[0]);
+		for (let k = stride; k < record.predCount; k += stride) {
+			ctx.lineTo(record.predX[k], record.predY[k]);
+		}
+		ctx.globalAlpha = 0.4;
+		ctx.strokeStyle = colour;
+		ctx.lineWidth = 1.1 * px;
+		ctx.setLineDash(RADAR_DASH);
+		ctx.stroke();
+		ctx.setLineDash(NO_DASH);
+		/* the ghost itself sits where the ship will land, headed as it flies */
+		const last = record.predCount - 1;
+		const lx = record.predX[last];
+		const ly = record.predY[last];
+		const angle = Math.atan2(record.sim.cargo.vy, record.sim.cargo.vx);
+		const size = 4.3 * px;
+		ctx.beginPath();
+		ctx.moveTo(lx + Math.cos(angle) * size, ly + Math.sin(angle) * size);
+		ctx.lineTo(lx + Math.cos(angle + 2.4) * size, ly + Math.sin(angle + 2.4) * size);
+		ctx.lineTo(lx + Math.cos(angle - 2.4) * size, ly + Math.sin(angle - 2.4) * size);
+		ctx.closePath();
+		ctx.fillStyle = colour;
+		ctx.fill();
+		ctx.globalAlpha = 1;
+	}
+}
+
+/* the time labels stay legible at any zoom: drawn screen-space after the
+ * world transform, like the rival tags */
+function drawRadarLabels() {
+	if (!radarOutCount) return;
+	ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	const maxX = window.innerWidth - 30;
+	const maxY = window.innerHeight - 14;
+	for (let i = 0; i < radarOutCount; i++) {
+		const record = radarOut[i];
+		const flying = record.predCount >= 2;
+		const parkedAt = !flying && record.career.at >= 0 ? record.career.at : -1;
+		if (!(flying && record.tLand > 0) && parkedAt < 0) continue;
+		const text = flying ? '+' + Math.max(0, Math.round(record.tLand)) + ' s' : 'landed';
+		let x = record.x * view.scale + view.offX;
+		let y = record.y * view.scale + view.offY - (flying ? 18
+			: tradeSim.planetR[parkedAt] * view.scale + 18);
+		if (x < 22) x = 22;
+		else if (x > maxX) x = maxX;
+		if (y < 4) y = 4;
+		else if (y > maxY) y = maxY;
+		const colour = radarGhostColour(record.career);
+		plate(x - 22, y - 7, 44, 14, colour);
+		ctx.fillStyle = colour;
+		ctx.fillText(text, x, y);
+	}
+}
+
 function drawTrail(sim = activeSim(), other = false) {
 	if (careerRule() && cleanCareerView) return;
 	const count = sim.trailCount;

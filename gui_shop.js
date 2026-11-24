@@ -437,6 +437,22 @@ function guestFeeClause(career, planet) {
 	return 'fee ' + costText(careerCost(career, fee)) + ' · own 0.00';
 }
 
+/* the HQ facility row (0.7.49): radar builds at the HQ only, and once */
+function radarRowHtml(career, at) {
+	if (at !== career.hq || career.hq < 0) return '';
+	if (career.radar) {
+		return '<div class="careerLine dim">radar at HQ · every ship\u2019s predicted landing is on the radar (view bar)</div>';
+	}
+	if (career.ended !== GravityGame.CAREER_OPEN) return '';
+	const cost = careerCost(career, GravityGame.RADAR_COST);
+	const poor = purseTooSmall(career, cost);
+	return '<div class="careerRow"><span class="careerBtns">' +
+		'<button class="miniBtn' + (poor ? ' costly' : '') + '" data-act="radar"' +
+		(poor ? ' disabled' : '') +
+		' title="build the radar at this HQ: a ghost on every ship\u2019s predicted trajectory with the time to its next landing, own and rivals alike \u00b7 the radar checkbox in the view bar turns the reveal on">build radar \u00b7 ' +
+		costText(cost) + '</button></span></div>';
+}
+
 function padBlockHtml(career) {
 	const at = career.at;
 	if (at < 0) return '<div class="careerLine warn">lost in space · evacuate to HQ</div>';
@@ -451,6 +467,7 @@ function padBlockHtml(career) {
 	html += '<div class="careerLine dim">ship ' + ship.hold.id + ' · ' +
 		(ship.engine ? ship.engine.id : 'no engine') + ' · ' + ship.tank.id +
 		shipImpulseNote(ship) + '</div>';
+	html += radarRowHtml(career, at);
 	html += politicsBlockHtml(career) + fragileLineHtml(career, at);
 	if (at === career.capitalPlanet) {
 		const lift = GravityGame.padLift(career, at);

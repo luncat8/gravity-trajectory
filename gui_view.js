@@ -7,6 +7,15 @@
 
 'use strict';
 
+/* the radar checkbox (0.7.49): career-only, enabled only while the selected
+ * company owns the facility; the view off state is the operator's choice */
+function syncRadarViewUi(career) {
+	if (radarLabelEl) radarLabelEl.hidden = !career;
+	if (!radarViewEl) return;
+	radarViewEl.disabled = !career || !career.radar;
+	radarViewEl.checked = radarViewOn;
+}
+
 function refreshViewUi() {
 	if (viewFullEl) viewFullEl.checked = scene.view.frame === FRAME_FULL;
 	if (viewSpaceEl) viewSpaceEl.checked = viewMode === VIEW_SPACE;
@@ -15,6 +24,7 @@ function refreshViewUi() {
 	if (potentialLegendEl) potentialLegendEl.hidden = viewMode !== VIEW_POTENTIAL;
 	if (careerCleanLabelEl) careerCleanLabelEl.hidden = !careerRule();
 	if (careerCleanEl) careerCleanEl.checked = cleanCareerView;
+	syncRadarViewUi(careerRule() ? activeCareer() : null);
 	if (!viewTagEl) return;
 	if (viewMode === VIEW_SPACE || !fieldRenderer) {
 		const lost = fieldRenderer !== null && fieldRenderer.backend() === 'lost';

@@ -1471,6 +1471,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			cheat: null,
 			galaxy: null,
 			index: 0,
+			/* the vessel's sim, set at startCareer — the radar reveal predicts
+			 * through it; live references like these are never saved */
+			sim: null,
+			radar: false,
+			radarStamp: { steps: -1, vx: 0, vy: 0 },
 			/* the run's active planet subset; null = every planet in play */
 			planetMask: null,
 			planetCount: OrbitWorld.PLANETS,
@@ -4552,6 +4557,124 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		stats.nextStep = step + stats.every;
 	}
 
+	/* --- radar (0.7.49): the HQ facility that reveals every ship's landing --
+	 * The HQ sees the whole map and broadcasts to the ship, so one build
+	 * covers every company flight: a ghost on each ship's predicted
+	 * trajectory with the time to its next landing. It is a boolean company
+	 * flag plus the spend — no pad, no ship slot. The reveal is each ship's
+	 * own `predictFlight`, so a ghost matches what that ship will actually
+	 * do. Cost sits between EMC-1 (3.04) and EMC-2 (7.83), so a company
+	 * builds EMC-1 before radar. */
+	const RADAR_COST = 6;
+	/* per-ship prediction cap, the aim-trace class, so the reveal never
+	 * stalls a frame: six game seconds of flight per call — the bot's own
+	 * planning horizon — and a memo so parked skies and other ships' frames
+	 * cost nothing. A trace the budget truncates (a long coast) shows its
+	 * partial path with no landing ghost, exactly like the live flight
+	 * prediction the page already draws at its own budget. */
+	const RADAR_BUDGET_MS = 6;
+	/* a landing another ship reaches inside this window contestes the prize */
+	const RADAR_HORIZON = 45;
+	/* the score fraction a radar company gives up on a taken destination */
+	const RADAR_AVOID = 0.25;
+
+	/* pure build gate: at the HQ, career open, the purse covers it */
+	function canBuildRadar(career) {
+		return career.ended === CAREER_OPEN && career.hq >= 0 &&
+			career.at === career.hq && canPay(career, RADAR_COST);
+	}
+
+	/* the facility itself: money into property, the flag is the whole machine */
+	function buildRadar(career) {
+		if (career.radar || !canBuildRadar(career)) return false;
+		career.ledger.purse -= price(career, RADAR_COST);
+		career.buildSpent += price(career, RADAR_COST);
+		career.radar = true;
+		return true;
+	}
+
+	/* predict one ship for the reveal, memoised on the career; false when it
+	 * is parked (or on the tow). The trace reads only flight state —
+	 * flightFieldT is a function of liveSteps, the cargo carries the rest —
+	 * so a static sky never re-predicts, and the one flight-state change a
+	 * step does not carry (an impulse burn) invalidates the memo through
+	 * its velocity alone. `keep` is a sim whose buffers someone else
+	 * maintains this frame (the page's active aim or flight trace): read
+	 * them, never re-predict over them. */
+	function radarPredict(career, keep) {
+		const sim = career.sim;
+		if (!sim) return false;
+		const stamp = career.radarStamp;
+		if (sim.status !== GravitySim.STATUS_FLYING || career.evacuating) {
+			stamp.steps = -1;
+			return false;
+		}
+		if (keep !== sim && (stamp.steps !== sim.liveSteps ||
+			stamp.vx !== sim.cargo.vx || stamp.vy !== sim.cargo.vy)) {
+			sim.predictFlight(RADAR_BUDGET_MS);
+		}
+		stamp.steps = sim.liveSteps;
+		stamp.vx = sim.cargo.vx;
+		stamp.vy = sim.cargo.vy;
+		return true;
+	}
+
+	/* one pooled record per ship; the pool grows only when a company joins */
+	const radarRecordPool = [];
+
+	function radarFill(out, count, career, world, keep) {
+		const sim = career.sim;
+		if (!sim) return count;
+		if (radarRecordPool.length <= count) {
+			radarRecordPool.push({ career: null, sim: null, x: 0, y: 0,
+				predX: null, predY: null, predCount: 0, landStep: -1, tLand: 0, body: -1 });
+		}
+		const record = radarRecordPool[count];
+		out[count] = record;
+		if (!radarPredict(career, keep)) {
+			const parked = career.at >= 0 && !career.evacuating;
+			record.career = career;
+			record.sim = sim;
+			record.x = parked ? world.planetX[career.at] : sim.cargo.x;
+			record.y = parked ? world.planetY[career.at] : sim.cargo.y;
+			record.predX = null;
+			record.predY = null;
+			record.predCount = 0;
+			record.landStep = -1;
+			record.tLand = 0;
+			record.body = -1;
+			return count + 1;
+		}
+		const landed = sim.predReason === GravitySim.END_IMPACT && sim.predBody >= 0;
+		record.career = career;
+		record.sim = sim;
+		record.x = sim.cargo.x;
+		record.y = sim.cargo.y;
+		/* the sim's own buffers, reused — never copied per frame */
+		record.predX = sim.predX;
+		record.predY = sim.predY;
+		record.predCount = sim.predCount;
+		record.landStep = landed ? sim.liveSteps + sim.predSteps : -1;
+		record.tLand = landed ? sim.predSteps * GravitySim.DT : 0;
+		record.body = landed ? sim.predBody : -1;
+		return count + 1;
+	}
+
+	/* the reveal: one record per ship the company's HQ sees — its own ship
+	 * first, then the galaxy's — into the caller-owned array; the count.
+	 * Global by design (no range limit), landing trajectories only. */
+	function radarShips(out, humanCareer, world, keep) {
+		if (!humanCareer || !humanCareer.radar) return 0;
+		let count = radarFill(out, 0, humanCareer, world, keep);
+		const actors = humanCareer.galaxy ? humanCareer.galaxy.actors : null;
+		for (let i = 0; actors && i < actors.length; i++) {
+			if (actors[i] !== humanCareer) {
+				count = radarFill(out, count, actors[i], world, keep);
+			}
+		}
+		return count;
+	}
+
 	/* --- start gifts (0.7.48) ------------------------------------------------
 	 * an operator budget drawn per company at start: a few pool entries, the
 	 * rest as cash. The pool is data. A kit is priced at its parts' build cost,
@@ -4565,13 +4688,17 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const GIFT = { budgetMax: 20, maxDraws: 3 };
 	const GIFT_PART = 'part';
 	const GIFT_SCIENCE = 'science';
+	/* the radar facility itself (0.7.49): granted past the build gate, paid
+	 * from the budget like any other entry — the flag is the whole machine */
+	const GIFT_RADAR = 'radar';
 	const GIFT_POOL = [
 		{ id: 'imp1', kind: GIFT_PART, weight: 3, items: ['IMP-1', 'FT-1'] },
 		{ id: 'imp2', kind: GIFT_PART, weight: 2, items: ['IMP-2', 'FT-2'] },
 		{ id: 'imp3', kind: GIFT_PART, weight: 1, items: ['IMP-3', 'FT-3'] },
 		{ id: 'sci3', kind: GIFT_SCIENCE, weight: 2, value: 3 },
 		{ id: 'sci6', kind: GIFT_SCIENCE, weight: 2, value: 6 },
-		{ id: 'sci10', kind: GIFT_SCIENCE, weight: 1, value: 10 }
+		{ id: 'sci10', kind: GIFT_SCIENCE, weight: 1, value: 10 },
+		{ id: 'radar', kind: GIFT_RADAR, weight: 2, value: RADAR_COST }
 	];
 	for (let i = 0; i < GIFT_POOL.length; i++) {
 		const entry = GIFT_POOL[i];
@@ -4623,7 +4750,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	function giftFits(entry, remaining, drawn, last) {
 		if (entry.value > remaining + 1e-9 || entry === last) return false;
-		return entry.kind !== GIFT_PART || drawn.indexOf(entry) < 0;
+		/* a kit once, a radar once; science entries may repeat */
+		return entry.kind === GIFT_SCIENCE || drawn.indexOf(entry) < 0;
 	}
 
 	/* pure and deterministic in (budget, seed): up to GIFT.maxDraws weighted
@@ -4708,6 +4836,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				for (let i = 0; i < entry.parts.length; i++) ownPart(career, entry.parts[i]);
 				career.buildSpent += entry.value;
 				career.giftDrawn.push(entry.items.join(' + '));
+			} else if (entry.kind === GIFT_RADAR) {
+				/* the flag, past the build gate: a gifted radar works in any
+				 * start that has (or will settle) an HQ */
+				career.radar = true;
+				career.buildSpent += entry.value;
+				career.giftDrawn.push('radar');
 			} else {
 				const text = grantGiftScience(career, entry.value, career.seed, k);
 				if (text === null) continue;
@@ -4751,6 +4885,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.flying = false;
 		career.stranded = false;
 		career.fragileLost = false;
+		/* a restart is a new company: no radar, and no stale reveal memo */
+		career.radar = false;
+		career.radarStamp.steps = -1;
 		career.commercialPlanet = -1;
 		career.commercialPads = null;
 		career.capitalPlanet = specialPlanets ? trade.world.capitalPlanet : -1;
@@ -4983,6 +5120,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (galaxy) joinGalaxy(career, galaxy);
 		else syncCareerNetwork(career);
 		sim.attachCareer(career);
+		/* the reveal predicts each company through its own sim (never saved) */
+		career.sim = sim;
 		if (mode === START_SPACE) {
 			if (career.cheat !== CHEAT_ENDGAME) {
 				career.ledger.purse += SPACE_START_BONUS;
@@ -7659,6 +7798,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		setPadScale, padScaleOf, setRotScale, rotScaleOf, setPayScale, payScaleOf,
 		GIFT, GIFT_POOL, GIFT_FRONTIER, setStartGifts, startGiftsOf, giftBudget, drawGifts,
 		grantStartGifts, giftText,
+		RADAR_COST, RADAR_BUDGET_MS, RADAR_HORIZON, RADAR_AVOID,
+		canBuildRadar, buildRadar, radarPredict, radarShips,
 		careerPadSeconds, careerPadMinutes, careerWaitPadSeconds,
 		launchWear, spaceWear, impulseWear, landingWear,
 		forecastCondition, forecastReportUntil, forecastRepairReserve, forecastWearCost,

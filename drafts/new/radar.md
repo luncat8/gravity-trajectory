@@ -22,4 +22,4 @@ landing on a planet another ship is heading to, just profited from, or probably 
 
 especially useful at long trajectories, and in case of all players start from similar location at same time to suspend start, know competitor's move and adjust own aim to outperform or avoid risky landing.
 
-→ `../0.7.49-plan-radar.md`
+→ `../archive/0.7.49-plan-radar.md`

@@ -40,7 +40,9 @@
 	};
 
 	/* keys that are live references or re-derived from the seed/universe */
-	const CAREER_SKIP = ['galaxy', 'market', 'launchPads', 'planetMask', 'planetCount'];
+	const CAREER_SKIP = ['galaxy', 'market', 'launchPads', 'planetMask', 'planetCount',
+		/* the vessel's sim and the radar reveal memo (0.7.49) are live cache */
+		'sim', 'radarStamp'];
 	const MARKET_SKIP = ['galaxy', 'planetMask', 'planetCount'];
 	const GALAXY_SKIP = ['actors', 'market', 'period', 'phase'];
 	const TRADE_SKIP = ['handleEvent', 'onColonyEvent', 'world', 'rand', 'events',
