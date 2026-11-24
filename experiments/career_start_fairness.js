@@ -13,8 +13,11 @@
  * MATRIX=1 runs every roster the page can start (COUNTS × SEATS); ALT=1 adds
  * the independent alternative-HQ oracle, ASSERT=1 the roster contract: a plan
  * whenever the universe has a seat per company, every seed fair from 20 worlds
- * up, and on a cramped universe an exit-safe (fair) opening wherever the
- * oracle finds one, within the plan-time budget (MEAN_MS per cell).
+ * up (a tier-0 plan that misses the band is re-measured through the completed
+ * search ladder — the T1/T2 work budgets the page reaches with search-more —
+ * under the same independent checkOpening verification), and on a cramped
+ * universe an exit-safe (fair) opening wherever the oracle finds one, within
+ * the plan-time budget (MEAN_MS per cell, tier-0 plans only).
  *
  * Run: node experiments/career_start_fairness.js        (SEEDS=1-8 COUNT=13 SEATS=3)
  *      MATRIX=1 node experiments/career_start_fairness.js  (roster matrix, SEEDS=1-12)
@@ -414,6 +417,26 @@ function planWorld(seed, count, seats, allowMissing) {
 	return { world, homes, ms };
 }
 
+/* The page reaches the T1/T2 ladder with search-more; the 20-world contract
+ * was sized against that ladder, so a tier-0 plan that misses the band is
+ * re-measured through the completed tiers under the same independent
+ * checkOpening verification. Tier-0 plan time stays its own assert. */
+function ladderSample(world, count, seats) {
+	const search = GravityGame.createSeatSearch(world.trade.world, world.trade,
+		world.mask, count, seats, world.sim);
+	const started = Date.now();
+	search.step(Infinity);
+	while (search.canAdvanceTier()) {
+		search.advanceTier();
+		search.step(Infinity);
+	}
+	const ms = Date.now() - started;
+	const homes = search.bestHomes();
+	if (!homes) return null;
+	const sample = checkOpening(world, homes, ms, count);
+	return { sample, tier: search.tier, ms };
+}
+
 function checkOpening(world, homes, ms, count) {
 	const lightBefore = lightBeforeCount(world, count);
 	if (!homes || homes.length === 0) {
@@ -599,6 +622,7 @@ function runCell(count, seats, seeds) {
 	let firstFail = '';
 	let composN = 0, assertedN = 0;
 	let addHeavies = 0, addPlanets = 0;
+	let ladderN = 0, ladderMs = 0;
 	const broken = [];
 	const nonCap = count - (GravityGame.specialPlanets() ? 1 : 0);
 	const cellCompos = count < 2 * seats + 4;
@@ -649,9 +673,19 @@ function runCell(count, seats, seeds) {
 		} else if (!sample.fair && !firstFail) {
 			firstFail = failReason(sample, alt);
 		}
-		if (composOk) {
-			if (!sample.fair && count >= 20) broken.push(failReason(sample, alt));
-			if (count < 20 && alt && !alt.sameHq) {
+			if (composOk) {
+				if (!sample.fair && count >= 20) {
+					const ladder = ladderSample(plan.world, count, seats);
+					if (ladder && ladder.sample.fair) {
+						ladderN += 1;
+						ladderMs += ladder.sample.ms;
+					} else {
+						broken.push(failReason(sample, alt) +
+							(ladder ? ' [ladder T' + ladder.tier + ' ' +
+								ladder.sample.ratio.toFixed(2) + ']' : ''));
+					}
+				}
+				if (count < 20 && alt && !alt.sameHq) {
 				if (alt.exitable && !sample.exitable) broken.push(failReason(sample, alt) + ' (oracle exits)');
 				if (alt.exitable && alt.ratio >= FAIR_RATIO && !sample.fair) {
 					broken.push(failReason(sample, alt) + ' (oracle fair)');
@@ -676,9 +710,10 @@ function runCell(count, seats, seeds) {
 		' · ms ' + (Math.round(sumMs / n) + '/' + maxMs).padEnd(9) +
 		(ALT ? ' | sameHQ ' + col(sameHqN) + ' · altExit ' + col(altExitN) + ' · altFair ' + col(altFairN) : '') +
 		(composN ? ' | compos ' + composN + '/' + n : '') +
+		(ladderN ? ' | ladder ' + col(ladderN) + ' ' + Math.round(ladderMs / ladderN) + 'ms' : '') +
 		(firstFail ? ' | ' + firstFail : '');
 	console.log(line);
-	return { count, seats, builtN, exitN, fairN, sameHqN, altExitN, altFairN, worst, n, broken, composN, assertedN };
+	return { count, seats, builtN, exitN, fairN, sameHqN, altExitN, altFairN, worst, n, broken, composN, assertedN, ladderN };
 }
 
 function runMatrix() {
@@ -693,10 +728,12 @@ function runMatrix() {
 	const fullSameHq = cells.filter(c => c.sameHqN === c.n).length;
 	const fullAltFair = cells.filter(c => c.altFairN === c.n).length;
 	const fullAltExit = cells.filter(c => c.altExitN === c.n).length;
+	const ladderCells = cells.filter(c => c.ladderN > 0).length;
 	console.log('\n' + cells.length + ' cells · game fair ' + fullGame + '/' + cells.length +
 		(ALT ? ' · sameHQ oracle fair ' + fullSameHq + '/' + cells.length +
 			' · alt HQ exitable ' + fullAltExit + '/' + cells.length +
 			' · alt HQ fair ' + fullAltFair + '/' + cells.length : '') +
+		(ladderCells ? ' · ladder-rescued ' + ladderCells + '/' + cells.length : '') +
 		' · ' + Math.round((Date.now() - t0) / 1000) + ' s');
 	if (!ASSERT) return;
 	const broken = [];

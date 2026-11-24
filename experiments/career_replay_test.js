@@ -393,9 +393,16 @@ assert.match(restored.elements.get('careerMsg').textContent, /opening history is
 restored.click('botLog');
 assert.match(restored.clipboardText, /restored run · earlier history was not recorded/);
 
-/* A truly blocked shot produces a visible call and opens the relevant answer. */
+/* A truly blocked shot produces a visible call and opens the relevant answer.
+ * The roster report is pinned fair: WS3's fair-roster call outranks the worn
+ * block this section exercises (0.7.47), and roster fairness is covered by the
+ * frozen facts and the fairness runs. */
 const calls = loadPage({ search: mapSearch(42) });
 assert.match(calls.elements.get('commsButton').title, /radio assistant/i);
+get(calls, 'rosterFairnessReport = function () { return { ok: true, planets: planetCount, players: playerCountShown() }; }');
+/* the roster call above already stamped the frozen clock's call second;
+ * let the hull fact ring on its own tick */
+get(calls, 'commsState.lastCallSecond = -1');
 get(calls, `playerCareer().ship.condition = 0; armed = false; commsTick()`);
 assert.strictEqual(get(calls, 'commsState.callReason.id'), 'worn');
 assert.strictEqual(calls.elements.get('commsCall').hidden, false);
@@ -406,8 +413,10 @@ assert.match(calls.elements.get('commsAnswer').textContent, /repair/i);
 assert.strictEqual(calls.elements.get('commsCall').hidden, true);
 
 /* Landing without your own pad with money for the commercial rail is normal
- * travel, not a call; with an empty purse it is a stuck gate and H calls. */
+ * travel, not a call; with an empty purse it is a stuck gate and H calls.
+ * Roster report pinned fair for the same 0.7.47 reason as the block above. */
 const stranded = loadPage({ search: mapSearch(42) });
+get(stranded, 'rosterFairnessReport = function () { return { ok: true, planets: planetCount, players: playerCountShown() }; }');
 get(stranded, `(() => {
 	const career = playerCareer();
 	const sim = activeCareerSim();

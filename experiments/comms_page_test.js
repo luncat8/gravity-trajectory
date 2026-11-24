@@ -14,6 +14,14 @@ const Tech = ctx.OrbitTech;
 const Sim = ctx.GravitySim;
 const get = expr => vm.runInContext(expr, ctx);
 const run = expr => vm.runInContext(expr, ctx);
+/* This file exercises H's page contract (chips, CTAs, history), not roster
+ * fairness: seed 42's roster fails the 0.7.47 composition law, and H's WS3
+ * roster call would outrank the chips under test. Pin the roster report
+ * fair; roster fairness is covered by the frozen facts and the fairness runs. */
+run('rosterFairnessReport = function () { return { ok: true, planets: planetCount, players: playerCountShown() }; }');
+/* the roster call above already stamped the frozen clock's call second and
+ * owns the call state; re-tick so H's page contract is exercised clean */
+run('commsInvalidate(); commsState.lastCallSecond = -1; commsTick();');
 
 function clickChip(topicId) {
 	env.fireElement(ui.get('commsChips'), 'click',

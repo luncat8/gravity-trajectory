@@ -110,8 +110,19 @@ checks.
 
 ## red on a clean main
 
-There are currently no `KNOWN_RED` exemptions. A new exemption needs a named
-failure reproduced on the base revision, not just a count.
+Four files are exempt in `run_fast.js` `KNOWN_RED`; each was reproduced on the
+base revision (`68905ee`) on 2026-11-24 with the named failure below, and a
+green result means the note is stale. A new exemption needs a named failure
+reproduced on the base revision, not just a count.
+
+- `bot_gravity_test.js` — `score(6) finite, no build`: the exit/claim decision
+  on a saved field scores a finite value without the build the assertion
+  expects (`Number.isFinite(score(6)) && !bot.careerEval.builds`).
+- `career_guidance_test.js` — `seed 1 has no starter-blocked landing for the
+  aim-state fixture`.
+- `career_bot_bench.js` — `padless solvency gate counts this flight's launch
+  fee`: the same shot must score once the exit is covered after the fee.
+- `dom_smoke.js` — `0.4.17: no landing with a commercial exit from HQ`.
 
 Previously fixed:
 

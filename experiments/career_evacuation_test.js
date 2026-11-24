@@ -49,6 +49,11 @@ const run = code => vm.runInContext(code, env.context);
 const el = id => env.elements.get(id);
 const Game = env.context.GravityGame;
 const Sim = env.context.GravitySim;
+/* This file exercises the tow/evac mechanics, not roster fairness: the
+ * replay's pinned field fails the 0.7.47 composition law, and H's WS3
+ * roster call would outrank the tow call under test. Pin the roster report
+ * fair; roster fairness is covered by the frozen facts and the fairness runs. */
+run('rosterFairnessReport = function () { return { ok: true, planets: planetCount, players: playerCountShown() }; }');
 el('replayInput').value = env.context.CareerActions.encode(data);
 env.click('replayLoad');
 assert.equal(el('replayLoadNote').textContent, 'replay opened');
