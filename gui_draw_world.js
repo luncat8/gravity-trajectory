@@ -23,6 +23,28 @@ function drawPlanetVisitOutline(x, y, r, px, pulse, inside) {
 	ctx.stroke();
 }
 
+/* a rival under the pointer is heading here: ring the planet in its colour so
+ * the destination reads instantly without tracing the dashed line */
+function drawRivalLandingRing(planet, colour) {
+	const px = 1 / view.scale;
+	const x = tradeSim.planetX[planet];
+	const y = tradeSim.planetY[planet];
+	const r = tradeSim.planetR[planet];
+	ctx.setLineDash(NO_DASH);
+	ctx.beginPath();
+	ctx.arc(x, y, r + 6 * px, 0, TAU);
+	ctx.strokeStyle = colour;
+	ctx.lineWidth = 2 * px;
+	ctx.stroke();
+	ctx.globalAlpha = 0.5;
+	ctx.beginPath();
+	ctx.arc(x, y, r + 11 * px, 0, TAU);
+	ctx.strokeStyle = colour;
+	ctx.lineWidth = 1 * px;
+	ctx.stroke();
+	ctx.globalAlpha = 1;
+}
+
 /* Past visits stay dim outside clean career view; active/upcoming planet visits
  * highlight the planet outline + outer ring (and omit thick orbit rings when clean). */
 function drawSystemVisits(now) {
@@ -30,7 +52,7 @@ function drawSystemVisits(now) {
 	const sim = activeSim();
 	const px = 1 / view.scale;
 	const activePred = aiming || armed || sim.status === STATUS_FLYING;
-	const clean = careerRule() && cleanCareerView;
+	const clean = cleanCareerView;
 	const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
 	SYS_DASH[0] = 5 * px;
 	SYS_DASH[1] = 5 * px;
@@ -472,49 +494,161 @@ function drawPrediction() {
 }
 
 /*
- * Radar ghosts (0.7.49): the HQ facility's reveal, an overlay distinct from
- * the aim trace and the trail — every ship's predicted path as a thin dashed
- * line in the owner's colour at lowered alpha, a translucent chevron at the
- * landing point, and a screen-space `+N s` / `landed` label on it. The
- * records come pooled from GravityGame.radarShips; the operator's checkbox
- * is the view, the facility is the asset.
+ * Radar ghosts (0.7.49, reworked 0.7.51): every ship's predicted path as a
+ * thin dashed line in the owner's colour at lowered alpha, a translucent
+ * chevron at the landing point, a landing ring while the pointer holds the
+ * ship, and a `+N s` / `landed` plate on the landing point. Career reads the
+ * HQ facility's pooled reveal (GravityGame.radarShips); every other mode
+ * predicts each flying rival straight off its sim buffers. The predicted
+ * checkbox is the view in every mode, the facility is the career asset;
+ * hovering or pressing a rival ship reveals that one ship with the box off.
  */
 const radarOut = [];
 let radarOutCount = 0;
+/* the rival ship under the pointer: hover follows it, press holds it while
+ * down. Display only — bots and blind humans read radarShips directly, so
+ * gameplay is untouched; the pointer handlers in gui_aim.js write these. */
+let radarHoverSim = null;
+let radarPressSim = null;
 
-function radarGhostColour(career) {
-	const index = career ? career.index : 0;
+function radarGhostColour(record) {
+	const index = record.career ? record.career.index : record.slot;
 	return index === 0 || index > RIVAL_COLOURS.length ? MINT : RIVAL_COLOURS[index - 1];
 }
 
+/* the other ship under the pointer — nearest record within the same reach
+ * the ship hover uses; the selected ship skipped (it never hides anyway) */
+function radarShipAt(wx, wy) {
+	if (!radarOutCount) return null;
+	const reach = HIT_PX / view.scale;
+	let best = reach * reach;
+	let found = null;
+	const own = activeSim();
+	for (let i = 0; i < radarOutCount; i++) {
+		const record = radarOut[i];
+		if (record.sim === own) continue;
+		const dx = record.x - wx;
+		const dy = record.y - wy;
+		const d2 = dx * dx + dy * dy;
+		if (d2 <= best) {
+			best = d2;
+			found = record.sim;
+		}
+	}
+	return found;
+}
+
+/* the lab pool (0.7.51): outside career one record per flying rival,
+ * predicted off the sim's own buffers under the same memo rule as the
+ * career's radarPredict — a static sky predicts once, a step or a burn
+ * re-predicts. The selected slot is skipped: its trace is the aim/flight
+ * one already on the canvas, and its buffers belong to that frame. */
+const labRadarPool = [];
+const labRadarStamps = [];
+
+function labRadarShips(out, active) {
+	const slots = slotCount();
+	let count = 0;
+	for (let slot = 0; slot < slots; slot++) {
+		const sim = slotSim(slot);
+		if (sim === active || sim.status !== STATUS_FLYING) continue;
+		if (labRadarPool.length <= count) {
+			labRadarPool.push({ career: null, sim: null, slot: 0, x: 0, y: 0,
+				predX: null, predY: null, predCount: 0, landStep: -1, tLand: 0, body: -1 });
+		}
+		const record = labRadarPool[count];
+		out[count] = record;
+		const stamp = labRadarStamps[slot] ||
+			(labRadarStamps[slot] = { sim: null, steps: -1, t0: -1, vx: 0, vy: 0 });
+		if (stamp.sim !== sim) {
+			stamp.sim = sim;
+			stamp.steps = -1;
+			stamp.t0 = -1;
+		}
+		if (stamp.steps !== sim.liveSteps || stamp.t0 !== sim.flightFieldT ||
+			stamp.vx !== sim.cargo.vx || stamp.vy !== sim.cargo.vy) {
+			sim.predictFlight(GravityGame.RADAR_BUDGET_MS);
+			stamp.steps = sim.liveSteps;
+			stamp.t0 = sim.flightFieldT;
+			stamp.vx = sim.cargo.vx;
+			stamp.vy = sim.cargo.vy;
+		}
+		const landed = sim.predReason === GravitySim.END_IMPACT && sim.predBody >= 0;
+		record.career = null;
+		record.sim = sim;
+		record.slot = slot;
+		record.x = sim.cargo.x;
+		record.y = sim.cargo.y;
+		record.predX = sim.predX;
+		record.predY = sim.predY;
+		record.predCount = sim.predCount;
+		record.landStep = landed ? sim.liveSteps + sim.predSteps : -1;
+		record.tLand = landed ? sim.predSteps * GravitySim.DT : 0;
+		record.body = landed ? sim.predBody : -1;
+		count++;
+	}
+	return count;
+}
+
+/* one gate for both the path and the plate: parked records carry only the
+ * `landed` plate and never hide (career); a flying record is the selected
+ * ship's own (always draws), every player's while the predicted box is on,
+ * or the one hovered/pressed ship */
+function radarRecordShown(record) {
+	if (record.predCount < 2) return true;
+	if (record.sim === activeSim()) return true;
+	return predRivalsOn ||
+		record.sim === radarHoverSim || record.sim === radarPressSim;
+}
+
 function drawRadar() {
-	const career = careerRule() && radarViewOn ? activeCareer() : null;
-	radarOutCount = career && career.radar
-		? GravityGame.radarShips(radarOut, career, tradeSim, activeSim()) : 0;
+	const career = careerRule() ? activeCareer() : null;
+	if (career) {
+		radarOutCount = career.radar
+			? GravityGame.radarShips(radarOut, career, tradeSim, activeSim()) : 0;
+	} else {
+		radarOutCount = labRadarShips(radarOut, activeSim());
+	}
 	const px = 1 / view.scale;
 	for (let i = 0; i < radarOutCount; i++) {
 		const record = radarOut[i];
 		if (record.predCount < 2) continue;
-		const colour = radarGhostColour(record.career);
+		/* the gate hides the dashed path and its ghost chevron together */
+		if (!radarRecordShown(record)) continue;
+		const colour = radarGhostColour(record);
+		/* while this rival is the one under the pointer, ring the planet its
+		 * ghost points at, so the landing reads at a glance */
+		if ((record.sim === radarHoverSim || record.sim === radarPressSim) &&
+				record.body >= 0) {
+			drawRivalLandingRing(record.body, colour);
+		}
 		RADAR_DASH[0] = 3 * px;
 		RADAR_DASH[1] = 5 * px;
 		const stride = record.predCount > 6000 ? 4 : record.predCount > 1400 ? 2 : 1;
+		const last = record.predCount - 1;
 		ctx.beginPath();
 		ctx.moveTo(record.predX[0], record.predY[0]);
 		for (let k = stride; k < record.predCount; k += stride) {
 			ctx.lineTo(record.predX[k], record.predY[k]);
 		}
+		if (last % stride !== 0) ctx.lineTo(record.predX[last], record.predY[last]);
 		ctx.globalAlpha = 0.4;
 		ctx.strokeStyle = colour;
 		ctx.lineWidth = 1.1 * px;
 		ctx.setLineDash(RADAR_DASH);
 		ctx.stroke();
 		ctx.setLineDash(NO_DASH);
-		/* the ghost itself sits where the ship will land, headed as it flies */
-		const last = record.predCount - 1;
+		/* a partial or non-impact trace draws its dashed path with no landing ghost */
+		if (record.body < 0) {
+			ctx.globalAlpha = 1;
+			continue;
+		}
 		const lx = record.predX[last];
 		const ly = record.predY[last];
-		const angle = Math.atan2(record.sim.cargo.vy, record.sim.cargo.vx);
+		const dx = lx - record.predX[last - 1];
+		const dy = ly - record.predY[last - 1];
+		const angle = dx !== 0 || dy !== 0
+			? Math.atan2(dy, dx) : Math.atan2(record.sim.cargo.vy, record.sim.cargo.vx);
 		const size = 4.3 * px;
 		ctx.beginPath();
 		ctx.moveTo(lx + Math.cos(angle) * size, ly + Math.sin(angle) * size);
@@ -527,8 +661,75 @@ function drawRadar() {
 	}
 }
 
-/* the time labels stay legible at any zoom: drawn screen-space after the
- * world transform, like the rival tags */
+const RADAR_PLATE_W = 44;
+const RADAR_PLATE_H = 14;
+const RADAR_PLATE_GAP = 2;
+const RADAR_PLATE_STEP = RADAR_PLATE_H + RADAR_PLATE_GAP;
+const RADAR_OVERLAP_X = RADAR_PLATE_W + RADAR_PLATE_GAP;
+const radarFlyOrder = [];
+const radarFlyX = [];
+const radarFlyY = [];
+
+function radarTimeText(tLand) {
+	const sec = Math.max(0, Math.round(tLand));
+	let text = RADAR_TIME_STRINGS[sec];
+	if (text === undefined) {
+		text = '+' + sec + ' s';
+		RADAR_TIME_STRINGS[sec] = text;
+	}
+	return text;
+}
+
+function radarFlyBefore(idxA, idxB) {
+	const a = radarOut[idxA];
+	const b = radarOut[idxB];
+	if (a.body !== b.body) return a.body < b.body;
+	if (a.tLand !== b.tLand) return a.tLand < b.tLand;
+	return idxA < idxB;
+}
+
+function radarPlateOverlaps(x, y, start, end) {
+	for (let m = start; m < end; m++) {
+		if (Math.abs(x - radarFlyX[m]) < RADAR_OVERLAP_X &&
+				Math.abs(y - radarFlyY[m]) < RADAR_PLATE_STEP) {
+			return m;
+		}
+	}
+	return -1;
+}
+
+/* stack overlapping +N s plates on one landing planet: earliest arrival stays
+ * on its landing point, later arrivals step above (or below at the top edge) */
+function stackRadarPlanetGroup(start, end, maxY) {
+	for (let k = start + 1; k < end; k++) {
+		const x = radarFlyX[k];
+		const baseY = radarFlyY[k];
+		let y = baseY;
+		let hit = radarPlateOverlaps(x, y, start, k);
+		if (hit < 0) continue;
+		while (hit >= 0) {
+			y = radarFlyY[hit] - RADAR_PLATE_STEP;
+			hit = radarPlateOverlaps(x, y, start, k);
+		}
+		if (y < 7) {
+			y = baseY < 7 ? 7 : baseY;
+			hit = radarPlateOverlaps(x, y, start, k);
+			while (hit >= 0) {
+				y = radarFlyY[hit] + RADAR_PLATE_STEP;
+				hit = radarPlateOverlaps(x, y, start, k);
+			}
+		}
+		if (y < 4) y = 4;
+		else if (y > maxY) y = maxY;
+		radarFlyY[k] = y;
+	}
+}
+
+/* the time plates stay legible at any zoom: drawn screen-space after the
+ * world transform, like the rival tags. A flying ship's mark sits on the
+ * landing point its time belongs to (0.7.51), and ships landing on the same
+ * planet stack when their plates overlap (0.7.52); a parked ship's `landed`
+ * plate keeps floating above its planet. */
 function drawRadarLabels() {
 	if (!radarOutCount) return;
 	ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -536,28 +737,72 @@ function drawRadarLabels() {
 	ctx.textBaseline = 'middle';
 	const maxX = window.innerWidth - 30;
 	const maxY = window.innerHeight - 14;
+	let flyCount = 0;
 	for (let i = 0; i < radarOutCount; i++) {
 		const record = radarOut[i];
 		const flying = record.predCount >= 2;
-		const parkedAt = !flying && record.career.at >= 0 ? record.career.at : -1;
-		if (!(flying && record.tLand > 0) && parkedAt < 0) continue;
-		const text = flying ? '+' + Math.max(0, Math.round(record.tLand)) + ' s' : 'landed';
-		let x = record.x * view.scale + view.offX;
-		let y = record.y * view.scale + view.offY - (flying ? 18
-			: tradeSim.planetR[parkedAt] * view.scale + 18);
+		if (!flying) {
+			const parkedAt = record.career && record.career.at >= 0 ? record.career.at : -1;
+			if (parkedAt < 0 || !radarRecordShown(record)) continue;
+			let x = record.x * view.scale + view.offX;
+			let y = record.y * view.scale + view.offY -
+				(tradeSim.planetR[parkedAt] * view.scale + 18);
+			if (x < 22) x = 22;
+			else if (x > maxX) x = maxX;
+			if (y < 4) y = 4;
+			else if (y > maxY) y = maxY;
+			const colour = radarGhostColour(record);
+			plate(x - 22, y - 7, RADAR_PLATE_W, RADAR_PLATE_H, colour);
+			ctx.fillStyle = colour;
+			ctx.fillText('landed', x, y);
+			continue;
+		}
+		if (record.body < 0 || !(record.tLand > 0) || !radarRecordShown(record)) continue;
+		let pos = flyCount;
+		while (pos > 0 && radarFlyBefore(i, radarFlyOrder[pos - 1])) {
+			radarFlyOrder[pos] = radarFlyOrder[pos - 1];
+			pos -= 1;
+		}
+		radarFlyOrder[pos] = i;
+		flyCount += 1;
+	}
+	for (let k = 0; k < flyCount; k++) {
+		const record = radarOut[radarFlyOrder[k]];
+		const last = record.predCount - 1;
+		let x = record.predX[last] * view.scale + view.offX;
+		let y = record.predY[last] * view.scale + view.offY - 18;
 		if (x < 22) x = 22;
 		else if (x > maxX) x = maxX;
 		if (y < 4) y = 4;
 		else if (y > maxY) y = maxY;
-		const colour = radarGhostColour(record.career);
-		plate(x - 22, y - 7, 44, 14, colour);
+		radarFlyX[k] = x;
+		radarFlyY[k] = y;
+	}
+	let start = 0;
+	while (start < flyCount) {
+		const body = radarOut[radarFlyOrder[start]].body;
+		let end = start + 1;
+		while (end < flyCount && radarOut[radarFlyOrder[end]].body === body) end += 1;
+		if (end - start > 1) stackRadarPlanetGroup(start, end, maxY);
+		start = end;
+	}
+	for (let k = 0; k < flyCount; k++) {
+		const record = radarOut[radarFlyOrder[k]];
+		const x = radarFlyX[k];
+		const y = radarFlyY[k];
+		const colour = radarGhostColour(record);
+		plate(x - 22, y - 7, RADAR_PLATE_W, RADAR_PLATE_H, colour);
 		ctx.fillStyle = colour;
-		ctx.fillText(text, x, y);
+		ctx.fillText(radarTimeText(record.tLand), x, y);
 	}
 }
 
 function drawTrail(sim = activeSim(), other = false) {
-	if (careerRule() && cleanCareerView) return;
+	if (other) {
+		if (!trailRivalsOn) return;   // other players' trails: their own checkbox
+	} else if (cleanCareerView) {
+		return;                        // own trail: clean render hides it
+	}
 	const count = sim.trailCount;
 	if (count < 2) return;
 	const px = 1 / view.scale;

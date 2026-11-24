@@ -36,10 +36,9 @@ function refreshGameUi() {
 	runBoxEl.hidden = !game.on;
 	if (careerBoxEl) careerBoxEl.hidden = !career;
 	if (careerHudEl) careerHudEl.hidden = !career;
-	if (careerCleanLabelEl) careerCleanLabelEl.hidden = !career;
 	if (gameHudEl) gameHudEl.hidden = !career;
 	if (careerCleanEl) careerCleanEl.checked = cleanCareerView;
-	syncRadarViewUi(career && !careerPlanning ? activeCareer() : null);
+	syncTrajectoryUi(career && !careerPlanning ? activeCareer() : null);
 	refreshCareerClockUi();
 	if (rivalGroupEl) rivalGroupEl.hidden = !game.on || RULES[game.rule].solo;
 	syncModeRadios();

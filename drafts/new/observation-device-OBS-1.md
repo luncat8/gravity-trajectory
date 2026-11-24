@@ -12,9 +12,9 @@ bad space weather fields and planet's jammer decrease visit distance.
 OBS also work as radar in modes with hidden map to uncover around ship.
 currently does NOT work as planet's radar and cant send data about other ships in modes with trajectories hidden.
 
-OBS stop working and give no profit after ship wearing out.
+OBS stop working and give no profit after ship wearing out. → `0.7.2` (`../archive/0.7.2-plan-ship-wear.md`)
 
 
-uninstall obs possible only at rebel planet. uninstall obs useful to take bribe instead of visit profit. 
+uninstall obs possible only at planet with >75% corruption OR rebel planets. uninstall obs useful to take bribe instead of visit profit. → `0.7.50` / `0.7.52`: `uninstallRefusal` + `partRefusal` (`gravity_game.js`), `back OBS-0` in ship refit (`gui_shop.js`, `gui_career.js`)
 
 

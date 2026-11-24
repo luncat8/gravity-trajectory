@@ -481,8 +481,10 @@
 			noImpact: 0, book: 0, busy: 0, burn: 0, rescue: 0
 		};
 		/* radar (0.7.49): the planets another ship's predicted trajectory lands
-		 * on inside the horizon, refreshed once per scanned company and step */
+		 * on, with the earliest rival landing time on each, refreshed once per
+		 * scanned company and step */
 		this.radarHot = new Uint8Array(PLANETS);
+		this.radarHotTime = new Float64Array(PLANETS);
 		this.radarHotStep = -1;
 		this.radarHotCareer = null;
 		/* bounded decision trace and the last line per actor */
@@ -2791,12 +2793,14 @@
 		this.careerEval.taskPay = taskPay;
 		this.careerEval.padValue = padValue;
 		return taskPay + padValue -
-			this.careerRadarAvoid(career, body, runStep, taskPay + padValue);
+			this.careerRadarAvoid(career, body, runStep, taskPay + padValue,
+				GravitySim.gameSeconds(steps));
 	};
 
-	/* the planets another ship's predicted trajectory lands on inside the
-	 * radar horizon, once per scanned company and world step; the shared
-	 * radar memo keeps the per-ship predictions themselves cheap */
+	/* the planets another ship's predicted trajectory lands on, with the
+	 * earliest rival landing time on each, once per scanned company and world
+	 * step; the shared radar memo keeps the per-ship predictions themselves
+	 * cheap. No horizon cap: the reveal's landing time is the whole signal. */
 	GravityBot.prototype.careerRadarHot = function (career, runStep) {
 		if (this.radarHotStep === runStep && this.radarHotCareer === career) {
 			return this.radarHot;
@@ -2804,32 +2808,53 @@
 		this.radarHotStep = runStep;
 		this.radarHotCareer = career;
 		const hot = this.radarHot;
+		const when = this.radarHotTime;
 		hot.fill(0);
+		when.fill(0);
 		const actors = career.galaxy ? career.galaxy.actors : null;
 		for (let i = 0; actors && i < actors.length; i++) {
 			const other = actors[i];
 			if (other === career || !other.sim) continue;
-			/* the page keeps its own ship's buffers (aim trace, flight coast):
-			 * read them, never re-predict over them */
-			const keep = other === this.careerPlayer.career ? this.careerPlayer.sim : null;
-			if (!GravityGame.radarPredict(other, keep)) continue;
-			if (other.sim.predReason !== END_IMPACT || other.sim.predBody < 0) continue;
-			if (other.sim.predSteps * GravitySim.DT > GravityGame.RADAR_HORIZON) continue;
-			hot[other.sim.predBody] = 1;
+			let sim = other.sim;
+			if (other === this.careerPlayer.career) {
+				/* trace the player's coasting ship on exitProbe: never mutate
+				 * cargoSim's burn/aim buffers, and never depend on GUI frames */
+				if (sim.status !== STATUS_FLYING || other.evacuating) continue;
+				this.prepareCareerExitProbe(sim);
+				this.exitProbe.traceFromCargo(sim, 0, 0, GravityGame.RADAR_BUDGET_MS, false);
+				sim = this.exitProbe;
+			} else if (!GravityGame.radarPredict(other, null)) {
+				continue;
+			}
+			if (sim.predReason !== END_IMPACT || sim.predBody < 0) continue;
+			const body = sim.predBody;
+			/* the earliest rival landing on a planet is the one to beat */
+			const t = sim.predSteps * GravitySim.DT;
+			if (when[body] <= 0 || t < when[body]) when[body] = t;
+			hot[body] = 1;
 		}
 		return hot;
 	};
 
-	/* radar (0.7.49): what a radar company's launch scoring adds — a fraction
-	 * of the landing's value off a destination another ship is about to take:
-	 * one whose predicted trajectory lands there inside the horizon, one
-	 * parked on it now, or one whose rail already owns it. Without radar the
-	 * score is exactly what it was. */
-	GravityBot.prototype.careerRadarAvoid = function (career, body, runStep, score) {
+	/* radar (0.7.49): what a radar company's launch scoring adds — the
+	 * landing-time race the reveal makes visible. A destination another ship
+	 * is heading to is taken: this company concedes a fraction of the landing's
+	 * value, unless its own shot lands there first (`myTime` < the rival's
+	 * landing time), in which case it beats the rival and gains the same
+	 * fraction. A planet a ship sits on, or a rail another company owns, is
+	 * stale or captured ground and always concedes. Without radar the score is
+	 * exactly what it was. */
+	GravityBot.prototype.careerRadarAvoid = function (career, body, runStep, score, myTime) {
 		if (!career.radar || body < 0 || !(score > 0) || !career.galaxy) return 0;
 		const owner = GravityGame.claimOwner(career.galaxy, body);
 		if (owner >= 0 && owner !== career.index) return GravityGame.RADAR_AVOID * score;
-		if (this.careerRadarHot(career, runStep)[body]) return GravityGame.RADAR_AVOID * score;
+		if (this.careerRadarHot(career, runStep)[body]) {
+			const rival = this.radarHotTime[body];
+			if (myTime > 0 && rival > 0 && myTime < rival) {
+				return -GravityGame.RADAR_BEAT * score;
+			}
+			return GravityGame.RADAR_AVOID * score;
+		}
 		const actors = career.galaxy.actors;
 		for (let i = 0; i < actors.length; i++) {
 			const other = actors[i];

@@ -68,6 +68,14 @@ const planet = normalPlanet();
 market.corruption[planet] = 50;
 land(planet);
 check(!drawerHtml().includes('data-act="quiet"'), 'go quiet is offered at 50% rot');
+/* the plain `back OBS-0` uninstall obeys the same line */
+shop = ui.get('careerShop').innerHTML;
+check(/<button[^>]*disabled[^>]*>back OBS-0<\/button>/.test(shop),
+	'the uninstall is not gated below the line: ' + shop);
+act({ act: 'part', kind: 'obs', tier: '0' });
+check(career.ship.obs === Tech.OBS[1], 'unfitting below the line did nothing');
+check(ui.get('careerMsg').textContent.includes(Game.QUIET_MIN + '%'),
+	'no rot reason on the refused uninstall: ' + ui.get('careerMsg').textContent);
 market.corruption[planet] = 80;
 context.refreshCareerPanel();
 let html = drawerHtml();
@@ -77,6 +85,8 @@ check(/data-help="politics"[^>]*><span class="careerBtns"><button class="miniBtn
 	'the go-quiet row carries no help topic');
 check(/data-help="politics"[^>]*><span class="careerBtns"><button class="miniBtn" data-act="bribe"/.test(html),
 	'the bribe row carries no help topic');
+check(!/<button[^>]*disabled[^>]*>back OBS-0<\/button>/.test(html) && html.includes('back OBS-0'),
+	'the uninstall stays locked above the line: ' + html);
 
 /* the help drawer previews the topic while the pointer is on the row */
 const row = { dataset: { help: 'politics' } };

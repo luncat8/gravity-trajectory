@@ -91,11 +91,13 @@ function makePaint(calls, overlay) {
 		closePath() {}, strokeRect() {}, fillRect() {},
 		clearRect() {}, drawImage() {}, setTransform() {}, save() {},
 		restore() {}, translate() {}, scale() {}, setLineDash() {},
-		fillText(text) {
+		fillText(text, x, y) {
 			calls.fillText += 1;
-			if (calls.texts.length < 64) {
+			const idx = calls.texts.length;
+			if (idx < 256) {
 				calls.texts.push(String(text));
-				calls.textColors.push(this.fillStyle);
+				calls.textColors[idx] = this.fillStyle;
+				calls.textXY[idx] = [x, y];
 			}
 		},
 		stroke() {
@@ -167,7 +169,7 @@ function loadPage(options = {}) {
 		fillText: 0, stroke: 0, fill: 0, arc: 0, ellipse: 0,
 		gStroke: 0, gArc: 0, gEllipse: 0, gStrokeStyles: [],
 		putImageData: 0, lastImageData: null,
-		texts: [], textColors: []
+		texts: [], textColors: [], textXY: []
 	};
 	const paint = makePaint(calls, false);
 	const gPaint = makePaint(calls, true);

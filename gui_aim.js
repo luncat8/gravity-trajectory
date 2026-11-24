@@ -590,6 +590,8 @@ function onPointerDown(event) {
 	if (event.button !== 0 || (event.target !== tradeCanvas && !hudPadPress(event))) return;
 	const wx = worldX(event.clientX);
 	const wy = worldY(event.clientY);
+	/* the radar reveal (0.7.50): pressing another ship holds its radar mark */
+	radarPressSim = event.target === tradeCanvas ? radarShipAt(wx, wy) : null;
 	if (isBurnPaused() && shipAt(wx, wy)) {
 		if (beginBurnPress(event, wx, wy)) return;
 	}
@@ -671,12 +673,15 @@ function onPointerMove(event) {
 			refreshHoverLabel();
 		}
 		hoverPlanet = planet;
+		/* the radar reveal (0.7.50): hovering another ship shows its mark */
+		radarHoverSim = onCanvas ? radarShipAt(wx, wy) : null;
 	}
 	lastWX = wx;
 	lastWY = wy;
 }
 
 function onPointerUp(event) {
+	radarPressSim = null;
 	fine = event.shiftKey;
 	if (burnAiming) {
 		burnAiming = false;

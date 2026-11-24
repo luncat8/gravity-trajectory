@@ -122,9 +122,8 @@ const viewFullEl = $('viewFull');
 const potentialLegendEl = $('potentialLegend');
 const zoneBarEl = $('zoneBar');
 const careerCleanEl = $('careerClean');
-const careerCleanLabelEl = $('careerCleanLabel');
-const radarViewEl = $('radarView');
-const radarLabelEl = $('radarLabel');
+const trailViewEl = $('trailView');
+const predViewEl = $('predView');
 const sourceTagEl = $('sourceTag');
 const srcPlanetsEl = $('srcPlanets');
 const srcPortsEl = $('srcPorts');
@@ -360,11 +359,16 @@ let aimCeiling = SPEED_MAX;
 let mode = MODE_PLANETS;
 let viewMode = VIEW_SPACE;
 let viewDesired = VIEW_SPACE;
-/* career clean canvas: hides thick orbit visit highlights + past flight trails */
+/* career clean canvas: hides the own past-flight trail + thick orbit visit
+ * highlights — the own layer only, other players have their own checkboxes */
 let cleanCareerView = true;
-/* the radar overlay (0.7.49): off even when the facility is built — the
- * checkbox is the view, the facility is the asset */
-let radarViewOn = false;
+/* other players' past-flight trails (0.7.51): their own checkbox, every mode */
+let trailRivalsOn = true;
+/* other players' predicted trajectories (0.7.51): their own checkbox, every
+ * mode — career alone locks it until the selected company's HQ holds the
+ * radar, and the build ticks it; hovering or pressing a rival ship reveals
+ * that one ship even with the box off */
+let predRivalsOn = false;
 let pressing = false;
 let pressPlanet = -1;
 let pressClientX = 0;
@@ -645,9 +649,14 @@ if (careerCleanEl) {
 		cleanCareerView = careerCleanEl.checked;
 	});
 }
-if (radarViewEl) {
-	radarViewEl.addEventListener('change', () => {
-		radarViewOn = radarViewEl.checked;
+if (trailViewEl) {
+	trailViewEl.addEventListener('change', () => {
+		trailRivalsOn = trailViewEl.checked;
+	});
+}
+if (predViewEl) {
+	predViewEl.addEventListener('change', () => {
+		predRivalsOn = predViewEl.checked;
 	});
 }
 srcPlanetsEl.addEventListener('change', () => setSource(MODE_PLANETS));
@@ -1095,7 +1104,8 @@ root.GravityScene = {
 	frame: () => scene.view.frame,
 	setFrame: setViewFrame,
 	cleanCareerView: () => cleanCareerView,
-	radarView: () => radarViewOn,
+	trailRivals: () => trailRivalsOn,
+	predRivals: () => predRivalsOn,
 	liteMode: () => liteMode,
 	fieldRenderer: () => fieldRenderer,
 	playMode: () => (game.on ? game.rule : PLAY_LAB),
@@ -1147,6 +1157,8 @@ for (let s = 0; s < scoreBotEls.length; s++) {
 game.player = slotTypes[0];
 
 if (careerCleanEl) cleanCareerView = careerCleanEl.checked;
+if (trailViewEl) trailRivalsOn = trailViewEl.checked;
+if (predViewEl) predRivalsOn = predViewEl.checked;
 if (careerPauseLandEl) pauseOnLanding = careerPauseLandEl.checked;
 if (careerAutoRepairEl) autoRepair = careerAutoRepairEl.checked;
 refreshPlaybackUi();

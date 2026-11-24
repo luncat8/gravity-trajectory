@@ -1,4 +1,14 @@
 
+## check
+
+ensure helper radio implemented properly. see draft. 
+show helper call when issue detected
+do not show useless info.
+
+probably need refactoring or re-implement from zero
+
+##
+
 разработать концепцию капитана база - помощника (H-helper). Для начала польза от него - информация для игрока (P-player). можно открыть диалог и выбрать вопросы
 Продумать типичные вопросы и дерево ответов и систему которая будет динамически их формировать.
 
@@ -12,7 +22,9 @@ H:
 			* ты можешь подождать немного и взять взятку. учти это доступно только один раз пока ты не посетишь др планету
 			* или подождать пока кто-то купит EMC или топливо на твоей базе на одной из планет. *но у тебя таких нет*
 	- у тебя сломан корабль надо починить в местной мастерской. [repair btn in dialog]
+	(system check if user can do this)
 		Но у тебя нет денег.
+		 list note about ways to earn money that are available NOW and not available because of reasons
 			...
 
 P:

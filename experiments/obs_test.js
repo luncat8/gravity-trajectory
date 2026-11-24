@@ -56,7 +56,11 @@ function check(name, fn) { fn(); checks += 1; console.log('ok - ' + name); }
 const AGED = -1e9;
 
 function unfit(w) {
+	const at = w.career.at;
+	const saved = w.market.rebel[at];
+	w.market.rebel[at] = 1;
 	assert.ok(Game.installPart(w.career, Tech.KIND_OBS, Tech.OBS[0]), 'unfit to OBS-0');
+	w.market.rebel[at] = saved;
 }
 
 check('every career starts with OBS-1 fitted and owned; the starter mass is unchanged', () => {
@@ -210,15 +214,14 @@ check('go quiet takes the device off, silences the planet and names every refusa
 	assert.strictEqual(Game.quietRefusal(career, market, planet), 'not landed there');
 	career.at = planet;
 	market.corruption[planet] = Game.QUIET_MIN;
-	assert.ok(Game.quietRefusal(career, market, planet).includes(Game.QUIET_MIN + '%'), 'at the line is not above it');
+	market.rebel[planet] = 1;
+	assert.ok(Game.quietRefusal(career, market, planet).includes(Game.QUIET_MIN + '%'), 'at the line is not above it, rebel or not');
 	assert.strictEqual(Game.goQuiet(career, market, planet), false);
 	market.corruption[planet] = 80;
 	unfit(w);
 	assert.strictEqual(Game.quietRefusal(career, market, planet), 'no observation device fitted');
 	assert.ok(Game.installPart(career, Tech.KIND_OBS, Tech.OBS[1]));
-	market.rebel[planet] = 1;
-	assert.strictEqual(Game.quietRefusal(career, market, planet), 'rebels hold the planet');
-	market.rebel[planet] = 0;
+	assert.strictEqual(Game.quietRefusal(career, market, planet), '', 'a rotten rebel planet may go quiet');
 	const stamp = market.stamp;
 	assert.strictEqual(Game.goQuiet(career, market, planet), true);
 	assert.strictEqual(market.quiet[planet], 1);
@@ -231,6 +234,29 @@ check('go quiet takes the device off, silences the planet and names every refusa
 	assert.strictEqual(Game.quietRefusal(career, market, market.capitalPlanet), 'nothing to silence here');
 	career.at = market.arfPlanet;
 	assert.strictEqual(Game.quietRefusal(career, market, market.arfPlanet), 'nothing to silence here');
+});
+
+check('the plain back OBS-0 uninstall needs >75% rot or a rebel planet', () => {
+	const w = setup(31);
+	const planet = normalPlanet(w);
+	const career = w.career;
+	const market = w.market;
+	career.at = planet;
+	market.corruption[planet] = 50;
+	market.rebel[planet] = 0;
+	assert.strictEqual(Game.uninstallRefusal(career, market, planet),
+		'the rulers only dare above ' + Game.QUIET_MIN + '% corruption or on a rebel world');
+	assert.strictEqual(Game.partRefusal(career, Tech.KIND_OBS, Tech.OBS[0]),
+		Game.uninstallRefusal(career, market, planet));
+	assert.strictEqual(Game.installPart(career, Tech.KIND_OBS, Tech.OBS[0]), false,
+		'installPart enforces the uninstall gate too');
+	market.corruption[planet] = 80;
+	assert.strictEqual(Game.uninstallRefusal(career, market, planet), '', 'above the line the device may come off');
+	market.corruption[planet] = 50;
+	market.rebel[planet] = 1;
+	assert.strictEqual(Game.uninstallRefusal(career, market, planet), '', 'a rebel planet may always uninstall');
+	assert.ok(Game.installPart(career, Tech.KIND_OBS, Tech.OBS[0]), 'the uninstall itself');
+	assert.strictEqual(Game.uninstallRefusal(career, market, planet), 'no observation device fitted');
 });
 
 check('refitting the device does not un-silence the planet; quelling the rot does', () => {

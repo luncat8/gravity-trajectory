@@ -86,6 +86,8 @@ const SLOW = [
 	['politics_gui_test.js', 1],
 	['comms_page_test.js', 1],
 	['fair_start_gui_test.js', 3],
+	['radar_test.js', 5],
+	['lab_radar_test.js', 1],
 	['profit_monotonic_test.js', 1],
 	['career_pause_test.js', 1],
 	['lite_mode_test.js', 6],

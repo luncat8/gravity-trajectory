@@ -252,12 +252,16 @@ function repairBlockHtml(career) {
 	const cost = GravityGame.repairCost(career);
 	const worn = career.ship.condition < 1;
 	const poor = purseTooSmall(career, cost);
-	const open = career.ended === GravityGame.CAREER_OPEN;
+	/* repair is a service on the planet under the ship — never in flight */
+	const landed = career.ended === GravityGame.CAREER_OPEN && career.at >= 0 && !career.flying;
+	const why = !worn ? 'the ship is as new'
+		: !landed ? 'no repair in space · land first'
+		: poor ? 'purse cannot cover the repair'
+		: 'full repair · wear costs visits and launches at 0 %';
 	return '<div class="careerRow"><span>condition ' + conditionText(career) +
 		(worn ? ' · repair ' + costText(cost) : '') + '</span><span class="careerBtns">' +
-		shopButtonRef('repair', 'repair', 'ship', '', !worn || poor || !open,
-			!worn ? 'the ship is as new' : poor ? 'purse cannot cover the repair'
-				: 'full repair · wear costs visits and launches at 0 %', worn && poor) +
+		shopButtonRef('repair', 'repair', 'ship', '', !worn || !landed || poor,
+			why, worn && poor) +
 		'</span></div>';
 }
 
@@ -441,7 +445,7 @@ function guestFeeClause(career, planet) {
 function radarRowHtml(career, at) {
 	if (at !== career.hq || career.hq < 0) return '';
 	if (career.radar) {
-		return '<div class="careerLine dim">radar at HQ · every ship\u2019s predicted landing is on the radar (view bar)</div>';
+		return '<div class="careerLine dim">radar at HQ · every ship\u2019s predicted landing is on the radar (the predicted box in the view bar)</div>';
 	}
 	if (career.ended !== GravityGame.CAREER_OPEN) return '';
 	const cost = careerCost(career, GravityGame.RADAR_COST);
@@ -449,7 +453,7 @@ function radarRowHtml(career, at) {
 	return '<div class="careerRow"><span class="careerBtns">' +
 		'<button class="miniBtn' + (poor ? ' costly' : '') + '" data-act="radar"' +
 		(poor ? ' disabled' : '') +
-		' title="build the radar at this HQ: a ghost on every ship\u2019s predicted trajectory with the time to its next landing, own and rivals alike \u00b7 the radar checkbox in the view bar turns the reveal on">build radar \u00b7 ' +
+		' title="build the radar at this HQ: a ghost on every ship\u2019s predicted trajectory with the time to its landing, own and rivals alike \u00b7 building it also ticks the predicted checkbox in the view bar \u00b7 hovering or pressing a rival ship reveals its path even with the box off \u00b7 best on long flights and simultaneous starts: see a rival\u2019s move, then out-aim or dodge">build radar \u00b7 ' +
 		costText(cost) + '</button></span></div>';
 }
 
@@ -669,7 +673,8 @@ function partCapText(career, row, cur, change) {
 
 /* one refit button: forward buys/installs the next tier, `back` returns to
  * an owned lighter one (item null = strip the engine). Any landed ship can be
- * refitted; only a ship still in flight is gated. */
+ * refitted; only a ship still in flight is gated — plus the observation
+ * uninstall, which waits for the go-quiet corruption line (plus the rebel-planet exception) (0.7.50). */
 function partButtonHtml(career, row, item, back) {
 	const landed = career.at >= 0;
 	const at = landed ? career.at : career.hq;
@@ -684,16 +689,20 @@ function partButtonHtml(career, row, item, back) {
 		? ' · Δv ' + dv.toFixed(1) + ' px/s' +
 			(burnCap < dv - 0.05 ? ' (burn ' + burnCap.toFixed(1) + ')' : '')
 		: '';
+	/* the obs uninstall is the plain `back OBS-0`: partRefusal enforces it */
+	const refusal = back && row.kind === OrbitTech.KIND_OBS && landed
+		? GravityGame.partRefusal(career, row.kind, item) : '';
 	const title = 'refit ' + name + (landed ? '' : ' · land on a planet first') + ' · ' +
 		partStatText(row.kind, item) + ' · ship ' + mass.toFixed(1) + ' t · ' +
 		planetName(at) + ' cap ' + Math.round(partCap(career, row, item)) + ' px/s' + dvNote +
-		(fits ? '' : ' · drops ' + career.ship.cargoTons + ' t cargo first');
+		(fits ? '' : ' · drops ' + career.ship.cargoTons + ' t cargo first') +
+		(refusal ? ' · ' + refusal : '');
 	const label = back ? 'back ' + name
 		: (owned ? 'fit ' : 'buy ') + name + ' · ' + costText(price);
 	const poor = purseTooSmall(career, price);
 	return shopButton(label, 'part', row.kind,
 		item === null ? NO_TIER : tierIndex(row.table, item),
-		!landed || !fits || poor, title, poor && landed && fits);
+		!landed || !fits || poor || Boolean(refusal), title, poor && landed && fits);
 }
 
 function partRowHtml(career, row) {

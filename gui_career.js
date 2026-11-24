@@ -337,7 +337,9 @@ function careerPart(career, kind, item) {
 	const name = item === null ? 'no engine' : item.id;
 	if (!GravityGame.installPart(career, kind, item)) {
 		const reason = GravityGame.partRefusal(career, kind, item);
-		careerNotice('cannot fit ' + name + (reason ? ' · ' + reason : ''));
+		careerNotice((kind === OrbitTech.KIND_OBS && item && !item.fitted
+			? 'cannot take the device off' : 'cannot fit ' + name) +
+			(reason ? ' · ' + reason : ''));
 		return;
 	}
 	recordCareerShop('part', kind, item);
@@ -679,8 +681,11 @@ function careerRadar() {
 		return;
 	}
 	recordCareerAction('act', { act: 'radar' });
-	careerNotice('radar built at HQ · every ship\u2019s predicted landing is on the radar · ' +
-		'tick the view-bar checkbox to see it');
+	/* 0.7.51: the reveal is on the moment the facility exists — the build
+	 * also ticks the predicted checkbox, so the ghosts start drawing at once */
+	predRivalsOn = true;
+	if (predViewEl) predViewEl.checked = true;
+	careerNotice('radar built at HQ · every ship\u2019s predicted landing is on the radar');
 	careerChanged();
 	return true;
 }

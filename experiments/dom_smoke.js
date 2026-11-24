@@ -3670,13 +3670,13 @@ function protoOf(career, family, id) {
 	check(cui.get('careerCleanLabel').hidden === false,
 		'career clean render checkbox is visible in career mode');
 
-	/* hidden outside career mode */
+	/* 0.7.51: clean render is the own-layer switch in every mode now */
 	cg.setPlayMode('tour');
 	cleanEnv.runFrames(1, 16.0);
-	check(cui.get('careerCleanLabel').hidden === true, 'career clean checkbox hides in tour mode');
+	check(cui.get('careerCleanLabel').hidden === false, 'clean render stays visible in tour mode');
 	cg.setPlayMode('career');
 	cleanEnv.runFrames(1, 16.0);
-	check(cui.get('careerCleanLabel').hidden === false, 'career clean checkbox returns in career mode');
+	check(cui.get('careerCleanLabel').hidden === false, 'clean render stays visible in career mode');
 
 	/* 0.4.30 fix: dragging experiment sliders keeps stay-pay · per tick checked */
 	cui.get('expHarvest').checked = true;

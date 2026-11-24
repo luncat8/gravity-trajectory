@@ -1475,7 +1475,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			 * through it; live references like these are never saved */
 			sim: null,
 			radar: false,
-			radarStamp: { steps: -1, vx: 0, vy: 0 },
+			radarStamp: { steps: -1, t0: -1, vx: 0, vy: 0 },
 			/* the run's active planet subset; null = every planet in play */
 			planetMask: null,
 			planetCount: OrbitWorld.PLANETS,
@@ -4567,16 +4567,18 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * builds EMC-1 before radar. */
 	const RADAR_COST = 6;
 	/* per-ship prediction cap, the aim-trace class, so the reveal never
-	 * stalls a frame: six game seconds of flight per call — the bot's own
-	 * planning horizon — and a memo so parked skies and other ships' frames
-	 * cost nothing. A trace the budget truncates (a long coast) shows its
-	 * partial path with no landing ghost, exactly like the live flight
+	 * stalls a frame: a fixed CPU budget in real milliseconds (the same
+	 * class as the aim trace), and a memo so parked skies and other ships'
+	 * frames cost nothing. A trace the budget truncates (a long coast) shows
+	 * its partial path with no landing ghost, exactly like the live flight
 	 * prediction the page already draws at its own budget. */
 	const RADAR_BUDGET_MS = 6;
-	/* a landing another ship reaches inside this window contestes the prize */
-	const RADAR_HORIZON = 45;
-	/* the score fraction a radar company gives up on a taken destination */
+	/* the landing-time race the reveal makes visible: a destination another
+	 * ship is heading to is taken, so a radar company concedes this fraction
+	 * of the landing's value — unless its own shot lands there first, in which
+	 * case it beats the rival and gains the same fraction */
 	const RADAR_AVOID = 0.25;
+	const RADAR_BEAT = RADAR_AVOID;
 
 	/* pure build gate: at the HQ, career open, the purse covers it */
 	function canBuildRadar(career) {
@@ -4609,13 +4611,15 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			stamp.steps = -1;
 			return false;
 		}
-		if (keep !== sim && (stamp.steps !== sim.liveSteps ||
-			stamp.vx !== sim.cargo.vx || stamp.vy !== sim.cargo.vy)) {
+		if (keep === sim) return true;
+		if (stamp.steps !== sim.liveSteps || stamp.t0 !== sim.flightFieldT ||
+			stamp.vx !== sim.cargo.vx || stamp.vy !== sim.cargo.vy) {
 			sim.predictFlight(RADAR_BUDGET_MS);
+			stamp.steps = sim.liveSteps;
+			stamp.t0 = sim.flightFieldT;
+			stamp.vx = sim.cargo.vx;
+			stamp.vy = sim.cargo.vy;
 		}
-		stamp.steps = sim.liveSteps;
-		stamp.vx = sim.cargo.vx;
-		stamp.vy = sim.cargo.vy;
 		return true;
 	}
 
@@ -4888,6 +4892,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		/* a restart is a new company: no radar, and no stale reveal memo */
 		career.radar = false;
 		career.radarStamp.steps = -1;
+		career.radarStamp.t0 = -1;
 		career.commercialPlanet = -1;
 		career.commercialPads = null;
 		career.capitalPlanet = specialPlanets ? trade.world.capitalPlanet : -1;
@@ -5465,7 +5470,6 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (career.arrested) return 'under arrest';
 		if (planet < 0 || career.at !== planet || career.flying) return 'not landed there';
 		if (planet === market.capitalPlanet || planet === market.arfPlanet) return 'nothing to silence here';
-		if (market.rebel[planet]) return 'rebels hold the planet';
 		if (market.quiet[planet]) return 'already quiet';
 		if (!career.ship.obs.fitted) return 'no observation device fitted';
 		if (market.corruption[planet] <= QUIET_MIN) {
@@ -5481,6 +5485,24 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.ship.obs = OrbitTech.OBS[0];
 		refitShip(career);
 		return true;
+	}
+
+	/*
+	 * The plain `back OBS-0` refit is an uninstall too (0.7.50): the device
+	 * only leaves the ship where the rulers are rotten enough to want it
+	 * gone — above QUIET_MIN% corruption, or on a rebel world (a seized planet frees the device at any rot),
+	 * minus the planet-wide silence. Fitting the device stays open anywhere.
+	 */
+	function uninstallRefusal(career, market, planet) {
+		if (!career || career.ended !== CAREER_OPEN) return 'career over';
+		if (!market || !market.galaxy) return 'no politics here';
+		if (career.arrested) return 'under arrest';
+		if (planet < 0 || career.at !== planet || career.flying) return 'not landed there';
+		if (!career.ship.obs.fitted) return 'no observation device fitted';
+		if (market.corruption[planet] <= QUIET_MIN && !market.rebel[planet]) {
+			return 'the rulers only dare above ' + QUIET_MIN + '% corruption or on a rebel world';
+		}
+		return '';
 	}
 
 	/* the Capital's slow transport: no fee, no reward, no medics, no planning.
@@ -5634,6 +5656,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		}
 		if (kind === OrbitTech.KIND_HOLD && item.capacity < career.ship.cargoTons) {
 			return 'drop the ' + career.ship.cargoTons + ' t cargo first';
+		}
+		if (kind === OrbitTech.KIND_OBS && !item.fitted && career.market && career.market.galaxy) {
+			const refusal = uninstallRefusal(career, career.market, career.at);
+			if (refusal !== '') return refusal;
 		}
 		if (!career.owned[item.id] && !canPay(career, item.buildCost)) return 'purse too small';
 		return '';
@@ -7755,7 +7781,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		bindRun, politicsSeconds, rebelRail, setPolitics, politicsOn,
 		advancePolitics, acceptBribe, bribeAmount, bribeWindowOpen, bribeRefusal,
 		stampReport,
-		visitReports, quietRefusal, goQuiet,
+		visitReports, quietRefusal, goQuiet, uninstallRefusal,
 		arrestCareer, pacifyPlanet, seizePlanet, clearMedicalCargo, coveredPlanets, BRIBE,
 		createLedger, resetLedger, beginFlight, stepHarvest, harvestPlanet, endFlight,
 		estimateProfit, estimateProfitLog, compareScores,
@@ -7798,7 +7824,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		setPadScale, padScaleOf, setRotScale, rotScaleOf, setPayScale, payScaleOf,
 		GIFT, GIFT_POOL, GIFT_FRONTIER, setStartGifts, startGiftsOf, giftBudget, drawGifts,
 		grantStartGifts, giftText,
-		RADAR_COST, RADAR_BUDGET_MS, RADAR_HORIZON, RADAR_AVOID,
+		RADAR_COST, RADAR_BUDGET_MS, RADAR_AVOID, RADAR_BEAT,
 		canBuildRadar, buildRadar, radarPredict, radarShips,
 		careerPadSeconds, careerPadMinutes, careerWaitPadSeconds,
 		launchWear, spaceWear, impulseWear, landingWear,

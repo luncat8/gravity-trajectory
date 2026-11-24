@@ -178,6 +178,9 @@ const GRAVITY_STRINGS = new Array(701);
 for (let c = -200; c <= 500; c++) {
 	GRAVITY_STRINGS[c + 200] = 'g ' + (c > 0 ? '+' : '') + (c / 100).toFixed(2);
 }
+/* radar landing-time plates (0.7.49): cached so draw() stays 0-alloc */
+const RADAR_TIME_STRINGS = new Array(601);
+for (let s = 0; s <= 600; s++) RADAR_TIME_STRINGS[s] = '+' + s + ' s';
 const HEAVY_G = root.GravityField ? root.GravityField.HEAVY_G : 2;
 /* Ordered by perceptual separation, including YOU's mint and the two original rivals. */
 const RIVAL_COLOURS = [
@@ -273,7 +276,8 @@ const POLITICS_HELP = {
 	detail: 'The observation device ' + OrbitTech.OBS[1].id + ' (ship refit, observer) is what reports. Without it the ship is ' +
 		OrbitTech.OBS[1].mass.toFixed(1) + ' t lighter, its visits pay nothing and clear nothing. Above ' +
 		GravityGame.QUIET_MIN + '% corruption, go quiet takes the device off on that planet: nobody reports there ' +
-		'until medics quell it, the unreported value keeps growing, and only a bribe cashes it.',
+		'until medics quell it, the unreported value keeps growing, and only a bribe cashes it. ' +
+		'The plain back refit to ' + OrbitTech.OBS[0].id + ' obeys the same line — and a rebel planet may uninstall the device at any rot.',
 	controls: ''
 };
 const RULE_HELP = {

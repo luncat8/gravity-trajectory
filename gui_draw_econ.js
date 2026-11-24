@@ -61,9 +61,9 @@ function drawRivalsWorld(now) {
 			drawRoutePlanEntry(sim, routeLeader === rIdx, colour, RIVAL_TRAILS[rIdx], px);
 		}
 		if (active === rIdx + 1) continue;
-		/* rival trail */
+		/* rival trail: the trails checkbox owns other players' past flights */
 		const count = sim.trailCount;
-		if (count >= 2 && !(careerRule() && cleanCareerView)) {
+		if (count >= 2 && trailRivalsOn) {
 			const stride = count > 2400 ? 2 : 1;
 			ctx.beginPath();
 			ctx.moveTo(sim.trailX[0], sim.trailY[0]);

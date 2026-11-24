@@ -359,6 +359,7 @@ function applyRunRecord(record) {
 	syncPlanetGravity();
 	cargoSim.fieldT = tradeSim.t;
 	cargoSim.fieldRate = scene.trade.speed;
+	if (activeCareer() && activeCareer().radar) predRivalsOn = true;
 	dirty = true;
 	refreshCareerClockUi();
 	refreshGameUi();

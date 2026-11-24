@@ -7,13 +7,14 @@
 
 'use strict';
 
-/* the radar checkbox (0.7.49): career-only, enabled only while the selected
- * company owns the facility; the view off state is the operator's choice */
-function syncRadarViewUi(career) {
-	if (radarLabelEl) radarLabelEl.hidden = !career;
-	if (!radarViewEl) return;
-	radarViewEl.disabled = !career || !career.radar;
-	radarViewEl.checked = radarViewOn;
+/* the trajectory checkboxes (0.7.51): trails and predicted work in every
+ * mode; career alone locks predicted until the selected company's HQ holds
+ * the radar — the facility is the asset, the checkbox is the view */
+function syncTrajectoryUi(career) {
+	if (trailViewEl) trailViewEl.checked = trailRivalsOn;
+	if (!predViewEl) return;
+	predViewEl.disabled = Boolean(career) && !career.radar;
+	predViewEl.checked = predRivalsOn;
 }
 
 function refreshViewUi() {
@@ -22,9 +23,8 @@ function refreshViewUi() {
 	if (viewFieldEl) viewFieldEl.checked = viewMode === VIEW_FIELD;
 	if (viewPotentialEl) viewPotentialEl.checked = viewMode === VIEW_POTENTIAL;
 	if (potentialLegendEl) potentialLegendEl.hidden = viewMode !== VIEW_POTENTIAL;
-	if (careerCleanLabelEl) careerCleanLabelEl.hidden = !careerRule();
 	if (careerCleanEl) careerCleanEl.checked = cleanCareerView;
-	syncRadarViewUi(careerRule() ? activeCareer() : null);
+	syncTrajectoryUi(careerRule() ? activeCareer() : null);
 	if (!viewTagEl) return;
 	if (viewMode === VIEW_SPACE || !fieldRenderer) {
 		const lost = fieldRenderer !== null && fieldRenderer.backend() === 'lost';

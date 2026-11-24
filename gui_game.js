@@ -182,6 +182,8 @@ function finishCareerStart(seed) {
 	/* YOU as a bot: the page keeps the ship, the bot plans and shops for it */
 	bot.attachCareerPlayer(game.career, cargoSim);
 	game.career.forceScale = cargoSim.forceScale;
+	/* a gifted radar turns the view on from step 0, like building it */
+	if (game.career.radar) predRivalsOn = true;
 	/* the ship starts landed on HQ: the landing pause applies from turn one,
 	 * but a bot-run YOU never needs the clock stopped to aim */
 	for (let s = 0; s < slotCount(); s++) slotPaused[s] = pauseOnLanding && !slotIsBot(s);
