@@ -90,12 +90,26 @@ function makeWorld(seed) {
 
 /* --- 1. Default ×1.00 zero-drift identity -------------------------------- */
 
+/* 0.7.48 added three start-gift keys to every career; at the default zero
+ * budgets they must be empty, and without them the state is the baseline's */
+function withoutGiftKeys(state) {
+	const copy = JSON.parse(JSON.stringify(state));
+	for (const career of copy.careers) {
+		assert.ok(career.giftCredit === 0 && career.giftCash === 0 && career.giftDrawn.length === 0,
+			'default run draws no start gift');
+		delete career.giftCredit;
+		delete career.giftCash;
+		delete career.giftDrawn;
+	}
+	return copy;
+}
+
 check('default ×1.00 career run matches pre-0.7.42 600-step state bit-for-bit', () => {
 	const page = loadPage({ search: mapSearch(3) + '&you=bot&rate=1' });
 	page.runFrames(50, 25);
 	assert.strictEqual(page.context.GravityScene.game.clockSteps, 600);
 	const state = page.context.GravityMaps.captureState(page.context.mapRunInfo());
-	const sha = crypto.createHash('sha256').update(JSON.stringify(state)).digest('hex');
+	const sha = crypto.createHash('sha256').update(JSON.stringify(withoutGiftKeys(state))).digest('hex');
 	assert.strictEqual(sha, PRE_0742_STEP600_SHA256,
 		'default ×1.00 diverged from pre-0.7.42 career baseline');
 	const searchParams = new URLSearchParams(page.context.location.search);

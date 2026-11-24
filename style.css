@@ -1151,6 +1151,46 @@ body {
 	width: auto;
 }
 
+/* start gifts (0.7.48): three budget sliders and the preview line */
+.giftBlock {
+	margin-top: 7px;
+	padding-top: 6px;
+	border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.giftHead {
+	display: flex;
+	justify-content: space-between;
+	margin-bottom: 3px;
+	color: var(--dim);
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.giftHead label {
+	text-transform: none;
+	letter-spacing: 0;
+	cursor: pointer;
+}
+
+.giftBlock .ctl span {
+	white-space: nowrap;
+	min-width: 58px;
+}
+
+#cargoHud .giftBlock .ctl input[type="range"] {
+	width: auto;
+	flex: 1 1 0;
+}
+
+.giftPreview {
+	margin-top: 3px;
+	color: var(--dim);
+	font-size: 10px;
+	line-height: 1.45;
+}
+
 .soundHint {
 	margin: 7px 0 0;
 	color: var(--dim);

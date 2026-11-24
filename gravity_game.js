@@ -185,8 +185,14 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return '&' + name + '=' + (Math.round(value * 100) / 100);
 	}
 
+	/* whole-cr start-gift budget, omitted at 0 */
+	function giftPart(name, value) {
+		return value > 0 ? '&' + name + '=' + value : '';
+	}
+
 	/* `game` = { seed, rate, rule, bot, player, cheat, gravityScale, forceScale,
-	 * spaceWearScale, harvestTick, shots, visited, steps, length }; default rule/bot/player/scales stay
+	 * spaceWearScale, harvestTick, giftAll, giftBot, giftHuman, shots, visited,
+	 * steps, length }; default rule/bot/player/scales/gifts stay
 	 * omitted; `length` verifies a route plan. A career link starts the same
 	 * career (seed, rate, cheat, scales) — its builds and contracts are not
 	 * replayed, so it never carries shots. */
@@ -202,7 +208,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				? scalePart('ws', game.spaceWearScale) + scalePart('ps', game.padScale) +
 					scalePart('rs', game.rotScale) + scalePart('ys', game.payScale)
 				: '') +
-			(game.rule === RULE_CAREER && game.harvestTick ? '&ht=1' : '');
+			(game.rule === RULE_CAREER && game.harvestTick ? '&ht=1' : '') +
+			(game.rule === RULE_CAREER
+				? giftPart('ga', game.giftAll) + giftPart('gb', game.giftBot) + giftPart('gh', game.giftHuman)
+				: '');
 		if (game.shots.length === 0 || game.rule === RULE_CAREER) return head;
 		const lengthPart = game.rule === RULE_ROUTE && Number.isFinite(game.length)
 			? '&len=' + Math.round(game.length) : '';
@@ -248,8 +257,16 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return value;
 	}
 
+	/* absent = 0, otherwise a whole number of cr inside [0, GIFT.budgetMax] */
+	function decodeGift(text) {
+		if (text === null) return 0;
+		if (!/^\d{1,2}$/.test(text)) return null;
+		const value = Number(text);
+		return value <= GIFT.budgetMax ? value : null;
+	}
+
 	/* Returns { seed, rate, rule, bot, player, cheat, gravityScale, forceScale,
-	 * spaceWearScale, harvestTick, shots, end, length } or null. */
+	 * spaceWearScale, harvestTick, giftAll, giftBot, giftHuman, shots, end, length } or null. */
 	function decodeLink(text) {
 		const params = new URLSearchParams(String(text).replace(/^#/, ''));
 		if (params.get('game') !== String(FORMAT)) return null;
@@ -280,6 +297,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const harvestText = params.get('ht');
 		if (harvestText !== null && harvestText !== '1' && harvestText !== '0') return null;
 		const harvestTick = harvestText === '1';
+		const giftAll = decodeGift(params.get('ga'));
+		const giftBot = decodeGift(params.get('gb'));
+		const giftHuman = decodeGift(params.get('gh'));
+		if (giftAll === null || giftBot === null || giftHuman === null) return null;
+		if (rule.name !== RULE_CAREER && giftAll + giftBot + giftHuman > 0) return null;
 		const list = params.get('shots');
 		const parts = list ? list.split('_') : [];
 		if (rule.planner && parts.length > 1) return null;
@@ -301,6 +323,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return { seed: seed, rate: rate, rule: rule.name, bot: bot, player: player, cheat: cheat,
 			gravityScale: gravityScale, forceScale: forceScale, spaceWearScale: spaceWearScale,
 			padScale: padScale, rotScale: rotScale, payScale: payScale, harvestTick: harvestTick,
+			giftAll: giftAll, giftBot: giftBot, giftHuman: giftHuman,
 			shots: shots, end: end, length: length };
 	}
 
@@ -866,6 +889,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	const SALT_POLITICS = 0xce;
 	const SALT_ARREST = 0xcf;
 	const SALT_BRIBE = 0xd0;
+	const SALT_GIFT = 0xd1;
 	const TAU = Math.PI * 2;
 
 	/*
@@ -1539,7 +1563,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		flownPx: 0,
 		feesPaid: 0,
 		buildSpent: 0,
-		sciSpent: 0
+		sciSpent: 0,
+		giftCredit: 0,
+		giftCash: 0,
+		giftDrawn: []
 		};
 	}
 
@@ -4453,9 +4480,10 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	/* the career's money, where it came from and where it went:
 	 * income − running = profit; property and science are where profit went.
-	 * purse = starter purse + profit − property − science.
+	 * purse = starter purse + gift + profit − property − science.
 	 * fills the caller-owned row without allocating */
 	function careerStats(out, career) {
+		out.gift = career.giftCredit;
 		out.income = career.visitIncome + career.earned + career.bribeIncome + career.taxEarned;
 		out.running = career.feesPaid + career.fuelSpent + career.maintenanceSpent +
 			career.evacuationSpent + career.stakeSpent;
@@ -4497,7 +4525,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* sampler scratch: the getters fill a caller-owned row, so one sample
 	 * step costs no allocation even with the full 17-company roster */
 	const sampleMapOut = { rot: 0, standing: 0 };
-	const sampleCareerOut = { income: 0, running: 0, profit: 0, property: 0, science: 0, flown: 0 };
+	const sampleCareerOut = { gift: 0, income: 0, running: 0, profit: 0, property: 0, science: 0, flown: 0 };
 
 	/* write one stats sample at `step`: rot/standing for the map and
 	 * profit/property/science/flown for every company in the galaxy.
@@ -4522,6 +4550,181 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		}
 		stats.count = count + 1;
 		stats.nextStep = step + stats.every;
+	}
+
+	/* --- start gifts (0.7.48) ------------------------------------------------
+	 * an operator budget drawn per company at start: a few pool entries, the
+	 * rest as cash. The pool is data. A kit is priced at its parts' build cost,
+	 * so a gift never disagrees with the shop; kits pair an engine with its
+	 * tank, because an engine without fuel is no gift. Gifted parts are owned,
+	 * not fitted: the start ship stays the one the fair-start seats were
+	 * planned for, and a refit to an owned part is free. A science entry is
+	 * the research budget of one invention. Cash is never an entry: it is
+	 * what the draws leave. The 0.7.49 radar entry joins the table when the
+	 * facility exists. */
+	const GIFT = { budgetMax: 20, maxDraws: 3 };
+	const GIFT_PART = 'part';
+	const GIFT_SCIENCE = 'science';
+	const GIFT_POOL = [
+		{ id: 'imp1', kind: GIFT_PART, weight: 3, items: ['IMP-1', 'FT-1'] },
+		{ id: 'imp2', kind: GIFT_PART, weight: 2, items: ['IMP-2', 'FT-2'] },
+		{ id: 'imp3', kind: GIFT_PART, weight: 1, items: ['IMP-3', 'FT-3'] },
+		{ id: 'sci3', kind: GIFT_SCIENCE, weight: 2, value: 3 },
+		{ id: 'sci6', kind: GIFT_SCIENCE, weight: 2, value: 6 },
+		{ id: 'sci10', kind: GIFT_SCIENCE, weight: 1, value: 10 }
+	];
+	for (let i = 0; i < GIFT_POOL.length; i++) {
+		const entry = GIFT_POOL[i];
+		if (entry.kind !== GIFT_PART) continue;
+		entry.parts = entry.items.map(giftPartById);
+		entry.value = round2(entry.parts.reduce((sum, item) => sum + item.buildCost, 0));
+	}
+	/* a science gift invents one point on the segment from a known rung toward
+	 * the family's next step, as far out as its value pays at the start hull */
+	const GIFT_FRONTIER = [
+		{ family: OrbitTech.KIND_CATAPULT, from: 'EMC-2', to: [135, 0.80] },
+		{ family: OrbitTech.KIND_ENGINE, from: 'IMP-3', to: [56, 2.5] },
+		{ family: OrbitTech.KIND_TANK, from: 'FT-3', to: [220, 1.4] },
+		{ family: OrbitTech.KIND_BATTERY, from: 'BAT-5', to: [22, 0.0003] }
+	];
+	const GIFT_T_STEPS = 100;
+	let giftAll = 0;
+	let giftBot = 0;
+	let giftHuman = 0;
+
+	function giftPartById(id) {
+		for (let k = 0; k < OrbitTech.PART_KINDS.length; k++) {
+			const item = OrbitTech.findKind(OrbitTech.PART_KINDS[k], id);
+			if (item) return item;
+		}
+		throw new Error('unknown gift part ' + id);
+	}
+
+	function clampGift(value) {
+		const v = Math.round(Number(value));
+		if (!Number.isFinite(v) || v < 0) return 0;
+		return v > GIFT.budgetMax ? GIFT.budgetMax : v;
+	}
+
+	/* the run's three budgets; read once per company start */
+	function setStartGifts(all, bot, human) {
+		giftAll = clampGift(all);
+		giftBot = clampGift(bot);
+		giftHuman = clampGift(human);
+	}
+
+	function startGiftsOf() {
+		return { all: giftAll, bot: giftBot, human: giftHuman };
+	}
+
+	function giftBudget(isBot) {
+		return giftAll + (isBot ? giftBot : giftHuman);
+	}
+
+	function giftFits(entry, remaining, drawn, last) {
+		if (entry.value > remaining + 1e-9 || entry === last) return false;
+		return entry.kind !== GIFT_PART || drawn.indexOf(entry) < 0;
+	}
+
+	/* pure and deterministic in (budget, seed): up to GIFT.maxDraws weighted
+	 * picks among the entries the rest of the budget still pays, never the same
+	 * entry twice in a row nor a kit twice; whatever is left is cash */
+	function drawGifts(budget, seed) {
+		const drawn = [];
+		let remaining = clampGift(budget);
+		let last = null;
+		for (let k = 0; k < GIFT.maxDraws; k++) {
+			let total = 0;
+			for (let i = 0; i < GIFT_POOL.length; i++) {
+				if (giftFits(GIFT_POOL[i], remaining, drawn, last)) total += GIFT_POOL[i].weight;
+			}
+			if (total === 0) break;
+			let pick = OrbitWorld.hash01(seed >>> 0, k, SALT_GIFT) * total;
+			let chosen = null;
+			for (let i = 0; i < GIFT_POOL.length && pick >= 0; i++) {
+				if (!giftFits(GIFT_POOL[i], remaining, drawn, last)) continue;
+				chosen = GIFT_POOL[i];
+				pick -= chosen.weight;
+			}
+			drawn.push(chosen);
+			remaining = round2(remaining - chosen.value);
+			last = chosen;
+		}
+		return { drawn: drawn, cash: remaining };
+	}
+
+	function frontierPoint(from, to, t) {
+		return [round4(from[0] + (to[0] - from[0]) * t), round4(from[1] + (to[1] - from[1]) * t)];
+	}
+
+	function round4(value) {
+		return Math.round(value * 10000) / 10000;
+	}
+
+	/* the farthest hundredth of the frontier segment whose research fee fits */
+	function giftSciencePoint(career, frontier, value) {
+		const spec = scienceFamilyOf(frontier.family);
+		const from = spec.params(OrbitTech.findKind(frontier.family, frontier.from));
+		for (let s = GIFT_T_STEPS; s > 0; s--) {
+			const params = frontierPoint(from, frontier.to, s / GIFT_T_STEPS);
+			if (OrbitScience.previewHull(career.science, frontier.family, params).cost <= value) return params;
+		}
+		return null;
+	}
+
+	/* one invention, researched for free: it widens the hull and is owned as
+	 * a prototype, exactly what `researchPoint` buys */
+	function grantGiftScience(career, value, seed, k) {
+		const first = Math.floor(OrbitWorld.hash01(seed >>> 0, GIFT.maxDraws + k, SALT_GIFT) * GIFT_FRONTIER.length);
+		for (let n = 0; n < GIFT_FRONTIER.length; n++) {
+			const frontier = GIFT_FRONTIER[(first + n) % GIFT_FRONTIER.length];
+			const params = giftSciencePoint(career, frontier, value);
+			if (!params) continue;
+			const label = researchLabel(career);
+			OrbitScience.acceptHull(career.science, frontier.family, params, label);
+			career.research += 1;
+			unlockPrototype(career, frontier.family, params, label);
+			career.sciSpent += value;
+			return label + ' ' + frontier.family;
+		}
+		return null;
+	}
+
+	/* the whole budget enters the purse; every non-cash gift is paid out of it
+	 * into property or science, so purse = starter + gift + profit − property − science */
+	function grantStartGifts(career, budget) {
+		career.giftCredit = 0;
+		career.giftCash = 0;
+		career.giftDrawn = [];
+		const credit = clampGift(budget);
+		if (credit === 0) return;
+		const draw = drawGifts(credit, career.seed);
+		career.giftCredit = credit;
+		career.ledger.purse += credit;
+		let cash = credit;
+		for (let k = 0; k < draw.drawn.length; k++) {
+			const entry = draw.drawn[k];
+			if (entry.kind === GIFT_PART) {
+				for (let i = 0; i < entry.parts.length; i++) ownPart(career, entry.parts[i]);
+				career.buildSpent += entry.value;
+				career.giftDrawn.push(entry.items.join(' + '));
+			} else {
+				const text = grantGiftScience(career, entry.value, career.seed, k);
+				if (text === null) continue;
+				career.giftDrawn.push(text);
+			}
+			career.ledger.purse -= entry.value;
+			cash -= entry.value;
+		}
+		career.giftCash = round2(cash);
+	}
+
+	/* `start gift · IMP-1 + FT-1 · R1 catapult · cash 2.00` */
+	function giftText(career) {
+		if (!(career.giftCredit > 0)) return '';
+		const parts = career.giftDrawn.slice();
+		if (career.giftCash > 0) parts.push('cash ' + career.giftCash.toFixed(2));
+		return 'start gift ' + career.giftCredit + ' cr · ' + parts.join(' · ');
 	}
 
 	function resetCareer(career, seed, trade, cheat, homePlanet, sim) {
@@ -4627,6 +4830,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		career.feesPaid = 0;
 		career.buildSpent = 0;
 		career.sciSpent = 0;
+		career.giftCredit = 0;
+		career.giftCash = 0;
+		career.giftDrawn = [];
 		refreshBoard(career, trade, 0);
 	}
 
@@ -4760,7 +4966,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	/* a career begins with the vessel on HQ and the sim gating on the network;
 	 * every career in one run joins the same galaxy, so pads are shared ground */
-	function startCareer(career, sim, seed, trade, cheat, galaxy, homePlanet, startMode) {
+	/* `isBot` picks the company's start-gift budget (bot or human) */
+	function startCareer(career, sim, seed, trade, cheat, galaxy, homePlanet, startMode, isBot) {
 		const mode = startMode === START_SPACE || startMode === START_CAPITAL
 			? startMode : START_PLANET;
 		career.galaxy = galaxy || null;
@@ -4771,6 +4978,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			plannedHome = galaxy.mapSeats[galaxy.actors.length];
 		}
 		resetCareer(career, seed, trade, cheat, plannedHome, sim);
+		if (career.cheat !== CHEAT_ENDGAME) grantStartGifts(career, giftBudget(isBot === true));
 		career.forceScale = sim.forceScale;
 		if (galaxy) joinGalaxy(career, galaxy);
 		else syncCareerNetwork(career);
@@ -7449,6 +7657,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		WEAR_FLEET, WEAR_SCIENCE_MIN, WEAR_SCIENCE_STEP, WEAR_REPAIR_COST, WORN_OUT_BLOCK,
 		wearFactor, setSpaceWearScale, spaceWearScaleOf,
 		setPadScale, padScaleOf, setRotScale, rotScaleOf, setPayScale, payScaleOf,
+		GIFT, GIFT_POOL, GIFT_FRONTIER, setStartGifts, startGiftsOf, giftBudget, drawGifts,
+		grantStartGifts, giftText,
 		careerPadSeconds, careerPadMinutes, careerWaitPadSeconds,
 		launchWear, spaceWear, impulseWear, landingWear,
 		forecastCondition, forecastReportUntil, forecastRepairReserve, forecastWearCost,

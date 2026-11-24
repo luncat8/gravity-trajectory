@@ -358,6 +358,22 @@
 			<output id="expPayLabel">×1.00</output>
 		</label>
 		<label class="ctl" title="career only · entering a system always collects everything it has accrued since the last encounter; with this on, every step the ship stays inside also collects what regrew during that step, and predictions, the launch list and rival plans price the full stay trail."><input id="expHarvest" type="checkbox"> stay-pay · per tick</label>
+		<div id="giftBlock" class="giftBlock">
+			<div class="giftHead"><span>start gifts</span><label title="show a sample draw at these budgets · never what a company actually gets"><input id="giftPeek" type="checkbox"> 👀 example</label></div>
+			<label class="ctl" title="career only · start-gift budget for every company, drawn at the next start as 1+ gifts (engine kit, science) and the rest as cash"><span>for all</span>
+				<input id="giftAll" type="range" min="0" max="20" step="1" value="0">
+				<output id="giftAllLabel">0 cr</output>
+			</label>
+			<label class="ctl" title="career only · extra start-gift budget for every bot company"><span>+ bots</span>
+				<input id="giftBot" type="range" min="0" max="20" step="1" value="0">
+				<output id="giftBotLabel">0 cr</output>
+			</label>
+			<label class="ctl" title="career only · extra start-gift budget for every human company"><span>+ humans</span>
+				<input id="giftHuman" type="range" min="0" max="20" step="1" value="0">
+				<output id="giftHumanLabel">0 cr</output>
+			</label>
+			<div id="giftPreview" class="giftPreview">gifts off</div>
+		</div>
 	</div>
 
 	<div class="group">

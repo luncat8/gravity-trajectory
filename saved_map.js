@@ -169,7 +169,7 @@
 	function startFields(info) {
 		const galaxy = info.galaxy;
 		const seats = galaxy && galaxy.mapSeats ? galaxy.mapSeats.slice() : [];
-		return {
+		const fields = {
 			seed: info.seed >>> 0,
 			universe: info.universe,
 			seats: seats,
@@ -191,6 +191,10 @@
 			ys: scale(info.ys),
 			ht: info.ht === true
 		};
+		/* start-gift budgets [all, bot, human]; absent = no gifts */
+		const gift = info.gift;
+		if (gift && (gift[0] > 0 || gift[1] > 0 || gift[2] > 0)) fields.gift = gift.slice(0, 3);
+		return fields;
 	}
 
 	function activeGravity(seed, universe) {

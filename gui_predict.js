@@ -267,6 +267,7 @@ function refreshExperimentUi() {
 				(payScale !== 1 ? ' · pay ×' + payScale.toFixed(2) : '') : '') +
 			(careerTicks ? ' · ticks' : '');
 	}
+	refreshGiftUi();
 }
 
 /* one entry point for the sliders and for a link that carries the scales */
@@ -299,6 +300,70 @@ function setExperimentScales(nextGravity, nextForce, nextHarvest, nextWear, next
 	if (expPayEl) expPayEl.value = String(payScale);
 	applyExperiment();
 	refreshExperimentUi();
+}
+
+/* ── start gifts (0.7.48): three budgets for the next career start ── */
+
+/* one entry point for the sliders, the address, links and saved maps */
+function setGiftBudgets(all, botAdd, humanAdd) {
+	const max = GravityGame.GIFT.budgetMax;
+	const clamp = v => Math.max(0, Math.min(max, Math.round(Number(v) || 0)));
+	giftAll = clamp(all);
+	giftBot = clamp(botAdd);
+	giftHuman = clamp(humanAdd);
+	refreshGiftUi();
+}
+
+/* the start reads the pending budgets once: later slider moves wait for the next start */
+function applyStartGifts() {
+	game.giftAll = giftAll;
+	game.giftBot = giftBot;
+	game.giftHuman = giftHuman;
+	GravityGame.setStartGifts(giftAll, giftBot, giftHuman);
+}
+
+function onGiftInput() {
+	setGiftBudgets(giftAllEl.value, giftBotEl.value, giftHumanEl.value);
+	syncSeedUrl();
+}
+
+function giftEntryText(entry) {
+	return entry.kind === 'part' ? entry.items.join(' + ') : 'science ' + entry.value + ' cr';
+}
+
+/* a sample draw on a seed no company uses, so the example never tells
+ * what a competitor actually got */
+function giftExampleText(budget) {
+	const seed = (Math.imul(game.seed || tradeSim.seed, 0x9e3779b1) ^ 0x6e7) >>> 0;
+	const draw = GravityGame.drawGifts(budget, seed);
+	const parts = draw.drawn.map(giftEntryText);
+	if (draw.cash > 0) parts.push(draw.cash.toFixed(2) + ' cr');
+	return parts.join(' + ');
+}
+
+function refreshGiftUi() {
+	if (!giftPreviewEl) return;
+	if (giftAllEl) giftAllEl.value = String(giftAll);
+	if (giftBotEl) giftBotEl.value = String(giftBot);
+	if (giftHumanEl) giftHumanEl.value = String(giftHuman);
+	giftAllLabelEl.textContent = giftAll + ' cr';
+	giftBotLabelEl.textContent = giftBot + ' cr';
+	giftHumanLabelEl.textContent = giftHuman + ' cr';
+	const botBudget = giftAll + giftBot;
+	const humanBudget = giftAll + giftHuman;
+	if (botBudget === 0 && humanBudget === 0) {
+		giftPreviewEl.textContent = 'gifts off';
+		return;
+	}
+	const pending = game.on && careerRule() && (giftAll !== game.giftAll ||
+		giftBot !== game.giftBot || giftHuman !== game.giftHuman);
+	let text = 'bots ' + botBudget + ' cr · humans ' + humanBudget + ' cr' +
+		(pending ? ' · from next start' : '');
+	if (giftPeekEl && giftPeekEl.checked) {
+		text += ' · e.g. bot ' + (giftExampleText(botBudget) || '—') +
+			' · human ' + (giftExampleText(humanBudget) || '—');
+	}
+	giftPreviewEl.textContent = text;
 }
 
 /* The stay-pay changes what a flight earns, so it is world state like the

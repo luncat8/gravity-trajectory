@@ -119,6 +119,7 @@ function copyCareerReplay() {
 		forceScale: game.forceScale, spaceWearScale: game.spaceWearScale,
 		padScale: game.padScale, rotScale: game.rotScale, payScale: game.payScale,
 		harvestTick: game.harvestTick,
+		giftAll: game.giftAll, giftBot: game.giftBot, giftHuman: game.giftHuman,
 		shots: []
 	});
 	const url = location.href.split('#')[0] + '#' + head + '&replay=' + encoded;
@@ -136,6 +137,7 @@ function careerOpening(start) {
 		mask: start.state.mask, seats: start.seats, targetPay: start.targetPay,
 		g: start.gs, f: start.fs, w: start.ws,
 		p: start.ps ?? 1, r: start.rs ?? 1, y: start.ys ?? 1, h: start.ht,
+		...(start.gift ? { gift: start.gift } : {}),
 		source: start.source, corruption: start.state.market.permanentCorruption,
 		...(Array.isArray(start.gravity) ? { gravity: start.gravity } : {}),
 		...(start.cheat ? { cheat: start.cheat } : {})
@@ -177,6 +179,7 @@ function validCareerActions(data) {
 		(data.r !== undefined && (!Number.isFinite(data.r) || data.r < 0 || data.r > 3)) ||
 		(data.y !== undefined && (!Number.isFinite(data.y) || data.y < 0.25 || data.y > 3)) ||
 		typeof data.h !== 'boolean' ||
+		(data.gift !== undefined && !validGift(data.gift)) ||
 		!Object.hasOwn(GravityGame.BOTS, data.bot) ||
 		(data.cheat !== undefined && !Object.hasOwn(GravityGame.CHEATS, data.cheat)) ||
 		(data.source !== MODE_PLANETS && data.source !== MODE_PORTS) || typeof data.corruption !== 'boolean' ||
@@ -233,6 +236,7 @@ function startCareerActionsReplay(data) {
 	for (let i = 0; i < MAX_PLAYERS; i++) slotTypes[i] = data.players[i] || PLAYER_BOT;
 	$('permanentCorruption').checked = data.corruption;
 	setExperimentScales(data.g, data.f, data.h, data.w, pScale, rScale, yScale);
+	applyRecordGifts(data);
 	scene.setSpeed(data.rate);
 	setSource(data.source, false);
 	startGame(data.seed, true, RULE_CAREER, data.bot, data.players[0], data.cheat);

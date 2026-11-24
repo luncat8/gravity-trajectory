@@ -3622,7 +3622,8 @@
 					this.planetUniverseCount || OrbitWorld.PLANETS);
 			}
 			GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(seed, i),
-				trade, null, galaxy, undefined, startMode);
+				trade, null, galaxy, undefined, startMode,
+				this.rivalTypes[i] !== GravityGame.PLAYER_USER);
 			/* whoever flies this company by hand needs the live rail gate */
 			r.sim.attachCareer(r.career);
 			r.career.bribeProne = this.careerBribeProne(i);
@@ -3679,7 +3680,7 @@
 		r.career = GravityGame.createCareer(r.ledger);
 		GravityGame.setCareerUniverse(r.career, this.probe.planetMask, this.planetUniverseCount);
 		GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(this.seed, i),
-			trade, null, galaxy, mode === GravityGame.START_PLANET ? planet : -1, mode);
+			trade, null, galaxy, mode === GravityGame.START_PLANET ? planet : -1, mode, true);
 		r.sim.attachCareer(r.career);
 		r.career.bribeProne = this.careerBribeProne(i);
 		r.basePlanet = r.career.at >= 0 ? r.career.at : GravityGame.evacTarget(r.career);

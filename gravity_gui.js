@@ -148,6 +148,15 @@ const expPayEl = $('expPay');
 const expPayLabelEl = $('expPayLabel');
 const expHarvestEl = $('expHarvest');
 const expTagEl = $('expTag');
+const giftBlockEl = $('giftBlock');
+const giftAllEl = $('giftAll');
+const giftBotEl = $('giftBot');
+const giftHumanEl = $('giftHuman');
+const giftAllLabelEl = $('giftAllLabel');
+const giftBotLabelEl = $('giftBotLabel');
+const giftHumanLabelEl = $('giftHumanLabel');
+const giftPeekEl = $('giftPeek');
+const giftPreviewEl = $('giftPreview');
 const launchButton = $('launch');
 const launchMenuBtn = $('launchMenuBtn');
 const launchMenuEl = $('launchMenu');
@@ -390,6 +399,10 @@ let padScale = 1;
 let rotScale = 1;
 let payScale = 1;
 let harvestTick = false;
+/* start-gift budgets (cr) for the next career start; `game.gift*` holds the running one's */
+let giftAll = 0;
+let giftBot = 0;
+let giftHuman = 0;
 let experimentTouched = false;
 let hudAt = -Infinity;
 let lastFrame = performance.now();
@@ -470,6 +483,7 @@ const game = { on: false, seed: 0, fixedRate: false, rule: RULE_TOUR, bot: BOT_N
 	player: PLAYER_USER, cheat: null, playerCount: 0, planetUniverse: 0,
 	startMode: GravityGame.START_PLANET,
 	gravityScale: 1, forceScale: 1, spaceWearScale: 1, padScale: 1, rotScale: 1, payScale: 1, harvestTick: false,
+	giftAll: 0, giftBot: 0, giftHuman: 0,
 	shots: [], steps: 0, clockSteps: 0, doneSteps: -1, length: 0,
 	market: GravityGame.createMarket(), money: GravityGame.createLedger(),
 	galaxy: GravityGame.createGalaxy() };
@@ -644,6 +658,8 @@ if (expPadsEl) expPadsEl.addEventListener('input', onPadsInput);
 if (expRotEl) expRotEl.addEventListener('input', onRotInput);
 if (expPayEl) expPayEl.addEventListener('input', onPayInput);
 if (expHarvestEl) expHarvestEl.addEventListener('change', onHarvestChange);
+for (const el of [giftAllEl, giftBotEl, giftHumanEl]) if (el) el.addEventListener('input', onGiftInput);
+if (giftPeekEl) giftPeekEl.addEventListener('change', refreshGiftUi);
 horizonSlider.addEventListener('input', () => {
 	cargoSim.horizon = Number(horizonSlider.value);
 	const text = cargoSim.horizon + ' s';
@@ -1081,6 +1097,7 @@ root.GravityScene = {
 	aimGuidance: () => aimGuidance,
 	predTime: () => activeSim().predTime,
 	speedCeiling,
+	startGifts: () => ({ all: giftAll, bot: giftBot, human: giftHuman, run: GravityGame.startGiftsOf() }),
 	experimentScales: () => ({
 		gravity: gravityScale, force: forceScale, spaceWear: spaceWearScale,
 		pad: padScale, rot: rotScale, pay: payScale, harvestTick: harvestTick && careerRule()

@@ -73,6 +73,7 @@ function refreshGameUi() {
 	if (expPayEl) expPayEl.disabled = experimentLock || !career;
 	/* the stay-pay only exists in career: outside it the box is off and dim */
 	if (expHarvestEl) expHarvestEl.disabled = experimentLock || !career;
+	for (const el of [giftAllEl, giftBotEl, giftHumanEl, giftPeekEl]) if (el) el.disabled = !career;
 	/* Moving ports share the orbit clock with gravity. Keep that clock fixed
 	 * for shared runs; the label explains why a disabled slider cannot move. */
 	const rateReason = career ? 'Locked in career: orbits and gravity follow the shared game clock'

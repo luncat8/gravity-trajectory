@@ -72,8 +72,10 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	ensureValidActiveSlot(-1);
 	turret = slotTurrets[activeSlotIndex()];
 	attachWorld();
-	if (careerRule()) startCareerRun(seed);
-	else {
+	if (careerRule()) {
+		applyStartGifts();
+		startCareerRun(seed);
+	} else {
 		careerPaused = false;
 		if (scene.setFrozen) scene.setFrozen(false);
 		cargoSim.setLaunchNetwork(null, null);
@@ -167,7 +169,7 @@ function startCareerWithPlan(plan, seed, startMode) {
 			planetMask, planetCount, 1 + bot.count, cargoSim);
 	}
 	GravityGame.startCareer(game.career, cargoSim, seed, tradeSim, game.cheat,
-		game.galaxy, undefined, startMode);
+		game.galaxy, undefined, startMode, game.player === PLAYER_BOT);
 	finishCareerStart(seed);
 }
 

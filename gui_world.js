@@ -356,6 +356,12 @@ function syncSeedUrl(keepReplay = false) {
 	else params.delete('ys');
 	if (game.on && careerRule() && harvestTick) params.set('ht', '1');
 	else params.delete('ht');
+	/* start gifts: the pending budgets, which is what a reload would start with */
+	const giftParams = [['ga', giftAll], ['gb', giftBot], ['gh', giftHuman]];
+	for (const [key, value] of giftParams) {
+		if (game.on && careerRule() && value > 0) params.set(key, String(value));
+		else params.delete(key);
+	}
 	if (game.on && game.fixedRate) {
 		params.set('rate', String(scene.trade.speed));
 		params.delete('speed');

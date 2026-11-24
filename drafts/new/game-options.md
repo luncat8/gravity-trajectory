@@ -17,4 +17,4 @@ IMP-2), radar.
 draws come from the game seed, so a run replays the same gift; a
 new seed re-rolls.
 
-→ `../0.7.48-plan-start-gifts.md`
+→ `0.7.48` (`../../archive/0.7.48-plan-start-gifts.md`): `#giftAll`/`#giftBot`/`#giftHuman` + `👀 example` in the experimental panel; gifted parts are owned, not fitted (the fair-start ship stays unchanged); the example is drawn on a seed no company uses; `ga=`/`gb=`/`gh=` in the address and links.

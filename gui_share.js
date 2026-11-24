@@ -56,6 +56,9 @@ function copyLink() {
 		rotScale: game.rotScale,
 		payScale: game.payScale,
 		harvestTick: game.harvestTick,
+		giftAll: game.giftAll,
+		giftBot: game.giftBot,
+		giftHuman: game.giftHuman,
 		shots: game.shots,
 		visited: routeRule() ? routePlan.visits : cargoSim.visitedCount,
 		steps: scoreSteps(),
@@ -194,6 +197,7 @@ function loadLink(hash = location.hash) {
 	scene.setSpeed(link.rate);
 	setExperimentScales(link.gravityScale, link.forceScale, link.harvestTick,
 		link.spaceWearScale, link.padScale, link.rotScale, link.payScale);
+	setGiftBudgets(link.giftAll, link.giftBot, link.giftHuman);
 	startGame(link.seed, true, link.rule, link.bot, link.player, link.cheat);
 	if (link.shots.length > 0) startReplay(link.shots, link.end, link.length);
 	loadingUrl = false;
@@ -234,6 +238,19 @@ function readStartParam(params, rule) {
 	return true;
 }
 
+/* start-gift budgets `ga`/`gb`/`gh`: whole cr in 0..GIFT.budgetMax, absent = 0 */
+function readUrlGifts(params) {
+	const out = [0, 0, 0];
+	const keys = ['ga', 'gb', 'gh'];
+	for (let i = 0; i < keys.length; i++) {
+		if (!params.has(keys[i])) continue;
+		const value = Number(params.get(keys[i]));
+		if (!Number.isInteger(value) || value < 0 || value > GravityGame.GIFT.budgetMax) return null;
+		out[i] = value;
+	}
+	return out;
+}
+
 function readUrlScale(params, name, min, max) {
 	if (!params.has(name)) return 1;
 	const value = Number(params.get(name));
@@ -254,7 +271,8 @@ function loadSearchParams() {
 		params.has('source') || params.has('player') || params.has('you') || params.has('shots') ||
 		params.has('universe') || params.has('players') || params.has('start') ||
 		params.has('gs') || params.has('fs') || params.has('ws') ||
-		params.has('ps') || params.has('rs') || params.has('ys') || params.has('ht');
+		params.has('ps') || params.has('rs') || params.has('ys') || params.has('ht') ||
+		params.has('ga') || params.has('gb') || params.has('gh');
 	if (!hasGameHint) return false;
 	const exp = GravityGame.EXPERIMENT;
 	const gsNum = readUrlScale(params, 'gs', exp.gravityMin, exp.gravityMax);
@@ -270,11 +288,14 @@ function loadSearchParams() {
 		return false;
 	}
 	const htFlag = htStr === '1' || htStr === 'true';
+	const gifts = readUrlGifts(params);
+	if (!gifts) return false;
 	const modeParam = params.get('mode');
 	const gameParam = params.get('game');
 	const modeRule = modeParam && RULES[modeParam] ? modeParam : null;
 	const hasCareerScale = params.has('ht') || params.has('ws') ||
-		params.has('ps') || params.has('rs') || params.has('ys');
+		params.has('ps') || params.has('rs') || params.has('ys') ||
+		params.has('ga') || params.has('gb') || params.has('gh');
 	const shouldGame = modeParam === 'game' || gameParam === '1' || modeRule !== null ||
 		params.has('rule') || params.has('seed') || params.has('rate') || params.has('bot') ||
 		hasCareerScale;
@@ -293,6 +314,7 @@ function loadSearchParams() {
 		clearMapField();
 		stopGame();
 		setExperimentScales(gsNum, fsNum, false, wsNum, psNum, rsNum, ysNum);
+		setGiftBudgets(gifts[0], gifts[1], gifts[2]);
 		if (seedNum !== tradeSim.seed) {
 			scene.reset(seedNum);
 			clearCargo();
@@ -330,6 +352,7 @@ function loadSearchParams() {
 	if (speedStr !== null) scene.setSpeed(rateNum);
 	setExperimentScales(gsNum, fsNum, ruleStr === RULE_CAREER && htFlag,
 		wsNum, psNum, rsNum, ysNum);
+	setGiftBudgets(gifts[0], gifts[1], gifts[2]);
 	startGame(seedNum, rateStr !== null, ruleStr, botStr || undefined, playerStr || undefined,
 		cheatStr || undefined);
 	if (sourceStr === 'ports' || sourceStr === 'port') setSource(MODE_PORTS);

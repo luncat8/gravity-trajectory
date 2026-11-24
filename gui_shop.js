@@ -832,6 +832,9 @@ function shopBlockHtml(career) {
 		}
 	}
 	html += rivalTaxLineHtml(career, planet);
+	/* gifted parts are owned, not fitted: the line names what a free refit can pick */
+	const gift = GravityGame.giftText(career);
+	if (gift) html += '<div class="careerLine dim giftLine">' + gift + '</div>';
 	/* the ship is refitted wherever it stands, so the block follows the ship's
 	 * planet, not the planet picked for the pad rows above */
 	html += '<div class="careerHead">ship refit · ' +

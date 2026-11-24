@@ -207,6 +207,7 @@ function mapRunInfo() {
 		rs: rotScale,
 		ys: payScale,
 		ht: harvestTick,
+		gift: [game.giftAll, game.giftBot, game.giftHuman],
 		game: game,
 		market: game.market,
 		trade: tradeSim,
@@ -318,6 +319,17 @@ function pendingUniverse() {
 	planetCount = count;
 	refreshPlanetUniverseUi();
 	return true;
+}
+
+/* a record starts with the gift budgets it was saved with (absent = none) */
+function applyRecordGifts(record) {
+	const gift = validGift(record.gift) ? record.gift : [0, 0, 0];
+	setGiftBudgets(gift[0], gift[1], gift[2]);
+}
+
+function validGift(gift) {
+	return Array.isArray(gift) && gift.length === 3 &&
+		gift.every(v => Number.isInteger(v) && v >= 0 && v <= GravityGame.GIFT.budgetMax);
 }
 
 function applyRunRecord(record) {
@@ -509,6 +521,7 @@ function startMapRecord(record) {
 	activeFieldMap = fieldParamKey(record);
 	if (record.rate) scene.setSpeed(record.rate);
 	setExperimentScales(gs, fs, ht, ws, ps, rs, ys);
+	applyRecordGifts(record);
 	game.playerCount = plannedCount;
 	game.planetUniverse = record.universe;
 	/* a record owns its seats, so a saved map always starts on a planet HQ
