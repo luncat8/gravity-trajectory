@@ -18,7 +18,7 @@ const $ = id => document.getElementById(id);
 - these are not strict rules, use best.
 
 - plan*.md is NOT the implementation log. if need - update/improve plan, but keep final plan as artifact for possible fork or reimplementation without referring of what was and what done, without referring chat, etc.
-- plan number i.e. 0.1 - is not version sequence. it is ok to continue old numbers by subject and implement in any useful order.
+- plan number i.e. 0.1.2 - is not version sequence. it is ok to continue old numbers by subject and implement in any useful order.
 
 - only essential concise comments (in code and in worklogs) that really helpful i.e. explain why and decision. prefer descriptive naming.
 
@@ -48,8 +48,8 @@ archive/ - for implemented plans and worklogs.
 
 root `*-plan*.md` - open plans.
 
-drafts/ - human design notes, one file per big subject, indexed by `drafts/README.md`. every
-section is the human's own words plus a `→` line saying where it stands in the code, and a note
+drafts/ - general human ideas about goals and design. minimal concise changes allowed, anvers from chat and approved decisions.
+, indexed by `drafts/README.md` every section is the human's own words plus a `→` line saying where it stands in the code, and a note
 still open ends with the one question a plan must answer first. `0.2.0-draft-economy-compare.md`
 is the one draft kept at the root: signed-off decisions, cited by the economy plan.
 
@@ -170,7 +170,7 @@ then continue with next: review next step plan, if found good ideas - improve pl
 record development steps and its validation in `archive/*-worklog.md`, end job with a next step suggestion.
 
 example of file structure:
-drafts/<subject>.md - human write thoughts about goals and design
+drafts/<subject>.md
 archive/0.1.0-plan.md
 archive/0.1.0-worklog.md
 0.1.1-plan.md
