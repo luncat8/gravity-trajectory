@@ -31,6 +31,15 @@ assert.notStrictEqual(get("commsFindingKey({ id: 'fee', need: 3.04, have: 2, rep
 assert.notStrictEqual(get("commsFindingKey({ id: 'fee', need: 3.04, have: 1, repair: false }, 3)"), key,
 	'a different planet is a new fact');
 
+/* The 0.7.47 composition law leaves this roster unbuildable (no EMC-3
+ * heavy on seed 1), and H's WS3 roster warning then outranks every run
+ * gate. This file exercises the worn/fee call mechanics, not roster
+ * fairness — pin the roster report fair so the hull block below is the
+ * live finding under test. */
+run('rosterFairnessReport = function () { return { ok: true, planets: planetCount, players: playerCountShown() }; }');
+/* the roster call above already stamped the frozen clock's call second;
+ * let the hull fact ring on its own tick */
+run('commsState.lastCallSecond = -1');
 run('playerCareer().ship.condition = 0; armed = false; commsTick()');
 let state = get('commsState');
 const wornKey = state.callKey;
@@ -123,6 +132,9 @@ assert.ok(ui.get('commsAnswer').textContent.includes('Evacuate to HQ'),
  * still a useful call even before the player arms a shot. */
 const visitor = loadPage({ search: mapSearch(42) });
 const visit = expression => vm.runInContext(expression, visitor.context);
+/* seed 42's roster is composition-unfair (no EMC-3 heavy); this section
+ * tests rail-fee calls, so pin the roster report fair like above */
+visit('rosterFairnessReport = function () { return { ok: true, planets: planetCount, players: playerCountShown() }; }');
 visit(`(() => {
 	const career = playerCareer();
 	const other = Array.from(planetMask).findIndex((on, p) => on && p !== career.hq &&
@@ -170,6 +182,9 @@ assert.strictEqual(visit('commsState.callReason.id'), 'space');
 
 const ending = loadPage({ search: mapSearch(1) + '&rate=1' });
 const endgame = code => vm.runInContext(code, ending.context);
+/* seed 1's roster is composition-unfair; the endgame gates under test must
+ * stay the live finding, so pin the roster report fair like above */
+endgame('rosterFairnessReport = function () { return { ok: true, planets: planetCount, players: playerCountShown() }; }');
 ending.runFrames(2, 16);
 endgame(`playerCareer().ledger.purse = -1;
 	GravityGame.careerAdvance(playerCareer(), GravityGame.ENDGAME_WARNING_STEPS - 1);

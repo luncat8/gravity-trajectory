@@ -23,9 +23,12 @@ function makeField(seed, count, gs, fs) {
 	return { world: trade.world, mask, sim };
 }
 
-/* Seed 1 at 13 planets passes planet start for 3 and 4 companies, fails 5 and 6 on count. */
+/* Seed 5 at 13 planets passes planet start for 3 and 4 companies, fails 5 and
+ * 6 on count. (The positive fixture moved from seed 1 to seed 5 when the
+ * 0.7.47 review's corrected heavy classes narrowed the EMC-3 band: seed 1
+ * carries no EMC-3-margin world under the recalibrated probes.) */
 {
-	const f = makeField(1, 13);
+	const f = makeField(5, 13);
 	const s3 = Game.startComposition(f.world, f.mask, 13, 3, f.sim, 'planet');
 	assert.strictEqual(s3.ok, true);
 	assert.strictEqual(s3.minimal, 10);

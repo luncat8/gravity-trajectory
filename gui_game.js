@@ -145,7 +145,12 @@ function startCareerRun(seed) {
 /* take a completed, accepted search's plan and finish the start exactly as
  * the synchronous path does today */
 function applySeatPlan(search, seed) {
-	const plan = search.bestPlan();
+	applySeatPlanPlan(search.bestPlan(), seed);
+}
+
+/* apply a plan snapshot directly — the WS4 decisions carry the tier that
+ * was complete when they appeared, not the live search */
+function applySeatPlanPlan(plan, seed) {
 	GravityGame.rememberSeatPlan(game.galaxy, tradeSim.world, tradeSim,
 		planetMask, planetCount, 1 + bot.count, cargoSim, plan.homes, plan.targetPay);
 	startCareerWithPlan(plan, seed, GravityGame.START_PLANET);
@@ -207,22 +212,52 @@ function addPlanetForRoster() {
 	}
 }
 
+/* The live WS4 decision, or null while the walk is still running. `plan`
+ * is the snapshot taken when the decision appeared (the completed tier at
+ * offer time — mid-tier progress never leaks into it); `canAdvance` says a
+ * wait-more click would start the next tier. */
+function careerPlanningDecision() {
+	if (!careerPlanning || !careerPlanSearch || !careerPlanDecision) return null;
+	return {
+		kind: careerPlanDecision.kind,
+		plan: Boolean(careerPlanDecision.plan),
+		canAdvance: Boolean(careerPlanDecision.canAdvance),
+		tier: careerPlanSearch.tier
+	};
+}
+
 /* H's search decision (WS4): start with the tier that was complete when the
- * card offered it. The search is work-deterministic, so the completed plan
- * is whatever the search holds right now. */
+ * card offered it — the snapshot the decision carries, not a later best. */
 function playFairSearchAsIs() {
-	if (!careerPlanning || !careerPlanSearch) return;
-	const search = careerPlanSearch;
+	const decision = careerPlanDecision;
+	if (!careerPlanning || !careerPlanSearch || !decision) return;
 	const seed = careerPlanSeed;
+	const plan = decision.plan;
 	cancelCareerPlanning();
-	if (search.bestPlan()) applySeatPlan(search, seed);
+	if (plan) applySeatPlanPlan(plan, seed);
 	else startCareerWithPlan(null, seed, GravityGame.START_PLANET);
 }
 
-/* H's search decision (WS4): search one tier deeper. */
+/* H's search decision (WS4): start fair on the tier the search accepted. */
+function startFairSearchPlan() {
+	const decision = careerPlanDecision;
+	if (!careerPlanning || !careerPlanSearch || !decision ||
+		decision.kind !== 'accepted' || !decision.plan) return;
+	const seed = careerPlanSeed;
+	const plan = decision.plan;
+	cancelCareerPlanning();
+	applySeatPlanPlan(plan, seed);
+}
+
+/* H's search decision (WS4): search one tier deeper. Only offered while a
+ * tier-end decision can still advance; the walk resumes in the background
+ * and the live report keeps updating until the next decision. */
 function advanceFairSearchTier() {
-	if (!careerPlanning || !careerPlanSearch) return;
+	const decision = careerPlanDecision;
+	if (!careerPlanning || !careerPlanSearch || !decision ||
+		decision.kind !== 'tier-end' || !decision.canAdvance) return;
 	if (!careerPlanSearch.advanceTier()) return;
+	careerPlanDecision = null;
 	commsInvalidate();
 	refreshGameUi();
 }
@@ -244,6 +279,30 @@ function rosterFairnessReport() {
  * clears the report; while planning it names the tier, the best weakest
  * share so far, and which criterion is still unmet. `step(0)` is a no-op
  * that only reads the current best, so it never advances the walk. */
+/* flat search fields for H's snapshot (WS4): the live report plus the
+ * frozen decision, in the one shape comms_copy's gates read */
+function fairSearchSnapshotFields() {
+	if (!careerPlanning || !careerPlanSearch) {
+		return {
+			searchActive: false, searchTier: 0, searchWeakest: 0,
+			searchUnmet: '', searchProgress: 0, searchDecision: '',
+			searchPlan: false, searchCanAdvance: false
+		};
+	}
+	const rep = seatSearchReport();
+	const decision = careerPlanningDecision();
+	return {
+		searchActive: true,
+		searchTier: rep.tier,
+		searchWeakest: rep.weakest,
+		searchUnmet: rep.unmet,
+		searchProgress: rep.progress,
+		searchDecision: decision ? decision.kind : '',
+		searchPlan: Boolean(decision && decision.plan),
+		searchCanAdvance: Boolean(decision && decision.canAdvance)
+	};
+}
+
 function seatSearchReport() {
 	if (!careerPlanning || !careerPlanSearch) {
 		return { active: false, tier: 0, weakest: 0, unmet: '', progress: 0 };
@@ -268,6 +327,7 @@ function beginCareerPlanning(search, seed, startMode) {
 	careerPlanSearch = search;
 	careerPlanSeed = seed;
 	careerPlanMode = startMode;
+	careerPlanDecision = null;
 	/* the run is open but the careers are not started yet: hold the clock */
 	careerPaused = true;
 	careerPauseNow = performance.now();
@@ -277,41 +337,38 @@ function beginCareerPlanning(search, seed, startMode) {
 	commsInvalidate();
 }
 
-/* advance the open search by one frame budget. A tier that accepts finishes
- * the start; a tier that completes without accepting auto-advances to the
- * next one, so the walk tries every tier without a click. When the last tier
- * is exhausted the run resolves: the best plan if one was found, else the
- * ordinary pickHq fallback (the roster is simply unfair — WS3 warns). */
+/* Advance the open search by one frame budget (WS4). The page never
+ * auto-advances a tier and never auto-starts an unaccepted plan: when a
+ * tier accepts or completes, the decision freezes here with a snapshot of
+ * the completed tier, and H offers play-as-is / load saves / wait more (or
+ * start fair on acceptance). Wall-clock decides when the card appears;
+ * only completed tiers can become a plan. */
 function stepCareerPlanning(budgetMs) {
 	if (!careerPlanning || !careerPlanSearch) return;
+	if (careerPlanDecision) {
+		/* frozen at a decision: the walk waits for the player's click */
+		return;
+	}
 	const out = careerPlanSearch.step(budgetMs);
 	if (out.accepted) {
-		const search = careerPlanSearch;
-		const seed = careerPlanSeed;
-		cancelCareerPlanning();
-		applySeatPlan(search, seed);
+		careerPlanDecision = {
+			kind: 'accepted',
+			plan: careerPlanSearch.bestPlan(),
+			canAdvance: false
+		};
+		commsInvalidate();
+		refreshGameUi();
 		return;
 	}
 	if (out.done) {
-		if (careerPlanSearch.bestPlan()) {
-			/* a completed tier has a plan, even if it missed the band: the
-			 * player may start on it (play-as-is) — do so automatically once
-			 * the walk has nothing better to offer */
-			if (!careerPlanSearch.advanceTier()) {
-				const search = careerPlanSearch;
-				const seed = careerPlanSeed;
-				cancelCareerPlanning();
-				applySeatPlan(search, seed);
-				return;
-			}
-		} else if (!careerPlanSearch.advanceTier()) {
-			/* no tier produced any plan: start anyway on a picked HQ */
-			const seed = careerPlanSeed;
-			const mode = careerPlanMode;
-			cancelCareerPlanning();
-			startCareerWithPlan(null, seed, mode);
-			return;
-		}
+		careerPlanDecision = {
+			kind: 'tier-end',
+			plan: careerPlanSearch.bestPlan(),
+			canAdvance: careerPlanSearch.canAdvanceTier()
+		};
+		commsInvalidate();
+		refreshGameUi();
+		return;
 	}
 	commsInvalidate();
 	refreshGameUi();
@@ -323,6 +380,7 @@ function cancelCareerPlanning() {
 	careerPlanSearch = null;
 	careerPlanSeed = 0;
 	careerPlanMode = GravityGame.START_PLANET;
+	careerPlanDecision = null;
 }
 
 /* the planning driver: ~6-10 ms per frame from the frame loop */
@@ -332,10 +390,29 @@ function tickCareerPlanning() {
 
 /* 0.7.47 WS4: advance the opening seat search without stepping the game.
  * The harness uses this to resolve planning at load without letting the
- * career clock run ahead of a fresh replay. */
+ * career clock run ahead of a fresh replay. With the decision lifecycle it
+ * plays the part of a patient player: wait-more at every tier end while a
+ * tier remains (the old walk-every-tier behaviour), then start as planned;
+ * an accepted tier starts fair at once. That policy keeps the drained page
+ * on exactly the plan today's tests expect. */
 function drainCareerPlanning() {
 	let guard = 0;
-	while (careerPlanning && guard++ < 600) stepCareerPlanning(CAREER_SEARCH_FRAME_MS);
+	while (careerPlanning && guard++ < 600) {
+		const decision = careerPlanningDecision();
+		if (decision) {
+			if (decision.kind === 'accepted') {
+				startFairSearchPlan();
+				continue;
+			}
+			if (decision.canAdvance) {
+				advanceFairSearchTier();
+				continue;
+			}
+			playFairSearchAsIs();
+			continue;
+		}
+		stepCareerPlanning(CAREER_SEARCH_FRAME_MS);
+	}
 }
 
 /* one flat row: lab stops the run, every other mode starts its rule at once */

@@ -146,4 +146,120 @@ function bootCareer(search) {
 		get(ctx, 'game.career.at') >= 0, 'the career has started after the drain');
 }
 
-console.log('FAIR START GUI OK · 7 groups');
+/* 8. the WS4 decision lifecycle: hold planning open, render H, decide */
+{
+	const env = bootCareer('?seed=42&mode=career');
+	const ctx = env.context;
+	const ui = env.elements;
+
+	/* hold planning open and walk until a tier end or acceptance freezes a
+	 * decision — the page must not auto-advance or auto-start from here */
+	get(ctx, 'beginCareerPlanning(GravityGame.createSeatSearch(tradeSim.world, tradeSim,' +
+		'planetMask, planetCount, 1 + bot.count, cargoSim), game.seed, game.startMode)');
+	let decision = null;
+	for (let i = 0; i < 3000 && !decision; i++) {
+		get(ctx, 'stepCareerPlanning(8)');
+		decision = get(ctx, 'careerPlanningDecision()');
+	}
+	assert.ok(decision, 'a tier end or acceptance freezes a decision');
+	assert.strictEqual(get(ctx, 'careerPlanning'), true,
+		'planning stays open at the decision — nothing auto-resolves');
+	assert.strictEqual(get(ctx, 'careerPaused'), true, 'the career clock is held at the decision');
+	const frozen = JSON.stringify(get(ctx, 'careerPlanSearch.step(0)'));
+	get(ctx, 'stepCareerPlanning(8)');
+	assert.strictEqual(JSON.stringify(get(ctx, 'careerPlanSearch.step(0)')), frozen,
+		'a pending decision stops the walk: further frames run no units');
+
+	/* H renders the decision with all three choices plus the save picker.
+	 * Open the card directly: the harness's click path drains planning (the
+	 * simulated player would resolve the decision), and this group inspects
+	 * the pending decision itself. */
+	get(ctx, 'commsOpen(); commsAsk("fair-search"); commsTick()');
+	assert.strictEqual(ui.get('commsCard').hidden, false, 'the H card opens at the decision');
+	const ctas = ui.get('commsCtas').innerHTML;
+	assert.ok(ctas.indexOf('fair-play-as-is') >= 0, 'the decision offers play-as-is');
+	assert.ok(ctas.indexOf('fair-load-saves') >= 0, 'the decision offers the fair-save picker');
+	const snap = get(ctx, 'commsBuildSnapshot()');
+	assert.strictEqual(snap.searchActive, true, 'the snapshot reports an active search');
+	assert.strictEqual(snap.searchDecision, decision.kind, 'the snapshot carries the decision');
+	assert.strictEqual(snap.searchPlan, decision.plan, 'the snapshot carries the plan flag');
+	if (decision.kind === 'tier-end' && decision.canAdvance) {
+		assert.ok(ctas.indexOf('fair-wait-more') >= 0, 'wait more is offered while a tier remains');
+		assert.ok(snap.searchCanAdvance, 'the snapshot says a tier can still advance');
+	}
+
+	/* a roster change at the decision cancels it and restarts the search
+	 * (the restart may finish synchronously — seed 42 accepts inside the
+	 * head budget — so only the decision's absence is asserted here) */
+	get(ctx, 'setPlayerCount(1)');
+	assert.strictEqual(get(ctx, 'careerPlanningDecision()'), null,
+		'a roster change cancels the pending decision');
+	for (let i = 0; i < 600 && get(ctx, 'careerPlanning'); i++) {
+		get(ctx, 'drainCareerPlanning()');
+	}
+	assert.strictEqual(get(ctx, 'careerPlanning'), false,
+		'the restarted search drains to a start');
+	assert.strictEqual(get(ctx, 'game.on'), true, 'the restarted run is on');
+}
+
+/* 9. each decision resolves: wait-more walks on, then the player starts */
+{
+	const env = bootCareer('?seed=42&mode=career');
+	const ctx = env.context;
+	get(ctx, 'beginCareerPlanning(GravityGame.createSeatSearch(tradeSim.world, tradeSim,' +
+		'planetMask, planetCount, 1 + bot.count, cargoSim), game.seed, game.startMode)');
+	const driveToDecision = () => {
+		for (let i = 0; i < 3000; i++) {
+			const d = get(ctx, 'careerPlanningDecision()');
+			if (d) return d;
+			get(ctx, 'stepCareerPlanning(8)');
+		}
+		return get(ctx, 'careerPlanningDecision()');
+	};
+	let decision = driveToDecision();
+	assert.ok(decision, 'the first decision appears');
+	if (decision.kind === 'tier-end' && decision.canAdvance) {
+		get(ctx, 'advanceFairSearchTier()');
+		assert.strictEqual(get(ctx, 'careerPlanningDecision()'), null,
+			'wait-more clears the decision and resumes the walk');
+		decision = driveToDecision();
+		assert.ok(decision, 'the next tier freezes its own decision');
+	}
+	const plan = get(ctx, 'careerPlanningDecision().plan');
+	if (decision.kind === 'accepted') {
+		get(ctx, 'startFairSearchPlan()');
+	} else {
+		get(ctx, 'playFairSearchAsIs()');
+	}
+	assert.strictEqual(get(ctx, 'careerPlanning'), false, 'the chosen decision leaves planning');
+	assert.strictEqual(get(ctx, 'game.on'), true, 'the chosen decision starts the run');
+	assert.ok(get(ctx, 'game.career.hq') >= 0 || get(ctx, 'game.career.at') >= 0,
+		'the career has a seat after the decision');
+	/* the planning freeze is gone: the pause clock is the run's own landing
+	 * pause now, not the planning hold (group 8 pins careerPaused at the
+	 * decision itself) */
+	assert.notStrictEqual(get(ctx, 'careerPauseNow') > 0 && get(ctx, 'careerPaused') &&
+		get(ctx, 'careerPlanSearch'), true, 'no planning hold survives the start');
+	if (plan) {
+		const homes = get(ctx, 'game.galaxy.mapSeats');
+		assert.ok(homes && homes.length > 0, 'the run recorded a seat plan');
+	}
+}
+
+/* 10. the fair-save picker loads a saved map and leaves planning behind */
+{
+	const env = bootCareer('?seed=42&mode=career');
+	const ctx = env.context;
+	get(ctx, 'beginCareerPlanning(GravityGame.createSeatSearch(tradeSim.world, tradeSim,' +
+		'planetMask, planetCount, 1 + bot.count, cargoSim), game.seed, game.startMode)');
+	const options = get(ctx, 'fairSaveOptions()');
+	assert.ok(options.length > 0, 'the picker has at least one fair save');
+	const chosen = options[0];
+	get(ctx, 'loadFairSaveRecord(' + JSON.stringify(chosen.id) + ')');
+	assert.strictEqual(get(ctx, 'careerPlanning'), false, 'loading a save leaves planning');
+	assert.strictEqual(get(ctx, 'game.seed'), chosen.record.seed,
+		'the chosen save\'s seed is the running world');
+	assert.strictEqual(get(ctx, 'game.on'), true, 'the loaded save starts a run');
+}
+
+console.log('FAIR START GUI OK · 10 groups');

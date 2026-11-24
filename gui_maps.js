@@ -397,6 +397,69 @@ function planFieldOpening(record, wantedSeats, gs, fs, ps, ys) {
 	return homes;
 }
 
+/* WS4 fair-save dropdown: seated career records whose recorded opening
+ * still clears the fair band. The record's own seats are re-scored through
+ * openingGroupStats the first time the card opens (memoised per record), so
+ * the picker can never offer a save the current law would refuse. */
+const fairSaveMemo = new Map();
+
+function validateFairSave(record) {
+	const mask = new Uint8Array(PLANETS);
+	mask.fill(1, 0, record.universe);
+	const sim = new OrbitSim(record.seed);
+	sim.setPlanetMask(mask);
+	sim.step(420);
+	sim.setPlanetLimit(record.universe);
+	const probe = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	const gs = record.gs === undefined ? 1 : record.gs;
+	const fs = record.fs === undefined ? 1 : record.fs;
+	probe.setScales(gs, fs);
+	const forced = new Uint8Array(PLANETS);
+	for (let i = 0; i < record.seats.length; i++) forced[record.seats[i]] = 1;
+	const stats = GravityGame.openingGroupStats(
+		sim.world, sim, mask, record.universe, forced, record.seats, probe);
+	const ratio = stats.maxPay > 0 ? stats.minPay / stats.maxPay : 0;
+	return stats.missing === 0 && stats.distinct && stats.exitOk &&
+		ratio >= FIELD_FAIR_MIN_RATIO ? ratio : null;
+}
+
+function fairSaveOptions() {
+	const out = [];
+	const list = savedMapList();
+	for (let i = 0; i < list.length; i++) {
+		const record = list[i];
+		if (record.rule !== 'career' || !Array.isArray(record.seats) || !record.seats.length) continue;
+		let verdict = fairSaveMemo.get(record);
+		if (verdict === undefined) {
+			try {
+				verdict = validateFairSave(record);
+			} catch (err) {
+				verdict = null;
+			}
+			fairSaveMemo.set(record, verdict);
+		}
+		if (verdict === null) continue;
+		out.push({
+			id: i,
+			name: record.name || ('seed ' + record.seed + ' · ' + record.universe),
+			record: record
+		});
+	}
+	return out;
+}
+
+/* WS4 decision: load the chosen fair save and leave planning behind */
+function loadFairSaveRecord(id) {
+	const opts = fairSaveOptions();
+	let hit = null;
+	for (let i = 0; i < opts.length; i++) {
+		if (String(opts[i].id) === String(id)) hit = opts[i];
+	}
+	if (!hit) return false;
+	cancelCareerPlanning();
+	return startMapRecord(hit.record);
+}
+
 function startMapRecord(record) {
 	const rule = record && (record.rule || (record.kind === 'field' ? RULE_CAREER : ''));
 	if (!record || !RULES[rule]) {

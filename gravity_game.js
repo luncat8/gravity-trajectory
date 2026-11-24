@@ -1900,9 +1900,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 
 	function openingSyncField(world) {
 		const extent = openingExtent(openingFieldMask);
-		openingSim.setField(extent, openingTrade.planetR, openingStrengths, openingFill, true);
-		openingActiveExitMemo = world ? openingFieldEntry(world, openingFieldMask, extent).memo
-			: openingExitMemo;
+		const entry = world ? openingFieldEntry(world, openingFieldMask, extent) : null;
+		if (!entry || openingInstalledEntry !== entry) {
+			openingSim.setField(extent, openingTrade.planetR, openingStrengths, openingFill, true);
+			openingInstalledEntry = entry;
+		}
+		openingActiveExitMemo = entry ? entry.memo : openingExitMemo;
 	}
 
 	/* An exit counts for a *new* rail only with a quarter of the kit's power
@@ -1931,6 +1934,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (!exitSpeedHasMargin(speed, cap)) return false;
 		for (let a = 0; a < OPENING_EXIT_ANGLES; a++) {
 			const angle = angleOf(angleUnits((a + 0.5) / OPENING_EXIT_ANGLES * Math.PI * 2));
+			openingFanQuota -= 1;
 			sim.predictFast(planet, angle, speed, OPENING_HORIZON);
 			if (sim.predReason === GravitySim.END_IMPACT && sim.predBody >= 0 &&
 				sim.predBody !== planet) return true;
@@ -1944,12 +1948,33 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		return memo[body] === 1;
 	}
 
+	/* Frame quota for resumable search units (0.7.47 review): the seat
+	 * search bounds a unit's physics with fanBounded() so one frame never
+	 * flies a whole proposal at once; a paused fan resumes exactly where it
+	 * stopped, so slice sizes change timing only — never results. Sync
+	 * callers run at the default Infinity quota and cannot pause. */
+	const OPENING_PAUSED = Object.freeze({ paused: true });
+	const OPENING_FAN_QUOTA = 4;
+	let openingFanQuota = Infinity;
+	/* the field entry whose strengths are currently installed on openingSim;
+	 * an entry's key hashes every setField argument, so a repeat install is
+	 * a no-op and units skip the raster refill when the field already matches */
+	let openingInstalledEntry = null;
+
+	function fanBounded(fn) {
+		openingFanQuota = OPENING_FAN_QUOTA;
+		try {
+			return fn();
+		} finally {
+			openingFanQuota = Infinity;
+		}
+	}
+
 	/* Trace one company's starter-speed fan. A safe landing is a free planet
 	 * the other starting HQs do not occupy and from which an EMC-1 can leave
 	 * again with margin. */
 	function openingTraceHome(world, mask, forcedHomes, home, strictExit, sitePay, targetPay,
 		exitOk, angles, speeds) {
-		openingTraceCount += 1;
 		const nAngles = angles || OPENING_ANGLES;
 		const nSpeeds = speeds || OPENING_SPEEDS;
 		const sim = openingSim;
@@ -1960,15 +1985,37 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		openingActiveExitMemo = entry.memo;
 		const fanKey = home * 1048576 + nAngles * 1024 + nSpeeds;
 		let fan = entry.fans.get(fanKey);
-		if (!fan) {
-			sim.setField(extent, openingTrade.planetR, openingStrengths, openingFill, true);
-			openingSeen.fill(0);
-			const anyPay = new Float64Array(OrbitWorld.PLANETS);
-			const buildPay = new Float64Array(OrbitWorld.PLANETS);
-			anyPay.fill(-Infinity);
-			buildPay.fill(-Infinity);
+		/* A fan paused by the frame quota resumes where it stopped; the
+		 * logical trace is counted only on its first entry, so sliced and
+		 * whole searches consume the same trace budgets. */
+		const resumed = Boolean(fan && fan.partial);
+		openingTraceCount += resumed ? 0 : 1;
+		if (!fan || fan.partial) {
+			let si = 0;
+			let ai = 0;
 			let pay = -Infinity;
 			let reach = 0;
+			let anyPay;
+			let buildPay;
+			if (fan && fan.partial) {
+				si = fan.si;
+				ai = fan.ai;
+				pay = fan.pay;
+				reach = fan.reach;
+				anyPay = fan.anyPay;
+				buildPay = fan.buildPay;
+				openingSeen.set(fan.seen);
+			} else {
+				if (openingInstalledEntry !== entry) {
+					sim.setField(extent, openingTrade.planetR, openingStrengths, openingFill, true);
+					openingInstalledEntry = entry;
+				}
+				openingSeen.fill(0);
+				anyPay = new Float64Array(OrbitWorld.PLANETS);
+				buildPay = new Float64Array(OrbitWorld.PLANETS);
+				anyPay.fill(-Infinity);
+				buildPay.fill(-Infinity);
+			}
 			const cap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
 				OrbitTech.SHIP_DRY_MASS, OrbitTech.CATAPULTS[0], openingForceScale);
 			const minU = GravitySim.SPEED_MIN * SPEED_STEPS;
@@ -1977,11 +2024,23 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			if (capU > maxU) capU = maxU;
 			if (capU >= minU) {
 				const span = capU - minU;
-				for (let s = 0; s < nSpeeds; s++) {
+				for (let s = si; s < nSpeeds; s++) {
 					const speedU = s === nSpeeds - 1 ? capU
 						: minU + Math.round(span * s / (nSpeeds - 1));
 					const speed = speedOf(speedU);
-					for (let a = 0; a < nAngles; a++) {
+					const aStart = s === si ? ai : 0;
+					for (let a = aStart; a < nAngles; a++) {
+						if (openingFanQuota <= 0) {
+							/* keep the partial fan and the pinned field for
+							 * the next unit; the strength restores when the
+							 * fan completes (or a fresh prepare rebuilds it) */
+							entry.fans.set(fanKey, {
+								partial: true, si: s, ai: a, pay: pay, reach: reach,
+								anyPay: anyPay, buildPay: buildPay, seen: openingSeen.slice()
+							});
+							return OPENING_PAUSED;
+						}
+						openingFanQuota -= 1;
 						const angle = angleOf(angleUnits((a + 0.5) / nAngles * Math.PI * 2));
 						sim.predictFast(home, angle, speed, OPENING_HORIZON);
 						if (sim.predReason !== GravitySim.END_IMPACT || sim.predBody < 0) continue;
@@ -2176,6 +2235,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		sitePay.fill(-Infinity);
 		const profile = openingTraceHome(world, mask, forcedHomes, home, checkExit,
 			sitePay, null, exitOk, nAngles, nSpeeds);
+		if (profile === OPENING_PAUSED) return OPENING_PAUSED;
 		const track = {
 			home: home,
 			sitePay: sitePay,
@@ -2327,8 +2387,13 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * as they have no distinct exit-safe seating, or none whose ratio reaches
 	 * `cutoff`. Undefined traces every seat and always returns the stats.
 	 */
-	function openingGroupStats(world, trade, mask, count, forcedHomes, homes, sourceSim, windowed,
-		cutoff, order) {
+	/* Exact evaluation of one pinned HQ set, resumable across frame units
+	 * (0.7.47 review): begin once per proposal, then step until the state
+	 * returns stats/null; a fan-quota pause returns OPENING_PAUSED with all
+	 * progress kept. The sync wrapper below runs the same state at the
+	 * default quota and cannot pause. */
+	function openingGroupBegin(world, trade, mask, count, forcedHomes, homes, sourceSim,
+		windowed, cutoff, order) {
 		const assign = windowed ? seatFairAssignment : seatAssignment;
 		openingPrepare(world, trade, mask, count, forcedHomes, sourceSim);
 		const siteList = [];
@@ -2360,11 +2425,34 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const openPays = new Float64Array(homes.length);
 		const buildables = new Int32Array(homes.length);
 		const traced = [];
-		for (let n = 0; n < homes.length; n++) {
-			const seat = order ? order[n] : n;
+		return {
+			world: world, mask: mask, forcedHomes: forcedHomes, homes: homes,
+			windowed: windowed, cutoff: cutoff, order: order, assign: assign,
+			siteList: siteList, stats: stats, rows: rows, openPays: openPays,
+			buildables: buildables, traced: traced, n: 0
+		};
+	}
+
+	function openingGroupStep(state) {
+		const assign = state.assign;
+		const mask = state.mask;
+		const homes = state.homes;
+		const order = state.order;
+		const cutoff = state.cutoff;
+		const siteList = state.siteList;
+		const stats = state.stats;
+		const sitePay = state.rows.sitePay;
+		const exitOk = state.rows.exitOk;
+		const rows = state.rows;
+		const openPays = state.openPays;
+		const buildables = state.buildables;
+		const traced = state.traced;
+		while (state.n < homes.length) {
+			const seat = order ? order[state.n] : state.n;
 			const home = homes[seat];
-			const track = openingTracks(world, mask, forcedHomes, home,
+			const track = openingTracks(state.world, state.mask, state.forcedHomes, home,
 				OPENING_ANGLES, OPENING_SPEEDS, true);
+			if (track === OPENING_PAUSED) return OPENING_PAUSED;
 			const row = home * OrbitWorld.PLANETS;
 			for (let k = 0; k < siteList.length; k++) {
 				const body = siteList[k];
@@ -2373,6 +2461,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			}
 			openPays[seat] = track.openPay;
 			buildables[seat] = track.buildable;
+			state.n += 1;
 			if (cutoff === undefined) continue;
 			traced.push(home);
 			if (!openingSeatsCanReach(rows, traced, siteList, mask, cutoff)) return null;
@@ -2438,6 +2527,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		stats.peak = seatPeakRatio(rows, homes, siteList, mask);
 		stats.anySpread = stats.maxAnyPay - stats.minAnyPay;
 		return stats;
+	}
+
+	function openingGroupStats(world, trade, mask, count, forcedHomes, homes, sourceSim,
+		windowed, cutoff, order) {
+		return openingGroupStep(openingGroupBegin(world, trade, mask, count, forcedHomes,
+			homes, sourceSim, windowed, cutoff, order));
 	}
 
 	/* can these traced seats still sit on distinct exit-safe sites, at a
@@ -2948,11 +3043,25 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	}
 
 	/* Put four leaders from each reading first, then the map objective's full
-	 * order. Object identity is enough here: every proposal is created once. */
-	function diverseOpeningOrder(sets) {
+	 * order. Object identity is enough here: every proposal is created once.
+	 * One yield per family so a background search can spend a frame on a
+	 * single sort; the sync wrapper below drains the same generator. */
+	function* stableSortSteps(values, cmp) {
+		/* One family sort per yield so the walk spends a frame on it. The sort
+		 * stays whole-array on purpose: the family comparators band fields with
+		 * epsilon fall-throughs, so they are not transitive and chunk-merge
+		 * sorting produced a different (also valid) order — which moved a
+		 * saved-map plan (make_saved_maps --check caught seed 4). The pinned
+		 * baseline order is V8's Array.sort on the full array; keep it. */
+		const sorted = values.slice().sort(cmp);
+		yield false;
+		return sorted;
+	}
+
+	function* diverseOpeningOrderSteps(sets) {
 		const families = [];
 		for (let i = 0; i < OPENING_ORDERS.length; i++) {
-			families.push(sets.slice().sort(openingProposalSort(OPENING_ORDERS[i])));
+			families.push(yield* stableSortSteps(sets, openingProposalSort(OPENING_ORDERS[i])));
 		}
 		const ordered = [];
 		const seen = new Set();
@@ -2972,6 +3081,13 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			ordered.push(proposal);
 		}
 		return ordered;
+	}
+
+	function diverseOpeningOrder(sets) {
+		const steps = diverseOpeningOrderSteps(sets);
+		let out = steps.next();
+		while (!out.done) out = steps.next();
+		return out.value;
 	}
 
 	const rankOccupiedScratch = new Uint8Array(OrbitWorld.PLANETS);
@@ -3145,8 +3261,18 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * page can warn before the seat search and the fairness script can skip
 	 * seeds that never had a chance. Light uses the margin law (a new rail
 	 * must leave with a quarter in hand); heavies count worlds the starter
-	 * rail cannot leave at all, split into tier-2 (EMC-2 + BAT-2 at <= 75 %)
-	 * and tier-3+ (EMC-3 + BAT-3 capability). Memoised per field stamp. */
+	 * rail cannot leave at all, split by the plan's shared vocabulary:
+	 * heavy >= EMC2 — EMC-1 cannot leave it, EMC-2 kit can at <= 75 %;
+	 * heavy > EMC2 — EMC-2 cannot leave it, EMC-3 kit can at <= 75 %.
+	 * Negatives are capability (a full-power exit is still a physical exit,
+	 * so an EMC-2 escape never enters the > EMC2 branch); positives are the
+	 * margin law (a launch class must not rest on one lucky full-power
+	 * trajectory). The kits keep the paired batteries, not the vocabulary's
+	 * BAT-1: 0.75 of EMC-2 + BAT-1's cap (89 px/s) sits below the starter's
+	 * own cap (92 px/s), so no heavy could ever clear that tier and both
+	 * BAT-1 classes measure empty — the margin clause of the vocabulary wins
+	 * over the battery noun, recalibrated per the 0.7.47 review. Memoised
+	 * per field stamp. */
 	const compositionCache = new Map();
 	const COMPOSITION_CACHE_MAX = 8;
 	let compositionSim = null;
@@ -3239,8 +3365,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			heavies += 1;
 			const s2 = compositionExitSpeed(planet, cap2);
 			if (exitSpeedHasMargin(s2, cap2)) { heavyEmc2 += 1; continue; }
+			/* a full-power EMC-2 escape is still an escape: EMC-2 can leave
+			 * the world, so it is not the "EMC-2 cannot" class either */
+			if (s2 > 0) continue;
 			const s3 = compositionExitSpeed(planet, cap3);
-			if (s3 > 0) heavyEmc3 += 1;
+			if (exitSpeedHasMargin(s3, cap3)) heavyEmc3 += 1;
 		}
 		const counts = { light: light, heavyEmc2: heavyEmc2, heavyEmc3: heavyEmc3, heavies: heavies };
 		compositionCache.set(key, counts);
@@ -3347,6 +3476,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		const traceBudget = count >= law.roomyCount ? law.roomyTraces : law.traces;
 		const maxProposals = law.proposals || OPENING_WIDE_PROPOSALS;
 		let phase = candidates.length < seatsWanted ? 'done' : 'light';
+		let lightPrepared = false;
 		let lightPlanet = 0;
 		let lightSites = 0;
 		let coldPlanet = 0;
@@ -3360,6 +3490,17 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		let pairTracks = null;
 		let pairA = 0;
 		let pairB = 1;
+		let pairTrackIdx = 0;
+		let exactGroup = null;
+		let exactGroupBefore = 0;
+		let repairGroup = null;
+		let repairReplacement = -1;
+		let diverseSteps = null;
+		let dfsStack = null;
+		let dfsBuilt = null;
+		let dfsChosen = null;
+		let dfsPool = null;
+		let dfsLightBudget = 0;
 		let rankIdx = 0;
 		let coldRows = null;
 		let bestHomes = null;
@@ -3368,45 +3509,68 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		let repairIdx = 0;
 		let result = null;
 
-		function buildSets() {
+		/* Set construction (0.7.47 review): the candidate-pool DFS is an
+		 * explicit stack advanced by a fixed op budget per unit, so big pools
+		 * never build all combinations inside one frame; set order and hashes
+		 * are unchanged. */
+		function buildSetsBegin() {
 			let heavyHomes = 0;
 			for (let c = 0; c < candidates.length; c++) if (!light[candidates[c]]) heavyHomes += 1;
-			const lightBudget = !law.prune ? Infinity
+			dfsLightBudget = !law.prune ? Infinity
 				: Math.max(lightSites - seatsWanted, seatsWanted - heavyHomes, 0);
-			const pool = law.prune ? openingWidePool(world, trade, mask, count, candidates,
+			dfsPool = law.prune ? openingWidePool(world, trade, mask, count, candidates,
 				seatsWanted, sourceSim, light, maxProposals) : candidates;
-			const chosen = [];
-			const built = [];
-			function searchSets(from, lightUsed) {
-				if (lightUsed > lightBudget) return;
-				if (chosen.length === seatsWanted) {
+			dfsChosen = [];
+			dfsBuilt = [];
+			dfsStack = [{ from: 0, lightUsed: 0, c: 0 }];
+		}
+
+		function buildSetsStep() {
+			let ops = 0;
+			while (dfsStack.length) {
+				if (ops >= 8192) return false;
+				ops += 1;
+				const frame = dfsStack[dfsStack.length - 1];
+				const need = seatsWanted - dfsChosen.length;
+				if (frame.c > dfsPool.length - need) {
+					dfsStack.pop();
+					dfsChosen.pop();
+					continue;
+				}
+				const c = frame.c;
+				frame.c += 1;
+				dfsChosen.push(dfsPool[c]);
+				if (dfsChosen.length === seatsWanted) {
 					let tie = OrbitWorld.hashBits(world.seed, seatsWanted, SALT_HQ);
 					let dim = 0;
-					for (let i = 0; i < chosen.length; i++) {
-						tie = OrbitWorld.hashBits(tie, chosen[i], SALT_HQ);
-						if (sunlit && !sunlit[chosen[i]]) dim += 1;
+					for (let i = 0; i < dfsChosen.length; i++) {
+						tie = OrbitWorld.hashBits(tie, dfsChosen[i], SALT_HQ);
+						if (sunlit && !sunlit[dfsChosen[i]]) dim += 1;
 					}
-					built.push({ homes: chosen.slice(), tie: tie, dim: dim });
-					return;
+					dfsBuilt.push({ homes: dfsChosen.slice(), tie: tie, dim: dim });
+					dfsChosen.pop();
+					continue;
 				}
-				const need = seatsWanted - chosen.length;
-				for (let c = from; c <= pool.length - need; c++) {
-					chosen.push(pool[c]);
-					searchSets(c + 1, lightUsed + light[pool[c]]);
-					chosen.pop();
+				const childLight = frame.lightUsed + light[dfsPool[c]];
+				if (childLight <= dfsLightBudget) {
+					dfsStack.push({ from: c + 1, lightUsed: childLight, c: c + 1 });
+				} else {
+					dfsChosen.pop();
 				}
 			}
-			searchSets(0, 0);
-			sets = built;
+			sets = dfsBuilt;
+			dfsStack = null;
+			dfsChosen = null;
+			dfsPool = null;
 			if (!sets.length) {
 				phase = 'done';
-				return;
+				return true;
 			}
 			if (sets.length <= law.batch) {
 				consider = sets;
 				exactLimit = Math.min(consider.length, law.sets);
 				phase = 'exact';
-				return;
+				return true;
 			}
 			if (openingPairRanked(candidates, seatsWanted, count, law.windowed)) {
 				pairKey = pairTracksKey(world, trade, mask, count, candidates, sourceSim);
@@ -3420,19 +3584,28 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 					pairB = 1;
 					phase = 'tracePairs';
 				}
-				return;
+				return true;
 			}
 			coldPlanet = 0;
 			coldNextPhase = 'scoreColdInit';
 			phase = 'warmCold';
+			return true;
 		}
 
 		function stepUnit() {
 			if (phase === 'done') return true;
 			if (phase === 'light') {
+				if (!lightPrepared) {
+					/* the field install is its own unit: a cold prepare plus
+					 * sync used to sit inside the first probe chunk */
+					openingPrepare(world, trade, mask, count, null, sourceSim);
+					openingSyncField(world);
+					lightPrepared = true;
+					return false;
+				}
 				openingPrepare(world, trade, mask, count, null, sourceSim);
 				openingSyncField(world);
-				const end = Math.min(planets, lightPlanet + 8);
+				const end = Math.min(planets, lightPlanet + 1);
 				while (lightPlanet < end) {
 					if (openingSiteLight(world, mask, lightPlanet)) {
 						light[lightPlanet] = 1;
@@ -3447,7 +3620,12 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 					phase = 'warmCold';
 					return false;
 				}
-				buildSets();
+				buildSetsBegin();
+				phase = 'buildSets';
+				return false;
+			}
+			if (phase === 'buildSets') {
+				if (!buildSetsStep()) return false;
 				return phase === 'done';
 			}
 			if (phase === 'warmCold') {
@@ -3458,14 +3636,17 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				if (coldPlanet < planets) {
 					const savedCount = openingTraceCount;
 					openingPrepare(world, trade, mask, count, null, sourceSim);
-					openingTraceHome(world, mask, null, coldPlanet, true, null, null, null);
+					const coldProfile = fanBounded(() => openingTraceHome(world, mask, null,
+						coldPlanet, true, null, null, null));
 					openingTraceCount = savedCount;
+					if (coldProfile === OPENING_PAUSED) return false;
 					coldPlanet += 1;
 					return false;
 				}
 				if (coldNextPhase === 'buildSets') {
-					buildSets();
-					return phase === 'done';
+					buildSetsBegin();
+					phase = 'buildSets';
+					return false;
 				}
 				coldRows = careerOpenings(world, trade, mask, count, null, sourceSim);
 				rankIdx = 0;
@@ -3480,14 +3661,28 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				if (pairA < candidates.length) {
 					const homeA = candidates[pairA];
 					const homeB = candidates[pairB];
-					pairMask.fill(0);
-					pairMask[homeA] = 1;
-					pairMask[homeB] = 1;
-					openingPrepare(world, trade, mask, count, pairMask, sourceSim);
-					pairTracks[homeA * planets + homeB] = openingTracks(
-						world, mask, pairMask, homeA, OPENING_ANGLES, OPENING_SPEEDS, false);
-					pairTracks[homeB * planets + homeA] = openingTracks(
-						world, mask, pairMask, homeB, OPENING_ANGLES, OPENING_SPEEDS, false);
+					if (pairTrackIdx === 0) {
+						pairMask.fill(0);
+						pairMask[homeA] = 1;
+						pairMask[homeB] = 1;
+						openingPrepare(world, trade, mask, count, pairMask, sourceSim);
+						const trackA = fanBounded(() => openingTracks(
+							world, mask, pairMask, homeA, OPENING_ANGLES, OPENING_SPEEDS, false));
+						if (trackA === OPENING_PAUSED) return false;
+						pairTracks[homeA * planets + homeB] = trackA;
+						pairTrackIdx = 1;
+					}
+					if (pairTrackIdx === 1) {
+						pairMask.fill(0);
+						pairMask[homeA] = 1;
+						pairMask[homeB] = 1;
+						openingPrepare(world, trade, mask, count, pairMask, sourceSim);
+						const trackB = fanBounded(() => openingTracks(
+							world, mask, pairMask, homeB, OPENING_ANGLES, OPENING_SPEEDS, false));
+						if (trackB === OPENING_PAUSED) return false;
+						pairTracks[homeB * planets + homeA] = trackB;
+						pairTrackIdx = 0;
+					}
 					pairB += 1;
 					return false;
 				}
@@ -3498,20 +3693,19 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 				return false;
 			}
 			if (phase === 'scorePairs') {
-				const end = Math.min(sets.length, rankIdx + 256);
+				const end = Math.min(sets.length, rankIdx + 16);
 				while (rankIdx < end) {
 					scoreSetByPairs(mask, pairTracks, sets[rankIdx], law.windowed);
 					rankIdx += 1;
 				}
 				if (rankIdx < sets.length) return false;
-				consider = diverseOpeningOrder(sets);
-				exactLimit = Math.min(consider.length, law.sets);
-				phase = 'exact';
+				diverseSteps = diverseOpeningOrderSteps(sets);
+				phase = 'diversify';
 				return false;
 			}
 			if (phase === 'scoreCold') {
 				const occupied = rankOccupiedScratch;
-				const end = Math.min(sets.length, rankIdx + 256);
+				const end = Math.min(sets.length, rankIdx + 16);
 				while (rankIdx < end) {
 					const proposal = sets[rankIdx];
 					occupied.fill(0);
@@ -3522,7 +3716,15 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 					rankIdx += 1;
 				}
 				if (rankIdx < sets.length) return false;
-				consider = diverseOpeningOrder(sets);
+				diverseSteps = diverseOpeningOrderSteps(sets);
+				phase = 'diversify';
+				return false;
+			}
+			if (phase === 'diversify') {
+				const stepOut = diverseSteps.next();
+				if (!stepOut.done) return false;
+				consider = stepOut.value;
+				diverseSteps = null;
 				exactLimit = Math.min(consider.length, law.sets);
 				phase = 'exact';
 				return false;
@@ -3533,14 +3735,19 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 					return phase === 'done';
 				}
 				const proposal = consider[exactIdx];
-				proposalMask.fill(0);
-				for (let j = 0; j < proposal.homes.length; j++) proposalMask[proposal.homes[j]] = 1;
 				const cutoff = law.windowed ? openingCutoff(bestStats) : undefined;
-				const before = openingTraceCount;
-				const exact = openingGroupStats(world, trade, mask, count,
-					proposalMask, proposal.homes, sourceSim, law.windowed, cutoff,
-					cutoff === undefined ? null : openingRiskOrder(proposal));
-				exactTraced += (openingTraceCount - before) * count;
+				if (!exactGroup) {
+					proposalMask.fill(0);
+					for (let j = 0; j < proposal.homes.length; j++) proposalMask[proposal.homes[j]] = 1;
+					exactGroup = openingGroupBegin(world, trade, mask, count,
+						proposalMask, proposal.homes, sourceSim, law.windowed, cutoff,
+						cutoff === undefined ? null : openingRiskOrder(proposal));
+					exactGroupBefore = openingTraceCount;
+				}
+				const exact = fanBounded(() => openingGroupStep(exactGroup));
+				if (exact === OPENING_PAUSED) return false;
+				exactGroup = null;
+				exactTraced += (openingTraceCount - exactGroupBefore) * count;
 				if (exact) exact.dim = proposal.dim || 0;
 				const better = exact ? compareOpeningGroups(exact, bestStats) : -1;
 				if (better > 0 || (better === 0 && proposal.tie < bestTie)) {
@@ -3568,20 +3775,25 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 					finalizeWalk();
 					return true;
 				}
-				forcedHomes[badHome] = 0;
-				const replacement = pickFairHq(world.seed + seat + repairIdx, world,
-					forcedHomes, mask, count, trade, sourceSim);
-				if (replacement < 0 || replacement === badHome) {
-					forcedHomes[badHome] = 1;
-					finalizeWalk();
-					return true;
+				if (!repairGroup) {
+					forcedHomes[badHome] = 0;
+					repairReplacement = pickFairHq(world.seed + seat + repairIdx, world,
+						forcedHomes, mask, count, trade, sourceSim);
+					if (repairReplacement < 0 || repairReplacement === badHome) {
+						forcedHomes[badHome] = 1;
+						finalizeWalk();
+						return true;
+					}
+					bestHomes[seat] = repairReplacement;
+					forcedHomes[repairReplacement] = 1;
+					repairGroup = openingGroupBegin(world, trade, mask, count, forcedHomes,
+						bestHomes, sourceSim, law.windowed, undefined, null);
 				}
-				bestHomes[seat] = replacement;
-				forcedHomes[replacement] = 1;
-				const repaired = openingGroupStats(world, trade, mask, count, forcedHomes,
-					bestHomes, sourceSim, law.windowed);
+				const repaired = fanBounded(() => openingGroupStep(repairGroup));
+				if (repaired === OPENING_PAUSED) return false;
+				repairGroup = null;
 				if (law.relaxed && compareOpeningGroups(repaired, bestStats) < 0) {
-					forcedHomes[replacement] = 0;
+					forcedHomes[repairReplacement] = 0;
 					forcedHomes[badHome] = 1;
 					bestHomes[seat] = badHome;
 					finalizeWalk();
@@ -3637,6 +3849,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			if (phase === 'scorePairs' || phase === 'scoreCold') {
 				return 0.30 + 0.05 * (sets && sets.length ? rankIdx / sets.length : 1);
 			}
+			if (phase === 'diversify') return 0.35;
+			if (phase === 'buildSets') return 0.25;
 			if (phase === 'exact') {
 				const bySet = exactLimit > 0 ? exactIdx / Math.min(exactLimit, law.miss) : 1;
 				const byTrace = Number.isFinite(traceBudget) && traceBudget > 0
@@ -3897,11 +4111,19 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			return true;
 		}
 
+		/* read-only probe for H's decision card (WS4): could a wait-more
+		 * click advance right now, without performing the advance */
+		function canAdvanceTier() {
+			return Boolean(canSeat && tierDone && currentTier < 2 &&
+				!(completedRaw && openingGroupAccepted(completedRaw.stats)));
+		}
+
 		startTier(0);
 
 		return {
 			step: step,
 			advanceTier: advanceTier,
+			canAdvanceTier: canAdvanceTier,
 			get tier() { return currentTier; },
 			bestHomes: () => completedPlan ? completedPlan.homes.slice() : null,
 			bestStats: () => completedPlan ? completedPlan.stats : null,

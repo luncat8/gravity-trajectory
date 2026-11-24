@@ -510,7 +510,10 @@
 			searchTier: opts.searchTier || 0,
 			searchWeakest: opts.searchWeakest || 0,
 			searchUnmet: opts.searchUnmet || '',
-			searchProgress: opts.searchProgress || 0
+			searchProgress: opts.searchProgress || 0,
+			searchDecision: opts.searchDecision || '',
+			searchPlan: Boolean(opts.searchPlan),
+			searchCanAdvance: Boolean(opts.searchCanAdvance)
 		}));
 	}
 
@@ -829,16 +832,24 @@
 			why: () => 'world is full'
 		}),
 		'search-has-plan': Object.freeze({
-			test: s => s.searchActive && s.searchUnmet === '',
+			test: s => s.searchActive && s.searchPlan,
 			why: s => s.searchUnmet ? 'still searching · ' + s.searchUnmet : 'nothing to start'
 		}),
 		'can-advance-tier': Object.freeze({
-			test: s => s.searchActive && s.searchTier < 2,
-			why: s => 'last tier already searched'
+			test: s => s.searchActive && s.searchDecision === 'tier-end' && s.searchCanAdvance,
+			why: () => 'last tier already searched'
 		}),
 		'search-unmet': Object.freeze({
 			test: s => s.searchActive && Boolean(s.searchUnmet),
 			why: () => ''
+		}),
+		'search-accepted': Object.freeze({
+			test: s => s.searchActive && s.searchDecision === 'accepted',
+			why: () => 'the search has not accepted yet'
+		}),
+		'search-decision': Object.freeze({
+			test: s => s.searchActive && Boolean(s.searchDecision),
+			why: () => 'no decision is pending'
 		}),
 		'search-settled': Object.freeze({
 			test: s => s.searchActive && !s.searchUnmet,
@@ -1042,6 +1053,20 @@
 			label: 'search more',
 			when: 'search-active',
 			enabled: 'can-advance-tier',
+			costly: false
+		}),
+		'fair-start-fair': Object.freeze({
+			id: 'fair-start-fair',
+			label: 'start fair',
+			when: 'search-accepted',
+			enabled: 'search-accepted',
+			costly: false
+		}),
+		'fair-load-saves': Object.freeze({
+			id: 'fair-load-saves',
+			label: 'load a fair save',
+			when: 'search-active',
+			enabled: 'search-active',
 			costly: false
 		})
 	});
@@ -1539,13 +1564,22 @@
 				Object.freeze({
 					text: 'A fair set is ready at this tier — start with it, search more, or change the roster.',
 					when: 'search-has-plan'
+				}),
+				Object.freeze({
+					text: 'The search accepted a fair set — start fair now, or load a saved map instead.',
+					when: 'search-accepted'
+				}),
+				Object.freeze({
+					text: 'Or load a saved map that already seats this roster fairly.',
+					when: 'search-decision'
 				})
 			]),
 			lookAhead: Object.freeze([]),
 			ref: Object.freeze(['fair-roster']),
 			refWhen: 'roster-unfair',
 			chips: Object.freeze([]),
-			actions: Object.freeze(['fair-play-as-is', 'fair-wait-more'])
+			actions: Object.freeze(['fair-play-as-is', 'fair-wait-more',
+				'fair-start-fair', 'fair-load-saves'])
 		})
 	});
 

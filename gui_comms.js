@@ -114,6 +114,12 @@ const COMMS_HANDLERS = Object.freeze({
 	},
 	'fair-wait-more'() {
 		advanceFairSearchTier();
+	},
+	'fair-start-fair'() {
+		startFairSearchPlan();
+	},
+	'fair-load-saves'() {
+		loadFairSaveRecord(commsState.loadSaveValue);
 	}
 });
 
@@ -191,6 +197,8 @@ function commsBuildSnapshot() {
 	const rule = watching ? 'replay' : game.on ? game.rule : PLAY_LAB;
 	const career = inCareer ? playerCareer() : null;
 	const sim = inCareer ? activeCareerSim() : activeSim();
+	const roster = rosterFairnessReport();
+	const search = fairSearchSnapshotFields();
 	const snapshot = CommsCopy.buildSnapshot({
 		rule: rule,
 		gameOn: game.on && !watching,
@@ -206,9 +214,20 @@ function commsBuildSnapshot() {
 		aimSpeed: aimSpeed,
 		waitLocked: careerWaitBusy() || turret.pending || sim.status === STATUS_FLYING,
 		/* 0.7.47 WS3/WS4: the live roster's fairness and the seat-search
-		 * report, so H can raise the fair-roster and fair-search cards */
-		roster: rosterFairnessReport(),
-		search: seatSearchReport()
+		 * report, flattened into the one shape comms_copy's gates read —
+		 * passing them nested left rosterOk/searchActive at their defaults
+		 * and the fair cards never raised */
+		rosterOk: roster.ok,
+		rosterPlanets: roster.planets,
+		rosterPlayers: roster.players,
+		searchActive: search.searchActive,
+		searchTier: search.searchTier,
+		searchWeakest: search.searchWeakest,
+		searchUnmet: search.searchUnmet,
+		searchProgress: search.searchProgress,
+		searchDecision: search.searchDecision,
+		searchPlan: search.searchPlan,
+		searchCanAdvance: search.searchCanAdvance
 	});
 	commsState.snapshot = snapshot;
 	commsState.snapshotDirty = false;
@@ -387,6 +406,23 @@ function commsCtasMarkup(actions) {
 		const act = actions[i];
 		const cls = 'miniBtn' + (act.costly ? ' costly' : '');
 		const dis = act.enabled ? '' : ' disabled';
+		/* WS4 fair-save picker: an inline dropdown of the saved maps whose
+		 * seated opening still clears the fair band; choosing one loads it */
+		if (act.id === 'fair-load-saves') {
+			const opts = typeof fairSaveOptions === 'function' ? fairSaveOptions() : [];
+			html += '<div class="commsActRow"><select class="' + cls +
+				'" data-comms-act="fair-load-saves" aria-label="load a fair save"' + dis + '>' +
+				'<option value="">' + (opts.length ? 'load a fair save\u2026' : 'no fair saves') +
+				'</option>';
+			for (let j = 0; j < opts.length; j++) {
+				html += '<option value="' + commsEscapeHtml(String(opts[j].id)) + '">' +
+					commsEscapeHtml(opts[j].name) + '</option>';
+			}
+			html += '</select>' +
+				(act.why ? '<span class="commsWhy">' + commsEscapeHtml(act.why) + '</span>' : '') +
+				'</div>';
+			continue;
+		}
 		html += '<div class="commsActRow"><button class="' + cls +
 			'" type="button" data-comms-act="' + commsEscapeHtml(act.id) + '"' + dis + '>' +
 			commsEscapeHtml(act.label) + '</button>' +
@@ -524,5 +560,11 @@ if (commsCtasEl) {
 	commsCtasEl.addEventListener('click', event => {
 		const act = commsFindData(event, 'commsAct');
 		if (act) commsRunAction(act);
+	});
+	commsCtasEl.addEventListener('change', event => {
+		const target = event.target;
+		if (!target || target.getAttribute('data-comms-act') !== 'fair-load-saves') return;
+		commsState.loadSaveValue = target.value;
+		commsRunAction('fair-load-saves');
 	});
 }

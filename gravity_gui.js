@@ -523,6 +523,11 @@ let careerPlanning = false;
 let careerPlanSearch = null;
 let careerPlanSeed = 0;
 let careerPlanMode = GravityGame.START_PLANET;
+/* WS4 decision frozen at a tier end or an acceptance: the page never
+ * auto-advances or auto-starts — H offers play-as-is / load saves /
+ * wait more (or start fair), and the snapshot plan is the tier that was
+ * complete when this decision appeared */
+let careerPlanDecision = null;
 const slotPaused = new Array(MAX_PLAYERS).fill(false);
 /* wall-clock instant the career clock was paused; draw ticks freeze on it
  * so nothing animates while the world clock holds still */

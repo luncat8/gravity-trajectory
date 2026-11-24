@@ -128,8 +128,14 @@ for (const seed of SEEDS) {
 	assert.ok(compSpace.minimal <= compPlanet.minimal,
 		'seed ' + seed + ': a no-HQ start needs fewer planets than a planet start');
 	assert.ok(compSpace.light >= 3, 'seed ' + seed + ': the space composition counts light sites');
-	assert.ok(compSpace.heavyEmc2 >= 1 && compSpace.heavyEmc3 >= 1,
-		'seed ' + seed + ': the space composition still needs the heavy EMC planets');
+	/* The heavy classes still gate the weakened start. Under the 0.7.47
+	 * review's corrected probes (EMC-3 positive = margin, full-power-only
+	 * exits never class) seeds 1 and 8 carry an EMC-2-margin world but no
+	 * EMC-3-margin world, so each fails the gate on 'emc3'. */
+	assert.ok(compSpace.heavyEmc2 >= 1,
+		'seed ' + seed + ': the space composition counts the EMC-2 heavy class');
+	assert.ok(compSpace.missing.includes('emc3'),
+		'seed ' + seed + ': the EMC-3 heavy class still gates the space start');
 
 	/* --- the bot's full-parity space opening ------------------------------ */
 	/* the space flight opens like any career flight; the bot fans the granted
