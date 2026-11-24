@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gravity-trajectory · cargo slider · multiple-1</title>
+<style>
+:root {
+	color-scheme: dark;
+	--panel: rgba(6, 13, 25, 0.84);
+	--line: rgba(126, 180, 230, 0.16);
+	--text: #d6e7f5;
+	--dim: #728ca6;
+	--accent: #ffcf6e;
+	--mint: #8ef0c0;
+	--warn: #ff9478;
+}
+* { box-sizing: border-box; }
+body {
+	margin: 0;
+	padding: 24px 12px 40px;
+	background: #02060c;
+	color: var(--text);
+	font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 440px; margin: 0 auto; }
+h1 {
+	margin: 0 0 4px;
+	color: var(--accent);
+	font-size: 14px;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+.sub { margin: 0 0 14px; color: var(--dim); font-size: 11px; }
+.trade {
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	padding: 12px 14px;
+}
+section + section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.pRow {
+	display: grid;
+	grid-template-columns: 1fr 96px 72px;
+	gap: 6px;
+	align-items: baseline;
+	padding: 3px 0;
+	font-size: 11px;
+}
+.cargoHead {
+	display: flex;
+	justify-content: space-between;
+	gap: 10px;
+	align-items: baseline;
+	margin-bottom: 4px;
+}
+.cargoName { color: var(--accent); font-size: 12px; font-weight: 600; }
+.cargoMeta {
+	overflow: hidden;
+	color: var(--dim);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.bar { position: relative; height: 64px; cursor: pointer; }
+.bar:focus-within { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.bar canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.bar input {
+	position: absolute;
+	left: 3%;
+	top: 30%;
+	width: 94%;
+	height: 40%;
+	margin: 0;
+	opacity: 0.01;
+}
+.colHead,
+.jHead {
+	color: var(--dim);
+	font-size: 9px;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+}
+.colHead { padding-bottom: 2px; }
+.colHead span:nth-child(2),
+.colHead span:nth-child(3) { text-align: right; }
+.jHead { margin-bottom: 3px; }
+.pLbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pVal,
+.pDiff {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+}
+.pVal { color: var(--dim); }
+.pDiff { font-weight: 600; }
+.gain { color: var(--mint); }
+.loss { color: var(--warn); }
+.flat { color: var(--dim); font-weight: 400; }
+.foot { display: flex; gap: 6px; align-items: center; margin-top: 12px; }
+.miniBtn {
+	background: none;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	color: var(--text);
+	font: inherit;
+	font-size: 11px;
+	padding: 3px 10px;
+	cursor: pointer;
+}
+.miniBtn:hover { border-color: var(--accent); color: var(--accent); }
+.state {
+	flex: 1;
+	overflow: hidden;
+	color: var(--dim);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 10px;
+	text-align: right;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+</style>
+</head>
+<body>
+<main>
+	<h1>cargo &amp; trade · universal slider · 1</h1>
+	<p class="sub">compact canvas slider to move any useful cargo between 2 storages — one config per cargo.
+	watched values keep a ± diff beside their own bar (mint better · coral worse), derived joins combine below.
+	drag, arrow keys, double-click cancels a bar.</p>
+	<div id="trade"></div>
+</main>
+<script>
+"use strict";
+
+/* Universal cargo transfer panel.
+ * cfg: { sliders: [{ id, label, unit, step, value, metaDigits?,
+ *                    src: { label, cap, amount }, ship: { label, cap },
+ *                    params: [{ label, unit, digits, good: "up"|"down",
+ *                               join?, get(value, base) }] }],
+ *        joins: [{ key, label, good?, digits?, unit? }], onChange?(state) }
+ * diff of a param = get(current bar) - get(committed bar); a join sums its
+ * members across the sliders in one combined row below. */
+function createCargoTrade(container, cfg) {
+	const base = {};
+	const sliders = [];
+	const joins = [];
+
+	for (const s of cfg.sliders) {
+		const total = s.src.amount + s.value;
+		const lo = Math.max(0, total - s.src.cap);
+		const hi = Math.min(s.ship.cap, total);
+		if (!(hi > lo)) throw new Error(s.id + ": empty slider range");
+		base[s.id] = s.value;
+		sliders.push({ cfg: s, total, lo, hi, rows: [] });
+	}
+	for (const j of cfg.joins || []) joins.push({ cfg: j, members: [] });
+
+	container.innerHTML = '<div class="trade">' +
+		'<div class="pRow colHead" title="watched value · current · diff vs applied state">' +
+		'<span>watch</span><span>value</span><span>&#916;</span></div>' +
+		sliders.map(sectionHtml).join("") +
+		(joins.length ? joinsHtml() : "") +
+		footHtml() +
+		"</div>";
+
+	const stateEl = container.querySelector(".state");
+	for (const s of sliders) wireSlider(s);
+	wireJoins();
+	container.querySelector('[data-act="reset"]').addEventListener("click", reset);
+	container.querySelector('[data-act="apply"]').addEventListener("click", apply);
+	window.addEventListener("resize", redraw);
+	redraw();
+
+	function sectionHtml(s) {
+		const c = s.cfg;
+		return '<section class="cargo" data-id="' + c.id + '" aria-label="' + c.label + ' transfer">' +
+			'<div class="cargoHead"><span class="cargoName">' + c.label + '</span>' +
+			'<span class="cargoMeta"></span></div>' +
+			'<div class="bar" title="drag or arrow keys · double-click cancels">' +
+			"<canvas></canvas>" +
+			'<input type="range" min="' + s.lo + '" max="' + s.hi + '" step="' + (c.step || 1) +
+			'" value="' + c.value + '" aria-label="' + c.label + ' amount on ship">' +
+			"</div>" +
+			c.params.map(p =>
+				'<div class="pRow"><span class="pLbl">' + p.label + "</span>" +
+				'<span class="pVal"></span><span class="pDiff flat"></span></div>').join("") +
+			"</section>";
+	}
+
+	function joinsHtml() {
+		return '<section class="joins" aria-label="combined">' +
+			'<div class="jHead">combined</div>' +
+			joins.map(j =>
+				'<div class="pRow"><span class="pLbl">' + j.cfg.label + "</span>" +
+				'<span class="pVal"></span><span class="pDiff flat"></span></div>').join("") +
+			"</section>";
+	}
+
+	function footHtml() {
+		return '<div class="foot">' +
+			'<button class="miniBtn" data-act="reset" title="every bar back to the applied state">reset</button>' +
+			'<button class="miniBtn" data-act="apply" title="commit the current bars as the applied state">apply</button>' +
+			'<span class="state" title="state passed to onChange"></span>' +
+			"</div>";
+	}
+
+	function wireSlider(s) {
+		const sec = container.querySelector('.cargo[data-id="' + s.cfg.id + '"]');
+		s.input = sec.querySelector("input");
+		s.meta = sec.querySelector(".cargoMeta");
+		s.canvas = sec.querySelector("canvas");
+		s.ctx = s.canvas.getContext("2d");
+		const rowEls = sec.querySelectorAll(".pRow");
+		s.cfg.params.forEach((p, i) => s.rows.push({
+			p,
+			rowEl: rowEls[i],
+			valEl: rowEls[i].querySelector(".pVal"),
+			diffEl: rowEls[i].querySelector(".pDiff")
+		}));
+		s.input.addEventListener("input", refresh);
+		sec.querySelector(".bar").addEventListener("dblclick", () => {
+			s.input.value = base[s.cfg.id];
+			refresh();
+		});
+	}
+
+	function wireJoins() {
+		const rowEls = container.querySelectorAll(".joins .pRow");
+		joins.forEach((j, i) => {
+			j.valEl = rowEls[i].querySelector(".pVal");
+			j.diffEl = rowEls[i].querySelector(".pDiff");
+			for (const s of sliders)
+				for (const row of s.rows)
+					if (row.p.join === j.cfg.key) j.members.push({ s, row });
+			const first = j.members.length ? j.members[0].row.p : null;
+			j.digits = j.cfg.digits ?? first?.digits ?? 0;
+			j.good = j.cfg.good ?? first?.good;
+			j.unit = j.cfg.unit ?? first?.unit;
+		});
+	}
+
+	function state() {
+		const out = {};
+		for (const s of sliders) out[s.cfg.id] = Number(s.input.value);
+		return out;
+	}
+
+	function setCells(valEl, diffEl, value, baseValue, unit, digits, good) {
+		const diff = value - baseValue;
+		valEl.textContent = fmtNum(value, digits) + (unit ? " " + unit : "");
+		diffEl.textContent = diffText(diff, digits);
+		diffEl.className = diffClass(diff, good, digits);
+	}
+
+	function refreshSlider(s) {
+		const c = s.cfg;
+		const value = Number(s.input.value);
+		const applied = base[s.cfg.id];
+		drawCargoBar(s, value, applied);
+		s.meta.textContent = metaText(s, value);
+		for (const row of s.rows) {
+			const p = row.p;
+			const was = p.get(applied, applied);
+			const val = p.get(value, applied);
+			setCells(row.valEl, row.diffEl, val, was, p.unit, p.digits, p.good);
+			row.rowEl.title = p.label + ": " + fmtNum(was, p.digits) + " → " + fmtNum(val, p.digits) +
+				(p.unit ? " " + p.unit : "");
+		}
+	}
+
+	function refreshJoins() {
+		for (const j of joins) {
+			let value = 0;
+			let applied = 0;
+			for (const m of j.members) {
+				const at = Number(m.s.input.value);
+				const was = base[m.s.cfg.id];
+				value += m.row.p.get(at, was);
+				applied += m.row.p.get(was, was);
+			}
+			setCells(j.valEl, j.diffEl, value, applied, j.unit, j.digits, j.good);
+		}
+	}
+
+	function redraw() {
+		for (const s of sliders) refreshSlider(s);
+		refreshJoins();
+		stateEl.textContent = JSON.stringify(state());
+	}
+
+	function refresh() {
+		redraw();
+		if (cfg.onChange) cfg.onChange(state());
+	}
+
+	function reset() {
+		for (const s of sliders) s.input.value = base[s.cfg.id];
+		refresh();
+	}
+
+	function apply() {
+		for (const s of sliders) base[s.cfg.id] = Number(s.input.value);
+		refresh();
+	}
+
+	return {
+		state,
+		reset,
+		apply,
+		refresh,
+		destroy() {
+			window.removeEventListener("resize", redraw);
+			container.innerHTML = "";
+		}
+	};
+}
+
+function metaText(s, value) {
+	const c = s.cfg;
+	const d = c.metaDigits ?? 1;
+	const cap = v => Number.isInteger(v) ? String(v) : fmtNum(v, d);
+	return c.src.label + " " + fmtNum(s.total - value, d) + " / " + cap(c.src.cap) +
+		" · " + c.ship.label + " " + fmtNum(value, d) + " / " + cap(c.ship.cap) + " " + c.unit;
+}
+
+/* both levels on one horizontal rectangle: left of the center mark is the
+   source, right is the ship, the accent tick marks the applied bar position */
+function drawCargoBar(s, value, applied) {
+	const c = s.cfg;
+	const box = s.canvas.parentNode;
+	const w = box.clientWidth;
+	const h = box.clientHeight;
+	const dpr = window.devicePixelRatio || 1;
+	const pw = Math.round(w * dpr);
+	const ph = Math.round(h * dpr);
+	if (s.canvas.width !== pw || s.canvas.height !== ph) {
+		s.canvas.width = pw;
+		s.canvas.height = ph;
+	}
+	const ctx = s.ctx;
+	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+	ctx.clearRect(0, 0, w, h);
+
+	const x = w * 0.03;
+	const bw = w * 0.94;
+	const y = h * 0.30;
+	const bh = h * 0.40;
+	const cx = x + bw / 2;
+	const ship = clamp(value / c.ship.cap, 0, 1);
+	const src = clamp((s.total - value) / c.src.cap, 0, 1);
+
+	ctx.fillStyle = "rgba(126, 180, 230, 0.10)";
+	ctx.fillRect(x, y, bw, bh);
+	ctx.fillStyle = c.src.color || "#e67e22";
+	ctx.fillRect(cx - src * bw / 2, y, src * bw / 2, bh);
+	ctx.fillStyle = c.ship.color || "#3a7bd5";
+	ctx.fillRect(cx, y, ship * bw / 2, bh);
+	ctx.strokeStyle = "rgba(126, 180, 230, 0.35)";
+	ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
+
+	ctx.fillStyle = "#ffcf6e";
+	ctx.fillRect(x + (applied - s.lo) / (s.hi - s.lo) * bw - 1, y + bh + 3, 2, 5);
+
+	ctx.fillStyle = "#d6e7f5";
+	ctx.fillRect(cx - 1, y - 4, 2, bh + 8);
+
+	ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+	ctx.textBaseline = "middle";
+	ctx.fillStyle = "#d6e7f5";
+	ctx.textAlign = "left";
+	ctx.fillText(c.src.label + " " + Math.round(src * 100) + "%", x + 6, y + bh / 2);
+	ctx.textAlign = "right";
+	ctx.fillText(c.ship.label + " " + Math.round(ship * 100) + "%", x + bw - 6, y + bh / 2);
+}
+
+function fmtNum(value, digits) {
+	const rounded = Number(value.toFixed(digits));
+	return (rounded === 0 ? 0 : rounded).toFixed(digits);
+}
+
+function diffText(diff, digits) {
+	const d = Number(diff.toFixed(digits));
+	return (d > 0 ? "+" : "") + (d === 0 ? 0 : d).toFixed(digits);
+}
+
+function diffClass(diff, good, digits) {
+	const d = Number(diff.toFixed(digits));
+	if (!good || d === 0) return "pDiff flat";
+	return "pDiff " + ((d > 0) === (good === "up") ? "gain" : "loss");
+}
+
+function clamp(value, min, max) {
+	return Math.min(max, Math.max(min, value));
+}
+
+// Example: ship cargo & trade, any cargo comes from config alone.
+const ENERGY_RATE = 8;      // kWh moved per second of transfer
+const ENERGY_PRICE = 0.05;  // cr per kWh on the commercial rail
+const FUEL_PRICE = 0.08;    // cr per kg, the career fuel price
+const DRY_MASS = 1.2;       // t of the ship without fuel
+
+const trade = createCargoTrade(document.getElementById("trade"), {
+	sliders: [
+		{
+			id: "energy",
+			label: "energy",
+			unit: "kWh",
+			step: 0.5,
+			value: 8,
+			src: { label: "station", cap: 120, amount: 96 },
+			ship: { label: "ship", cap: 20 },
+			params: [
+				{ label: "amount", unit: "kWh", digits: 1, good: "up", get: v => v },
+				{ label: "time", unit: "s", digits: 1, good: "down",
+					get: (v, b) => Math.abs(v - b) / ENERGY_RATE },
+				{ label: "cost", unit: "cr", digits: 2, good: "down", join: "cost",
+					get: (v, b) => (v - b) * ENERGY_PRICE }
+			]
+		},
+		{
+			id: "fuel",
+			label: "fuel",
+			unit: "kg",
+			step: 0.5,
+			value: 4,
+			src: { label: "depot", cap: 60, amount: 40 },
+			ship: { label: "tank", cap: 15 },
+			params: [
+				{ label: "ship mass", unit: "t", digits: 3, good: "down",
+					get: v => DRY_MASS + v / 1000 },
+				{ label: "cost", unit: "cr", digits: 2, good: "down", join: "cost",
+					get: (v, b) => (v - b) * FUEL_PRICE }
+			]
+		}
+	],
+	joins: [{ key: "cost", label: "total cost" }],
+	onChange: state => console.log("trade draft", state)
+});
+</script>
+</body>
+</html>

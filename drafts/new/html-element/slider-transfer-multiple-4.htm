@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gravity-trajectory · cargo slider · multiple-4</title>
+<style>
+:root {
+	color-scheme: dark;
+	--panel: rgba(6, 13, 25, 0.84);
+	--line: rgba(126, 180, 230, 0.16);
+	--text: #d6e7f5;
+	--dim: #728ca6;
+	--accent: #ffcf6e;
+	--mint: #8ef0c0;
+	--warn: #ff9478;
+}
+* { box-sizing: border-box; }
+body {
+	margin: 0;
+	padding: 24px 12px 40px;
+	background: #02060c;
+	color: var(--text);
+	font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 440px; margin: 0 auto; }
+h1 {
+	margin: 0 0 4px;
+	color: var(--accent);
+	font-size: 14px;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+.sub { margin: 0 0 14px; color: var(--dim); font-size: 11px; }
+.trade {
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	padding: 12px 14px;
+}
+section + section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.pRow {
+	display: grid;
+	grid-template-columns: 1fr 96px 72px;
+	gap: 6px;
+	align-items: baseline;
+	padding: 3px 0;
+	font-size: 11px;
+}
+.cargoHead {
+	display: flex;
+	justify-content: space-between;
+	gap: 10px;
+	align-items: baseline;
+	margin-bottom: 4px;
+}
+.cargoName { color: var(--accent); font-size: 12px; font-weight: 600; }
+.cargoMeta {
+	overflow: hidden;
+	color: var(--dim);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.barRow { display: flex; align-items: center; gap: 3px; }
+.endBtn {
+	flex: 0 0 30px;
+	height: 26px; /* same as the drawn bar rect: the 64px bar × 40% */
+	padding: 0;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	background: #0d1826;
+	font: inherit;
+	cursor: pointer;
+}
+/* glyphs colored like the bar diff text: to ship = gain, to source = loss */
+.endBtn.gain { color: var(--mint); }
+.endBtn.loss { color: var(--warn); }
+.endBtn.gain:hover, .endBtn.gain:focus-visible { border-color: var(--mint); }
+.endBtn.loss:hover, .endBtn.loss:focus-visible { border-color: var(--warn); }
+.bar { position: relative; flex: 1; min-width: 0; height: 64px; cursor: pointer; }
+.bar:focus-within { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.bar canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.bar input {
+	position: absolute;
+	left: 3%;
+	top: 30%;
+	width: 94%;
+	height: 40%;
+	margin: 0;
+	opacity: 0.01;
+}
+.jHead {
+	color: var(--dim);
+	font-size: 9px;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	margin-bottom: 3px;
+}
+.pLbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pVal,
+.pDiff {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+}
+.pVal { color: var(--dim); }
+.pDiff { font-weight: 600; }
+.gain { color: var(--mint); }
+.loss { color: var(--warn); }
+.flat { color: var(--dim); font-weight: 400; }
+.foot { display: flex; gap: 6px; align-items: center; margin-top: 12px; }
+.miniBtn {
+	background: none;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	color: var(--text);
+	font: inherit;
+	font-size: 11px;
+	padding: 3px 10px;
+	cursor: pointer;
+}
+.miniBtn:hover:not(:disabled), .miniBtn:focus-visible { border-color: var(--accent); color: var(--accent); }
+.miniBtn:disabled { opacity: 0.4; cursor: default; }
+.preview { color: var(--dim); font-size: 10px; white-space: nowrap; }
+.state {
+	flex: 1;
+	overflow: hidden;
+	color: var(--dim);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 10px;
+	text-align: right;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+</style>
+</head>
+<body>
+<main>
+	<h1>cargo &amp; trade · universal slider · 4</h1>
+	<p class="sub">the bar shows ship amount and its change from the applied state. the moved region is tinted;
+	watched values and combined diffs are below. use the end buttons for the maximum possible transfer in either
+	direction, drag or use arrow keys to adjust, and double-click the bar to cancel it. apply commits both bars.</p>
+	<div id="trade"></div>
+</main>
+<script>
+"use strict";
+
+/* Universal cargo transfer panel.
+ * cfg: { sliders: [{ id, label, unit, step, value, metaDigits?, good?,
+ *                    src: { label, cap, amount }, ship: { label, cap },
+ *                    params: [{ label, unit, digits, good: "up"|"down",
+ *                               join?, get(value, base) }] }],
+ *        joins: [{ key, label, good?, digits?, unit? }], onChange?(state) }
+ * diff of a param = get(current bar) - get(committed bar); a join sums its
+ * members across the sliders in one combined row below. the bar itself shows
+ * its amount and the bar diff at the center (good defaults to "up"). */
+function createCargoTrade(container, cfg) {
+	const base = {};
+	const sliders = [];
+	const joins = [];
+
+	for (const s of cfg.sliders) {
+		const total = s.src.amount + s.value;
+		const lo = Math.max(0, total - s.src.cap);
+		const hi = Math.min(s.ship.cap, total);
+		if (!(hi > lo)) throw new Error(s.id + ": empty slider range");
+		base[s.id] = s.value;
+		sliders.push({ cfg: s, total, lo, hi, rows: [] });
+	}
+	for (const j of cfg.joins || []) joins.push({ cfg: j, members: [] });
+
+	container.innerHTML = '<div class="trade">' +
+		sliders.map(sectionHtml).join("") +
+		(joins.length ? joinsHtml() : "") +
+		footHtml() +
+		"</div>";
+
+	const stateEl = container.querySelector(".state");
+	const previewEl = container.querySelector(".preview");
+	const resetBtn = container.querySelector('[data-act="reset"]');
+	const applyBtn = container.querySelector('[data-act="apply"]');
+	for (const s of sliders) wireSlider(s);
+	wireJoins();
+	resetBtn.addEventListener("click", reset);
+	applyBtn.addEventListener("click", apply);
+	const observer = new ResizeObserver(redraw);
+	for (const s of sliders) observer.observe(s.canvas.parentNode);
+	window.addEventListener("resize", redraw);
+	redraw();
+
+	function sectionHtml(s) {
+		const c = s.cfg;
+		const toShip = (c.good || "up") === "up" ? "gain" : "loss";
+		const toSrc = toShip === "gain" ? "loss" : "gain";
+		return '<section class="cargo" data-id="' + c.id + '" aria-label="' + c.label + ' transfer">' +
+			'<div class="cargoHead"><span class="cargoName">' + c.label + '</span>' +
+			'<span class="cargoMeta"></span></div>' +
+			'<div class="barRow">' +
+			'<button type="button" class="endBtn ' + toSrc + '" data-end="min" title="transfer as much as possible to ' + c.src.label + '" aria-label="transfer as much ' + c.label + ' as possible to ' + c.src.label + '">◀</button>' +
+			'<div class="bar" title="drag or arrow keys · double-click cancels">' +
+			'<canvas aria-hidden="true"></canvas>' +
+			'<input type="range" min="' + s.lo + '" max="' + s.hi + '" step="' + (c.step || 1) +
+			'" value="' + c.value + '" aria-label="' + c.label + ' amount on ship">' +
+			"</div>" +
+			'<button type="button" class="endBtn ' + toShip + '" data-end="max" title="transfer as much as possible to ' + c.ship.label + '" aria-label="transfer as much ' + c.label + ' as possible to ' + c.ship.label + '">▶</button>' +
+			"</div>" +
+			c.params.map(p =>
+				'<div class="pRow"><span class="pLbl">' + p.label + "</span>" +
+				'<span class="pVal"></span><span class="pDiff flat"></span></div>').join("") +
+			"</section>";
+	}
+
+	function joinsHtml() {
+		return '<section class="joins" aria-label="combined">' +
+			'<div class="jHead">combined</div>' +
+			joins.map(j =>
+				'<div class="pRow"><span class="pLbl">' + j.cfg.label + "</span>" +
+				'<span class="pVal"></span><span class="pDiff flat"></span></div>').join("") +
+			"</section>";
+	}
+
+	function footHtml() {
+		return '<div class="foot">' +
+			'<button class="miniBtn" data-act="reset" title="every bar back to the applied state">reset</button>' +
+			'<button class="miniBtn" data-act="apply" title="commit the current bars as the applied state">apply</button>' +
+			'<span class="preview" aria-live="polite"></span>' +
+			'<span class="state" title="state passed to onChange"></span>' +
+			"</div>";
+	}
+
+	function wireSlider(s) {
+		const sec = container.querySelector('.cargo[data-id="' + s.cfg.id + '"]');
+		s.input = sec.querySelector("input");
+		s.meta = sec.querySelector(".cargoMeta");
+		s.canvas = sec.querySelector("canvas");
+		s.ctx = s.canvas.getContext("2d");
+		const rowEls = sec.querySelectorAll(".pRow");
+		s.cfg.params.forEach((p, i) => s.rows.push({
+			p,
+			rowEl: rowEls[i],
+			valEl: rowEls[i].querySelector(".pVal"),
+			diffEl: rowEls[i].querySelector(".pDiff")
+		}));
+		s.input.addEventListener("input", refresh);
+		sec.querySelectorAll(".endBtn").forEach(button => button.addEventListener("click", () => {
+			s.input.value = button.dataset.end === "min" ? s.lo : s.hi;
+			refresh();
+		}));
+		sec.querySelector(".bar").addEventListener("dblclick", () => {
+			s.input.value = base[s.cfg.id];
+			refresh();
+		});
+	}
+
+	function wireJoins() {
+		const rowEls = container.querySelectorAll(".joins .pRow");
+		joins.forEach((j, i) => {
+			j.valEl = rowEls[i].querySelector(".pVal");
+			j.diffEl = rowEls[i].querySelector(".pDiff");
+			for (const s of sliders)
+				for (const row of s.rows)
+					if (row.p.join === j.cfg.key) j.members.push({ s, row });
+			const first = j.members.length ? j.members[0].row.p : null;
+			j.digits = j.cfg.digits ?? first?.digits ?? 0;
+			j.good = j.cfg.good ?? first?.good;
+			j.unit = j.cfg.unit ?? first?.unit;
+		});
+	}
+
+	function state() {
+		const out = {};
+		for (const s of sliders) out[s.cfg.id] = Number(s.input.value);
+		return out;
+	}
+
+	function setCells(valEl, diffEl, value, baseValue, unit, digits, good) {
+		const diff = value - baseValue;
+		valEl.textContent = fmtNum(value, digits) + (unit ? " " + unit : "");
+		diffEl.textContent = diffText(diff, digits);
+		diffEl.className = diffClass(diff, good, digits);
+	}
+
+	function refreshSlider(s) {
+		const c = s.cfg;
+		const value = Number(s.input.value);
+		const applied = base[s.cfg.id];
+		drawCargoBar(s, value, applied);
+		s.meta.textContent = metaText(s, value);
+		const digits = stepDigits(c.step || 1);
+		s.input.setAttribute("aria-valuetext", fmtNum(value, digits) + " " + c.unit +
+			" on " + c.ship.label + ", change " + diffText(value - applied, digits) + " " + c.unit);
+		for (const row of s.rows) {
+			const p = row.p;
+			const was = p.get(applied, applied);
+			const val = p.get(value, applied);
+			setCells(row.valEl, row.diffEl, val, was, p.unit, p.digits, p.good);
+			row.rowEl.title = p.label + ": " + fmtNum(was, p.digits) + " → " + fmtNum(val, p.digits) +
+				(p.unit ? " " + p.unit : "");
+		}
+	}
+
+	function refreshJoins() {
+		for (const j of joins) {
+			let value = 0;
+			let applied = 0;
+			for (const m of j.members) {
+				const at = Number(m.s.input.value);
+				const was = base[m.s.cfg.id];
+				value += m.row.p.get(at, was);
+				applied += m.row.p.get(was, was);
+			}
+			setCells(j.valEl, j.diffEl, value, applied, j.unit, j.digits, j.good);
+		}
+	}
+
+	function redraw() {
+		for (const s of sliders) refreshSlider(s);
+		refreshJoins();
+		const current = state();
+		const changed = sliders.some(s => current[s.cfg.id] !== base[s.cfg.id]);
+		resetBtn.disabled = applyBtn.disabled = !changed;
+		previewEl.textContent = changed ? "preview" : "applied";
+		stateEl.textContent = JSON.stringify(current);
+	}
+
+	function refresh() {
+		redraw();
+		if (cfg.onChange) cfg.onChange(state());
+	}
+
+	function reset() {
+		for (const s of sliders) s.input.value = base[s.cfg.id];
+		refresh();
+	}
+
+	function apply() {
+		for (const s of sliders) base[s.cfg.id] = Number(s.input.value);
+		refresh();
+	}
+
+	return {
+		state,
+		reset,
+		apply,
+		refresh,
+		destroy() {
+			observer.disconnect();
+			window.removeEventListener("resize", redraw);
+			container.innerHTML = "";
+		}
+	};
+}
+
+function metaText(s, value) {
+	const c = s.cfg;
+	const d = c.metaDigits ?? 1;
+	const cap = v => Number.isInteger(v) ? String(v) : fmtNum(v, d);
+	return c.src.label + " " + fmtNum(s.total - value, d) + " / " + cap(c.src.cap) +
+		" · " + c.ship.label + " " + fmtNum(value, d) + " / " + cap(c.ship.cap) + " " + c.unit;
+}
+
+/* both levels on one horizontal rectangle: left of the center mark is the
+   source, right is the ship. both sides are dark variations of one hue so the
+   white amount and the mint/coral diff stay readable on either half; the
+   moved region is tinted and a changed bar outlines accent. the accent tick
+   under the rect is the applied bar position */
+function drawCargoBar(s, value, applied) {
+	const c = s.cfg;
+	const box = s.canvas.parentNode;
+	const w = box.clientWidth;
+	const h = box.clientHeight;
+	const dpr = window.devicePixelRatio || 1;
+	const pw = Math.round(w * dpr);
+	const ph = Math.round(h * dpr);
+	if (s.canvas.width !== pw || s.canvas.height !== ph) {
+		s.canvas.width = pw;
+		s.canvas.height = ph;
+	}
+	const ctx = s.ctx;
+	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+	ctx.clearRect(0, 0, w, h);
+
+	const x = w * 0.03;
+	const bw = w * 0.94;
+	const y = h * 0.30;
+	const bh = h * 0.40;
+	const cx = x + bw / 2;
+	const half = bw / 2;
+	const ship = clamp(value / c.ship.cap, 0, 1);
+	const src = clamp((s.total - value) / c.src.cap, 0, 1);
+	const shipWas = clamp(applied / c.ship.cap, 0, 1);
+	const srcWas = clamp((s.total - applied) / c.src.cap, 0, 1);
+	const changed = value !== applied;
+
+	ctx.fillStyle = "#0d1826";
+	ctx.fillRect(x, y, bw, bh);
+	ctx.fillStyle = c.src.color || "#16293d";
+	ctx.fillRect(cx - src * half, y, src * half, bh);
+	ctx.fillStyle = c.ship.color || "#1e3552";
+	ctx.fillRect(cx, y, ship * half, bh);
+
+	if (changed) {
+		ctx.fillStyle = "rgba(255, 207, 110, 0.16)";
+		ctx.fillRect(Math.min(cx - src * half, cx - srcWas * half), y,
+			Math.abs(srcWas - src) * half, bh);
+		ctx.fillRect(Math.min(cx + ship * half, cx + shipWas * half), y,
+			Math.abs(ship - shipWas) * half, bh);
+	}
+
+	ctx.fillStyle = "#d6e7f5";
+	ctx.fillRect(cx - 1, y - 4, 2, bh + 8);
+
+	ctx.fillStyle = "#ffcf6e";
+	ctx.fillRect(x + (applied - s.lo) / (s.hi - s.lo) * bw - 1, y + bh + 3, 2, 5);
+
+	ctx.strokeStyle = changed ? "#ffcf6e" : "rgba(126, 180, 230, 0.35)";
+	ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
+
+	const digits = stepDigits(c.step || 1);
+	const midY = y + bh / 2;
+	const amountText = fmtNum(value, digits) + " " + c.unit;
+	const diff = value - applied;
+	const changeText = diffText(diff, digits);
+	const good = c.good || "up";
+	ctx.textBaseline = "middle";
+	ctx.font = "600 12px ui-sans-serif, system-ui, sans-serif";
+	const amountWidth = Math.min(ctx.measureText(amountText).width, Math.max(1, half - 16));
+	const changeWidth = Math.min(ctx.measureText(changeText).width, Math.max(1, half - 16));
+	ctx.fillStyle = "#ffffff";
+	ctx.textAlign = "right";
+	ctx.fillText(amountText, cx - 10, midY, Math.max(1, half - 16));
+	ctx.fillStyle = diff === 0 ? "#728ca6" : ((diff > 0) === (good === "up") ? "#8ef0c0" : "#ff9478");
+	ctx.textAlign = "left";
+	ctx.fillText(changeText, cx + 10, midY, Math.max(1, half - 16));
+
+	// Hide the edge labels if they would collide with the more important values.
+	ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+	ctx.fillStyle = "#728ca6";
+	const srcText = c.src.label + " " + Math.round(src * 100) + "%";
+	const shipText = c.ship.label + " " + Math.round(ship * 100) + "%";
+	if (ctx.measureText(srcText).width + amountWidth + 22 <= half) {
+		ctx.textAlign = "left";
+		ctx.fillText(srcText, x + 6, midY);
+	}
+	if (ctx.measureText(shipText).width + changeWidth + 22 <= half) {
+		ctx.textAlign = "right";
+		ctx.fillText(shipText, x + bw - 6, midY);
+	}
+}
+
+function fmtNum(value, digits) {
+	const rounded = Number(value.toFixed(digits));
+	return (rounded === 0 ? 0 : rounded).toFixed(digits);
+}
+
+function diffText(diff, digits) {
+	const d = Number(diff.toFixed(digits));
+	return (d > 0 ? "+" : "") + (d === 0 ? 0 : d).toFixed(digits);
+}
+
+/* decimals of the step: 0.5 -> 1, 0.25 -> 2, 1 -> 0 */
+function stepDigits(step) {
+	const text = String(step);
+	const dot = text.indexOf(".");
+	return dot < 0 ? 0 : text.length - dot - 1;
+}
+
+function diffClass(diff, good, digits) {
+	const d = Number(diff.toFixed(digits));
+	if (!good || d === 0) return "pDiff flat";
+	return "pDiff " + ((d > 0) === (good === "up") ? "gain" : "loss");
+}
+
+function clamp(value, min, max) {
+	return Math.min(max, Math.max(min, value));
+}
+
+// Example: ship cargo & trade, any cargo comes from config alone.
+const ENERGY_RATE = 8;      // kWh moved per second of transfer
+const ENERGY_PRICE = 0.05;  // cr per kWh on the commercial rail
+const FUEL_PRICE = 0.08;    // cr per kg, the career fuel price
+const DRY_MASS = 1.2;       // t of the ship without fuel
+
+const trade = createCargoTrade(document.getElementById("trade"), {
+	sliders: [
+		{
+			id: "energy",
+			label: "energy",
+			unit: "kWh",
+			step: 0.5,
+			value: 8,
+			src: { label: "station", cap: 120, amount: 96 },
+			ship: { label: "ship", cap: 20 },
+			params: [
+				{ label: "time", unit: "s", digits: 1, good: "down",
+					get: (v, b) => Math.abs(v - b) / ENERGY_RATE },
+				{ label: "cost", unit: "cr", digits: 2, good: "down", join: "cost",
+					get: (v, b) => (v - b) * ENERGY_PRICE }
+			]
+		},
+		{
+			id: "fuel",
+			label: "fuel",
+			unit: "kg",
+			step: 0.5,
+			value: 4,
+			src: { label: "depot", cap: 60, amount: 40 },
+			ship: { label: "tank", cap: 15 },
+			params: [
+				{ label: "ship mass", unit: "t", digits: 3, good: "down",
+					get: v => DRY_MASS + v / 1000 },
+				{ label: "cost", unit: "cr", digits: 2, good: "down", join: "cost",
+					get: (v, b) => (v - b) * FUEL_PRICE }
+			]
+		}
+	],
+	joins: [{ key: "cost", label: "total cost" }],
+	onChange: state => console.log("trade draft", state)
+});
+</script>
+</body>
+</html>
