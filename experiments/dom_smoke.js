@@ -1229,8 +1229,9 @@ function padCapOf(catapult, battery, force) {
 }
 const emc1Cap = padCapOf(OrbitTech.CATAPULTS[0], OrbitTech.BATTERIES[0], kCargo.forceScale);
 const emc2Cap = padCapOf(OrbitTech.CATAPULTS[1], OrbitTech.BATTERIES[0], kCargo.forceScale);
-check(kui.get('careerShop').innerHTML.includes('>' + Math.round(emc1Cap) + ' → ' +
-	Math.round(emc2Cap) + ' px/s<'), 'shop caps: ' + kui.get('careerShop').innerHTML);
+check(kui.get('careerShop').innerHTML.includes('>' + Math.round(emc1Cap) + ' px/s<') &&
+	kui.get('careerShop').innerHTML.includes('capDelta"> +' + (Math.round(emc2Cap) - Math.round(emc1Cap)) + ' px/s'),
+	'shop caps: ' + kui.get('careerShop').innerHTML);
 check(!kui.get('careerPad').innerHTML.includes('· full '),
 	'a full pad is rail-limited and must not repeat its cap: ' + kui.get('careerPad').innerHTML);
 check(kui.get('careerPlanet').innerHTML.includes(' · ' + Math.round(emc1Cap) + ' px/s · EMC-1'),
@@ -1307,9 +1308,10 @@ check(kScene.game.career.pads[career.hq].catapult.id === 'EMC-1' &&
 	kui.get('careerPad').innerHTML.includes('max ' + Math.round(halfLimit) + ' px/s'),
 	'pad readout ignores the force scale: ' + kui.get('careerPad').innerHTML);
 /* the shop caps follow the force slider, so the buy decision stays truthful */
-check(kui.get('careerShop').innerHTML.includes('>' +
-	Math.round(padCapOf(OrbitTech.CATAPULTS[0], OrbitTech.BATTERIES[0], 0.5)) + ' → ' +
-	Math.round(padCapOf(OrbitTech.CATAPULTS[1], OrbitTech.BATTERIES[0], 0.5)) + ' px/s<'),
+const fsCap0 = Math.round(padCapOf(OrbitTech.CATAPULTS[0], OrbitTech.BATTERIES[0], 0.5));
+const fsCap1 = Math.round(padCapOf(OrbitTech.CATAPULTS[1], OrbitTech.BATTERIES[0], 0.5));
+check(kui.get('careerShop').innerHTML.includes('>' + fsCap0 + ' px/s<') &&
+	kui.get('careerShop').innerHTML.includes('capDelta"> +' + (fsCap1 - fsCap0) + ' px/s'),
 	'shop caps ignore the force scale: ' + kui.get('careerShop').innerHTML);
 careerEnv.dragAim(career.hq, 0.7, 200);
 careerEnv.runFrames(2, 16.0);
@@ -1775,8 +1777,16 @@ function shopCap(mass) {
 const holdCargo = shopCareer.ship.cargoTons;
 const mass8 = sTech.refitMass(shopCareer.ship, 'hold', sTech.HOLDS[1], holdCargo);
 const mass24 = sTech.refitMass(shopCareer.ship, 'hold', sTech.HOLDS[2], holdCargo);
-const expectHoldCap = '8 t → 24 t · ' + Math.round(shopCap(mass8)) + ' → ' +
-	Math.round(shopCap(mass24)) + ' px/s';
+const holdCap8 = Math.round(shopCap(mass8));
+const holdCap24 = Math.round(shopCap(mass24));
+const holdCapDelta = holdCap24 - holdCap8;
+const holdCapStr = holdCapDelta === 0 ? ''
+	: (holdCapDelta > 0 ? ' +' : ' −') + Math.abs(holdCapDelta) + ' px/s';
+/* the fit as it is (`8 t · N px/s`) with the refit delta interleaved per metric
+ * (`8 t<span> +16 t</span> · N px/s<span> ±M px/s</span>`), revealed on hover /
+ * eye-press, so the row never reflows */
+const expectHoldCap = '8 t<span class="capDelta"> +16 t</span> · ' + holdCap8 + ' px/s' +
+	(holdCapStr ? '<span class="capDelta">' + holdCapStr + '</span>' : '');
 check(sui.get('careerShop').innerHTML.includes('>' + expectHoldCap + '<'),
 	'hold row cap: expected ' + expectHoldCap + ' in ' + sui.get('careerShop').innerHTML);
 holdBtn = shopData(sui, 'part', 'hold');
@@ -2172,7 +2182,8 @@ console.log('career:', 'HQ P' + career.hq, '· limit', limit.toFixed(0), 'px/s �
 	/* 0.4.8 review fix 1: endgame engine steps down IMP-3 -> IMP-2 -> IMP-1 -> no engine */
 	const cShop = cEnv.elements.get('careerShop');
 	const cBox = cEnv.elements.get('careerBox');
-	check(cShop.innerHTML.includes('>back IMP-2<') && cShop.innerHTML.includes('40 kN → 24 kN'),
+	check(cShop.innerHTML.includes('>back IMP-2<') &&
+		cShop.innerHTML.includes('>40 kN') && cShop.innerHTML.includes('capDelta"> −16 kN'),
 		'endgame engine offers step down to IMP-2: ' + cShop.innerHTML);
 	cEnv.fireElement(cBox, 'click', { target: { dataset: { act: 'part', kind: 'engine', tier: '1' } } });
 	check(cEnv.context.GravityScene.career.ship.engine.id === 'IMP-2' &&

@@ -6,6 +6,7 @@
 	--dim: #728ca6;
 	--accent: #ffcf6e;
 	--mint: #8ef0c0;
+	--diff: #8ef0c0;
 	--ice: #67e0ff;
 	--warn: #ff9478;
 	--ore: #ffb26b;
@@ -1687,16 +1688,37 @@ button.costly:disabled {
 	font-size: 10.5px;
 }
 
-/* what the pad (or a row's next tier) can fire with the ship as loaded now */
+/* what the pad (or a row's fitted part) can fire as it is now; the before →
+ * after change sits in a hidden span that reserves its width, so revealing it
+ * on hover / eye-press never reflows the row */
 .careerCap {
 	max-width: 100%;
 	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
 	color: var(--dim);
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-size: 10px;
 	white-space: nowrap;
+}
+
+/* the before → after change; hidden until hovered (fine pointer) or the row's
+ * eye is pressed (touch / no cursor). visibility (not display) reserves the
+ * width so the row does not shift when the delta appears */
+.careerCap .capDelta {
+	visibility: hidden;
+	color: var(--diff);
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.careerRow:hover .careerCap .capDelta { visibility: visible; }
+}
+
+.careerRow.showCap .careerCap .capDelta { visibility: visible; }
+
+/* compact eye that reveals a row's delta where there is no cursor */
+.peekBtn {
+	padding: 2px 6px;
+	font-size: 11px;
+	line-height: 1;
 }
 
 .careerBtns {

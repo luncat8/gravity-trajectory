@@ -754,6 +754,13 @@ for (let sIdx = 0; sIdx < startEls.length; sIdx++) {
 if (careerBoxEl) {
 	careerBoxEl.addEventListener('click', event => {
 		const data = careerEventData(event);
+		/* the eye is a pure UI toggle: reveal a row's before → after delta on
+		 * touch where there is no hover; keep it out of the career state machine */
+		if (data && data.act === 'peek') {
+			const row = event.target.closest('.careerRow');
+			if (row) row.classList.toggle('showCap');
+			return;
+		}
 		if (data) careerAct(data);
 	});
 	careerBoxEl.addEventListener('input', event => {

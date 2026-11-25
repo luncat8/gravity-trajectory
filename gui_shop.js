@@ -86,25 +86,55 @@ function capArrowText(now, after) {
 	return from === to ? to + ' px/s' : from + ' → ' + to + ' px/s';
 }
 
-/* rails/batteries move the cap; panels move solar kWh/wait and full-shot ready time */
+/* the cap a row shows is the pad (or fitted part) as it is plus the change the
+ * on-offer build/refit makes, so a hover / eye-press reveals the before → after
+ * without the row reflowing. `stat` is the row's own read (a part's kg/kN/t, a
+ * pad's px/s cap, a panel's kWh/ready); `cap` is the secondary pad-cap column a
+ * part refit also moves. Each may carry a `Delta` (signed, diff-coloured).
+ * Returns { stat, statDelta, cap, capDelta }. */
 function gearCapText(career, planet, pad, kind, next) {
 	if (kind === OrbitTech.KIND_PANEL) {
 		const item = next || pad.panel;
-		if (!item) return '';
-		return '+' + waitGain(career, planet, item) + ' kWh · ready in ' +
+		if (!item) return { stat: '', statDelta: '', cap: '', capDelta: '' };
+		const stat = '+' + waitGain(career, planet, item) + ' kWh · ready in ' +
 			panelReadySec(career, planet, pad, item) + ' s';
+		return { stat, statDelta: '', cap: '', capDelta: '' };
 	}
 	const now = padCap(career, pad.catapult, pad.battery);
-	if (next === null) return now > 0 ? Math.round(now) + ' px/s' : '';
+	if (next === null) return { stat: now > 0 ? Math.round(now) + ' px/s' : '',
+		statDelta: '', cap: '', capDelta: '' };
 	/* a first catapult arrives with the starter panel and battery */
 	const after = kind === OrbitTech.KIND_CATAPULT
 		? padCap(career, next, pad.catapult === null ? OrbitTech.BATTERIES[0] : pad.battery)
 		: padCap(career, pad.catapult, next);
-	return capArrowText(now, after);
+	const stat = now > 0 ? Math.round(now) + ' px/s' : '';
+	const statDelta = Math.round(after) !== Math.round(now)
+		? capDeltaToken(Math.round(now), Math.round(after), 'px/s') : '';
+	return { stat, statDelta, cap: '', capDelta: '' };
 }
 
+/* signed change token: (40, 90, 'kg') -> ' +50 kg'; (89, 88, 'px/s') -> ' −1 px/s' */
+function capDeltaToken(from, to, unit) {
+	const d = to - from;
+	if (d === 0) return '';
+	return (d > 0 ? ' +' : ' −') + Math.abs(d) + ' ' + unit;
+}
+
+/* the always-on read with the refit/build delta interleaved per metric, e.g.
+ * `40 kg<span class="capDelta"> +50 kg</span> · 89 px/s<span class="capDelta"> −1 px/s</span>`
+ * — a hover (fine pointer) or the row's eye press (touch) reveals the deltas,
+ * which sit in hidden spans that reserve their width so the row never shifts.
+ * `text` may also be a plain string (legacy paths). */
 function capHtml(text) {
-	return text === '' ? '' : '<span class="careerCap">' + text + '</span>';
+	if (text === '' || text == null) return '';
+	if (typeof text === 'string') return '<span class="careerCap">' + text + '</span>';
+	let s = text.stat || '';
+	if (text.statDelta) s += '<span class="capDelta">' + text.statDelta + '</span>';
+	if (text.cap) {
+		s += (s ? ' · ' : '') + text.cap;
+		if (text.capDelta) s += '<span class="capDelta">' + text.capDelta + '</span>';
+	}
+	return '<span class="careerCap">' + s + '</span>';
 }
 
 /* the next record above the installed one that is buildable right now
@@ -187,8 +217,17 @@ function shopRecord(data) {
  * the one fitted; copy stays enabled with an empty purse or a closed career */
 function copyButtonHtml(row, item) {
 	if (!item) return '';
-	return shopButtonRef('copy', 'copy', row.kind, recordRef(row.table, item), false,
+	return shopButtonRef('⧉', 'copy', row.kind, recordRef(row.table, item), false,
 		'copy the balance spec of ' + item.id);
+}
+
+/* the eye that reveals a row's before → after delta where there is no cursor:
+ * a tap toggles it; on cursor devices the same read shows on hover. Only rows
+ * whose offer changes something get one. */
+function peekButtonHtml(info) {
+	if (!info || (!info.statDelta && !info.capDelta)) return '';
+	return '<button class="miniBtn peekBtn" data-act="peek" ' +
+		'title="preview the before → after stats · hover on desktop, tap here on touch">👁</button>';
 }
 
 function careerTagText() {
@@ -581,9 +620,10 @@ function lockedTier(career, row, cur) {
 function gearRowHtml(career, row, planet, next) {
 	const pad = career.pads[planet];
 	const cur = pad[row.kind];
+	const cap = gearCapText(career, planet, pad, row.kind, next);
 	let html = '<div class="careerRow"><span class="careerKind">' + row.label + '</span>' +
 		'<span class="careerNow">' + (cur ? cur.id : 'none') + '</span>' +
-		capHtml(gearCapText(career, planet, pad, row.kind, next)) + '<span class="careerBtns">';
+		capHtml(cap) + '<span class="careerBtns">';
 	if (next === null) {
 		/* nothing buildable here now: say so, and name the next stock tier
 		 * when it is only waiting for science */
@@ -606,6 +646,7 @@ function gearRowHtml(career, row, planet, next) {
 	html += shopButtonRef(next.id + ' · ' + costText(buildCost), 'build', row.kind,
 		recordRef(row.table, next), poor, btnTitle, poor);
 	html += bulkButtonHtml(career, row, next, recordRef(row.table, next));
+	html += peekButtonHtml(cap);
 	html += copyButtonHtml(row, next);
 	return html + '</span></div>';
 }
@@ -659,16 +700,46 @@ function partCap(career, row, item) {
 		OrbitTech.refitMass(career.ship, row.kind, item, career.ship.cargoTons));
 }
 
-/* `8 → 24 t · 88 → 78 px/s`: the stat the offered refit holds and the pad cap
- * it buys, so a heavy fit reads as a launch limit before it is fitted;
- * `change` undefined prints the fit as it is, null means the empty engine slot */
+/* the fitted part as it is (`stat` kg/kN/t · `cap` px/s) and, when a refit is
+ * on offer, the change it makes (`statDelta` · `capDelta`) — revealed on hover
+ * (cursor) or eye-press (touch) so a heavy fit reads as a launch limit before
+ * it is fitted without reflowing the row. `change` undefined prints the fit as
+ * it is, null means the empty engine slot. Returns { stat, statDelta, cap, capDelta }. */
 function partCapText(career, row, cur, change) {
 	const now = partCap(career, row, cur);
 	const after = change === undefined ? now : partCap(career, row, change);
-	const stat = change === undefined ? partStatText(row.kind, cur)
-		: partStatText(row.kind, cur) + ' → ' + partStatText(row.kind, change);
-	const cap = capArrowText(now, after);
-	return cap === '' ? stat : stat + ' · ' + cap;
+	const stat = partStatText(row.kind, cur);
+	const statDelta = change === undefined ? '' : partStatDelta(row.kind, cur, change);
+	const cap = now > 0 ? Math.round(now) + ' px/s' : '';
+	const capDelta = (change !== undefined && Math.round(after) !== Math.round(now))
+		? capDeltaToken(Math.round(now), Math.round(after), 'px/s') : '';
+	return { stat, statDelta, cap, capDelta };
+}
+
+/* the signed change a refit makes to the part's own stat (hold t, tank kg,
+ * engine kN). Observation devices report visits rather than a number, so they
+ * carry no numeric delta. */
+function partStatDelta(kind, cur, change) {
+	if (kind === OrbitTech.KIND_OBS) return '';
+	const from = statValue(kind, cur);
+	const to = statValue(kind, change);
+	if (to === from) return '';
+	return capDeltaToken(from, to, statUnit(kind));
+}
+
+function statValue(kind, item) {
+	if (item === null) return 0;
+	if (kind === OrbitTech.KIND_HOLD) return item.capacity;
+	if (kind === OrbitTech.KIND_TANK) return item.fuelCap;
+	if (kind === OrbitTech.KIND_OBS) return 0;
+	return item.thrust;
+}
+
+function statUnit(kind) {
+	if (kind === OrbitTech.KIND_HOLD) return 't';
+	if (kind === OrbitTech.KIND_TANK) return 'kg';
+	if (kind === OrbitTech.KIND_OBS) return '';
+	return 'kN';
 }
 
 /* one refit button: forward buys/installs the next tier, `back` returns to
@@ -713,11 +784,13 @@ function partRowHtml(career, row) {
 	const canBack = cur !== null && (engine || back !== null);
 	/* the arrow describes the action on offer: the upgrade, else the step down */
 	const change = next !== null ? next : canBack ? back : undefined;
+	const cap = partCapText(career, row, cur, change);
 	let html = '<div class="careerRow"><span class="careerKind">' + row.label + '</span>' +
 		'<span class="careerNow">' + (cur ? cur.id : 'none') + '</span>' +
-		capHtml(partCapText(career, row, cur, change)) + '<span class="careerBtns">';
+		capHtml(cap) + '<span class="careerBtns">';
 	if (next !== null) html += partButtonHtml(career, row, next, false);
 	if (canBack) html += partButtonHtml(career, row, back, true);
+	html += peekButtonHtml(cap);
 	html += copyButtonHtml(row, next !== null ? next : cur);
 	return html + '</span></div>';
 }
@@ -726,9 +799,10 @@ function partRowHtml(career, row) {
  * free on any planet, and the fitted one is marked instead of offered */
 function protoPartRowHtml(career, row, proto) {
 	const fitted = career.ship[row.kind] === proto;
+	const cap = partCapText(career, row, proto, undefined);
 	let html = '<div class="careerRow"><span class="careerKind">↳ ' + row.label + '</span>' +
 		'<span class="careerNow">' + proto.id + '</span>' +
-		capHtml(partCapText(career, row, proto, undefined)) + '<span class="careerBtns">';
+		capHtml(cap) + '<span class="careerBtns">';
 	if (fitted) html += '<i>fitted</i>';
 	else {
 		const mass = OrbitTech.refitMass(career.ship, row.kind, proto, career.ship.cargoTons);
@@ -740,6 +814,7 @@ function protoPartRowHtml(career, row, proto) {
 			career.at < 0, 'refit ' + proto.id + ' · ' + partStatText(row.kind, proto) + note +
 			' · ship ' + mass.toFixed(1) + ' t' + dvNote);
 	}
+	html += peekButtonHtml(cap);
 	return html + copyButtonHtml(row, proto) + '</span></div>';
 }
 
@@ -771,10 +846,15 @@ function protoGearRowHtml(career, row, planet, proto) {
 	const fits = gearFits(pad, row.kind, proto);
 	const cost = careerCost(career, proto.buildCost);
 	const cap = gearCapText(career, planet, pad, row.kind, proto);
-	const stat = protoGearStatText(row.kind, proto);
+	const gearStat = protoGearStatText(row.kind, proto);
+	/* a proto gear row leads with the gear's own rating, then the pad cap its
+	 * build moves; a panel has no cap column, so its gain is the lead read */
+	const info = row.kind === OrbitTech.KIND_PANEL
+		? { stat: cap.stat, statDelta: '', cap: '', capDelta: '' }
+		: { stat: gearStat, statDelta: '', cap: cap.stat, capDelta: cap.statDelta };
 	let html = '<div class="careerRow"><span class="careerKind">↳ ' + row.label + '</span>' +
 		'<span class="careerNow">' + proto.id + '</span>' +
-		capHtml(cap ? stat + ' · ' + cap : stat) + '<span class="careerBtns">';
+		capHtml(info) + '<span class="careerBtns">';
 	if (pad[row.kind] === proto) html += '<i>built</i>';
 	else {
 		const poor = purseTooSmall(career, cost);
@@ -787,6 +867,7 @@ function protoGearRowHtml(career, row, planet, proto) {
 				protoGearNoteText(row.kind, proto) : why, poor && fits);
 	}
 	html += bulkButtonHtml(career, row, proto, 'data-item="' + proto.id + '"');
+	html += peekButtonHtml(info);
 	return html + copyButtonHtml(row, proto) + '</span></div>';
 }
 
