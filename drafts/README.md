@@ -25,10 +25,15 @@ Both originals were removed once their text was placed, and
 | 8 | `bots-and-tools.md` | a bot that competes, the balance lab, test harnesses |
 | 9 | `map.md` | periodic FFT gravity, space weather · new notes, not from the split |
 | 10 | `found-colony-land.md` | empty heavy planets without EMC (`13 → 16`) and single-use colonization equipment |
-| 11 | `new/lite-version.md` | lite profile (`?lite=1`): saved-map boot, quiet non-gameplay background, mute sound & photos |
+| 11 | `lite-version.md` | lite profile (`?lite=1`): saved-map boot, quiet non-gameplay background, mute sound & photos |
 | 12 | `map-fair-start-modes.md` | the fair-start contract: composition rule, 75 % exit margin, background search, space & capital starts |
 | 13 | `new/game-options.md` | the start-gift budget: sliders, a per-company random draw + the rest as cash |
 | 14 | `new/radar.md` | a global ship-trajectory + landing-time reveal, and bot avoidance |
+| 15 | `new/adv-explorer-career.md` | explorer career: 32 planets, 4× map, FFT wrap, half empty, gas atmosphere, auction, hidden map, lone stars |
+| 16 | `fuel-collector.md` | gas-atmosphere fuel collection: heavy endgame ship equipment |
+| 17 | `new/battery-on-ship.md` | ship battery: 10× smaller than planetary, solar variant, energy-transfer slider |
+| 18 | `new/observation-device-OBS-1.md` · `new/observation-satellite.md` | OBS-1 visit profit, uninstall on rotten planets, half-power OBS-0.5 satellite |
+| 19 | `GUI.md` · `balance.md` · `save.md` · `other.md` · `time-scale-units.md` | small notes: bot-log copy, preview diff, URL vs storage, visit-profit/bribe rebalance, replay/save, endgame, time units |
 
 What is *not* here:
 
@@ -105,20 +110,20 @@ The two specs written from `0.4-draft-career.md` are
 
 ## the open plans, split into `0.7.*` (prior to FFT) and `0.8.*` (FFT and later)
 
-Plans continue `0.7.*` (`0.7.38`–`0.7.49`) for all classic bounded-map work
-prior to Periodic FFT, and use `0.8.*` (`0.8.0`–`0.8.6`) starting at Periodic
-FFT:
+Plans continue `0.7.*` for all classic bounded-map work prior to Periodic
+FFT, and use `0.8.*` starting at Periodic FFT. Plan numbers are not version
+sequence (`AGENTS.md`): `0.7.47`–`0.7.49`, `0.7.51`–`0.7.52` and `0.8.7`
+shipped while `0.7.44`–`0.7.45` and `0.8.0`–`0.8.6` are still open, so the
+open `0.7.*` plans below are written against the shipped `0.7.47`–`0.7.49`
+composition / space & capital starts / gifts / radar and the `0.7.51`–`0.7.52`
+view rework, not against the `0.7.43` world they were first drafted on.
 
-1. **Pre-FFT (`0.7.38`–`0.7.45`) — Fast testbed, exact forecast parity, core single-ship career (`two-leg-quests`, `sport-competitions`), `×1` balance sliders, grouped map-law expansion (`+5` gravity + empty heavy worlds), and automatic company fleet.**
-2. **FFT & gameplay completion (`0.8.0`–`0.8.3`) — Periodic FFT torus (`PLANETS = 192`), Max-Distance modes & `SPORT_MAXDIST` (building on FFT's 192-body arrays, non-shader field view, and `512×256` periodic wrap), Rival Characters, and the single final bot/economy calibration pass.**
-3. **Final UX, readout & sound polish (`0.8.4`–`0.8.6`, after all rules settle) — Helper Dialog (`H` M3/M4), Accessibility Live Readout (`#srStatus`), and Sound Improvements (Voronoi neighbor-scale consonance across 13–192 bodies/FFT, aim-channel cues).**
+1. **Pre-FFT (`0.7.44`–`0.7.45`) — Empty heavy worlds & colony founding, and automatic company fleet.** Both land on the shipped `0.7.47` seat search and composition rule; neither changes `MAX_PLAYERS` or the fair-start contract.
+2. **FFT & gameplay completion (`0.8.0`–`0.8.3`) — Periodic FFT torus (`PLANETS = 192`), Max-Distance modes & `SPORT_MAXDIST` (building on FFT's 192-body arrays, non-shader field view, and `512×256` periodic wrap), Rival Characters, and the single final bot/economy calibration pass.** `0.8.3` lands last in this group, after `0.7.44`–`0.7.45` and `0.8.0`–`0.8.2` have settled the rules it calibrates.
+3. **Final UX, readout & sound polish (`0.8.4`–`0.8.6`, after all rules settle) — Helper Dialog (`H` M3/M4), Accessibility Live Readout (`#srStatus`), and Sound Improvements (Voronoi neighbor-scale consonance across 13–192 bodies/FFT, aim-channel cues).** `0.8.4` M0–M2 (`launchReasons`, `comms_copy.js`, `gui_comms.js`) are already live; only M3/M4 remain.
 
 | plan | group | draft sections it answers |
 |---|---|---|
-| `../0.7.46-plan-fair-start-fallback.md` | `0.7` pre-FFT | `flight-lab-and-modes.md` §1.4 (the rosters `../archive/0.7.43-plan-seeded-map-opening.md` leaves short) — **superseded by `../archive/0.7.47-plan-fair-start-modes.md`** |
-| `../archive/0.7.47-plan-fair-start-modes.md` | `0.7` pre-FFT | `map-fair-start-modes.md` (composition rule, exit margin, background search, space & capital starts) |
-| `../archive/0.7.48-plan-start-gifts.md` | `0.7` pre-FFT | `new/game-options.md` (start-gift budget: three sliders, per-company random draw + rest cash) |
-| `../archive/0.7.49-plan-radar.md` | `0.7` pre-FFT | `new/radar.md` (radar HQ facility: global ship-trajectory reveal, bot avoidance) |
 | `../0.7.44-plan-founding-colony.md` | `0.7` pre-FFT | `found-colony-land.md`, `career-economy.md` §2.5 |
 | `../0.7.45-plan-buy-ships.md` | `0.7` pre-FFT | `career-economy.md` §buy more ships |
 | `../0.8.0-plan-periodic-fft.md` | `0.8` FFT+ | `map.md` §gravity (`&fft=1`, `PLANETS = 192`, 256²/512×256 Plummer FFT) |
@@ -128,15 +133,24 @@ FFT:
 | `../0.8.4-plan-helper-dialog.md` | `0.8` after all | `helper-dialog-draft.md` / `helper-dialog/` (remaining M3 topic browser/art/delta & M4 non-career/rival-intent) |
 | `../0.8.5-plan-accessibility-readout.md` | `0.8` after all | `sound-and-photos.md` §7.1 (`#srStatus` & HUD landmarks) |
 | `../0.8.6-plan-improve-sound.md` | `0.8` after all | `sound-and-photos.md` §7.1 (Voronoi neighbor-scale consonance, toroidal/192-body adjacency, aim/arrival/block cues) |
+| `../0.8.8-plan-space-weather.md` | design first | `map.md` §add space weather, `new/observation-device-OBS-1.md` (career weather, observation range and planet sources; decisions pending) |
+| `../archive/0.7.46-plan-fair-start-fallback.md` (superseded) | — | `flight-lab-and-modes.md` §1.4 — **superseded by `../archive/0.7.47-plan-fair-start-modes.md`**; options 2 (repair the map), 4 (`MONEY.initSec`) and 5 (cheaper exact check) stay open, see below |
+| `../archive/0.7.47-plan-fair-start-modes.md` (done) | — | `map-fair-start-modes.md` (composition rule, exit margin, background search, space & capital starts) |
+| `../archive/0.7.48-plan-start-gifts.md` (done) | — | `new/game-options.md` (start-gift budget: three sliders, per-company random draw + rest cash) |
+| `../archive/0.7.49-plan-radar.md` (done) | — | `new/radar.md` (radar HQ facility: global ship-trajectory reveal, bot avoidance) |
 | `../archive/0.7.42-plan-balance-knobs.md` (done) | — | `career-economy.md` §2.9 / `time-scale-units.md` (`pads ×`, `rot ×`, `pay ×` alongside shipped `wear ×`) |
 | `../archive/0.7.41-plan-sport-competitions.md` (done) | — | `rivals-sport-competitions.md` §5.2 (`galaxy.sport` countdown, pool, barrel hold) |
 | `../archive/0.7.40-plan-two-leg-quests.md` (done) | — | `politics-quests.md` §3.5 (`careerLegPlan`, `plan quest`) |
 | `../archive/0.7.39-plan-harvest-ticks.md` (done) | — | `career-economy.md` §2.11 (stay-pay forecast & book parity) |
-| `../archive/0.7.38-plan-lite-profile.md` (done) | — | `new/lite-version.md` (saved-map boot, still non-gameplay background, mute sound & photos) |
+| `../archive/0.7.38-plan-lite-profile.md` (done) | — | `lite-version.md` (saved-map boot, still non-gameplay background, mute sound & photos) |
 | `../archive/0.7.35-plan-playable-fields.md` (done) | — | playable `map_fields.js` designed gravity fields from `map-generator-helper.htm` |
 | `../archive/0.7.16-plan-bribe-rot.md` (done) | — | `politics-quests.md` §3.1–3.2 (bribe rot & quiet restoration) |
 | `../archive/0.7.2-plan-ship-wear.md` (done) | — | `career-economy.md` §ship maintenance cost; `map.md` §add space weather (the wear hook) |
 | `../archive/0.5.23-plan-medic-capital.md` (done) | — | `politics-quests.md` §3.1 (the medical mission), `career-economy.md` §2.4 (Capital accept refund) |
+
+The landed visit-growth half-rate (`politics-quests.md` §3.2) and the
+2-minute warning / 10-minute company liquidation (`other.md`) are implemented.
+
 Open in the drafts and still without a plan of their own, and why:
 
 - **player-set pad tax** (`career-economy.md` §2.2) — deferred by the draft itself,
@@ -149,8 +163,8 @@ Open in the drafts and still without a plan of their own, and why:
   deliberately out of `0.7.41`; each is the career rule with the board replaced.
   The max-distance pair is `0.8.1`; “max visits”, “land on an antigravity
   planet”, the Capital-only start and the other variations still have no plan.
-- **keyboard aim** (`sound-and-photos.md` §7.1) — the shape is written down in
-  `0.8.5` §3 as a deferred step, not a plan.
+- **keyboard aim** — deferred until a human draft defines it; no control
+  scheme is specified in `0.8.5`.
 - **HQ-only refit** outside a casual mode (`flight-lab-and-modes.md` §1.5) —
   deferred by the note itself (Voronoi scale & aim-channel tuning now have
   `0.8.6-plan-improve-sound.md`).
@@ -158,12 +172,24 @@ Open in the drafts and still without a plan of their own, and why:
   (`../archive/0.7.5-worklog.md`): a visible career-ship ride on
   the world clock whose wait falls linearly from `12 s` at the full `6.00` to
   `240 s` free.
-- **the landed visit-growth half-rate** (`politics-quests.md` §3.2) — «2x less
-  speed». Needs one decision on whether the half applies to the shared curve or
-  to a landed term the `wait` preview also reads.
-- **space weather** (`map.md`) — no weather plan; the gravity option is
-  `0.8.0`, the wear hook is `0.7.2`, and the zone shape / observation-range /
-  jammer layers still need their own question answered first.
+- **explorer career** (`new/adv-explorer-career.md`) — 32 planets, 4× map, FFT
+  wrap, half empty, gas atmosphere, auction, hidden map (fog of war), lone
+  stars, observation satellite. Overlaps `0.7.44` (empty worlds), `0.8.0`
+  (FFT), `fuel-collector.md` (gas) and `map-fair-start-modes.md` (auction is
+  not the fair-start search). No plan; the first question is whether this is
+  one career mode or several features split across existing plans.
+- **fuel collector** (`fuel-collector.md`) — gas-atmosphere fuel collection,
+  20–30 cr, 20 % FT-1 fill per fly-through. No plan; overlaps the explorer
+  atmosphere. The draft specifies collection in flight, with braking deferred to explorer
+  mode; atmosphere rendering and balance still need a design.
+- **battery on ship** (`new/battery-on-ship.md`) — ship BAT-1 at 10× less
+  capacity, solar variant, energy-transfer slider. Deferred by the draft
+  itself (bot choice at launch). The draft suggests a fuel-cell alternative; no plan until that is decided.
+- **`0.7.46` options 2, 4, 5** (`../archive/0.7.46-plan-fair-start-fallback.md`) —
+  repair the map (add a good planet for the weakest seat), `MONEY.initSec`
+  40 → 120–200, and a cheaper exact check. `0.7.47` shipped options 1 and 3
+  (say so + symmetric start) and the tiered ladder rescues the `20/6` cell;
+  whether 2/4/5 are still wanted is undecided.
 - small checks, each one question in its section: the tourist / emissary line in
   the help drawer and the money rule's rate on a small universe
   (`flight-lab-and-modes.md` §1.1, §1.2), the player cap in the help text and 12

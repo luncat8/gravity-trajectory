@@ -261,7 +261,8 @@ to mirror it (`archive/0.5.22-worklog.md` §3).
 roster runs the seat search. From 20 planets up every seed is fair except
 20 planets / six companies (9 of 12). Cramped universes keep their best
 exit-safe set, shared if they must. The misses are
-`../0.7.46-plan-fair-start-fallback.md`.
+`../archive/0.7.46-plan-fair-start-fallback.md` (superseded by
+`../archive/0.7.47-plan-fair-start-modes.md`).
 
 ## 1.5 what a career ignores on purpose ← `archive/draft.txt` (deferred)
 

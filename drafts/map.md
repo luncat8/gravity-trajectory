@@ -23,9 +23,7 @@ some type of zones are - slowly move 2d noise x,y offset += change
 some change like 3d noise z+= change
 what type of zone will be looks better with what type of movement - open question.
 
-→ **open**, no weather plan yet. The wear half has a hook:
-`archive/0.7.2-plan-ship-wear.md` exposes `careerWearAt(career, x, y) → multiplier` (identity
-today) and prices the ship's condition, so a weather layer can fill it without
-touching the repair/launch code. The zone shape, motion and overlay still need
-their own answer; the observation-range and jammer parts are a different layer
-from wear.
+→ **open** · `../0.8.8-plan-space-weather.md` covers the whole note for career
+mode. Compare drifting and evolving noise in a visual prototype before choosing
+motion; `careerWearAt` is the existing wear hook. Gameplay parameters and the
+open rules in the plan need decisions before implementation.
