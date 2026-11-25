@@ -846,7 +846,7 @@ Re-run the bench alone before believing a change caused it.
 
 ## which forceScale is the world's — the sim's, not the career's
 
-`career.forceScale` is set only for **rival** careers (`gravity_bot.js` `setScales`
+`career.forceScale` is set only for **rival** careers (`bot_setup.js` `setScales`
 assigns it to `rivals[i].career` but not to the player career); the player's world
 multiplier lives on the sims and on the probe/exitProbe/burnShotSims. Any bot helper
 that prices a physically possible shot must take the scale from the live sim it is
@@ -1235,3 +1235,23 @@ The caveat: `INIT_SEC` breaks 0.7.7's "a quick hop pays what it always paid" —
 pay at t=0 rises from 0.24 to 0.68 — so it is an economy decision, not a free
 knob. Lower gravity and longer distances both reduce reach inside the 120 s
 horizon and made fairness worse in the matrix.
+
+## a split module: copied `let`s, renamed keys, and a fresh instance per fixture
+
+Three traps when one IIFE becomes a core plus parts (`GravityGame`, `GravityBot`,
+`CommsCopy`; the wiring is in `AGENTS.md`):
+
+- `const { harvestMode } = inner;` copies the value once, at load. A top-level `let`
+  that another part reads goes through an accessor (`harvestModeOf()`); destructuring
+  it gives a stale copy that no test notices until the setter runs mid-session.
+- the public object maps some keys to differently named functions
+  (`harvestMode: harvestModeOf`, `specialPlanets: specialPlanetsOn`). A split that
+  republishes them shorthand silently renames public API that the page and tests
+  read; keep the `key: name` form in the owner's publish list and compare the exact
+  key set against the base. `inner` is the opposite: shorthand only, own names only,
+  so an import never resolves through a public alias (`parts_test` refuses renames).
+- a test that wants its own module instance (own caches, own fake `performance`)
+  cannot re-run one source file in a vm any more: the core would `require` its parts
+  from the real module cache. Run the core and its `PARTS` as page scripts in a fresh
+  `vm.createContext` with the core's dependencies as globals
+  (`experiments/seat_search_test.js` `fixture()`); that also exercises the page path.

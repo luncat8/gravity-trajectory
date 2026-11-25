@@ -7,6 +7,8 @@
 
 'use strict';
 
+/* ── helper UI & world ── origin, panel update, world attach */
+
 function helperHelperOrigin() {
 	if (selected >= 0 && selected < PLANETS) return selected;
 	if (aiming || armed) return aimBody;
@@ -127,6 +129,8 @@ function helperAttachWorld() {
 	helperProbe.fieldT = sim.fieldT;
 	helperProbe.fieldRate = sim.fieldRate;
 }
+
+/* ── goals & scoring ── goal table, leg text, offer tags, goal score, copied logs, plan-quest hits, helperScore */
 
 /*
  * How a scan ranks a landing. Every career scan prices a shot through the
@@ -361,6 +365,8 @@ function helperScore(probe, cand) {
 	score += probe.predLength * 0.0002;
 	return score;
 }
+
+/* ── candidate scans ── broad, focus, tweak, profit, quest and plan-quest makers and starters, book seeds */
 
 function helperSnapSpeedUnits(origin, speed) {
 	const maxU = Math.floor(speedCeiling(origin) * GravityGame.SPEED_STEPS + 1e-9);
@@ -793,6 +799,8 @@ function helperStartTweak() {
 	const cands = helperMakeTweak(base, 16);
 	helperRun(cands, 'tweak');
 }
+
+/* ── stop & tick ── stop, cancel on change, the budgeted helperTick */
 
 function stopHelper() {
 	if (!helperState.active) return;

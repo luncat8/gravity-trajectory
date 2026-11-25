@@ -3,21 +3,27 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const path = require('path');
 const vm = require('vm');
-const { createRequire } = require('module');
 const Trade = require('../orbit_sim.js');
 const Sim = require('../gravity_sim.js');
-const gamePath = require.resolve('../gravity_game.js');
-const source = fs.readFileSync(gamePath, 'utf8');
+const root = path.join(__dirname, '..');
+const coreSource = fs.readFileSync(path.join(root, 'gravity_game.js'), 'utf8');
+const parts = [.../const PARTS = \[([\s\S]*?)\];/.exec(coreSource)[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+const sources = ['gravity_game.js', ...parts].map(file => [file, fs.readFileSync(path.join(root, file), 'utf8')]);
+const externals = {
+	GravitySim: Sim, OrbitWorld: require('../orbit_world.js'), OrbitEcon: require('../orbit_econ.js'),
+	OrbitTech: require('../orbit_tech.js'), OrbitScience: require('../orbit_science.js'),
+	PlanetGravity: require('../planet_gravity.js')
+};
 
+/* a fresh module per fixture (own seat-plan and pair-track caches) on a fake clock:
+ * the core and its parts run as page scripts in a new context */
 function fixture() {
 	let clock = 0;
-	const context = {
-		module: { exports: {} }, require: createRequire(gamePath),
-		performance: { now: () => clock++ }
-	};
-	vm.runInNewContext(source, context, { filename: gamePath });
-	const Game = context.module.exports;
+	const context = vm.createContext(Object.assign({ performance: { now: () => clock++ } }, externals));
+	for (const [file, source] of sources) vm.runInContext(source, context, { filename: file });
+	const Game = context.GravityGame;
 	const trade = new Trade(1);
 	trade.advanceTo(420);
 	const sim = new Sim(Trade.WORLD_W, Trade.WORLD_H);

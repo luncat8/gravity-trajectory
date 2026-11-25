@@ -1,8 +1,9 @@
 /*
  * H's live calls, non-modal card, ranked topic chips and verified CTAs.
  *
- * Facts, slots and topics live in comms_copy.js; this file owns only the DOM
- * surface, the per-visit call state and the 1-to-1 action dispatcher.
+ * Facts, slots and topics live in CommsCopy (comms_copy.js and its parts);
+ * this file owns only the DOM surface, the per-visit call state and the
+ * 1-to-1 action dispatcher.
  */
 'use strict';
 

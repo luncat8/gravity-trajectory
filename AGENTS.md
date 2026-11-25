@@ -103,6 +103,61 @@ every file below is in place. each area file reads the composer's state as ordin
 state and element refs belong with the area that owns them, never in a shared state/utils file.
 root.GravityScene keys are a test contract (experiments/ read them) - keep the names.
 
+### rule set, bot and copy
+
+`GravityGame`, `GravityBot` and `CommsCopy` are each a core plus parts (0.7.53, done): the core
+(`gravity_game.js`, `gravity_bot.js`, `comms_copy.js`) holds the vocabulary every part reads and
+`PARTS`, the load order with one comment per file. find the file from `PARTS`, then read that part
+alone; each part's header says what it owns and what it does not. plan:
+archive/0.7.53-plan-js-split.md
+
+	grep -n -A20 "const PARTS" gravity_game.js gravity_bot.js comms_copy.js
+
+the big single files that stay whole (`orbit_view.js`, `gui_game.js`, `gravity_sim.js`,
+`gui_draw_world.js`, `gui_shop.js`, `gui_helper.js`, `orbit_sim.js`, besides `gravity_gui.js`)
+and the parts over ~600 lines are indexed the same way as the composer: `grep -n "── " file`.
+
+how a part is wired (`experiments/parts_test.js` checks all of it):
+
+- it takes names from the core and earlier parts on one `const { … } = inner;` line, and
+  publishes at its end: `Object.assign(GravityGame, { … })` for public keys,
+  `Object.assign(inner, { … })` for names a later part needs (shorthand only, never a rename).
+- a call into a later part is `inner.name(…)`, at call time only, never while the part loads.
+- a top-level `let` is read from another part through its accessor (`harvestModeOf()`,
+  `politicsOn()`, `specialPlanetsOn()`, the scale getters, `openingTraces()`,
+  `cachedPairTracks()`); a destructured `let` would be a stale copy. no cross-part writes.
+- internal callers never go through the public object, so a test that patches
+  `GravityGame.x` reaches only what it reached before.
+- bot parts add `GravityBot.prototype` methods (shared through `this`); a part's own constants
+  and public statics (`GravityBot.LEVELS = LEVELS`) live with it.
+- a constant read by one part lives in that part; the core keeps what two or more read.
+- node: the core requires its parts, and tests keep requiring the three cores; never `require`
+  a part. page: each part is a classic script that calls `GravityGame.part(file, attach)`; the
+  core refuses a part out of order and removes `part` after the last one (`CommsCopy` is frozen
+  then).
+- a new part goes into `PARTS` and `index.html` together, right after the core and its earlier
+  parts.
+
+| subject | rule | bot | GUI | fast check |
+|---|---|---|---|---|
+| mode caps, link codec, balance scales | `gravity_game.js`, `game_ship.js` (knobs) | `bot_setup.js` | `gui_share.js`, `gui_world.js` | `gravity_seed_test`, `balance_knobs_test` |
+| visit profit, harvest, stay-pay | `game_market.js` | `bot_rivals.js`, `bot_career_score.js` | `gui_predict.js`, `gui_draw_econ.js` | `harvest_ticks_test`, `profit_monotonic_test` |
+| pads, turrets, fees, launch reasons | `game_network.js` | `bot_career_shot.js` | `gui_flight.js`, `gui_aim.js`, `gui_shop.js` | `launch_reason_test`, `career_departure_test` |
+| company start, gifts, endgame | `game_career.js`, `game_science.js` (gifts) | `bot_career_loop.js` | `gui_game.js`, `gui_world.js` | `career_space_start_test`, `gift_test` |
+| wear, repair, fuel | `game_ship.js` | `bot_career_shop.js`, `bot_career_burn.js` | `gui_flight.js`, `gui_shop.js` | `career_wear_test`, `wear_flight_test` |
+| building, parts, radar | `game_build.js` | `bot_career_shop.js`, `bot_career_score.js` | `gui_shop.js`, `gui_draw_world.js` | `radar_test`, `obs_test` |
+| research, prototypes | `game_science.js` | `bot_career_assets.js` | `gui_science.js` | `obs_test` |
+| fair start, seats, composition | `game_opening.js`, `game_seat_*.js` | — | `gui_game.js`, `gui_maps.js` | `seat_search_test`, `start_composition_test`, `career_start_fairness` |
+| politics, bribes, arrest | `game_politics.js` | `bot_career_shop.js` | `gui_shop.js`, `gui_draw_econ.js` | `politics_test`, `bribe_score_test`, `politics_gui_test` |
+| deliveries, medics, board | `game_contracts.js` | `bot_career_shop.js` | `gui_book.js`, `gui_career.js` | `fragile_test`, `special_planets_test` |
+| sport race | `game_sport.js` | `bot_career_shot.js` (race entry) | `gui_book.js` | `competition_test` |
+| departure solvency, two-leg quests | `game_departure.js`, `game_legs.js` | `bot_career_assets.js`, `bot_career_plan.js` | `gui_helper.js`, `gui_predict.js` | `two_leg_test`, `career_departure_test` |
+| flight hooks, landing, evacuation | `game_flight.js` | `bot_career_shot.js` | `gui_flight.js`, `gui_career.js` | `career_evacuation_test` |
+| launch book | `game_book.js` | `bot_career_plan.js` | `gui_book.js` | `career_bench` |
+| non-career bots (tour/money/route) | `game_market.js` | `bot_rivals.js`, `bot_route.js` | `gui_route.js`, `gui_hud_game.js` | `bot_bench`, `route_bench` |
+| impulse burns, fuel pricing, rescue | `game_ship.js` | `bot_career_burn.js` | `gui_aim.js`, `gui_flight.js` | `multiplayer_impulse_test`, `career_bot_bench` |
+| H facts vs copy vs rendering | `comms_facts.js` / `comms_topics.js` / `comms_render.js` | — | `gui_comms.js` | `comms_facts_test`, `comms_topics_test`, `comms_call_test` |
+
 ## tests
 
 - run the fast checks while working, not the whole `experiments/` folder. a change
@@ -141,8 +196,10 @@ root.GravityScene keys are a test contract (experiments/ read them) - keep the n
 | `orbit_world`, `orbit_sim`, `orbit_econ` trade laws | `special_planets_test`, `orbit_clock_test`, `politics_test` |
 | `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `route_bench` (long trace), `bot_gravity_test` (exit/claim decisions on a saved field) |
 | `gravity_field` CPU raster and palette | `gravity_bench` (color + budget), `gravity_view_test` |
-| `gravity_game` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
-| `gravity_bot` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
+| `gravity_game.js`/`game_*.js` career/economy/laws | the part's row in the pairing table above, else `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
+| `gravity_bot.js`/`bot_*.js` planning/scoring | the part's row above, else `bribe_score_test`, `career_bench`, `career_bot_bench` |
+| `comms_copy.js`/`comms_*.js` | `comms_facts_test`, `comms_topics_test`, `comms_call_test` |
+| a part boundary: imports, publish lists, `PARTS`, a new part | `parts_test`, then the area test (and `dom_smoke` once if `index.html` changed) |
 | the career seat search (`prepareCareerStarts` and below) | `career_start_fairness` (independent exit-safe pay band), `career_start_seat_test`, then `make_saved_maps.js --check`: a stale saved map needs the generator rerun |
 | `gravity_gui`/`gui_*.js` page state | the one page test for the area (`politics_gui_test`, `obs_fragile_gui_test`, `career_pause_test`, `profit_monotonic_test`, …) |
 | `index.html`, script order, composer | `dom_smoke` once, plus the area test |

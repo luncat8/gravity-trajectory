@@ -120,6 +120,9 @@
 
 	/* the cargo layer's active planet subset; null = every planet drawn */
 	let planetMask = null;
+
+	/* ── universe mask ── planet/port/ship in-play tests */
+
 	function planetInPlay(planet) {
 		return !planetMask || planetMask[planet] === 1;
 	}
@@ -196,6 +199,8 @@
 	const stillState = new Uint8Array(OrbitSim.PLANETS);
 	const stillPort = new Int32Array(OrbitSim.PLANETS);
 	const stillSpec = new Uint8Array(OrbitSim.PLANETS);
+
+	/* ── backdrop & layout ── glow, rounded rects, the painted backdrop, resize, frames, positions, hover */
 
 	function makeGlow(fill) {
 		const sprite = document.createElement('canvas');
@@ -396,6 +401,8 @@
 		}
 	}
 
+	/* ── moons ── moon systems, tracks, stepping and drawing */
+
 	function addMoon(planet, kind, tone, a, e, phase, size, alpha, dir) {
 		if (moonCount >= MOON_CAP) return;
 		const slot = moonCount;
@@ -586,6 +593,8 @@
 		}
 		ctx.globalAlpha = 1;
 	}
+
+	/* ── world drawing ── orbits, links, planets, builders, routes, stations, ships, hover cards */
 
 	function orbitTrail(planet, colour) {
 		/* fading arc behind the station shows which way the ellipse turns */
@@ -953,6 +962,8 @@
 
 	let showBackdrop = true;
 
+	/* ── paint & still frame ── beginPaint, paintStill, the stale test, draw */
+
 	/* clears to the sky (or the bare frame over the field view) and leaves
 	 * the world transform applied inside a save() */
 	function beginPaint() {
@@ -1014,6 +1025,8 @@
 		ctx.restore();
 		drawHoverCard();
 	}
+
+	/* ── HUD & clock controls ── clock text, hover info, HUD, pause, speed, game-clock lock */
 
 	function formatClock(minutes) {
 		const total = Math.floor(minutes);
@@ -1116,6 +1129,8 @@
 			? reason + '. Moving ports share this gravity clock.'
 			: 'Moving ports: rate and pause also affect gravity and trajectories.';
 	}
+
+	/* ── world lifecycle & frame loop ── reset, settle, frame, still mode */
 
 	/* rebuilds the world in place, so OrbitScene.sim stays the same object;
 	 * `deferHistory` leaves the fast-forward to `settle`, for a boot that may

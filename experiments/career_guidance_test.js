@@ -20,7 +20,7 @@ const blockedSpeed = 60;
 const safeSpeed = 90;
 const TAU = Math.PI * 2;
 
-/* The seed picks the world and a shallow HQ (gravity_game pickHq), so the
+/* The seed picks the world and a shallow HQ (GravityGame.pickHq), so the
  * fixture searches the live pad for its two landings instead of hard-coding
  * the planets an older forced-gravity HQ used to reach. */
 function seek(speed, want) {

@@ -7,6 +7,8 @@
 
 'use strict';
 
+/* ── start ── startGame, the career run start, strengths, seat plans */
+
 function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	commsResetSession();
 	cancelCareerPlanning();
@@ -205,6 +207,8 @@ function finishCareerStart(seed) {
  * milliseconds at a time, and H reports the live best until a tier accepts
  * or the player decides. Only a completed tier can become a plan. */
 
+/* ── seat search ── roster planets, fair-search decisions and reports, sliced planning */
+
 /* Adding a planet to an active career does not reseat its existing HQs. */
 function addPlanetForRoster() {
 	if (!careerRule()) return;
@@ -398,6 +402,8 @@ function drainCareerPlanning() {
 		stepCareerPlanning(CAREER_SEARCH_FRAME_MS);
 	}
 }
+
+/* ── mode, bot & roster controls ── play mode, bot level, player count, universe, slot types */
 
 /* one flat row: lab stops the run, every other mode starts its rule at once */
 function setPlayMode(next) {
@@ -686,6 +692,8 @@ function selectSlot(slot) {
 	refreshGameUi();
 }
 
+/* ── stop & bot launches ── stopGame, the player-seat bot launch */
+
 /* back to lab: the world stays, the clock returns to real time, a running flight continues */
 function stopGame() {
 	careerRecordingClear();
@@ -787,6 +795,8 @@ function careerPlayerBotLaunch() {
 	if (selected !== 0) selectSlot(selected);
 	return true;
 }
+
+/* ── step loop ── career world advance, stepCareerGame, stepGame, bot and replay burns */
 
 function advanceCareerWorld() {
 	tradeSim.advanceTo(tradeSim.t + DT * scene.trade.speed);
@@ -1082,6 +1092,8 @@ function advanceGameOneStep() {
 	if (careerRule()) bot.stepCareer(game.clockSteps, game.market, tradeSim, scene.trade.speed);
 	else bot.stepOne(game.clockSteps, game.market);
 }
+
+/* ── flight end ── bot settle, endGameFlight, rival flight end, evacuation */
 
 function settleBotsWhenUsersDone() {
 	if (hasLiveUser() || replay.on) return;

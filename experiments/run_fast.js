@@ -32,6 +32,7 @@ const KNOWN_RED = {
 
 /* logic only, no page boot: the tier you can afford after every edit */
 const FAST = [
+	['parts_test.js', 0.3],
 	['launch_reason_test.js', 0.2],
 	['comms_facts_test.js', 0.4],
 	['comms_topics_test.js', 0.4],

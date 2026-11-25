@@ -7,6 +7,8 @@
 
 'use strict';
 
+/* ── text & cost helpers ── rule text, costs, caps, tiers, picks, shop buttons and records */
+
 function careerRuleText() {
 	const career = activeCareer();
 	const pads = career.padCount + ' / ' + planetCount + ' pads';
@@ -241,6 +243,8 @@ function careerTagText() {
 	return where + state;
 }
 
+/* ── fuel, repair & bribe blocks ── impulse note, fuel gauge and HUD, bribe UI, repair and fuel blocks */
+
 function shipImpulseNote(ship) {
 	if (!ship.engine || ship.tank.fuelCap <= 0) return '';
 	const remDv = OrbitTech.impulseDeltaV(ship.fuelKg, ship.engine, ship.mass, ship.fuelKg);
@@ -339,7 +343,7 @@ function fuelBlockHtml(career) {
 	return html + '</span></div>';
 }
 
-/* ── pads, claims & parts ── EMC claim rings, pad blocks, gear/part/prototype rows and the shop block */
+/* ── pads, claims & parts ── EMC claim rings, pad blocks, gear/part/prototype rows */
 /* who owns which planet's EMC claim, counted per player */
 function claimCounts() {
 	const counts = new Array(bot.count + 1).fill(0);
@@ -870,6 +874,8 @@ function protoGearRowHtml(career, row, planet, proto) {
 	html += peekButtonHtml(info);
 	return html + copyButtonHtml(row, proto) + '</span></div>';
 }
+
+/* ── pad charge & shop block ── charge readout and its live sync, shopBlockHtml */
 
 /* battery charge of the rail the career fires from on `planet`, for the shop
  * info block. The commercial EMC-1 is always charged, so it reads nothing. */

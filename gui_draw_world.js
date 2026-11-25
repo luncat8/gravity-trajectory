@@ -7,6 +7,8 @@
 
 'use strict';
 
+/* ── visits & bases ── visit outlines, rival landing rings, system visits, landed base */
+
 /* highlights the planet's own outline plus a tight outer ring, leaving thin orbits untouched */
 function drawPlanetVisitOutline(x, y, r, px, pulse, inside) {
 	ctx.setLineDash(NO_DASH);
@@ -139,6 +141,8 @@ function drawLandedBase(now) {
 	ctx.lineWidth = 1.4 * px;
 	ctx.stroke();
 }
+
+/* ── blocked & guide arrows ── blocked planet, guide arrow, occupied planet, tooltips */
 
 function activeBlockedPlanet(now) {
 	if (aiming) return -1;
@@ -322,6 +326,8 @@ function drawBlockedTooltipScreen(src) {
 	ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
 	ctx.fillText(text, x + 26, y + height * 0.5 + 0.5);
 }
+
+/* ── field & prediction ── wells, signs, port velocities, prediction */
 
 function drawWells() {
 	const px = 1 / view.scale;
@@ -510,6 +516,8 @@ let radarOutCount = 0;
  * gameplay is untouched; the pointer handlers in gui_aim.js write these. */
 let radarHoverSim = null;
 let radarPressSim = null;
+
+/* ── radar ── ghost colours, ship positions, lab radar, plates and labels */
 
 function radarGhostColour(record) {
 	const index = record.career ? record.career.index : record.slot;
@@ -796,6 +804,8 @@ function drawRadarLabels() {
 		ctx.fillText(radarTimeText(record.tLand), x, y);
 	}
 }
+
+/* ── ship & aim ── trail, cargo, aim, markers, labels, grip label */
 
 function drawTrail(sim = activeSim(), other = false) {
 	if (other) {

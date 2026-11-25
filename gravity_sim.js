@@ -32,6 +32,8 @@
 		: root.OrbitWorld;
 	const AREA_PAD = (OrbitWorld.AREA_SCALE - 1) / 2;
 
+	/* ── constants & clock contract ── step, field and cargo constants; gameSeconds..wallSeconds, the conversions every reader goes through */
+
 	const DT = 1 / 120;
 	const MU = 400000;
 	const SOFT = 60;
@@ -123,6 +125,8 @@
 	function wallSeconds(steps, pace) {
 		return pace > 0 ? steps * DT / pace : 0;
 	}
+
+	/* ── sim record & field setup ── constructor, planets, mask, bodies, field stride and drift */
 
 	/* `worldW`/`worldH` frame the planet field; a flight may run out to the
 	 * area, AREA_SCALE times the field and centred on it */
@@ -351,6 +355,8 @@
 		return worst;
 	};
 
+	/* ── career launch gate ── attachCareer, pads and ship, launch energy, speed and burn limits */
+
 	/*
 	 * With a launch network the vessel fires only from the pad it sits on. Every
 	 * rail gate (the drag ceiling, the launch button, the launch book) reads this
@@ -407,6 +413,8 @@
 	GravitySim.prototype.canBurn = function (dv) {
 		return dv > 0 && dv <= this.burnLimit() + 1e-9;
 	};
+
+	/* ── field sampling & visits ── fieldAt, scales, relocate, system marks and inside tests */
 
 	/* gravitational acceleration (px/s²) at world point (x, y) into `out` */
 	GravitySim.prototype.fieldAt = function (x, y, out) {
@@ -520,6 +528,8 @@
 		return entered;
 	};
 
+	/* ── flight physics ── strength, the drag map (speedAt/gripLength), advance, impact, edge, spawn */
+
 	GravitySim.prototype.setStrength = function (body, value) {
 		const clamped = value < STRENGTH_MIN ? STRENGTH_MIN
 			: value > STRENGTH_MAX ? STRENGTH_MAX : value;
@@ -632,6 +642,8 @@
 		state.vx += (plusX - this.velX[origin]) * k;
 		state.vy += (plusY - this.velY[origin]) * k;
 	};
+
+	/* ── prediction ── sliced route trace, predict/predictFull/predictFast, burn predictions */
 
 	GravitySim.prototype.snapshotField = function (t0) {
 		this.fillField(t0, this.predBodyX, this.predBodyY, this.bodyCount);
@@ -940,6 +952,8 @@
 	GravitySim.prototype.predictBurnFast = function (source, angle, dv) {
 		this.traceFromCargo(source, angle, dv, FULL_BUDGET_MS, false);
 	};
+
+	/* ── live flight ── burn, launch, visits, trail, finish, stepOne/step, clear */
 
 	/* instantaneous velocity impulse at the current fixed-step boundary */
 	GravitySim.prototype.burn = function (angle, dv) {

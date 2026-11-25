@@ -128,7 +128,7 @@ value for the bribe to cash — the only way to take one on landing without an
 uninstall action the game does not have.
 
 → a rival with the bribe-taking persona prices that offer into the landing it
-plans (`careerBribeOffer` in `gravity_bot.js`, 0.7.7); the human's helpers, aim
+plans (`careerBribeOffer` in `bot_career_score.js`, 0.7.7); the human's helpers, aim
 line and launch list never do, because the offer is the player's to take or
 leave.
 
@@ -186,7 +186,7 @@ work (`careerGoalBodies`). The "count taken quests as profit" half is the leg
 credit in `careerLandingFacts`.
 
 → `../archive/0.7.40-plan-two-leg-quests.md` (done): `careerLegPlan` in
-`gravity_game.js` prices intermediate two-leg stops (`at → pickup → dropoff`
+`game_legs.js` prices intermediate two-leg stops (`at → pickup → dropoff`
 and `Capital → rebel → Capital`) across post-pickup mass, fragile ceiling,
 fees, wear, deadline and Capital refund escrow, shared by `quest scan`,
 `GravityBot` (shot scoring and board acceptance), and the new `plan quest`

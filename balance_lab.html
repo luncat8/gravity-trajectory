@@ -584,7 +584,7 @@ function createPricing() {
 	var PRIMARY_KEY = { engine: 'thrust', catapult: 'maxForce', tank: 'fuelCap', battery: 'capacity', panel: 'power', hold: 'capacity' };
 	var SECONDARY_KEY = { engine: 'mass', catapult: 'efficiency', tank: 'emptyMass', battery: 'leak' };
 	var UNIT = { thrust: 'kN', maxForce: 'kN', fuelCap: 'kg', capacity: 'kWh', power: 'kW', mass: 't', emptyMass: 't' };
-	/* tiers known out of the box (mirrors gravity_game.js STARTING_RESEARCH_TIER;
+	/* tiers known out of the box (mirrors game_science.js STARTING_RESEARCH_TIER;
 	 * hold is build-only there, here its whole ladder ships known) */
 	var START_TIER = { catapult: 2, panel: 99, battery: 99, hold: 99, engine: 99, tank: 99 };
 

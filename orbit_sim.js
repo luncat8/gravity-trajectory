@@ -64,6 +64,8 @@
 	const GOOD_NAMES = ['bulk', 'goods', 'migrants'];
 	const seedRandom = OrbitWorld.seedRandom;
 
+	/* ── sim record ── constructor, reset, positions, colony log and events */
+
 	function Sim(seed) {
 		this.handleEvent = this.handleEvent.bind(this);
 		this.onColonyEvent = this.onColonyEvent.bind(this);
@@ -217,6 +219,8 @@
 		return this.planetYAt(this.portPlanet[port], time);
 	};
 
+	/* ── ports & colonies ── natural specs, activate/seed/remove ports, trade partners */
+
 	function naturalSpec(colony) {
 		let best = OrbitEcon.BULK;
 		let bestEase = colony.ease[OrbitEcon.BULK];
@@ -349,6 +353,8 @@
 			}
 		}
 	};
+
+	/* ── trade flights ── rendezvous, departures, export and migrant destinations, load, arrive, colony ships */
 
 	Sim.prototype.solveRendezvous = function (fromX, fromY, dest, depart, speed) {
 		let dx = this.portX(dest, depart) - fromX;
@@ -610,6 +616,8 @@
 		this.refreshPartners();
 	};
 
+	/* ── universe mask & retirement ── planet limit and mask, in-play tests, retire/cancel/drop ports */
+
 	/*
 	 * Trade only considers planets in the run's enabled set once they are
 	 * enabled. Raising the count is a one-way door (a world once opened keeps
@@ -808,6 +816,8 @@
 			}
 		}
 	};
+
+	/* ── clock ── target scoring, tick, events, step, advanceTo */
 
 	/* Habitat-weighted target selection within EXPAND_RADIUS. */
 	Sim.prototype.scoreTarget = function (port) {
