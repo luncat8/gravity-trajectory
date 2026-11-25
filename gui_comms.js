@@ -112,12 +112,6 @@ const COMMS_HANDLERS = Object.freeze({
 	'fair-play-as-is'() {
 		playFairSearchAsIs();
 	},
-	'fair-wait-more'() {
-		advanceFairSearchTier();
-	},
-	'fair-start-fair'() {
-		startFairSearchPlan();
-	},
 	'fair-load-saves'() {
 		loadFairSaveRecord(commsState.loadSaveValue);
 	}
@@ -134,12 +128,8 @@ function commsEscapeHtml(text) {
 function commsFindingKey(reason, planet) {
 	if (!reason) return '';
 	if (reason === ENDGAME_WARNING) return reason.id + '|' + commsState.career.recoveryEpisode;
-	/* WS4: the search report changes as tiers advance, so the key follows it
-	 * and the live card refreshes; WS3 keys the roster call per roster */
-	if (reason === FAIR_SEARCH) {
-		const report = seatSearchReport();
-		return reason.id + '|T' + report.tier + '|W' + report.weakest + '|' + report.unmet;
-	}
+	/* Keep the call stable while its live report changes. */
+	if (reason === FAIR_SEARCH) return reason.id;
 	if (reason === FAIR_ROSTER) {
 		const report = rosterFairnessReport();
 		return reason.id + '|P' + report.players + '|N' + report.planets;
@@ -148,6 +138,12 @@ function commsFindingKey(reason, planet) {
 		(reason.need === null || reason.need === undefined ? '' : String(reason.need)) + '|' +
 		(reason.have === null || reason.have === undefined ? '' : String(reason.have)) + '|' +
 		(reason.repair ? 'repair' : 'launch');
+}
+
+function commsResetSession() {
+	commsState.open = false;
+	commsState.collapsed = false;
+	commsResetVisit(null, -2);
 }
 
 function commsResetVisit(career, planet) {
@@ -167,11 +163,11 @@ function commsResetVisit(career, planet) {
 }
 
 function commsActiveFinding(career) {
-	if (!career || !careerRule() || replay.on || careerActionReplay.active ||
-		career.ended !== GravityGame.CAREER_OPEN) return null;
+	if (!career || !careerRule() || replay.on || careerActionReplay.active) return null;
 	/* WS4: while the opening search is planning, the roster/search report is
 	 * the live finding; the career's own gates do not apply yet */
 	if (careerPlanning) return FAIR_SEARCH;
+	if (career.ended !== GravityGame.CAREER_OPEN) return null;
 	/* WS3: an unfair roster is the finding before the run's own gates */
 	if (!rosterFairnessReport().ok) return FAIR_ROSTER;
 	if (career.recoverySteps >= GravityGame.ENDGAME_WARNING_STEPS) return ENDGAME_WARNING;
@@ -220,6 +216,7 @@ function commsBuildSnapshot() {
 		rosterOk: roster.ok,
 		rosterPlanets: roster.planets,
 		rosterPlayers: roster.players,
+		rosterDetails: CommsCopy.compositionChecklist(roster),
 		searchActive: search.searchActive,
 		searchTier: search.searchTier,
 		searchWeakest: search.searchWeakest,
@@ -227,14 +224,17 @@ function commsBuildSnapshot() {
 		searchProgress: search.searchProgress,
 		searchDecision: search.searchDecision,
 		searchPlan: search.searchPlan,
-		searchCanAdvance: search.searchCanAdvance
+		searchCanAdvance: search.searchCanAdvance,
+		searchPay: search.searchPay,
+		searchHasBest: search.searchHasBest
 	});
 	commsState.snapshot = snapshot;
 	commsState.snapshotDirty = false;
 	if (commsStamp) {
-		commsStamp.textContent = 'checked ' + snapshot.second + ' s · ' +
+		const stamp = 'checked ' + snapshot.second + ' s · ' +
 			(snapshot.planet >= 0 ? planetName(snapshot.planet)
 				: snapshot.careerMode ? 'in space' : snapshot.rule);
+		if (commsStamp.textContent !== stamp) commsStamp.textContent = stamp;
 	}
 	return snapshot;
 }
@@ -261,6 +261,11 @@ function commsTick() {
 		commsState.callKey = '';
 		commsState.callReason = null;
 		commsState.snapshotDirty = true;
+		if (commsState.open && reason === FAIR_SEARCH) commsAsk(FAIR_SEARCH.id);
+		else if (commsState.open && commsState.exchanges.length &&
+			commsState.exchanges[commsState.exchanges.length - 1].id === FAIR_SEARCH.id) {
+			commsAsk(CommsCopy.H_META_ID);
+		}
 	}
 	const second = game.on && !replay.on && !careerActionReplay.active ? Math.floor(game.clockSteps * DT) : 0;
 	const unwarned = reason === ENDGAME_WARNING && commsWarnedEpisodes.get(career) !== career.recoveryEpisode;
@@ -268,7 +273,7 @@ function commsTick() {
 		commsWarnedEpisodes.set(career, career.recoveryEpisode);
 		commsAsk(reason.id);
 	}
-	if (key && !commsState.open && !commsState.callKey && second !== commsState.lastCallSecond &&
+	if (key && !commsState.open && !commsState.callKey && (reason === FAIR_SEARCH || second !== commsState.lastCallSecond) &&
 		(reason === ENDGAME_WARNING ? unwarned :
 			reason === RETURN_TOW || (!commsState.seen[key] && !commsState.dismissed[key]))) {
 		commsState.callKey = key;
@@ -346,7 +351,7 @@ function commsRunAction(actId) {
 function commsOpen() {
 	if (commsState.open) return;
 	const reason = commsState.callReason;
-	const topic = reason && (reason === RETURN_TOW || reason === ENDGAME_WARNING ||
+	const topic = careerPlanning ? FAIR_SEARCH.id : reason && (reason === RETURN_TOW || reason === ENDGAME_WARNING ||
 		reason === FAIR_SEARCH || reason === FAIR_ROSTER)
 		? reason.id : CommsCopy.H_META_ID;
 	commsState.open = true;
@@ -451,14 +456,13 @@ function commsReasonText(reason) {
 	if (reason === ENDGAME_WARNING) return commsEndgameText();
 	if (reason === FAIR_SEARCH) {
 		const report = seatSearchReport();
-		return 'Fair-start search · tier ' + report.tier + ' · weakest ' + report.weakest +
-			'% · ' + report.progress + '% done' +
-			(report.unmet ? ' · still missing ' + report.unmet : ' · a fair set is ready');
+		return 'Preparing the map · search pass ' + (report.tier + 1) + ' · ' +
+			report.progress + '% of this pass' + (report.hasBest
+				? ' · weakest opening ' + report.weakest + '% of strongest' : ' · testing candidates');
 	}
 	if (reason === FAIR_ROSTER) {
 		const report = rosterFairnessReport();
-		return report.players + ' companies cannot start fairly on ' + report.planets +
-			' planets · drop a company or open another planet';
+		return report.planets + '-planet map, ' + report.players + ' companies · ' + CommsCopy.compositionMissingText(report);
 	}
 	if (reason === RETURN_TOW) {
 		const career = commsState.career;
@@ -485,12 +489,13 @@ function commsPaint() {
 	}
 	if (commsCall) commsCall.hidden = !called;
 	if (commsCallReason) {
-		commsCallReason.textContent = reasonText;
+		if (commsCallReason.textContent !== reasonText) commsCallReason.textContent = reasonText;
 	}
 	if (commsBadge) commsBadge.hidden = !called;
 	if (commsTag) {
 		commsTag.hidden = !called;
-		commsTag.textContent = commsState.callReason === RETURN_TOW ? 'tow to HQ?' : reasonText;
+		const tag = commsState.callReason === RETURN_TOW ? 'tow to HQ?' : reasonText;
+		if (commsTag.textContent !== tag) commsTag.textContent = tag;
 	}
 	if (commsCard) {
 		commsCard.hidden = !commsState.open;
@@ -511,8 +516,9 @@ function commsPaint() {
 			'\nH: ' + exchange.answer;
 	}
 	if (latest) transcript += (transcript ? '\n\n' : '') + 'You: ' + latest.question;
-	commsTranscript.textContent = transcript;
-	commsAnswer.textContent = latest ? latest.answer : '';
+	if (commsTranscript.textContent !== transcript) commsTranscript.textContent = transcript;
+	const answer = latest ? latest.answer : '';
+	if (commsAnswer.textContent !== answer) commsAnswer.textContent = answer;
 	if (commsBackButton) commsBackButton.hidden = count <= 1;
 	if (commsChipsEl && commsState.snapshot) {
 		const nextChips = commsChipsMarkup(commsState.snapshot, latest ? latest.id : '');

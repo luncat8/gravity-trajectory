@@ -63,6 +63,52 @@
 		return owner === 0 ? 'YOU' : 'R' + owner;
 	}
 
+	/* The fair-start composition gate as rows, one per requirement, so the
+	 * answer can list what this map is missing before what it already has.
+	 * `report` is { planets, players, composition: startComposition(...) }. */
+	function compositionRows(report) {
+		const comp = report.composition;
+		if (!comp || !Array.isArray(comp.missing)) return [];
+		const missing = comp.missing;
+		const rows = [
+			{ ok: !missing.includes('planets'), label: 'planets', have: report.planets, need: comp.minimal, min: true },
+			{ ok: !missing.includes('light'), label: 'starter-accessible planets', have: comp.light, need: report.players, min: false }
+		];
+		if (GravityGame.specialPlanets()) {
+			rows.push({ ok: !missing.includes('specials'), label: 'Capital and ARF on the map', have: -1, need: -1, min: false });
+		}
+		rows.push({ ok: !missing.includes('emc2'), label: 'EMC-2 heavy planets', have: comp.heavyEmc2, need: 1, min: true });
+		rows.push({ ok: !missing.includes('emc3'), label: 'EMC-3 heavy planets', have: comp.heavyEmc3, need: 1, min: true });
+		return rows;
+	}
+
+	function compositionRowText(row) {
+		const mark = row.ok ? '✓ ' : '✗ ';
+		if (row.need < 0) return mark + row.label;
+		const count = row.min ? row.have + ' (at least ' + row.need + ')' : row.have + ' of ' + row.need;
+		return mark + row.label + ': ' + count + (row.ok ? '' : ' · ' + (row.need - row.have) + ' more needed');
+	}
+
+	/* the multi-line checklist H answers with: missing first, then met */
+	function compositionChecklist(report) {
+		const rows = compositionRows(report);
+		if (!rows.length) return '';
+		const missing = rows.filter(row => !row.ok).map(compositionRowText);
+		const met = rows.filter(row => row.ok).map(compositionRowText);
+		const parts = [];
+		if (missing.length) parts.push('Missing on this map:\n' + missing.join('\n'));
+		if (met.length) parts.push((missing.length ? 'Already met:' : 'Map check, all met:') + '\n' + met.join('\n'));
+		return parts.join('\n\n');
+	}
+
+	/* the one-line call banner: only the shortfalls */
+	function compositionMissingText(report) {
+		const rows = compositionRows(report).filter(row => !row.ok);
+		if (!rows.length) return 'all composition requirements met';
+		return 'missing ' + rows.map(row => row.need < 0 ? row.label
+			: row.label + ' ' + row.have + '/' + row.need).join(' · ');
+	}
+
 	function shortfall(need, have) {
 		const diff = need - have;
 		return diff > 0 ? money(diff) : money(0);
@@ -318,6 +364,7 @@
 			rosterOk: true,
 			rosterPlanets: 0,
 			rosterPlayers: 0,
+			rosterDetails: '',
 			searchActive: false,
 			searchTier: 0,
 			searchWeakest: 0,
@@ -506,11 +553,14 @@
 			rosterOk: opts.rosterOk !== false,
 			rosterPlanets: opts.rosterPlanets || 0,
 			rosterPlayers: opts.rosterPlayers || 0,
+			rosterDetails: opts.rosterDetails || '',
 			searchActive: Boolean(opts.searchActive),
 			searchTier: opts.searchTier || 0,
 			searchWeakest: opts.searchWeakest || 0,
 			searchUnmet: opts.searchUnmet || '',
 			searchProgress: opts.searchProgress || 0,
+			searchPay: opts.searchPay || '',
+			searchHasBest: Boolean(opts.searchHasBest),
 			searchDecision: opts.searchDecision || '',
 			searchPlan: Boolean(opts.searchPlan),
 			searchCanAdvance: Boolean(opts.searchCanAdvance)
@@ -816,8 +866,8 @@
 		/* 0.7.47 WS3/WS4: the roster fairness and seat-search report */
 		'roster-unfair': Object.freeze({
 			test: s => s.careerMode && s.rosterOk === false,
-			why: s => whole(s.rosterPlayers) + ' companies need more than ' +
-				whole(s.rosterPlanets) + ' planets to start fairly'
+			why: s => 'the ' + whole(s.rosterPlanets) + '-planet map does not meet the fair-start composition for ' +
+				whole(s.rosterPlayers) + ' companies'
 		}),
 		'search-active': Object.freeze({
 			test: s => s.searchActive,
@@ -828,31 +878,33 @@
 			why: () => 'already one company'
 		}),
 		'can-add-planet': Object.freeze({
-			test: s => s.careerMode && s.rosterOk === false && s.rosterPlanets > 0,
+			test: s => s.careerMode && s.rosterOk === false && s.rosterPlanets > 0 && s.rosterPlanets < OrbitWorld.PLANETS,
 			why: () => 'world is full'
 		}),
 		'search-has-plan': Object.freeze({
 			test: s => s.searchActive && s.searchPlan,
+			why: () => ''
+		}),
+		'search-can-start': Object.freeze({
+			test: s => s.searchActive && (s.searchPlan ||
+				(s.searchDecision === 'tier-end' && !s.searchCanAdvance)),
 			why: s => s.searchUnmet ? 'still searching · ' + s.searchUnmet : 'nothing to start'
 		}),
-		'can-advance-tier': Object.freeze({
-			test: s => s.searchActive && s.searchDecision === 'tier-end' && s.searchCanAdvance,
-			why: () => 'last tier already searched'
+
+		'search-best': Object.freeze({
+			test: s => s.searchActive && s.searchHasBest,
+			why: () => ''
 		}),
 		'search-unmet': Object.freeze({
 			test: s => s.searchActive && Boolean(s.searchUnmet),
 			why: () => ''
 		}),
-		'search-accepted': Object.freeze({
-			test: s => s.searchActive && s.searchDecision === 'accepted',
-			why: () => 'the search has not accepted yet'
+		'search-running': Object.freeze({
+			test: s => s.searchActive && !(s.searchDecision === 'tier-end' && !s.searchCanAdvance),
+			why: () => ''
 		}),
-		'search-decision': Object.freeze({
-			test: s => s.searchActive && Boolean(s.searchDecision),
-			why: () => 'no decision is pending'
-		}),
-		'search-settled': Object.freeze({
-			test: s => s.searchActive && !s.searchUnmet,
+		'search-exhausted': Object.freeze({
+			test: s => s.searchActive && s.searchDecision === 'tier-end' && !s.searchCanAdvance,
 			why: () => ''
 		})
 	});
@@ -955,10 +1007,13 @@
 		/* 0.7.47 WS3/WS4 */
 		rosterPlanets: s => whole(s.rosterPlanets),
 		rosterPlayers: s => whole(s.rosterPlayers),
+		rosterDetails: s => s.rosterDetails || 'Composition details unavailable.',
 		searchTier: s => 'T' + whole(s.searchTier),
 		searchWeakest: s => whole(s.searchWeakest) + '%',
 		searchUnmet: s => s.searchUnmet || 'fair',
-		searchProgress: s => whole(s.searchProgress) + '%'
+		searchProgress: s => whole(s.searchProgress) + '%',
+		searchPass: s => whole(s.searchTier + 1),
+		searchPay: s => s.searchPay || 'unavailable'
 	});
 
 	/* Verified CTA metadata: gui_comms maps each id to its real page handler. */
@@ -1043,23 +1098,9 @@
 		}),
 		'fair-play-as-is': Object.freeze({
 			id: 'fair-play-as-is',
-			label: 'start as planned',
+			label: 'start anyway',
 			when: 'search-active',
-			enabled: 'search-has-plan',
-			costly: false
-		}),
-		'fair-wait-more': Object.freeze({
-			id: 'fair-wait-more',
-			label: 'search more',
-			when: 'search-active',
-			enabled: 'can-advance-tier',
-			costly: false
-		}),
-		'fair-start-fair': Object.freeze({
-			id: 'fair-start-fair',
-			label: 'start fair',
-			when: 'search-accepted',
-			enabled: 'search-accepted',
+			enabled: 'search-can-start',
 			costly: false
 		}),
 		'fair-load-saves': Object.freeze({
@@ -1530,12 +1571,20 @@
 			steps: Object.freeze(['non-career', 'career-ended']),
 			lines: Object.freeze([
 				Object.freeze({
-					text: '{rosterPlayers} companies cannot start fairly on {rosterPlanets} planets.',
+					text: 'The {rosterPlanets}-planet map does not meet the fair-start composition for {rosterPlayers} companies.',
 					when: 'roster-unfair'
 				}),
 				Object.freeze({
-					text: 'Drop a company, or open another planet so the opening search has room to seat everyone.',
-					when: 'roster-unfair'
+					text: '\n{rosterDetails}',
+					when: null
+				}),
+				Object.freeze({
+					text: 'The {rosterPlanets}-planet map now meets the composition requirements for {rosterPlayers} companies. This is not a guarantee of balanced openings.',
+					when: { not: 'roster-unfair' }
+				}),
+				Object.freeze({
+					text: '\nStarter-accessible: another planet is reachable with at most three quarters of the starter rail, one needed per company.\nHeavy: no planet is reachable from the starter rail; only a stronger EMC rail leaves with that margin.\nAdding a planet or removing a company does not reseat existing HQs; a new game reruns the opening search unless it uses a saved opening. Neither guarantees fairness.',
+					when: null
 				})
 			]),
 			lookAhead: Object.freeze([]),
@@ -1551,35 +1600,21 @@
 			ask: 'fair opening search?',
 			rank: 1,
 			when: 'search-active',
-			steps: Object.freeze(['non-career', 'career-ended']),
+			steps: Object.freeze(['non-career']),
 			lines: Object.freeze([
-				Object.freeze({
-					text: 'Searching tier {searchTier} · weakest share {searchWeakest} · {searchProgress} done.',
-					when: 'search-active'
-				}),
-				Object.freeze({
-					text: 'Still missing: {searchUnmet}.',
-					when: 'search-unmet'
-				}),
-				Object.freeze({
-					text: 'A fair set is ready at this tier — start with it, search more, or change the roster.',
-					when: 'search-has-plan'
-				}),
-				Object.freeze({
-					text: 'The search accepted a fair set — start fair now, or load a saved map instead.',
-					when: 'search-accepted'
-				}),
-				Object.freeze({
-					text: 'Or load a saved map that already seats this roster fairly.',
-					when: 'search-decision'
-				})
+				Object.freeze({ text: 'Preparing the map for {rosterPlayers} companies on {rosterPlanets} planets.', when: 'search-active' }),
+				Object.freeze({ text: 'Search pass {searchPass}: approximately {searchProgress} complete. The game starts when a fair opening is found.', when: 'search-running' }),
+				Object.freeze({ text: 'Best candidate so far: estimated first-landing rewards {searchPay}; the weakest is {searchWeakest} of the strongest.', when: 'search-best' }),
+				Object.freeze({ text: 'Still missing: {searchUnmet}.', when: 'search-unmet' }),
+				Object.freeze({ text: 'You can start with the best completed pass. The live candidate above may be newer.', when: 'search-has-plan' }),
+				Object.freeze({ text: 'Search finished without a fair opening. Start anyway or load a saved map.', when: 'search-exhausted' }),
+				Object.freeze({ text: 'You can also load a saved map.', when: 'search-active' })
 			]),
 			lookAhead: Object.freeze([]),
-			ref: Object.freeze(['fair-roster']),
-			refWhen: 'roster-unfair',
+			ref: Object.freeze([]),
+			refWhen: null,
 			chips: Object.freeze([]),
-			actions: Object.freeze(['fair-play-as-is', 'fair-wait-more',
-				'fair-start-fair', 'fair-load-saves'])
+			actions: Object.freeze(['fair-play-as-is', 'fair-load-saves'])
 		})
 	});
 
@@ -1954,6 +1989,9 @@
 		topTopicId,
 		chipList,
 		renderTopic,
+		compositionRows,
+		compositionChecklist,
+		compositionMissingText,
 		validateCopy
 	});
 

@@ -82,10 +82,11 @@ full-parity space opening. Evacuation with no HQ rides to the Capital
 so player can read helper report of current state while search continues. continue search in background and upd results until player decision.
 
 → `0.7.47` WS4: resumable `createSeatSearch` driver, 2 s synchronous head,
-then ~6–10 ms per frame; H's `fair-search` card carries the live report and
-the play-as-is / load-fair-saves / wait-more decision; tiers are deterministic
-work budgets (T0 = today's walk bit-for-bit), so the same seed always seats
-the same companies.
+then a cooperative ~8 ms frame budget (individual work units can take longer);
+H's `fair-search` card reports the live best and offers a completed plan or a
+saved map. The search continues through deterministic tiers and starts on an
+accepted plan; an overcrowded composition starts with the completed fallback,
+while an exhausted search waits for the player's choice.
 
 ## QA
 

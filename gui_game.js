@@ -8,6 +8,7 @@
 'use strict';
 
 function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
+	commsResetSession();
 	cancelCareerPlanning();
 	const armedField = PlanetGravity.armed();
 	if (armedField && armedField.seed !== (seed >>> 0)) clearMapField();
@@ -134,7 +135,7 @@ function startCareerRun(seed) {
 		if (out.done && !search.bestPlan()) {
 			/* no set at any tier can be seated: start planet anyway below the
 			 * minimal line and let the weak roster warning carry the news */
-			startCareerWithPlan(null, seed, startMode);
+			startCareerWithPlan(null, seed, startMode, true);
 			return;
 		}
 		beginCareerPlanning(search, seed, startMode);
@@ -163,8 +164,8 @@ function applySeatPlanPlan(plan, seed) {
  * set it); `startCareer` reads one home per company from there, so no single
  * homePlanet is passed here. A no-HQ start seats nothing, so its galaxy is
  * opened without any seat search (WS5). */
-function startCareerWithPlan(plan, seed, startMode) {
-	if (startMode === GravityGame.START_PLANET) {
+function startCareerWithPlan(plan, seed, startMode, skipSeatSearch) {
+	if (startMode === GravityGame.START_PLANET && !skipSeatSearch) {
 		GravityGame.prepareCareerStarts(game.galaxy, tradeSim.world, tradeSim,
 			planetMask, planetCount, 1 + bot.count, cargoSim);
 	}
@@ -204,8 +205,7 @@ function finishCareerStart(seed) {
  * milliseconds at a time, and H reports the live best until a tier accepts
  * or the player decides. Only a completed tier can become a plan. */
 
-/* H's roster fix (WS3): one more planet. The planet input's own change
- * handler restarts the search, so this only widens the world first. */
+/* Adding a planet to an active career does not reseat its existing HQs. */
 function addPlanetForRoster() {
 	if (!careerRule()) return;
 	if (planetCount >= PLANET_UNIVERSE_MAX) return;
@@ -219,7 +219,7 @@ function addPlanetForRoster() {
 /* The live WS4 decision, or null while the walk is still running. `plan`
  * is the snapshot taken when the decision appeared (the completed tier at
  * offer time — mid-tier progress never leaks into it); `canAdvance` says a
- * wait-more click would start the next tier. */
+ * deeper pass is still running. */
 function careerPlanningDecision() {
 	if (!careerPlanning || !careerPlanSearch || !careerPlanDecision) return null;
 	return {
@@ -239,29 +239,7 @@ function playFairSearchAsIs() {
 	const plan = decision.plan;
 	cancelCareerPlanning();
 	if (plan) applySeatPlanPlan(plan, seed);
-	else startCareerWithPlan(null, seed, GravityGame.START_PLANET);
-}
-
-/* H's search decision (WS4): start fair on the tier the search accepted. */
-function startFairSearchPlan() {
-	const decision = careerPlanDecision;
-	if (!careerPlanning || !careerPlanSearch || !decision ||
-		decision.kind !== 'accepted' || !decision.plan) return;
-	const seed = careerPlanSeed;
-	const plan = decision.plan;
-	cancelCareerPlanning();
-	applySeatPlanPlan(plan, seed);
-}
-
-/* H's search decision (WS4): search one tier deeper. Only offered while a
- * tier-end decision can still advance; the walk resumes in the background
- * and the live report keeps updating until the next decision. */
-function advanceFairSearchTier() {
-	const decision = careerPlanDecision;
-	if (!careerPlanning || !careerPlanSearch || !decision ||
-		decision.kind !== 'tier-end' || !decision.canAdvance) return;
-	if (!careerPlanSearch.advanceTier()) return;
-	careerPlanDecision = null;
+	else startCareerWithPlan(null, seed, GravityGame.START_PLANET, true);
 	commsInvalidate();
 	refreshGameUi();
 }
@@ -276,7 +254,7 @@ function rosterFairnessReport() {
 	}
 	const comp = GravityGame.startComposition(tradeSim.world, planetMask, planetCount,
 		playerCountShown(), cargoSim, game.startMode);
-	return { ok: comp.ok, planets: planetCount, players: playerCountShown() };
+	return { ok: comp.ok, planets: planetCount, players: playerCountShown(), composition: comp };
 }
 
 /* the live seat-search report for H (WS4). A completed tier that accepted
@@ -290,7 +268,7 @@ function fairSearchSnapshotFields() {
 		return {
 			searchActive: false, searchTier: 0, searchWeakest: 0,
 			searchUnmet: '', searchProgress: 0, searchDecision: '',
-			searchPlan: false, searchCanAdvance: false
+			searchPlan: false, searchCanAdvance: false, searchPay: '', searchHasBest: false
 		};
 	}
 	const rep = seatSearchReport();
@@ -303,7 +281,9 @@ function fairSearchSnapshotFields() {
 		searchProgress: rep.progress,
 		searchDecision: decision ? decision.kind : '',
 		searchPlan: Boolean(decision && decision.plan),
-		searchCanAdvance: Boolean(decision && decision.canAdvance)
+		searchCanAdvance: Boolean(decision && decision.canAdvance),
+		searchPay: rep.pay,
+		searchHasBest: rep.hasBest
 	};
 }
 
@@ -314,11 +294,19 @@ function seatSearchReport() {
 	const out = careerPlanSearch.step(0);
 	const best = out.best;
 	const weakest = best && best.stats ? Math.round(best.ratio * 100) : 0;
+	const unmet = !best ? 'no complete candidate evaluated yet' :
+		best.unmet === 'distinct' ? 'each company needs a distinct first landing' :
+		best.unmet === 'exit-safe' ? 'a starter rail cannot safely launch from every first landing' :
+		best.unmet ? 'weakest opening pays less than 55% of the strongest' : '';
+	const pay = best && Number.isFinite(best.minPay) && Number.isFinite(best.maxPay)
+		? best.minPay.toFixed(1) + '–' + best.maxPay.toFixed(1) + ' cr' : '';
 	return {
 		active: true,
 		tier: out.tier,
 		weakest: weakest,
-		unmet: best && best.unmet ? best.unmet : '',
+		unmet: unmet,
+		pay: pay,
+		hasBest: Boolean(best && pay),
 		progress: Math.round(out.progress * 100)
 	};
 }
@@ -338,44 +326,46 @@ function beginCareerPlanning(search, seed, startMode) {
 	if (scene.setFrozen) scene.setFrozen(true);
 	refreshCareerClockUi();
 	refreshGameUi();
+	commsResetVisit(playerCareer(), playerCareer().at);
 	commsInvalidate();
 }
 
-/* Advance the open search by one frame budget (WS4). The page never
- * auto-advances a tier and never auto-starts an unaccepted plan: when a
- * tier accepts or completes, the decision freezes here with a snapshot of
- * the completed tier, and H offers play-as-is / load saves / wait more (or
- * start fair on acceptance). Wall-clock decides when the card appears;
- * only completed tiers can become a plan. */
+/* Completed tiers are safe to start; keep looking while that offer is open. */
 function stepCareerPlanning(budgetMs) {
 	if (!careerPlanning || !careerPlanSearch) return;
-	if (careerPlanDecision) {
-		/* frozen at a decision: the walk waits for the player's click */
-		return;
-	}
+	if (careerPlanDecision && !careerPlanDecision.canAdvance &&
+		careerPlanSearch.step(0).done) return;
 	const out = careerPlanSearch.step(budgetMs);
 	if (out.accepted) {
-		careerPlanDecision = {
-			kind: 'accepted',
-			plan: careerPlanSearch.bestPlan(),
-			canAdvance: false
-		};
+		const seed = careerPlanSeed;
+		const plan = careerPlanSearch.bestPlan();
+		cancelCareerPlanning();
+		applySeatPlanPlan(plan, seed);
 		commsInvalidate();
 		refreshGameUi();
 		return;
 	}
 	if (out.done) {
-		careerPlanDecision = {
-			kind: 'tier-end',
-			plan: careerPlanSearch.bestPlan(),
-			canAdvance: careerPlanSearch.canAdvanceTier()
-		};
+		const plan = careerPlanSearch.bestPlan();
+		const comp = GravityGame.startComposition(tradeSim.world, planetMask, planetCount,
+			1 + bot.count, cargoSim, game.startMode);
+		if (!comp.ok) {
+			const seed = careerPlanSeed;
+			cancelCareerPlanning();
+			if (plan) applySeatPlanPlan(plan, seed);
+			else startCareerWithPlan(null, seed, GravityGame.START_PLANET, true);
+			commsInvalidate();
+			refreshGameUi();
+			return;
+		}
+		const canAdvance = careerPlanSearch.canAdvanceTier();
+		careerPlanDecision = { kind: 'tier-end', plan: plan, canAdvance: canAdvance };
+		if (canAdvance) careerPlanSearch.advanceTier();
 		commsInvalidate();
 		refreshGameUi();
 		return;
 	}
 	commsInvalidate();
-	refreshGameUi();
 }
 
 /* cancel the planning state: called on restart, a roster change, or a decision */
@@ -392,24 +382,14 @@ function tickCareerPlanning() {
 	if (careerPlanning) stepCareerPlanning(CAREER_SEARCH_FRAME_MS);
 }
 
-/* 0.7.47 WS4: advance the opening seat search without stepping the game.
- * The harness uses this to resolve planning at load without letting the
- * career clock run ahead of a fresh replay. With the decision lifecycle it
- * plays the part of a patient player: wait-more at every tier end while a
- * tier remains (the old walk-every-tier behaviour), then start as planned;
- * an accepted tier starts fair at once. That policy keeps the drained page
- * on exactly the plan today's tests expect. */
+/* Test harness: finish planning without advancing the game clock. */
 function drainCareerPlanning() {
 	let guard = 0;
 	while (careerPlanning && guard++ < 600) {
 		const decision = careerPlanningDecision();
 		if (decision) {
-			if (decision.kind === 'accepted') {
-				startFairSearchPlan();
-				continue;
-			}
 			if (decision.canAdvance) {
-				advanceFairSearchTier();
+				stepCareerPlanning(CAREER_SEARCH_FRAME_MS);
 				continue;
 			}
 			playFairSearchAsIs();
@@ -553,6 +533,7 @@ function setPlayerCount(delta, replayPlanet) {
 				for (let i = 0; i < bot.count; i++) bot.rivals[i].doneSteps = -1;
 			}
 			game.playerCount = count;
+			commsInvalidate();
 			refreshGameUi();
 			refreshPlanetUniverseUi();
 			careerRecordingCapture(true);
@@ -568,6 +549,7 @@ function setPlayerCount(delta, replayPlanet) {
 		}
 		else bot.removeRival();
 		game.playerCount = count;
+		commsInvalidate();
 		syncCareerPause();
 		refreshGameUi();
 		refreshPlanetUniverseUi();
@@ -620,7 +602,7 @@ function syncRosterFairness(shown) {
 }
 
 function setSlotType(slot, next) {
-	if (replay.on || careerInputLocked()) return;
+	if (replay.on || careerInputLocked() || careerPlanning) return;
 	if (slot < 0 || slot >= slotTypes.length) return;
 	const normalized = next === PLAYER_BOT ? PLAYER_BOT : PLAYER_USER;
 	if (slotTypes[slot] === normalized && (slot !== 0 || game.player === normalized)) return;

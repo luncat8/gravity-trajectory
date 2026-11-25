@@ -627,6 +627,7 @@ function launchRideTitle(career) {
 }
 
 function statusText() {
+	if (careerPlanning) return 'preparing the map · open H for search progress';
 	if (replay.on) {
 		if (replay.route) return 'replay · tracing plan';
 		return slotSim(activeSlotIndex()).status === STATUS_FLYING

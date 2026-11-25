@@ -146,104 +146,133 @@ function bootCareer(search) {
 		get(ctx, 'game.career.at') >= 0, 'the career has started after the drain');
 }
 
-/* 8. the WS4 decision lifecycle: hold planning open, render H, decide */
+/* 8. A new-seed search runs in real frames and starts the career on acceptance. */
 {
-	const env = bootCareer('?seed=42&mode=career');
+	const env = bootCareer('?rule=career&seed=42&players=3&universe=14&rate=1');
 	const ctx = env.context;
 	const ui = env.elements;
-
-	/* hold planning open and walk until a tier end or acceptance freezes a
-	 * decision — the page must not auto-advance or auto-start from here */
-	get(ctx, 'beginCareerPlanning(GravityGame.createSeatSearch(tradeSim.world, tradeSim,' +
-		'planetMask, planetCount, 1 + bot.count, cargoSim), game.seed, game.startMode)');
-	let decision = null;
-	for (let i = 0; i < 3000 && !decision; i++) {
-		get(ctx, 'stepCareerPlanning(8)');
-		decision = get(ctx, 'careerPlanningDecision()');
-	}
-	assert.ok(decision, 'a tier end or acceptance freezes a decision');
-	assert.strictEqual(get(ctx, 'careerPlanning'), true,
-		'planning stays open at the decision — nothing auto-resolves');
-	assert.strictEqual(get(ctx, 'careerPaused'), true, 'the career clock is held at the decision');
-	const frozen = JSON.stringify(get(ctx, 'careerPlanSearch.step(0)'));
-	get(ctx, 'stepCareerPlanning(8)');
-	assert.strictEqual(JSON.stringify(get(ctx, 'careerPlanSearch.step(0)')), frozen,
-		'a pending decision stops the walk: further frames run no units');
-
-	/* H renders the decision with all three choices plus the save picker.
-	 * Open the card directly: the harness's click path drains planning (the
-	 * simulated player would resolve the decision), and this group inspects
-	 * the pending decision itself. */
-	get(ctx, 'commsOpen(); commsAsk("fair-search"); commsTick()');
-	assert.strictEqual(ui.get('commsCard').hidden, false, 'the H card opens at the decision');
-	const ctas = ui.get('commsCtas').innerHTML;
-	assert.ok(ctas.indexOf('fair-play-as-is') >= 0, 'the decision offers play-as-is');
-	assert.ok(ctas.indexOf('fair-load-saves') >= 0, 'the decision offers the fair-save picker');
-	const snap = get(ctx, 'commsBuildSnapshot()');
-	assert.strictEqual(snap.searchActive, true, 'the snapshot reports an active search');
-	assert.strictEqual(snap.searchDecision, decision.kind, 'the snapshot carries the decision');
-	assert.strictEqual(snap.searchPlan, decision.plan, 'the snapshot carries the plan flag');
-	if (decision.kind === 'tier-end' && decision.canAdvance) {
-		assert.ok(ctas.indexOf('fair-wait-more') >= 0, 'wait more is offered while a tier remains');
-		assert.ok(snap.searchCanAdvance, 'the snapshot says a tier can still advance');
-	}
-
-	/* a roster change at the decision cancels it and restarts the search
-	 * (the restart may finish synchronously — seed 42 accepts inside the
-	 * head budget — so only the decision's absence is asserted here) */
-	get(ctx, 'setPlayerCount(1)');
-	assert.strictEqual(get(ctx, 'careerPlanningDecision()'), null,
-		'a roster change cancels the pending decision');
-	for (let i = 0; i < 600 && get(ctx, 'careerPlanning'); i++) {
-		get(ctx, 'drainCareerPlanning()');
-	}
-	assert.strictEqual(get(ctx, 'careerPlanning'), false,
-		'the restarted search drains to a start');
-	assert.strictEqual(get(ctx, 'game.on'), true, 'the restarted run is on');
+	assert.strictEqual(get(ctx, 'planetCount'), 14);
+	assert.strictEqual(get(ctx, '1 + bot.count'), 3);
+	/* Force only the first synchronous slice to zero; subsequent frames do real work. */
+	get(ctx, `globalThis.originalSeatSearch = GravityGame.createSeatSearch;
+		GravityGame.createSeatSearch = function (...args) {
+			const search = originalSeatSearch(...args);
+			const step = search.step;
+			let first = true;
+			search.step = function (ms) {
+				if (first) { first = false; return step(0); }
+				return step(ms);
+			};
+			return search;
+		}`);
+	get(ctx, 'startGame(123456, true, "career", game.bot, game.player, game.cheat)');
+	assert.strictEqual(get(ctx, 'careerPlanning'), true);
+	assert.strictEqual(get(ctx, 'game.galaxy.actors.length'), 0);
+	get(ctx, 'game.career.ended = GravityGame.CAREER_BROKE; commsTick()');
+	assert.strictEqual(get(ctx, 'commsState.callReason.id'), 'fair-search',
+		'a previous ended career does not hide the search call');
+	assert.match(ui.get('commsCallReason').textContent, /testing candidates/);
+	get(ctx, `globalThis.reportingStep = careerPlanSearch.step;
+		careerPlanSearch.step = ms => ms === 0 ? { ...reportingStep(0),
+			best: { stats: {}, ratio: 0.4, minPay: 2, maxPay: 5, unmet: '≥ 55 %' } } : reportingStep(ms);
+		commsTick()`);
+	assert.strictEqual(get(ctx, 'commsState.callReason.id'), 'fair-search',
+		'live progress does not dismiss the call while the clock is frozen');
+	get(ctx, 'careerPlanSearch.step = reportingStep; commsOpen(); commsTick()');
+	assert.match(ui.get('commsAnswer').textContent, /Preparing the map for 3 companies on 14 planets/);
+	assert.match(ui.get('commsAnswer').textContent, /Search pass 1/);
+	assert.doesNotMatch(ui.get('commsAnswer').textContent, /Career closed|fair set is ready/);
+	for (let i = 0; i < 3000 && get(ctx, 'careerPlanning'); i++) env.runFrames(1, 16);
+	assert.strictEqual(get(ctx, 'careerPlanning'), false, 'real frames finish the search');
+	assert.strictEqual(get(ctx, 'game.galaxy.actors.length'), 3, 'all careers exist');
+	assert.ok(get(ctx, 'game.career.hq') >= 0, 'player has an HQ');
+	assert.ok(ui.get('careerShop').innerHTML.length > 0, 'shop is refreshed after async startup');
+	assert.ok(get(ctx, 'careerRecording.record'), 'recording begins after the roster exists');
+	const asyncSeats = JSON.stringify(get(ctx, 'game.galaxy.mapSeats'));
+	get(ctx, 'GravityGame.createSeatSearch = originalSeatSearch; startGame(123456, true, "career", game.bot, game.player, game.cheat); drainCareerPlanning()');
+	assert.strictEqual(JSON.stringify(get(ctx, 'game.galaxy.mapSeats')), asyncSeats,
+		'the same seed seats identically on restart');
 }
 
-/* 9. each decision resolves: wait-more walks on, then the player starts */
+/* 9. Completed offers stay usable while the next pass runs, including exhaustion. */
 {
-	const env = bootCareer('?seed=42&mode=career');
+	const env = bootCareer('?rule=career&seed=42&players=3&universe=14&rate=1');
 	const ctx = env.context;
-	get(ctx, 'beginCareerPlanning(GravityGame.createSeatSearch(tradeSim.world, tradeSim,' +
-		'planetMask, planetCount, 1 + bot.count, cargoSim), game.seed, game.startMode)');
-	const driveToDecision = () => {
-		for (let i = 0; i < 3000; i++) {
-			const d = get(ctx, 'careerPlanningDecision()');
-			if (d) return d;
-			get(ctx, 'stepCareerPlanning(8)');
-		}
-		return get(ctx, 'careerPlanningDecision()');
+	get(ctx, `globalThis.mockPlan = { homes: game.galaxy.mapSeats.slice(), targetPay: 1, stats: {} };
+		globalThis.mockTier = 0; globalThis.mockDone = false; globalThis.mockSteps = 0;
+		globalThis.mockSearch = {
+			get tier() { return mockTier; },
+			step(ms) {
+				if (ms > 0) { mockSteps++; mockDone = true; }
+				return { done: mockDone, accepted: false, tier: mockTier, progress: mockDone ? 1 : 0,
+					best: { stats: {}, ratio: 0.4, minPay: 2, maxPay: 5, unmet: '≥ 55 %' } };
+			},
+			bestPlan() { return mockPlan; },
+			canAdvanceTier() { return mockTier < 2; },
+			advanceTier() { if (!mockDone || mockTier >= 2) return false; mockTier++; mockDone = false; return true; }
+		};
+		globalThis.originalComposition = GravityGame.startComposition;
+		GravityGame.startComposition = () => ({ ok: true });
+		beginCareerPlanning(mockSearch, game.seed, game.startMode);
+		stepCareerPlanning(8)`);
+	assert.strictEqual(get(ctx, 'mockTier'), 1, 'next pass starts automatically');
+	assert.strictEqual(get(ctx, 'careerPlanningDecision().plan'), true);
+	get(ctx, 'commsOpen(); commsAsk("fair-search"); commsTick()');
+	assert.match(env.elements.get('commsAnswer').textContent, /2.0–5.0 cr/);
+	assert.match(env.elements.get('commsAnswer').textContent, /less than 55%/);
+	assert.ok(env.elements.get('commsCtas').innerHTML.includes('fair-play-as-is'));
+	assert.strictEqual(get(ctx, 'commsRunAction("fair-play-as-is")'), true,
+		'a completed plan can be started while the next pass is running');
+	assert.strictEqual(get(ctx, 'careerPlanning'), false);
+	get(ctx, 'mockTier = 0; mockDone = false; mockSteps = 0; beginCareerPlanning(mockSearch, game.seed, game.startMode); stepCareerPlanning(8)');
+	get(ctx, 'stepCareerPlanning(8); stepCareerPlanning(8)');
+	assert.strictEqual(get(ctx, 'mockSteps'), 3, 'search continues while offer is open');
+	assert.strictEqual(get(ctx, 'careerPlanningDecision().canAdvance'), false);
+	assert.match(get(ctx, 'CommsCopy.renderTopic("fair-search", commsBuildSnapshot(), {}).text'), /Search finished/);
+	get(ctx, 'playFairSearchAsIs(); GravityGame.startComposition = originalComposition');
+	assert.strictEqual(get(ctx, 'careerPlanning'), false);
+	assert.ok(get(ctx, 'game.career.hq') >= 0);
+}
+
+/* Acceptance after the synchronous budget starts immediately, with UI and recording. */
+{
+	const env = bootCareer('?rule=career&seed=42&players=3&universe=14&rate=1');
+	const ctx = env.context;
+	get(ctx, `globalThis.acceptedPlan = { homes: game.galaxy.mapSeats.slice(), targetPay: 1, stats: {} };
+		globalThis.acceptedSearch = {
+			tier: 0, step(ms) { return { done: ms > 0, accepted: ms > 0, tier: 0, progress: ms > 0 ? 1 : 0, best: null }; },
+			bestPlan() { return acceptedPlan; }
+		};
+		beginCareerPlanning(acceptedSearch, game.seed, game.startMode); stepCareerPlanning(8)`);
+	assert.strictEqual(get(ctx, 'careerPlanning'), false);
+	assert.ok(get(ctx, 'game.career.hq') >= 0);
+	assert.ok(env.elements.get('careerShop').innerHTML.length > 0);
+	assert.ok(get(ctx, 'careerRecording.record'));
+}
+
+/* A final search with no plan still offers a fallback; a cramped roster starts automatically. */
+{
+	const env = bootCareer('?rule=career&seed=42&players=3&universe=14&rate=1');
+	const ctx = env.context;
+	get(ctx, `globalThis.noPlanSearch = {
+		tier: 2,
+		step(ms) { return { done: true, accepted: false, tier: 2, progress: 1, best: null }; },
+		bestPlan() { return null; }, canAdvanceTier() { return false; }
 	};
-	let decision = driveToDecision();
-	assert.ok(decision, 'the first decision appears');
-	if (decision.kind === 'tier-end' && decision.canAdvance) {
-		get(ctx, 'advanceFairSearchTier()');
-		assert.strictEqual(get(ctx, 'careerPlanningDecision()'), null,
-			'wait-more clears the decision and resumes the walk');
-		decision = driveToDecision();
-		assert.ok(decision, 'the next tier freezes its own decision');
-	}
-	const plan = get(ctx, 'careerPlanningDecision().plan');
-	if (decision.kind === 'accepted') {
-		get(ctx, 'startFairSearchPlan()');
-	} else {
-		get(ctx, 'playFairSearchAsIs()');
-	}
-	assert.strictEqual(get(ctx, 'careerPlanning'), false, 'the chosen decision leaves planning');
-	assert.strictEqual(get(ctx, 'game.on'), true, 'the chosen decision starts the run');
-	assert.ok(get(ctx, 'game.career.hq') >= 0 || get(ctx, 'game.career.at') >= 0,
-		'the career has a seat after the decision');
-	/* the planning freeze is gone: the pause clock is the run's own landing
-	 * pause now, not the planning hold (group 8 pins careerPaused at the
-	 * decision itself) */
-	assert.notStrictEqual(get(ctx, 'careerPauseNow') > 0 && get(ctx, 'careerPaused') &&
-		get(ctx, 'careerPlanSearch'), true, 'no planning hold survives the start');
-	if (plan) {
-		const homes = get(ctx, 'game.galaxy.mapSeats');
-		assert.ok(homes && homes.length > 0, 'the run recorded a seat plan');
-	}
+	globalThis.savedComposition = GravityGame.startComposition;
+	GravityGame.startComposition = () => ({ ok: true });
+	beginCareerPlanning(noPlanSearch, game.seed, game.startMode); stepCareerPlanning(8);
+	commsOpen(); commsAsk('fair-search'); commsTick()`);
+	assert.match(env.elements.get('commsAnswer').textContent, /Search finished without a fair opening/);
+	assert.doesNotMatch(env.elements.get('commsAnswer').textContent, /best completed pass/);
+	assert.strictEqual(get(ctx, 'commsRunAction("fair-play-as-is")'), true);
+	assert.strictEqual(get(ctx, 'careerPlanning'), false);
+	assert.ok(get(ctx, 'game.career.hq') >= 0);
+	get(ctx, `GravityGame.startComposition = () => ({ ok: false });
+		beginCareerPlanning(noPlanSearch, game.seed, game.startMode); stepCareerPlanning(8);
+		GravityGame.startComposition = savedComposition`);
+	assert.strictEqual(get(ctx, 'careerPlanning'), false, 'unfair composition starts the fallback');
+	assert.ok(get(ctx, 'game.career.hq') >= 0);
 }
 
 /* 10. the fair-save picker loads a saved map and leaves planning behind */
@@ -262,4 +291,62 @@ function bootCareer(search) {
 	assert.strictEqual(get(ctx, 'game.on'), true, 'the loaded save starts a run');
 }
 
-console.log('FAIR START GUI OK · 10 groups');
+/* The roster call explains the failing checks and follows real roster edits. */
+{
+	const env = bootCareer('?rule=career&seed=42&players=3&universe=14&rate=1');
+	const ctx = env.context;
+	const ui = env.elements;
+	get(ctx, `globalThis.originalRosterComposition = GravityGame.startComposition;
+		GravityGame.startComposition = (world, mask, count, players) => ({
+			ok: count > 15, minimal: 10, light: count > 15 ? players : 2,
+			heavyEmc2: 1, heavyEmc3: count > 15 ? 1 : 0,
+			missing: count > 15 ? [] : ['light', 'emc3']
+		});
+		commsResetVisit(null, -2); commsTick()`);
+	assert.match(ui.get('commsCallReason').textContent, /missing starter-accessible planets 2\/3 · EMC-3 heavy planets 0\/1$/);
+	get(ctx, 'commsOpen()');
+	assert.match(ui.get('commsAnswer').textContent,
+		/Missing on this map:\n✗ starter-accessible planets: 2 of 3 · 1 more needed\n✗ EMC-3 heavy planets: 0 \(at least 1\) · 1 more needed\n\nAlready met:\n✓ planets: 14 \(at least 10\)/);
+	assert.match(ui.get('commsAnswer').textContent, /does not reseat existing HQs/);
+	const home = get(ctx, 'game.career.hq');
+	assert.strictEqual(get(ctx, 'commsRunAction("fair-more-planets")'), true);
+	assert.strictEqual(get(ctx, 'planetCount'), 15);
+	assert.strictEqual(get(ctx, 'game.career.hq'), home, 'adding a planet does not reseat the player');
+	assert.match(ui.get('commsAnswer').textContent, /15-planet map does not meet/);
+	assert.match(ui.get('commsAnswer').textContent, /✗ EMC-3 heavy planets: 0 \(at least 1\)/);
+	assert.strictEqual(get(ctx, 'commsRunAction("fair-more-planets")'), true);
+	assert.strictEqual(get(ctx, 'planetCount'), 16);
+	assert.match(ui.get('commsAnswer').textContent, /16-planet map now meets/);
+	assert.match(ui.get('commsAnswer').textContent, /not a guarantee/);
+	assert.match(ui.get('commsAnswer').textContent, /Map check, all met:\n✓ planets: 16/);
+	assert.doesNotMatch(ui.get('commsAnswer').textContent, /✗/);
+	assert.doesNotMatch(ui.get('commsCtas').innerHTML, /fair-more-planets/);
+
+	/* Repainting unchanged text must not destroy a browser selection. */
+	for (const id of ['commsAnswer', 'commsTranscript', 'commsCallReason']) {
+		const element = ui.get(id);
+		let value = element.textContent;
+		let writes = 0;
+		Object.defineProperty(element, 'textContent', {
+			get() { return value; },
+			set(next) { writes++; value = next; }, configurable: true
+		});
+		get(ctx, 'commsPaint(); commsPaint()');
+		assert.strictEqual(writes, 0, id + ' is not replaced on an unchanged paint');
+	}
+	get(ctx, 'GravityGame.startComposition = originalRosterComposition; startGame(12345, true, game.rule, game.bot, game.player, game.cheat)');
+	assert.strictEqual(ui.get('commsCard').hidden, true, 'a new game closes the old conversation');
+	assert.strictEqual(get(ctx, 'commsState.exchanges.length'), 0);
+}
+
+/* A full map cannot offer an enabled add-planet action. */
+{
+	const env = bootCareer('?rule=career&seed=42&players=3&universe=14&rate=1');
+	const ctx = env.context;
+	get(ctx, `globalThis.fullSnapshot = Object.assign({}, commsBuildSnapshot(), {
+		rosterOk: false, rosterPlanets: OrbitWorld.PLANETS
+	});`);
+	assert.strictEqual(get(ctx, 'HH_FACTS["can-add-planet"].test(fullSnapshot)'), false);
+}
+
+console.log('FAIR START GUI OK · startup, search, radio and fallback');

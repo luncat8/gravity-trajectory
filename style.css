@@ -237,6 +237,11 @@ body {
 	color: var(--accent);
 }
 
+.commsCall,
+.commsCard {
+	user-select: text;
+}
+
 .commsCall .actions {
 	justify-content: flex-start;
 	margin-top: 6px;

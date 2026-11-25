@@ -361,9 +361,22 @@ let viewMode = VIEW_SPACE;
 let viewDesired = VIEW_SPACE;
 /* career clean canvas: hides the own past-flight trail + thick orbit visit
  * highlights — the own layer only, other players have their own checkboxes */
-let cleanCareerView = true;
+/* view checkboxes remembered across visits, like the last mode */
+const CLEAN_STORAGE = 'gravity.cleanRender';
+const TRAILS_STORAGE = 'gravity.trails';
+function loadViewFlag(key, fallback) {
+	try {
+		const value = root.localStorage.getItem(key);
+		return value === null ? fallback : value === '1';
+	} catch (e) { return fallback; }
+}
+function saveViewFlag(key, on) {
+	try { root.localStorage.setItem(key, on ? '1' : '0'); }
+	catch (e) { /* private mode */ }
+}
+let cleanCareerView = loadViewFlag(CLEAN_STORAGE, true);
 /* other players' past-flight trails (0.7.51): their own checkbox, every mode */
-let trailRivalsOn = true;
+let trailRivalsOn = loadViewFlag(TRAILS_STORAGE, true);
 /* other players' predicted trajectories (0.7.51): their own checkbox, every
  * mode — career alone locks it until the selected company's HQ holds the
  * radar, and the build ticks it; hovering or pressing a rival ship reveals
@@ -647,11 +660,13 @@ if (viewFullEl) {
 if (careerCleanEl) {
 	careerCleanEl.addEventListener('change', () => {
 		cleanCareerView = careerCleanEl.checked;
+		saveViewFlag(CLEAN_STORAGE, cleanCareerView);
 	});
 }
 if (trailViewEl) {
 	trailViewEl.addEventListener('change', () => {
 		trailRivalsOn = trailViewEl.checked;
+		saveViewFlag(TRAILS_STORAGE, trailRivalsOn);
 	});
 }
 if (predViewEl) {
@@ -1156,8 +1171,8 @@ for (let s = 0; s < scoreBotEls.length; s++) {
 }
 game.player = slotTypes[0];
 
-if (careerCleanEl) cleanCareerView = careerCleanEl.checked;
-if (trailViewEl) trailRivalsOn = trailViewEl.checked;
+if (careerCleanEl) careerCleanEl.checked = cleanCareerView;
+if (trailViewEl) trailViewEl.checked = trailRivalsOn;
 if (predViewEl) predRivalsOn = predViewEl.checked;
 if (careerPauseLandEl) pauseOnLanding = careerPauseLandEl.checked;
 if (careerAutoRepairEl) autoRepair = careerAutoRepairEl.checked;
