@@ -69,12 +69,12 @@ with no fair opening: the registry is also the pool `load map` draws from, so
 | the seeded PRNG (`seedRandom`) and world geometry | `gravity_seed_test` (bench tier), `orbit_clock_test` |
 | `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `route_bench` (long trace), `bot_gravity_test` (exit/claim decisions on a saved field) |
 | `gravity_field` CPU raster and palette | `gravity_bench` (color + budget), `gravity_view_test` |
-| `gravity_game` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
+| `gravity_game.js`/`game_*.js` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
 | the stay-pay trace price (`estimateProfitLog` dwells) and launch-book `logDwell` | `harvest_ticks_test` (both rules, book round trip, heap), `bot_bench` (both-rule parity) |
 | two-leg quest valuation (`careerLegPlan`) and `plan quest` (`#helperPlanQuest`) | `two_leg_test` (heavy/fragile/deadline gates, Capital escrow parity, bot/helper parity, `bookTrace` replay, heap) |
 | career opening and the seat search | `seat_search_test` (read-only reports, sliced determinism), `career_start_fairness` (independent exit-safe pay band), `career_start_seat_test`, `make_saved_maps.js --check` (stale records) |
 | route visit-log tracking | `route_log_test` (overlap, re-entry, masks, overflow, slice parity), `harvest_ticks_test` (economic parity) |
-| `gravity_bot` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
+| `gravity_bot.js`/`bot_*.js` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
 | `gravity_gui`/`gui_*.js` page state | the one page test for the area (`politics_gui_test`, `obs_fragile_gui_test`, `career_pause_test`, `profit_monotonic_test`, …) |
 | saved maps: `saved_map.js`, `gui_maps.js`, the `?map=` boot, the map picker | `saved_map_test` |
 | `planet_gravity.js`, the map-generator helper page (`map_gen.js`, `map_fields.js`) | `map_gen_test` |
@@ -83,6 +83,7 @@ with no fair opening: the registry is also the pool `load map` draws from, so
 | remembered view checkboxes: `trails`, `clean render` (`gravity.trails`, `gravity.cleanRender`) | `view_prefs_test` |
 | the lite profile: `gui_lite.js`, the still backdrop in `orbit_view.js`, the boot pre-history, sound/postcard gates | `lite_mode_test` |
 | the radar reveal: `radarShips`, the `radar` gift + build gate, the `predView`/`trailView` boxes and the `+N s` plate, the bot `careerRadarAvoid`/`careerRadarHot` | `radar_test` (career facility + reveal + memo + bot), `lab_radar_test` (the box outside career) |
+| the game/bot part split: `PARTS`, import lines, `Object.assign` | `parts_test` (load order, imports published earlier, no key twice) |
 | `index.html`, script order, composer | `dom_smoke` once, plus the area test |
 | docs, plans, worklogs, test files only | nothing |
 

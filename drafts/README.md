@@ -135,6 +135,7 @@ view rework, not against the `0.7.43` world they were first drafted on.
 | `../0.8.6-plan-improve-sound.md` | `0.8` after all | `sound-and-photos.md` §7.1 (Voronoi neighbor-scale consonance, toroidal/192-body adjacency, aim/arrival/block cues) |
 | `../0.8.8-plan-space-weather.md` | design first | `map.md` §add space weather, `new/observation-device-OBS-1.md` (career weather, observation range and planet sources; decisions pending) |
 | `../archive/0.7.46-plan-fair-start-fallback.md` (superseded) | — | `flight-lab-and-modes.md` §1.4 — **superseded by `../archive/0.7.47-plan-fair-start-modes.md`**; options 2 (repair the map), 4 (`MONEY.initSec`) and 5 (cheaper exact check) stay open, see below |
+| `../archive/0.5.24-plan-game-bot-split.md` (done) | — | none — code layout: `gravity_game.js` / `gravity_bot.js` cut into one file per area (`PARTS`) so an agent loads only the area it edits; landed before `0.7.44` |
 | `../archive/0.7.47-plan-fair-start-modes.md` (done) | — | `map-fair-start-modes.md` (composition rule, exit margin, background search, space & capital starts) |
 | `../archive/0.7.48-plan-start-gifts.md` (done) | — | `new/game-options.md` (start-gift budget: three sliders, per-company random draw + rest cash) |
 | `../archive/0.7.49-plan-radar.md` (done) | — | `new/radar.md` (radar HQ facility: global ship-trajectory reveal, bot avoidance) |

@@ -1,0 +1,396 @@
+/*
+ * Can a company leave where it lands: the shared leg probe sim, exit speed per
+ * field, arrival mass and charge, refund escrow, and careerDeparture, the
+ * solvency check every planner and the board share.
+ *
+ * Part of GravityGame: gravity_game.js holds the load order and the sharing rule.
+ */
+(function (root) {
+	'use strict';
+
+	const node = typeof module !== 'undefined' && module.exports;
+	const GravityGame = node ? require('./gravity_game.js') : root.GravityGame;
+	const GravitySim = node ? require('./gravity_sim.js') : root.GravitySim;
+	const OrbitWorld = node ? require('./orbit_world.js') : root.OrbitWorld;
+	const OrbitTech = node ? require('./orbit_tech.js') : root.OrbitTech;
+	const {
+		SPEED_STEPS, CAP_SECONDS, BOOK_LOG_MAX, CAREER, MEDIC_SLOT, BOARD_SIZE, TASK_NONE,
+		TASK_MEDIC, TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED, LEG_NONE, OWNER_COMMERCIAL,
+		OWNER_CAPITAL, OWNER_REBEL, padAt, padOwner, commercialFee, price, careerShipUsable,
+		careerPadSeconds, exitSpeedHasMargin, gearKnown, planetBuildable, medicLoad
+	} = GravityGame;
+
+	/* --- two-leg contract valuation & shared departure solvency ---------- */
+
+	const LEG_EXIT_ANGLES = 8;
+	const LEG_EXIT_FRACTIONS = [0.35, 0.65, 0.85, 1];
+	const LEG_EXIT_WAYS = 4;
+	const LEG_PAIR_SLOTS = 64;
+	const LEG_PAIR_WAYS = 6;
+	const LEG_SCAN_ALL_SPEEDS = [34, 42, 52, 66, 80, 96, 116, 138, 175, 230, 300];
+	const LEG_SCAN_CIRCLE_SPEEDS = [42, 60, 82, 108, 138, 195, 285];
+	const LEG_SCAN_CIRCLE_ANGLES = 28;
+	const LEG_SCAN_FAN_HALF = 8;
+	const LEG_SCAN_FAN_STEP = 0.065;
+	const LEG_SCAN_FINE_HALF = 12;
+	const LEG_SCAN_FINE_STEP = 0.02;
+	const LEG_SCAN_FINE_SPEEDS = [40, 56, 78, 108, 138, 200, 295];
+
+	let legProbe = null;
+	let legSourceSim = null;
+	const legExitCacheStamp = new Uint32Array(OrbitWorld.PLANETS * LEG_EXIT_WAYS);
+	const legExitCacheCap = new Int32Array(OrbitWorld.PLANETS * LEG_EXIT_WAYS);
+	legExitCacheCap.fill(-1);
+	const legExitCacheSpeed = new Float64Array(OrbitWorld.PLANETS * LEG_EXIT_WAYS);
+	const leg1VisitScratch = new Float64Array(OrbitWorld.PLANETS);
+	const legFactsScratch = { cash: 0, credit: 0, leg: LEG_NONE };
+
+	function createDepartureOut() {
+		return {
+			ok: false, physical: false, builds: false,
+			canBuildStarter: false, starterCanExit: false,
+			cost: Infinity, speed: 0, source: '',
+			catapult: null, battery: null, reason: ''
+		};
+	}
+
+	const legDepScratch1 = createDepartureOut();
+	const legDepScratch2 = createDepartureOut();
+
+	function createLegPlan() {
+		return {
+			feasible: true,
+			hasSecond: false,
+			slot: -1,
+			prospective: false,
+			leg1Leg: LEG_NONE,
+			leg1Cash: 0,
+			leg1Fee: 0,
+			leg1Wear: 0,
+			leg1Exit: 0,
+			leg1Net: 0,
+			credit: 0,
+			total: 0,
+			purseDelta: 0,
+			leg2: {
+				origin: -1,
+				angleU: 0,
+				speedU: 0,
+				body: -1,
+				steps: 0,
+				time: 0,
+				length: 0,
+				visitPay: 0,
+				reward: 0,
+				cash: 0,
+				fee: 0,
+				wear: 0,
+				exit: 0,
+				net: 0,
+				leg: LEG_NONE,
+				commercial: false,
+				logPlanet: new Int16Array(BOOK_LOG_MAX),
+				logStep: new Int32Array(BOOK_LOG_MAX),
+				logDwell: new Int32Array(BOOK_LOG_MAX),
+				logCount: 0
+			}
+		};
+	}
+
+	function prepareLegProbe(sourceSim) {
+		if (!sourceSim) return null;
+		if (legProbe === null || legProbe.worldW !== sourceSim.worldW || legProbe.worldH !== sourceSim.worldH) {
+			legProbe = new GravitySim(sourceSim.worldW, sourceSim.worldH);
+			legSourceSim = null;
+		}
+		legProbe.fieldT = sourceSim.fieldT;
+		legProbe.fieldRate = sourceSim.fieldRate;
+		legProbe.setScales(sourceSim.gravityScale, sourceSim.forceScale);
+		if (legSourceSim !== sourceSim ||
+			legProbe.planetX !== sourceSim.planetX ||
+			legProbe.planetY !== sourceSim.planetY ||
+			legProbe.planetR !== sourceSim.planetR ||
+			legProbe.planetCapacity !== sourceSim.planetCapacity) {
+			legProbe.planetCapacity = sourceSim.planetCapacity;
+			legProbe.planetX = sourceSim.planetX;
+			legProbe.planetY = sourceSim.planetY;
+			legProbe.planetR = sourceSim.planetR;
+			legProbe.sysCos.set(sourceSim.sysCos);
+			legProbe.sysSin.set(sourceSim.sysSin);
+			legProbe.sysInvRX.set(sourceSim.sysInvRX);
+			legProbe.sysInvRY.set(sourceSim.sysInvRY);
+			legProbe.sysBoundR2.set(sourceSim.sysBoundR2);
+			legProbe.planetMinX = sourceSim.planetMinX;
+			legProbe.planetMaxX = sourceSim.planetMaxX;
+			legProbe.planetMinY = sourceSim.planetMinY;
+			legProbe.planetMaxY = sourceSim.planetMaxY;
+		}
+		legProbe.setPlanetMask(sourceSim.planetMask);
+		if (legSourceSim !== sourceSim ||
+			legProbe.bodyCount !== sourceSim.bodyCount ||
+			legProbe.bodyR !== sourceSim.bodyR ||
+			legProbe.strength !== sourceSim.strength ||
+			legProbe.fillField !== sourceSim.fillField ||
+			legProbe.fieldStatic !== sourceSim.fieldStatic) {
+			legProbe.setField(sourceSim.bodyCount, sourceSim.bodyR, sourceSim.strength,
+				sourceSim.fillField, sourceSim.fieldStatic);
+			legSourceSim = sourceSim;
+		} else {
+			legProbe.stepStale = true;
+			legProbe.refreshField();
+		}
+		return legProbe;
+	}
+
+	function legFieldTag(sim, fieldTime) {
+		let stamp = sim.fieldStatic ? 0x811c9dc5 : 0x9e3779b9;
+		stamp = Math.imul(stamp ^ sim.bodyCount, 0x01000193);
+		stamp = Math.imul(stamp ^ Math.round(sim.gravityScale * 100), 0x01000193);
+		for (let i = 0; i < sim.bodyCount; i++) {
+			stamp = Math.imul(stamp ^ (Math.round(sim.strength[i] * 100) + i * 31), 0x01000193);
+		}
+		for (let i = 0; i < sim.planetCapacity; i++) {
+			const active = !sim.planetMask || sim.planetMask[i] === 1 ? 1 : 0;
+			stamp = Math.imul(stamp ^ active, 0x01000193);
+			if (active && sim.planetX && sim.planetY) {
+				stamp = Math.imul(stamp ^ Math.round(sim.planetX[i]), 0x01000193);
+				stamp = Math.imul(stamp ^ Math.round(sim.planetY[i]), 0x01000193);
+			}
+		}
+		if (!sim.fieldStatic && sim.fieldRate !== 0) {
+			const t = fieldTime === undefined ? sim.fieldT : fieldTime;
+			stamp = Math.imul(stamp ^ Math.round(sim.fieldRate * 1000), 0x01000193);
+			stamp = Math.imul(stamp ^ Math.round(t * 20), 0x01000193);
+		}
+		return (stamp >>> 0) || 1;
+	}
+
+	function legExitSpeed(sim, planet, cap) {
+		const probe = prepareLegProbe(sim);
+		if (!probe || !Number.isFinite(cap) || !probe.planetActive(planet)) return 0;
+		const minU = GravitySim.SPEED_MIN * SPEED_STEPS;
+		let capU = Math.floor(cap * SPEED_STEPS + 1e-9);
+		const maxU = GravitySim.SPEED_MAX * SPEED_STEPS;
+		if (capU > maxU) capU = maxU;
+		if (capU < minU) return 0;
+		const stamp = legFieldTag(probe, probe.fieldT);
+		const slot = planet * LEG_EXIT_WAYS + capU % LEG_EXIT_WAYS;
+		if (legExitCacheCap[slot] === capU && legExitCacheStamp[slot] === stamp) {
+			return legExitCacheSpeed[slot];
+		}
+		let found = 0;
+		let previous = -1;
+		const span = capU - minU;
+		const tau = Math.PI * 2;
+		for (let f = 0; f < LEG_EXIT_FRACTIONS.length; f++) {
+			const speedU = f === LEG_EXIT_FRACTIONS.length - 1
+				? capU : minU + Math.round(span * LEG_EXIT_FRACTIONS[f]);
+			if (speedU === previous) continue;
+			previous = speedU;
+			const speed = speedU / SPEED_STEPS;
+			for (let a = 0; a < LEG_EXIT_ANGLES; a++) {
+				const angle = (a + 0.5) / LEG_EXIT_ANGLES * tau;
+				probe.predictFast(planet, angle, speed, CAP_SECONDS);
+				if (probe.predReason !== GravitySim.END_IMPACT ||
+					probe.predBody < 0 || probe.predBody === planet) continue;
+				found = speed;
+				break;
+			}
+			if (found > 0) break;
+		}
+		legExitCacheCap[slot] = capU;
+		legExitCacheStamp[slot] = stamp;
+		legExitCacheSpeed[slot] = found;
+		return found;
+	}
+
+	function careerRefundEscrow(career) {
+		let held = 0;
+		for (let i = 0; i < BOARD_SIZE; i++) {
+			const task = career.tasks[i];
+			if (task.kind === TASK_NONE || task.state === TASK_OFFERED) continue;
+			if (task.capitalRefund > 0) held += task.capitalRefund;
+		}
+		return held;
+	}
+
+	function careerArrivalMass(career, planet) {
+		let mass = career.ship.mass;
+		if (career.contract < 0) {
+			const medic = career.tasks[MEDIC_SLOT];
+			if (planet === career.capitalPlanet && medic.kind === TASK_MEDIC && medic.medics > 0) {
+				return OrbitTech.shipMass(career.ship, medic.medics);
+			}
+			return mass;
+		}
+		const task = career.tasks[career.contract];
+		if (task.kind === TASK_MEDIC) {
+			const market = career.market;
+			if (task.aboard === 0 && planet === task.to) {
+				const picked = market ? Math.min(task.medics, market.patients[task.to]) : task.medics;
+				return OrbitTech.shipMass(career.ship, picked);
+			}
+			if (task.aboard > 0 && planet === career.capitalPlanet) {
+				const left = market && market.patients[task.to] > task.aboard
+					? market.patients[task.to] - task.aboard : 0;
+				return OrbitTech.shipMass(career.ship, medicLoad(career, left));
+			}
+			return mass;
+		}
+		if (task.state === TASK_ACCEPTED && task.from === planet) mass += task.tons;
+		else if (task.state === TASK_LOADED && task.to === planet) mass -= task.tons;
+		return mass;
+	}
+
+	function careerArrivalCharge(career, planet, flightSeconds) {
+		const pad = career.pads[planet];
+		if (planet === career.at || !(flightSeconds > 0)) return pad.battery.capacity;
+		const charge = Math.max(0, pad.chargeKwh - pad.reservedKwh);
+		const gained = OrbitTech.solarCharge(pad.panel, career.light[planet],
+			careerPadSeconds(flightSeconds));
+		return Math.min(pad.battery.capacity, charge + gained) - pad.reservedKwh;
+	}
+
+	function checkExitSpeed(exitSpeedFn, sourceSim, planet, cap) {
+		return exitSpeedFn ? exitSpeedFn(planet, cap) : legExitSpeed(sourceSim, planet, cap);
+	}
+
+	function careerDeparture(out, career, planet, cash, mass, sourceSim, condition,
+		seekClaim, afterLanding, flightSeconds, exitSpeedFn) {
+		const res = out || legDepScratch1;
+		res.ok = false;
+		res.physical = false;
+		res.builds = false;
+		res.canBuildStarter = false;
+		res.starterCanExit = false;
+		res.cost = Infinity;
+		res.speed = 0;
+		res.source = '';
+		res.catapult = null;
+		res.battery = null;
+		res.reason = 'no affordable exit trajectory';
+		if (!sourceSim || !sourceSim.planetActive(planet)) {
+			res.reason = 'planet is not active';
+			return res;
+		}
+		const usable = condition === undefined ? careerShipUsable(career) : condition > 0;
+		if (planet === career.at && !usable) {
+			res.reason = 'ship worn out';
+			return res;
+		}
+		const arrivalMass = Number.isFinite(mass) && mass > 0 ? mass : career.ship.mass;
+		const available = cash === Infinity ? Infinity : Number.isFinite(cash) ? cash : -Infinity;
+		const forceScale = sourceSim.forceScale;
+		const own = career.pads[planet];
+		const useComm = !afterLanding;
+		const pad = padAt(career, planet, useComm);
+		const owner = padOwner(career, planet, useComm);
+
+		const buildable = planetBuildable(career, planet);
+		if (own.catapult === null && buildable) {
+			const starterCap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
+				arrivalMass, OrbitTech.CATAPULTS[0], forceScale);
+			/* margin law: a starter rail is only worth building where it
+			 * leaves with a quarter of its power in hand */
+			res.starterCanExit = exitSpeedHasMargin(
+				checkExitSpeed(exitSpeedFn, sourceSim, planet, starterCap), starterCap);
+			res.canBuildStarter = res.starterCanExit &&
+				available + 1e-9 >= price(career, OrbitTech.CATAPULTS[0].buildCost);
+			if (res.starterCanExit) res.physical = true;
+		}
+
+		const secs = flightSeconds || 0;
+		const charge = owner === career.index
+			? careerArrivalCharge(career, planet, secs)
+			: Math.max(0, pad.chargeKwh - pad.reservedKwh);
+		const currentCap = OrbitTech.speedLimit(charge, arrivalMass, pad.catapult, forceScale);
+		const currentSpeed = checkExitSpeed(exitSpeedFn, sourceSim, planet, currentCap);
+		let bestCost = Infinity;
+		if (currentSpeed > 0) {
+			res.physical = true;
+			const fee = owner === career.index || owner === OWNER_CAPITAL ? 0
+				: owner === OWNER_COMMERCIAL || owner === OWNER_REBEL
+				? commercialFee(career, planet, currentSpeed, arrivalMass)
+				: price(career, CAREER.taxPerKwh *
+					OrbitTech.launchEnergy(arrivalMass, pad.catapult, currentSpeed) * pad.catapult.tier);
+			if (available + 1e-9 >= fee) {
+				bestCost = fee;
+				res.ok = true;
+				res.cost = fee;
+				res.speed = currentSpeed;
+				res.source = owner === career.index ? 'own'
+					: owner === OWNER_CAPITAL ? 'capital'
+					: owner === OWNER_REBEL ? 'rebel'
+					: owner === OWNER_COMMERCIAL ? 'commercial' : 'rival';
+				res.catapult = pad.catapult;
+				res.battery = pad.battery;
+				res.reason = '';
+			}
+		}
+
+		if (seekClaim && !own.catapult) bestCost = Infinity;
+		if (bestCost === 0 || !buildable) return res;
+
+		const catPrototypes = career.prototypes ? career.prototypes[OrbitTech.KIND_CATAPULT] : null;
+		const batteryPrototypes = career.prototypes ? career.prototypes[OrbitTech.KIND_BATTERY] : null;
+		const catCount = OrbitTech.CATAPULTS.length + (catPrototypes ? catPrototypes.length : 0);
+		const batteryCount = OrbitTech.BATTERIES.length + (batteryPrototypes ? batteryPrototypes.length : 0);
+		const currentBattery = own.catapult === null ? OrbitTech.BATTERIES[0] : own.battery;
+		for (let ci = -1; ci < catCount; ci++) {
+			let catapult;
+			if (ci < 0) {
+				if (own.catapult === null) continue;
+				catapult = own.catapult;
+			} else if (ci < OrbitTech.CATAPULTS.length) catapult = OrbitTech.CATAPULTS[ci];
+			else catapult = catPrototypes[ci - OrbitTech.CATAPULTS.length];
+			const buildCatapult = catapult !== own.catapult;
+			if (own.catapult !== null && buildCatapult && catapult.tier <= own.catapult.tier) continue;
+			if (buildCatapult && !gearKnown(career, catapult)) continue;
+			const catCost = buildCatapult ? price(career, catapult.buildCost) : 0;
+			if (available + 1e-9 < catCost) continue;
+			for (let bi = -1; bi < batteryCount; bi++) {
+				let battery;
+				if (bi < 0) battery = currentBattery;
+				else if (bi < OrbitTech.BATTERIES.length) battery = OrbitTech.BATTERIES[bi];
+				else battery = batteryPrototypes[bi - OrbitTech.BATTERIES.length];
+				const buildBattery = battery !== currentBattery;
+				if (buildBattery && battery.tier <= currentBattery.tier) continue;
+				if (buildBattery && !gearKnown(career, battery)) continue;
+				if (!buildCatapult && !buildBattery) continue;
+				/* A newly built starter must satisfy the margin, even if a
+				 * full-power commercial rail can physically depart. */
+				if (own.catapult === null && catapult === OrbitTech.CATAPULTS[0] &&
+					battery === OrbitTech.BATTERIES[0] && !res.starterCanExit) continue;
+				const totalCost = catCost + (buildBattery ? price(career, battery.buildCost) : 0);
+				if (available + 1e-9 < totalCost || totalCost + 1e-9 >= bestCost) continue;
+				const cap = OrbitTech.speedLimit(battery.capacity, arrivalMass, catapult, forceScale);
+				const speed = checkExitSpeed(exitSpeedFn, sourceSim, planet, cap);
+				if (speed <= 0) continue;
+				res.physical = true;
+				bestCost = totalCost;
+				res.ok = true;
+				res.builds = true;
+				res.cost = totalCost;
+				res.speed = speed;
+				res.source = 'build';
+				res.catapult = catapult;
+				res.battery = battery;
+				res.reason = '';
+			}
+		}
+		if (!res.ok) {
+			res.reason = res.physical
+				? 'departure cost is unaffordable' : 'no launch trajectory within affordable gear';
+		}
+		return res;
+	}
+
+	Object.assign(GravityGame, {
+		LEG_PAIR_SLOTS, LEG_PAIR_WAYS, LEG_SCAN_ALL_SPEEDS, LEG_SCAN_CIRCLE_SPEEDS,
+		LEG_SCAN_CIRCLE_ANGLES, LEG_SCAN_FAN_HALF, LEG_SCAN_FAN_STEP, LEG_SCAN_FINE_HALF,
+		LEG_SCAN_FINE_STEP, LEG_SCAN_FINE_SPEEDS, leg1VisitScratch, legFactsScratch,
+		createDepartureOut, legDepScratch1, legDepScratch2, createLegPlan, prepareLegProbe,
+		legFieldTag, careerRefundEscrow, careerArrivalMass, careerArrivalCharge, checkExitSpeed,
+		careerDeparture
+	});
+})(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -3,21 +3,26 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const path = require('path');
 const vm = require('vm');
 const { createRequire } = require('module');
 const Trade = require('../orbit_sim.js');
 const Sim = require('../gravity_sim.js');
 const gamePath = require.resolve('../gravity_game.js');
-const source = fs.readFileSync(gamePath, 'utf8');
+/* a fresh module instance per fixture (its own caches and a fake clock): the
+ * core and its parts run as browser scripts in one context */
+const sources = [gamePath].concat(require(gamePath).PARTS.map(part => path.join(path.dirname(gamePath), part)))
+	.map(file => [file, fs.readFileSync(file, 'utf8')]);
+const gameRequire = createRequire(gamePath);
 
 function fixture() {
 	let clock = 0;
-	const context = {
-		module: { exports: {} }, require: createRequire(gamePath),
-		performance: { now: () => clock++ }
-	};
-	vm.runInNewContext(source, context, { filename: gamePath });
-	const Game = context.module.exports;
+	const context = vm.createContext({ performance: { now: () => clock++ } });
+	for (const name of ['GravitySim', 'OrbitWorld', 'OrbitEcon', 'OrbitTech', 'OrbitScience', 'PlanetGravity']) {
+		context[name] = gameRequire('./' + name.replace(/[A-Z]/g, (c, i) => (i ? '_' : '') + c.toLowerCase()) + '.js');
+	}
+	for (const [file, source] of sources) vm.runInContext(source, context, { filename: file });
+	const Game = context.GravityGame;
 	const trade = new Trade(1);
 	trade.advanceTo(420);
 	const sim = new Sim(Trade.WORLD_W, Trade.WORLD_H);

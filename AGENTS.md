@@ -103,6 +103,32 @@ every file below is in place. each area file reads the composer's state as ordin
 state and element refs belong with the area that owns them, never in a shared state/utils file.
 root.GravityScene keys are a test contract (experiments/ read them) - keep the names.
 
+### rule set and bot
+
+`gravity_game.js` and `gravity_bot.js` are split one file per area (0.5.24, done):
+the core of each holds a `PARTS` list — the load order and the table of contents,
+one comment per file — so one read of the core's head names the file to open:
+
+	sed -n '/const PARTS/,/];/p' gravity_game.js gravity_bot.js
+
+then open that one part (140–740 lines) and edit there. its first ~15 lines are
+the header, the external modules, and the `const { … } = GravityGame;` line —
+every name it takes from earlier parts; its last lines are
+`Object.assign(GravityGame, { … })` — every name it publishes. bodies call
+everything bare, as before the split. plan: archive/0.5.24-plan-game-bot-split.md
+
+- a name another part needs: add it to the owner's `Object.assign` and to the
+	reader's import line. if the owner loads *later* (`PARTS` order), call it as
+	`GravityGame.name(…)` instead — that spelling marks the few back references.
+- a top-level `let` never crosses a file (a destructured `let` is a stale copy):
+	readers elsewhere use an accessor (`specialPlanetsOn()`, `payScaleOf()`, …).
+- bot parts add `GravityBot.prototype` methods (shared through `this`); only
+	constants and free helpers go through the import line.
+- a new part goes into `PARTS` and `index.html` together; require only the core,
+	never a part. `experiments/parts_test.js` (fast) checks order, imports and
+	duplicate keys.
+- an outside caller (page, tests) keeps using `GravityGame.x` / `GravityBot.x`.
+
 ## tests
 
 - run the fast checks while working, not the whole `experiments/` folder. a change
@@ -141,8 +167,9 @@ root.GravityScene keys are a test contract (experiments/ read them) - keep the n
 | `orbit_world`, `orbit_sim`, `orbit_econ` trade laws | `special_planets_test`, `orbit_clock_test`, `politics_test` |
 | `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `route_bench` (long trace), `bot_gravity_test` (exit/claim decisions on a saved field) |
 | `gravity_field` CPU raster and palette | `gravity_bench` (color + budget), `gravity_view_test` |
-| `gravity_game` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
-| `gravity_bot` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
+| `gravity_game.js`/`game_*.js` career/economy/laws | `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
+| `gravity_bot.js`/`bot_*.js` planning/scoring | `bribe_score_test`, `career_bench`, `career_bot_bench` |
+| a part boundary: `PARTS`, an import line, an `Object.assign`, a moved helper | `parts_test`, then the area test; `dom_smoke` once when `index.html` changed |
 | the career seat search (`prepareCareerStarts` and below) | `career_start_fairness` (independent exit-safe pay band), `career_start_seat_test`, then `make_saved_maps.js --check`: a stale saved map needs the generator rerun |
 | `gravity_gui`/`gui_*.js` page state | the one page test for the area (`politics_gui_test`, `obs_fragile_gui_test`, `career_pause_test`, `profit_monotonic_test`, …) |
 | `index.html`, script order, composer | `dom_smoke` once, plus the area test |

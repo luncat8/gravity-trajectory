@@ -846,7 +846,7 @@ Re-run the bench alone before believing a change caused it.
 
 ## which forceScale is the world's — the sim's, not the career's
 
-`career.forceScale` is set only for **rival** careers (`gravity_bot.js` `setScales`
+`career.forceScale` is set only for **rival** careers (`bot_setup.js` `setScales`
 assigns it to `rivals[i].career` but not to the player career); the player's world
 multiplier lives on the sims and on the probe/exitProbe/burnShotSims. Any bot helper
 that prices a physically possible shot must take the scale from the live sim it is
@@ -1235,3 +1235,29 @@ The caveat: `INIT_SEC` breaks 0.7.7's "a quick hop pays what it always paid" —
 pay at t=0 rises from 0.24 to 0.68 — so it is an economy decision, not a free
 knob. Lower gravity and longer distances both reduce reach inside the 120 s
 horizon and made fairness worse in the matrix.
+
+## splitting an IIFE module into parts that share one object (0.5.24)
+
+Do it with an AST tool, never by hand: acorn + eslint-scope (npm, outside the
+repo) resolve every reference to its top-level declaration, so the tool knows
+for each use whether it stays in the part (bare), comes from an earlier part
+(one destructured `const { … } = NS;` line) or reaches a later one
+(`NS.name(…)` at call time; a *definition-time* read of a later part must be
+refused). Cut by anchor name, take each statement with the comments above it,
+and audit afterwards that every statement of the monolith occurs verbatim in
+exactly one output file.
+
+- a destructured `let` is a copy taken at load: a top-level `let` read from
+  another part silently freezes. Keep it in its owner and export an accessor;
+  make the tool refuse any cross-part `let` without one.
+- export-key renames hide this: `GravityGame.specialPlanets` was the
+  *accessor* `specialPlanetsOn`, so destructuring `specialPlanets` elsewhere
+  binds a function and every `if (specialPlanets)` becomes always true.
+- node: the core assigns `module.exports` *before* requiring its parts; each
+  part's `require(core)` is then a cycle that returns the finished object.
+- a test that `vm`-evaluates the core's source for a fresh instance must also
+  evaluate the parts in the same context (as browser scripts), or the parts it
+  `require`s attach to a different instance.
+- with destructuring, test monkeypatches (`GravityGame.x = stub`) keep their
+  old reach: internal callers hold their own binding, as in the monolith; only
+  `NS.x` back references would see a stub.
