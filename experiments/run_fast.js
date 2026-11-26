@@ -92,6 +92,7 @@ const SLOW = [
 	['lab_radar_test.js', 1],
 	['profit_monotonic_test.js', 1],
 	['career_pause_test.js', 1],
+	['cheat_panel_test.js', 6],
 	['lite_mode_test.js', 6],
 	['view_prefs_test.js', 1],
 	['career_departure_test.js', 85],

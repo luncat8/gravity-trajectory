@@ -205,6 +205,11 @@ function finishCareerStart(seed) {
 	if (careerPaused) careerPauseNow = performance.now();
 	if (scene.setFrozen) scene.setFrozen(careerPaused);
 	refreshCareerClockUi();
+	/* the panel carries the session's cheat intent: adopt the reset's own cheat
+	 * into the boxes, then re-apply the intent a single-slot reset could not
+	 * carry (the test fit on a communism reset) */
+	cheatPanelAdopt();
+	cheatPanelApply();
 	/* 0.7.47 WS4: the planning path starts the career asynchronously (after
 	 * startGame's tail), so the recording is created here — after the rivals
 	 * exist — not only in startGame. The synchronous path re-creates it right

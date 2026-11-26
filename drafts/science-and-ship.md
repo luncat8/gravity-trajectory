@@ -67,7 +67,10 @@ frontier line — a paste-ready `tech: KIND ID { … }` block.
 
 communism mode (all free), endgame mode (all upgrade installed)
 
-→ `&cheat=communism` and `&cheat=endgame` (all pads top tier, purse 99).
+→ `&cheat=communism` and `&cheat=endgame` (all pads top tier, purse 99). The
+cheat panel under the flight HUD toggles both on the live career and adds
++10 cr: communism keeps the free-price wrappers (`career.cheat`), test mode
+runs the endgame fit through `installStockUpgrades`.
 
 ## 4.6 the ship before it flies ← `0.4-draft-career.md`
 

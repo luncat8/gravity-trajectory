@@ -317,6 +317,23 @@ function applyCareerCommercial(entry) {
 	return true;
 }
 
+/* a recorded cheat-panel edit re-applies the state change through the panel's
+ * own path, boxes included, so the replayed page looks like the recorded one */
+function applyCareerCheat(entry) {
+	if (typeof entry.communism !== 'boolean' || typeof entry.test !== 'boolean') return false;
+	cheatCommunismEl.checked = entry.communism;
+	cheatTestEl.checked = entry.test;
+	cheatPanelApply();
+	careerChanged();
+	return true;
+}
+
+function applyCareerCredit(entry) {
+	if (entry.cr !== CHEAT_CR) return false;
+	game.money.purse += entry.cr;
+	return true;
+}
+
 function applyCareerAction(entry) {
 	if (entry.slot >= slotCount()) return false;
 	if (entry.type !== 'controller' && entry.type !== 'cancelLaunch' && entry.slot !== activeSlotIndex()) selectSlot(entry.slot);
@@ -328,6 +345,8 @@ function applyCareerAction(entry) {
 	if (entry.type === 'act') return applyCareerAct(entry);
 	if (entry.type === 'bookTrace') return applyCareerBookTrace(entry.trace);
 	if (entry.type === 'commercial') return applyCareerCommercial(entry);
+	if (entry.type === 'cheat') return applyCareerCheat(entry);
+	if (entry.type === 'credit') return applyCareerCredit(entry);
 	if (entry.type === 'controller') {
 		if (!Object.hasOwn(GravityGame.PLAYER_TYPES, entry.player)) return false;
 		setSlotType(entry.slot, entry.player);

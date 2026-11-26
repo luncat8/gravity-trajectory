@@ -18,7 +18,7 @@
 		openFlight, planetInPlay, createLaunchBook, resetLaunchBook, createSportRecord,
 		setCommercial, refreshNetwork, syncCareerNetwork, returnLandingVisits, hqMask, pickHq,
 		syncSportSlot, refreshBoard, clearPad, fitPad, ownPart, newPrototypes, seedScience,
-		giftBudget, grantStartGifts, emptyWorld
+		giftBudget, grantStartGifts, emptyWorld, refreshCareerMedic
 	} = inner;
 
 	const START_PLANET = 'planet';
@@ -424,6 +424,25 @@
 		career.ship.tank = topTier(OrbitTech.TANKS);
 	}
 
+	/* cheat panel test mode: the endgame fit applied to a live career, plus the
+	 * housekeeping a shop build does — rail network, medic slot, the commercial
+	 * marker a new own rail replaces, and stranding under the fresh fit */
+	function installStockUpgrades(career) {
+		fitEndgame(career);
+		refitShip(career);
+		if (career.commercialPlanet >= 0 && career.pads[career.commercialPlanet].catapult !== null) {
+			setCommercial(career, -1);
+		}
+		if (!career.flying && career.at >= 0) {
+			const pad = career.pads[career.at];
+			career.stranded = pad.catapult === null && career.at !== career.capitalPlanet ||
+				!(OrbitTech.speedLimit(pad.battery.capacity, career.ship.mass, pad.catapult,
+					career.forceScale) + 1e-9 >= GravitySim.SPEED_MIN);
+		}
+		syncCareerNetwork(career);
+		refreshCareerMedic(career);
+	}
+
 	/* ── placement & starts ── evacuation clear, placeShip, space spawns, startCareer */
 
 	function clearEvacuation(career, sim) {
@@ -643,7 +662,7 @@
 		coveredPlanets, careerStats, mapStats, sampleStats, START_PLANET, START_SPACE, START_CAPITAL,
 		SPACE_START_FUEL_KG, SPACE_START_BONUS, CAPITAL_START_BONUS, spaceSpawnAt, CAREER_BROKE,
 		CAREER_COMPLETE, createCareer, resetCareer, startCareer, checkEnded, placeShip,
-		ENDGAME_WARNING_STEPS, capitalCovered, joinGalaxy
+		ENDGAME_WARNING_STEPS, capitalCovered, joinGalaxy, installStockUpgrades
 	});
 	Object.assign(inner, {
 		placeShip, checkEnded, liquidateCareer

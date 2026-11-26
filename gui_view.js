@@ -170,6 +170,10 @@ function reserveGameFooter() {
 	cargoHudEl.style.setProperty('--footReserve', reserve);
 	if (flightHudEl && flightHudEl.style) {
 		flightHudEl.style.setProperty('--footReserve', reserve);
+		/* the cheat strip docks under the flight hud: the hud stops above it */
+		const cheatH = cheatPanelEl.getBoundingClientRect().height;
+		flightHudEl.style.setProperty('--cheatReserve',
+			cheatH > 0 ? Math.ceil(cheatH) + 6 + 'px' : '0px');
 	}
 	if (leftHudEl && leftHudEl.style) {
 		leftHudEl.style.setProperty('--footReserve', reserve);

@@ -58,7 +58,7 @@ experiments/logs/ - without long formatting, keep only useful data that helpful 
 
 ### gravity gui
 
-the gui is split one file per area (0.5, done): 25 `gui_*.js` classic scripts plus
+the gui is split one file per area (0.5, done): 26 `gui_*.js` classic scripts plus
 `gravity_gui.js` (1,074 lines: state, element refs, wiring, boot — not an IIFE, and never
 an empty re-export hub). never read the composer whole.
 the areas still inside it are indexed by a banner comment; one grep gives the table of contents with
@@ -85,6 +85,7 @@ every file below is in place. each area file reads the composer's state as ordin
 | `gui_route.js` | 266 | route plan rows, best-route record/restore, route leader |
 | `gui_helper.js` | 594 | career helpers: goal table over the rule's landing factors, broad/focus/profit/quest scans, candidates, budgeted tick |
 | `gui_replay.js` | 194 | replay lifecycle, per-shot aim replay, verdicts, skip |
+| `gui_cheat.js` | 77 | cheat panel: +10 cr, communism (all free), test mode (endgame fit), panel locks and url adoption |
 | `gui_hud_game.js` | 220 | scoreboard, score meta, player/rival summaries, the career map-statistics strip |
 | `gui_world.js` | 301 | planet universe and strengths, attach to the trade world, mode/bot/score radios, seed url |
 | `gui_career.js` | 523 | career tabs, wait easing and settlement, build/bulk/part/accept/drop, evacuate, act |

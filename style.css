@@ -172,17 +172,44 @@ body {
 #flightHud {
 	top: auto;
 	right: 14px;
-	bottom: var(--footReserve, 64px);
+	bottom: calc(var(--footReserve, 64px) + var(--cheatReserve, 0px));
 	left: auto;
 	width: 294px;
 	/* Leave room for the upper HUD on short screens; all actions still scroll. */
-	max-height: max(160px, calc(100dvh - var(--footReserve, 64px) - 212px));
+	max-height: max(160px, calc(100dvh - var(--footReserve, 64px) - var(--cheatReserve, 0px) - 212px));
 	overflow-y: auto;
 	overscroll-behavior: contain;
 	scrollbar-width: thin;
 	scrollbar-color: rgba(126, 180, 230, 0.28) transparent;
 	padding: 10px 15px 11px;
 	pointer-events: auto;
+}
+
+/* the cheat panel: a dev strip docked under the flight hud; the hud stops
+ * above it via --cheatReserve, which reserveGameFooter measures */
+#cheatPanel {
+	top: auto;
+	right: 14px;
+	bottom: var(--footReserve, 64px);
+	left: auto;
+	width: max-content;
+	max-width: 294px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 12px;
+	font-size: 11px;
+}
+
+.cheatCb {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	white-space: nowrap;
+}
+
+.cheatCb input {
+	margin: 0;
 }
 
 #cargoHud > .panelHead {
@@ -2216,6 +2243,11 @@ polyline.sciKnownHull {
 		bottom: var(--footReserve, 60px);
 		width: 248px;
 		padding: 9px 12px 10px;
+	}
+
+	/* the cheat strip has no room beside the full-width footer bar */
+	#cheatPanel {
+		display: none;
 	}
 
 	.planetActions button {

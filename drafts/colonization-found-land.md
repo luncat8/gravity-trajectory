@@ -1,9 +1,9 @@
 
-## new planet type
+## planet type 'empty'
 
 empty planets without population
 
-without any EMC. so only evacuation or IMP available to launch. no visit cost.
+without any EMC, no refuel. so only evacuation or IMP available to launch. no visit cost.
 
 auto-helpers and bots avoid landing on this type before colonization equipment is in cargo hold.
 Sport targets dont use these planets as landing or starting positions.
@@ -11,6 +11,9 @@ Sport targets dont use these planets as landing or starting positions.
 landing with colonization equipment (single use) in cargo hold - possible founds 1 colony - just typical planet with commercial EMC.
 
 colonization equipment (single use) - i suggest it for end game: heavy > tier 1 cargo holds,  cost 20..40
+
+HUD default action : colonization if equipment kit available.
+Helper radio warn to land on empty when trajectory on it without equipment.
 
 ### generation
 

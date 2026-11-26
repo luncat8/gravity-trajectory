@@ -83,6 +83,7 @@ with no fair opening: the registry is also the pool `load map` draws from, so
 | compact career playback and bot history | `career_actions_test`, `career_history_seed_test` (handover), `career_evacuation_test` (reported P8 returns and tow) |
 | full career save, clipboard fallback and H calls | `career_replay_test` |
 | remembered view checkboxes: `trails`, `clean render` (`gravity.trails`, `gravity.cleanRender`) | `view_prefs_test` |
+| the cheat panel: `gui_cheat.js`, `installStockUpgrades`, the recorded `cheat`/`credit` actions | `cheat_panel_test` |
 | the lite profile: `gui_lite.js`, the still backdrop in `orbit_view.js`, the boot pre-history, sound/postcard gates | `lite_mode_test` |
 | the radar reveal: `radarShips`, the `radar` gift + build gate, the `predView`/`trailView` boxes and the `+N s` plate, the bot `careerRadarAvoid`/`careerRadarHot` | `radar_test` (career facility + reveal + memo + bot), `lab_radar_test` (the box outside career) |
 | `index.html`, script order, composer | `dom_smoke` once, plus the area test |
@@ -129,7 +130,13 @@ reproduced on the base revision, not just a count.
   helper's earlier armed contract shot back onto the HQ prices neutral (−0.36).
 - `career_bot_bench.js` — `padless solvency gate counts this flight's launch
   fee`: the same shot must score once the exit is covered after the fee.
-- `dom_smoke.js` — `0.4.17: no landing with a commercial exit from HQ`.
+- `dom_smoke.js` — fails earlier than the once-noted `0.4.17` block, on base
+  `bee343e` (2026-11-26) and identically after 0.8.9: `career rule tag` and
+  `cheat rule tag` expect the 13-planet career default that the 16-planet
+  universe replaced, then the build-env block crashes on
+  `padBuild[1]` (its planet is claimed by R1, so the drawer shows no
+  first-catapult button). A logging copy collects exactly those three
+  `CHECKFAIL`s on base and on the tree; everything before them is green.
 
 Previously fixed:
 
