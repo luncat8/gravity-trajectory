@@ -25,8 +25,9 @@
 		const comp = report.composition;
 		if (!comp || !Array.isArray(comp.missing)) return [];
 		const missing = comp.missing;
+		const settled = Number.isInteger(comp.settled) ? comp.settled : report.planets;
 		const rows = [
-			{ ok: !missing.includes('planets'), label: 'planets', have: report.planets, need: comp.minimal, min: true },
+			{ ok: !missing.includes('planets'), label: 'planets', have: settled, need: comp.minimal, min: true },
 			{ ok: !missing.includes('light'), label: 'starter-accessible planets', have: comp.light, need: report.players, min: false }
 		];
 		if (GravityGame.specialPlanets()) {
@@ -546,7 +547,8 @@
 	}
 
 	function commercialOption(s) {
-		return landedOpen(s) && s.planet !== s.capitalPlanet && !s.commercialSelected &&
+		return landedOpen(s) && s.planet !== s.capitalPlanet &&
+			s.padOwner !== GravityGame.OWNER_EMPTY && !s.commercialSelected &&
 			s.padOwner !== GravityGame.OWNER_COMMERCIAL && s.commercialLift + EPS >= s.speedMin &&
 			(hasReason(s, 'no-rail') || hasReason(s, 'cap'));
 	}
@@ -564,7 +566,8 @@
 	}
 
 	function politicalPlanet(s) {
-		return landedOpen(s) && s.planet !== s.capitalPlanet && s.planet !== s.arfPlanet;
+		return landedOpen(s) && s.planet !== s.capitalPlanet &&
+			s.planet !== s.arfPlanet && s.padOwner !== GravityGame.OWNER_EMPTY;
 	}
 
 	/* ── fact & slot registries ── HH_FACTS, H_SLOTS */
@@ -729,7 +732,8 @@
 			why: s => 'short ' + shortfall(s.commercialMinFee, s.purse) + ' (purse ' + money(s.purse) + ')'
 		}),
 		'commercial-available': Object.freeze({
-			test: s => landedOpen(s) && s.planet !== s.capitalPlanet,
+			test: s => landedOpen(s) && s.planet !== s.capitalPlanet &&
+				s.padOwner !== GravityGame.OWNER_EMPTY,
 			why: () => 'no commercial rail here'
 		}),
 		'leave-short': Object.freeze({

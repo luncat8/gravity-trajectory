@@ -25,6 +25,9 @@
 	/* a target another company is already queued for is worth this much less:
 	 * the first to queue harvests the landing, the second lands on a paid visit */
 	const CAREER_CONTESTED_COST = 2;
+	/* once a colonization kit is aboard, delivering it to an exitable empty
+	 * world outranks routine visits while still pricing post-founding exit */
+	const CAREER_FOUND_BONUS = 10;
 
 	GravityBot.prototype.careerEnergyWait = function (career, planet, energy, sourcePad) {
 		if (!(energy > 0)) return 0;
@@ -165,11 +168,13 @@
 			this.careerEval.reject = 'fee';
 			return -Infinity;
 		}
-		const arrivalMass = this.careerArrivalMass(career, body);
+		const foundsColony = GravityGame.emptyWorld(career, body) && career.ship.colonyKit;
+		const arrivalMass = this.careerArrivalMass(career, body) -
+			(foundsColony ? OrbitTech.COLONY_KIT.mass : 0);
 		const contested = this.careerContested(career, body);
 		const departure = this.careerDeparture(career, body, exitCash, arrivalMass, this.probe,
 			arrivalCondition === 0 ? 1 : arrivalCondition, !contested, true,
-			GravitySim.gameSeconds(steps));
+			GravitySim.gameSeconds(steps), foundsColony);
 		if (!departure.ok || exitCash + 1e-9 < departure.cost) {
 			this.careerEval.reject = departure.physical ? 'exit' : 'unlaunchable';
 			return -Infinity;
@@ -185,7 +190,11 @@
 		const claim = !contested && !own.catapult && departure.builds;
 		let padValue;
 		if (body === origin) padValue = -departure.cost;
-		else if (own.catapult) padValue = CAREER_BUILT_PAD_VALUE + (own.catapult.tier - 1) * 0.1 - departure.cost;
+		else if (foundsColony) {
+			padValue = CAREER_FOUND_BONUS +
+				(claim ? this.careerClaimValue(career, body, -1, departure, arrivalMass)
+					: -departure.cost);
+		} else if (own.catapult) padValue = CAREER_BUILT_PAD_VALUE + (own.catapult.tier - 1) * 0.1 - departure.cost;
 		else if (claim) padValue = this.careerClaimValue(career, body, -1, departure, arrivalMass);
 		else {
 			/* A commercial ticket, rival rail or imperial rail buys no property. */

@@ -138,6 +138,7 @@
 		/* a seized planet keeps the rebel rail: swapping in a commercial EMC-1
 		 * would invent a pad the planet does not have */
 		if (career.commercialPlanet !== career.at &&
+			!GravityGame.emptyWorld(career, career.at) &&
 			!GravityGame.planetSeized(career, career.at) &&
 			GravityGame.padOwner(career, career.at) !== GravityGame.OWNER_COMMERCIAL) {
 			GravityGame.setCommercial(career, career.at);

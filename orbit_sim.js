@@ -81,6 +81,7 @@
 		 * rebuilding the world for a new seed keeps it (applyPlanetUniverse
 		 * re-applies it anyway, and a stale mask would hide new colonies) */
 		const savedMask = this.planetMask;
+		const savedEmpty = this.emptyMask;
 		this.seed = seed || 1;
 		this.rand = seedRandom(this.seed);
 		this.t = 0;
@@ -92,6 +93,7 @@
 		this.planetEmpty = this.tradePlanetLimit;
 		/* the run's in-play subset; null = every enabled planet trades */
 		this.planetMask = null;
+		this.emptyMask = null;
 		this.reserved = 0;
 		this.delivered = 0;
 		this.coloniesBuilt = 0;
@@ -162,6 +164,8 @@
 			this.portNext[p] = 10 + this.rand() * 30;
 		}
 		this.planetMask = savedMask;
+		this.emptyMask = savedEmpty;
+		if (savedMask || savedEmpty) this.retireHidden();
 	};
 
 	Sim.prototype.econY = function (time) {
@@ -296,7 +300,9 @@
 	/* Found an outpost on a free planet (or return the existing colony). */
 	Sim.prototype.seedColony = function (planet, time) {
 		if (planet < 0 || planet >= PLANETS) return null;
-		if (!this.planetInPlay(planet)) return null;
+		if (this.planetMask && this.planetMask[planet] === 0) return null;
+		if (this.emptyMask) this.emptyMask[planet] = 0;
+		if (planet >= this.tradePlanetLimit) this.setPlanetLimit(planet + 1);
 		if (this.colonyOn[planet] !== NO_PORT) {
 			return this.colonies[this.colonyOn[planet]];
 		}
@@ -639,10 +645,17 @@
 		if (this.planetMask) this.retireHidden();
 	};
 
-	/* a planet the trade world may still touch: enabled and inside the subset */
+	/* uninhabited worlds stay out of trade until a colonization kit founds them */
+	Sim.prototype.setEmptyMask = function (mask) {
+		this.emptyMask = mask || null;
+		if (this.emptyMask) this.retireHidden();
+	};
+
+	/* a planet the trade world may still touch: enabled, inside the subset, and settled */
 	Sim.prototype.planetInPlay = function (planet) {
 		if (planet < 0 || planet >= this.tradePlanetLimit) return false;
-		return !this.planetMask || this.planetMask[planet] !== 0;
+		if (this.planetMask && this.planetMask[planet] === 0) return false;
+		return !this.emptyMask || this.emptyMask[planet] === 0;
 	};
 
 	/* a port whose own planet is still in play */

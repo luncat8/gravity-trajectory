@@ -187,7 +187,7 @@ function attachWorld() {
 		 * keep the well they were colonized under (career runs only — other
 		 * rules carry no empty flags and read the plain law) */
 		planetBaseStrength[p] = careerRule() && game.market.heavy[p] === 1
-			? GravityGame.careerGravity(game.career, p)
+			? PlanetGravity.emptyGravity(tradeSim.seed, p)
 			: GravityGame.planetGravity(tradeSim.seed, p);
 		portPlanetStrength[p] = planetBaseStrength[p];
 	}

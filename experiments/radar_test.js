@@ -459,7 +459,7 @@ check('predicted: the box shows every rival, hover or press reveals one without 
 		'the build ticks the box');
 	page.toggle('predView');
 	/* the own ship and one rival fly verified shots; the third stays parked */
-	const fly = index => vm.runInContext(`(() => {
+	const fly = (index, avoidTarget = -1) => vm.runInContext(`(() => {
 		const r = game.career.galaxy.actors[${index}];
 		const sim = r.sim;
 		const at = r.at >= 0 ? r.at : 0;
@@ -470,7 +470,7 @@ check('predicted: the box shows every rival, hover or press reveals one without 
 		const cap = Math.ceil(GravitySim.FLY_HORIZON / GravitySim.DT) + 2;
 		const targets = [];
 		for (let p = 0; p < n && p < px.length; p++) {
-			if (p === at || (mask && mask[p] !== 1)) continue;
+			if (p === at || p === ${avoidTarget} || (mask && mask[p] !== 1)) continue;
 			targets.push(p);
 		}
 		targets.sort((a, b) => Math.hypot(px[a] - px[at], py[a] - py[at]) -
@@ -495,8 +495,9 @@ check('predicted: the box shows every rival, hover or press reveals one without 
 		}
 		return -1;
 	})()`, page.context);
-	assert.ok(fly(0) >= 0, 'the own ship finds a verified shot');
-	assert.ok(fly(1) >= 0, 'the rival finds a verified shot');
+	const ownTarget = fly(0);
+	assert.ok(ownTarget >= 0, 'the own ship finds a verified shot');
+	assert.ok(fly(1, ownTarget) >= 0, 'the rival finds a verified shot');
 	const plates = () => page.calls.texts.filter(t => /^\+\d+ s$/.test(t)).length;
 	const rest = () => page.calls.texts.filter(t => t === 'landed').length;
 	const paint = () => {
@@ -611,7 +612,7 @@ check('stacking: overlapping +N s plates stack by landing planet in arrival orde
 			return null;
 		}
 		for (const target of active) {
-			const others = active.filter(p => p !== target)
+			const others = active.filter(p => p !== target && !game.market.empty[p])
 				.sort((a, b) => Math.hypot(px[a] - px[target], py[a] - py[target]) -
 					Math.hypot(px[b] - px[target], py[b] - py[target]));
 			const plans = [];

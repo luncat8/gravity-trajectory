@@ -122,7 +122,10 @@ reproduced on the base revision, not just a count.
   on a saved field scores a finite value without the build the assertion
   expects (`Number.isFinite(score(6)) && !bot.careerEval.builds`).
 - `career_guidance_test.js` — `seed 1 has no starter-blocked landing for the
-  aim-state fixture`.
+  aim-state fixture` on the base. Since 0.7.44 the 16-planet saved seed 1 has
+  one (the fixture skips uninhabited worlds) and the file fails later at
+  `restored departure rule should recover the green aim state`: the profit
+  helper's earlier armed contract shot back onto the HQ prices neutral (−0.36).
 - `career_bot_bench.js` — `padless solvency gate counts this flight's launch
   fee`: the same shot must score once the exit is covered after the fee.
 - `dom_smoke.js` — `0.4.17: no landing with a commercial exit from HQ`.

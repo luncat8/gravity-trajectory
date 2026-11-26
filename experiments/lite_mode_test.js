@@ -56,11 +56,11 @@ const bootAt = Date.now();
 const lite = loadPage({ search: '?lite=1&mode=career', globals: { AudioContext: audio.AudioContext } });
 const bootMs = Date.now() - bootAt;
 const liteScene = lite.context.GravityScene;
-const liteSeeds3 = savedSeeds(13, 3);
+const liteSeeds3 = savedSeeds(16, 3);
 assert.strictEqual(liteScene.playMode(), 'career', 'the address starts a career');
 assert.ok(liteSeeds3.includes(liteScene.game.seed), 'an unpinned lite seed is a saved one: ' + liteScene.game.seed);
 const bootRecord = MAPS.find(record => record.kind === 'start' && record.seed === liteScene.game.seed &&
-	record.universe === 13 && record.seats.length === 3);
+	record.universe === 16 && record.seats.length === 3);
 assert.deepStrictEqual(plain(liteScene.game.galaxy.mapSeats), bootRecord.seats, 'seated from the record');
 assert.strictEqual(plain(liteScene.game.galaxy.openingTargetPay), bootRecord.targetPay, 'record pay target');
 assert.strictEqual(lite.context.GravityMaps.armed(), null, 'the armed record was used up');
@@ -84,11 +84,11 @@ console.log('boot: lite career on saved seed ' + liteScene.game.seed + ' in ' + 
 
 /* each default difficulty with saved openings boots on one of them, as does a 4-seat roster */
 const easy = loadPage({ search: '?lite=1&mode=career&bot=easy' });
-assert.ok(savedSeeds(13, 2).includes(easy.context.GravityScene.game.seed), 'easy boots on a saved 2-seat opening');
+assert.ok(savedSeeds(16, 2).includes(easy.context.GravityScene.game.seed), 'easy boots on a saved 2-seat opening');
 assert.strictEqual(easy.context.GravityScene.game.galaxy.mapSeats.length, 2, 'YOU + one rival');
 assert.strictEqual(easy.context.GravityMaps.armed(), null, 'easy used its record');
 const four = loadPage({ search: '?lite=1&mode=career&players=4' });
-const liteSeeds4 = savedSeeds(13, 4);
+const liteSeeds4 = savedSeeds(16, 4);
 assert.ok(liteSeeds4.includes(four.context.GravityScene.game.seed), '4-seat career boots on a saved opening');
 assert.strictEqual(four.context.GravityScene.game.galaxy.mapSeats.length, 4, 'four companies');
 assert.strictEqual(four.context.GravityMaps.armed(), null, '4-seat career used its record');
@@ -102,7 +102,7 @@ const next = order[(order.indexOf(before) + 1) % order.length];
 assert.strictEqual(liteScene.game.seed, next, 'new seed: the next saved opening ' + before + ' → ' + next);
 assert.strictEqual(lite.context.GravityMaps.armed(), null, 'and it seated from it');
 const nextRecord = MAPS.find(record => record.kind === 'start' && record.seed === next &&
-	record.universe === 13 && record.seats.length === 3);
+	record.universe === 16 && record.seats.length === 3);
 assert.deepStrictEqual(plain(liteScene.game.galaxy.mapSeats), nextRecord.seats, 'new seed seats from the record');
 assert.strictEqual(lite.context.newRunSeed(true) >= 1, true, 'Shift asks for a random world');
 lite.context.Math.random = () => 0.123456;

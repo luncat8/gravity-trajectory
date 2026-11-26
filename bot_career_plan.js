@@ -11,8 +11,8 @@
 )(function (GravityBot, inner) {
 	'use strict';
 	const {
-		GravitySim, GravityGame, PLAYER_INDEX, END_IMPACT, END_TIME, TAU, CAREER_REFINE_SEEDS,
-		CAREER_PURSE_RESERVE
+		GravitySim, GravityGame, PLANETS, PLAYER_INDEX, END_IMPACT, END_TIME, TAU,
+		CAREER_REFINE_SEEDS, CAREER_PURSE_RESERVE
 	} = inner;
 
 	/* Career is a solo economic controller, not another shared-market rival. */
@@ -34,6 +34,26 @@
 		 * bot never has to know which kind it is flying */
 		const goals = GravityGame.careerGoalBodies(career);
 		if (career.contract >= 0) return goals[0];
+		if (career.ship.colonyKit && GravityGame.emptyInPlay(career) > 0) {
+			let bestPlanet = -1;
+			let bestDist2 = Infinity;
+			const sim = career.sim || this.probe;
+			const ox = career.at >= 0 && sim && sim.planetX ? sim.planetX[career.at] : 0;
+			const oy = career.at >= 0 && sim && sim.planetY ? sim.planetY[career.at] : 0;
+			for (let p = 0; p < PLANETS; p++) {
+				if (p === career.at || !GravityGame.planetInPlay(career, p)) continue;
+				if (!GravityGame.emptyWorld(career, p) || this.careerContested(career, p)) continue;
+				if (!sim || !sim.planetX || career.at < 0) return p;
+				const dx = sim.planetX[p] - ox;
+				const dy = sim.planetY[p] - oy;
+				const d2 = dx * dx + dy * dy;
+				if (d2 < bestDist2) {
+					bestDist2 = d2;
+					bestPlanet = p;
+				}
+			}
+			if (bestPlanet >= 0) return bestPlanet;
+		}
 		for (let i = 0; i < goals.length; i++) {
 			const planet = goals[i];
 			if (planet !== career.at &&
@@ -280,7 +300,9 @@
 		/* Even a paying shuttle must compete with fresh harvest periodically.
 		 * Use completed flights, not planner calls: fallback scans and actors
 		 * sharing this controller must not spend each other's exploration turn. */
-		const explore = career.flights % CAREER_BOOK_EXPLORE_EVERY === CAREER_BOOK_EXPLORE_EVERY - 1;
+		const explore = career.flights % CAREER_BOOK_EXPLORE_EVERY === CAREER_BOOK_EXPLORE_EVERY - 1 ||
+			(career.ship.colonyKit && GravityGame.emptyInPlay(career) > 0 &&
+				!GravityGame.emptyWorld(career, best.body));
 		if (!explore && best.score >= CAREER_BOOK_ENOUGH && bookNet >= CAREER_BOOK_MIN_NET) return best;
 
 		const level = career === this.careerPlayer.career ? this.specFor(PLAYER_INDEX) : this.spec();

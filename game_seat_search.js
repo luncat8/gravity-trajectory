@@ -13,9 +13,9 @@
 	const {
 		OrbitWorld, PlanetGravity, planetGravity, CAREER, SALT_HQ, OWNER_COMMERCIAL,
 		specialPlanetsOn, padScaleOf, payScaleOf, claimOwner, HQ_GRAVITY_MAX, OPENING_COMPARE_EPS,
-		OPENING_FAIR_RATIO, OPENING_RATIO_EPS, openingMaskTag, openingPrepare, openingTraceHome,
-		pickFairHq, hqForbidden, openingRatio, compareOpeningGroups, startCandidatePools,
-		openingGroupAccepted, createHomeWalk
+		OPENING_FAIR_RATIO, OPENING_RATIO_EPS, openingMaskTag, openingMaskBits, openingPrepare,
+		openingTraceHome, pickFairHq, hqForbidden, openingRatio, compareOpeningGroups,
+		startCandidatePools, openingGroupAccepted, createHomeWalk
 	} = inner;
 
 	const OPENING_EXACT_BATCH = 16;
@@ -93,8 +93,9 @@
 	function seatPlanKey(world, trade, mask, count, seatsWanted, sourceSim) {
 		const field = PlanetGravity.armed();
 		const fieldTag = field && field.seed === (world.seed >>> 0) ? field.tag : 0;
+		const emptyTag = trade && trade.emptyMask ? openingMaskBits(trade.emptyMask) : 'd';
 		return (world.seed >>> 0) + ':' + (trade.seed >>> 0) + ':' +
-			openingMaskTag(mask, count) + ':' + seatsWanted + ':' +
+			openingMaskTag(mask, count) + ':' + emptyTag + ':' + seatsWanted + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
 			padScaleOf() + ':' + payScaleOf() + ':' +
@@ -375,7 +376,8 @@
 		const sitePay = new Float64Array(planets * planets);
 		const options = [];
 		for (let candidate = 0; candidate < planets; candidate++) {
-			if (trialMask[candidate] || hqForbidden(world, candidate)) continue;
+			if (trialMask[candidate] ||
+				(specialPlanetsOn() && candidate === world.capitalPlanet)) continue;
 			trialMask[candidate] = 1;
 			homes[candidate] = 1;
 			openingPrepare(world, trade, trialMask, count + 1, homes, sourceSim);

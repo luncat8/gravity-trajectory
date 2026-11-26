@@ -40,7 +40,9 @@ const hq = rivalCareer.hq;
 const pad = rivalCareer.pads[hq];
 const padKwh = pad.chargeKwh;
 const speed = 60;
-env.dragAim(hq, 0.9, speed);
+/* 0.7 rad lands R1 on settled P12; since 0.7.44 the old 0.9 rad aim hits
+ * uninhabited P13, where a kitless ship is stranded and evacuates instead */
+env.dragAim(hq, 0.7, speed);
 env.runFrames(3, 16);
 const aim = scene.aimState();
 assert.ok(Math.abs(aim.speed - speed) < 1, 'the drag did not keep its speed');

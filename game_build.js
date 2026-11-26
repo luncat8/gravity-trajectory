@@ -11,9 +11,9 @@
 )(function (GravityGame, inner) {
 	'use strict';
 	const {
-		GravitySim, OrbitTech, CHEAT_COMMUNISM, CAREER_OPEN, OWNER_COMMERCIAL, price, canPay,
-		refitShip, rebelRail, claimOwner, syncCareerNetwork, refreshCareerMedic, uninstallRefusal,
-		emptyWorld, emptyInPlay
+		GravitySim, OrbitEcon, OrbitTech, CHEAT_COMMUNISM, CAREER_OPEN, OWNER_COMMERCIAL,
+		price, canPay, refitShip, rebelRail, claimOwner, syncCareerNetwork, refreshCareerMedic,
+		uninstallRefusal, emptyWorld, emptyInPlay
 	} = inner;
 
 	function fitPad(career, planet, catapult, panel, battery) {
@@ -195,15 +195,27 @@
 	 * its visit clock starts paying, and the commercial EMC-1 every inhabited
 	 * planet carries becomes its only rail until someone builds there. The
 	 * ship stays stranded — impulse and the evacuation tow are the exits. */
-	function foundColony(career, trade) {
+	function foundColony(career, trade, step) {
 		if (foundRefusal(career) !== '' || !trade || !trade.seedColony) return false;
-		if (!trade.seedColony(career.at)) return false;
+		const at = career.at;
+		const market = career.market;
+		const runStep = Number.isFinite(step) ? step : Math.max(0, market.politicsStep);
+		market.empty[at] = 0;
+		if (!trade.seedColony(at)) {
+			market.empty[at] = 1;
+			return false;
+		}
 		career.ship.colonyKit = false;
 		refitShip(career);
-		career.market.empty[career.at] = 0;
-		career.market.lastVisitStep[career.at] = Math.max(0, career.market.politicsStep);
+		market.lastVisitStep[at] = runStep;
+		market.reportStep[at] = runStep;
+		market.reportPrev[at] = runStep;
+		market.corruption[at] = OrbitEcon.CORRUPTION_TRADITION;
+		market.corruptionFloor[at] = OrbitEcon.CORRUPTION_TRADITION;
+		market.stamp += 1;
 		syncCareerNetwork(career);
 		refreshCareerMedic(career);
+		inner.checkEnded(career);
 		return true;
 	}
 

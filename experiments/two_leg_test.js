@@ -406,7 +406,7 @@ for (const mode of ['entry', 'tick']) {
 	 * both bot and helper evaluate pure two-leg trajectory net with zero
 	 * pad-building bonus or solar-wait offset. */
 	Game.placeShip(career, sim, career.capitalPlanet);
-	market.lastVisitStep.fill(55000);
+	market.lastVisitStep.fill(70000);
 	scene.game.clockSteps = 50000;
 
 	/* Pick an unowned commercial world where `purse < EMC-1.buildCost (3.04)`
@@ -431,26 +431,28 @@ for (const mode of ['entry', 'tick']) {
 		career.galaxy.commercialPads[p] = { catapult: Tech.CATAPULTS[0], battery: battery,
 			panel: Tech.PANELS[0], chargeKwh: battery.capacity, reservedKwh: 0 };
 		const h1 = findImpact(sim, Game, career.at, p, 50, 140);
-		if (!h1) continue;
-		for (let q = 0; q < sim.planetCount; q++) {
-			if (!sim.planetActive(q) || q === p || q === career.at || q === career.capitalPlanet) continue;
-			if (Game.hasFeasibleLeg(career, sim, p, q, Tech.shipMass(career.ship, 1), false, 45000)) {
-				Object.assign(career.tasks[0], {
-					kind: Game.TASK_DELIVERY, state: Game.TASK_ACCEPTED,
-					from: p, to: q, tons: 1, fragile: false,
-					reward: 6.5, deadline: scene.game.clockSteps + 45000, capitalRefund: 0
-				});
-				scene.bot.probe.predict(career.at, h1.angle, h1.speed, Game.CAP_SECONDS);
-				const score = scene.bot.careerScoreProbe(career, sim, career.at,
-					h1.speed, market, scene.game.clockSteps);
-				if (!Number.isFinite(score) || !scene.bot.careerLeg.hasSecond ||
-					scene.bot.careerEval.builds) continue;
-				pickup = p;
-				dropoff = q;
-				candShot = h1;
-				break;
+		if (h1) {
+			for (let q = 0; q < sim.planetCount; q++) {
+				if (!sim.planetActive(q) || q === p || q === career.at || q === career.capitalPlanet) continue;
+				if (Game.hasFeasibleLeg(career, sim, p, q, Tech.shipMass(career.ship, 1), false, 45000)) {
+					Object.assign(career.tasks[0], {
+						kind: Game.TASK_DELIVERY, state: Game.TASK_ACCEPTED,
+						from: p, to: q, tons: 1, fragile: false,
+						reward: 6.5, deadline: scene.game.clockSteps + 45000, capitalRefund: 0
+					});
+					scene.bot.probe.predict(career.at, h1.angle, h1.speed, Game.CAP_SECONDS);
+					const score = scene.bot.careerScoreProbe(career, sim, career.at,
+						h1.speed, market, scene.game.clockSteps);
+					if (!Number.isFinite(score) || !scene.bot.careerLeg.hasSecond ||
+						scene.bot.careerEval.builds) continue;
+					pickup = p;
+					dropoff = q;
+					candShot = h1;
+					break;
+				}
 			}
 		}
+		if (!candShot) career.galaxy.commercialPads[p] = null;
 	}
 	assert.ok(candShot && dropoff >= 0, 'expected Capital -> commercial -> dropoff candidate');
 	for (const t of career.tasks) t.kind = Game.TASK_NONE;
@@ -508,10 +510,11 @@ for (const mode of ['entry', 'tick']) {
 	let dropoff = -1;
 	for (let p = 0; p < sim.planetCount && pickup < 0; p++) {
 		if (!sim.planetActive(p) || p === career.at || p === career.capitalPlanet ||
-			p === career.arfPlanet) continue;
+			p === career.arfPlanet || Game.emptyWorld(career, p)) continue;
 		if (!findImpact(sim, Game, career.at, p, 55, 165)) continue;
 		for (let q = 0; q < sim.planetCount; q++) {
-			if (!sim.planetActive(q) || q === p || q === career.at || q === career.capitalPlanet) continue;
+			if (!sim.planetActive(q) || q === p || q === career.at || q === career.capitalPlanet ||
+				Game.emptyWorld(career, q)) continue;
 			if (findImpact(sim, Game, p, q, 55, 82)) {
 				pickup = p;
 				dropoff = q;
@@ -683,11 +686,12 @@ for (const mode of ['entry', 'tick']) {
 	let p2 = -1;
 	let shot = null;
 	for (let p = 0; p < sim.planetCount && p1 < 0; p++) {
-		if (!sim.planetActive(p) || p === career.at || p === career.capitalPlanet) continue;
+		if (!sim.planetActive(p) || p === career.at || p === career.capitalPlanet ||
+			Game.emptyWorld(career, p)) continue;
 		const h1 = findImpact(sim, Game, career.at, p, 52, 85);
 		if (!h1) continue;
 		for (let q = 0; q < sim.planetCount; q++) {
-			if (!sim.planetActive(q) || q === p || q === career.at) continue;
+			if (!sim.planetActive(q) || q === p || q === career.at || Game.emptyWorld(career, q)) continue;
 			if (findImpact(sim, Game, p, q, 52, 82)) { p1 = p; p2 = q; shot = h1; break; }
 		}
 	}

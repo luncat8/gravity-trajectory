@@ -46,7 +46,7 @@
 	const MARKET_SKIP = ['galaxy', 'planetMask', 'planetCount'];
 	const GALAXY_SKIP = ['actors', 'market', 'period', 'phase'];
 	const TRADE_SKIP = ['handleEvent', 'onColonyEvent', 'world', 'rand', 'events',
-		'colonies', 'corruption', 'mapOut', 'log', 'planetMask'];
+		'colonies', 'corruption', 'mapOut', 'log', 'planetMask', 'emptyMask'];
 	const RIVAL_SKIP = ['sim', 'career', 'ledger', 'turret'];
 	/* a sim's geometry, field and refs are rebuilt; only the past is saved */
 	const SHIP_KEYS = ['status', 'landedBody', 'origin', 'angle', 'speed', 'cargo',
@@ -318,6 +318,7 @@
 			if (colony.map && colony.map.ease) colony.ease = colony.map.ease;
 		}
 		unpackData(info.market, state.market, MARKET_SKIP);
+		trade.setEmptyMask(info.market.empty);
 		const galaxy = info.galaxy;
 		unpackData(galaxy, state.galaxy, GALAXY_SKIP);
 		for (let i = 0; i < state.careers.length && i < galaxy.actors.length; i++) {

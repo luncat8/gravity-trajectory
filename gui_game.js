@@ -64,22 +64,25 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	if (!pendingUniverse()) {
 		initPlanetUniverse(game.planetUniverse > 0 ? game.planetUniverse : planetUniverseDefault(game.rule));
 	}
-	scene.reset(seed);
+	tradeSim.setEmptyMask(null);
+	scene.reset(seed, true);
 	scene.setGameClock(true);
+	if (careerRule()) {
+		/* the empty heavy worlds are an opening fact, and the trade world must
+		 * know before settle() advances t = 0 → 420: the tail of the in-play
+		 * indices starts uninhabited, retired from trade and drawn from their
+		 * own gravity salt. Live universe edits never re-derive — planets that
+		 * join a run mid-way are settled ground (an HQ lands there at once). */
+		GravityGame.deriveEmptyWorlds(game.market, planetMask, planetCount, tradeSim.world);
+		tradeSim.setEmptyMask(game.market.empty);
+	}
+	scene.settle();
 	clearCargo();
 	cargoSim.fieldT = tradeSim.t;
 	cargoSim.fieldRate = scene.trade.speed;
 	bot.reset(seed, game.rule, game.bot, game.player, rivalTypesArg,
 		game.playerCount > 0 ? game.playerCount - 1 : undefined);
 	applyPlanetUniverse();
-	if (careerRule()) {
-		/* the empty heavy worlds are an opening fact, and the field must know
-		 * before attachWorld builds it: the tail of the in-play indices starts
-		 * uninhabited, drawn from their own gravity salt. Live universe edits
-		 * never re-derive — planets that join a run mid-way are settled ground
-		 * (an HQ lands there at once). */
-		GravityGame.deriveEmptyWorlds(game.market, planetMask, planetCount, tradeSim.world);
-	}
 	ensureValidActiveSlot(-1);
 	turret = slotTurrets[activeSlotIndex()];
 	attachWorld();
@@ -265,7 +268,7 @@ function rosterFairnessReport() {
 		return { ok: true, planets: planetCount, players: playerCountShown() };
 	}
 	const comp = GravityGame.startComposition(tradeSim.world, planetMask, planetCount,
-		playerCountShown(), cargoSim, game.startMode);
+		playerCountShown(), cargoSim, game.startMode, game.market.empty);
 	return { ok: comp.ok, planets: planetCount, players: playerCountShown(), composition: comp };
 }
 
@@ -360,7 +363,7 @@ function stepCareerPlanning(budgetMs) {
 	if (out.done) {
 		const plan = careerPlanSearch.bestPlan();
 		const comp = GravityGame.startComposition(tradeSim.world, planetMask, planetCount,
-			1 + bot.count, cargoSim, game.startMode);
+			1 + bot.count, cargoSim, game.startMode, game.market.empty);
 		if (!comp.ok) {
 			const seed = careerPlanSeed;
 			cancelCareerPlanning();
@@ -607,7 +610,7 @@ function syncRosterFairness(shown) {
 	let ok = true;
 	if (unfair) {
 		const comp = GravityGame.startComposition(tradeSim.world, planetMask, planetCount,
-			shown, cargoSim, game.startMode);
+			shown, cargoSim, game.startMode, game.market.empty);
 		ok = comp.ok;
 	}
 	const cls = 'rosterUnfair';
@@ -723,6 +726,7 @@ function stopGame() {
 	if (wasCareer) resetPlayback();
 	else refreshPlaybackUi();
 	cargoSim.setLaunchNetwork(null, null);
+	tradeSim.setEmptyMask(null);
 	resetAllRouteBest();
 	updateRuleHelp(selectedHelpRule());
 	scene.setGameClock(false);

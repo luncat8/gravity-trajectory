@@ -12,7 +12,8 @@
 	'use strict';
 	const {
 		OrbitWorld, CAREER, OPENING_ANGLES, OPENING_SPEEDS, OPENING_COMPARE_EPS, OPENING_FAIR_RATIO,
-		OPENING_RATIO_EPS, openingPrepare, OPENING_PAUSED, hqForbidden, openingTracks, planetInMask
+		OPENING_RATIO_EPS, openingExtent, openingMarket, openingFillEmpty, openingPrepare,
+		OPENING_PAUSED, hqForbidden, openingTracks, planetInMask
 	} = inner;
 
 	/* ratios below this are not worth ranking; negative openings are not starts */
@@ -728,7 +729,9 @@
 	 * which is how a map ended up with no valid seating at all. Callers walk
 	 * the pools in order and keep the first that yields a usable map.
 	 */
-	function startCandidatePools(world, mask, wanted) {
+	function startCandidatePools(world, mask, wanted, trade, count) {
+		const activeCount = Number.isFinite(count) ? count : openingExtent(mask);
+		openingFillEmpty(openingMarket, world, trade, mask, activeCount);
 		const all = [];
 		const bright = new Uint8Array(OrbitWorld.PLANETS);
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) {

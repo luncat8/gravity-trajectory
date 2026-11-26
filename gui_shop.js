@@ -508,10 +508,12 @@ function padBlockHtml(career) {
 	const ship = career.ship;
 	const cargo = ship.cargoTons > 0 ? ' · cargo ' + ship.cargoTons + ' t' : '';
 	const claim = GravityGame.claimOwner(game.galaxy, at);
+	const emptyHere = GravityGame.emptyWorld(career, at);
 	const special = at === career.capitalPlanet ? ' · CAPITAL'
 		: at === career.arfPlanet ? ' · A.R.F.' : '';
 	let html = '<div class="careerLine"><b>' + planetName(at) + (at === career.hq ? ' · HQ' : '') +
-		special + '</b> · ' + ship.mass.toFixed(1) + ' t' + cargo + ' · ' + claimTag(claim) + ' EMC</div>';
+		special + '</b> · ' + ship.mass.toFixed(1) + ' t' + cargo + ' · ' +
+		(emptyHere ? 'no EMC' : claimTag(claim) + ' EMC') + '</div>';
 	html += '<div class="careerLine dim">ship ' + ship.hold.id + ' · ' +
 		(ship.engine ? ship.engine.id : 'no engine') + ' · ' + ship.tank.id +
 		shipImpulseNote(ship) + '</div>';
@@ -525,6 +527,21 @@ function padBlockHtml(career) {
 			'entry ' + CAPITAL_PROFIT_TEXT + ' · taking work refunds +' +
 			GravityGame.CAPITAL_REFUND.toFixed(2) + '</div>';
 		return html;
+	}
+	if (emptyHere) {
+		html += '<div class="careerLine warn">uninhabited world · no EMC rail</div>';
+		if (ship.colonyKit) {
+			html += '<div class="careerRow"><span class="careerBtns">' +
+				shopButton('found colony · ' + planetName(at), 'found', '', 0, false,
+					'consume the colonization kit to found a colony on ' + planetName(at) +
+					' · activates trade port and commercial EMC-1') + '</span></div>';
+		} else {
+			html += '<div class="careerLine dim">no colonization kit aboard · evacuate ' +
+				costText(GravityGame.evacuationCost(career)) + ' · ' +
+				Math.round(GravityGame.evacuationSeconds(career)) + ' s</div>';
+		}
+		html += claimLineHtml();
+		return html + fuelBlockHtml(career);
 	}
 	if (career.commercialPlanet === at) {
 		const lift = GravityGame.padLift(career, at);

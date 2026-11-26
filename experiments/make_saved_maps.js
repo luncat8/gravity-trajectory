@@ -49,29 +49,32 @@ const SEEDS = parseSeeds(process.env.SEEDS || '1-12');
 
 /* One entry per record wanted; `from` spreads the sampled configs over different
  * seeds so "load a random map" really is different worlds, and the career
- * default (13 worlds, YOU + two rivals) gets two. `seeds` names its worlds
- * instead of sampling them. `?map=<index>` counts from the top, so a new entry
- * goes last. */
+ * default (16 worlds: 13 settled + 3 uninhabited, YOU + two rivals) gets two.
+ * `seeds` names its worlds instead of sampling them. `?map=<index>` counts from
+ * the top, so a new entry goes last. */
 const CONFIGS = [
-	{ universe: 13, seats: 3, want: 2, from: 1, note: 'career default' },
-	{ universe: 13, seats: 2, want: 1, from: 3, note: 'YOU + one rival' },
+	{ universe: 16, seats: 3, want: 2, from: 1, note: 'career default' },
+	{ universe: 16, seats: 2, want: 1, from: 3, note: 'YOU + one rival' },
 	{ universe: 26, seats: 3, want: 1, from: 4, note: 'the old 26-world subset' },
 	{ universe: 8, seats: 2, want: 1, from: 2, note: 'the small universe' },
 	{ universe: 26, seats: 4, want: 1, from: 5, note: 'four companies on 26' },
-	{ universe: 13, seats: 3, seeds: [42, 9, 3, 520383], note: 'career default · a page-test world' },
-	{ universe: 13, seats: 3, seeds: [93293], note: 'career default' },
-	{ universe: 13, seats: 2, want: 3, from: 6, note: 'YOU + one rival · a lite easy start' },
-	{ universe: 13, seats: 4, want: 2, from: 6, note: 'four companies · a lite 4-seat start' }
+	{ universe: 16, seats: 3, seeds: [42, 9, 3, 520383], note: 'career default · a page-test world' },
+	{ universe: 16, seats: 3, seeds: [93293], note: 'career default' },
+	{ universe: 16, seats: 2, want: 3, from: 6, note: 'YOU + one rival · a lite easy start' },
+	{ universe: 16, seats: 4, want: 2, from: 6, note: 'four companies · a lite 4-seat start' }
 ];
 
 function tradeWorld(seed, universe) {
 	const mask = new Uint8Array(PLANETS);
 	mask.fill(1, 0, universe);
 	const trade = new Sim(seed);
+	const market = GravityGame.createMarket();
+	GravityGame.deriveEmptyWorlds(market, mask, universe, trade.world);
 	trade.setPlanetMask(mask);
+	trade.setEmptyMask(market.empty);
 	trade.step(START_MINUTES);
 	trade.setPlanetLimit(universe);
-	return { trade: trade, mask: mask };
+	return { trade: trade, mask: mask, market: market };
 }
 
 /* the page's own acceptance test, re-run on the plan it returns */

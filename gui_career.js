@@ -734,7 +734,7 @@ function careerAct(data) {
 	if (act === 'buyColonyKit' || act === 'foundColony') {
 		const reason = act === 'buyColonyKit' ? GravityGame.kitRefusal(career) : GravityGame.foundRefusal(career);
 		if (reason) { careerNotice(reason); return false; }
-		const ok = act === 'buyColonyKit' ? GravityGame.buyColonyKit(career) : GravityGame.foundColony(career, tradeSim);
+		const ok = act === 'buyColonyKit' ? GravityGame.buyColonyKit(career) : GravityGame.foundColony(career, tradeSim, game.clockSteps);
 		if (!ok) { careerNotice('colony action failed'); return false; }
 		recordCareerAction('act', { act: act });
 		if (act === 'foundColony') GravityGame.refreshBoard(career, tradeSim, game.clockSteps);

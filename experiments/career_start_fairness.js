@@ -32,6 +32,7 @@ const GravitySim = require('../gravity_sim.js');
 const GravityGame = require('../gravity_game.js');
 const GravityBot = require('../gravity_bot.js');
 const OrbitTech = require('../orbit_tech.js');
+const PlanetGravity = require('../planet_gravity.js');
 
 const P = OrbitWorld.PLANETS;
 
@@ -50,11 +51,11 @@ function parseList(value) {
 
 const MATRIX = process.env.MATRIX === '1';
 const SEEDS = parseRange(process.env.SEEDS || (MATRIX ? '1-12' : '1-8'));
-const COUNT = Number(process.env.COUNT || 13);
+const COUNT = Number(process.env.COUNT || 16);
 const SEATS = Number(process.env.SEATS || 3);
 const FAIR_RATIO = Number(process.env.RATIO || 0.55);
 const COUNTS = process.env.COUNTS ? parseList(process.env.COUNTS)
-	: (process.env.COUNT ? [COUNT] : [8, 13, 20, 26, 48]);
+	: (process.env.COUNT ? [COUNT] : [10, 16, 24, 26, 48]);
 const SEATS_LIST = process.env.SEATS ? parseList(process.env.SEATS) : [2, 3, 4, 5, 6];
 const ALT = MATRIX && process.env.ALT !== '0';
 const ALT_LIMIT = Number(process.env.ALT_LIMIT || 1000);
@@ -95,7 +96,12 @@ function makeWorld(seed, count) {
 	const mask = new Uint8Array(P);
 	mask.fill(1, 0, count);
 	const trade = new OrbitSim(seed);
+	const market = GravityGame.createMarket();
+	GravityGame.deriveEmptyWorlds(market, mask, count, trade.world);
+	trade.setPlanetMask(mask);
+	trade.setEmptyMask(market.empty);
 	trade.advanceTo(420);
+	trade.setPlanetLimit(count);
 	const sim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
 	sim.setPlanets(P, trade.planetX, trade.planetY, trade.planetR,
 		trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
@@ -103,7 +109,7 @@ function makeWorld(seed, count) {
 	sim.setScales(GS, FS);
 	const galaxy = GravityGame.createGalaxy();
 	GravityGame.resetGalaxy(galaxy, seed);
-	return { seed, mask, trade, sim, galaxy };
+	return { seed, mask, market, trade, sim, galaxy };
 }
 
 function isSpecial(world, planet) {
@@ -128,7 +134,9 @@ function blockedPlanets(world, homes, count) {
 	for (let planet = 0; planet < P; planet++) {
 		if (!world.mask[planet]) strength[planet] = 0;
 		else if (!pinned[planet] && !isSpecial(world, planet)) {
-			strength[planet] = GravityGame.planetGravity(world.seed, planet);
+			strength[planet] = world.market && world.market.empty[planet] === 1
+				? PlanetGravity.emptyGravity(world.seed, planet)
+				: GravityGame.planetGravity(world.seed, planet);
 		}
 	}
 	sim.setField(P, trade.planetR, strength, (t, outX, outY, n) => {
@@ -144,18 +152,21 @@ function blockedPlanets(world, homes, count) {
 	let drawn = 0, blocked = 0;
 	for (let planet = 0; planet < count; planet++) {
 		if (pinned[planet] || isSpecial(world, planet)) continue;
+		if (world.market && world.market.empty[planet] === 1) continue;
 		drawn += 1;
 		if (!(exitBot.careerExitSpeed(planet, STARTER_CAP) > 0)) blocked += 1;
 	}
 	return { drawn, blocked };
 }
 
-function freeSites(mask, homes) {
+function freeSites(mask, homes, market) {
 	const occupied = new Uint8Array(P);
 	for (const home of homes) occupied[home] = 1;
 	const sites = [];
 	for (let site = 0; site < P; site++) {
-		if (mask[site] && !occupied[site]) sites.push(site);
+		if (mask[site] && !occupied[site] && !(market && market.empty[site] === 1)) {
+			sites.push(site);
+		}
 	}
 	return sites;
 }
@@ -170,6 +181,7 @@ function freeSites(mask, homes) {
 const siteProbeSessions = new WeakMap();
 function buildableSite(world, site, homes) {
 	if (GravityGame.specialPlanets() && site === world.trade.world.capitalPlanet) return false;
+	if (world.market && world.market.empty[site] === 1) return false;
 	const pinKey = homes && homes.length ? homes.join(',') : '';
 	let session = siteProbeSessions.get(world);
 	if (!session) {
@@ -183,7 +195,9 @@ function buildableSite(world, site, homes) {
 			if (!world.mask[planet]) base[planet] = 0;
 			else if (GravityGame.specialPlanets() && (planet === world.trade.world.capitalPlanet ||
 				planet === world.trade.world.arfPlanet)) base[planet] = 1;
-			else base[planet] = GravityGame.planetGravity(world.seed, planet);
+			else if (world.market && world.market.empty[planet] === 1) {
+				base[planet] = PlanetGravity.emptyGravity(world.seed, planet);
+			} else base[planet] = GravityGame.planetGravity(world.seed, planet);
 		}
 		const strength = base.slice();
 		sim.setField(P, trade.planetR, strength, (t, outX, outY, n) => {
@@ -448,7 +462,7 @@ function checkOpening(world, homes, ms, count) {
 	for (const home of homes) occupied[home] = 1;
 	const rows = GravityGame.careerOpenings(world.trade.world, world.trade,
 		world.mask, count, occupied, world.sim);
-	const sites = freeSites(world.mask, homes);
+	const sites = freeSites(world.mask, homes, world.market);
 	/* targetPay is every reachable non-HQ site; sitePay has already filtered
 	 * out Capital sites and landings from which an EMC-1 cannot leave with
 	 * margin. Use the former for buildability so a dead end does not
@@ -479,7 +493,7 @@ function checkOpening(world, homes, ms, count) {
 function evaluateOracleSet(world, count, homes) {
 	const occupied = new Uint8Array(P);
 	for (const home of homes) occupied[home] = 1;
-	const sites = freeSites(world.mask, homes);
+	const sites = freeSites(world.mask, homes, world.market);
 	const buildable = sites.filter(site => buildableSite(world, site, homes));
 	if (buildable.length < homes.length) return { built: false, exitable: false, ratio: 0 };
 	GravityGame.openingPrepare(world.trade.world, world.trade, world.mask, count,
@@ -517,6 +531,7 @@ function findBetterHqSet(world, count, seats) {
 	let lightBefore = 0;
 	for (let i = 0; i < count; i++) {
 		if (GravityGame.specialPlanets() && i === world.trade.world.capitalPlanet) continue;
+		if (world.market && world.market.empty[i] === 1) continue;
 		candidates.push(i);
 		if (buildableSite(world, i)) {
 			lightFlags[i] = 1;
@@ -534,7 +549,7 @@ function findBetterHqSet(world, count, seats) {
 		.sort((a, b) => unpinned.buildPay[b] - unpinned.buildPay[a]);
 	const light = candidates.filter(c => lightFlags[c])
 		.sort((a, b) => unpinned.buildPay[b] - unpinned.buildPay[a]);
-	const exhaustive = count <= 13;
+	const exhaustive = candidates.length <= 12;
 	let pool;
 	if (exhaustive) {
 		pool = heavy.concat(light);
@@ -624,8 +639,9 @@ function runCell(count, seats, seeds) {
 	let addHeavies = 0, addPlanets = 0;
 	let ladderN = 0, ladderMs = 0;
 	const broken = [];
-	const nonCap = count - (GravityGame.specialPlanets() ? 1 : 0);
-	const cellCompos = count < 2 * seats + 4;
+	const settledCount = count - GravityGame.emptyCountFor(count);
+	const nonCap = settledCount - (GravityGame.specialPlanets() ? 1 : 0);
+	const cellCompos = settledCount < 2 * seats + 4;
 	for (const seed of seeds) {
 		const plan = planWorld(seed, count, seats, true);
 		const missingPlan = !plan.homes || plan.homes.length !== seats;
@@ -674,7 +690,7 @@ function runCell(count, seats, seeds) {
 			firstFail = failReason(sample, alt);
 		}
 			if (composOk) {
-				if (!sample.fair && count >= 20) {
+				if (!sample.fair && settledCount >= 20) {
 					const ladder = ladderSample(plan.world, count, seats);
 					if (ladder && ladder.sample.fair) {
 						ladderN += 1;
@@ -685,7 +701,7 @@ function runCell(count, seats, seeds) {
 								ladder.sample.ratio.toFixed(2) + ']' : ''));
 					}
 				}
-				if (count < 20 && alt && !alt.sameHq) {
+				if (settledCount < 20 && alt && !alt.sameHq) {
 				if (alt.exitable && !sample.exitable) broken.push(failReason(sample, alt) + ' (oracle exits)');
 				if (alt.exitable && alt.ratio >= FAIR_RATIO && !sample.fair) {
 					broken.push(failReason(sample, alt) + ' (oracle fair)');
@@ -747,7 +763,8 @@ function runMatrix() {
 
 function runDefault() {
 	const samples = [];
-	const cellCompos = COUNT < 2 * SEATS + 4;
+	const settledCount = COUNT - GravityGame.emptyCountFor(COUNT);
+	const cellCompos = settledCount < 2 * SEATS + 4;
 	for (const seed of SEEDS) {
 		const plan = planWorld(seed, COUNT, SEATS, false);
 		const sample = checkOpening(plan.world, plan.homes, plan.ms, COUNT);

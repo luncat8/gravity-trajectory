@@ -378,7 +378,10 @@ function planFieldOpening(record, wantedSeats, gs, fs, ps, ys) {
 	const mask = new Uint8Array(PLANETS);
 	mask.fill(1, 0, record.universe);
 	const sim = new OrbitSim(record.seed);
+	const market = GravityGame.createMarket();
+	GravityGame.deriveEmptyWorlds(market, mask, record.universe, sim.world);
 	sim.setPlanetMask(mask);
+	sim.setEmptyMask(market.empty);
 	sim.step(420);
 	sim.setPlanetLimit(record.universe);
 	const galaxy = GravityGame.createGalaxy();
@@ -420,7 +423,10 @@ function validateFairSave(record) {
 	const mask = new Uint8Array(PLANETS);
 	mask.fill(1, 0, record.universe);
 	const sim = new OrbitSim(record.seed);
+	const market = GravityGame.createMarket();
+	GravityGame.deriveEmptyWorlds(market, mask, record.universe, sim.world);
 	sim.setPlanetMask(mask);
+	sim.setEmptyMask(market.empty);
 	sim.step(420);
 	sim.setPlanetLimit(record.universe);
 	const probe = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);

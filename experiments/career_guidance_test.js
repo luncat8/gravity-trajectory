@@ -30,6 +30,8 @@ function seek(speed, want) {
 		env.runFrames(3, 16);
 		if (scene.sim.predReason !== sim.END_IMPACT) continue;
 		if (scene.sim.predBody < 0 || scene.sim.predBody === origin) continue;
+		/* uninhabited worlds (0.7.44) carry their own founding readout */
+		if (gameApi.emptyWorld(scene.career, scene.sim.predBody)) continue;
 		if (scene.aimGuidance() !== want) continue;
 		return { angle, body: scene.sim.predBody };
 	}

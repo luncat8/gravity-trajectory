@@ -156,6 +156,7 @@
 
 	GravityBot.prototype.careerAccept = function (career, step = this.worldStep, sim = this.probe) {
 		if (career.contract >= 0 || step < career.acceptAfterStep) return false;
+		if (career.ship.colonyKit && GravityGame.emptyInPlay(career) > 0) return false;
 		let best = -1;
 		let bestScore = -Infinity;
 		for (let i = 0; i < GravityGame.BOARD_SIZE; i++) {
@@ -452,6 +453,119 @@
 
 	/* ── between flights ── careerBetweenFlights */
 
+	/* Buy a colonization kit when surplus endgame capital covers the hold,
+	 * the kit, launching the loaded ship from here, and post-founding exit on
+	 * a reachable uninhabited world (0.7.44). */
+	const CAREER_KIT_ANGLES = 32;
+	const CAREER_KIT_FRACTIONS = [0.6, 0.8, 1];
+
+	GravityBot.prototype.careerColonyKitShop = function (career, sim, runStep) {
+		if (career.ended !== GravityGame.CAREER_OPEN || career.ship.colonyKit ||
+			career.contract >= 0 || career.at < 0) return 0;
+		const at = career.at;
+		if (GravityGame.emptyWorld(career, at)) return 0;
+		if (at !== career.hq && at !== career.capitalPlanet &&
+			career.pads[at].catapult === null) return 0;
+		const kitCost = careerPrice(career, OrbitTech.COLONY_KIT);
+		const needHold = career.ship.hold.capacity >= OrbitTech.COLONY_KIT.mass
+			? career.ship.hold : OrbitTech.HOLDS[2];
+		const holdCost = needHold === career.ship.hold || career.owned[needHold.id]
+			? 0 : careerPrice(career, needHold);
+		const keepBase = CAREER_PURSE_RESERVE + GravityGame.repairCost(career) +
+			careerRefundEscrow(career);
+		const cashAfterBuy = career.ledger.purse - kitCost - holdCost - keepBase;
+		if (cashAfterBuy < 0 || GravityGame.emptyInPlay(career) <= 0) return 0;
+		const dryMass = OrbitTech.refitMass(career.ship, OrbitTech.KIND_HOLD, needHold, 0);
+		const loadedMass = dryMass + OrbitTech.COLONY_KIT.mass;
+		const here = this.careerDeparture(career, at, cashAfterBuy, loadedMass, sim);
+		if (!here.ok || cashAfterBuy + 1e-9 < here.cost) return 0;
+		/* Snapshot `here` scalars before `post` reuses `this.careerExit`. */
+		const hereBuilds = here.builds;
+		const hereCatapult = here.catapult;
+		const hereBattery = here.battery;
+		const hereCost = here.cost;
+		const cashAtDest = cashAfterBuy - hereCost;
+		let exitableMask = 0;
+		let minPostCost = Infinity;
+		const exitable = [];
+		for (let p = 0; p < OrbitWorld.PLANETS; p++) {
+			if (!GravityGame.planetInPlay(career, p) || !GravityGame.emptyWorld(career, p)) continue;
+			if (this.careerContested(career, p)) continue;
+			const post = this.careerDeparture(career, p, cashAtDest, dryMass, sim,
+				1, true, true, 0, true);
+			if (!post.ok || cashAtDest + 1e-9 < post.cost) continue;
+			exitable.push(p);
+			exitableMask += 1;
+			if (post.cost < minPostCost) minPostCost = post.cost;
+		}
+		if (!exitableMask) return 0;
+		const standingPad = GravityGame.padAt(career, at);
+		const availKwh = standingPad.battery
+			? Math.max(0, standingPad.chargeKwh - standingPad.reservedKwh) : 0;
+		const launchCap = hereBuilds
+			? OrbitTech.speedLimit(hereBattery.capacity, loadedMass, hereCatapult, sim.forceScale)
+			: OrbitTech.speedLimit(availKwh, loadedMass, standingPad.catapult, sim.forceScale);
+		const minU = GravityGame.speedUnits(GravitySim.SPEED_MIN);
+		this.prepareCareerExitProbe(sim);
+		const probe = this.exitProbe;
+		const maxU = GravitySim.SPEED_MAX * GravityGame.SPEED_STEPS;
+		const probeReachable = cap => {
+			const capU = Math.min(maxU,
+				Math.floor(cap * GravityGame.SPEED_STEPS + 1e-9));
+			if (capU < minU) return -1;
+			for (let f = 0; f < CAREER_KIT_FRACTIONS.length; f++) {
+				const speedU = Math.max(minU, Math.min(capU,
+					Math.round(capU * CAREER_KIT_FRACTIONS[f])));
+				const speed = GravityGame.speedOf(speedU);
+				for (let a = 0; a < CAREER_KIT_ANGLES; a++) {
+					const angle = GravityGame.angleOf(
+						GravityGame.angleUnits((a + 0.5) / CAREER_KIT_ANGLES * Math.PI * 2));
+					probe.predictFast(at, angle, speed, GravityGame.CAP_SECONDS);
+					if (probe.predReason !== GravitySim.END_IMPACT || probe.predBody < 0) continue;
+					if (exitable.indexOf(probe.predBody) >= 0) return probe.predBody;
+				}
+			}
+			return -1;
+		};
+		let reachable = probeReachable(launchCap);
+		let actions = 0;
+		if (reachable < 0 && !hereBuilds && GravityGame.planetBuildable(career, at) &&
+			standingPad.catapult) {
+			const padReserve = keepBase + kitCost + holdCost + minPostCost;
+			for (let i = 0; i < OrbitTech.CATAPULTS.length && reachable < 0; i++) {
+				const rail = OrbitTech.CATAPULTS[i];
+				if (rail.tier <= standingPad.catapult.tier || !GravityGame.techUnlocked(career, rail)) continue;
+				if (cashAfterBuy - careerPrice(career, rail) + 1e-9 < minPostCost) break;
+				const hit = probeReachable(OrbitTech.speedLimit(availKwh, loadedMass, rail, sim.forceScale));
+				if (hit < 0) continue;
+				if (this.careerBuyGear(career, at, OrbitTech.KIND_CATAPULT, rail,
+					padReserve, runStep, 'lift colony kit')) {
+					reachable = hit;
+					actions += 1;
+				}
+			}
+		}
+		if (reachable < 0) return actions;
+		if (hereBuilds) {
+			const padReserve = keepBase + kitCost + holdCost + minPostCost;
+			const offer = { builds: true, catapult: hereCatapult, battery: hereBattery, cost: hereCost };
+			if (!this.careerBuyPad(career, at, offer, padReserve, runStep, 'lift colony kit')) {
+				return 0;
+			}
+			actions += 1;
+		}
+		if (needHold !== career.ship.hold) {
+			if (!GravityGame.installPart(career, OrbitTech.KIND_HOLD, needHold)) return actions;
+			this.traceAdd(careerTraceIndex(career), 'gear', 'P' + at + ' ' +
+				needHold.id + ' · ' + needHold.capacity + ' t', runStep);
+			actions += 1;
+		}
+		if (!GravityGame.buyColonyKit(career)) return actions;
+		this.traceAdd(careerTraceIndex(career), 'gear', 'P' + at + ' ' +
+			OrbitTech.COLONY_KIT.id + ' · → P' + reachable, runStep);
+		return actions + 1;
+	};
+
 	GravityBot.prototype.careerBetweenFlights = function (career, sim, runStep = this.worldStep) {
 		if (career.ended !== GravityGame.CAREER_OPEN) return 0;
 		/* transport trips own the ship and the clock until arrival */
@@ -460,6 +574,13 @@
 		if (career.at < 0) {
 			if (this.careerRecover(career, sim, runStep, 'lost in space')) return 1;
 			return 0;
+		}
+		if (career.ship.colonyKit && GravityGame.emptyWorld(career, career.at) &&
+			GravityGame.foundColony(career, this.tradeSim, runStep)) {
+			GravityGame.refreshBoard(career, this.tradeSim, runStep);
+			this.traceAdd(careerTraceIndex(career), 'found colony',
+				'P' + career.at + ' · colony founded', runStep);
+			actions++;
 		}
 		/* Mandatory service first. An affordable exit kit comes before an
 		 * optional repair, contract or evacuation, just as the fan priced it. */
@@ -487,6 +608,10 @@
 				this.traceAdd(careerTraceIndex(career), 'research', part + ' · HQ gear', runStep);
 				actions += 1;
 			}
+		}
+		if (career.contract < 0 && GravityGame.emptyInPlay(career) > 0 &&
+			this.careerNextPad(career, career.ledger.purse, sim) < 0) {
+			actions += this.careerColonyKitShop(career, sim, runStep);
 		}
 		if (this.careerAccept(career, runStep, sim)) actions += 1;
 		if (this.careerBribe(career, sim, runStep)) actions += 1;
@@ -539,6 +664,7 @@
 		if (career.ended === GravityGame.CAREER_OPEN && this.careerPadGear(career, runStep)) {
 			actions += 1;
 		}
+		actions += this.careerColonyKitShop(career, sim, runStep);
 		return actions;
 	};
 

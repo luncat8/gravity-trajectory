@@ -70,10 +70,13 @@ function maskedTrade(seed, universe) {
 	const mask = new Uint8Array(PLANETS);
 	mask.fill(1, 0, universe);
 	const trade = new Sim(seed);
+	const market = GravityGame.createMarket();
+	GravityGame.deriveEmptyWorlds(market, mask, universe, trade.world);
 	trade.setPlanetMask(mask);
+	trade.setEmptyMask(market.empty);
 	trade.step(420);
 	trade.setPlanetLimit(universe);
-	return { trade: trade, mask: mask };
+	return { trade: trade, mask: mask, market: market };
 }
 
 function planCheck(world, trade, mask, universe, homes) {

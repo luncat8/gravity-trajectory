@@ -176,8 +176,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* planet claim: the highest rail there wins, ties keep the older actor; the
 	 * Capital is always the Empire's, never a player claim */
 	function claimOwner(galaxy, planet) {
+		const market = galaxy.market || (galaxy.actors.length > 0 ? galaxy.actors[0].market : null);
+		if (market && market.empty[planet]) return OWNER_EMPTY;
 		if (galaxy.actors.length > 0 && galaxy.actors[0].capitalPlanet === planet) return OWNER_CAPITAL;
-		const market = galaxy.market;
 		if (market && market.rebel[planet]) return OWNER_REBEL;
 		if (market && market.seized[planet]) return OWNER_COMMERCIAL;
 		let owner = OWNER_COMMERCIAL;

@@ -160,6 +160,7 @@ const PROFIT_ROT_MID_CENTS = Math.round((OrbitEcon.CORRUPTION_PROFIT_START + Orb
 /* special-planet pills (0.5.11): the Capital levies a fixed entry fee, A.R.F.
  * pays nothing. Cached so draw() stays 0-alloc. */
 const CAPITAL_PROFIT_TEXT = GravityGame.CAPITAL_VISIT_PAY.toFixed(2);
+const EMPTY_PROFIT_TEXT = 'empty';
 const CAPITAL_TAG = 'CAPITAL';
 const ARF_TAG = 'A.R.F.';
 /* political pills (0.5.12): a rebellion and the rot that feeds it. Both are

@@ -185,9 +185,11 @@ function moneyFacts(origin, speed, body, steps, length, visitPay, logPlanet, log
 	const wear = GravityGame.forecastWearCost(career, condition, steps, speed, 0, true);
 	const mandatoryRepair = GravityGame.forecastRepairReserve(career, arrival);
 	const available = career.ledger.purse + shotMoney.cash - fee - repair - mandatoryRepair;
-	const mass = bot.careerArrivalMass(career, body);
+	const foundsColony = body >= 0 && GravityGame.emptyWorld(career, body) && career.ship.colonyKit;
+	const mass = bot.careerArrivalMass(career, body) -
+		(foundsColony ? OrbitTech.COLONY_KIT.mass : 0);
 	const departure = bot.careerDeparture(career, body, available, mass, sim,
-		arrival === 0 ? 1 : arrival, false, true, GravitySim.gameSeconds(steps));
+		arrival === 0 ? 1 : arrival, false, true, GravitySim.gameSeconds(steps), foundsColony);
 	const padless = career.pads[body].catapult === null;
 	shotMoney.visit = visitPay;
 	shotMoney.fee = fee;

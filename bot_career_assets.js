@@ -51,7 +51,7 @@
 	}
 
 	function careerPrice(career, item) {
-		return career.cheat === GravityGame.CHEAT_COMMUNISM ? 0 : item.buildCost;
+		return career.cheat === GravityGame.CHEAT_COMMUNISM ? 0 : (item.buildCost ?? item.cost);
 	}
 
 	GravityBot.prototype.prepareCareerExitProbe = function (sourceSim) {

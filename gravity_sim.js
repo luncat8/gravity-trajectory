@@ -383,7 +383,7 @@
 
 	/* kWh the pad battery spends on a launch at `speed`; 0 without a network */
 	GravitySim.prototype.launchEnergy = function (planet, speed) {
-		if (this.pads === null) return 0;
+		if (this.pads === null || this.pads[planet].catapult === null) return 0;
 		return OrbitTech.launchEnergy(this.ship.mass, this.pads[planet].catapult, speed);
 	};
 
@@ -392,6 +392,7 @@
 	GravitySim.prototype.speedLimit = function (planet) {
 		if (this.pads === null) return SPEED_MAX;
 		const pad = this.pads[planet];
+		if (pad.catapult === null) return 0;
 		const free = pad.chargeKwh - pad.reservedKwh;
 		const limit = OrbitTech.speedLimit(free, this.ship.mass, pad.catapult, this.forceScale);
 		return limit > SPEED_MAX ? SPEED_MAX : limit;

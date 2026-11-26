@@ -107,8 +107,10 @@
 		const requiredBody = career.contract >= 0 ? this.careerTarget(career) : -1;
 		this.probe.predictBurnFast(sim, 0, 0);
 		const coastLands = this.probe.predReason === END_IMPACT && this.probe.predBody >= 0;
+		const coastEmpty = coastLands && GravityGame.emptyWorld(career, this.probe.predBody) &&
+			!career.ship.colonyKit;
 		const onTarget = requiredBody < 0 || (coastLands && this.probe.predBody === requiredBody);
-		if (rescueOnly && onTarget) return null;
+		if (rescueOnly && onTarget && !coastEmpty) return null;
 		let coastScore = -Infinity;
 		if (onTarget) {
 			coastScore = this.careerScoreFlight(career, sim.origin, market, runStep,

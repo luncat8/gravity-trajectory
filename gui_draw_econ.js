@@ -221,19 +221,21 @@ function drawPlanetProfits() {
 		const inside = liveHarvestMask[i] === 1;
 		const onRoute = inside || predHarvestMask[i] === 1;
 		const career = careerRule();
+		const empty = career && game.market.empty[i] === 1;
 		const owner = career ? GravityGame.claimOwner(game.galaxy, i) : -1;
-		const rebel = career && game.market.rebel[i] === 1;
-		const seized = career && game.market.seized[i] === 1;
-		const quiet = career && game.market.quiet[i] === 1;
-		const rotCents = career && !isCapital && !isArf && !rebel
+		const rebel = career && !empty && game.market.rebel[i] === 1;
+		const seized = career && !empty && game.market.seized[i] === 1;
+		const quiet = career && !empty && game.market.quiet[i] === 1;
+		const rotCents = career && !empty && !isCapital && !isArf && !rebel
 			? (GravityGame.rotScaleOf() > 0
 				? Math.round(GravityGame.planetProfitUnscaledAt(game.market, i, step,
 					game.market.lastVisitStep[i]) * 100) : 0)
-			: cents;
+			: empty ? 0 : cents;
 		const rotHigh = rotCents >= PROFIT_ROT_MID_CENTS;
 		const rotGrowing = rotCents > PROFIT_ROT_START_CENTS;
 		const border = rebel ? REBEL
 			: isCapital ? 'rgba(255, 207, 110, 0.85)'
+			: empty ? (onRoute ? 'rgba(92, 255, 139, 0.6)' : 'rgba(128, 156, 184, 0.24)')
 			: seized ? 'rgba(255, 148, 120, 0.45)'
 			: quiet ? QUIET_COLOUR
 			: isArf ? 'rgba(142, 240, 192, 0.7)'
@@ -247,6 +249,7 @@ function drawPlanetProfits() {
 			: null;
 		plate(x, y, width, height, border);
 		ctx.fillStyle = isCapital ? GOLD
+			: empty ? (onRoute ? '#9effbe' : 'rgba(148, 172, 196, 0.62)')
 			: inside ? '#ffffff' : onRoute ? '#9effbe'
 			: quiet ? QUIET_COLOUR
 			: rotHigh ? WARN
@@ -254,11 +257,12 @@ function drawPlanetProfits() {
 			: cents >= 50 ? MINT
 			: cents >= 14 ? 'rgba(210, 230, 246, 0.86)'
 			: 'rgba(128, 156, 184, 0.52)';
-		ctx.fillText(isCapital ? CAPITAL_PROFIT_TEXT : PROFIT_STRINGS[cents], x + width * 0.5, y + 7.5);
+		ctx.fillText(isCapital ? CAPITAL_PROFIT_TEXT
+			: empty ? EMPTY_PROFIT_TEXT : PROFIT_STRINGS[cents], x + width * 0.5, y + 7.5);
 		ctx.fillStyle = g < 0 ? SIGN_NEG : g >= HEAVY_G ? SIGN_POS : 'rgba(210, 230, 246, 0.82)';
 		ctx.fillText(GRAVITY_STRINGS[gi], x + width * 0.5, y + 20.5);
 		if (isCapital || isArf || rebel || seized ||
-			(careerRule() && game.market.corruption[i] >= CORRUPTION_TAG_MIN)) {
+			(career && !empty && game.market.corruption[i] >= CORRUPTION_TAG_MIN)) {
 			const topY = tradeSim.planetY[i] * view.scale + view.offY -
 				tradeSim.planetR[i] * view.scale;
 			ctx.fillStyle = rebel ? REBEL : seized ? 'rgba(255, 148, 120, 0.8)'
@@ -286,7 +290,7 @@ function drawCareerEmc() {
 	 * barrel does not rotate then */
 	const seconds = game.clockSteps * DT;
 	for (let p = 0; p < PLANETS; p++) {
-		if (!planetMask[p]) continue;
+		if (!planetMask[p] || game.market.empty[p]) continue;
 		const owner = GravityGame.claimOwner(galaxy, p);
 		const x = tradeSim.planetX[p];
 		const y = tradeSim.planetY[p];
@@ -344,7 +348,8 @@ function padPlateInfo(career, planet, plate) {
 		return plate;
 	}
 	if (!charged) {
-		plate.text = planetName(planet) + ' · no catapult';
+		plate.text = planetName(planet) + (owner === GravityGame.OWNER_EMPTY
+			? ' · uninhabited · no EMC' : ' · no catapult');
 		plate.frac = 0;
 		plate.warn = true;
 		return plate;

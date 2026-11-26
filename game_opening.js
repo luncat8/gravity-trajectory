@@ -53,7 +53,7 @@
 	/* fans flown so far: the wide walk's budget is counted in them */
 	let openingTraceCount = 0;
 	let openingSim = null;
-	let openingMarket = null;
+	const openingMarket = createMarket();
 	let openingStrengths = null;
 	let openingTrade = null;
 	let openingGravityScale = 1;
@@ -96,12 +96,21 @@
 	function openingEnsureSim(trade) {
 		if (openingSim === null) {
 			openingSim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
-			openingMarket = createMarket();
 			openingStrengths = new Float64Array(GravitySim.MAX_BODIES);
 		}
 		openingTrade = trade;
 		openingSim.setPlanets(OrbitWorld.PLANETS, trade.planetX, trade.planetY, trade.planetR,
 			trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+	}
+
+	function openingFillEmpty(market, world, trade, mask, count) {
+		if (trade && trade.emptyMask) {
+			market.empty.set(trade.emptyMask);
+			if (trade.market && trade.market.heavy) market.heavy.set(trade.market.heavy);
+			else market.heavy.set(trade.emptyMask);
+			return;
+		}
+		deriveEmptyWorlds(market, mask, count, world);
 	}
 
 	function openingPrepare(world, trade, mask, count, forcedHomes, sourceSim) {
@@ -119,7 +128,7 @@
 		applyMarketSpecials(openingMarket, world);
 		/* the planning probes price empty worlds at zero payout and trace
 		 * them under the heavy band's wells */
-		deriveEmptyWorlds(openingMarket, mask, count, world);
+		openingFillEmpty(openingMarket, world, trade, mask, count);
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
 			if (mask && mask[i] === 0) openingStrengths[i] = 0;
 			else if (specialPlanetsOn() && (i === world.capitalPlanet || i === world.arfPlanet)) {
@@ -315,7 +324,7 @@
 						const earned = estimateProfitLog(openingMarket, 0,
 							sim.predLogPlanet, sim.predLogStep, sim.predLogCount);
 						if (earned > pay) pay = earned;
-						if (body === home) continue;
+						if (body === home || openingMarket.empty[body] === 1) continue;
 						if (!openingSeen[body]) {
 							openingSeen[body] = 1;
 							reach += 1;
@@ -366,11 +375,12 @@
 	/* One world and one set of already-pinned HQs have the same opening table
 	 * for every actor; the company-specific seed only breaks equal choices. */
 	function careerOpenings(world, trade, mask, count, forcedHomes, sourceSim) {
+		const emptyTag = trade && trade.emptyMask ? openingMaskBits(trade.emptyMask) : 'd';
 		const key = (world.seed >>> 0) + ':' + (trade.seed >>> 0) + ':' + trade.t.toFixed(3) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
 			openingMaskTag(mask, count) + ':' + openingMaskTag(forcedHomes, 0) + ':' +
-			(specialPlanetsOn() ? 1 : 0);
+			emptyTag + ':' + (specialPlanetsOn() ? 1 : 0);
 		const cached = openingCache.get(key);
 		if (cached) return cached;
 		openingPrepare(world, trade, mask, count, forcedHomes, sourceSim);
@@ -438,9 +448,11 @@
 		return -1;
 	}
 
-	/* The Capital is the Empire's: no company may call it home. */
+	/* The Capital is the Empire's and uninhabited worlds have no port or rail:
+	 * no company may call either home. */
 	function hqForbidden(world, i) {
-		return specialPlanetsOn() && i === world.capitalPlanet;
+		return (specialPlanetsOn() && i === world.capitalPlanet) ||
+			openingMarket.empty[i] === 1;
 	}
 
 	function hashPickHq(seed, world, used, mask, rows, floor, shallowOnly, needLight) {
@@ -489,6 +501,7 @@
 			openingMaskBits(mask) + ':' +
 			(openingMarket && Number.isFinite(openingMarket.planetCount)
 				? openingMarket.planetCount : openingExtent(mask)) + ':' +
+			openingMaskBits(openingMarket.empty) + ':' +
 			home + ':' + nAngles + 'x' + nSpeeds + ':' + (specialPlanetsOn() ? 1 : 0) + ':' +
 			(checkExit ? 'exit:' : 'land:') + openingMaskBits(forcedHomes) +
 			(fieldTag ? ':' + fieldTag : '');
@@ -538,7 +551,8 @@
 	Object.assign(inner, {
 		HQ_GRAVITY_MAX, OPENING_ANGLES, OPENING_SPEEDS, OPENING_EXIT_ANGLES, OPENING_EXIT_FRACTIONS,
 		OPENING_HORIZON, OPENING_COMPARE_EPS, OPENING_FAIR_RATIO, OPENING_RATIO_EPS, openingTraces,
-		restoreOpeningTraces, openingMaskTag, openingExtent, openingPrepare, openingSyncField,
+		restoreOpeningTraces, openingMaskTag, openingExtent, openingMarket, openingFillEmpty,
+		openingPrepare, openingSyncField,
 		exitSpeedHasMargin, openingStarterCanExit, OPENING_PAUSED, fanBounded, openingTraceHome,
 		careerOpenings, pickFairHq, hqForbidden, openingMaskBits, openingTracks, planetInMask,
 		hqMask

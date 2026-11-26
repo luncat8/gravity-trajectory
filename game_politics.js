@@ -69,6 +69,7 @@
 		const count = market.planetCount || OrbitWorld.PLANETS;
 		for (let p = 0; p < count; p++) {
 			if (market.planetMask && market.planetMask[p] !== 1) continue;
+			if (market.empty[p]) continue;
 			if (p === market.capitalPlanet || p === market.arfPlanet) continue;
 			let occupied = false;
 			let reporting = false;
@@ -217,6 +218,7 @@
 		if (!market || !market.galaxy) return 'no politics here';
 		if (career.arrested) return 'under arrest';
 		if (planet < 0 || career.at !== planet || career.flying) return 'not landed there';
+		if (market.empty[planet]) return 'planet is uninhabited';
 		if (planet === market.capitalPlanet) return 'the Empire does not deal';
 		if (planet === market.arfPlanet) return 'A.R.F. takes no bribes';
 		if (market.rebel[planet]) return 'rebels hold the planet';
@@ -287,6 +289,7 @@
 		if (!market || !market.galaxy) return 'no politics here';
 		if (career.arrested) return 'under arrest';
 		if (planet < 0 || career.at !== planet || career.flying) return 'not landed there';
+		if (market.empty[planet]) return 'planet is uninhabited';
 		if (planet === market.capitalPlanet || planet === market.arfPlanet) return 'nothing to silence here';
 		if (market.quiet[planet]) return 'already quiet';
 		if (!career.ship.obs.fitted) return 'no observation device fitted';
@@ -316,6 +319,7 @@
 		if (!market || !market.galaxy) return 'no politics here';
 		if (career.arrested) return 'under arrest';
 		if (planet < 0 || career.at !== planet || career.flying) return 'not landed there';
+		if (market.empty[planet]) return 'planet is uninhabited';
 		if (!career.ship.obs.fitted) return 'no observation device fitted';
 		if (market.corruption[planet] <= QUIET_MIN && !market.rebel[planet]) {
 			return 'the rulers only dare above ' + QUIET_MIN + '% corruption or on a rebel world';

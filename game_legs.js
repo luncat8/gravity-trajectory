@@ -19,7 +19,7 @@
 		visitReports, walkProfitLog, launchBookTag, bookReady, commercialPadAt, padAt, padOwner,
 		commercialFee, launchFee, medicLoad, canAccept, careerLandingFacts, createDepartureOut,
 		legDepScratch1, prepareLegProbe, legFieldTag, careerRefundEscrow, careerArrivalMass,
-		careerArrivalCharge, checkExitSpeed, careerDeparture
+		careerArrivalCharge, checkExitSpeed, careerDeparture, emptyWorld
 	} = inner;
 
 	function speedUnits(speed) {
@@ -181,6 +181,7 @@
 
 	function postLandingRailCap(career, planet, mass, forceScale, flightSeconds) {
 		const pad = padAt(career, planet, false);
+		if (!pad.catapult) return 0;
 		const owner = padOwner(career, planet, false);
 		let charge = pad.battery.capacity;
 		if (owner === career.index) {
@@ -199,6 +200,7 @@
 
 	function currentPadCapForMass(career, planet, mass, forceScale) {
 		const pad = padAt(career, planet, true);
+		if (!pad.catapult) return 0;
 		const owner = padOwner(career, planet, true);
 		const charge = owner === OWNER_COMMERCIAL || owner === OWNER_CAPITAL || owner === OWNER_REBEL
 			? pad.battery.capacity : Math.max(0, pad.chargeKwh - pad.reservedKwh);
@@ -234,9 +236,11 @@
 	/* Quick non-mutating check used by board acceptance to ensure a pickup's
 	 * loaded second leg (from → to) physically exists before deadline. */
 	function hasFeasibleLeg(career, sim, from, to, loadedMass, fragile, remainingSteps) {
+		if (emptyWorld(career, from) || emptyWorld(career, to)) return false;
 		const slot = lookupLegPairSlot(sim, from, to);
 		if (!slot || slot.count === 0) return false;
 		const pad = padAt(career, from, false);
+		if (!pad.catapult) return false;
 		const owner = padOwner(career, from, false);
 		const charge = owner === OWNER_COMMERCIAL || owner === OWNER_CAPITAL || owner === OWNER_REBEL
 			? pad.battery.capacity
@@ -455,10 +459,12 @@
 				return out;
 			}
 			const avail1 = career.ledger.purse + acceptRefund - repair0 + cash1 - fee1 - mandatoryRepair1 - escrow1;
-			const mass1 = prospective ? endMass2 : careerArrivalMass(career, body);
+			const foundsColony1 = !prospective && emptyWorld(career, body) && career.ship.colonyKit;
+			const mass1 = (prospective ? endMass2 : careerArrivalMass(career, body)) -
+				(foundsColony1 ? OrbitTech.COLONY_KIT.mass : 0);
 			const dep1 = careerDeparture(legDepScratch1, career, body, avail1, mass1, sim,
 				arrival1 === 0 ? 1 : arrival1, seekClaim, true,
-				GravitySim.gameSeconds(steps1), exitSpeedFn);
+				GravitySim.gameSeconds(steps1), exitSpeedFn, foundsColony1);
 			if (!dep1.ok || avail1 + 1e-9 < dep1.cost) return out;
 			out.feasible = true;
 			out.hasSecond = false;
@@ -471,6 +477,7 @@
 		}
 
 		/* --- 2. Two-leg intermediate stop (`origin → body = stop1 → goal2`) --- */
+		if (emptyWorld(career, body) || emptyWorld(career, goal2)) return out;
 		const step2 = runStep + steps1;
 		const postMass = OrbitTech.shipMass(career.ship, tons2);
 		const postCond = arrival1 === 0 ? 1 : arrival1;

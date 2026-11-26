@@ -18,7 +18,7 @@
 		openFlight, planetInPlay, createLaunchBook, resetLaunchBook, createSportRecord,
 		setCommercial, refreshNetwork, syncCareerNetwork, returnLandingVisits, hqMask, pickHq,
 		syncSportSlot, refreshBoard, clearPad, fitPad, ownPart, newPrototypes, seedScience,
-		giftBudget, grantStartGifts
+		giftBudget, grantStartGifts, emptyWorld
 	} = inner;
 
 	const START_PLANET = 'planet';
@@ -232,6 +232,7 @@
 		var standing = 0;
 		for (var p = 0; p < OrbitWorld.PLANETS; p++) {
 			if (market.planetMask && market.planetMask[p] !== 1) continue;
+			if (market.empty[p]) continue;
 			rot += market.corruption[p];
 			var pay = planetProfit(market, p, step);
 			if (pay > 0) standing += pay;
@@ -408,6 +409,7 @@
 	function fitEndgame(career) {
 		for (let i = 0; i < career.pads.length; i++) {
 			if (career.planetMask && career.planetMask[i] === 0) continue;
+			if (emptyWorld(career, i)) continue;
 			if (i === career.capitalPlanet) continue;
 			if (rebelRail(career, i)) continue;
 			fitPad(career, i, topTier(OrbitTech.CATAPULTS), topTier(OrbitTech.PANELS),

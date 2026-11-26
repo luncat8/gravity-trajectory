@@ -78,14 +78,14 @@ assert.strictEqual(Math.min(...spent), get(live, 'game.money.purse'));
 /* Two immediate planet-count edits are both visible in the timeline. */
 const universeEdits = loadPage({ search: mapSearch(42) });
 const planetInput = universeEdits.elements.get('planetCountInput');
-planetInput.value = '14';
+planetInput.value = '17';
 universeEdits.fireElement(planetInput, 'change');
-planetInput.value = '13';
+planetInput.value = '16';
 universeEdits.fireElement(planetInput, 'change');
 universeEdits.click('careerSaveCopy');
 const universeStates = visitFrames(universeEdits.context.CareerReplay, decodeCopy(universeEdits));
-assert(universeStates.some(s => s.universe === 14), 'expanded universe is recorded');
-assert.strictEqual(universeStates.at(-1).universe, 13, 'subsequent shrink is recorded');
+assert(universeStates.some(s => s.universe === 17), 'expanded universe is recorded');
+assert.strictEqual(universeStates.at(-1).universe, 16, 'subsequent shrink is recorded');
 
 /* The trade event heap can grow beyond its initial capacity. */
 const grownQueue = loadPage({ search: mapSearch(42) });

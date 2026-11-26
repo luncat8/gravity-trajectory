@@ -76,7 +76,13 @@ assert(get(live, "playIndex = PLAY_SPEEDS.indexOf(1); careerAct({act:'evac'})"))
 until(live, '!game.career.evacuating', 27);
 assert.strictEqual(get(live, 'game.career.at'), get(live, 'game.career.hq'));
 const evacuated = capture(live);
-assert(evacuated.data.actions.some(a => a.act === 'evac' && a.steps === 1440));
+/* The trip's length follows the fare paid (full fare = evacFullSeconds, none =
+ * evacFreeSeconds); the replay below pins the exact recorded steps. */
+const evacFull = get(live, 'GravitySim.stepsForGameSeconds(GravityGame.CAREER.evacFullSeconds)');
+const evacFree = get(live, 'GravitySim.stepsForGameSeconds(GravityGame.CAREER.evacFreeSeconds)');
+assert(evacuated.data.actions.some(a => a.act === 'evac' && Number.isInteger(a.steps) &&
+	a.steps >= evacFull && a.steps <= evacFree),
+	'evacuation steps follow the fare: ' + JSON.stringify(evacuated.data.actions.filter(a => a.act === 'evac')));
 verify(evacuated.text, live, 0, 43);
 
 /* The human's purchases, saved aim and first flight remain after the handover.

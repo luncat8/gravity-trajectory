@@ -19,7 +19,7 @@ const PAGE_URL = 'file:///gravity-trajectory/index.html';
 const SAVED_MAPS = require(path.join(root, 'saved_maps.js'));
 /* what `?rule=career&seed=<seed>&rate=1` starts: the record fields of that run */
 const CAREER_DEFAULT = { kind: 'start', rule: 'career', bot: 'normal', player: 'user', cheat: null,
-	universe: 13, rate: 1, gs: 1, fs: 1, ws: 1, ht: false };
+	universe: 16, rate: 1, gs: 1, fs: 1, ws: 1, ht: false };
 const CAREER_SEATS = 3;
 
 /*

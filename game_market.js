@@ -170,19 +170,24 @@
 	function deriveEmptyWorlds(market, mask, count, world) {
 		market.empty.fill(0);
 		market.heavy.fill(0);
-		const seed = world ? world.seed >>> 0 : 0;
+		if (world) market.politicsSeed = world.seed >>> 0;
+		const armed = PlanetGravity.armed();
+		if (armed && (!world || armed.seed === (world.seed >>> 0))) {
+			market.stamp += 1;
+			return 0;
+		}
 		const skip = specialPlanetsOn() && world ? 1 : 0;
 		let want = emptyCountFor(count);
-		/* the traited world ends at DEFAULT_PLANETS: beyond it planets have no
-		 * light or kind, so no universe ever colonizes there */
-		for (let p = Math.min(OrbitWorld.DEFAULT_PLANETS, OrbitWorld.PLANETS) - 1;
-			p >= 0 && want > 0; p--) {
+		for (let p = OrbitWorld.PLANETS - 1; p >= 0 && want > 0; p--) {
 			if (mask && mask[p] !== 1) continue;
 			if (skip && (p === world.capitalPlanet || p === world.arfPlanet)) continue;
 			market.empty[p] = 1;
 			market.heavy[p] = 1;
+			market.corruption[p] = 0;
+			market.corruptionFloor[p] = 0;
 			want -= 1;
 		}
+		market.stamp += 1;
 		return emptyCountFor(count) - want;
 	}
 
