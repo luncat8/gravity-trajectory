@@ -6,6 +6,9 @@
  * spawn state, the grants and purses, the Capital's free rail, the universal
  * no-HQ evacuation rule, the weakened composition gate, and the bot's
  * full-parity space opening (it lands from rest and the run continues).
+ * The universe is the 16-world career default whose tail is derived into
+ * empty worlds before the settle: the Capital, a seat-search HQ and the
+ * bot's landing must all avoid them (0.7.44).
  *
  * Run: node experiments/career_space_start_test.js (SEEDS=1,8)
  */
@@ -19,14 +22,21 @@ const GravityGame = require('../gravity_game.js');
 const GravityBot = require('../gravity_bot.js');
 
 const P = OrbitWorld.PLANETS;
-const START_COUNT = 13;
+const START_COUNT = 16;
 const SEEDS = String(process.env.SEEDS || '1,8').split(',').map(Number);
 
-/* one armed trade world + market, shared by the modes of a seed */
+/* one armed trade world + market, shared by the modes of a seed; the empty
+ * worlds are derived before the settle, as the page does, so every start in
+ * this fixture sees the real 16-world universe (0.7.44) */
 function makeWorld(seed) {
 	const mask = new Uint8Array(P);
 	mask.fill(1, 0, START_COUNT);
 	const trade = new OrbitSim(seed);
+	const market = GravityGame.createMarket();
+	GravityGame.applyMarketUniverse(market, mask, START_COUNT);
+	GravityGame.applyMarketSpecials(market, trade.world);
+	GravityGame.deriveEmptyWorlds(market, mask, START_COUNT, trade.world);
+	trade.setEmptyMask(market.empty, market.heavy);
 	trade.advanceTo(420);
 	const sim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
 	sim.setPlanets(P, trade.planetX, trade.planetY, trade.planetR,
@@ -41,9 +51,6 @@ function makeWorld(seed) {
 	sim.setPlanetMask(mask);
 	const galaxy = GravityGame.createGalaxy();
 	GravityGame.resetGalaxy(galaxy, seed);
-	const market = GravityGame.createMarket();
-	GravityGame.applyMarketUniverse(market, mask, START_COUNT);
-	GravityGame.applyMarketSpecials(market, trade.world);
 	GravityGame.bindRun(market, galaxy, trade.world);
 	return { seed, mask, trade, sim, galaxy, market };
 }
@@ -92,6 +99,21 @@ for (const seed of SEEDS) {
 	assert.strictEqual(planet.ship.engine, null,
 		'seed ' + seed + ': planet start grants no engine');
 
+	/* --- the empty worlds of the default universe (0.7.44) -------------- */
+	assert.strictEqual(GravityGame.emptyCountFor(START_COUNT), 3,
+		'seed ' + seed + ': a 16-world career derives three empty worlds');
+	const emptyList = [];
+	for (let p = 0; p < START_COUNT; p++) if (world.market.empty[p] === 1) emptyList.push(p);
+	assert.strictEqual(emptyList.length, 3, 'seed ' + seed + ': three empty worlds in play');
+	assert.ok(!emptyList.includes(capital.capitalPlanet),
+		'seed ' + seed + ': the Capital is never empty');
+	assert.ok(!emptyList.includes(capital.arfPlanet),
+		'seed ' + seed + ': A.R.F. is never empty');
+	assert.ok(!GravityGame.emptyWorld(capital, capital.at),
+		'seed ' + seed + ': the capital start is not on an empty world');
+	assert.ok(!GravityGame.emptyWorld(planet, planet.hq),
+		'seed ' + seed + ': the seat-search HQ is not on an empty world');
+
 	/* --- the universal no-HQ evacuation rule (decision 6) ----------------- */
 	assert.strictEqual(GravityGame.evacTarget(space), space.capitalPlanet,
 		'seed ' + seed + ': a space company evacuates to the Capital');
@@ -122,9 +144,15 @@ for (const seed of SEEDS) {
 	/* a no-HQ start seats nothing, so the minimal-planet rule is weakened:
 	 * the composition only needs the light sites and the heavy EMC planets */
 	const compSpace = GravityGame.startComposition(world.trade.world, world.mask,
-		START_COUNT, 3, world.sim, GravityGame.START_SPACE);
+		START_COUNT, 3, world.sim, GravityGame.START_SPACE,
+		world.market.empty, world.market.heavy);
 	const compPlanet = GravityGame.startComposition(world.trade.world, world.mask,
-		START_COUNT, 3, world.sim, GravityGame.START_PLANET);
+		START_COUNT, 3, world.sim, GravityGame.START_PLANET,
+		world.market.empty, world.market.heavy);
+	assert.strictEqual(compSpace.empty, 3,
+		'seed ' + seed + ': the composition counts the empty worlds');
+	assert.strictEqual(compSpace.settled, START_COUNT - 3,
+		'seed ' + seed + ': the rest of the universe is settled');
 	assert.ok(compSpace.minimal <= compPlanet.minimal,
 		'seed ' + seed + ': a no-HQ start needs fewer planets than a planet start');
 	assert.ok(compSpace.light >= 3, 'seed ' + seed + ': the space composition counts light sites');
@@ -169,6 +197,8 @@ for (const seed of SEEDS) {
 	assert.strictEqual(botCareer.flying, false,
 		'seed ' + seed + ': the bot space flight ends within the cap');
 	assert.ok(botCareer.at >= 0, 'seed ' + seed + ': the bot lands from the space start');
+	assert.ok(!GravityGame.emptyWorld(botCareer, botCareer.at),
+		'seed ' + seed + ': the bot lands on a settled world, not an empty one');
 	assert.strictEqual(world.sim.endReason, GravitySim.END_IMPACT,
 		'seed ' + seed + ': the bot space landing is an impact, not a loss');
 	assert.ok(steps <= world.sim.stepLimit, 'seed ' + seed + ': the space flight respects the cap');
@@ -177,4 +207,4 @@ for (const seed of SEEDS) {
 		'seed ' + seed + ': the bot career is still open after the space landing');
 }
 
-console.log('CAREER SPACE START OK · ' + (SEEDS.length * 21) + ' checks');
+console.log('CAREER SPACE START OK · ' + (SEEDS.length * 43) + ' checks');

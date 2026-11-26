@@ -21,12 +21,11 @@ const { spawnSync } = require('child_process');
 const path = require('path');
 
 /* An exemption needs a named, reproduced failure (see experiments/README.md).
- * The four below were reproduced on the current base (68905ee) on 2026-11-24
- * with the named failure each note carries; see experiments/README.md. */
+ * The three below were reproduced on base 68905ee (2026-11-24) with the named
+ * failure each note carries; see experiments/README.md. */
 const KNOWN_RED = {
 	'bot_gravity_test.js': 'score(6) finite, no build (exit/claim on a saved field)',
 	'career_guidance_test.js': 'restored departure rule: HQ contract aim prices neutral, not green',
-	'career_bot_bench.js': 'padless solvency gate counts the launch fee',
 	'dom_smoke.js': '0.4.17: no landing with a commercial exit from HQ'
 };
 

@@ -227,5 +227,52 @@ assert.ok(target >= 0 && get(auto, 'bot.careerContested(slotCareer(1), game.care
 get(auto, 'selectSlot(1); cancelTurret(slotTurrets[0])');
 assert.strictEqual(get(auto, 'game.career.plannedLanding'), -1);
 
+/* A colonization kit rides a real shot onto an empty world: the purchase,
+ * the launch and the founding are recorded acts, and the replay re-applies
+ * all three (0.7.44 §1). Communism makes the kit affordable for a fresh purse. */
+const colony = loadPage({ search: mapSearch(1) + '&cheat=communism' });
+assert(colony.context.careerAct({ act: 'part', kind: 'hold', tier: 2 }), 'fit HOLD-24 for the kit');
+assert(colony.context.careerAct({ act: 'buyColonyKit' }), 'the kit is free under communism');
+assert.strictEqual(get(colony, 'playerCareer().ship.colonyKit'), true);
+/* seek a shot from the HQ onto an empty world inside the loaded pad cap */
+const seek = get(colony, `(() => {
+	const career = playerCareer();
+	const sim = activeSim();
+	const empties = [];
+	for (let p = 0; p < career.market.empty.length; p++) if (career.market.empty[p] === 1) empties.push(p);
+	const cap = GravityGame.padLift(career, career.hq);
+	const capSteps = GravityGame.CAP_SECONDS / GravitySim.DT;
+	for (let f = 10; f >= 1; f--) {
+		const speed = cap * (f / 10);
+		if (speed < GravitySim.SPEED_MIN) continue;
+		for (let a = 0; a < 96; a++) {
+			const angle = (a + 0.5) / 96 * Math.PI * 2;
+			sim.predict(career.hq, angle, speed);
+			if (sim.predReason !== GravitySim.END_IMPACT || sim.predSteps > capSteps) continue;
+			if (empties.indexOf(sim.predBody) >= 0) return { angle, speed, body: sim.predBody };
+		}
+	}
+	return null;
+})()`);
+assert.ok(seek, 'an empty world sits within the loaded launch cap');
+assert.strictEqual(get(colony, `GravityGame.emptyWorld(playerCareer(), ${seek.body})`), true,
+	'the target is uninhabited');
+get(colony, `aimBody = playerCareer().hq; aimAngle = ${seek.angle}; aimSpeed = ${seek.speed}; armed = true; launchShot()`);
+until(colony, 'cargoSim.status === STATUS_FLYING');
+until(colony, 'game.career.flights === 1 && cargoSim.status !== STATUS_FLYING', 16, 4000);
+assert.strictEqual(get(colony, 'playerCareer().at'), seek.body, 'the shot lands on the empty world');
+assert.strictEqual(get(colony, 'playerCareer().stranded'), true,
+	'landing without a rail strands the ship');
+assert.strictEqual(get(colony, 'GravityGame.foundRefusal(playerCareer())'), '', 'the kit opens the founding');
+assert.strictEqual(get(colony, 'careerOverText()'), 'stranded · found the colony',
+	'the stranded landing offers the founding');
+assert(colony.context.careerAct({ act: 'foundColony' }), 'the landing founds the colony');
+assert.strictEqual(get(colony, 'playerCareer().ship.colonyKit'), false, 'founding consumes the kit');
+assert.strictEqual(get(colony, `GravityGame.emptyWorld(playerCareer(), ${seek.body})`), false,
+	'the world is settled now');
+assert.strictEqual(get(colony, 'careerOverText()'), '',
+	'the commercial rail on the founded colony lifts the ship');
+verify(capture(colony).text, colony, 0);
+
 console.log('CAREER ACTIONS OK · ' + first.text.length + ' chars for a first launch, ' + record.text.length +
-	' chars for the handover · exact steps, human and bot history, shared inputs and waits');
+	' chars for the handover · exact steps, human and bot history, shared inputs, waits and a founding');

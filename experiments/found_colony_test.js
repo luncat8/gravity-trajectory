@@ -1,6 +1,7 @@
 /* Focused founding, kit capacity, empty-world sim/snapshot, GUI and bot invariants (0.7.44). */
 'use strict';
 const assert = require('assert');
+const vm = require('vm');
 const World = require('../orbit_world.js');
 const Tech = require('../orbit_tech.js');
 const Sim = require('../orbit_sim.js');
@@ -205,6 +206,29 @@ const { loadPage, mapSearch } = require('./dom_stub.js');
 	assert.strictEqual(page.elements.get('launch').value, 'foundColony');
 	assert.match(page.elements.get('launch').textContent, /found colony/);
 	assert.strictEqual(page.elements.get('launchCommercial').hidden, true);
+	/* a stranded landing with a kit offers the founding, and the empty world
+	 * is not yet part of the colony stream (0.7.44 §1) */
+	assert.strictEqual(G.colonyInPlay(career, { planet: emptyPlanet }), false,
+		'an empty world is not in the colony stream');
+	assert.strictEqual(page.context.careerOverText(), 'stranded · found the colony',
+		'the stranded landing with a kit offers the founding');
+	/* no delivery or sport draw may name an empty world (0.7.44 §6.1) */
+	const trade = vm.runInContext('tradeSim', page.context);
+	const emptyWorlds = [];
+	for (let p = 0; p < market.empty.length; p++) {
+		if (market.empty[p] === 1 && scene.sim.planetActive(p)) emptyWorlds.push(p);
+	}
+	assert.ok(emptyWorlds.length > 0, 'the map still has empty worlds to exclude');
+	const preStep = scene.game.clockSteps;
+	for (let i = 0; i < 60; i++) {
+		G.refreshBoard(career, trade, preStep + (i + 1) * Math.ceil(300 / GravitySim.DT));
+		for (const task of career.tasks) {
+			for (const p of emptyWorlds) {
+				assert.ok(task.from !== p && task.to !== p && task.planet !== p,
+					'task board must not name empty world P' + p);
+			}
+		}
+	}
 	const repairs = career.repairs;
 	page.click('launch');
 	assert.strictEqual(career.repairs, repairs, 'founding takes priority over repair');
@@ -217,6 +241,23 @@ const { loadPage, mapSearch } = require('./dom_stub.js');
 		PlanetGravity.emptyGravity(scene.game.seed, emptyPlanet),
 		'founded colony retains its heavy gravity draw'
 	);
+	/* the founding flips the stream: the world is in play, the dry ship lifts
+	 * on the new commercial rail, and redraws of the delivery board name it */
+	assert.strictEqual(G.colonyInPlay(career, { planet: emptyPlanet }), true,
+		'the founded world joins the colony stream');
+	assert.strictEqual(page.context.careerOverText(), '',
+		'the commercial rail on the founded colony lifts the ship');
+	const foundedStep = scene.game.clockSteps;
+	let drewFounded = false;
+	for (let i = 0; i < 300 && !drewFounded; i++) {
+		G.refreshBoard(career, trade, foundedStep + (i + 1) * Math.ceil(300 / GravitySim.DT));
+		for (const task of career.tasks) {
+			if (task.from === emptyPlanet || task.to === emptyPlanet || task.planet === emptyPlanet) {
+				drewFounded = true;
+			}
+		}
+	}
+	assert.ok(drewFounded, 'delivery redraws name the founded world');
 
 	/* Snapshot round-trip preserves remaining emptyMask in tradeSim */
 	const save = SavedMap.runRecord(page.context.mapRunInfo());

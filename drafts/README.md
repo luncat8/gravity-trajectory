@@ -24,7 +24,7 @@ Both originals were removed once their text was placed, and
 | 7 | `sound-and-photos.md` | the music of flight, the postcards, the image prompts |
 | 8 | `bots-and-tools.md` | a bot that competes, the balance lab, test harnesses |
 | 9 | `map.md` | periodic FFT gravity, space weather · new notes, not from the split |
-| 10 | `found-colony-land.md` | empty heavy planets without EMC (`13 → 16`) and single-use colonization equipment |
+| 10 | `colonization-found-land.md` | empty heavy planets without EMC (`13 → 16`) and single-use colonization equipment |
 | 11 | `lite-version.md` | lite profile (`?lite=1`): saved-map boot, quiet non-gameplay background, mute sound & photos |
 | 12 | `map-fair-start-modes.md` | the fair-start contract: composition rule, 75 % exit margin, background search, space & capital starts |
 | 13 | `new/game-options.md` | the start-gift budget: sliders, a per-company random draw + the rest as cash |
@@ -112,19 +112,19 @@ The two specs written from `0.4-draft-career.md` are
 
 Plans continue `0.7.*` for all classic bounded-map work prior to Periodic
 FFT, and use `0.8.*` starting at Periodic FFT. Plan numbers are not version
-sequence (`AGENTS.md`): `0.7.47`–`0.7.49`, `0.7.51`–`0.7.52` and `0.8.7`
-shipped while `0.7.44`–`0.7.45` and `0.8.0`–`0.8.6` are still open, so the
-open `0.7.*` plans below are written against the shipped `0.7.47`–`0.7.49`
-composition / space & capital starts / gifts / radar and the `0.7.51`–`0.7.52`
-view rework, not against the `0.7.43` world they were first drafted on.
+sequence (`AGENTS.md`): `0.7.44`, `0.7.47`–`0.7.49`, `0.7.51`–`0.7.52` and
+`0.8.7` shipped while `0.7.45` and `0.8.0`–`0.8.6` are still open, so the
+open `0.7.*` plans below are written against the shipped `0.7.44` empty
+worlds, the `0.7.47`–`0.7.49` composition / space & capital starts / gifts /
+radar and the `0.7.51`–`0.7.52` view rework, not against the `0.7.43` world
+they were first drafted on.
 
-1. **Pre-FFT (`0.7.44`–`0.7.45`) — Empty heavy worlds & colony founding, and automatic company fleet.** Both land on the shipped `0.7.47` seat search and composition rule; neither changes `MAX_PLAYERS` or the fair-start contract.
-2. **FFT & gameplay completion (`0.8.0`–`0.8.3`) — Periodic FFT torus (`PLANETS = 192`), Max-Distance modes & `SPORT_MAXDIST` (building on FFT's 192-body arrays, non-shader field view, and `512×256` periodic wrap), Rival Characters, and the single final bot/economy calibration pass.** `0.8.3` lands last in this group, after `0.7.44`–`0.7.45` and `0.8.0`–`0.8.2` have settled the rules it calibrates.
+1. **Pre-FFT (`0.7.45`) — automatic company fleet.** It lands on the shipped `0.7.44` empty worlds and the `0.7.47` seat search and composition rule; it does not change `MAX_PLAYERS` or the fair-start contract.
+2. **FFT & gameplay completion (`0.8.0`–`0.8.3`) — Periodic FFT torus (`PLANETS = 192`), Max-Distance modes & `SPORT_MAXDIST` (building on FFT's 192-body arrays, non-shader field view, and `512×256` periodic wrap), Rival Characters, and the single final bot/economy calibration pass.** `0.8.3` lands last in this group, after `0.7.45` and `0.8.0`–`0.8.2` have settled the rules it calibrates.
 3. **Final UX, readout & sound polish (`0.8.4`–`0.8.6`, after all rules settle) — Helper Dialog (`H` M3/M4), Accessibility Live Readout (`#srStatus`), and Sound Improvements (Voronoi neighbor-scale consonance across 13–192 bodies/FFT, aim-channel cues).** `0.8.4` M0–M2 (`launchReasons`, `comms_copy.js`, `gui_comms.js`) are already live; only M3/M4 remain.
 
 | plan | group | draft sections it answers |
 |---|---|---|
-| `../0.7.44-plan-founding-colony.md` | `0.7` pre-FFT | `found-colony-land.md`, `career-economy.md` §2.5 |
 | `../0.7.45-plan-buy-ships.md` | `0.7` pre-FFT | `career-economy.md` §buy more ships |
 | `../0.8.0-plan-periodic-fft.md` | `0.8` FFT+ | `map.md` §gravity (`&fft=1`, `PLANETS = 192`, 256²/512×256 Plummer FFT) |
 | `../0.8.1-plan-max-distance-mode.md` | `0.8` FFT+ | `flight-lab-and-modes.md` §1.2 (`max distance from start`); `rivals-sport-competitions.md` §5.2 (`SPORT_MAXDIST`) |
@@ -134,6 +134,7 @@ view rework, not against the `0.7.43` world they were first drafted on.
 | `../0.8.5-plan-accessibility-readout.md` | `0.8` after all | `sound-and-photos.md` §7.1 (`#srStatus` & HUD landmarks) |
 | `../0.8.6-plan-improve-sound.md` | `0.8` after all | `sound-and-photos.md` §7.1 (Voronoi neighbor-scale consonance, toroidal/192-body adjacency, aim/arrival/block cues) |
 | `../0.8.8-plan-space-weather.md` | design first | `map.md` §add space weather, `new/observation-device-OBS-1.md` (career weather, observation range and planet sources; decisions pending) |
+| `../archive/0.7.44-plan-founding-colony.md` (done) | — | `found-colony-land.md`, `career-economy.md` §2.5 (empty heavy worlds `13 → 16`, single-use colonization kit, founding turns an empty world into a settled colony) |
 | `../archive/0.7.46-plan-fair-start-fallback.md` (superseded) | — | `flight-lab-and-modes.md` §1.4 — **superseded by `../archive/0.7.47-plan-fair-start-modes.md`**; options 2 (repair the map), 4 (`MONEY.initSec`) and 5 (cheaper exact check) stay open, see below |
 | `../archive/0.7.47-plan-fair-start-modes.md` (done) | — | `map-fair-start-modes.md` (composition rule, exit margin, background search, space & capital starts) |
 | `../archive/0.7.48-plan-start-gifts.md` (done) | — | `new/game-options.md` (start-gift budget: three sliders, per-company random draw + rest cash) |

@@ -25,4 +25,7 @@ i suggest +20% of all planets, increase default map i.e. 13->16, keep old seed, 
 
 optionally create few planets far from main screen, visible in the full view, extend full by ~20%. This is subject of gameplay and balance.
 
-→ **open** · `../0.7.44-plan-founding-colony.md`
+→ **shipped** (0.7.44) · `../archive/0.7.44-plan-founding-colony.md` — 16-world
+career default with three empty heavy worlds, the single-use `COLONY-KIT`, and
+`foundColony` turning an empty world into a settled colony with commercial EMC ·
+worklogs: `../archive/0.7.44-worklog.md`, `../archive/0.7.44-verification-worklog.md`

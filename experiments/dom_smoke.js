@@ -1210,7 +1210,7 @@ check(kScene.game.rule === 'career' && kScene.bot.count === 2 && kScene.bot.play
 check(career.at === career.hq && kCargo.landedBody === career.hq && career.padCount === 1, 'career start on HQ');
 check(kui.get('cargoStatus').textContent === 'landed P' + career.hq + ' · clock paused',
 	'career status: ' + kui.get('cargoStatus').textContent);
-check(kui.get('ruleTag').textContent === 'career · 1 / 13 pads', 'career rule tag: ' + kui.get('ruleTag').textContent);
+check(kui.get('ruleTag').textContent === 'career · 1 / 16 pads', 'career rule tag: ' + kui.get('ruleTag').textContent);
 check(kui.get('rivalTag').textContent === '2 rivals · flying' && !kui.get('rivalRow').hidden &&
 	!kui.get('rivalGroup').hidden, 'career shows flying rivals: ' + kui.get('rivalTag').textContent);
 check(kui.get('modeCareer').checked && !kui.get('modeLab').checked && !kui.get('modeTour').checked &&
@@ -1686,7 +1686,7 @@ cheatEnv.runFrames(2, 16.0);
 const cheatCareer = cheatEnv.context.GravityScene.career;
 check(cheatCareer.cheat === 'endgame' && cheatCareer.padCount === 12 &&
 	cheatEnv.context.GravityScene.game.money.purse === kGame.CAREER.endgamePurse, 'endgame cheat link');
-check(cheatEnv.elements.get('ruleTag').textContent === 'career · 12 / 13 pads · endgame',
+check(cheatEnv.elements.get('ruleTag').textContent === 'career · 12 / 16 pads · endgame',
 	'cheat rule tag: ' + cheatEnv.elements.get('ruleTag').textContent);
 cheatEnv.click('careerSaveCopy');
 const copiedCheat = copiedCareerState(cheatEnv);
@@ -1908,7 +1908,11 @@ const bui = buildEnv.elements;
 const bScene = buildEnv.context.GravityScene;
 const bCargo = bScene.sim;
 const bCareer = bScene.career;
-/* the quickest landing shot: a short flight keeps the smoke test fast */
+const bGame = buildEnv.context.GravityGame;
+/* the quickest landing shot: a short flight keeps the smoke test fast.
+ * The first EMC is built from the pad block, so the landing must be on an
+ * unclaimed settled world: an empty world has no pad block to build on and a
+ * rival's claim hides the first-catapult button (0.7.44). */
 function landingAngle(sim, from, speed, career, accept) {
 	let best = null;
 	let bestTime = Infinity;
@@ -1923,7 +1927,8 @@ function landingAngle(sim, from, speed, career, accept) {
 	}
 	return best;
 }
-const firstAngle = landingAngle(bCargo, bCareer.hq, CAREER_TEST_SPEED, bCareer);
+const firstAngle = landingAngle(bCargo, bCareer.hq, CAREER_TEST_SPEED, bCareer,
+	body => bCareer.pads[body].catapult === null && bGame.planetBuildable(bCareer, body));
 check(firstAngle !== null, 'build env: no landing shot from HQ');
 buildEnv.dragAim(bCareer.hq, firstAngle, CAREER_TEST_SPEED);
 buildEnv.runFrames(2, 16.0);

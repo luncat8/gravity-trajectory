@@ -534,7 +534,7 @@
 			const padReserve = keepBase + kitCost + holdCost + minPostCost;
 			for (let i = 0; i < OrbitTech.CATAPULTS.length && reachable < 0; i++) {
 				const rail = OrbitTech.CATAPULTS[i];
-				if (rail.tier <= standingPad.catapult.tier || !GravityGame.techUnlocked(career, rail)) continue;
+				if (rail.tier <= standingPad.catapult.tier || !GravityGame.gearKnown(career, rail)) continue;
 				if (cashAfterBuy - careerPrice(career, rail) + 1e-9 < minPostCost) break;
 				const hit = probeReachable(OrbitTech.speedLimit(availKwh, loadedMass, rail, sim.forceScale));
 				if (hit < 0) continue;

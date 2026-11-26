@@ -115,10 +115,10 @@ checks.
 
 ## red on a clean main
 
-Four files are exempt in `run_fast.js` `KNOWN_RED`; each was reproduced on the
-base revision (`68905ee`) on 2026-11-24 with the named failure below, and a
-green result means the note is stale. A new exemption needs a named failure
-reproduced on the base revision, not just a count.
+Three files are exempt in `run_fast.js` `KNOWN_RED`; each carries the named
+failure it was reproduced with on a base revision, and a green result means
+the note is stale. A new exemption needs a named failure reproduced on the
+base revision, not just a count.
 
 - `bot_gravity_test.js` — `score(6) finite, no build`: the exit/claim decision
   on a saved field scores a finite value without the build the assertion
@@ -128,18 +128,23 @@ reproduced on the base revision, not just a count.
   one (the fixture skips uninhabited worlds) and the file fails later at
   `restored departure rule should recover the green aim state`: the profit
   helper's earlier armed contract shot back onto the HQ prices neutral (−0.36).
-- `career_bot_bench.js` — `padless solvency gate counts this flight's launch
-  fee`: the same shot must score once the exit is covered after the fee.
-- `dom_smoke.js` — fails earlier than the once-noted `0.4.17` block, on base
-  `bee343e` (2026-11-26) and identically after 0.8.9: `career rule tag` and
-  `cheat rule tag` expect the 13-planet career default that the 16-planet
-  universe replaced, then the build-env block crashes on
-  `padBuild[1]` (its planet is claimed by R1, so the drawer shows no
-  first-catapult button). A logging copy collects exactly those three
-  `CHECKFAIL`s on base and on the tree; everything before them is green.
+- `dom_smoke.js` — the three plan-caused `CHECKFAIL`s of 0.7.44 are fixed
+  (2026-11-26, [verification worklog](../archive/0.7.44-verification-worklog.md)):
+  `career rule tag` and `cheat rule tag` now expect the 16-planet career
+  default, and the build-env landing picks an unclaimed settled world (an
+  empty world has no pad block, a rival's claim hides the first-catapult
+  button). The file now reaches its older named failure
+  `0.4.17: no landing with a commercial exit from HQ` — reproduced on base
+  `68905ee` (2026-11-24, before colonization): on seed 42 every settled
+  planet reachable from the HQ at the test speed prices its exit as `build`,
+  none as `commercial`, and a probe of that accept fails identically at base
+  and on the tree.
 
 Previously fixed:
 
+- `career_bot_bench` (2026-11-26): the `padless solvency gate counts this
+  flight's launch fee` note (reproduced at `68905ee`, 2026-11-24) is stale —
+  green at base `6134d4f` (677 s) and on the tree (680 s); exemption removed.
 - `bot_gravity_test`, `career_bench`, `career_bot_bench` (0.7.27): real field
   and ownership for pad choice; separate tourist and freight endpoints, compare
   loaded/dry on the same rail, and count the Capital's coverage and the free HQ.

@@ -92,6 +92,15 @@ check('pool: kits are priced at their parts\' build cost and every entry fits th
 	}
 });
 
+check('pool: the colonization kit is an endgame purchase, never a start gift', () => {
+	assert.ok(!GravityGame.GIFT_POOL.some(entry => entry.id === OrbitTech.COLONY_KIT.id),
+		'the kit opens an empty world; it cannot arrive as a start gift');
+	for (const entry of GravityGame.GIFT_POOL) {
+		if (entry.kind !== 'part') continue;
+		assert.ok(!entry.parts.some(item => item.id === OrbitTech.COLONY_KIT.id), entry.id);
+	}
+});
+
 check('draw: deterministic, inside the budget, 1+ gifts once the cheapest fits, rest cash', () => {
 	let differs = 0;
 	for (let seed = 1; seed <= 300; seed++) {
