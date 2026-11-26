@@ -175,11 +175,11 @@
 		return GravityGame.careerArrivalCharge(career, planet, flightSeconds);
 	};
 
-	GravityBot.prototype.careerDeparture = function (career, planet, cash, mass, sourceSim, condition, seekClaim, afterLanding = false, flightSeconds = 0) {
+	GravityBot.prototype.careerDeparture = function (career, planet, cash, mass, sourceSim, condition, seekClaim, afterLanding = false, flightSeconds = 0, asFounded = false) {
 		this.prepareCareerExitProbe(sourceSim || this.probe);
 		return GravityGame.careerDeparture(this.careerExit, career, planet, cash, mass,
 			this.exitProbe, condition, seekClaim, afterLanding, flightSeconds,
-			this.careerExitFn);
+			this.careerExitFn, asFounded);
 	};
 
 	GravityBot.prototype.careerBuyGear = function (career, planet, kind, item, reserve, step, why) {

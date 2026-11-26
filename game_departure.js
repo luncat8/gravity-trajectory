@@ -15,8 +15,8 @@
 		GravitySim, OrbitWorld, OrbitTech, SPEED_STEPS, CAP_SECONDS, BOOK_LOG_MAX, CAREER,
 		MEDIC_SLOT, BOARD_SIZE, TASK_NONE, TASK_MEDIC, TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
 		LEG_NONE, OWNER_COMMERCIAL, OWNER_CAPITAL, OWNER_REBEL, price, careerShipUsable,
-		careerPadSeconds, padAt, padOwner, commercialFee, exitSpeedHasMargin, medicLoad, gearKnown,
-		planetBuildable
+		careerPadSeconds, padAt, padOwner, commercialPadAt, commercialFee, exitSpeedHasMargin,
+		medicLoad, gearKnown, planetBuildable
 	} = inner;
 
 	/* --- two-leg contract valuation & shared departure solvency ---------- */
@@ -242,7 +242,7 @@
 	}
 
 	function careerDeparture(out, career, planet, cash, mass, sourceSim, condition,
-		seekClaim, afterLanding, flightSeconds, exitSpeedFn) {
+		seekClaim, afterLanding, flightSeconds, exitSpeedFn, asFounded) {
 		const res = out || legDepScratch1;
 		res.ok = false;
 		res.physical = false;
@@ -269,10 +269,15 @@
 		const forceScale = sourceSim.forceScale;
 		const own = career.pads[planet];
 		const useComm = !afterLanding;
-		const pad = padAt(career, planet, useComm);
-		const owner = padOwner(career, planet, useComm);
+		/* `asFounded` prices the state a founding kit creates: the colony's
+		 * commercial EMC-1 is the rail out and the ground is buildable. The
+		 * aim readout and the bots' founding plans read it instead of flying
+		 * the founded world in their heads. */
+		const pad = asFounded ? commercialPadAt(career, planet)
+			: padAt(career, planet, useComm);
+		const owner = asFounded ? OWNER_COMMERCIAL : padOwner(career, planet, useComm);
 
-		const buildable = planetBuildable(career, planet);
+		const buildable = asFounded || planetBuildable(career, planet);
 		if (own.catapult === null && buildable) {
 			const starterCap = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
 				arrivalMass, OrbitTech.CATAPULTS[0], forceScale);

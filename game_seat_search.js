@@ -388,7 +388,10 @@
 			for (let body = 0; body < planets; body++) {
 				if (!trialMask[body] || homes[body]) continue;
 				const market = galaxy.market;
-				if ((market && market.seized[body]) || claimOwner(galaxy, body) !== OWNER_COMMERCIAL) {
+				/* an uninhabited world is no first landing: it pays nothing and
+				 * offers no rail out — the new company would be stranded */
+				if ((market && market.seized[body]) || (market && market.empty[body] === 1) ||
+					claimOwner(galaxy, body) !== OWNER_COMMERCIAL) {
 					continue;
 				}
 				const earned = sitePay[row + body];

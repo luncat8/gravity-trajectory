@@ -42,12 +42,19 @@
 	const BIAS_END = 2.8;
 	const BIAS_STRENGTH = 0.3;
 
-	/* One optional designed field (`map_fields.js`), armed for a single seed so
-	 * every reader (`gravity_game.js`, `gui_world.js`, the seat planner) sees it
-	 * without changing its call sites, and another seed never reads it. */
-	let armedField = null;
-	let armedSeed = 0;
-	let armedTag = 0;
+/* One optional designed field (`map_fields.js`), armed for a single seed so
+ * every reader (`gravity_game.js`, `gui_world.js`, the seat planner) sees it
+ * without changing its call sites, and another seed never reads it. */
+let armedField = null;
+let armedSeed = 0;
+let armedTag = 0;
+
+/* Empty heavy worlds (0.7.44) draw from their own salt so a colonization
+ * target is always a serious well: the band is [EMPTY_MIN, MAX], grid-snapped
+ * like every other draw. A designed field still wins: its values are the
+ * designer's whole say over that seed's gravity. */
+const SALT_EMPTY = 0xcf;
+const EMPTY_MIN = 1.5;
 
 	/* snap any value to the field's grid and range: the one way a designed or
 	 * rolled gravity becomes a value the game can actually hold */
@@ -109,10 +116,19 @@
 		return g === 0 ? 0 : Math.max(MIN, Math.min(MAX, g));
 	}
 
+	/* the draw an empty heavy world carries; a designed field overrides it */
+	function emptyGravity(seed, planet) {
+		if (armedField && (seed >>> 0) === armedSeed && planet >= 0 && planet < armedField.length) {
+			return armedField[planet];
+		}
+		const u = OrbitWorld.hash01(seed, planet, SALT_EMPTY);
+		return snap(EMPTY_MIN + u * (MAX - EMPTY_MIN));
+	}
+
 	const PlanetGravity = {
 		SALT_GRAVITY, MIN, MAX, STEPS, CHOICES, BODY_MAX,
-		BIAS_START, BIAS_END, BIAS_STRENGTH,
-		gravity, snap, fieldTag, arm, disarm, armed
+		BIAS_START, BIAS_END, BIAS_STRENGTH, SALT_EMPTY, EMPTY_MIN,
+		gravity, emptyGravity, snap, fieldTag, arm, disarm, armed
 	};
 	if (typeof module !== 'undefined' && module.exports) module.exports = PlanetGravity;
 	else root.PlanetGravity = PlanetGravity;

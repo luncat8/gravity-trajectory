@@ -302,6 +302,7 @@ function helperScore(probe, cand) {
 	let careerMoney = null;
 	if (careerRule()) {
 		if (probe.predReason !== END_IMPACT || probe.predBody < 0) return -Infinity;
+		if (!activeCareer().ship.colonyKit && GravityGame.emptyWorld(activeCareer(), probe.predBody)) return -Infinity;
 		if (helperState.goal === 'planQuest') {
 			const career = activeCareer();
 			const sim = activeCareerSim();

@@ -357,6 +357,7 @@ function claimCounts() {
 function claimTag(owner) {
 	if (owner === GravityGame.OWNER_CAPITAL) return 'imperial';
 	if (owner === GravityGame.OWNER_REBEL) return 'rebels';
+	if (owner === GravityGame.OWNER_EMPTY) return 'uninhabited';
 	if (owner < 0) return 'commercial';
 	return owner === 0 ? 'YOU' : RIVAL_TAGS[owner - 1];
 }
@@ -954,6 +955,19 @@ function shopBlockHtml(career) {
 		(career.at >= 0 ? planetName(career.at) : 'land on a planet') + '</div>';
 	if (career.at < 0) {
 		return html + '<div class="careerLine dim">any planet is a shipyard · land to refit</div>';
+	}
+	const kitReason = GravityGame.kitRefusal(career);
+	const foundReason = GravityGame.foundRefusal(career);
+	if (GravityGame.emptyWorld(career, career.at)) {
+		html += '<div class="careerLine">uninhabited · no EMC ' +
+			'<button class="miniBtn" data-act="foundColony" title="' + foundReason + '"' +
+			(foundReason ? ' disabled' : '') + '>found colony · ' + planetName(career.at) + '</button></div>';
+	} else {
+		html += '<div class="careerLine">Colonization Kit · 12 t · ' +
+			careerCost(career, OrbitTech.COLONY_KIT.cost).toFixed(2) + ' cr ' +
+			'<button class="miniBtn" data-act="buyColonyKit" title="' + kitReason + '"' +
+			(kitReason ? ' disabled' : '') + '>buy kit</button>' +
+			(kitReason ? ' · ' + kitReason : '') + '</div>';
 	}
 	for (let i = 0; i < PART_ROWS.length; i++) {
 		const row = PART_ROWS[i];

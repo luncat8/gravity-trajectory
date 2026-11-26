@@ -12,7 +12,8 @@
 	'use strict';
 	const {
 		GravitySim, OrbitTech, CHEAT_COMMUNISM, CAREER_OPEN, OWNER_COMMERCIAL, price, canPay,
-		refitShip, rebelRail, claimOwner, syncCareerNetwork, refreshCareerMedic, uninstallRefusal
+		refitShip, rebelRail, claimOwner, syncCareerNetwork, refreshCareerMedic, uninstallRefusal,
+		emptyWorld, emptyInPlay
 	} = inner;
 
 	function fitPad(career, planet, catapult, panel, battery) {
@@ -150,6 +151,72 @@
 		if (item !== null) career.owned[item.id] = true;
 	}
 
+	/* --- colonization kit (0.7.44) --------------------------------------- */
+
+	/*
+	 * The kit is the one door into an uninhabited world: bought at a settled
+	 * berth (the HQ, the Capital or an own pad — places with a company
+	 * presence), carried as dead mass, and consumed by landing on an empty
+	 * world. It prices more than a HOLD-8 can carry, so the hold gate doubles
+	 * as the tech gate, and it costs endgame money. Every gate also names
+	 * itself in the shop, so the player reads the same refusal twice.
+	 */
+	function kitRefusal(career) {
+		if (!career || career.ended !== CAREER_OPEN) return 'career closed';
+		if (career.ship.colonyKit) return 'kit already aboard';
+		if (career.contract >= 0) return 'finish or drop the contract first';
+		if (career.at < 0) return 'land to buy the kit';
+		if (career.at !== career.hq && career.at !== career.capitalPlanet &&
+			career.pads[career.at].catapult === null) {
+			return 'buy the kit at your HQ, the Capital or an own pad';
+		}
+		if (emptyWorld(career, career.at)) return 'buy the kit at a settled port';
+		if (career.ship.hold.capacity - career.ship.cargoTons < OrbitTech.COLONY_KIT.mass) {
+			return 'not enough free hold capacity for the 12 t kit';
+		}
+		if (emptyInPlay(career) === 0) return 'no uninhabited world left';
+		if (!canPay(career, OrbitTech.COLONY_KIT.cost)) return 'purse too small';
+		return '';
+	}
+
+	function buyColonyKit(career) {
+		if (kitRefusal(career) !== '') return false;
+		career.ledger.purse -= price(career, OrbitTech.COLONY_KIT.cost);
+		career.buildSpent += price(career, OrbitTech.COLONY_KIT.cost);
+		career.ship.colonyKit = true;
+		refitShip(career);
+		refreshCareerMedic(career);
+		inner.checkEnded(career);
+		return true;
+	}
+
+	/* founding: land on an uninhabited world with the kit aboard and consume
+	 * it into a colony. The world joins the trade sim (a port with partners),
+	 * its visit clock starts paying, and the commercial EMC-1 every inhabited
+	 * planet carries becomes its only rail until someone builds there. The
+	 * ship stays stranded — impulse and the evacuation tow are the exits. */
+	function foundColony(career, trade) {
+		if (foundRefusal(career) !== '' || !trade || !trade.seedColony) return false;
+		if (!trade.seedColony(career.at)) return false;
+		career.ship.colonyKit = false;
+		refitShip(career);
+		career.market.empty[career.at] = 0;
+		career.market.lastVisitStep[career.at] = Math.max(0, career.market.politicsStep);
+		syncCareerNetwork(career);
+		refreshCareerMedic(career);
+		return true;
+	}
+
+	/* the founding button names its gates exactly like the shop does */
+	function foundRefusal(career) {
+		if (!career || career.ended !== CAREER_OPEN) return 'career closed';
+		if (career.at < 0) return 'land on the world first';
+		if (!emptyWorld(career, career.at) || career.at === career.capitalPlanet ||
+			career.at === career.arfPlanet) return 'not an uninhabited world';
+		if (!career.ship.colonyKit) return 'no colonization kit aboard';
+		return '';
+	}
+
 	/* --- building ------------------------------------------------------ */
 
 	/* stock (table) gear is only buildable when it is known: EMC tiers 1-2
@@ -178,6 +245,8 @@
 
 	function planetBuildable(career, planet) {
 		if (planet === career.capitalPlanet) return false;
+		/* an uninhabited world is nobody's ground until a kit founds the colony */
+		if (emptyWorld(career, planet)) return false;
 		/* a seized planet is the rebels' ground, quelled or not */
 		if (rebelRail(career, planet)) return false;
 		if (!career.galaxy) return true;
@@ -262,8 +331,9 @@
 		if (item === null) {
 			return kind === OrbitTech.KIND_ENGINE ? '' : 'a ' + kind + ' slot cannot be empty';
 		}
-		if (kind === OrbitTech.KIND_HOLD && item.capacity < career.ship.cargoTons) {
-			return 'drop the ' + career.ship.cargoTons + ' t cargo first';
+		if (kind === OrbitTech.KIND_HOLD && item.capacity < career.ship.cargoTons +
+			(career.ship.colonyKit ? OrbitTech.COLONY_KIT.mass : 0)) {
+			return 'hold too small for cargo and kit';
 		}
 		if (kind === OrbitTech.KIND_OBS && !item.fitted && career.market && career.market.galaxy) {
 			const refusal = uninstallRefusal(career, career.market, career.at);
@@ -290,9 +360,11 @@
 	Object.assign(GravityGame, {
 		RADAR_COST, RADAR_BUDGET_MS, RADAR_AVOID, RADAR_BEAT, canBuildRadar, buildRadar,
 		radarPredict, radarShips, gearKnown, planetBuildable, planetSeized, buildGear,
-		bulkUpgradeCost, bulkUpgrade, installPart, partRefusal
+		bulkUpgradeCost, bulkUpgrade, installPart, partRefusal,
+		kitRefusal, buyColonyKit, foundColony, foundRefusal
 	});
 	Object.assign(inner, {
-		fitPad, RADAR_COST, ownPart, gearKnown, planetBuildable
+		fitPad, RADAR_COST, ownPart, gearKnown, planetBuildable,
+		buyColonyKit, foundColony
 	});
 });

@@ -11,13 +11,13 @@
 )(function (GravityGame, inner) {
 	'use strict';
 	const {
-		GravitySim, OrbitWorld, OrbitEcon, OrbitTech, planetGravity, CAREER, COMPETE_SLOT,
+		GravitySim, OrbitWorld, OrbitEcon, OrbitTech, CAREER, COMPETE_SLOT,
 		MEDIC_SLOT, BOARD_SIZE, TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_MEDIC, TASK_OFFERED,
 		TASK_ACCEPTED, TASK_LOADED, LEG_NONE, LEG_LOAD, LEG_DELIVER, LEG_MEDICS, LEG_PATIENTS,
 		LEG_CREDIT, CAREER_OPEN, SALT_TASK, CAPITAL_REFUND, specialPlanetsOn, clearTask, price,
 		draw01, round2, careerShipUsable, refitShip, repairCost, planetInPlay, colonyInPlay,
 		commercialPadAt, padAt, padOwner, commercialFee, fragileBreaks, sportStateOf, syncSportSlot,
-		syncSportMirrors, announceSport, expireSport
+		syncSportMirrors, announceSport, expireSport, emptyWorld, careerGravity
 	} = inner;
 
 	/* offered only from planets this light and for loads this heavy at most
@@ -50,14 +50,18 @@
 		return Math.sqrt(dx * dx + dy * dy);
 	}
 
-	/* a uniform in-play planet other than `exclude` (the tourist's free endpoint) */
+	/* a uniform in-play SETTLED planet other than `exclude` (the tourist's free
+	 * endpoint): nobody visits an uninhabited world */
 	function otherActivePlanet(career, exclude) {
-		const count = career.planetCount || OrbitWorld.PLANETS;
-		const span = count - (planetInPlay(career, exclude) ? 1 : 0);
+		let span = 0;
+		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+			if (!planetInPlay(career, i) || i === exclude || emptyWorld(career, i)) continue;
+			span += 1;
+		}
 		if (span < 1) return -1;
 		let pick = Math.floor(draw01(career, SALT_TASK) * span);
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
-			if (!planetInPlay(career, i) || i === exclude) continue;
+			if (!planetInPlay(career, i) || i === exclude || emptyWorld(career, i)) continue;
 			if (pick === 0) return i;
 			pick -= 1;
 		}
@@ -112,9 +116,10 @@
 	}
 
 	/* deep-origin delivery (0.6.2): a load of DEEP_TONS or more out of a well
-	 * at DEEP_G or deeper — the job an EMC-3 is built for */
+	 * at DEEP_G or deeper — the job an EMC-3 is built for. The well is the
+	 * career readout: a colony founded in an empty heavy world keeps its well. */
 	function deepOrigin(career, planet, tons) {
-		return tons >= DEEP_TONS && planetGravity(career.seed, planet) >= DEEP_G;
+		return tons >= DEEP_TONS && careerGravity(career, planet) >= DEEP_G;
 	}
 
 	/* the note on a deep-origin row, naming the rail that lifts it; one helper
@@ -165,7 +170,7 @@
 		/* fragile load (0.6.3): only from a light planet, only a small load; the
 		 * draw is spent only where the offer is possible, so every other board
 		 * keeps its stream */
-		const light = planetGravity(career.seed, src.planet) <= FRAGILE_G;
+		const light = careerGravity(career, src.planet) <= FRAGILE_G;
 		task.fragile = light && tons <= FRAGILE_TONS &&
 			draw01(career, SALT_TASK) < FRAGILE_CHANCE;
 		/* deep-origin (0.6.2): a heavy load out of a deep well is the one job
@@ -309,7 +314,8 @@
 
 	/* half the hold rides as medics: no new ship stat, no full-hold dead end */
 	function medicLoad(career, patients) {
-		const half = Math.floor(career.ship.hold.capacity / 2);
+		const free = career.ship.hold.capacity - (career.ship.colonyKit ? OrbitTech.COLONY_KIT.mass : 0);
+		const half = Math.floor(free / 2);
 		return Math.min(half, patients);
 	}
 
@@ -427,7 +433,7 @@
 				task.medics > 0 && task.patients > 0 &&
 				medicAffordable(career, task.to, task.medics);
 		}
-		return task.kind === TASK_DELIVERY && career.ship.hold.capacity >= task.tons;
+		return task.kind === TASK_DELIVERY && career.ship.hold.capacity - (career.ship.colonyKit ? OrbitTech.COLONY_KIT.mass : 0) >= task.tons;
 	}
 
 	/*

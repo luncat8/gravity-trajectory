@@ -72,6 +72,14 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 	bot.reset(seed, game.rule, game.bot, game.player, rivalTypesArg,
 		game.playerCount > 0 ? game.playerCount - 1 : undefined);
 	applyPlanetUniverse();
+	if (careerRule()) {
+		/* the empty heavy worlds are an opening fact, and the field must know
+		 * before attachWorld builds it: the tail of the in-play indices starts
+		 * uninhabited, drawn from their own gravity salt. Live universe edits
+		 * never re-derive — planets that join a run mid-way are settled ground
+		 * (an HQ lands there at once). */
+		GravityGame.deriveEmptyWorlds(game.market, planetMask, planetCount, tradeSim.world);
+	}
 	ensureValidActiveSlot(-1);
 	turret = slotTurrets[activeSlotIndex()];
 	attachWorld();

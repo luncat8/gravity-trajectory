@@ -43,18 +43,18 @@ function syncPlanetStrengths() {
 	bot.strength.set(planetStrength);
 }
 
-/* push the current subset into the career, market, field, scene and bot */
-function applyPlanetUniverse() {
-	/* the trade world follows the run's subset: a 13-planet career does not
-	 * keep colonies alive on the 13 worlds the player cannot see */
-	tradeSim.setPlanetMask(planetMask);
-	tradeSim.setPlanetLimit(activePlanetExtent());
-	GravityGame.setCareerUniverse(game.career, planetMask, planetCount);
-	GravityGame.applyMarketUniverse(game.market, planetMask, planetCount);
-	/* specials are a career economy rule; tour/money/route keep the plain market */
-	GravityGame.applyMarketSpecials(game.market, careerRule() ? tradeSim.world : null);
-	/* the political arrays only act on a bound run: careers in one galaxy */
-	GravityGame.bindRun(game.market, careerRule() ? game.galaxy : null, tradeSim.world);
+	/* push the current subset into the career, market, field, scene and bot */
+	function applyPlanetUniverse() {
+		/* the trade world follows the run's subset: a 13-planet career does not
+		 * keep colonies alive on the 13 worlds the player cannot see */
+		tradeSim.setPlanetMask(planetMask);
+		tradeSim.setPlanetLimit(activePlanetExtent());
+		GravityGame.setCareerUniverse(game.career, planetMask, planetCount);
+		GravityGame.applyMarketUniverse(game.market, planetMask, planetCount);
+		/* specials are a career economy rule; tour/money/route keep the plain market */
+		GravityGame.applyMarketSpecials(game.market, careerRule() ? tradeSim.world : null);
+		/* the political arrays only act on a bound run: careers in one galaxy */
+		GravityGame.bindRun(game.market, careerRule() ? game.galaxy : null, tradeSim.world);
 	cargoSim.setPlanetMask(planetMask);
 	helperProbe.setPlanetMask(planetMask);
 	if (scene.setPlanetMask) scene.setPlanetMask(planetMask);
@@ -183,7 +183,12 @@ function attachWorld() {
 	);
 	bot.attachWorld(tradeSim);
 	for (let p = 0; p < PLANETS; p++) {
-		planetBaseStrength[p] = GravityGame.planetGravity(tradeSim.seed, p);
+		/* empty heavy worlds draw from the band's own salt; founded colonies
+		 * keep the well they were colonized under (career runs only — other
+		 * rules carry no empty flags and read the plain law) */
+		planetBaseStrength[p] = careerRule() && game.market.heavy[p] === 1
+			? GravityGame.careerGravity(game.career, p)
+			: GravityGame.planetGravity(tradeSim.seed, p);
 		portPlanetStrength[p] = planetBaseStrength[p];
 	}
 	syncPlanetStrengths();

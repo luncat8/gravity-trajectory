@@ -462,6 +462,10 @@ const STATS_SAMPLES = 256;
 	 * that ramps from 1x toward 4x as the rebellion ages.
 	 */
 	const OWNER_REBEL = -3;
+	/* an uninhabited world (0.7.44): no rail of any kind stands there, nothing
+	 * can be built until a colonization kit founds the colony, and a landing
+	 * pays nothing. Escape without founding is the evacuation tow. */
+	const OWNER_EMPTY = -4;
 
 	/* specials are a property of the seeded world; the A/B switch turns their
 	 * rules off without touching geometry (SPECIAL=0 reproduces the old economy) */
@@ -558,7 +562,7 @@ const STATS_SAMPLES = 256;
 		SPORT_LENGTH, TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_MEDIC, TASK_OFFERED,
 		TASK_ACCEPTED, TASK_LOADED, LEG_NONE, LEG_LOAD, LEG_DELIVER, LEG_MEDICS, LEG_PATIENTS,
 		LEG_CREDIT, CAREER_OPEN, COMMERCIAL_PAD, OWNER_COMMERCIAL, CAPITAL_PAD, OWNER_CAPITAL,
-		OWNER_REBEL, reserveEnergy, releaseEnergy
+		OWNER_REBEL, OWNER_EMPTY, reserveEnergy, releaseEnergy
 	};
 	const inner = {
 		GravitySim, OrbitWorld, OrbitEcon, OrbitTech, OrbitScience, PlanetGravity, SPEED_STEPS,
@@ -568,7 +572,7 @@ const STATS_SAMPLES = 256;
 		TASK_NONE, TASK_DELIVERY, TASK_COMPETE, TASK_MEDIC, TASK_OFFERED, TASK_ACCEPTED, TASK_LOADED,
 		LEG_NONE, LEG_LOAD, LEG_DELIVER, LEG_MEDICS, LEG_PATIENTS, LEG_CREDIT, CAREER_OPEN, SALT_HQ,
 		SALT_TASK, COMMERCIAL_PAD, OWNER_COMMERCIAL, OWNER_CAPITAL, CAPITAL_PAD, CAPITAL_VISIT_PAY,
-		CAPITAL_REFUND, OWNER_REBEL, specialPlanetsOn, releaseEnergy, clearTask, price, canPay,
+		CAPITAL_REFUND, OWNER_REBEL, OWNER_EMPTY, specialPlanetsOn, releaseEnergy, clearTask, price, canPay,
 		draw01, round2, pay
 	};
 

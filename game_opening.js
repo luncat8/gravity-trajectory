@@ -13,7 +13,7 @@
 	const {
 		GravitySim, OrbitWorld, OrbitTech, PlanetGravity, SPEED_STEPS, CAP_SECONDS, MONEY,
 		planetGravity, angleUnits, angleOf, speedOf, CAREER, SALT_HQ, specialPlanetsOn, createMarket,
-		resetMarket, applyMarketSpecials, estimateProfitLog, applyMarketUniverse
+		resetMarket, applyMarketSpecials, estimateProfitLog, applyMarketUniverse, deriveEmptyWorlds
 	} = inner;
 
 	/* Conservative gravity band used for seeded HQ fallbacks. Opening landing
@@ -117,11 +117,15 @@
 		resetMarket(openingMarket);
 		applyMarketUniverse(openingMarket, mask, count);
 		applyMarketSpecials(openingMarket, world);
+		/* the planning probes price empty worlds at zero payout and trace
+		 * them under the heavy band's wells */
+		deriveEmptyWorlds(openingMarket, mask, count, world);
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
 			if (mask && mask[i] === 0) openingStrengths[i] = 0;
 			else if (specialPlanetsOn() && (i === world.capitalPlanet || i === world.arfPlanet)) {
 				openingStrengths[i] = 1;
 			} else if (forcedHomes && forcedHomes[i]) openingStrengths[i] = 1;
+			else if (openingMarket.empty[i] === 1) openingStrengths[i] = PlanetGravity.emptyGravity(world.seed, i);
 			else openingStrengths[i] = planetGravity(world.seed, i);
 		}
 	}

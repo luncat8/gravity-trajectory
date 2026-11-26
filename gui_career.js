@@ -731,6 +731,17 @@ function careerAct(data) {
 		careerNotice('career over · restart for a new HQ');
 		return;
 	}
+	if (act === 'buyColonyKit' || act === 'foundColony') {
+		const reason = act === 'buyColonyKit' ? GravityGame.kitRefusal(career) : GravityGame.foundRefusal(career);
+		if (reason) { careerNotice(reason); return false; }
+		const ok = act === 'buyColonyKit' ? GravityGame.buyColonyKit(career) : GravityGame.foundColony(career, tradeSim);
+		if (!ok) { careerNotice('colony action failed'); return false; }
+		recordCareerAction('act', { act: act });
+		if (act === 'foundColony') GravityGame.refreshBoard(career, tradeSim, game.clockSteps);
+		careerNotice(act === 'buyColonyKit' ? 'colonization kit aboard' : 'colony founded · ' + planetName(career.at));
+		careerChanged();
+		return true;
+	}
 	if (act === 'produceFuel') return careerFuelAction(career, true);
 	if (act === 'buyFuel') return careerFuelAction(career, false);
 	if (act === 'drop') return careerDrop(career, data.slot !== undefined ? Number(data.slot) : undefined);

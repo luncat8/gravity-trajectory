@@ -96,6 +96,8 @@ function predictedCareerEconomics(sim) {
 	out.speed = 0;
 	out.tier = 0;
 	out.own = false;
+	out.destEmpty = false;
+	out.foundExits = false;
 	if (!careerRule() || sim.predCount < 2 || sim.predReason !== END_IMPACT ||
 		sim.predBody < 0) return out;
 	const career = playerCareer();
@@ -115,6 +117,36 @@ function predictedCareerEconomics(sim) {
 	const mandatoryRepair = GravityGame.forecastRepairReserve(career, arrival);
 	const cash = career.ledger.purse + predGain - fee - out.repair - mandatoryRepair;
 	const mass = bot.careerArrivalMass(career, sim.predBody);
+	const destEmpty = GravityGame.emptyWorld(career, sim.predBody);
+	out.destEmpty = destEmpty;
+	/* an uninhabited destination: no rail stands there and the visit pays
+	 * nothing. With the kit aboard the readout prices the state after
+	 * founding — the kit is consumed, the colony's commercial EMC-1 is the
+	 * rail out; without it the tow is the only exit. */
+	if (destEmpty) {
+		out.tier = 0;
+		out.own = false;
+		out.fee = fee;
+		if (ship.colonyKit) {
+			const departure = bot.careerDeparture(career, sim.predBody, cash,
+				mass - OrbitTech.COLONY_KIT.mass, activeCareerSim(),
+				arrival === 0 ? 1 : arrival, false, false, 0, true);
+			out.exit = departure.cost;
+			out.source = departure.source;
+			out.speed = departure.speed;
+			out.foundExits = departure.ok;
+			out.launchable = career.ledger.purse + 1e-9 >= fee + out.repair &&
+				cash >= -1e-9 && departure.ok;
+			out.net = predGain - fee - out.fuel - out.repair - out.wear -
+				(departure.ok ? departure.cost : 0);
+			out.state = !out.launchable || aimBreaksFragile() ? 2 : out.net > 1e-9 ? 1 : 0;
+		} else {
+			out.launchable = false;
+			out.net = predGain - fee - out.fuel - out.repair - out.wear;
+			out.state = 2;
+		}
+		return out;
+	}
 	const departure = bot.careerDeparture(career, sim.predBody, cash, mass, activeCareerSim(),
 		arrival === 0 ? 1 : arrival);
 	out.fee = fee;
@@ -122,7 +154,7 @@ function predictedCareerEconomics(sim) {
 	out.source = departure.source;
 	out.speed = departure.speed;
 	const destinationPad = GravityGame.padAt(career, sim.predBody);
-	out.tier = destinationPad.catapult.tier + 1;
+	out.tier = destinationPad.catapult ? destinationPad.catapult.tier + 1 : 0;
 	out.own = career.pads[sim.predBody].catapult !== null;
 	out.launchable = career.ledger.purse + 1e-9 >= fee + out.repair && cash >= -1e-9 && departure.ok;
 	out.net = predGain - fee - out.fuel - out.repair - out.wear - (departure.ok ? departure.cost : 0);
@@ -133,6 +165,14 @@ function predictedCareerEconomics(sim) {
 function predProfitText(sim, economics) {
 	if (careerRule()) {
 		const money = economics || predictedCareerEconomics(sim);
+		if (money.destEmpty) {
+			if (!playerCareer().ship.colonyKit) {
+				return signedMoney(predGain) + ' · empty · no EMC (IMP / evac only)';
+			}
+			return money.foundExits
+				? signedMoney(money.net) + ' · founds colony'
+				: signedMoney(predGain) + ' · founding strands · evac out';
+		}
 		if (!money.launchable) return signedMoney(predGain) + ' · no exit';
 		return signedMoney(money.net);
 	}
@@ -535,6 +575,10 @@ function careerOverText() {
 	/* no own EMC here, but a standing rail (commercial or a rival's) that
 	 * can lift the ship is a launch button, not a dead end */
 	if (GravityGame.padLift(career, career.at) + 1e-9 >= GravitySim.SPEED_MIN) return '';
+	/* an uninhabited world: founding (with the kit) is the way to open it */
+	if (GravityGame.emptyWorld(career, career.at)) {
+		return career.ship.colonyKit ? 'stranded · found the colony' : 'stranded · evacuate';
+	}
 	/* short enough for the launch button, which must not wrap */
 	return 'stranded · build or evacuate';
 }

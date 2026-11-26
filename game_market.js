@@ -11,8 +11,8 @@
 )(function (GravityGame, inner) {
 	'use strict';
 	const {
-		GravitySim, OrbitWorld, OrbitEcon, MONEY, estScratch, BRIBE_OPEN, COMMERCIAL_PAD,
-		CAPITAL_VISIT_PAY, specialPlanetsOn, payScaleOf
+		GravitySim, OrbitWorld, OrbitEcon, PlanetGravity, MONEY, estScratch, BRIBE_OPEN, COMMERCIAL_PAD,
+		CAPITAL_VISIT_PAY, specialPlanetsOn, payScaleOf, planetGravity
 	} = inner;
 
 	/*
@@ -63,6 +63,13 @@
 			rebelCooldownStep: new Int32Array(OrbitWorld.PLANETS),
 			lastCheckEpoch: new Int32Array(OrbitWorld.PLANETS),
 			rebelPads: new Array(OrbitWorld.PLANETS),
+			/* uninhabited worlds (0.7.44): a landing pays nothing, no rail stands
+			 * there and nothing can be built until a kit founds the colony */
+			empty: new Uint8Array(OrbitWorld.PLANETS),
+			/* worlds whose gravity was drawn from the empty heavy band; unlike
+			 * `empty` this survives founding, so the well a colony was built in
+			 * is the one every readout keeps pricing */
+			heavy: new Uint8Array(OrbitWorld.PLANETS),
 			stamp: 0,
 			k: MONEY.k,
 			arfPlanet: -1,
@@ -98,6 +105,8 @@
 		market.rebelCooldownStep.fill(0);
 		market.lastCheckEpoch.fill(-1);
 		market.rebelPads.fill(null);
+		market.empty.fill(0);
+		market.heavy.fill(0);
 		market.politicsSeed = 1;
 		market.politicsSerial = 0;
 		market.politicsStep = -1;
@@ -135,6 +144,80 @@
 		if (world) market.politicsSeed = world.seed >>> 0;
 	}
 
+	/* ── empty heavy worlds (0.7.44) ──────────────────────────────────────── */
+
+	/*
+	 * The universe's colonization targets are the ~20 % of its planets that
+	 * start uninhabited: `emptyCount = max(1, round(settledCount · 0.2))`,
+	 * taken from the tail of the in-play indices so the settled worlds keep
+	 * their seed positions and every recorded opening seat stays meaningful.
+	 * The count solves the plan's formula with the settled share it leaves:
+	 * 16 total → 13 settled + 3 empty. The Capital and A.R.F. are people
+	 * worlds and never empty.
+	 */
+	function emptyCountFor(count) {
+		let empty = 0;
+		for (let i = 0; i < 4; i++) {
+			const next = Math.max(1, Math.round((count - empty) * 0.2));
+			if (next === empty) break;
+			empty = next;
+		}
+		return Math.min(empty, count);
+	}
+
+	/* mark the run's empty worlds into `market` (`world` only names the
+	 * specials, which are never empty); the heavy band flags the drawn wells */
+	function deriveEmptyWorlds(market, mask, count, world) {
+		market.empty.fill(0);
+		market.heavy.fill(0);
+		const seed = world ? world.seed >>> 0 : 0;
+		const skip = specialPlanetsOn() && world ? 1 : 0;
+		let want = emptyCountFor(count);
+		/* the traited world ends at DEFAULT_PLANETS: beyond it planets have no
+		 * light or kind, so no universe ever colonizes there */
+		for (let p = Math.min(OrbitWorld.DEFAULT_PLANETS, OrbitWorld.PLANETS) - 1;
+			p >= 0 && want > 0; p--) {
+			if (mask && mask[p] !== 1) continue;
+			if (skip && (p === world.capitalPlanet || p === world.arfPlanet)) continue;
+			market.empty[p] = 1;
+			market.heavy[p] = 1;
+			want -= 1;
+		}
+		return emptyCountFor(count) - want;
+	}
+
+	/* an uninhabited world of this company's run */
+	function emptyWorld(career, planet) {
+		return planet >= 0 && career.market != null &&
+			career.market.empty[planet] === 1;
+	}
+
+	/* how many of the run's in-play worlds are still uninhabited */
+	function emptyInPlay(career) {
+		const market = career.market;
+		if (!market) return 0;
+		let count = 0;
+		for (let p = 0; p < OrbitWorld.PLANETS; p++) {
+			if (market.empty[p] === 1 &&
+				(!career.planetMask || career.planetMask[p] === 1)) count += 1;
+		}
+		return count;
+	}
+
+	/* the well a career planet actually sits in: founded empty worlds keep
+	 * the heavy draw they were colonized under, so deep/fragile tags and
+	 * every gravity readout agree with the live field. The draw keys on the
+	 * WORLD seed (`politicsSeed`, set by bindRun) — gravity is a property of
+	 * the shared world, never of the company reading it. */
+	function careerGravity(career, planet) {
+		const market = career && career.market;
+		if (market && market.heavy[planet] === 1) {
+			return PlanetGravity.emptyGravity(market.politicsSeed, planet);
+		}
+		if (market) return planetGravity(market.politicsSeed, planet);
+		return planetGravity(career ? career.seed >>> 0 : 0, planet);
+	}
+
 	/* cap·(1 − e^(−k·age/cap)): initial slope k, asymptote cap at infinite age */
 	function planetProfitAtStep(lastStep, runStep, k) {
 		const age = (runStep - lastStep) * GravitySim.DT;
@@ -166,6 +249,9 @@
 	/* Unscaled visit curve: neglect rot reads this so `pay ×` stays orthogonal
 	 * to `rot ×` even when low `pay ×` caps collected payouts below 1.00. */
 	function planetProfitUnscaledAt(market, planet, at, lastStep) {
+		/* an uninhabited world has no market: it pays nothing until founded,
+		 * while its clock still stamps like any other visit */
+		if (market.empty[planet] === 1) return 0;
 		if (planet === market.capitalPlanet) return CAPITAL_VISIT_PAY;
 		if (planet === market.arfPlanet) return 0;
 		const pay = planetProfitAtStep(lastStep, at, market.k);
@@ -430,6 +516,17 @@
 	}
 
 	function applyMarketUniverse(market, mask, count) {
+		/* planets that join a live universe are settled ground: a company HQ
+		 * lands there at once, never an uninhabited wild. The opening derive
+		 * runs after this at startGame and re-marks its own tail. */
+		if (market.planetMask) {
+			for (let p = 0; p < OrbitWorld.PLANETS; p++) {
+				if (mask[p] === 1 && market.planetMask[p] !== 1) {
+					market.empty[p] = 0;
+					market.heavy[p] = 0;
+				}
+			}
+		}
 		market.planetMask = mask;
 		market.planetCount = count;
 		market.k = MONEY.k * (OrbitWorld.DEFAULT_PLANETS / count);
@@ -443,7 +540,7 @@
 
 	/* a colony sits on a planet of the run only when that planet is in play */
 	function colonyInPlay(career, colony) {
-		return planetInPlay(career, colony.planet);
+		return planetInPlay(career, colony.planet) && !emptyWorld(career, colony.planet);
 	}
 
 	Object.assign(GravityGame, {
@@ -452,11 +549,12 @@
 		applyMarketSpecials, bindRun, politicsSeconds, rebelRail, stampReport, visitReports,
 		createLedger, resetLedger, beginFlight, stepHarvest, harvestPlanet, endFlight,
 		estimateProfit, estimateProfitLog, setCareerUniverse, applyMarketUniverse, planetInPlay,
-		colonyInPlay
+		colonyInPlay, emptyCountFor, deriveEmptyWorlds, emptyWorld, emptyInPlay, careerGravity
 	});
 	Object.assign(inner, {
 		createMarket, resetMarket, applyMarketSpecials, politicsSeconds, rebelRail,
 		planetProfitUnscaledAt, planetProfit, resetLedger, openFlight, visitReports, endFlight,
-		walkProfitLog, estimateProfitLog, applyMarketUniverse, planetInPlay, colonyInPlay
+		walkProfitLog, estimateProfitLog, applyMarketUniverse, planetInPlay, colonyInPlay,
+		deriveEmptyWorlds, emptyWorld, emptyInPlay, careerGravity
 	});
 });

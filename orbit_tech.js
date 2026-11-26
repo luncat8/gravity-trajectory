@@ -110,6 +110,13 @@
 		{ id: 'HELP-2', tier: 2, candidates: 144, horizon: 240, buildCost: 2 }
 	];
 
+	/* Single-use colonization kit (0.7.44): bought at a settled port, carried
+	 * as dead mass, and consumed by founding a colony on an uninhabited world.
+	 * It is cargo equipment, not a slot part: `ship.colonyKit` carries it and
+	 * `refitMass`/`shipMass` price its tons. Heavier than a HOLD-8 tier-1 hold
+	 * (8 t), so only HOLD-24 can fly it; `cost` is endgame money. */
+	const COLONY_KIT = { id: 'COLONY-KIT', mass: 12, cost: 28 };
+
 	/* stock records with a research family: cost = share of the research from the
 	 * initial point, keyed by the family's spec fields in MERIT order; tier 0 is
 	 * the bare "none" record and stays free */
@@ -164,12 +171,14 @@
 
 	/* ship with `item` fitted in `kind`, cargo and every other slot as they are;
 	 * `kind` null leaves the whole fit as it is (the plain ship mass). The device
-	 * is summed first so the starter ship is exactly SHIP_DRY_MASS. */
+	 * is summed first so the starter ship is exactly SHIP_DRY_MASS. A carried
+	 * colonization kit rides with the cargo. */
 	function refitMass(ship, kind, item, cargoTons) {
 		let m = HULL_MASS + partMass(kind === KIND_OBS ? item : ship.obs) + cargoTons;
 		m += partMass(kind === KIND_HOLD ? item : ship.hold);
 		m += partMass(kind === KIND_ENGINE ? item : ship.engine);
 		m += partMass(kind === KIND_TANK ? item : ship.tank);
+		if (ship.colonyKit) m += COLONY_KIT.mass;
 		return m;
 	}
 
@@ -371,6 +380,7 @@
 	const OrbitTech = {
 		SHIP_DRY_MASS, KWH_PER_T_V2, RAIL_M, BURN_SEC,
 		CATAPULTS, PANELS, BATTERIES, HOLDS, ENGINES, TANKS, HELPERS, TABLES,
+		COLONY_KIT,
 		KIND_CATAPULT, KIND_PANEL, KIND_BATTERY, KIND_HOLD, KIND_ENGINE, KIND_TANK, KIND_HELPER, KIND_OBS,
 		GEAR_KINDS, PART_KINDS, OBS, HULL_MASS,
 		find, findKind,

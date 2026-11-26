@@ -516,7 +516,7 @@ game.career = GravityGame.createCareer(game.money);
  * removes a random one (no refund) while every player's first HQ stays. */
 const PLANET_UNIVERSE_MIN = 4;
 const PLANET_UNIVERSE_MAX = PLANETS;
-const PLANET_CAREER_DEFAULT = 13;
+const PLANET_CAREER_DEFAULT = 16;
 const PLANET_DEFAULT = OrbitWorld.DEFAULT_PLANETS;
 const planetMask = new Uint8Array(PLANET_UNIVERSE_MAX);
 let planetCount = PLANET_DEFAULT;

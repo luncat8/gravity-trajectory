@@ -116,6 +116,7 @@
 				hold: OrbitTech.HOLDS[0], engine: null, tank: OrbitTech.TANKS[0],
 				obs: OrbitTech.OBS[1],
 				cargoTons: 0, fuelKg: 0, mass: 0,
+				colonyKit: false,
 				condition: 1
 			},
 			/* 1 flagship; a bought ship wears WEAR_FLEET times faster */
@@ -323,6 +324,7 @@
 		career.ship.tank = grant.ship.tank;
 		career.ship.obs = grant.ship.obs;
 		career.ship.cargoTons = 0;
+		career.ship.colonyKit = false;
 		career.ship.fuelKg = career.cheat === CHEAT_ENDGAME ? career.ship.tank.fuelCap : 0;
 		career.ship.condition = 1;
 		career.wearScale = 1;

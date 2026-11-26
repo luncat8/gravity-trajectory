@@ -65,6 +65,10 @@
 		flownLen, fee, body, visitPay, length, steps, speed, wearCost, arrivalCondition,
 		landingValue) {
 		this.careerEval.reject = '';
+		if (GravityGame.emptyWorld(career, body) && !career.ship.colonyKit) {
+			this.careerEval.reject = 'uninhabited';
+			return -Infinity;
+		}
 		this.careerEval.builds = false;
 		this.careerEval.exitCost = Infinity;
 		this.careerEval.exitSource = '';

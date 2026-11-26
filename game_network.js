@@ -13,8 +13,8 @@
 	const {
 		GravitySim, OrbitWorld, OrbitTech, STATS_SAMPLES, FRAGILE_SPEED, CAREER, SPORT_LENGTH,
 		TASK_NONE, TASK_LOADED, COMMERCIAL_PAD, OWNER_COMMERCIAL, OWNER_CAPITAL, CAPITAL_PAD,
-		OWNER_REBEL, price, careerShipUsable, repairCost, evacuationCost, evacuationSeconds,
-		rebelRail
+		OWNER_REBEL, OWNER_EMPTY, price, careerShipUsable, repairCost, evacuationCost,
+		evacuationSeconds, rebelRail, emptyWorld
 	} = inner;
 
 const STATS_SEC = 2;
@@ -32,6 +32,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 */
 	const COMMERCIAL_BASE = 2.00;
 	const COMMERCIAL_KWH = 2.50;
+
+	/* an uninhabited world has no infrastructure at all: this record stands in
+	 * for the missing pad so every reader of `padAt` sees `catapult === null`
+	 * and the launch network refuses the rail there (0.7.44) */
+	const EMPTY_PAD = { catapult: null, panel: null, battery: null, chargeKwh: 0, reservedKwh: 0 };
 
 	/* --- EMC network ------------------------------------------------------- */
 
@@ -135,6 +140,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (planet === career.capitalPlanet) return CAPITAL_PAD;
 		const rebel = rebelRail(career, planet);
 		if (rebel) return rebel;
+		if (emptyWorld(career, planet)) return EMPTY_PAD;
 		if (useCommercial && career.commercialPlanet === planet) return commercialPadAt(career, planet);
 		if (career.pads[planet].catapult !== null) return career.pads[planet];
 		if (!career.galaxy) return commercialPadAt(career, planet);
@@ -143,13 +149,14 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	}
 
 	/* owner index of that pad, -1 for the neutral commercial EMC, -2 for the
-	 * fixed imperial rail on the Capital */
+	 * fixed imperial rail on the Capital, -4 for an uninhabited world's no-pad */
 	function padOwner(career, planet, useCommercial = true) {
 		if (planet === career.capitalPlanet) return OWNER_CAPITAL;
 		const market = career.market;
 		if (market && market.rebel[planet]) return OWNER_REBEL;
 		/* a quelled rebellion leaves its rail commercial for good */
 		if (market && market.seized[planet]) return OWNER_COMMERCIAL;
+		if (emptyWorld(career, planet)) return OWNER_EMPTY;
 		if (useCommercial && career.commercialPlanet === planet) return OWNER_COMMERCIAL;
 		if (career.pads[planet].catapult !== null) return career.index;
 		if (!career.galaxy) return OWNER_COMMERCIAL;
@@ -160,7 +167,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	 * it never claims the planet and never blocks building your own EMC there */
 	function setCommercial(career, planet) {
 		/* the Capital rail is imperial and a rebellious planet runs its own */
-		if (planet >= 0 && planet === career.capitalPlanet) return;
+		if (planet >= 0 && (planet === career.capitalPlanet || emptyWorld(career, planet))) return;
 		if (planet >= 0 && rebelRail(career, planet)) return;
 		career.commercialPlanet = planet;
 		syncCareerNetwork(career);
@@ -234,6 +241,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (owner === OWNER_COMMERCIAL || owner === OWNER_REBEL) {
 			return commercialFee(career, planet, speed, shipMass);
 		}
+		/* no rail stands on an uninhabited world, so there is no fee — and no
+		 * launch: callers read this as an unusable rail */
+		if (owner === OWNER_EMPTY) return Infinity;
 		const pad = padAt(career, planet, comm);
 		return price(career, CAREER.taxPerKwh *
 			OrbitTech.launchEnergy(shipMass, pad.catapult, speed) * pad.catapult.tier);
@@ -250,6 +260,8 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 		if (planet < 0) return price(career, CAREER.evacFee);
 		if (planet === career.capitalPlanet) return 0;
 		if (career.pads[planet].catapult !== null) return 0;
+		/* an uninhabited world offers no rail and no build: the tow is it */
+		if (emptyWorld(career, planet)) return price(career, CAREER.evacFee);
 		const rail = commercialPadAt(career, planet);
 		const lift = OrbitTech.speedLimit(rail.battery.capacity,
 			mass, rail.catapult, career.forceScale);
@@ -287,6 +299,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			return 'seized EMC-' + tier;
 		}
 		if (owner === OWNER_COMMERCIAL) return 'commercial EMC-' + tier;
+		if (owner === OWNER_EMPTY) return 'no rail · uninhabited';
 		return (owner === 0 ? 'YOU' : 'R' + owner) + ' rail';
 	}
 
@@ -301,6 +314,11 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 			return 'ship in space · evac ' + evacuationCost(career).toFixed(2) +
 			' · ' + Math.round(evacuationSeconds(career)) + ' s · purse ' +
 			career.ledger.purse.toFixed(2);
+		}
+		if (emptyWorld(career, planet)) {
+			return 'P' + planet + ' · uninhabited · no EMC · exit ' +
+				exitCostAt(career, planet, career.ship.mass).toFixed(2) +
+				' · purse ' + career.ledger.purse.toFixed(2);
 		}
 		const pad = padAt(career, planet);
 		const exit = exitCostAt(career, planet, career.ship.mass);
@@ -434,6 +452,9 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	/* full-battery speed cap of the pad `career` fires from on `planet` */
 	function padLift(career, planet, forceScale) {
 		const pad = padAt(career, planet);
+		/* no rail stands on an uninhabited world: zero lift keeps it out of
+		 * every bot target list */
+		if (pad.catapult === null) return 0;
 		const cap = OrbitTech.speedLimit(pad.battery.capacity, career.ship.mass,
 			pad.catapult, forceScale === undefined ? career.forceScale : forceScale);
 		return cap;
@@ -453,7 +474,7 @@ const STATS_EVERY = Math.round(STATS_SEC / GravitySim.DT);
 	}
 
 	Object.assign(GravityGame, {
-		COMMERCIAL_BASE, COMMERCIAL_KWH, commercialFee, commercialMinFee, commercialPadAt,
+		COMMERCIAL_BASE, COMMERCIAL_KWH, EMPTY_PAD, commercialFee, commercialMinFee, commercialPadAt,
 		createGalaxy, resetGalaxy, rivalSeed, turretPeriod, turretAngle, padAt, padOwner, claimOwner,
 		refreshNetwork, setCommercial, launchFee, exitCost, exitCostAt, careerCanFire, padLift,
 		railOwnerText, railText, launchBlock, railBlock, repairLaunchBlock, fragileBreaks,
