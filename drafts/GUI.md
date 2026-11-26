@@ -16,3 +16,12 @@ replace copy with ⧉
 ### settings
 
 url is for easy share and presets. think what settings should be saved to local storage (maybe view settings) to not overcrowd url. 
+
+### cheat panel
+
+improve/implement cheat panel:
+[+10cr]
+[Communism mode]: all free or unlimited money (implement what is better and cleaner approach. for gameplay it looks same)
+[Test mode]: install all stock upgrades
+
+i recommend place panel under HUD right bottom.
