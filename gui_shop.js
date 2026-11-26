@@ -311,6 +311,9 @@ function repairBlockHtml(career) {
 /* Fuel is a transaction on the planet under the ship, not a property of the
  * selected shop planet. Conversion reads only the owner's unreserved charge. */
 function fuelBlockHtml(career) {
+	if (GravityGame.emptyWorld(career, career.at)) {
+		return repairBlockHtml(career) + '<div class="careerLine dim">uninhabited · no refuelling until a colony is founded</div>';
+	}
 	const ship = career.ship;
 	const cap = ship.tank ? ship.tank.fuelCap : 0;
 	const ready = career.ended === GravityGame.CAREER_OPEN && ship.engine !== null && cap > 0;
@@ -335,7 +338,7 @@ function fuelBlockHtml(career) {
 		(Math.min(step, produceKg) / rate).toFixed(2) + ' kWh', 'produceFuel', 'fuel', 'data-kg="' + step + '"',
 		!ready || produceKg <= 0, why);
 	const buyWhy = !ready ? 'needs an engine and a fuel tank' : room <= 0 ? 'tank is full'
-		: buyKg <= 0 ? 'purse cannot buy fuel' : 'buy fuel on any planet';
+		: buyKg <= 0 ? 'purse cannot buy fuel' : 'buy fuel on a settled planet';
 	const buyPoor = ready && room > 0 && buyKg <= 0;
 	html += shopButtonRef('buy fuel +' + Math.min(step, buyKg).toFixed(buyKg < step ? 1 : 0) + ' · ' +
 		costText(Math.min(step, buyKg) * price), 'buyFuel', 'fuel', 'data-kg="' + step + '"',
@@ -532,7 +535,8 @@ function padBlockHtml(career) {
 		html += '<div class="careerLine warn">uninhabited world · no EMC rail</div>';
 		if (ship.colonyKit) {
 			html += '<div class="careerRow"><span class="careerBtns">' +
-				shopButton('found colony · ' + planetName(at), 'found', '', 0, false,
+				shopButton('found colony · ' + planetName(at), 'foundColony', '', 0,
+					GravityGame.foundRefusal(career) !== '',
 					'consume the colonization kit to found a colony on ' + planetName(at) +
 					' · activates trade port and commercial EMC-1') + '</span></div>';
 		} else {

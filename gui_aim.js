@@ -423,6 +423,10 @@ function launchShot() {
 		careerNotice('launch cancelled');
 		return;
 	}
+	if (careerRule() && !playerIsBot() && activeSim().status !== STATUS_FLYING &&
+		GravityGame.foundRefusal(playerCareer()) === '') {
+		return careerAct({ act: 'foundColony' });
+	}
 	/* a worn ship is serviced first; the shot follows only if the repair went
 	 * through, and with no firable shot the click is the repair alone */
 	if (repairOffered()) {

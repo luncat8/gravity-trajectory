@@ -199,7 +199,15 @@ const { loadPage, mapSearch } = require('./dom_stub.js');
 		/after founding · exit blocked/);
 	G.placeShip(career, scene.sim, emptyPlanet);
 	scene.game.clockSteps = 1234;
-	assert.ok(page.context.careerAct({ act: 'foundColony' }));
+	G.setShipCondition(career, 0.5);
+	page.context.setLaunchState(true, false);
+	assert.strictEqual(page.elements.get('launch').disabled, false);
+	assert.strictEqual(page.elements.get('launch').value, 'foundColony');
+	assert.match(page.elements.get('launch').textContent, /found colony/);
+	assert.strictEqual(page.elements.get('launchCommercial').hidden, true);
+	const repairs = career.repairs;
+	page.click('launch');
+	assert.strictEqual(career.repairs, repairs, 'founding takes priority over repair');
 	assert.strictEqual(career.ship.colonyKit, false);
 	assert.strictEqual(market.empty[emptyPlanet], 0);
 	assert.strictEqual(market.heavy[emptyPlanet], 1);
@@ -241,6 +249,64 @@ const { loadPage, mapSearch } = require('./dom_stub.js');
 	scene.bot.careerBetweenFlights(career, scene.sim, 2100);
 	assert.strictEqual(career.ship.colonyKit, false, 'bot founds colony on uninhabited world');
 	assert.strictEqual(market.empty[nextEmpty], 0);
+}
+
+/* Generated buttons must reach the action dispatcher, not just look enabled. */
+for (const block of ['padBlockHtml', 'shopBlockHtml']) {
+	const page = loadPage({ search: mapSearch(1) });
+	const { GravityScene: scene, GravityGame: G } = page.context;
+	const career = scene.career;
+	career.ledger.purse = 200;
+	assert.ok(page.context.careerAct({ act: 'part', kind: 'hold', tier: 2 }));
+	assert.ok(page.context.careerAct({ act: 'part', kind: 'engine', tier: 1 }));
+	assert.ok(page.context.careerAct({ act: 'part', kind: 'tank', tier: 1 }));
+	assert.ok(page.context.careerAct({ act: 'buyColonyKit' }));
+	const target = scene.game.market.empty.findIndex(v => v === 1);
+	G.placeShip(career, scene.sim, target);
+	career.ship.fuelKg = 0;
+	page.context.setLaunchState(true, false);
+	assert.strictEqual(page.elements.get('launchCommercial').hidden, true);
+	assert.strictEqual(page.elements.get('launchCommercial').disabled, true);
+	const selected = career.commercialPlanet;
+	assert.strictEqual(page.context.toggleCommercialRail(false), false);
+	assert.strictEqual(career.commercialPlanet, selected);
+	page.context.updateFlightFuel(career, career.ship);
+	assert.strictEqual(page.elements.get('flightRefuel').disabled, true);
+	assert.match(page.elements.get('flightRefuel').title, /uninhabited/);
+	assert.strictEqual(page.context.flightRefuelPlan(career), 0);
+	assert.strictEqual(page.context.flightRefuel(), false);
+	const purse = career.ledger.purse;
+	assert.strictEqual(G.buyFuel(career, 10), 0, 'empty worlds cannot sell fuel');
+	assert.strictEqual(G.produceFuel(career, target, 10), 0);
+	assert.strictEqual(career.ship.fuelKg, 0);
+	assert.strictEqual(career.ledger.purse, purse);
+	assert.doesNotMatch(page.context.fuelBlockHtml(career), /data-act="(?:buyFuel|produceFuel)"/);
+
+	career.ship.colonyKit = false;
+	page.context.setLaunchState(true, false);
+	assert.strictEqual(page.elements.get('launch').value, 'evac', 'no kit: evacuation remains available');
+	assert.notStrictEqual(G.foundRefusal(career), '');
+	career.ship.colonyKit = true;
+
+	const html = page.context[block](career);
+	const button = html.match(/<button\b[^>]*data-act="foundColony"[^>]*>/);
+	assert.ok(button, block + ' emits the supported founding action');
+	assert.doesNotMatch(button[0], / disabled/);
+	const act = /data-act="([^"]+)"/.exec(button[0])[1];
+	for (const listener of page.elements.get('careerBox').listeners.click) {
+		listener({ target: { dataset: { act } } });
+	}
+	assert.strictEqual(career.ship.colonyKit, false, block + ' click consumes kit');
+	assert.strictEqual(scene.game.market.empty[target], 0);
+	assert.strictEqual(G.padOwner(career, target), G.OWNER_COMMERCIAL);
+	page.context.setLaunchState(true, false);
+	assert.strictEqual(page.elements.get('launchCommercial').hidden, false);
+	page.context.updateFlightFuel(career, career.ship);
+	assert.strictEqual(page.elements.get('flightRefuel').disabled, false);
+	assert.ok(page.context.flightRefuelPlan(career) > 0, 'founded colony offers fuel');
+	assert.ok(G.buyFuel(career, 10) > 0);
+	assert.strictEqual(career.ship.fuelKg, 10);
+	assert.ok(career.ship.tank.fuelCap >= 10);
 }
 
 console.log('found_colony_test: kit, sim, snapshot, GUI and bot founding invariants passed');

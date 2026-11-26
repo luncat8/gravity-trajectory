@@ -201,7 +201,7 @@
 	function fuelRequest(career, kg) {
 		const ship = career.ship;
 		if (career.ended !== CAREER_OPEN || career.at < 0 || !ship.engine || !ship.tank ||
-			!Number.isFinite(kg) || kg <= 0) return 0;
+			!Number.isFinite(kg) || kg <= 0 || inner.emptyWorld(career, career.at)) return 0;
 		return Math.max(0, Math.min(kg, ship.tank.fuelCap - ship.fuelKg));
 	}
 

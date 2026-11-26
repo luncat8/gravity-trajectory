@@ -1034,7 +1034,7 @@ window.addEventListener('keydown', event => {
 	if (event.code === 'Enter' || event.code === 'Space') {
 		const button = event.target;
 		if (button && (button === launchMenuBtn || button.parentElement === launchMenuEl ||
-			(button === launchButton && launchButton.value === 'evac'))) return;
+			(button === launchButton && launchButton.value !== ''))) return;
 	}
 	if ((event.code === 'Space' || event.code === 'KeyP') &&
 		!event.ctrlKey && !event.metaKey && !event.altKey) {

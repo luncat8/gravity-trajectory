@@ -378,9 +378,12 @@ function setPlanetActions(career, show, busy) {
  * not a way home */
 function setCommercialOption(career, show, busy, commercialOn, usable) {
 	const at = career.at;
-	const commercial = show && at !== career.capitalPlanet;
+	const commercial = show && at !== career.capitalPlanet && !GravityGame.emptyWorld(career, at);
 	launchCommercialBtn.hidden = !commercial;
-	if (!commercial) return { ready: false, shown: false };
+	if (!commercial) {
+		launchCommercialBtn.disabled = true;
+		return { ready: false, shown: false };
+	}
 	const rail = GravityGame.commercialPadAt(career, at);
 	const label = 'commercial EMC-' + rail.catapult.tier;
 	const lift = padCap(career, rail.catapult, rail.battery);
@@ -530,6 +533,15 @@ function setLaunchState(blocked, exitWarning) {
 	}
 	if (worn || offerEvac || commercial.shown) launchMenuBtn.hidden = false;
 	else hideLaunchMenu();
+	if (onPlanet && !botPlayer && GravityGame.foundRefusal(c) === '') {
+		launchButton.value = 'foundColony';
+		launchButton.disabled = waitBusy;
+		launchButton.classList.remove('exitWarning', 'costly');
+		launchButton.textContent = 'found colony · ' + planetName(c.at);
+		launchButton.title = 'consume the colonization kit · activates trade and commercial EMC-1';
+		launchState = -1;
+		return;
+	}
 	if (evacPrimary) {
 		launchButton.value = 'evac';
 		launchButton.disabled = waitBusy || evacuating;

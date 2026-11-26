@@ -267,7 +267,8 @@ function careerChanged() {
 function toggleCommercialRail(selectOnly) {
 	if (replay.on || careerInputLocked() || !careerRule() || careerWaitBusy() || activeSim().status === STATUS_FLYING) return false;
 	const career = playerCareer();
-	if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0) return false;
+	if (career.ended !== GravityGame.CAREER_OPEN || career.at < 0 ||
+		GravityGame.emptyWorld(career, career.at)) return false;
 	if (career.commercialPlanet === career.at) {
 		if (selectOnly) return false;
 		if (armed && aimBody === career.at) {

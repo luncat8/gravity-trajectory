@@ -174,6 +174,11 @@ function flightRefuelPlan(career) {
 	const ship = career.ship;
 	flightHud.refuelKg = 0;
 	flightHud.refuelWhy = '';
+	if (career.at < 0 || GravityGame.emptyWorld(career, career.at)) {
+		flightHud.refuelWhy = career.at < 0 ? 'land to refuel'
+			: 'uninhabited · no refuelling until a colony is founded';
+		return 0;
+	}
 	if (!ship.engine || !ship.tank || ship.tank.fuelCap <= 0) {
 		flightHud.refuelWhy = 'needs an engine and a fuel tank';
 		return 0;
