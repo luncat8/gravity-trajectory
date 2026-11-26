@@ -49,10 +49,8 @@ let armedField = null;
 let armedSeed = 0;
 let armedTag = 0;
 
-/* Empty heavy worlds (0.7.44) draw from their own salt so a colonization
- * target is always a serious well: the band is [EMPTY_MIN, MAX], grid-snapped
- * like every other draw. A designed field still wins: its values are the
- * designer's whole say over that seed's gravity. */
+/* Uninhabited worlds draw a mid-to-high well on their own salt. The 1.5..2
+ * end is moderate; g >= 2 is heavy in the potential-view palette. */
 const SALT_EMPTY = 0xcf;
 const EMPTY_MIN = 1.5;
 
@@ -116,7 +114,7 @@ const EMPTY_MIN = 1.5;
 		return g === 0 ? 0 : Math.max(MIN, Math.min(MAX, g));
 	}
 
-	/* the draw an empty heavy world carries; a designed field overrides it */
+	/* The same well remains after founding; a designed field overrides the draw. */
 	function emptyGravity(seed, planet) {
 		if (armedField && (seed >>> 0) === armedSeed && planet >= 0 && planet < armedField.length) {
 			return armedField[planet];

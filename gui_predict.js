@@ -170,8 +170,8 @@ function predProfitText(sim, economics) {
 				return signedMoney(predGain) + ' · empty · no EMC (IMP / evac only)';
 			}
 			return money.foundExits
-				? signedMoney(money.net) + ' · founds colony'
-				: signedMoney(predGain) + ' · founding strands · evac out';
+				? signedMoney(money.net) + ' · can found colony · exit available'
+				: signedMoney(predGain) + ' · after founding · exit blocked';
 		}
 		if (!money.launchable) return signedMoney(predGain) + ' · no exit';
 		return signedMoney(money.net);

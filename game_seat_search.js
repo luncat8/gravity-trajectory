@@ -94,8 +94,9 @@
 		const field = PlanetGravity.armed();
 		const fieldTag = field && field.seed === (world.seed >>> 0) ? field.tag : 0;
 		const emptyTag = trade && trade.emptyMask ? openingMaskBits(trade.emptyMask) : 'd';
+		const gravityTag = trade && trade.colonyGravityMask ? openingMaskBits(trade.colonyGravityMask) : emptyTag;
 		return (world.seed >>> 0) + ':' + (trade.seed >>> 0) + ':' +
-			openingMaskTag(mask, count) + ':' + emptyTag + ':' + seatsWanted + ':' +
+			openingMaskTag(mask, count) + ':' + emptyTag + ':' + gravityTag + ':' + seatsWanted + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
 			padScaleOf() + ':' + payScaleOf() + ':' +

@@ -163,10 +163,11 @@
 		const field = PlanetGravity.armed();
 		const fieldTag = field && field.seed === (world.seed >>> 0) ? field.tag : 0;
 		const emptyTag = trade && trade.emptyMask ? openingMaskBits(trade.emptyMask) : 'd';
+		const gravityTag = trade && trade.colonyGravityMask ? openingMaskBits(trade.colonyGravityMask) : emptyTag;
 		return (world.seed >>> 0) + ':' + (trade.seed >>> 0) + ':' + trade.t.toFixed(3) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
-			openingMaskBits(mask) + ':' + count + ':' + emptyTag + ':' +
+			openingMaskBits(mask) + ':' + count + ':' + emptyTag + ':' + gravityTag + ':' +
 			(specialPlanetsOn() ? 1 : 0) + ':' + candidates.join(',') +
 			(fieldTag ? ':' + fieldTag : '');
 	}
@@ -303,11 +304,11 @@
 		}
 	}
 
-	function compositionKey(world, mask, count, sourceSim, emptyBits) {
+	function compositionKey(world, mask, count, sourceSim, emptyBits, gravityBits) {
 		const field = PlanetGravity.armed();
 		const fieldTag = field && field.seed === (world.seed >>> 0) ? field.tag : 0;
 		return (world.seed >>> 0) + ':' + openingMaskBits(mask) + ':' + count + ':' +
-			emptyBits + ':' +
+			emptyBits + ':' + gravityBits + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
 			(specialPlanetsOn() ? 1 : 0) + (fieldTag ? ':' + fieldTag : '');
@@ -338,15 +339,15 @@
 		return 0;
 	}
 
-	function compositionCounts(world, mask, count, sourceSim, emptyMask) {
+	function compositionCounts(world, mask, count, sourceSim, emptyMask, gravityMask) {
 		if (emptyMask) {
 			compositionMarket.empty.set(emptyMask);
-			compositionMarket.heavy.set(emptyMask);
+			compositionMarket.heavy.set(gravityMask || emptyMask);
 		} else {
 			deriveEmptyWorlds(compositionMarket, mask, count, world);
 		}
 		const emptyBits = openingMaskBits(compositionMarket.empty);
-		const key = compositionKey(world, mask, count, sourceSim, emptyBits);
+		const key = compositionKey(world, mask, count, sourceSim, emptyBits, openingMaskBits(compositionMarket.heavy));
 		const cached = compositionCache.get(key);
 		if (cached) return cached;
 		if (compositionSim === null) {
@@ -366,7 +367,7 @@
 			if (mask && mask[i] === 0) compositionStrengths[i] = 0;
 			else if (specialPlanetsOn() && (i === world.capitalPlanet || i === world.arfPlanet)) {
 				compositionStrengths[i] = 1;
-			} else if (compositionMarket.empty[i] === 1) {
+			} else if (compositionMarket.heavy[i] === 1) {
 				compositionStrengths[i] = PlanetGravity.emptyGravity(world.seed, i);
 			} else compositionStrengths[i] = planetGravity(world.seed, i);
 		}
@@ -415,12 +416,12 @@
 
 	/* `startMode` is 'planet' (default), 'space' or 'capital'. The weakened
 	 * starts drop the HQ term and the count gate; the rest is the same. */
-	function startComposition(world, mask, count, players, sourceSim, startMode, emptyMask) {
+	function startComposition(world, mask, count, players, sourceSim, startMode, emptyMask, gravityMask) {
 		const mode = startMode === 'space' || startMode === 'capital' ? startMode : 'planet';
 		const seats = Math.max(0, Math.floor(players));
 		const specials = specialPlanetsOn() ? 2 : 0;
 		const minimal = mode === 'planet' ? 2 * seats + specials + 2 : seats + specials + 2;
-		const counts = compositionCounts(world, mask, count, sourceSim, emptyMask);
+		const counts = compositionCounts(world, mask, count, sourceSim, emptyMask, gravityMask);
 		const missing = [];
 		if (mode === 'planet' && counts.settled < minimal) missing.push('planets');
 		if (counts.light < seats) missing.push('light');

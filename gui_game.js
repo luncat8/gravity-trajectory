@@ -74,7 +74,7 @@ function startGame(seed, fixedRate, rule, botLevel, playerType, cheat) {
 		 * own gravity salt. Live universe edits never re-derive — planets that
 		 * join a run mid-way are settled ground (an HQ lands there at once). */
 		GravityGame.deriveEmptyWorlds(game.market, planetMask, planetCount, tradeSim.world);
-		tradeSim.setEmptyMask(game.market.empty);
+		tradeSim.setEmptyMask(game.market.empty, game.market.heavy);
 	}
 	scene.settle();
 	clearCargo();
@@ -268,7 +268,7 @@ function rosterFairnessReport() {
 		return { ok: true, planets: planetCount, players: playerCountShown() };
 	}
 	const comp = GravityGame.startComposition(tradeSim.world, planetMask, planetCount,
-		playerCountShown(), cargoSim, game.startMode, game.market.empty);
+		playerCountShown(), cargoSim, game.startMode, game.market.empty, game.market.heavy);
 	return { ok: comp.ok, planets: planetCount, players: playerCountShown(), composition: comp };
 }
 
@@ -363,7 +363,7 @@ function stepCareerPlanning(budgetMs) {
 	if (out.done) {
 		const plan = careerPlanSearch.bestPlan();
 		const comp = GravityGame.startComposition(tradeSim.world, planetMask, planetCount,
-			1 + bot.count, cargoSim, game.startMode, game.market.empty);
+			1 + bot.count, cargoSim, game.startMode, game.market.empty, game.market.heavy);
 		if (!comp.ok) {
 			const seed = careerPlanSeed;
 			cancelCareerPlanning();
@@ -610,7 +610,7 @@ function syncRosterFairness(shown) {
 	let ok = true;
 	if (unfair) {
 		const comp = GravityGame.startComposition(tradeSim.world, planetMask, planetCount,
-			shown, cargoSim, game.startMode, game.market.empty);
+			shown, cargoSim, game.startMode, game.market.empty, game.market.heavy);
 		ok = comp.ok;
 	}
 	const cls = 'rosterUnfair';

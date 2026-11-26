@@ -67,6 +67,7 @@ with no fair opening: the registry is also the pool `load map` draws from, so
 |---|---|
 | `orbit_world`, `orbit_sim`, `orbit_econ` trade laws | `special_planets_test`, `orbit_clock_test`, `politics_test` |
 | the seeded PRNG (`seedRandom`) and world geometry | `gravity_seed_test` (bench tier), `orbit_clock_test` |
+| colonization and seeded planet mix | `found_colony_test`, `colony_distribution.js` (measurement, not reachability) |
 | `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `route_bench` (long trace), `bot_gravity_test` (exit/claim decisions on a saved field) |
 | `gravity_field` CPU raster and palette | `gravity_bench` (color + budget), `gravity_view_test` |
 | `gravity_game.js`/`game_*.js` career/economy/laws | the part's row in the `AGENTS.md` pairing table, else `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |

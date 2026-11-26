@@ -9,6 +9,7 @@ const path = require('path');
 const vm = require('vm');
 const Game = require('../gravity_game.js');
 const Sim = require('../gravity_sim.js');
+const PlanetGravity = require('../planet_gravity.js');
 const { loadPage } = require('./dom_stub.js');
 
 const PLANETS = 26;
@@ -115,7 +116,8 @@ for (const seed of [1, 7, 31, 42, 913]) {
 	const fixed = new Set([scene.career.capitalPlanet, scene.career.arfPlanet,
 		...scene.game.galaxy.actors.map(actor => actor.hq)]);
 	for (let p = 0; p < PLANETS; p++) {
-		const expected = active[p] ? (fixed.has(p) ? 1 : Game.planetGravity(seed, p)) : 0;
+		const expected = active[p] ? (fixed.has(p) ? 1 : scene.game.market.heavy[p] ?
+			PlanetGravity.emptyGravity(seed, p) : Game.planetGravity(seed, p)) : 0;
 		assert.strictEqual(saved[p], expected);
 		assert.strictEqual(scene.bot.probe.strength[p], expected);
 		assert.strictEqual(scene.bot.player.sim.strength[p], expected);
@@ -143,7 +145,8 @@ for (let port = 0; port < pcTrade.portCount; port++) {
 	const p = pcTrade.portPlanet[port];
 	const fixed = p === pcScene.career.capitalPlanet || p === pcScene.career.arfPlanet ||
 		pcScene.game.galaxy.actors.some(actor => actor.hq === p);
-	const expected = pcMask[p] ? (fixed ? 1 : Game.planetGravity(pcScene.game.seed, p)) : 0;
+	const expected = pcMask[p] ? (fixed ? 1 : pcScene.game.market.heavy[p] ?
+		PlanetGravity.emptyGravity(pcScene.game.seed, p) : Game.planetGravity(pcScene.game.seed, p)) : 0;
 	assert.strictEqual(pcScene.sim.strength[port], expected);
 }
 

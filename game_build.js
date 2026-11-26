@@ -194,7 +194,8 @@
 	 * it into a colony. The world joins the trade sim (a port with partners),
 	 * its visit clock starts paying, and the commercial EMC-1 every inhabited
 	 * planet carries becomes its only rail until someone builds there. The
-	 * ship stays stranded — impulse and the evacuation tow are the exits. */
+	 * commercial rail may still be too weak for the well; building, impulse
+	 * or evacuation can provide an exit. */
 	function foundColony(career, trade, step) {
 		if (foundRefusal(career) !== '' || !trade || !trade.seedColony) return false;
 		const at = career.at;

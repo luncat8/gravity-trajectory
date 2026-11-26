@@ -149,6 +149,15 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
   or reloading the same seed recreates the values. Inactive planets exert no pull and keep their
   values if added back. The G-field multiplier applies to these values; gravity can be edited
   per body only in the lab.
+  In a standard career, 3 of the 16 planets start uninhabited. Their gravity
+  is drawn separately from `+1.5…+5` (moderate to heavy; the potential view
+  calls `g ≥ 2` heavy). They still affect trajectories, but have no visit
+  payout or EMC. A 12 t, 28-credit single-use colonization kit requires a
+  larger hold; land and use **found colony** to open a trade port and commercial
+  rail. Founding does not change gravity (a later HQ still pins it to 1), and
+  the rail may be too weak to leave.
+  Without a kit, impulse or evacuation is needed to depart. Designed gravity
+  fields currently start with no uninhabited planets.
 - **Grand tour**: entering inside any planet's port-orbit ellipse marks that
   planet system as visited (`visited` rings persist across hops). Predicted
   visit count (`sys · +new`) updates live as your shot or moving orbits change.

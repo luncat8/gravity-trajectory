@@ -99,7 +99,7 @@ function makeWorld(seed, count) {
 	const market = GravityGame.createMarket();
 	GravityGame.deriveEmptyWorlds(market, mask, count, trade.world);
 	trade.setPlanetMask(mask);
-	trade.setEmptyMask(market.empty);
+	trade.setEmptyMask(market.empty, market.heavy);
 	trade.advanceTo(420);
 	trade.setPlanetLimit(count);
 	const sim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);

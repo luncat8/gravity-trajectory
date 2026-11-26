@@ -40,6 +40,7 @@ const FAST = [
 	['balance_changes_test.js', 0.2],
 	['career_exit_margin_test.js', 0.5],
 	['start_composition_test.js', 1],
+	['found_colony_test.js', 2],
 	['seat_search_test.js', 8],
 	['career_space_start_test.js', 2],
 	['bribe_score_test.js', 0.2],

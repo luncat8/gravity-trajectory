@@ -134,8 +134,8 @@ const zoneTotal = zonePix.length / 4;
  * HQ pinning (0.6.8) lifted the two stronger ones to +1, and a body near 0
  * can never reach alpha 0.5. The raster measures 112 blue here, against 984
  * on the unpinned lab world, so the bar is the three-zone check, not the old 200.
- * 0.7.44: its uninhabited heavy worlds (13-15) boot on their emptyGravity draw
- * (1.5..5) instead of the full heavy law, so red measures ~480, not ~1900. */
+ * Uninhabited planets use their seeded 1.5..5 band, not the normal draw.
+ * For this seed the resulting red area measures about 480 pixels. */
 assert.ok(seen.blue > 50 && seen.green > 2000 && seen.red > 300,
 	'blue, green and red zones all show: ' + JSON.stringify(seen));
 assert.ok(seen.red < zoneTotal / 4, 'red marks heavy planets, it does not wash the screen: ' + seen.red);

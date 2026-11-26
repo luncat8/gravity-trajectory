@@ -106,8 +106,7 @@
 	function openingFillEmpty(market, world, trade, mask, count) {
 		if (trade && trade.emptyMask) {
 			market.empty.set(trade.emptyMask);
-			if (trade.market && trade.market.heavy) market.heavy.set(trade.market.heavy);
-			else market.heavy.set(trade.emptyMask);
+			market.heavy.set(trade.colonyGravityMask || trade.emptyMask);
 			return;
 		}
 		deriveEmptyWorlds(market, mask, count, world);
@@ -134,7 +133,7 @@
 			else if (specialPlanetsOn() && (i === world.capitalPlanet || i === world.arfPlanet)) {
 				openingStrengths[i] = 1;
 			} else if (forcedHomes && forcedHomes[i]) openingStrengths[i] = 1;
-			else if (openingMarket.empty[i] === 1) openingStrengths[i] = PlanetGravity.emptyGravity(world.seed, i);
+			else if (openingMarket.heavy[i] === 1) openingStrengths[i] = PlanetGravity.emptyGravity(world.seed, i);
 			else openingStrengths[i] = planetGravity(world.seed, i);
 		}
 	}
@@ -376,11 +375,12 @@
 	 * for every actor; the company-specific seed only breaks equal choices. */
 	function careerOpenings(world, trade, mask, count, forcedHomes, sourceSim) {
 		const emptyTag = trade && trade.emptyMask ? openingMaskBits(trade.emptyMask) : 'd';
+		const gravityTag = trade && trade.colonyGravityMask ? openingMaskBits(trade.colonyGravityMask) : emptyTag;
 		const key = (world.seed >>> 0) + ':' + (trade.seed >>> 0) + ':' + trade.t.toFixed(3) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
 			openingMaskTag(mask, count) + ':' + openingMaskTag(forcedHomes, 0) + ':' +
-			emptyTag + ':' + (specialPlanetsOn() ? 1 : 0);
+			emptyTag + ':' + gravityTag + ':' + (specialPlanetsOn() ? 1 : 0);
 		const cached = openingCache.get(key);
 		if (cached) return cached;
 		openingPrepare(world, trade, mask, count, forcedHomes, sourceSim);
@@ -501,7 +501,7 @@
 			openingMaskBits(mask) + ':' +
 			(openingMarket && Number.isFinite(openingMarket.planetCount)
 				? openingMarket.planetCount : openingExtent(mask)) + ':' +
-			openingMaskBits(openingMarket.empty) + ':' +
+			openingMaskBits(openingMarket.empty) + ':' + openingMaskBits(openingMarket.heavy) + ':' +
 			home + ':' + nAngles + 'x' + nSpeeds + ':' + (specialPlanetsOn() ? 1 : 0) + ':' +
 			(checkExit ? 'exit:' : 'land:') + openingMaskBits(forcedHomes) +
 			(fieldTag ? ':' + fieldTag : '');

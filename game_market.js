@@ -66,7 +66,7 @@
 			/* uninhabited worlds (0.7.44): a landing pays nothing, no rail stands
 			 * there and nothing can be built until a kit founds the colony */
 			empty: new Uint8Array(OrbitWorld.PLANETS),
-			/* worlds whose gravity was drawn from the empty heavy band; unlike
+			/* worlds whose gravity was drawn from the uninhabited band; unlike
 			 * `empty` this survives founding, so the well a colony was built in
 			 * is the one every readout keeps pricing */
 			heavy: new Uint8Array(OrbitWorld.PLANETS),

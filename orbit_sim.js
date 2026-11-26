@@ -82,6 +82,7 @@
 		 * re-applies it anyway, and a stale mask would hide new colonies) */
 		const savedMask = this.planetMask;
 		const savedEmpty = this.emptyMask;
+		const savedGravityMask = this.colonyGravityMask;
 		this.seed = seed || 1;
 		this.rand = seedRandom(this.seed);
 		this.t = 0;
@@ -94,6 +95,7 @@
 		/* the run's in-play subset; null = every enabled planet trades */
 		this.planetMask = null;
 		this.emptyMask = null;
+		this.colonyGravityMask = null;
 		this.reserved = 0;
 		this.delivered = 0;
 		this.coloniesBuilt = 0;
@@ -165,6 +167,7 @@
 		}
 		this.planetMask = savedMask;
 		this.emptyMask = savedEmpty;
+		this.colonyGravityMask = savedGravityMask;
 		if (savedMask || savedEmpty) this.retireHidden();
 	};
 
@@ -645,9 +648,11 @@
 		if (this.planetMask) this.retireHidden();
 	};
 
-	/* uninhabited worlds stay out of trade until a colonization kit founds them */
-	Sim.prototype.setEmptyMask = function (mask) {
+	/* Empty worlds stay out of trade. Their gravity mask also includes founded
+	 * colonies, so opening probes keep tracing the original wells. */
+	Sim.prototype.setEmptyMask = function (mask, gravityMask) {
 		this.emptyMask = mask || null;
+		this.colonyGravityMask = mask ? (gravityMask || mask) : null;
 		if (this.emptyMask) this.retireHidden();
 	};
 

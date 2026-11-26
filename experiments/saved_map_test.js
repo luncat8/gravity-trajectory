@@ -73,7 +73,7 @@ function maskedTrade(seed, universe) {
 	const market = GravityGame.createMarket();
 	GravityGame.deriveEmptyWorlds(market, mask, universe, trade.world);
 	trade.setPlanetMask(mask);
-	trade.setEmptyMask(market.empty);
+	trade.setEmptyMask(market.empty, market.heavy);
 	trade.step(420);
 	trade.setPlanetLimit(universe);
 	return { trade: trade, mask: mask, market: market };

@@ -7,6 +7,7 @@ const Sim = require('../orbit_sim.js');
 const PlanetGravity = require('../planet_gravity.js');
 const SavedMap = require('../saved_map.js');
 const Game = require('../gravity_game.js');
+const GravitySim = require('../gravity_sim.js');
 const { loadPage, mapSearch } = require('./dom_stub.js');
 
 /* 1. Kit capacity, hold lock, no-rail pad, and seedColony rollback */
@@ -84,6 +85,68 @@ const { loadPage, mapSearch } = require('./dom_stub.js');
 	}
 }
 
+/* The colony band preserves medium-to-heavy variety over many seeds. */
+{
+	const bins = [0, 0, 0];
+	const heavyPerMap = [0, 0, 0, 0];
+	for (let seed = 1; seed <= 1000; seed++) {
+		let heavy = 0;
+		for (let p = 13; p < 16; p++) {
+			const g = PlanetGravity.emptyGravity(seed, p);
+			assert.ok(g >= 1.5 && g <= 5);
+			assert.strictEqual(g, PlanetGravity.emptyGravity(seed, p));
+			assert.ok(Math.abs(g * 20 - Math.round(g * 20)) < 1e-9);
+			bins[g < 2 ? 0 : g < 3.5 ? 1 : 2]++;
+			if (g >= 2) heavy++;
+		}
+		heavyPerMap[heavy]++;
+	}
+	assert.ok(bins[0] > 300 && bins[0] < 550, 'moderate worlds remain a minority');
+	assert.ok(bins[1] > 1100 && bins[1] < 1500, 'mid-heavy wells are common');
+	assert.ok(bins[2] > 1100 && bins[2] < 1500, 'deep wells are common');
+	assert.ok(heavyPerMap[2] + heavyPerMap[3] > 900, 'most maps have at least two heavy targets');
+}
+
+/* Founding changes settlement, not gravity, in opening probes and their caches. */
+{
+	const trade = new Sim(5);
+	const mask = new Uint8Array(World.PLANETS);
+	mask.fill(1, 0, 16);
+	const market = Game.createMarket();
+	Game.deriveEmptyWorlds(market, mask, 16, trade.world);
+	trade.setPlanetMask(mask);
+	trade.setEmptyMask(market.empty, market.heavy);
+	const target = market.empty.findIndex(v => v === 1);
+	assert.notStrictEqual(PlanetGravity.gravity(5, target), PlanetGravity.emptyGravity(5, target));
+	market.empty[target] = 0;
+	const expected = PlanetGravity.emptyGravity(5, target);
+	const originalSetField = GravitySim.prototype.setField;
+	let fields = [];
+	GravitySim.prototype.setField = function (count, radii, strengths, ...rest) {
+		fields.push(Array.from(strengths));
+		return originalSetField.call(this, count, radii, strengths, ...rest);
+	};
+	try {
+		const normal = new Uint8Array(market.empty);
+		Game.startComposition(trade.world, mask, 16, 3, null, 'planet', market.empty, normal);
+		fields = [];
+		Game.startComposition(trade.world, mask, 16, 3, null, 'planet', market.empty, market.heavy);
+		assert.ok(fields.length && fields[0][target] === expected, 'composition cache uses founded gravity');
+
+		trade.colonyGravityMask = normal;
+		Game.openingPrepare(trade.world, trade, mask, 16, null, null);
+		const before = Game.openingTracks(trade.world, mask, null, 0, 1, 1, false);
+		trade.colonyGravityMask = market.heavy;
+		Game.openingPrepare(trade.world, trade, mask, 16, null, null);
+		fields = [];
+		const after = Game.openingTracks(trade.world, mask, null, 0, 1, 1, false);
+		assert.notStrictEqual(after, before, 'trace cache distinguishes the gravity mask');
+		assert.ok(fields.some(field => field[target] === expected), 'opening probes use founded gravity');
+	} finally {
+		GravitySim.prototype.setField = originalSetField;
+	}
+}
+
 /* 3. Live OrbitSim emptyMask + seedColony + SavedMap round-trip */
 {
 	const mask = new Uint8Array(World.PLANETS);
@@ -92,7 +155,7 @@ const { loadPage, mapSearch } = require('./dom_stub.js');
 	const market = Game.createMarket();
 	Game.deriveEmptyWorlds(market, mask, 16, sim.world);
 	sim.setPlanetMask(mask);
-	sim.setEmptyMask(market.empty);
+	sim.setEmptyMask(market.empty, market.heavy);
 	sim.step(420);
 	for (let p = 0; p < 16; p++) {
 		if (market.empty[p]) {
@@ -105,7 +168,7 @@ const { loadPage, mapSearch } = require('./dom_stub.js');
 	const col = sim.seedColony(emptyPlanet);
 	assert.ok(col && col.planet === emptyPlanet, 'seedColony creates live colony on empty planet');
 	market.empty[emptyPlanet] = 0;
-	sim.setEmptyMask(market.empty);
+	sim.setEmptyMask(market.empty, market.heavy);
 	sim.step(60);
 	assert.strictEqual(sim.planetInPlay(emptyPlanet), true);
 	assert.notStrictEqual(sim.planetPort[emptyPlanet], 255, 'seeded colony joins port roster');
@@ -130,6 +193,10 @@ const { loadPage, mapSearch } = require('./dom_stub.js');
 	assert.ok(page.context.careerAct({ act: 'part', kind: 'hold', tier: 2 }));
 	assert.ok(page.context.careerAct({ act: 'buyColonyKit' }));
 	assert.strictEqual(career.ship.colonyKit, true);
+	assert.match(page.context.predProfitText({}, { destEmpty: true, foundExits: true, net: 0 }),
+		/can found colony/, 'preview does not imply that founding is automatic');
+	assert.match(page.context.predProfitText({}, { destEmpty: true, foundExits: false }),
+		/after founding · exit blocked/);
 	G.placeShip(career, scene.sim, emptyPlanet);
 	scene.game.clockSteps = 1234;
 	assert.ok(page.context.careerAct({ act: 'foundColony' }));
@@ -150,6 +217,8 @@ const { loadPage, mapSearch } = require('./dom_stub.js');
 	assert.ok(page2.context.applyRunRecord(save));
 	assert.strictEqual(page2.context.GravityScene.game.market.empty[emptyPlanet], 0);
 	assert.strictEqual(page2.context.GravityScene.game.market.heavy[emptyPlanet], 1);
+	assert.strictEqual(page2.context.mapRunInfo().trade.colonyGravityMask, page2.context.GravityScene.game.market.heavy);
+	assert.strictEqual(page2.context.GravityScene.sim.strength[emptyPlanet], PlanetGravity.emptyGravity(scene.game.seed, emptyPlanet));
 	assert.strictEqual(page2.context.mapRunInfo().trade.planetInPlay(emptyPlanet), true);
 
 	/* Bot endgame colonization: buys kit at HQ when settled worlds are built, founds on arrival */
