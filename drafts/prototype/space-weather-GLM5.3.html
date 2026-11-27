@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>space weather — zone shape &amp; motion demo</title>
+	<style>
+		body { margin: 0; padding: 18px 12px; background: #04060c; color: #93a6c2; font: 13px/1.5 monospace; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+		canvas { max-width: min(92vw, 86vh); background: #000; border: 1px solid #1b2740; touch-action: none; cursor: crosshair; }
+		#ui { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+		#ui label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+		button { font: inherit; color: #cfe0ff; background: #0d1626; border: 1px solid #2a3c5e; padding: 2px 12px; cursor: pointer; }
+		#stat, #hint { opacity: 0.75; font-size: 12px; text-align: center; max-width: min(92vw, 768px); }
+	</style>
+</head>
+<body>
+	<canvas id="view" width="768" height="768"></canvas>
+	<div id="ui">
+		<label>speed <input id="speed" type="range" min="0" max="3" step="0.05" value="1"> <span id="speedVal">1.00x</span></label>
+		<label><input id="cPlanet" type="checkbox" checked> planet plume</label>
+		<label><input id="cField" type="checkbox" checked> 3d-noise field</label>
+		<label><input id="cBand" type="checkbox" checked> rare bands</label>
+		<button id="btnBand">spawn band now</button>
+	</div>
+	<div id="stat">loading…</div>
+	<div id="hint">drag on the map to steer the wind (or open with ?wind=135). every tick the weather texture is faded, shifted by the wind, and new drifting weather is generated ONLY on the border strips the shift just exposed — the green frames, like the classic fire effect but the fed border follows the wind direction. inset = the raw weather texture.</div>
+	<script>
+	'use strict';
+
+	// ============================================================================
+	// space weather zones — shape & motion demo
+	//
+	// one 256x256 "weather texture" is a sliding window on the world. each tick
+	// it is: faded -> shifted by the space wind -> fresh pixels generated ONLY on
+	// the border strips the shift just exposed. that is the classic fire/flame
+	// effect (shift buffer up, ignite the bottom row), except the wind can blow
+	// in any direction, so the fed border changes: shift +x feeds the LEFT edge,
+	// -x the RIGHT edge, +y the TOP edge, -y the BOTTOM edge (two edges at once
+	// when the wind is diagonal, plus the shared corner). the screen only ever
+	// shows this texture scaled up; nothing is drawn directly.
+	//
+	// variants:
+	//   1. planet — an object glued to the map. every tick it paints a
+	//      slow-pulsing round-noisy blob; the wind shift carries that paint away,
+	//      so a plume grows and waves downwind of the planet.
+	//   2. 3d-noise field — fbm(x, y, z) with z += t, sampled at (map pos - total
+	//      drift) so fresh increments seamlessly continue the pattern that is
+	//      already drifting inside the texture.
+	//   3. rare band — a straight stripe fixed in the drift frame (drift = map
+	//      pos - total wind shift). the stripe is NEVER moved by code: while it
+	//      sweeps across the map, each tick only the pixels where it crosses the
+	//      freshly exposed border strips are generated, exactly like flame pixels
+	//      being born on the bottom row. the shift alone carries them across the
+	//      map; the fade dissolves them. with diagonal wind its entry endpoints
+	//      slide along whichever borders the wind is feeding at that moment.
+	// ============================================================================
+
+	const view = document.getElementById('view');
+	const vc = view.getContext('2d');
+	const MAP = view.width;                    // on-screen map size
+	const T = 256;                             // weather texture size
+	const K = MAP / T;                         // screen px per texture px
+
+	const tex = new Float32Array(T * T);       // weather intensity
+	const texCan = document.createElement('canvas');
+	texCan.width = texCan.height = T;
+	const tc = texCan.getContext('2d');
+	const texImg = tc.createImageData(T, T);
+	window.__tex = tex;   // debug hook for console poking
+
+	const speedEl = document.getElementById('speed');
+	const speedVal = document.getElementById('speedVal');
+	const cPlanet = document.getElementById('cPlanet');
+	const cField = document.getElementById('cField');
+	const cBand = document.getElementById('cBand');
+	const statEl = document.getElementById('stat');
+	window.onerror = (m) => { statEl.textContent = 'error: ' + m; };
+
+	// ---------- tiny noise toolkit ----------
+	function hash(x, y, z) {
+		let h = Math.imul(x, 0x8da6b343) ^ Math.imul(y, 0xd8163841) ^ Math.imul(z, 0xcb1ab31f);
+		h = Math.imul(h ^ (h >>> 13), 0x9e3779b1);
+		return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+	}
+	function noise3(x, y, z) {                 // 3d value noise, 0..1
+		const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+		const fx = x - ix, fy = y - iy, fz = z - iz;
+		const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), sz = fz * fz * (3 - 2 * fz);
+		const a = hash(ix, iy, iz), b = hash(ix + 1, iy, iz), c = hash(ix, iy + 1, iz), d = hash(ix + 1, iy + 1, iz);
+		const e = hash(ix, iy, iz + 1), f = hash(ix + 1, iy, iz + 1), g = hash(ix, iy + 1, iz + 1), h = hash(ix + 1, iy + 1, iz + 1);
+		const l0 = a + (b - a) * sx, l1 = c + (d - c) * sx;
+		const l2 = e + (f - e) * sx, l3 = g + (h - g) * sx;
+		const m0 = l0 + (l1 - l0) * sy, m1 = l2 + (l3 - l2) * sy;
+		return m0 + (m1 - m0) * sz;
+	}
+	function fbm3(x, y, z, oct) {              // fractal sum, 0..1
+		let v = 0, amp = 0.5, norm = 0;
+		for (let o = 0; o < oct; o++) {
+			v += amp * noise3(x, y, z);
+			norm += amp;
+			amp *= 0.5;
+			x = x * 2.03 + 19.19; y = y * 2.03 + 7.7; z = z * 2.03 + 3.3;
+		}
+		return v / norm;
+	}
+
+	// ---------- weather texture ops: fade, wind shift, add ----------
+	const FADE = 0.04;                         // intensity decay, per second
+	const tmpTex = new Float32Array(T * T);
+
+	function texFade(dt) {
+		const f = Math.exp(-FADE * dt);
+		for (let i = 0; i < tex.length; i++) tex[i] *= f;
+	}
+
+	// window shift: content moves by (dx, dy); texels whose source scrolled in
+	// from outside the map stay blank. those blank border strips are the ONLY
+	// place where new drifting weather may be generated (fire effect: shift up,
+	// ignite the newly exposed bottom row — here any direction).
+	function texShift(dx, dy) {
+		if (!dx && !dy) return;
+		for (let y = 0; y < T; y++) {
+			const sy = y - dy, row = y * T;
+			if (sy < 0 || sy >= T) { tmpTex.fill(0, row, row + T); continue; }
+			const s0 = sy * T;
+			for (let x = 0; x < T; x++) {
+				const sx = x - dx;
+				tmpTex[row + x] = sx >= 0 && sx < T ? tex[s0 + sx] : 0;
+			}
+		}
+		tex.set(tmpTex);
+	}
+
+	function texAdd(x, y, amt) {               // add at a texel (in bounds)
+		const i = (y | 0) * T + (x | 0);
+		if (i >= 0 && i < tex.length) tex[i] += amt;
+	}
+
+	// ---------- space wind (slowly wandering; drag the map to steer it) ----------
+	let windAngle = 0, windSpeed = 8;
+	let accX = 0, accY = 0;                   // sub-texel accumulator for integer shifts
+	let shiftX = 0, shiftY = 0;               // total drift (float; drift frame = map pos - shift)
+	let windOff = 0;                          // rebase offset, keeps drag steering smooth
+
+	function baseWind(t) {
+		return 0.7 * Math.sin(t * 0.009) + 0.25 * Math.sin(t * 0.033 + 2.1);
+	}
+	function updateWind(t) {
+		windAngle = baseWind(t) + windOff;
+		windSpeed = 7 + 3 * Math.sin(t * 0.016 + 0.7);
+	}
+
+	// ---------- variant 1: planet with pulsing round-noisy area ----------
+	const PLANET = { x: 0.36 * T, y: 0.62 * T, r: 8 };   // glued to the map
+
+	function paintPlanet(dt, t) {
+		const pulse = 0.78 + 0.22 * Math.sin(t * 0.42);  // slow breathing radius
+		const R = 23 * pulse;
+		const box = Math.ceil(R * 1.5);
+		const s = 0.055, zs = t * 0.22, rate = 0.5 * dt;
+		for (let oy = -box; oy <= box; oy++) {
+			for (let ox = -box; ox <= box; ox++) {
+				const d = Math.hypot(ox, oy) / R;
+				if (d > 1.5) continue;
+				// round but noisy edge; noise slowly evolves with z
+				const n = fbm3((PLANET.x + ox) * s, (PLANET.y + oy) * s, zs, 3);
+				const edge = 1 + (n - 0.5) * 0.8;
+				let a = (edge - d) / 0.55;                // soft rim
+				if (a <= 0) continue;
+				if (a > 1) a = 1;
+				texAdd(PLANET.x + ox, PLANET.y + oy, a * rate);
+			}
+		}
+	}
+
+	// ---------- variant 2: 3d-noise field, z += t, xy drifts with wind ----------
+	const G = T / 2;                          // sampled on a half-res grid, then bilinear
+	const grid = new Float32Array(G * G);
+
+	function paintField(dt, t) {
+		const s = 0.026;                       // xy noise scale
+		const z = t * 0.05;                    // z dimension: pattern slowly morphs
+		const ox = shiftX * s, oy = shiftY * s;// xy offset follows total wind drift
+		const rate = 0.057 * dt;
+		let k = 0;
+		for (let y = 0; y < G; y++) {
+			for (let x = 0; x < G; x++) {
+				// offset by total drift so fresh increments continue the
+				// pattern that is already drifting inside the texture
+				grid[k++] = fbm3(x * 2 * s - ox, y * 2 * s - oy, z, 2);
+			}
+		}
+		for (let y = 0; y < T; y++) {
+			const gy = y * 0.5, iy = gy | 0, fy = gy - iy;
+			const r0 = iy * G, r1 = Math.min(G - 1, iy + 1) * G, row = y * T;
+			for (let x = 0; x < T; x++) {
+				const gx = x * 0.5, ix = gx | 0, fx = gx - ix;
+				const c0 = ix, c1 = Math.min(G - 1, ix + 1);
+				const v = (grid[r0 + c0] * (1 - fx) + grid[r0 + c1] * fx) * (1 - fy)
+					+ (grid[r1 + c0] * (1 - fx) + grid[r1 + c1] * fx) * fy;
+				let a = (v - 0.52) / 0.18;     // sparse soft clouds
+				if (a <= 0) continue;
+				if (a > 1) a = 1;
+				tex[row + x] += a * a * rate;
+			}
+		}
+	}
+
+	// ---------- variant 3: rare band, generated fire-style on the border ----------
+	let band = null;                          // the active band (one at a time)
+	let bandTimer = 2.5;                      // seconds until the next one
+	const feedRects = [];                     // border strips exposed by the last shift
+
+	function spawnBand() {
+		// the band is a straight stripe fixed in the drift frame (drift = map
+		// pos - total shift); its normal points roughly downwind, so the wind
+		// shift sweeps it across the map. the code never moves it — it is only
+		// ever fed pixel by pixel through the exposed border strips.
+		const na = windAngle + (Math.random() - 0.5) * 0.3;
+		const nx = Math.cos(na), ny = Math.sin(na);   // across the stripe (sweep direction)
+		const ux = -ny, uy = nx;                      // along the stripe
+		let cMin = 1e9, cMax = -1e9;                  // map extent along the normal
+		for (let i = 0; i < 4; i++) {
+			const c = (i & 1 ? T : 0) * nx + (i & 2 ? T : 0) * ny;
+			if (c < cMin) cMin = c;
+			if (c > cMax) cMax = c;
+		}
+		const thick = 10 + Math.random() * 18;        // base thickness, texture px
+		const maxTh = thick * 1.45 + 1;               // widest the stripe can get
+		band = {
+			nx, ny, ux, uy, cMin, cMax, thick, maxTh,
+			// drift-frame offset of the centerline: just upwind of the map, so
+			// the stripe starts entering through the border right away
+			c0: cMin - 3 - maxTh - (shiftX * nx + shiftY * ny),
+			seed: Math.random() * 37,
+			seed2: Math.random() * 37,
+			seed3: Math.random() * 37,
+			str: 8 + Math.random() * 2.5
+		};
+	}
+
+	function bandGone() {
+		const b = band;
+		return b.c0 + shiftX * b.nx + shiftY * b.ny - b.maxTh > b.cMax + 3;
+	}
+
+	// which border strips the last shift exposed: dx>0 feeds the LEFT edge,
+	// dx<0 the RIGHT edge, dy>0 the TOP edge, dy<0 the BOTTOM edge. diagonal
+	// wind feeds two edges at once; the shared corner is left in the x-strip so
+	// it is never fed twice.
+	let lastFed = '—';                         // borders fed by the most recent shift
+
+	function collectStrips(dx, dy) {
+		feedRects.length = 0;
+		if (dx > 0) feedRects.push([0, 0, dx, T]);
+		else if (dx < 0) feedRects.push([T + dx, 0, T, T]);
+		const x0 = dx > 0 ? dx : 0, x1 = dx < 0 ? T + dx : T;
+		if (dy > 0) feedRects.push([x0, 0, x1, dy]);
+		else if (dy < 0) feedRects.push([x0, T + dy, x1, T]);
+		if (feedRects.length) {
+			let s = '';
+			if (dx > 0) s += 'left';
+			else if (dx < 0) s += 'right';
+			if (dy > 0) s += (s ? '+' : '') + 'top';
+			else if (dy < 0) s += (s ? '+' : '') + 'bottom';
+			lastFed = s;
+		}
+	}
+
+	function feedBand() {
+		// fire moment: the shift just exposed blank border strips; generate the
+		// stripe's pixels wherever it crosses them. nothing else is ever painted
+		// for this band — the wind shift does all the moving.
+		const b = band;
+		for (let k = 0; k < feedRects.length; k++) {
+			const r = feedRects[k];
+			for (let y = r[1]; y < r[3]; y++) {
+				const wy = y - shiftY, row = y * T;
+				for (let x = r[0]; x < r[2]; x++) {
+					paintBandTexel(b, row + x, x - shiftX, wy);
+				}
+			}
+		}
+	}
+
+	function paintBandTexel(b, i, wx, wy) {
+		// wx, wy: drift-frame coords of this texel
+		const dist = wx * b.nx + wy * b.ny - b.c0;   // signed distance from the centerline
+		if (dist <= -b.maxTh || dist >= b.maxTh) return;
+		const s = wx * b.ux + wy * b.uy;               // position along the stripe
+		// random thickness across the length of the band
+		const th = b.thick * (0.45 + 0.75 * fbm3(s * 0.014 + b.seed, 7.7, 0, 2)
+			+ 0.25 * fbm3(s * 0.045 + b.seed2, 3.3, 0, 2));
+		const dd = dist - (fbm3(s * 0.05 + b.seed2, 3.3, 0, 2) - 0.5) * th * 0.6;  // ragged edges
+		const d = dd / (th * 0.5);
+		if (d <= -1 || d >= 1) return;
+		const a = 1 - d * d;
+		tex[i] += b.str * a * a * (0.65 + 0.35 * fbm3(s * 0.02 + b.seed3, 9.1, 0, 2));
+	}
+
+	// ---------- one simulation tick ----------
+	function tick(dt, t) {
+		updateWind(t);
+		texFade(dt);
+		// wind moves the whole texture; sub-texel remainder accumulates
+		const wx = windSpeed * Math.cos(windAngle), wy = windSpeed * Math.sin(windAngle);
+		accX += wx * dt;
+		accY += wy * dt;
+		const ix = Math.floor(accX), iy = Math.floor(accY);
+		accX -= ix;
+		accY -= iy;
+		shiftX += wx * dt;
+		shiftY += wy * dt;
+		if (ix || iy) texShift(ix, iy);
+		collectStrips(ix, iy);
+		// increments
+		if (cPlanet.checked) paintPlanet(dt, t);
+		if (cField.checked) paintField(dt, t);
+		if (cBand.checked) {
+			if (band) {
+				feedBand();                    // ONLY the exposed border strips
+				if (bandGone()) {
+					// clear the band's ghost on exit so it doesn't linger
+					// until the cloud field overwrites it
+					const b = band;
+					const c0 = b.c0;
+					for (let y = 0; y < T; y++) {
+						const wy = y - shiftY;
+						const row = y * T;
+						for (let x = 0; x < T; x++) {
+							const dist = (x - shiftX) * b.nx + wy * b.ny - c0;
+							if (dist > -b.maxTh && dist < b.maxTh) tex[row + x] = 0;
+						}
+					}
+					band = null;
+					bandTimer = 12 + Math.random() * 14;
+				}
+			} else {
+				bandTimer -= dt;
+				if (bandTimer <= 0) spawnBand();
+			}
+		}
+	}
+
+	// ---------- render: colorize texture, scale up, decorate ----------
+	const STOPS = [
+		[0.00, 0, 0, 0, 0],
+		[0.10, 18, 42, 86, 70],
+		[0.30, 26, 108, 138, 130],
+		[0.55, 72, 206, 150, 200],
+		[0.78, 250, 226, 118, 235],
+		[1.00, 255, 255, 244, 255],
+	];
+	const LUT = new Uint8ClampedArray(256 * 4);
+	for (let i = 0; i < 256; i++) {
+		const p = i / 255;
+		let s0 = STOPS[0], s1 = STOPS[STOPS.length - 1];
+		for (let s = 1; s < STOPS.length; s++) {
+			if (p <= STOPS[s][0]) { s1 = STOPS[s]; s0 = STOPS[s - 1]; break; }
+		}
+		const f = (p - s0[0]) / Math.max(1e-9, s1[0] - s0[0]);
+		for (let c = 0; c < 4; c++) LUT[i * 4 + c] = s0[c + 1] + (s1[c + 1] - s0[c + 1]) * f;
+	}
+
+	function flushTex() {
+		const d = texImg.data;
+		for (let i = 0, p = 0; i < tex.length; i++, p += 4) {
+			const v = tex[i];
+			const t = v > 0 ? v / (1 + v) : 0;  // soft saturate
+			const li = (t * 255) | 0;
+			d[p] = LUT[li * 4];
+			d[p + 1] = LUT[li * 4 + 1];
+			d[p + 2] = LUT[li * 4 + 2];
+			d[p + 3] = LUT[li * 4 + 3];
+		}
+		tc.putImageData(texImg, 0, 0);
+	}
+
+	// static starfield backdrop
+	const stars = document.createElement('canvas');
+	stars.width = stars.height = MAP;
+	{
+		const sc = stars.getContext('2d');
+		for (let i = 0; i < 420; i++) {
+			const r = Math.random();
+			sc.globalAlpha = 0.12 + Math.random() * 0.7;
+			sc.fillStyle = Math.random() < 0.12 ? '#ffd9a6' : (Math.random() < 0.5 ? '#cfe2ff' : '#ffffff');
+			sc.beginPath();
+			sc.arc(Math.random() * MAP, Math.random() * MAP, 0.4 + r * r * 1.6, 0, 7);
+			sc.fill();
+		}
+	}
+
+	function render() {
+		vc.drawImage(stars, 0, 0);
+		vc.imageSmoothingEnabled = true;
+		vc.drawImage(texCan, 0, 0, MAP, MAP);  // the map = scaled weather texture
+		if (cPlanet.checked) {                 // planet body on top
+			const px = PLANET.x * K, py = PLANET.y * K;
+			vc.beginPath();
+			vc.arc(px, py, PLANET.r * K, 0, 7);
+			vc.fillStyle = '#20335c';
+			vc.fill();
+			vc.lineWidth = 3;
+			vc.strokeStyle = '#a8e2ff';
+			vc.stroke();
+			vc.beginPath();
+			vc.arc(px, py, 4, 0, 7);
+			vc.fillStyle = '#eaf7ff';
+			vc.fill();
+		}
+		// wind arrow (top left)
+		vc.save();
+		vc.translate(36, 36);
+		vc.strokeStyle = '#9fb0c8';
+		vc.fillStyle = '#9fb0c8';
+		vc.lineWidth = 1.5;
+		vc.globalAlpha = 0.3;
+		vc.beginPath();
+		vc.arc(0, 0, 13, 0, 7);
+		vc.stroke();
+		vc.globalAlpha = 1;
+		vc.rotate(windAngle);
+		vc.beginPath();
+		vc.moveTo(16, 0);
+		vc.lineTo(-8, 0);
+		vc.stroke();
+		vc.beginPath();
+		vc.moveTo(16, 0);
+		vc.lineTo(9, -4);
+		vc.lineTo(9, 4);
+		vc.closePath();
+		vc.fill();
+		vc.restore();
+		// green: the border strips that just received freshly generated pixels
+		if (feedRects.length) {
+			vc.lineWidth = 1;
+			vc.strokeStyle = 'rgba(61,255,124,0.4)';
+			for (let k = 0; k < feedRects.length; k++) {
+				const r = feedRects[k];
+				vc.strokeRect(r[0] * K + 0.5, r[1] * K + 0.5, Math.max(2, (r[2] - r[0]) * K), Math.max(2, (r[3] - r[1]) * K));
+			}
+		}
+		// inset: the raw weather texture the generators actually paint into
+		vc.drawImage(texCan, MAP - 154, 14, 140, 140);
+		vc.strokeStyle = '#2a3c5e';
+		vc.strokeRect(MAP - 154.5, 14.5, 141, 141);
+		vc.font = '11px monospace';
+		vc.fillStyle = '#9fb0c8';
+		vc.fillText('weather texture', MAP - 152, 168);
+		if (feedRects.length) {                // fed strips, marked on the inset too
+			const sc = 140 / T;
+			vc.lineWidth = 1;
+			vc.strokeStyle = 'rgba(61,255,124,0.9)';
+			for (let k = 0; k < feedRects.length; k++) {
+				const r = feedRects[k];
+				vc.strokeRect(MAP - 154 + r[0] * sc, 14 + r[1] * sc, Math.max(1.5, (r[2] - r[0]) * sc), Math.max(1.5, (r[3] - r[1]) * sc));
+			}
+		}
+	}
+
+	function updateStat() {
+		let bs;
+		if (!cBand.checked) bs = 'bands off';
+		else if (band) {
+			const c = band.c0 + shiftX * band.nx + shiftY * band.ny;
+			const p = Math.max(0, Math.min(1, (c - band.cMin - band.maxTh) / (band.cMax - band.cMin + band.maxTh * 2)));
+			bs = 'band crossing, ' + Math.round(p * 100) + '% across';
+		} else bs = 'next band in ' + Math.max(0, bandTimer).toFixed(0) + 's';
+		statEl.textContent = 'wind ' + windSpeed.toFixed(1) + ' px/s @ ' + Math.round(windAngle * 57.2958)
+			+ '° | fed border: ' + lastFed
+			+ ' | total shift (' + Math.round(shiftX) + ', ' + Math.round(shiftY) + ') px | ' + bs;
+	}
+
+	// ---------- ui wiring ----------
+	speedEl.oninput = () => speedVal.textContent = (+speedEl.value).toFixed(2) + 'x';
+	document.getElementById('btnBand').onclick = () => { cBand.checked = true; spawnBand(); };
+
+	// drag on the map to steer the wind; the fed border follows immediately
+	function steer(e) {
+		const r = view.getBoundingClientRect();
+		const x = (e.clientX - r.left) * (MAP / r.width) - MAP / 2;
+		const y = (e.clientY - r.top) * (MAP / r.height) - MAP / 2;
+		if (x * x + y * y < 64) return;
+		windOff = Math.atan2(y, x) - baseWind(t);
+	}
+	view.addEventListener('pointerdown', e => { view.setPointerCapture(e.pointerId); steer(e); });
+	view.addEventListener('pointermove', e => { if (e.buttons) steer(e); });
+
+	// debug hooks: ?speed=2&band=1 (band spawns right after load), ?wind=135 (deg)
+	const q = new URLSearchParams(location.search);
+	if (q.get('speed')) speedEl.value = q.get('speed');
+	if (q.get('wind')) windOff = +q.get('wind') * Math.PI / 180;
+	speedVal.textContent = (+speedEl.value).toFixed(2) + 'x';
+
+	// ---------- main loop ----------
+	let t = 0;
+	let last = performance.now();
+	let statT = -1;
+
+	bandTimer = 1e9;                                    // no bands during pre-warm
+	for (let i = 0; i < 300; i++) tick(0.05, t += 0.05); // pre-warm ~15s so the map is not empty at load
+	bandTimer = q.get('band') ? 0.05 : 2.5;
+
+	requestAnimationFrame(function frame(now) {
+		const raw = Math.min(0.1, (now - last) / 1000);
+		last = now;
+		const dt = raw * +speedEl.value;                // slider drives animation AND generation rates
+		if (dt > 0) tick(dt, t += dt);
+		flushTex();
+		render();
+		if (t - statT > 0.25) { statT = t; updateStat(); }
+		requestAnimationFrame(frame);
+	});
+	</script>
+</body>
+</html>

@@ -1,0 +1,130 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Jammer zone demo</title>
+<style>
+  body { margin: 0; background: #05070d; font: 13px monospace; color: #ccd; }
+  canvas { display: block; }
+  #ui { position: absolute; top: 8px; left: 8px; }
+  button { background: #162; color: #dfd; border: 1px solid #395; padding: 4px 8px; margin-right: 4px; cursor: pointer; }
+  button.on { background: #395; }
+</style>
+</head>
+<body>
+<canvas id="c" width="800" height="600"></canvas>
+<div id="ui">
+  <button data-m="pulse">1 Pulse</button>
+  <button data-m="drift">2 Drift</button>
+  <button data-m="puffs">3 Puffs</button>
+  <button data-m="gust">4 Gust</button>
+</div>
+<script>
+const cvs = document.getElementById('c'), ctx = cvs.getContext('2d');
+const W = cvs.width, H = cvs.height;
+const P = { x: W / 2, y: H / 2, r: 45 };                       // planet
+const CFG = { baseR: 70, noise: 0.22, pulseT: 6, pulseAmp: 0.18,
+              wind: 28, emitEvery: 2.5, life: 14 };
+
+let mode = 'pulse', zones = [], emitT = 0, simT = 0, last = performance.now();
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+function newZone(x, y, vx, vy, life) {
+  return {
+    x, y, vx, vy, age: 0, life,
+    baseR: CFG.baseR * rnd(0.85, 1.15),
+    ph: rnd(0, 6.28),
+    harm: [2, 3, 5].map(k => ({ k, ph: rnd(0, 6.28), sp: rnd(-0.5, 0.5), a: 1 / k }))
+  };
+}
+
+function rimFactor(z, a, t) {                                   // periodic rim noise
+  let s = 0;
+  for (const h of z.harm) s += h.a * Math.sin(h.k * a + h.ph + h.sp * t);
+  return 1 + CFG.noise * s;
+}
+
+function windAng() {
+  const base = -0.4;
+  return mode === 'gust'
+    ? base + 0.7 * Math.sin(simT * 0.15) + 0.3 * Math.sin(simT * 0.37)
+    : base;
+}
+
+function drawZone(z, alpha) {
+  const pulse = 1 + CFG.pulseAmp * Math.sin(2 * Math.PI * simT / CFG.pulseT + z.ph);
+  const grow = mode === 'drift' ? 0.6 + z.age / z.life : 1;
+  const R = z.baseR * pulse * grow;
+  const stretch = mode === 'gust' ? 1.35 : 1;
+  const wa = Math.atan2(z.vy, z.vx), c = Math.cos(wa), s = Math.sin(wa);
+
+  ctx.beginPath();
+  const N = 96;
+  for (let i = 0; i <= N; i++) {
+    const a = i / N * Math.PI * 2;
+    const r = R * rimFactor(z, a, simT);
+    const u = Math.cos(a) * r * stretch, v = Math.sin(a) * r;
+    const X = z.x + u * c - v * s, Y = z.y + u * s + v * c;
+    i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = `rgba(150,90,255,${0.22 * alpha})`;
+  ctx.fill();
+  ctx.strokeStyle = `rgba(200,160,255,${0.7 * alpha})`;
+  ctx.stroke();
+}
+
+function setMode(m) {
+  mode = m; zones = []; emitT = 0;
+  document.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  if (m === 'pulse') zones.push(newZone(P.x, P.y, 0, 0, Infinity));
+}
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; simT += dt;
+
+  const wa = windAng();
+  const moving = mode !== 'pulse';
+  const tx = moving ? CFG.wind * Math.cos(wa) : 0;
+  const ty = moving ? CFG.wind * Math.sin(wa) : 0;
+
+  // spawning
+  if (mode === 'drift' && !zones.length) zones.push(newZone(P.x, P.y, tx, ty, 20));
+  if (mode === 'puffs' || mode === 'gust') {
+    emitT -= dt;
+    if (emitT <= 0) { emitT = CFG.emitEvery; zones.push(newZone(P.x, P.y, tx, ty, CFG.life)); }
+  }
+
+  // motion
+  for (const z of zones) {
+    z.age += dt;
+    if (mode === 'gust') {
+      z.vx += (tx - z.vx) * dt * 0.5;
+      z.vy += (ty - z.vy) * dt * 0.5;
+    } else {
+      z.vx = tx; z.vy = ty;
+    }
+    z.x += z.vx * dt; z.y += z.vy * dt;
+  }
+  zones = zones.filter(z => z.age < z.life);
+
+  // draw
+  ctx.fillStyle = '#05070d';
+  ctx.fillRect(0, 0, W, H);
+  ctx.beginPath();
+  ctx.arc(P.x, P.y, P.r, 0, Math.PI * 2);
+  ctx.fillStyle = '#2a3140';
+  ctx.fill();
+  for (const z of zones) {
+    const alpha = Math.min(1, z.age / 2) * (1 - z.age / z.life);
+    drawZone(z, alpha);
+  }
+  requestAnimationFrame(frame);
+}
+
+document.querySelectorAll('button').forEach(b => b.onclick = () => setMode(b.dataset.m));
+setMode('pulse');
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

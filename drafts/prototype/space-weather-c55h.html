@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Space weather zone demo</title>
+<style>
+  body { margin: 0; background: #03040a; color: #ccd; font: 13px monospace; overflow: hidden; }
+  canvas { display: block; }
+  #ui { position: absolute; top: 8px; left: 8px; }
+  button { background: #111; color: #ccd; border: 1px solid #446; padding: 4px 8px; cursor: pointer; }
+  button.on { background: #335; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui"></div>
+<script>
+// ---------- 3D value noise (seeded by Math.random here; use a shared seed in-game) ----------
+const P = new Uint8Array(256), V = new Float32Array(256);
+{
+  const p = [...Array(256).keys()];
+  for (let i = 255; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [p[i], p[j]] = [p[j], p[i]]; }
+  for (let i = 0; i < 256; i++) { P[i] = p[i]; V[i] = Math.random(); }
+}
+const h = (i, j, k) => V[P[(P[(P[i & 255] + j) & 255] + k) & 255]];
+const lerp = (a, b, t) => a + (b - a) * t;
+function vn(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const fx = x - xi, fy = y - yi, fz = z - zi;
+  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
+  const x0 = xi, x1 = xi + 1, y0 = yi, y1 = yi + 1, z0 = zi, z1 = zi + 1;
+  return lerp(
+    lerp(lerp(h(x0, y0, z0), h(x1, y0, z0), u), lerp(h(x0, y1, z0), h(x1, y1, z0), u), v),
+    lerp(lerp(h(x0, y0, z1), h(x1, y0, z1), u), lerp(h(x0, y1, z1), h(x1, y1, z1), u), v), w);
+}
+function fbm(x, y, z, oct) {
+  let s = 0, n = 0, a = 0.5, f = 1;
+  for (let i = 0; i < oct; i++) { s += a * vn(x * f, y * f, z * f); n += a; a *= 0.5; f *= 2.02; }
+  return s / n;                       // roughly 0..1
+}
+function ridged(x, y, z, oct) {
+  let s = 0, n = 0, a = 0.5, f = 1;
+  for (let i = 0; i < oct; i++) { s += a * (1 - Math.abs(2 * vn(x * f, y * f, z * f) - 1)); n += a; a *= 0.5; f *= 2.02; }
+  return s / n;
+}
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+// ---------- variants ----------
+const VARIANTS = {
+  cloud:    { scale: 0.012, th: 0.52, evo: 0.03, wind: [10, 3],  noise: 'fbm' },
+  filament: { scale: 0.020, th: 0.70, evo: 0.05, wind: [28, 9],  noise: 'ridged' },
+  weather:  { scale: 0.008, th: 0.55, evo: 0.02, wind: [6, 2],   noise: 'fbm', weather: true, k: 0.25, decay: 0.03 },
+};
+
+// ---------- setup ----------
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const off = document.createElement('canvas'), octx = off.getContext('2d');
+const CELL = 4;
+let GW, GH, img, W, mode = 'cloud', T = 0, last = performance.now();
+
+function resize() {
+  cv.width = innerWidth; cv.height = innerHeight;
+  GW = Math.ceil(cv.width / CELL); GH = Math.ceil(cv.height / CELL);
+  off.width = GW; off.height = GH;
+  img = octx.createImageData(GW, GH);
+  W = new Float32Array(GW * GH);      // persistent weather layer
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---------- UI ----------
+const ui = document.getElementById('ui');
+for (const name of Object.keys(VARIANTS)) {
+  const b = document.createElement('button');
+  b.textContent = name;
+  b.onclick = () => { mode = name; W.fill(0); [...ui.children].forEach(c => c.classList.toggle('on', c === b)); };
+  if (name === mode) b.classList.add('on');
+  ui.appendChild(b);
+}
+
+// ---------- frame ----------
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
+  const v = VARIANTS[mode], z = T * v.evo, d = img.data;
+
+  for (let y = 0; y < GH; y++) {
+    for (let x = 0; x < GW; x++) {
+      const i = y * GW + x;
+      // space-wind advection: offset the sample domain over time
+      const u = (x + v.wind[0] * T) * v.scale;
+      const w = (y + v.wind[1] * T) * v.scale;
+      let f = v.noise === 'ridged' ? ridged(u, w, z, 3) : fbm(u, w, z, 4);
+
+      if (v.weather) {
+        // weather increment: integrate noise change into persistent layer, then decay
+        W[i] += dt * v.k * (f - 0.5);
+        W[i] *= 1 - dt * v.decay;
+        f = 0.5 + W[i] * 1.2 + (f - 0.5) * 0.4;
+      }
+
+      const a = smooth(v.th - 0.06, v.th + 0.06, f);   // soft zone edge
+      const p = i * 4;
+      if (a <= 0) { d[p + 3] = 0; continue; }
+      const c = smooth(v.th, v.th + 0.25, f);            // intensity toward core
+      d[p]     = lerp(60, 255, c);
+      d[p + 1] = lerp(40, 140, c);
+      d[p + 2] = lerp(140, 60, c);
+      d[p + 3] = a * 170;
+    }
+  }
+
+  octx.putImageData(img, 0, 0);
+  ctx.fillStyle = '#03040a';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(off, 0, 0, cv.width, cv.height);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

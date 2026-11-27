@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Space weather · Motion studies</title>
+<style>
+	:root { color-scheme: dark; --bg:#080e18; --panel:#101a28; --line:#263447; --muted:#91a1b4; --text:#e7eef7; --cyan:#77e0d6; }
+	* { box-sizing:border-box; }
+	body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+	button, input { font:inherit; }
+	button:focus-visible, input:focus-visible { outline:2px solid var(--cyan); outline-offset:4px; }
+	.shell { max-width:1600px; margin:auto; padding:32px 4vw 48px; }
+	.topline { display:flex; align-items:center; justify-content:space-between; gap:16px; padding-bottom:23px; border-bottom:1px solid var(--line); }
+	.brand { display:flex; align-items:center; gap:10px; color:#d8e5f0; font-size:12px; font-weight:750; letter-spacing:.13em; text-transform:uppercase; }
+	.brand-mark { display:grid; place-items:center; width:29px; height:29px; border:1px solid #4a9c9f; border-radius:50%; color:var(--cyan); font-size:19px; line-height:1; }
+	.top-meta { color:#72869b; font-size:11px; letter-spacing:.12em; text-transform:uppercase; }
+	.intro { display:flex; justify-content:space-between; align-items:end; gap:32px; padding:48px 0 32px; }
+	.eyebrow, .section-label { margin:0; color:var(--cyan); font-size:10px; font-weight:750; letter-spacing:.18em; text-transform:uppercase; }
+	h1 { margin:10px 0 10px; font-size:clamp(32px,4vw,54px); line-height:1.05; letter-spacing:-.045em; font-weight:600; }
+	.intro p.description { max-width:670px; margin:0; color:#9caec0; font-size:15px; }
+	.intro-aside { min-width:180px; padding-left:20px; border-left:1px solid #35485b; color:#859aaf; font-size:12px; }
+	.intro-aside strong { display:block; color:#d5e5ed; font-size:13px; font-weight:600; }
+	.controls { display:grid; grid-template-columns:minmax(190px,1fr) minmax(190px,1fr) auto; align-items:center; gap:30px; padding:20px 24px; border:1px solid var(--line); border-radius:8px; background:#101a27; }
+	.control-top { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+	.control-top label { color:#d7e3ec; font-weight:600; font-size:12px; }
+	.control-top output { color:var(--cyan); font-size:12px; font-variant-numeric:tabular-nums; }
+	input[type=range] { display:block; width:100%; height:4px; margin:13px 0 6px; accent-color:#81ded5; cursor:pointer; }
+	.control-hint { display:flex; justify-content:space-between; color:#70849a; font-size:10px; }
+	.actions { display:flex; align-items:center; gap:8px; }
+	button { padding:10px 14px; border:1px solid #3d5264; border-radius:5px; color:#dce9f0; background:#182838; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+	button:hover { background:#24394a; border-color:#6b8996; }
+	button.primary { border-color:#588d8c; color:#a9eee6; background:#173536; }
+	button.primary:hover { background:#204849; }
+	.study-heading { display:flex; justify-content:space-between; align-items:end; gap:20px; margin:43px 0 16px; }
+	.study-heading h2 { margin:6px 0 0; font-size:19px; font-weight:600; letter-spacing:-.02em; }
+	.study-heading p { margin:0; color:#71879b; font-size:11px; text-align:right; }
+	.cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+	.card { min-width:0; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--panel); }
+	.card-head { display:flex; align-items:start; justify-content:space-between; gap:12px; padding:19px 20px 17px; }
+	.card-kicker { margin:0 0 5px; color:#768ca2; font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
+	.card h3 { margin:0; color:#edf4f9; font-size:16px; font-weight:600; letter-spacing:-.01em; }
+	.number { color:#546b81; font-size:12px; font-variant-numeric:tabular-nums; }
+	.map { position:relative; overflow:hidden; background:#07101a; border-block:1px solid #26384a; }
+	canvas { display:block; width:100%; height:auto; aspect-ratio:8 / 5; }
+	.map-label { position:absolute; left:12px; top:10px; color:#809bb0; font-size:9px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; pointer-events:none; }
+	.map-corner { position:absolute; right:12px; bottom:10px; color:#7b94a6; font-size:9px; letter-spacing:.12em; text-transform:uppercase; pointer-events:none; }
+	.card-body { min-height:125px; padding:18px 20px 20px; }
+	.card-body p { margin:0; color:#9bacc0; font-size:12px; line-height:1.65; }
+	.tag { display:inline-flex; align-items:center; gap:7px; margin-top:15px; color:#a6bccc; font-size:10px; font-weight:650; letter-spacing:.08em; text-transform:uppercase; }
+	.dot { width:6px; height:6px; border-radius:50%; background:#79e4cf; box-shadow:0 0 8px #79e4cf; }
+	.card:nth-child(2) .dot { background:#a7a2ff; box-shadow:0 0 8px #a7a2ff; }
+	.card:nth-child(3) .dot { background:#f2b879; box-shadow:0 0 8px #f2b879; }
+	.notes { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:24px; padding:22px 24px; border:1px solid #223144; border-radius:8px; background:#0c1521; }
+	.notes p { margin:7px 0 0; max-width:650px; color:#899db0; font-size:12px; line-height:1.65; }
+	.footer { display:flex; justify-content:space-between; gap:20px; margin-top:27px; color:#5f758a; font-size:10px; letter-spacing:.1em; text-transform:uppercase; }
+	@media (max-width:900px) { .cards { grid-template-columns:1fr; } .card { display:grid; grid-template-columns:1fr 1.3fr; } .card-head { grid-column:1; grid-row:1; } .map { grid-column:2; grid-row:1 / 3; border:0; border-left:1px solid #26384a; } .card-body { grid-column:1; grid-row:2; min-height:0; padding-top:0; } .controls { grid-template-columns:1fr 1fr; } .actions { grid-column:1 / -1; } }
+	@media (max-width:580px) { .shell { padding:22px 16px 35px; } .top-meta, .intro-aside { display:none; } .intro { padding:37px 0 25px; } .controls { grid-template-columns:1fr; gap:20px; padding:18px; } .actions { grid-column:auto; flex-wrap:wrap; } .card { display:block; } .map { border:0; border-block:1px solid #26384a; } .card-body { padding:18px 20px; } .notes { grid-template-columns:1fr; gap:18px; } .study-heading p { display:none; } }
+</style>
+</head>
+<body>
+<main class="shell">
+	<header class="topline">
+		<div class="brand"><span class="brand-mark">✳</span> Gravity trajectory <span style="color:#52687d">/</span> Field lab</div>
+		<div class="top-meta">Visual experiment &nbsp;·&nbsp; 01 / space weather</div>
+	</header>
+	<section class="intro">
+		<div><p class="eyebrow">Motion study &nbsp; / &nbsp; 001</p><h1>Space weather, in motion.</h1><p class="description">Three ways to make a living weather field. Each source adds to a texture that drifts with the same space wind and gradually fades.</p></div>
+		<div class="intro-aside"><strong>One wind, three sources</strong>Independent fields · shared clock</div>
+	</section>
+	<section class="controls" aria-label="Simulation controls">
+		<div>
+			<div class="control-top"><label for="speed">Animation speed</label><output id="speedValue" for="speed">1.0×</output></div>
+			<input id="speed" type="range" min="0" max="4" step="0.1" value="1">
+			<div class="control-hint"><span>Paused</span><span>4× faster</span></div>
+		</div>
+		<div>
+			<div class="control-top"><label for="direction">Wind direction</label><output id="directionValue" for="direction">30° ↗</output></div>
+			<input id="direction" type="range" min="-180" max="180" step="5" value="30">
+			<div class="control-hint"><span>← Rotate wind</span><span>Rotate wind →</span></div>
+		</div>
+		<div class="actions"><button class="primary" id="bandButton" type="button">Generate band</button><button id="resetButton" type="button">Reset fields</button></div>
+	</section>
+	<div class="study-heading"><div><p class="section-label">Live comparison</p><h2>Source behaviours</h2></div><p>Same wind direction &amp; simulation time<br>Brighter areas indicate denser weather</p></div>
+	<section class="cards" aria-label="Weather variants">
+		<article class="card">
+			<div class="card-head"><div><p class="card-kicker">Local source</p><h3>Planetary pulse</h3></div><span class="number">01</span></div>
+			<div class="map"><canvas id="planet" width="720" height="450" aria-label="Pulsing weather emitted by a planet and carried by wind"></canvas><span class="map-label">Source / planet</span><span class="map-corner">Wind <span class="windArrow">↗</span></span></div>
+			<div class="card-body"><p>A planet continually emits a softly irregular, breathing cloud. The wind stretches its earlier emissions into a fading wake.</p><span class="tag"><span class="dot"></span> Pulsing emitter</span></div>
+		</article>
+		<article class="card">
+			<div class="card-head"><div><p class="card-kicker">Ambient field</p><h3>Evolutionary noise</h3></div><span class="number">02</span></div>
+			<div class="map"><canvas id="noise" width="720" height="450" aria-label="Evolving three-dimensional noise added to drifting weather"></canvas><span class="map-label">Source / 3D noise</span><span class="map-corner">Wind <span class="windArrow">↗</span></span></div>
+			<div class="card-body"><p>A slice of 3D noise evolves through its z-axis while its sampling coordinates drift slowly in x and y. It feeds the weather, rather than replacing it.</p><span class="tag"><span class="dot"></span> Continuous injection</span></div>
+		</article>
+		<article class="card">
+			<div class="card-head"><div><p class="card-kicker">Passing event</p><h3>Drifting band</h3></div><span class="number">03</span></div>
+			<div class="map"><canvas id="band" width="720" height="450" aria-label="A weather band entering from the windward edges and drifting across the map"></canvas><span class="map-label">Source / inflow edge</span><span class="map-corner">Wind <span class="windArrow">↗</span></span></div>
+			<div class="card-body"><p>Rare, uneven bands enter only through windward edges. The texture carries them across the map; the band itself is never moved or painted over the interior.</p><span class="tag"><span class="dot"></span> Edge-generated event</span></div>
+		</article>
+	</section>
+	<section class="notes" aria-label="How to explore">
+		<div><p class="section-label">Try it out</p><p>Change the wind to see the wake turn and the band enter from different edges. Generate a band on demand, or wait for the next rare event. Set speed to zero to pause both motion and generation.</p></div>
+		<div><p class="section-label">Under the surface</p><p>Each panel has its own low-resolution weather texture. Every simulation step backtraces the wind, fades existing weather, and adds new source material. Changing wind clears the fields so the next band starts at the correct inflow edge.</p></div>
+	</section>
+	<footer class="footer"><span>Field lab / prototype only</span><span>Not connected to gameplay</span></footer>
+</main>
+<script>
+'use strict';
+(() => {
+	const W = 240, H = 150, STEP = 1 / 30, WIND_SPEED = 5;
+	const $ = id => document.getElementById(id);
+	const speed = $('speed'), direction = $('direction');
+	const arrows = document.querySelectorAll('.windArrow');
+	const fields = ['planet', 'noise', 'band'].map((id, index) => {
+		const canvas = $(id);
+		const buffer = document.createElement('canvas');
+		buffer.width = W;
+		buffer.height = H;
+		const bufferContext = buffer.getContext('2d');
+		return { canvas, context: canvas.getContext('2d'), buffer, bufferContext, image: bufferContext.createImageData(W, H), data: new Float32Array(W * H), next: new Float32Array(W * H), index };
+	});
+	let time = 0, windX = 0, windY = 0, bandCenter = 0, bandSeed = 0, bandActive = false, nextBand = 0;
+	let lastFrame = 0, accumulator = 0;
+
+	function hash(x, y, z) {
+		let n = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(z, 1442695041);
+		n = Math.imul(n ^ n >>> 13, 1274126177);
+		return ((n ^ n >>> 16) >>> 0) / 4294967295;
+	}
+	function smooth(t) { return t * t * (3 - 2 * t); }
+	function mix(a, b, t) { return a + (b - a) * t; }
+	function noise3(x, y, z) {
+		const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+		const fx = smooth(x - ix), fy = smooth(y - iy), fz = smooth(z - iz);
+		const a = mix(mix(hash(ix, iy, iz), hash(ix + 1, iy, iz), fx), mix(hash(ix, iy + 1, iz), hash(ix + 1, iy + 1, iz), fx), fy);
+		const b = mix(mix(hash(ix, iy, iz + 1), hash(ix + 1, iy, iz + 1), fx), mix(hash(ix, iy + 1, iz + 1), hash(ix + 1, iy + 1, iz + 1), fx), fy);
+		return mix(a, b, fz);
+	}
+	function boundsProjection(x, y) { return x * windX / WIND_SPEED + y * windY / WIND_SPEED; }
+	function startBand() {
+		const min = Math.min(0, boundsProjection(W - 1, 0), boundsProjection(0, H - 1), boundsProjection(W - 1, H - 1));
+		bandCenter = min - 5 - WIND_SPEED * time;
+		bandSeed = Math.random() * 1000;
+		bandActive = true;
+	}
+	function reset() {
+		time = 0;
+		accumulator = 0;
+		for (const field of fields) { field.data.fill(0); field.next.fill(0); }
+		nextBand = 20;
+		startBand();
+		render();
+	}
+	function updateWind() {
+		const angle = Number(direction.value) * Math.PI / 180;
+		windX = Math.cos(angle) * WIND_SPEED;
+		windY = -Math.sin(angle) * WIND_SPEED;
+		const directions = ['→', '↗', '↑', '↖', '←', '↙', '↓', '↘'];
+		const arrow = directions[((Math.round(Number(direction.value) / 45) % 8) + 8) % 8];
+		$('directionValue').textContent = direction.value + '° ' + arrow;
+		for (const element of arrows) element.textContent = arrow;
+		reset();
+	}
+	function bandAt(x, y) {
+		if (!bandActive) return 0;
+		// Coordinates follow the advected texture, so the inlet samples one fixed stripe.
+		const wx = x - windX * time, wy = y - windY * time;
+		const along = (-wx * windY + wy * windX) / WIND_SPEED;
+		const center = bandCenter + (noise3(along / 32, bandSeed, 0) - .5) * 14;
+		const thickness = 7 + noise3(along / 24, bandSeed + 7, 2) * 13;
+		const distance = Math.abs(boundsProjection(wx, wy) - center);
+		return Math.max(0, Math.min(1, (thickness - distance) / 4)) * .95;
+	}
+	function stepField(field, dt) {
+		const old = field.data, next = field.next;
+		const dx = windX * dt, dy = windY * dt;
+		const decay = Math.exp(-dt * (field.index === 2 ? .013 : .07));
+		const pulse = 24 + 4 * Math.sin(time * .45);
+		for (let y = 0; y < H; y++) {
+			for (let x = 0; x < W; x++) {
+				const sx = x - dx, sy = y - dy, x0 = Math.floor(sx), y0 = Math.floor(sy);
+				const fx = sx - x0, fy = sy - y0;
+				let value = 0, coverage = 0;
+				for (let oy = 0; oy <= 1; oy++) {
+					for (let ox = 0; ox <= 1; ox++) {
+						const px = x0 + ox, py = y0 + oy;
+						if (px < 0 || px >= W || py < 0 || py >= H) continue;
+						const weight = (ox ? fx : 1 - fx) * (oy ? fy : 1 - fy);
+						value += old[py * W + px] * weight;
+						coverage += weight;
+					}
+				}
+				value *= decay;
+				if (field.index === 0) {
+					const px = x - 79, py = y - 80;
+					const radius = Math.sqrt(px * px + py * py);
+					const irregularity = (noise3(x / 19, y / 19, time * .055) - .5) * 13;
+					const shape = Math.max(0, Math.min(1, (pulse + irregularity - radius) / 10));
+					value += shape * dt * .20 * (.8 + .2 * Math.sin(time * .45));
+				} else if (field.index === 1) {
+					const nx = (x - windX * time * .25) / 39, ny = (y - windY * time * .25) / 39;
+					const n = noise3(nx, ny, time * .035) * .7 + noise3(nx * 2, ny * 2, 8 + time * .05) * .3;
+					value += Math.max(0, n - .38) * dt * .065;
+				} else if (coverage < .99999) {
+					value += (1 - coverage) * bandAt(sx, sy);
+				}
+				next[y * W + x] = Math.min(1, value);
+			}
+		}
+		field.data = next;
+		field.next = old;
+	}
+	function step(dt) {
+		time += dt;
+		if (bandActive) {
+			const max = Math.max(0, boundsProjection(W - 1, 0), boundsProjection(0, H - 1), boundsProjection(W - 1, H - 1));
+			if (bandCenter + WIND_SPEED * time > max + 30) { bandActive = false; nextBand = time + 18 + Math.random() * 15; }
+		} else if (time >= nextBand) startBand();
+		for (const field of fields) stepField(field, dt);
+	}
+	function renderField(field) {
+		const pixels = field.image.data, data = field.data;
+		const colors = [[76, 221, 193], [147, 138, 246], [242, 171, 104]][field.index];
+		for (let i = 0; i < data.length; i++) {
+			const v = Math.min(1, data[i]);
+			const glow = Math.pow(v, .8);
+			const p = i * 4;
+			pixels[p] = 5 + colors[0] * glow;
+			pixels[p + 1] = 14 + colors[1] * glow;
+			pixels[p + 2] = 24 + colors[2] * glow;
+			pixels[p + 3] = 255;
+		}
+		field.bufferContext.putImageData(field.image, 0, 0);
+		const ctx = field.context;
+		ctx.drawImage(field.buffer, 0, 0, field.canvas.width, field.canvas.height);
+		ctx.save();
+		ctx.scale(3, 3);
+		ctx.strokeStyle = 'rgba(145, 184, 205, .075)';
+		ctx.lineWidth = .3;
+		for (let x = 30; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+		for (let y = 30; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+		for (let i = 0; i < 55; i++) {
+			const x = hash(i, 2, 1) * W, y = hash(i, 4, 2) * H;
+			ctx.fillStyle = i % 7 ? 'rgba(190, 220, 235, .35)' : 'rgba(205, 235, 245, .7)';
+			ctx.fillRect(x, y, i % 7 ? .45 : .8, i % 7 ? .45 : .8);
+		}
+		if (field.index === 0) {
+			ctx.beginPath(); ctx.arc(79, 80, 7, 0, Math.PI * 2); ctx.fillStyle = '#c2e7dc'; ctx.fill();
+			ctx.beginPath(); ctx.arc(77, 78, 4.5, 0, Math.PI * 2); ctx.fillStyle = '#e8f6eb'; ctx.fill();
+			ctx.beginPath(); ctx.arc(79, 80, 10, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(204, 251, 237, .4)'; ctx.lineWidth = .5; ctx.stroke();
+		}
+		ctx.restore();
+	}
+	function render() { for (const field of fields) renderField(field); }
+	function frame(now) {
+		if (!lastFrame) lastFrame = now;
+		const elapsed = Math.min((now - lastFrame) / 1000, .1);
+		lastFrame = now;
+		accumulator += elapsed * Number(speed.value);
+		let steps = 0;
+		while (accumulator >= STEP && steps < 12) { step(STEP); accumulator -= STEP; steps++; }
+		if (steps) render();
+		requestAnimationFrame(frame);
+	}
+	speed.addEventListener('input', () => { $('speedValue').textContent = Number(speed.value).toFixed(1) + '×'; });
+	direction.addEventListener('input', updateWind);
+	$('bandButton').addEventListener('click', startBand);
+	$('resetButton').addEventListener('click', reset);
+	updateWind();
+	requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
