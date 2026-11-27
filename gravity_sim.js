@@ -59,7 +59,7 @@
 	const TRAIL_STRIDE = 2;
 	const BUDGET_MS = 10;
 	const BUDGET_EVERY = 64;
-	const MAX_BODIES = 48;
+	const MAX_BODIES = 192;
 	const FIELD_STRIDE = 4;
 	const VEL_EPS = 0.05;
 	const NO_BODY = -1;
@@ -366,11 +366,8 @@
 
 	GravitySim.prototype.setPeriodic = function (periodic, gridSource) {
 		this.periodic = !!periodic;
-		if (this.periodic) {
-			/* the torus has no margin: the area equals the world field */
-			this.padX = 0;
-			this.padY = 0;
-		}
+		this.padX = this.periodic ? 0 : this.worldW * AREA_PAD;
+		this.padY = this.periodic ? 0 : this.worldH * AREA_PAD;
 		this.periodicGrid_ = null;
 		this.periodicSource_ =
 			(this.periodic && gridSource && gridSource !== this) ? gridSource : null;
@@ -397,14 +394,17 @@
 	 * applied inside the solve, MU * gravityScale at sample time, so the g
 	 * field slider and refreshField never re-solve. */
 	GravitySim.prototype.ensurePeriodicGrid = function () {
-		if (this.periodicGrid_ !== null) return this.periodicGrid_;
 		if (this.periodicSource_) {
-			const shared = this.periodicSource_.periodicGrid();
-			if (shared) {
+			const source = this.periodicSource_;
+			if (source.periodic && source.fieldStatic && source.worldW === this.worldW && source.worldH === this.worldH) {
+				const shared = source.ensurePeriodicGrid();
 				this.periodicGrid_ = shared;
 				return shared;
 			}
+			this.periodicGrid_ = null;
+			this.periodicSource_ = null;
 		}
+		if (this.periodicGrid_ !== null) return this.periodicGrid_;
 		const W = this.worldW, H = this.worldH;
 		const g = GravityFFT.gridFor(W, H);
 		const snap = GravityFFT.solve(

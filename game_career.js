@@ -173,6 +173,7 @@
 		fleetSim.setPlanetMask(sim.planetMask);
 		fleetSim.setScales(sim.gravityScale, sim.forceScale);
 		fleetSim.setField(sim.bodyCount, sim.bodyR, sim.strength, sim.fillField, sim.fieldStatic);
+		fleetSim.setPeriodic(sim.periodic, sim);
 		fleetSim.fieldT = trade.t;
 		fleetSim.fieldRate = sim.fieldRate;
 		/* the launch gate reads the fleet ship's own fit, not the flagship's */
@@ -251,6 +252,7 @@
 		fleetSim.setPlanetMask(sim.planetMask);
 		fleetSim.setScales(sim.gravityScale, sim.forceScale);
 		fleetSim.setField(sim.bodyCount, sim.bodyR, sim.strength, sim.fillField, sim.fieldStatic);
+		fleetSim.setPeriodic(sim.periodic, sim);
 		fleetSim.fieldT = trade.t;
 		fleetSim.fieldRate = sim.fieldRate;
 		/* the launch gate and standing position are re-derived from the saved
@@ -331,7 +333,7 @@
 			radarStamp: { steps: -1, t0: -1, vx: 0, vy: 0 },
 			/* the run's active planet subset; null = every planet in play */
 			planetMask: null,
-			planetCount: OrbitWorld.PLANETS,
+			planetCount: OrbitWorld.CLASSIC_PLANETS,
 			hq: -1,
 			at: -1,
 			flying: false,

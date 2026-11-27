@@ -66,7 +66,8 @@
 
 	/* ── sim record ── constructor, reset, positions, colony log and events */
 
-	function Sim(seed) {
+	function Sim(seed, options) {
+		this.periodic = !!(options && options.periodic);
 		this.handleEvent = this.handleEvent.bind(this);
 		this.onColonyEvent = this.onColonyEvent.bind(this);
 		this.reset(seed);
@@ -142,7 +143,7 @@
 		this.shipDockAngle = new Float64Array(PORTS);
 
 		/* geometry and traits: the caller's stream, in the historical order */
-		OrbitWorld.attach(this, OrbitWorld.create(this.seed, this.rand));
+		OrbitWorld.attach(this, OrbitWorld.create(this.seed, this.rand, { periodic: this.periodic }));
 
 		/* one colony record per colonised planet (§1, §4) */
 		this.colonies = [];
@@ -635,7 +636,7 @@
 	 * keep trading with the worlds it cannot see.
 	 */
 	Sim.prototype.setPlanetLimit = function (count) {
-		const limit = Math.min(PLANETS, Math.max(this.tradePlanetLimit, count));
+		const limit = Math.min(this.world.planetCount, Math.max(this.tradePlanetLimit, count));
 		for (let i = this.tradePlanetLimit; i < limit; i++) {
 			if (this.planetState[i] === 0) this.planetEmpty++;
 		}

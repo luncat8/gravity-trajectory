@@ -43,7 +43,7 @@ function makeWorld(seed) {
 		trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
 	sim.setScales(1, 1);
 	const strength = new Float64Array(GravitySim.MAX_BODIES).fill(1);
-	sim.setField(P, trade.planetR, strength, (t, outX, outY, n) => {
+	sim.setField(OrbitWorld.CLASSIC_PLANETS, trade.planetR, strength, (t, outX, outY, n) => {
 		for (let i = 0; i < n; i++) { outX[i] = trade.planetX[i]; outY[i] = trade.planetY[i]; }
 	}, true);
 	sim.fieldT = trade.t;

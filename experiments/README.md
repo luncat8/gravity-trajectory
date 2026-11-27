@@ -200,3 +200,6 @@ files.
 `CONFIGS` and writes the records the search accepts (~20 s). With `--check` it
 writes nothing and fails on every record that is no longer what the search
 returns; that run closes the slow tier.
+
+`periodic_roster_test.js` checks the 192-cell toroidal placement, classic
+48-planet tail, deterministic reset and exact sparse opening-mask keys.

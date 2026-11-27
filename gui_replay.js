@@ -169,7 +169,7 @@ function verdictText(end) {
 	if (end.visited === cargoSim.visitedCount && end.steps === scoreSteps()) {
 		return 'verified ✓ · purse ' + game.money.purse.toFixed(2);
 	}
-	return 'differs · recorded ' + end.visited + ' / ' + PLANETS + ' · ' +
+	return 'differs · recorded ' + end.visited + ' / ' + planetCount + ' · ' +
 		(end.steps * DT).toFixed(2) + ' s';
 }
 

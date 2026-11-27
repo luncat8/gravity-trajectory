@@ -38,6 +38,7 @@ const FAST = [
 	['parts_test.js', 0.3],
 	['classic_physics_test.js', 0.1],
 	['periodic_sim_test.js', 0.5],
+	['periodic_roster_test.js', 0.5],
 	['launch_reason_test.js', 0.2],
 	['comms_facts_test.js', 0.4],
 	['comms_topics_test.js', 0.4],

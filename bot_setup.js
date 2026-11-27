@@ -182,6 +182,7 @@
 			sim.setScales(sourceSim.gravityScale, sourceSim.forceScale);
 			sim.setField(sourceSim.bodyCount, sourceSim.bodyR, sourceSim.strength,
 				sourceSim.fillField, sourceSim.fieldStatic);
+			sim.setPeriodic(sourceSim.periodic, sourceSim);
 		};
 		bind(this.probe);
 		bind(this.burnShotSim);

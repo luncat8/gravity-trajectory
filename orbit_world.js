@@ -16,7 +16,8 @@
 (function (root) {
 	'use strict';
 
-	const PLANETS = 48;
+	const PLANETS = 192;
+	const CLASSIC_PLANETS = 48;
 	const DEFAULT_PLANETS = 26;
 	const INITIAL_PORTS = 8;
 	const WORLD_W = 1600;
@@ -110,10 +111,12 @@
 	 * spaced initial planets, then the orbit of each planet). `seed` only keys
 	 * the trait stream.
 	 */
-	function create(seed, rand) {
+	function create(seed, rand, options) {
+		const periodic = !!(options && options.periodic);
 		const world = {
 			seed: seed >>> 0,
-			planetCount: PLANETS,
+			planetCount: periodic ? PLANETS : CLASSIC_PLANETS,
+			periodic: periodic,
 			planetX: new Float64Array(PLANETS),
 			planetY: new Float64Array(PLANETS),
 			planetR: new Float64Array(PLANETS),
@@ -136,10 +139,16 @@
 			metal: 0,
 			lum: 0
 		};
-		placePlanets(world, rand, INITIAL_PORTS);
-		placeOrbits(world, rand);
-		placeTraits(world);
-		placeExtraPlanets(world);
+		if (periodic) {
+			placePeriodicPlanets(world, rand);
+			chooseInitialPlanets(world, rand, INITIAL_PORTS);
+			placeTraits(world);
+		} else {
+			placePlanets(world, rand, INITIAL_PORTS);
+			placeOrbits(world, rand);
+			placeTraits(world);
+			placeExtraPlanets(world);
+		}
 		placeSpecials(world);
 		return world;
 	}
@@ -212,6 +221,11 @@
 			y[i] = bestY;
 		}
 
+		chooseInitialPlanets(world, rand, initialPorts);
+	}
+
+	function chooseInitialPlanets(world, rand, initialPorts) {
+		const x = world.planetX, y = world.planetY;
 		/* initial stations spread over the field, never two on one planet */
 		const initial = world.initialPlanets;
 		let pick = Math.floor(rand() * DEFAULT_PLANETS);
@@ -309,7 +323,7 @@
 	 * its economy retain their historical geometry and random draws. */
 	function placeExtraPlanets(world) {
 		const rand = seedRandom(world.seed ^ 0x48ab91);
-		for (let i = DEFAULT_PLANETS; i < PLANETS; i++) {
+		for (let i = DEFAULT_PLANETS; i < CLASSIC_PLANETS; i++) {
 			let bestGap = -1, x = 0, y = 0;
 			for (let attempt = 0; attempt < 80; attempt++) {
 				const px = 110 + rand() * (WORLD_W - 220);
@@ -340,6 +354,37 @@
 			world.planetMetal[i] = TYPE_METAL[type] * (0.70 + 0.60 * rand());
 			world.planetLight[i] = 0.2 + 0.8 * rand();
 			world.planetHabitat[i] = clamp01(TYPE_HABITAT[type] * (0.55 + 0.45 * rand()));
+		}
+	}
+
+	function reverseByte(value) {
+		value = ((value & 0x55) << 1) | ((value >>> 1) & 0x55);
+		value = ((value & 0x33) << 2) | ((value >>> 2) & 0x33);
+		return ((value & 0x0f) << 4) | (value >>> 4);
+	}
+
+	function placePeriodicPlanets(world, rand) {
+		let i = 0;
+		for (let j = 0; j < 256; j++) {
+			const cell = reverseByte(j);
+			if (cell >= PLANETS) continue;
+			world.planetX[i] = ((cell % 16) + 0.5) * (WORLD_W / 16) + 2 * rand() - 1;
+			world.planetY[i] = (Math.floor(cell / 16) + 0.5) * (WORLD_H / 12) + 2 * rand() - 1;
+			world.planetR[i] = 6 + rand() * 5;
+			world.orbitRX[i] = 46 + rand() * 32;
+			world.orbitRY[i] = 46 + rand() * 32;
+			world.orbitPhase[i] = rand() * TAU;
+			world.orbitOmega[i] = (rand() < 0.5 ? -1 : 1) * TAU / (160 + rand() * 240);
+			const tilt = rand() * Math.PI;
+			world.orbitTilt[i] = tilt;
+			world.orbitTiltCos[i] = Math.cos(tilt);
+			world.orbitTiltSin[i] = Math.sin(tilt);
+			const type = Math.floor(rand() * TYPE_COUNT);
+			world.planetType[i] = type;
+			world.planetMetal[i] = TYPE_METAL[type] * (0.70 + 0.60 * rand());
+			world.planetLight[i] = 0.2 + 0.8 * rand();
+			world.planetHabitat[i] = clamp01(TYPE_HABITAT[type] * (0.55 + 0.45 * rand()));
+			i++;
 		}
 	}
 
@@ -391,7 +436,7 @@
 	}
 
 	const OrbitWorld = {
-		PLANETS, DEFAULT_PLANETS, INITIAL_PORTS, WORLD_W, WORLD_H, TAU,
+		PLANETS, CLASSIC_PLANETS, DEFAULT_PLANETS, INITIAL_PORTS, WORLD_W, WORLD_H, TAU,
 		AREA_SCALE, AREA_W, AREA_H, AREA_PAD_X, AREA_PAD_Y,
 		KIND_NORMAL, KIND_ARF, KIND_CAPITAL, SPECIAL_COUNT,
 		TYPE_ROCK, TYPE_TERRAN, TYPE_SUPER, TYPE_DWARF, TYPE_MINI, TYPE_GAS, TYPE_ICE,

@@ -292,6 +292,25 @@ check('snapshot adoption shares a live grid without mutating it', function () {
 	assert.strictEqual(liveRev, liveRevBefore, 'live grid never mutated');
 });
 
+check('lazy borrowed grids follow source invalidation', function () {
+	const planets = [{ x: 300, y: 400, r: 20 }];
+	const live = makePeriodicSim(1600, 1000, planets);
+	const probe = makePeriodicSim(1600, 1000, planets);
+	probe.setPeriodic(true, live);
+	const before = GravityFFT.solves;
+	probe.fieldAt(100, 100, { ax: 0, ay: 0 });
+	assert.strictEqual(GravityFFT.solves, before + 1);
+	const old = live.periodicGrid();
+	assert.strictEqual(probe.periodicGrid(), old);
+	live.setStrength(0, 0.25);
+	probe.fieldAt(100, 100, { ax: 0, ay: 0 });
+	assert.strictEqual(GravityFFT.solves, before + 2);
+	assert.notStrictEqual(live.periodicGrid(), old);
+	assert.strictEqual(probe.periodicGrid(), live.periodicGrid());
+	live.setPeriodic(false);
+	assert.ok(live.padX > 0 && live.padY > 0);
+});
+
 /* ── moving source stays on the direct minimum-image sum (never solves a grid) ── */
 check('moving periodic source uses the direct sum, no grid solve', function () {
 	const W = 1600, H = 1000;

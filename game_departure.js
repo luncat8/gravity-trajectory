@@ -125,11 +125,16 @@
 			legProbe.stepStale = true;
 			legProbe.refreshField();
 		}
+		if (sourceSim.periodic) legProbe.setPeriodic(true, sourceSim);
+		else if (legProbe.periodic) legProbe.setPeriodic(false);
 		return legProbe;
 	}
 
 	function legFieldTag(sim, fieldTime) {
 		let stamp = sim.fieldStatic ? 0x811c9dc5 : 0x9e3779b9;
+		stamp = Math.imul(stamp ^ (sim.periodic ? 1 : 0), 0x01000193);
+		stamp = Math.imul(stamp ^ Math.round(sim.worldW), 0x01000193);
+		stamp = Math.imul(stamp ^ Math.round(sim.worldH), 0x01000193);
 		stamp = Math.imul(stamp ^ sim.bodyCount, 0x01000193);
 		stamp = Math.imul(stamp ^ Math.round(sim.gravityScale * 100), 0x01000193);
 		for (let i = 0; i < sim.bodyCount; i++) {

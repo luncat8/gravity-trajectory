@@ -159,7 +159,7 @@
 			lo = Math.imul(lo ^ (v + i * 31), 0x01000193) >>> 0;
 			hi = Math.imul(hi ^ (v ^ (i * 131)), 0x85ebca6b) >>> 0;
 		}
-		const key = (hi & 0x1fffff) * 4294967296 + lo;
+		const key = ((hi & 0x1fffff) * 4294967296 + lo) + ':' + openingMaskBits(mask);
 		let entry = openingFieldExitCache.get(key);
 		if (!entry) {
 			const memo = new Int8Array(OrbitWorld.PLANETS);
@@ -379,7 +379,7 @@
 		const key = (world.seed >>> 0) + ':' + (trade.seed >>> 0) + ':' + trade.t.toFixed(3) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
-			openingMaskTag(mask, count) + ':' + openingMaskTag(forcedHomes, 0) + ':' +
+			openingMaskBits(mask) + ':' + openingMaskBits(forcedHomes) + ':' +
 			emptyTag + ':' + gravityTag + ':' + (specialPlanetsOn() ? 1 : 0);
 		const cached = openingCache.get(key);
 		if (cached) return cached;
@@ -480,13 +480,18 @@
 	 */
 	const openingTraceCache = new Map();
 	const OPENING_TRACE_CACHE_MAX = 4096;
+	const OPENING_TRACE_BYTES_MAX = 32 * 1024 * 1024;
+	let openingTraceBytes = 0;
 
 	function openingMaskBits(mask) {
-		if (!mask) return -1;
-		let lo = 0, hi = 0;
-		for (let i = 0; i < 32; i++) if (mask[i]) lo |= (1 << i);
-		for (let i = 32; i < OrbitWorld.PLANETS; i++) if (mask[i]) hi |= (1 << (i - 32));
-		return hi * 4294967296 + (lo >>> 0);
+		if (!mask) return '-';
+		let key = '';
+		for (let base = 0; base < OrbitWorld.PLANETS; base += 32) {
+			let word = 0;
+			for (let bit = 0; bit < 32; bit++) if (mask[base + bit]) word |= 1 << bit;
+			key += (word >>> 0).toString(16).padStart(8, '0');
+		}
+		return key;
 	}
 
 	function openingTracks(world, mask, forcedHomes, home, angles, speeds, strictExit) {
@@ -524,8 +529,12 @@
 			openPay: profile.openPay
 		};
 		openingTraceCache.set(key, track);
-		if (openingTraceCache.size > OPENING_TRACE_CACHE_MAX) {
-			openingTraceCache.delete(openingTraceCache.keys().next().value);
+		openingTraceBytes += sitePay.byteLength + exitOk.byteLength;
+		while (openingTraceCache.size > OPENING_TRACE_CACHE_MAX || openingTraceBytes > OPENING_TRACE_BYTES_MAX) {
+			const oldest = openingTraceCache.keys().next().value;
+			const evicted = openingTraceCache.get(oldest);
+			openingTraceBytes -= evicted.sitePay.byteLength + evicted.exitOk.byteLength;
+			openingTraceCache.delete(oldest);
 		}
 		return track;
 	}

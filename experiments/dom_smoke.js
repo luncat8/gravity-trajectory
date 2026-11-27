@@ -29,12 +29,12 @@ const pageWorld = env.context.OrbitWorld;
 const pageEcon = env.context.OrbitEcon;
 if (!pageWorld || !pageEcon) throw new Error('orbit_world/orbit_econ not loaded by index.html');
 if (sim.planetType.length !== pageWorld.PLANETS) throw new Error('planet types missing');
-for (let i = 0; i < pageWorld.PLANETS; i++) {
+for (let i = 0; i < sim.world.planetCount; i++) {
 	if (!(sim.planetHabitat[i] > 0)) throw new Error('planet habitat missing at ' + i);
 	if (!(sim.planetLight[i] > 0)) throw new Error('planet light missing at ' + i);
 }
 const typeCount = new Array(pageWorld.TYPE_COUNT).fill(0);
-for (let i = 0; i < pageWorld.PLANETS; i++) typeCount[sim.planetType[i]] += 1;
+for (let i = 0; i < sim.world.planetCount; i++) typeCount[sim.planetType[i]] += 1;
 console.log('world traits:', pageWorld.TYPE_NAMES.map((name, i) => name + ' ' + typeCount[i]).join(', '),
 	'| Z', sim.metal.toFixed(4), 'L', sim.lum.toFixed(2), 'belts', sim.beltCount);
 if (typeCount.every(n => n === 0)) throw new Error('no planet types drawn');

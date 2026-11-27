@@ -124,7 +124,7 @@
 	/* ── universe mask ── planet/port/ship in-play tests */
 
 	function planetInPlay(planet) {
-		return !planetMask || planetMask[planet] === 1;
+		return planet < sim.world.planetCount && (!planetMask || planetMask[planet] === 1);
 	}
 	function setPlanetMask(mask) {
 		planetMask = mask || null;
@@ -438,7 +438,7 @@
 		const rand = seedRandom(sim.seed ^ 0x51a7);
 		moonCount = 0;
 		trackCount = 0;
-		for (let p = 0; p < OrbitSim.PLANETS; p++) {
+		for (let p = 0; p < sim.world.planetCount; p++) {
 			const rx = sim.orbitRX[p];
 			const ry = sim.orbitRY[p];
 			const major = rx >= ry ? rx : ry;
@@ -1079,11 +1079,13 @@
 		if (now - hudAt < HUD_INTERVAL) return;
 		hudAt = now;
 		clockEl.textContent = formatClock(sim.t);
-		portsEl.textContent = sim.portCount + ' / ' + OrbitSim.PLANETS;
+		let active = 0;
+		for (let p = 0; p < sim.world.planetCount; p++) if (planetInPlay(p)) active++;
+		portsEl.textContent = sim.portCount + ' / ' + active;
 		shipsEl.textContent = sim.shipCount;
 		deliveredEl.textContent = Math.round(sim.delivered);
 		coloniesEl.textContent = sim.coloniesBuilt + ' / ' +
-			(OrbitSim.PLANETS - OrbitSim.INITIAL_PORTS);
+			Math.max(0, active - OrbitSim.INITIAL_PORTS);
 		aimEl.textContent = sim.maxAimError < 0.0005
 			? '0.000 px'
 			: sim.maxAimError.toFixed(3) + ' px';

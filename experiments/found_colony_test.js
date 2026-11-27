@@ -68,7 +68,8 @@ const { loadPage, mapSearch } = require('./dom_stub.js');
 		assert.strictEqual(opening.empty[world.arfPlanet], 0);
 		assert.strictEqual(opening.politicsSeed, 7);
 	}
-	const mask48 = new Uint8Array(World.PLANETS).fill(1);
+	const mask48 = new Uint8Array(World.PLANETS);
+	mask48.fill(1, 0, World.CLASSIC_PLANETS);
 	const m48 = Game.createMarket();
 	Game.deriveEmptyWorlds(m48, mask48, 48, new Sim(3).world);
 	assert.ok(m48.empty.subarray(26, 48).reduce((a, b) => a + b, 0) > 0,

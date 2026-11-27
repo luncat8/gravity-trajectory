@@ -517,10 +517,10 @@ game.career = GravityGame.createCareer(game.money);
  * scoreboard +/- change it live — increase adds a random planet, decrease
  * removes a random one (no refund) while every player's first HQ stays. */
 const PLANET_UNIVERSE_MIN = 4;
-const PLANET_UNIVERSE_MAX = PLANETS;
+const PLANET_UNIVERSE_MAX = OrbitWorld.CLASSIC_PLANETS;
 const PLANET_CAREER_DEFAULT = 16;
 const PLANET_DEFAULT = OrbitWorld.DEFAULT_PLANETS;
-const planetMask = new Uint8Array(PLANET_UNIVERSE_MAX);
+const planetMask = new Uint8Array(PLANETS);
 let planetCount = PLANET_DEFAULT;
 /* last used game mode, restored on load */
 const MODE_STORAGE = 'gravity.lastMode';
