@@ -127,6 +127,15 @@ function makeElement(spec, paint, webglFactory) {
 		tagName: spec.tagName,
 		style: { setProperty() {} },
 		textContent: '',
+		/* the page fills blocks with innerHTML: mirror a tag-stripped copy
+		 * into textContent so tests can assert rendered words */
+		_html: '',
+		get innerHTML() { return this._html; },
+		set innerHTML(html) {
+			this._html = String(html);
+			this.textContent = this._html.replace(/<[^>]*>/g, ' ')
+				.replace(/\s+/g, ' ').trim();
+		},
 		title: '',
 		value: spec.value,
 		checked: spec.checked,
@@ -207,6 +216,37 @@ function loadPage(options = {}) {
 		for (const node of Object.values(fragment.nodes)) {
 			if (node.id) elements.set(node.id, node);
 		}
+	};
+
+	/* the fleet template (0.7.45): cloned rows keep their data-fleet nodes,
+	 * and the container records them so tests can read the rendered rows */
+	const fleetHtml = /<template id="scoreFleetTemplate">([\s\S]*?)<\/template>/.exec(html)[1];
+	const fleetRows = [];
+	elements.get('scoreFleetRows').children = fleetRows;
+	elements.get('scoreFleetTemplate').content = {
+		cloneNode() {
+			const nodes = {};
+			for (const match of fleetHtml.matchAll(/<(\w+)\b([^>]*)\bdata-fleet="([^"]+)"([^>]*)>/g)) {
+				const attrs = match[2] + match[4];
+				nodes[match[3]] = makeElement({ id: '', tagName: match[1].toUpperCase(),
+					checked: /\bchecked\b/.test(attrs), hidden: /\shidden\b/.test(attrs) }, paint);
+			}
+			nodes.row.parentElement = nodes.name;
+			return {
+				nodes,
+				querySelector(selector) {
+					const name = /^\[data-fleet="([^"]+)"\]$/.exec(selector);
+					return name ? nodes[name[1]] : null;
+				}
+			};
+		}
+	};
+	elements.get('scoreFleetRows').appendChild = fragment => {
+		const row = fragment.nodes.row;
+		row.textContent = fragment.nodes.name.textContent + ' ' +
+			fragment.nodes.value.textContent + ' ' + fragment.nodes.meta.textContent;
+		row._fleetNodes = fragment.nodes;
+		fleetRows.push(row);
 	};
 
 	const windowListeners = {};

@@ -443,3 +443,99 @@ function drawRivalTags() {
 		ctx.fillText(RIVAL_TAGS[rIdx], x + 11, y + 7);
 	}
 }
+
+/* the bought fleet ships (0.7.45): the owner's colour, a small id tag. A
+ * flying ship draws its chevron, a parked one a diamond on its planet, an
+ * evacuating one rides the tow — the same shapes the rivals use. */
+function drawFleetWorld() {
+	const fleet = bot.fleetOwner ? bot.fleetOwner.fleet : null;
+	if (!fleet || fleet.length === 0) return;
+	const px = 1 / view.scale;
+	for (let i = 0; i < fleet.length; i++) {
+		const f = fleet[i];
+		const sim = f.sim;
+		if (f.evacuating) {
+			const dx = f.evacToX - f.evacFromX;
+			const dy = f.evacToY - f.evacFromY;
+			const angle = Math.atan2(dy, dx);
+			const size = 4.3 * px;
+			ctx.beginPath();
+			ctx.moveTo(f.evacFromX, f.evacFromY);
+			ctx.lineTo(sim.cargo.x, sim.cargo.y);
+			ctx.strokeStyle = MINT;
+			ctx.globalAlpha = 0.35;
+			ctx.lineWidth = 1.05 * px;
+			ctx.stroke();
+			ctx.globalAlpha = 1;
+			ctx.beginPath();
+			ctx.moveTo(sim.cargo.x + Math.cos(angle) * size, sim.cargo.y + Math.sin(angle) * size);
+			ctx.lineTo(sim.cargo.x + Math.cos(angle + 2.4) * size, sim.cargo.y + Math.sin(angle + 2.4) * size);
+			ctx.lineTo(sim.cargo.x + Math.cos(angle - 2.4) * size, sim.cargo.y + Math.sin(angle - 2.4) * size);
+			ctx.closePath();
+			ctx.fillStyle = MINT;
+			ctx.fill();
+			continue;
+		}
+		if (sim.status === STATUS_FLYING) {
+			const x = sim.cargo.x;
+			const y = sim.cargo.y;
+			const angle = Math.atan2(sim.cargo.vy, sim.cargo.vx);
+			const size = 4.3 * px;
+			ctx.beginPath();
+			ctx.moveTo(x + Math.cos(angle) * size, y + Math.sin(angle) * size);
+			ctx.lineTo(x + Math.cos(angle + 2.4) * size, y + Math.sin(angle + 2.4) * size);
+			ctx.lineTo(x + Math.cos(angle - 2.4) * size, y + Math.sin(angle - 2.4) * size);
+			ctx.closePath();
+			ctx.fillStyle = MINT;
+			ctx.fill();
+			ctx.strokeStyle = 'rgba(3, 8, 16, 0.85)';
+			ctx.lineWidth = 0.8 * px;
+			ctx.stroke();
+			continue;
+		}
+		if (f.at >= 0) {
+			const bx = tradeSim.planetX[f.at];
+			const by = tradeSim.planetY[f.at];
+			const br = tradeSim.planetR[f.at] + (8 + i * 3.5) * px;
+			ctx.beginPath();
+			ctx.moveTo(bx, by - br);
+			ctx.lineTo(bx + br, by);
+			ctx.lineTo(bx, by + br);
+			ctx.lineTo(bx - br, by);
+			ctx.closePath();
+			ctx.strokeStyle = MINT;
+			ctx.globalAlpha = 0.68;
+			ctx.lineWidth = 1.15 * px;
+			ctx.stroke();
+			ctx.globalAlpha = 1;
+		}
+	}
+}
+
+/* the fleet ships' screen-space tags, right after the rival tags */
+function drawFleetTags() {
+	const fleet = bot.fleetOwner ? bot.fleetOwner.fleet : null;
+	if (!fleet || fleet.length === 0) return;
+	ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	const maxX = window.innerWidth - 26;
+	const maxY = window.innerHeight - 18;
+	for (let i = 0; i < fleet.length; i++) {
+		const f = fleet[i];
+		if (f.at < 0 && f.sim.status !== STATUS_FLYING && !f.evacuating) continue;
+		const flying = f.sim.status === STATUS_FLYING || f.evacuating;
+		const wx = flying ? f.sim.cargo.x : tradeSim.planetX[f.at];
+		const wy = flying ? f.sim.cargo.y : tradeSim.planetY[f.at];
+		let x = wx * view.scale + view.offX + (flying ? 8 : 11);
+		let y = wy * view.scale + view.offY -
+			(flying ? 18 : tradeSim.planetR[f.at] * view.scale + 5);
+		if (x < 4) x = 4;
+		else if (x > maxX) x = maxX;
+		if (y < 4) y = 4;
+		else if (y > maxY) y = maxY;
+		plate(x, y, 18, 13, MINT);
+		ctx.fillStyle = MINT;
+		ctx.fillText(String(f.id), x + 9, y + 7);
+	}
+}

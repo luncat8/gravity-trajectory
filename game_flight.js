@@ -105,15 +105,17 @@
 			pad.chargeKwh = pad.chargeKwh > energy ? pad.chargeKwh - energy : 0;
 			releaseEnergy(pad, energy);
 		}
-		const fee = launchFee(career, planet, sim.speed);
-		career.ledger.purse -= fee;
-		career.feesPaid += fee;
-		career.flightStartStep = runStep;
-		const sport = sportStateOf(career);
-		if (sport.kind === TASK_COMPETE && planet === sport.planet &&
-			(sport.enteredMask & (1 << career.index)) !== 0 && runStep >= sport.startsAt) {
-			sport.attemptedMask |= 1 << career.index;
-		}
+	const fee = launchFee(career, planet, sim.speed);
+	career.ledger.purse -= fee;
+	career.feesPaid += fee;
+	career.flightStartStep = runStep;
+	/* the race is company-indexed; a fleet ship never enters one, so its
+	 * launch must not mark the flagship's attempt (0.7.45) */
+	const sport = sportStateOf(career);
+	if (!career.fleetShip && sport.kind === TASK_COMPETE && planet === sport.planet &&
+		(sport.enteredMask & (1 << career.index)) !== 0 && runStep >= sport.startsAt) {
+		sport.attemptedMask |= 1 << career.index;
+	}
 		if (!freeRail && owner !== career.index) {
 			const host = career.galaxy.actors[owner];
 			host.ledger.purse += fee;
@@ -153,33 +155,40 @@
 		return true;
 	}
 
-	/* pads charge on the sun clock, never on the flight clock: the career sees
-	 * SUN_SEC_PER_GAME_SEC pad seconds of sunlight per game second, so a step
-	 * buys DT of sunlight against the battery's leak in pad minutes */
-	function careerAdvance(career, steps, flightStep) {
-		if (career.ended !== CAREER_OPEN) return;
-		checkEnded(career);
-		if (career.recoverySteps >= 0) {
-			career.recoverySteps += steps;
-			if (career.recoverySteps >= ENDGAME_LIMIT_STEPS) {
-				liquidateCareer(career);
-				return;
-			}
+/* pads charge on the sun clock, never on the flight clock: the career sees
+ * SUN_SEC_PER_GAME_SEC pad seconds of sunlight per game second, so a step
+ * buys DT of sunlight against the battery's leak in pad minutes */
+function careerAdvance(career, steps, flightStep) {
+	if (career.ended !== CAREER_OPEN) return;
+	checkEnded(career);
+	if (career.recoverySteps >= 0) {
+		career.recoverySteps += steps;
+		if (career.recoverySteps >= ENDGAME_LIMIT_STEPS) {
+			liquidateCareer(career);
+			return;
 		}
-		const padSec = careerPadSeconds(GravitySim.gameSeconds(steps));
-		const padMin = careerPadMinutes(GravitySim.gameSeconds(steps));
-		for (let i = 0; i < career.pads.length; i++) {
-			const pad = career.pads[i];
-			if (pad.catapult === null) continue;
-			const charge = OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, padMin) +
-				OrbitTech.solarCharge(pad.panel, career.light[i], padSec);
-			pad.chargeKwh = charge < pad.battery.capacity ? charge : pad.battery.capacity;
-		}
-		/* only space wears the ship: a landing, a pad wait or a held clock does not */
-		if (!career.flying || flightStep === false) return;
-		setShipCondition(career, career.ship.condition -
-			spaceWear(career, steps));
 	}
+	const padSec = careerPadSeconds(GravitySim.gameSeconds(steps));
+	const padMin = careerPadMinutes(GravitySim.gameSeconds(steps));
+	for (let i = 0; i < career.pads.length; i++) {
+		const pad = career.pads[i];
+		if (pad.catapult === null) continue;
+		const charge = OrbitTech.batteryLeak(pad.battery, pad.chargeKwh, padMin) +
+			OrbitTech.solarCharge(pad.panel, career.light[i], padSec);
+		pad.chargeKwh = charge < pad.battery.capacity ? charge : pad.battery.capacity;
+	}
+	careerAdvanceShip(career, steps, flightStep);
+}
+
+/* the wear half of careerAdvance, split for the fleet step (0.7.45): a fleet
+ * ship charges the shared pads once through its owner's careerAdvance and
+ * takes only this space wear on its own context */
+function careerAdvanceShip(career, steps, flightStep) {
+	/* only space wears the ship: a landing, a pad wait or a held clock does not */
+	if (!career.flying || flightStep === false) return;
+	setShipCondition(career, career.ship.condition -
+		spaceWear(career, steps));
+}
 
 	/* a landing settles contracts; a vessel that left the map or timed out is
 	 * lost in space (at = -1) and only an evacuation brings it back */
@@ -195,22 +204,29 @@
 			setShipCondition(career, career.ship.condition - landingWear(career) *
 				careerWearAt(career, sim.cargo.x, sim.cargo.y));
 		}
-		career.at = landed ? sim.endBody : -1;
+	career.at = landed ? sim.endBody : -1;
+	/* the "landed back where you launched" fact is the flagship's; a fleet
+	 * ship must not overwrite it (0.7.45) */
+	if (!career.fleetShip) {
 		if (landed && sim.endBody === sim.origin && career.hq >= 0 &&
 			sim.endBody !== career.hq) {
 			const visit = returnLandingVisit(career);
 			if (visit) visit.count += 1;
 			else returnLandingVisits.set(career, { planet: sim.endBody, count: 1 });
 		} else returnLandingVisits.delete(career);
-		career.flying = false;
-		/* the commercial choice bought one launch; the next planet starts fresh */
-		setCommercial(career, -1);
-		/* the Capital's free imperial rail is a way off, so it never strands */
-		career.stranded = !landed ||
-			(career.pads[sim.endBody].catapult === null && sim.endBody !== career.capitalPlanet);
-		refreshBoard(career, trade, step);
-		return checkEnded(career);
 	}
+	career.flying = false;
+	/* the commercial choice bought one launch; the next planet starts fresh */
+	setCommercial(career, -1);
+	/* the Capital's free imperial rail is a way off, so it never strands */
+	career.stranded = !landed ||
+		(career.pads[sim.endBody].catapult === null && sim.endBody !== career.capitalPlanet);
+	/* a fleet ship owns no board and never ends the company: no refresh, and
+	 * checkEnded refuses a swapped context anyway (0.7.45) */
+	if (career.fleetShip) return CAREER_OPEN;
+	refreshBoard(career, trade, step);
+	return checkEnded(career);
+}
 
 	/* Evacuation is a paid, clock-driven ride, not a flight or an instant placeShip.
 	 * Headless callers (bench/tests) omit runStep to complete synchronously. */
@@ -289,6 +305,6 @@
 
 	Object.assign(GravityGame, {
 		ENDGAME_LIMIT_STEPS, advanceEvacuation, settleMedic, careerBeginFlight, careerBurn,
-		careerAdvance, careerEndFlight, evacuate
+		careerAdvance, careerAdvanceShip, careerEndFlight, evacuate
 	});
 });

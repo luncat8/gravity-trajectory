@@ -567,6 +567,9 @@
 	};
 
 	GravityBot.prototype.careerBetweenFlights = function (career, sim, runStep = this.worldStep) {
+		/* a fleet ship shops reduced: repair and fuel only — no pads, research,
+		 * expansion, contracts, kits or bribes stay the flagship's (0.7.45) */
+		if (career.fleetShip) return this.careerFleetShop(career.fleetShip, runStep);
 		if (career.ended !== GravityGame.CAREER_OPEN) return 0;
 		/* transport trips own the ship and the clock until arrival */
 		if (career.arrested || career.evacuating) return 0;
@@ -665,6 +668,24 @@
 			actions += 1;
 		}
 		actions += this.careerColonyKitShop(career, sim, runStep);
+		return actions;
+	};
+
+	/* the fleet's reduced shop (0.7.45): service the ship, top up the tank.
+	 * The wear rate is ×2, so repair is the fleet's main upkeep; the shared
+	 * purse covers it, and a ship it cannot afford stays landed until it can. */
+	GravityBot.prototype.careerFleetShop = function (f, runStep) {
+		const career = f.career;
+		if (career.ended !== GravityGame.CAREER_OPEN || career.arrested || career.evacuating) return 0;
+		if (career.at < 0) return 0;
+		let actions = 0;
+		if (this.careerRepair(career, runStep)) actions += 1;
+		const tank = career.ship.tank;
+		const dry = tank ? tank.fuelCap - career.ship.fuelKg : 0;
+		if (dry > 0 && career.ledger.purse + 1e-9 >=
+			CAREER_PURSE_RESERVE + GravityGame.fuelPrice(career) * dry) {
+			if (GravityGame.buyFuel(career, dry) > 0) actions += 1;
+		}
 		return actions;
 	};
 

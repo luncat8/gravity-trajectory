@@ -195,6 +195,10 @@ function finishCareerStart(seed) {
 	bot.setPlanetMask(planetMask, planetCount);
 	/* YOU as a bot: the page keeps the ship, the bot plans and shops for it */
 	bot.attachCareerPlayer(game.career, cargoSim);
+	/* the bought fleet (0.7.45): an empty alias on a fresh company, and the
+	 * standing box intent re-arms its mirror after a restart */
+	bot.attachFleet(game.career, tradeSim);
+	syncFleetCheckbox();
 	game.career.forceScale = cargoSim.forceScale;
 	/* a gifted radar turns the view on from step 0, like building it */
 	if (game.career.radar) predRivalsOn = true;
@@ -819,6 +823,9 @@ function advanceCareerWorld() {
 	tradeSim.advanceTo(tradeSim.t + DT * scene.trade.speed);
 	cargoSim.fieldT = tradeSim.t;
 	bot.stepCareer(game.clockSteps, game.market, tradeSim, scene.trade.speed);
+	/* the bought fleet flies after the rivals: the company pads are already
+	 * advanced by the owner's careerAdvance above (0.7.45) */
+	bot.stepFleet(game.clockSteps, game.market, tradeSim, scene.trade.speed);
 }
 
 function advanceCareerOneStep() {

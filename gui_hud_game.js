@@ -57,6 +57,7 @@ function refreshGameUi() {
 	if (botNormalEl) botNormalEl.disabled = playback || (replay.on && replay.career);
 	if (botHardEl) botHardEl.disabled = playback || (replay.on && replay.career);
 	syncScoreControls();
+	refreshFleetRows();
 	refreshStatsStrip();
 	let anyShots = game.shots.length > 0;
 	for (let i = 0; i < bot.count && !anyShots; i++) {
@@ -73,6 +74,13 @@ function refreshGameUi() {
 	if (expPayEl) expPayEl.disabled = experimentLock || !career;
 	/* the stay-pay only exists in career: outside it the box is off and dim */
 	if (expHarvestEl) expHarvestEl.disabled = experimentLock || !career;
+	/* buying ships is a live-career choice: locked mid-flight like the rest */
+	if (expFleetEl) expFleetEl.disabled = experimentLock || !career;
+	if (expFleetEl && career && game.career && game.career.fleetUnlocked !== expFleetEl.checked) {
+		/* the mirror follows the box unless a restart cleared it */
+		if (expFleetEl.checked) game.career.fleetUnlocked = true;
+	}
+	syncFleetCheckbox();
 	for (const el of [giftAllEl, giftBotEl, giftHumanEl, giftPeekEl]) if (el) el.disabled = !career;
 	cheatPanelSyncUi(career);
 	/* Moving ports share the orbit clock with gravity. Keep that clock fixed

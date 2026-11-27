@@ -148,6 +148,7 @@ const expRotLabelEl = $('expRotLabel');
 const expPayEl = $('expPay');
 const expPayLabelEl = $('expPayLabel');
 const expHarvestEl = $('expHarvest');
+const expFleetEl = $('expFleet');
 const expTagEl = $('expTag');
 const giftBlockEl = $('giftBlock');
 const giftAllEl = $('giftAll');
@@ -254,6 +255,7 @@ const rivalGroupEl = $('rivalGroup');
 const careerBoxEl = $('careerBox');
 const careerTagEl = $('careerTag');
 const careerPlanetEl = $('careerPlanet');
+const careerFleetEl = $('careerFleet');
 const careerPadEl = $('careerPad');
 const careerShopEl = $('careerShop');
 const careerScienceEl = $('careerScience');
@@ -676,6 +678,22 @@ if (predViewEl) {
 }
 srcPlanetsEl.addEventListener('change', () => setSource(MODE_PLANETS));
 srcPortsEl.addEventListener('change', () => setSource(MODE_PORTS));
+/* the fleet checkbox (0.7.45) is the only writer of the live career's
+ * mirror; ships bought while it was on keep flying when it goes off again */
+function onFleetChange() {
+	if (careerInputLocked()) return;
+	if (game.career) game.career.fleetUnlocked = expFleetEl.checked;
+	refreshGameUi();
+	dirty = true;
+	hudAt = -Infinity;
+}
+
+/* a restart is a new company, so its mirror starts cleared: the box's
+ * standing intent re-arms it on the next refresh */
+function syncFleetCheckbox() {
+	if (expFleetEl && expFleetEl.checked && game.career) game.career.fleetUnlocked = true;
+}
+
 $('tradeSpeed').addEventListener('input', () => syncSeedUrl(replay.on));
 trimSlider.addEventListener('input', onTrimInput);
 trimSlider.addEventListener('change', resetTrim);
@@ -692,6 +710,7 @@ if (expPadsEl) expPadsEl.addEventListener('input', onPadsInput);
 if (expRotEl) expRotEl.addEventListener('input', onRotInput);
 if (expPayEl) expPayEl.addEventListener('input', onPayInput);
 if (expHarvestEl) expHarvestEl.addEventListener('change', onHarvestChange);
+if (expFleetEl) expFleetEl.addEventListener('change', onFleetChange);
 for (const el of [giftAllEl, giftBotEl, giftHumanEl]) if (el) el.addEventListener('input', onGiftInput);
 if (giftPeekEl) giftPeekEl.addEventListener('change', refreshGiftUi);
 horizonSlider.addEventListener('input', () => {
@@ -1082,12 +1101,16 @@ window.addEventListener('keyup', event => {
 	refreshAimLabel();
 });
 
-root.GravityScene = {
+	root.GravityScene = {
 	sim: cargoSim,
 	sound: sound,
 	activeSim: activeSim,
 	bot: bot,
 	game: game,
+	/* the bought fleet ships of the live career (0.7.45 test contract):
+	 * fleetCount is the size, fleet the records themselves (read-only) */
+	fleetCount: () => (game.career ? game.career.fleet.length : 0),
+	fleet: () => (game.career ? game.career.fleet : null),
 	career: game.career,
 	activeCareer: activeCareer,
 	slotCareer: slotCareer,

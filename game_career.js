@@ -14,7 +14,7 @@
 	const {
 		GravitySim, OrbitWorld, OrbitTech, OrbitScience, STATS_SAMPLES, RULES, CHEAT_ENDGAME, CAREER,
 		BOARD_SIZE, TASK_NONE, TASK_OFFERED, CAREER_OPEN, SALT_HQ, COMMERCIAL_PAD, specialPlanetsOn,
-		clearTask, careerShipUsable, refitShip, repairCost, rebelRail, planetProfit, resetLedger,
+		price, clearTask, careerShipUsable, refitShip, repairCost, rebelRail, planetProfit, resetLedger,
 		openFlight, planetInPlay, createLaunchBook, resetLaunchBook, createSportRecord,
 		setCommercial, refreshNetwork, syncCareerNetwork, returnLandingVisits, hqMask, pickHq,
 		syncSportSlot, refreshBoard, clearPad, fitPad, ownPart, newPrototypes, seedScience,
@@ -30,6 +30,13 @@
 	const SPACE_START_OFFSET_PX = 22;
 	const CAREER_BROKE = 1;
 	const CAREER_COMPLETE = 2;
+	/* a bought fleet ship costs this much, flat (0.7.45) */
+	const FLEET_COST = 30;
+	const FLEET_RESERVE = 0;
+	/* the first gap mirrors GravityBot.CAREER_RIVAL_GAP; the phase spacing
+	 * mirrors its CAREER_RIVAL_PHASE, so ships never plan on one step */
+	const FLEET_GAP = Math.round(8 / GravitySim.DT);
+	const FLEET_PHASE = Math.round(3 / GravitySim.DT);
 
 	/* ── records & creation ── pad and task records, joinGalaxy, createCareer, pad sunlight */
 
@@ -74,6 +81,140 @@
 		syncSportSlot(career, galaxy.sport);
 	}
 
+	/* ── fleet context swap (0.7.45) ─────────────────────────────────────
+	 * A bought ship is a record inside the company career, not a second
+	 * career: one ledger, one pad network, one science hull. For one
+	 * synchronous step the company's per-ship context is swapped for the
+	 * record's, every shared function runs, then the swap is stored back.
+	 * The ledger rides along because a flight owns ledger state (fee,
+	 * shotGain, visit mask, reports) — the purse alone stays shared. */
+	const CONTEXT_KEYS = [
+		'at', 'ship', 'contract', 'tasks', 'stranded', 'flying', 'commercialPlanet',
+		'fragileLost', 'wearScale', 'plannedLanding', 'flightStartStep',
+		'lastEnergy', 'lastFee', 'lastReward', 'lastFuel',
+		'arrested', 'arrestUntilStep',
+		'evacuating', 'evacUntilStep', 'evacStartStep', 'evacDurationSteps',
+		'evacFromX', 'evacFromY', 'evacToX', 'evacToY', 'evacLastPaid', 'evacLastSteps',
+		'evacFrom'
+	];
+	const LEDGER_KEYS = ['fee', 'shotGain', 'shotVisits', 'lastPlanet', 'reports'];
+
+	function createFlightBlock() {
+		return {
+			fee: 0, shotGain: 0, shotVisits: 0, lastPlanet: -1, reports: true,
+			inside: new Uint8Array(GravitySim.MAX_BODIES)
+		};
+	}
+
+	function saveCareerContext(career, out) {
+		for (let i = 0; i < CONTEXT_KEYS.length; i++) out[CONTEXT_KEYS[i]] = career[CONTEXT_KEYS[i]];
+		for (let i = 0; i < LEDGER_KEYS.length; i++) out[LEDGER_KEYS[i]] = career.ledger[LEDGER_KEYS[i]];
+		out.inside = career.ledger.inside;
+		return out;
+	}
+
+	function loadCareerContext(career, f) {
+		for (let i = 0; i < CONTEXT_KEYS.length; i++) career[CONTEXT_KEYS[i]] = f[CONTEXT_KEYS[i]];
+		for (let i = 0; i < LEDGER_KEYS.length; i++) career.ledger[LEDGER_KEYS[i]] = f.flight[LEDGER_KEYS[i]];
+		career.ledger.inside = f.flight.inside;
+		career.fleetShip = f;
+	}
+
+	function storeCareerContext(career, f) {
+		for (let i = 0; i < CONTEXT_KEYS.length; i++) f[CONTEXT_KEYS[i]] = career[CONTEXT_KEYS[i]];
+		for (let i = 0; i < LEDGER_KEYS.length; i++) f.flight[LEDGER_KEYS[i]] = career.ledger[LEDGER_KEYS[i]];
+	}
+
+	function restoreCareerContext(career, saved) {
+		for (let i = 0; i < CONTEXT_KEYS.length; i++) career[CONTEXT_KEYS[i]] = saved[CONTEXT_KEYS[i]];
+		for (let i = 0; i < LEDGER_KEYS.length; i++) career.ledger[LEDGER_KEYS[i]] = saved[LEDGER_KEYS[i]];
+		career.ledger.inside = saved.inside;
+		career.fleetShip = null;
+	}
+
+	function fleetBuyRefusal(career, sim) {
+		if (!career.fleetUnlocked) return 'enable allow automatic ships in experimental';
+		if (career.ended !== CAREER_OPEN) return 'career over';
+		if (career.hq < 0 || career.at !== career.hq) return 'buy a ship at the HQ';
+		if (sim && sim.status === GravitySim.STATUS_FLYING) return 'land the flagship first';
+		if (career.ledger.purse + 1e-9 < price(career, FLEET_COST) + FLEET_RESERVE) {
+			return 'purse too small';
+		}
+		return '';
+	}
+
+	/* buy one automatic ship: it stays inside the company (shared purse, pads,
+	 * owned gear and science) and flies itself from now on. No new planet, no
+	 * new scoreboard slot: planCareerExpansion, setPlanetUniverseSize,
+	 * MAX_PLAYERS and PLAYER_INDEX are untouched. */
+	function buyFleetShip(career, trade, sim, runStep) {
+		if (!career || !trade || !sim || fleetBuyRefusal(career, sim) !== '') return null;
+		const cost = price(career, FLEET_COST);
+		career.ledger.purse -= cost;
+		career.fleetSpent += cost;
+		const s = career.ship;
+		const ship = {
+			hold: s.hold, engine: s.engine, tank: s.tank,
+			obs: Object.assign({}, s.obs),
+			cargoTons: 0, fuelKg: 0, mass: 0,
+			/* the kit is per-ship: the flagship keeps flying it (plan §7) */
+			colonyKit: false,
+			condition: 1
+		};
+		ship.mass = OrbitTech.shipMass(ship, 0);
+		const fleetSim = new GravitySim(sim.worldW, sim.worldH);
+		fleetSim.setPlanets(OrbitWorld.PLANETS, trade.planetX, trade.planetY, trade.planetR,
+			trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+		fleetSim.setPlanetMask(sim.planetMask);
+		fleetSim.setScales(sim.gravityScale, sim.forceScale);
+		fleetSim.setField(sim.bodyCount, sim.bodyR, sim.strength, sim.fillField, sim.fieldStatic);
+		fleetSim.fieldT = trade.t;
+		fleetSim.fieldRate = sim.fieldRate;
+		/* the launch gate reads the fleet ship's own fit, not the flagship's */
+		fleetSim.setLaunchNetwork(career.launchPads, ship);
+		/* the new vessel stands on the HQ like the flagship does after a start */
+		fleetSim.relocate(career.hq);
+		const gapPhase = career.fleetSeq * FLEET_PHASE;
+		const record = {
+			career: career,
+			fleet: true,
+			id: career.fleetSeq + 1,
+			at: career.hq,
+			ship: ship,
+			contract: -1,
+			tasks: career.fleetTasks,
+			stranded: false,
+			flying: false,
+			commercialPlanet: -1,
+			fragileLost: false,
+			wearScale: 2,
+			flight: createFlightBlock(),
+			plannedLanding: -1,
+			flightStartStep: 0,
+			lastEnergy: 0,
+			lastFee: 0,
+			lastReward: 0,
+			lastFuel: 0,
+			lastVisit: 0,
+			sim: fleetSim,
+			readyStep: runStep + FLEET_GAP + gapPhase,
+			gapPhase: gapPhase,
+			idleTries: 0,
+			waitTries: 0,
+			panelTried: false,
+			burn: 0,
+			burnTries: 0,
+			burnNext: 0,
+			burnStep: 0,
+			basePlanet: career.hq,
+			turret: null,
+			shots: []
+		};
+		career.fleet.push(record);
+		career.fleetSeq += 1;
+		return record;
+	}
+
 	/* `ledger` is the purse shared with the page's score rows; pads and ship
 	 * are the objects a GravitySim gates on (setLaunchNetwork) */
 	function createCareer(ledger) {
@@ -83,6 +224,10 @@
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) launchPads.push(COMMERCIAL_PAD);
 		const tasks = [];
 		for (let i = 0; i < BOARD_SIZE; i++) tasks.push(createTask());
+		/* the fleet ships' own empty board: never refreshed, never accepted
+		 * from, but present because landing facts read COMPETE_SLOT */
+		const fleetTasks = [];
+		for (let i = 0; i < BOARD_SIZE; i++) fleetTasks.push(createTask());
 		return {
 			ledger: ledger,
 			seed: 0,
@@ -190,9 +335,20 @@
 		sciSpent: 0,
 		giftCredit: 0,
 		giftCash: 0,
-		giftDrawn: []
-		};
-	}
+		giftDrawn: [],
+		/* bought automatic ships (0.7.45): records inside this career, the
+		 * flagship excluded; the checkbox mirror unlocks buying */
+		fleet: [],
+		fleetSeq: 0,
+		fleetSpent: 0,
+		fleetUnlocked: false,
+		/* the live fleet ship during a stepFleet swap; null on the flagship */
+		fleetShip: null,
+		fleetTasks: fleetTasks,
+		/* the one reusable save slot for the flagship's swapped-out context */
+		contextBase: { inside: new Uint8Array(GravitySim.MAX_BODIES) }
+	};
+}
 
 	/* pad sunlight: orbit light above a floor so no world is dead, star brightness a mild modifier */
 	function fillLight(career, world) {
@@ -220,7 +376,8 @@
 		out.running = career.feesPaid + career.fuelSpent + career.maintenanceSpent +
 			career.evacuationSpent + career.stakeSpent;
 		out.profit = out.income - out.running;
-		out.property = career.buildSpent;
+		/* bought fleet ships are company property: the price left the purse */
+		out.property = career.buildSpent + career.fleetSpent;
 		out.science = career.sciSpent;
 		out.flown = career.flownPx;
 	}
@@ -395,11 +552,17 @@
 		career.feesPaid = 0;
 		career.buildSpent = 0;
 		career.sciSpent = 0;
-		career.giftCredit = 0;
-		career.giftCash = 0;
-		career.giftDrawn = [];
-		refreshBoard(career, trade, 0);
-	}
+	career.giftCredit = 0;
+	career.giftCash = 0;
+	career.giftDrawn = [];
+	/* a restart is a new company, not a new ship for the old fleet */
+	career.fleet.length = 0;
+	career.fleetSeq = 0;
+	career.fleetSpent = 0;
+	career.fleetUnlocked = false;
+	career.fleetShip = null;
+	refreshBoard(career, trade, 0);
+}
 
 	function topTier(table) {
 		return table[table.length - 1];
@@ -621,6 +784,9 @@
 
 	function checkEnded(career) {
 		if (career.ended !== CAREER_OPEN) return career.ended;
+		/* a swapped fleet context never judges the company: a fleet loss is
+		 * a notice, and no fleet call may tick or clear the recovery (0.7.45) */
+		if (career.fleetShip) return career.ended;
 		if (career.evacuating || career.flying) {
 			career.recoverySteps = -1;
 			return CAREER_OPEN;
@@ -662,7 +828,9 @@
 		coveredPlanets, careerStats, mapStats, sampleStats, START_PLANET, START_SPACE, START_CAPITAL,
 		SPACE_START_FUEL_KG, SPACE_START_BONUS, CAPITAL_START_BONUS, spaceSpawnAt, CAREER_BROKE,
 		CAREER_COMPLETE, createCareer, resetCareer, startCareer, checkEnded, placeShip,
-		ENDGAME_WARNING_STEPS, capitalCovered, joinGalaxy, installStockUpgrades
+		ENDGAME_WARNING_STEPS, capitalCovered, joinGalaxy, installStockUpgrades,
+		FLEET_COST, FLEET_RESERVE, FLEET_GAP, createFlightBlock, saveCareerContext,
+		loadCareerContext, storeCareerContext, restoreCareerContext, fleetBuyRefusal, buyFleetShip
 	});
 	Object.assign(inner, {
 		placeShip, checkEnded, liquidateCareer

@@ -42,9 +42,16 @@
 	/* keys that are live references or re-derived from the seed/universe */
 	const CAREER_SKIP = ['galaxy', 'market', 'launchPads', 'planetMask', 'planetCount',
 		/* the vessel's sim and the radar reveal memo (0.7.49) are live cache */
-		'sim', 'radarStamp'];
+		'sim', 'radarStamp',
+		/* the bought fleet (0.7.45) is captured record by record, its boards
+		 * and swap scratch are live */
+		'fleet', 'fleetTasks', 'contextBase'];
 	const MARKET_SKIP = ['galaxy', 'planetMask', 'planetCount'];
 	const GALAXY_SKIP = ['actors', 'market', 'period', 'phase'];
+	/* a bought fleet ship (0.7.45) is saved like a rival record: the career
+	 * back-reference, the sim, the shared task board and the queued turret
+	 * are live; the flight block packs plain */
+	const FLEET_SKIP = ['career', 'sim', 'tasks', 'turret'];
 	const TRADE_SKIP = ['handleEvent', 'onColonyEvent', 'world', 'rand', 'events',
 		'colonies', 'corruption', 'mapOut', 'log', 'planetMask', 'emptyMask', 'colonyGravityMask'];
 	const RIVAL_SKIP = ['sim', 'career', 'ledger', 'turret'];
@@ -226,20 +233,23 @@
 		const ships = [];
 		const sims = info.sims;
 		for (let i = 0; i < sims.length; i++) {
-			const sim = sims[i];
-			const out = {};
-			for (let k = 0; k < SHIP_KEYS.length; k++) {
-				const key = SHIP_KEYS[k];
-				out[key] = packData(sim[key]);
-			}
-			/* the trail buffers are preallocated for 4096 points; only the drawn
-			 * prefix is history, and the rest would be most of the file */
-			const count = Math.min(sim.trailCount, sim.trailX.length);
-			out.trailX = Array.prototype.slice.call(sim.trailX, 0, count);
-			out.trailY = Array.prototype.slice.call(sim.trailY, 0, count);
-			ships.push(out);
+			ships.push(packShipKeys(sims[i]));
 		}
 		return ships;
+	}
+
+	function packShipKeys(sim) {
+		const out = {};
+		for (let k = 0; k < SHIP_KEYS.length; k++) {
+			const key = SHIP_KEYS[k];
+			out[key] = packData(sim[key]);
+		}
+		/* the trail buffers are preallocated for 4096 points; only the drawn
+		 * prefix is history, and the rest would be most of the file */
+		const count = Math.min(sim.trailCount, sim.trailX.length);
+		out.trailX = Array.prototype.slice.call(sim.trailX, 0, count);
+		out.trailY = Array.prototype.slice.call(sim.trailY, 0, count);
+		return out;
 	}
 
 	function captureState(info) {
@@ -248,11 +258,18 @@
 		for (let i = 0; i < galaxy.actors.length; i++) {
 			careers.push(packData(galaxy.actors[i], CAREER_SKIP));
 		}
-		const rivals = [];
-		for (let i = 0; i < info.rivals.length; i++) {
-			rivals.push(packData(info.rivals[i], RIVAL_SKIP));
-		}
-		const trade = info.trade;
+			const rivals = [];
+			for (let i = 0; i < info.rivals.length; i++) {
+				rivals.push(packData(info.rivals[i], RIVAL_SKIP));
+			}
+			const fleet = info.game.career ? info.game.career.fleet : null;
+			const fleetRecords = [];
+			const fleetShips = [];
+			for (let i = 0; fleet && i < fleet.length; i++) {
+				fleetRecords.push(packData(fleet[i], FLEET_SKIP));
+				fleetShips.push(packShipKeys(fleet[i].sim));
+			}
+			const trade = info.trade;
 		return {
 			mask: maskBits(info.mask),
 			clock: {
@@ -274,6 +291,8 @@
 			galaxy: packData(galaxy, GALAXY_SKIP),
 			careers: careers,
 			rivals: rivals,
+			fleet: fleetRecords,
+			fleetShips: fleetShips,
 			planner: packData(info.planner, PLANNER_SKIP),
 			page: packData(info.page),
 			ships: captureShips(info),
@@ -326,6 +345,20 @@
 		}
 		for (let i = 0; i < state.rivals.length && i < info.rivals.length; i++) {
 			unpackData(info.rivals[i], state.rivals[i], RIVAL_SKIP);
+		}
+		/* bought ships (0.7.45): the records unpack in place, their sims keep
+		 * the live references and get the saved flight state back */
+		if (state.fleet && info.game.career) {
+			const career = info.game.career;
+			const fleet = career.fleet;
+			for (let i = 0; i < state.fleet.length && i < fleet.length; i++) {
+				unpackData(fleet[i], state.fleet[i], FLEET_SKIP);
+				if (state.fleetShips && state.fleetShips[i]) {
+					fleet[i].sim.relocate(fleet[i].at);
+					unpackKeys(fleet[i].sim, state.fleetShips[i]);
+					fleet[i].sim.setLaunchNetwork(career.launchPads, fleet[i].ship);
+				}
+			}
 		}
 		if (state.planner && info.planner) {
 			unpackData(info.planner, state.planner, PLANNER_SKIP);

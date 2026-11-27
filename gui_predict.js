@@ -847,3 +847,69 @@ for (let i = 1; i < MAX_PLAYERS; i++) {
 	scoreRowsEl.appendChild(fragment);
 	scoreRowEls.push(row);
 }
+
+/* the bought fleet ships under the YOU row (0.7.45): one compact row per
+ * record, allocated only when the fleet grows, refreshed with text guards */
+const scoreFleetRowsEl = $('scoreFleetRows');
+const scoreFleetTemplate = $('scoreFleetTemplate');
+const scoreFleetRowEls = [];
+const scoreFleetNameTexts = [];
+const scoreFleetValueTexts = [];
+const scoreFleetMetaTexts = [];
+
+function fleetStatusText(f) {
+	if (f.evacuating) return 'evac';
+	if (f.flying) return 'flying';
+	if (f.at < 0) return 'lost';
+	return 'ready';
+}
+
+function refreshFleetRows() {
+	const career = careerRule() && !careerPlanning && game.on ? game.career : null;
+	const fleet = career ? career.fleet : null;
+	if (!fleet || fleet.length === 0) {
+		if (scoreFleetRowsEl.hidden && scoreFleetRowEls.length === 0) return;
+		scoreFleetRowsEl.hidden = true;
+		for (let i = 0; i < scoreFleetRowEls.length; i++) scoreFleetRowEls[i].hidden = true;
+		return;
+	}
+	if (scoreFleetRowsEl.hidden) scoreFleetRowsEl.hidden = false;
+	while (scoreFleetRowEls.length < fleet.length) {
+		const fragment = scoreFleetTemplate.content.cloneNode(true);
+		const row = fragment.querySelector('[data-fleet="row"]');
+		const name = fragment.querySelector('[data-fleet="name"]');
+		const value = fragment.querySelector('[data-fleet="value"]');
+		const meta = fragment.querySelector('[data-fleet="meta"]');
+		scoreFleetRowEls.push(row);
+		scoreFleetNameTexts.push('');
+		scoreFleetValueTexts.push('');
+		scoreFleetMetaTexts.push('');
+		scoreFleetRowsEl.appendChild(fragment);
+		row._fleetRefs = { name: name, value: value, meta: meta };
+	}
+	for (let i = 0; i < scoreFleetRowEls.length; i++) {
+		const row = scoreFleetRowEls[i];
+		if (i >= fleet.length) {
+			if (!row.hidden) row.hidden = true;
+			continue;
+		}
+		const f = fleet[i];
+		if (row.hidden) row.hidden = false;
+		const name = 'YOU · ship ' + f.id;
+		if (name !== scoreFleetNameTexts[i]) {
+			scoreFleetNameTexts[i] = name;
+			row._fleetRefs.name.textContent = name;
+		}
+		const value = f.lastVisit ? '+' + f.lastVisit.toFixed(2) : '';
+		if (value !== scoreFleetValueTexts[i]) {
+			scoreFleetValueTexts[i] = value;
+			row._fleetRefs.value.textContent = value;
+		}
+		const meta = (f.at >= 0 ? 'P' + f.at : 'space') +
+			' · cond ' + Math.round(f.ship.condition * 100) + ' % · ' + fleetStatusText(f);
+		if (meta !== scoreFleetMetaTexts[i]) {
+			scoreFleetMetaTexts[i] = meta;
+			row._fleetRefs.meta.textContent = meta;
+		}
+	}
+}

@@ -213,6 +213,10 @@ function refreshCareerPanel() {
 		careerPadEl.innerHTML = '';
 		careerShopEl.innerHTML = '';
 		if (careerScienceEl) careerScienceEl.innerHTML = '';
+		if (careerFleetEl) {
+			careerFleetEl.innerHTML = '';
+			careerFleetEl.hidden = true;
+		}
 		careerTaskEl.innerHTML = '';
 		refreshLaunchList(true);
 		if (careerWaitInfoEl) {
@@ -230,6 +234,7 @@ function refreshCareerPanel() {
 		careerPadEl.innerHTML = '';
 		careerTaskEl.innerHTML = '';
 		careerShopEl.innerHTML = '';
+		if (careerFleetEl) careerFleetEl.innerHTML = '';
 		if (careerScienceEl) careerScienceEl.innerHTML = '';
 		refreshLaunchList(true);
 		if (careerWaitInfoEl) {
@@ -242,6 +247,10 @@ function refreshCareerPanel() {
 	}
 	if (careerTagEl) careerTagEl.textContent = careerTagText();
 	fillCareerPlanets(career);
+	if (careerFleetEl) {
+		careerFleetEl.hidden = false;
+		careerFleetEl.innerHTML = fleetBlockHtml(career);
+	}
 	careerPadEl.innerHTML = padBlockHtml(career);
 	careerTaskEl.innerHTML = taskBlockHtml(career);
 	refreshLaunchList(true);
@@ -691,6 +700,38 @@ function careerRadar() {
 	return true;
 }
 
+/* the fleet drawer block (0.7.45): the header line, and the buy button —
+ * disabled with the experimental hint while the box is off */
+function fleetBlockHtml(career) {
+	let html = '<div class="careerHead">fleet ' + career.fleet.length + ' · ' +
+		GravityGame.FLEET_COST + ' cr each · wear ×' + GravityGame.WEAR_FLEET + '</div>';
+	if (!career.fleetUnlocked) {
+		return html + '<div class="careerLine"><button class="miniBtn" disabled>' +
+			'enable allow automatic ships in experimental</button></div>';
+	}
+	const refuse = GravityGame.fleetBuyRefusal(career, cargoSim);
+	return html + '<div class="careerLine"><button class="miniBtn" data-act="buyShip"' +
+		(refuse ? ' disabled title="' + refuse + '"' : '') + '>buy ship · ' +
+		GravityGame.FLEET_COST + '</button>' +
+		(refuse ? ' · ' + refuse : '') +
+		(career.fleet.length ? ' · ' + career.fleet.length + ' automatic' +
+			(career.fleet.length === 1 ? ' ship' : ' ships') : '') + '</div>';
+}
+
+function careerBuyShip() {
+	const career = activeCareer();
+	const trade = tradeSim;
+	const refuse = GravityGame.fleetBuyRefusal(career, cargoSim);
+	if (refuse) { careerNotice(refuse); return false; }
+	const ship = GravityGame.buyFleetShip(career, trade, cargoSim, game.clockSteps);
+	if (!ship) { careerNotice('buy refused'); return false; }
+	/* the controller aliases the fleet and wires the new record */
+	bot.attachFleet(career, trade);
+	careerNotice('ship ' + ship.id + ' joined the fleet · it flies itself now');
+	careerChanged();
+	return true;
+}
+
 /* every shop / board button carries data-act (and its args) */
 function careerAct(data) {
 	if (!careerRule() || careerInputLocked()) return;
@@ -745,6 +786,7 @@ function careerAct(data) {
 	}
 	if (act === 'produceFuel') return careerFuelAction(career, true);
 	if (act === 'buyFuel') return careerFuelAction(career, false);
+	if (act === 'buyShip') return careerBuyShip();
 	if (act === 'drop') return careerDrop(career, data.slot !== undefined ? Number(data.slot) : undefined);
 	if (act === 'accept') return careerAccept(career, Number(data.slot));
 	if (!data.item && Math.round(Number(data.tier)) === NO_TIER) {

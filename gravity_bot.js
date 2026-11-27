@@ -210,6 +210,10 @@
 		this.worldH = worldH;
 		this.strength = new Float64Array(PLANETS).fill(1);
 		this.rivals = [createRival(worldW, worldH), createRival(worldW, worldH)];
+		/* the human company's bought ships (0.7.45): an alias of the live
+		 * career's fleet records, refreshed by attachFleet */
+		this.fleet = [];
+		this.fleetOwner = null;
 		/* the GUI's own actor when YOU is set to bot; its sim mirrors the GUI sim */
 		this.player = createRival(worldW, worldH);
 		/* YOU as a career bot: the page owns the career record, the ship sim and

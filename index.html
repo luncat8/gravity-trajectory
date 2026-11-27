@@ -72,6 +72,14 @@
 				<b id="gameScore" class="scoreValue">0 / 26</b>
 				<span id="playerScoreMeta" class="scoreMeta">0 shots · purse 3.00</span>
 			</div>
+			<div id="scoreFleetRows" class="scoreFleetRows" hidden></div>
+			<template id="scoreFleetTemplate">
+				<div class="scoreEntry scoreFleet" data-fleet="row" hidden>
+					<span class="scoreName scoreFleetName" data-fleet="name"></span>
+					<b class="scoreValue" data-fleet="value"></b>
+					<span class="scoreMeta" data-fleet="meta"></span>
+				</div>
+			</template>
 		</div>
 		<template id="scoreRivalTemplate">
 			<div class="scoreEntry scoreRival" data-score="row" hidden role="button" tabindex="0">
@@ -109,6 +117,7 @@
 				role="tab" aria-selected="false" aria-controls="careerSciencePanel" tabindex="-1">science</button>
 		</div>
 		<div id="careerUpgrades" role="tabpanel" aria-labelledby="careerUpgradesTab">
+			<div id="careerFleet" class="careerBlock" hidden></div>
 			<label class="ctl careerPick" title="planet whose pad the shop builds on">planet
 				<select id="careerPlanet" aria-label="build planet"></select>
 			</label>
@@ -360,6 +369,7 @@
 			<output id="expPayLabel">×1.00</output>
 		</label>
 		<label class="ctl" title="career only · entering a system always collects everything it has accrued since the last encounter; with this on, every step the ship stays inside also collects what regrew during that step, and predictions, the launch list and rival plans price the full stay trail."><input id="expHarvest" type="checkbox"> stay-pay · per tick</label>
+		<label class="ctl" title="career only · allow buying automatic ships that fly for the company: they share the purse, pads, owned gear and science, wear twice as fast, and keep flying when this box is off again"><input id="expFleet" type="checkbox"> allow automatic ships</label>
 		<div id="giftBlock" class="giftBlock">
 			<div class="giftHead"><span>start gifts</span><label title="show a sample draw at these budgets · never what a company actually gets"><input id="giftPeek" type="checkbox"> 👀 example</label></div>
 			<label class="ctl" title="career only · start-gift budget for every company, drawn at the next start as 1+ gifts (engine kit, science) and the rest as cash"><span>for all</span>

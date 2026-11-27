@@ -71,6 +71,8 @@ function updateGameHud() {
 			rivalEl.classList.toggle('loss', info.outcome < 0);
 		}
 	}
+	/* the fleet rows live with the score rows, so they breathe with the HUD */
+	if (careerRule()) refreshFleetRows();
 	const activeSlotNow = activeSlotIndex();
 	const ledger = slotLedger(activeSlotNow);
 	const shots = slotShots(activeSlotNow);
@@ -166,6 +168,7 @@ function draw(now) {
 	drawWells();
 	drawPortVelocities();
 	if (game.on && bot.count > 0) drawRivalsWorld(tickNow);
+	if (game.on && careerRule()) drawFleetWorld(tickNow);
 	drawRadar();
 	drawPrediction();
 	drawTrail();
@@ -184,6 +187,7 @@ function draw(now) {
 	if (game.on && !routeRule()) drawPlanetProfits();
 	if (careerRule()) drawCareerPad();
 	if (game.on && bot.count > 0) drawRivalTags();
+	if (game.on && careerRule()) drawFleetTags();
 	drawRadarLabels();
 	if (hoverBody >= 0 && hoverBody !== selected && !aiming) {
 		drawLabel(hoverLabel, cargoSim.bodyX[hoverBody],

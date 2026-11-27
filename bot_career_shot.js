@@ -375,7 +375,8 @@
 				return false;
 			}
 			if (!requested) this.careerPrepareFuel(r, plan, market, runStep);
-			this.careerRaceEntry(career, sim, plan, runStep);
+			/* a fleet ship never enters the shared race (0.7.45) */
+			if (!r.fleet) this.careerRaceEntry(career, sim, plan, runStep);
 			/* queue the shot: the first to queue claims the pad charge, then the
 			 * barrel turns on the same in-game clock the player's turret uses —
 			 * an entered race shot waits for the gun when it queues early */

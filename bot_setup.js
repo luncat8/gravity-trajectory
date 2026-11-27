@@ -97,6 +97,7 @@
 		this.bindSim(this.exitProbe);
 		this.bindSim(this.burnShotSim);
 		for (let i = 0; i < this.rivals.length; i++) this.bindSim(this.rivals[i].sim);
+		for (let i = 0; i < this.fleet.length; i++) this.bindSim(this.fleet[i].sim);
 		this.bindSim(this.player.sim);
 	};
 
@@ -112,6 +113,7 @@
 			this.rivals[i].sim.setScales(gravityScale, forceScale);
 			if (this.rivals[i].career) this.rivals[i].career.forceScale = forceScale;
 		}
+		for (let i = 0; i < this.fleet.length; i++) this.fleet[i].sim.setScales(gravityScale, forceScale);
 		this.player.sim.setScales(gravityScale, forceScale);
 		if (!changed) return;
 		/* a cached plan was searched in the old world */
@@ -261,6 +263,9 @@
 		this.jobRival = -1;
 		this.routeCandActor = -1;
 		this.routeTurn = 0;
+		/* the alias dies with the run; attachFleet re-aliases on a career start */
+		this.fleet = [];
+		this.fleetOwner = null;
 		this.probe.clear();
 		this.worldStep = 0;
 		this.traceReset();

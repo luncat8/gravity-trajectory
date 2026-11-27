@@ -265,10 +265,13 @@ make new experimental settings panel add sliders to adjust system global gravity
 settings checkbox:
 allow buy new automatic ship to earn money; acts like bot, shown under player name, shares player purse and all owned property (science/gear) without repaying research.
 
-→ **open** · `../0.7.45-plan-buy-ships.md` — a bought ship is a ship context
-inside the one company career, not a scoreboard slot: it shares purse, pads,
-science and owned gear, costs 30 cr, wears ×2, and appears under YOU. Unlimited;
-no new planet, no `MAX_RIVALS` change.
+→ **done (0.7.45)** · `../0.7.45-plan-buy-ships.md`, now `archive/0.7.45-plan-buy-ships.md` —
+a bought ship is a ship context inside the one company career, not a scoreboard
+slot: it shares purse, pads, science and owned gear, costs 30 cr, wears ×2, and
+appears under YOU. Unlimited; no new planet, no `MAX_RIVALS` change. In the code:
+`buyFleetShip` and the context swap in `game_career.js`, the record and its
+controller in `bot_career_loop.js` (`attachFleet`/`stepFleet`), the reduced shop
+in `bot_career_shop.js`, `#expFleet` + `#scoreFleetRows` in the page.
 
 ## ship maintenance cost
 represent ship condition (storyline: repair, service, oxygen, food, …) as one parameter ~ cost: wear 0.01/s in space + 0.1 per landing + 0.1×EMC acceleration for the starter ship; upgrades/science reduce wear. limits lucky starts (observation device fail, preventing earn huge amount of money in case of very long route occasionally found).

@@ -12,7 +12,7 @@
 	'use strict';
 	const {
 		GravitySim, GravityGame, OrbitWorld, PLAYER_INDEX, STATUS_FLYING, CAREER_RIVAL_GAP,
-		CAREER_BURN_AT, careerStartTraceText, evacTargetLabel
+		CAREER_BURN_AT, careerStartTraceText, careerTraceIndex, evacTargetLabel
 	} = inner;
 
 	const CAREER_RIVAL_PHASE = Math.round(3 / GravitySim.DT);
@@ -310,5 +310,108 @@
 		GravityGame.releaseEnergy(r.turret.pad, r.turret.energy);
 		r.turret = null;
 		r.career.plannedLanding = -1;
+	};
+
+	/* ── fleet (0.7.45) ── the human company's bought ships, stepped after
+	 * stepCareer: the pads are already advanced once by the owner's
+	 * careerAdvance, so a fleet ship takes only careerAdvanceShip wear and
+	 * runs every shared function inside its swapped context. */
+
+	/* alias the live career's fleet and fill the controller fields a fresh
+	 * buy does not know (trace index, burn state); called on a career start
+	 * and after every buy */
+	GravityBot.prototype.attachFleet = function (career, trade) {
+		this.fleetOwner = career;
+		this.fleet = career.fleet;
+		for (let i = 0; i < career.fleet.length; i++) {
+			const f = career.fleet[i];
+			if (f.index !== undefined) continue;
+			f.index = careerTraceIndex(career);
+			f.burnNext = CAREER_BURN_AT;
+			if (trade) {
+				f.sim.fieldT = trade.t;
+				f.sim.fieldRate = this.probe.fieldRate;
+			}
+		}
+	};
+
+	/* a lost ship with no way home is written off: its queue is dropped, the
+	 * record leaves the fleet, and the loss is a notice — never a company end */
+	GravityBot.prototype.careerFleetRetire = function (f) {
+		const career = f.career;
+		if (career.at >= 0 || career.evacuating || GravityGame.canEvacuate(career)) return false;
+		this.careerDropQueue(f);
+		const at = career.fleet.indexOf(f);
+		if (at >= 0) career.fleet.splice(at, 1);
+		this.traceAdd(f.index, 'fleet', 'ship ' + f.id + ' lost · decommissioned', this.worldStep);
+		return true;
+	};
+
+	GravityBot.prototype.careerFleetLand = function (f, trade, runStep) {
+		const career = f.career;
+		const had = career.visitIncome;
+		GravityGame.careerEndFlight(career, f.sim, trade, runStep);
+		f.lastVisit = career.visitIncome - had;
+		f.basePlanet = career.at;
+		f.readyStep = runStep + CAREER_RIVAL_GAP + f.gapPhase;
+		f.idleTries = 0;
+		f.waitTries = 0;
+		f.panelTried = false;
+		this.traceAdd(f.index, 'land', 'ship ' + f.id + ' · P' + career.at +
+			' · +' + f.lastVisit.toFixed(2), runStep);
+		this.careerBetweenFlights(career, f.sim, runStep);
+	};
+
+	/* one game step for every bought ship of the human company; mirrors
+	 * stepCareer's rival order (burn → advance → fly/plan) against the
+	 * swapped context, and stores each record back before the next */
+	GravityBot.prototype.stepFleet = function (runStep, market, trade, rate) {
+		const career = this.fleetOwner;
+		if (!career || career.fleet.length === 0) return;
+		const saved = GravityGame.saveCareerContext(career, career.contextBase);
+		for (let i = 0; i < career.fleet.length; i++) {
+			const f = career.fleet[i];
+			GravityGame.loadCareerContext(career, f);
+			const flightStep = f.sim.status === STATUS_FLYING && f.sim.liveSteps < f.sim.stepLimit;
+			if (flightStep) {
+				const burn = this.careerFlightBurn(career, f.sim, market, runStep - 1, f);
+				const shot = f.shots[f.shots.length - 1];
+				if (burn && shot) shot.burns.push(GravityGame.createBurn(f.sim.liveSteps, burn.angleU, burn.dvU));
+			}
+			GravityGame.careerAdvanceShip(career, 1, flightStep);
+			if (career.evacuating) {
+				if (!GravityGame.advanceEvacuation(career, f.sim, runStep)) {
+					f.readyStep = runStep + CAREER_RIVAL_GAP + f.gapPhase;
+					f.idleTries = 0;
+					f.waitTries = 0;
+					f.panelTried = false;
+					this.traceAdd(f.index, 'evacuated', 'ship ' + f.id + ' · to ' +
+						evacTargetLabel(career), runStep);
+					this.careerBetweenFlights(career, f.sim, runStep);
+				} else {
+					f.readyStep = Math.max(f.readyStep, runStep + 1);
+				}
+				GravityGame.storeCareerContext(career, f);
+				continue;
+			}
+			if (f.sim.status === STATUS_FLYING) {
+				f.sim.stepOne();
+				if (flightStep) {
+					GravityGame.careerWeatherWear(career, f.sim);
+					GravityGame.stepHarvest(career.ledger, market, f.sim, runStep);
+				}
+				if (f.sim.status !== STATUS_FLYING) this.careerFleetLand(f, trade, runStep);
+			} else if (career.ended === GravityGame.CAREER_OPEN && career.recoverySteps < 0 &&
+				runStep >= f.readyStep) {
+				/* a written-off record leaves the array: retry this index */
+				if (this.careerFleetRetire(f)) {
+					i--;
+					continue;
+				}
+				this.careerLaunch(f, market, trade, rate, runStep);
+			}
+			GravityGame.storeCareerContext(career, f);
+		}
+		GravityGame.restoreCareerContext(career, saved);
 	};
 });
