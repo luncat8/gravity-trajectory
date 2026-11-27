@@ -45,7 +45,9 @@
 	//      so a plume grows and waves downwind of the planet.
 	//   2. 3d-noise field — fbm(x, y, z) with z += t, sampled at (map pos - total
 	//      drift) so fresh increments seamlessly continue the pattern that is
-	//      already drifting inside the texture.
+	//      already drifting inside the texture. like the band, it is fed ONLY
+	//      on the exposed border strips; repainting the interior would morph
+	//      it in place and crack when the wind turns.
 	//   3. rare band — a straight stripe fixed in the drift frame (drift = map
 	//      pos - total wind shift). the stripe is NEVER moved by code: while it
 	//      sweeps across the map, each tick only the pixels where it crosses the
@@ -132,8 +134,9 @@
 	}
 
 	function texAdd(x, y, amt) {               // add at a texel (in bounds)
-		const i = (y | 0) * T + (x | 0);
-		if (i >= 0 && i < tex.length) tex[i] += amt;
+		x |= 0; y |= 0;
+		if (x < 0 || x >= T || y < 0 || y >= T) return;
+		tex[y * T + x] += amt;
 	}
 
 	// ---------- space wind (slowly wandering; drag the map to steer it) ----------
@@ -174,35 +177,38 @@
 	}
 
 	// ---------- variant 2: 3d-noise field, z += t, xy drifts with wind ----------
-	const G = T / 2;                          // sampled on a half-res grid, then bilinear
-	const grid = new Float32Array(G * G);
+	// fire-style: fresh noise is generated ONLY on the border strips the last
+	// shift exposed. interior texels already hold the pattern from when they
+	// entered, carried in by the shift — repainting them every tick would
+	// morph the pattern in place (stationary trails) and crack on wind change.
+	function fieldAt(x, y, z, ox, oy) {
+		const v = fbm3(x * 0.026 - ox, y * 0.026 - oy, z, 2);
+		let a = (v - 0.52) / 0.18;             // sparse soft clouds
+		if (a <= 0) return 0;
+		if (a > 1) a = 1;
+		return a * a * 1.2;                    // one feed must reach full strength
+	}
 
 	function paintField(dt, t) {
-		const s = 0.026;                       // xy noise scale
 		const z = t * 0.05;                    // z dimension: pattern slowly morphs
-		const ox = shiftX * s, oy = shiftY * s;// xy offset follows total wind drift
-		const rate = 0.057 * dt;
-		let k = 0;
-		for (let y = 0; y < G; y++) {
-			for (let x = 0; x < G; x++) {
-				// offset by total drift so fresh increments continue the
-				// pattern that is already drifting inside the texture
-				grid[k++] = fbm3(x * 2 * s - ox, y * 2 * s - oy, z, 2);
+		const ox = shiftX * 0.026, oy = shiftY * 0.026;
+		for (let k = 0; k < feedRects.length; k++) {
+			const r = feedRects[k];
+			for (let y = r[1]; y < r[3]; y++) {
+				const row = y * T;
+				for (let x = r[0]; x < r[2]; x++) tex[row + x] += fieldAt(x, y, z, ox, oy);
 			}
 		}
+	}
+
+	// one full-map fill so the map is not empty at load; afterwards the field
+	// is border-fed only (see paintField).
+	function fillField(t) {
+		const z = t * 0.05;
+		const ox = shiftX * 0.026, oy = shiftY * 0.026;
 		for (let y = 0; y < T; y++) {
-			const gy = y * 0.5, iy = gy | 0, fy = gy - iy;
-			const r0 = iy * G, r1 = Math.min(G - 1, iy + 1) * G, row = y * T;
-			for (let x = 0; x < T; x++) {
-				const gx = x * 0.5, ix = gx | 0, fx = gx - ix;
-				const c0 = ix, c1 = Math.min(G - 1, ix + 1);
-				const v = (grid[r0 + c0] * (1 - fx) + grid[r0 + c1] * fx) * (1 - fy)
-					+ (grid[r1 + c0] * (1 - fx) + grid[r1 + c1] * fx) * fy;
-				let a = (v - 0.52) / 0.18;     // sparse soft clouds
-				if (a <= 0) continue;
-				if (a > 1) a = 1;
-				tex[row + x] += a * a * rate;
-			}
+			const row = y * T;
+			for (let x = 0; x < T; x++) tex[row + x] += fieldAt(x, y, z, ox, oy);
 		}
 	}
 
@@ -241,7 +247,10 @@
 
 	function bandGone() {
 		const b = band;
-		return b.c0 + shiftX * b.nx + shiftY * b.ny - b.maxTh > b.cMax + 3;
+		const c = b.c0 + shiftX * b.nx + shiftY * b.ny;  // centerline map projection
+		// gone when the stripe is fully outside on either side, so a wind
+		// reversal mid-crossing does not strand or prematurely drop it
+		return c - b.maxTh > b.cMax + 3 || c + b.maxTh < b.cMin - 3;
 	}
 
 	// which border strips the last shift exposed: dx>0 feeds the LEFT edge,
@@ -319,19 +328,10 @@
 		if (cBand.checked) {
 			if (band) {
 				feedBand();                    // ONLY the exposed border strips
+				// no ghost-clear: fed pixels exit via the shift and dissolve
+				// via the fade. clearing a stripe at the current shift would
+				// erase the wrong place after a wind change and strand trails.
 				if (bandGone()) {
-					// clear the band's ghost on exit so it doesn't linger
-					// until the cloud field overwrites it
-					const b = band;
-					const c0 = b.c0;
-					for (let y = 0; y < T; y++) {
-						const wy = y - shiftY;
-						const row = y * T;
-						for (let x = 0; x < T; x++) {
-							const dist = (x - shiftX) * b.nx + wy * b.ny - c0;
-							if (dist > -b.maxTh && dist < b.maxTh) tex[row + x] = 0;
-						}
-					}
 					band = null;
 					bandTimer = 12 + Math.random() * 14;
 				}
@@ -499,6 +499,7 @@
 	let statT = -1;
 
 	bandTimer = 1e9;                                    // no bands during pre-warm
+	fillField(0);                                       // border-fed field needs a seed
 	for (let i = 0; i < 300; i++) tick(0.05, t += 0.05); // pre-warm ~15s so the map is not empty at load
 	bandTimer = q.get('band') ? 0.05 : 2.5;
 

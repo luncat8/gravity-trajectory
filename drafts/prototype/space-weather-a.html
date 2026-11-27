@@ -101,7 +101,7 @@
 	</section>
 	<section class="notes" aria-label="How to explore">
 		<div><p class="section-label">Try it out</p><p>Change the wind to see the wake turn and the band enter from different edges. Generate a band on demand, or wait for the next rare event. Set speed to zero to pause both motion and generation.</p></div>
-		<div><p class="section-label">Under the surface</p><p>Each panel has its own low-resolution weather texture. Every simulation step backtraces the wind, fades existing weather, and adds new source material. Changing wind clears the fields so the next band starts at the correct inflow edge.</p></div>
+		<div><p class="section-label">Under the surface</p><p>Each panel has its own low-resolution weather texture. Every simulation step backtraces the wind, fades existing weather, and adds new source material. Changing wind keeps the fields: the drift continues and new bands enter through the new inflow edges.</p></div>
 	</section>
 	<footer class="footer"><span>Field lab / prototype only</span><span>Not connected to gameplay</span></footer>
 </main>
@@ -120,7 +120,8 @@
 		const bufferContext = buffer.getContext('2d');
 		return { canvas, context: canvas.getContext('2d'), buffer, bufferContext, image: bufferContext.createImageData(W, H), data: new Float32Array(W * H), next: new Float32Array(W * H), index };
 	});
-	let time = 0, windX = 0, windY = 0, bandCenter = 0, bandSeed = 0, bandActive = false, nextBand = 0;
+	let time = 0, windX = 0, windY = 0, driftX = 0, driftY = 0, bandCenter = 0, bandSeed = 0, bandActive = false, nextBand = 0;
+	let bandNx = 1, bandNy = 0, bandMin = 0, bandMax = 0;
 	let lastFrame = 0, accumulator = 0;
 
 	function hash(x, y, z) {
@@ -137,15 +138,23 @@
 		const b = mix(mix(hash(ix, iy, iz + 1), hash(ix + 1, iy, iz + 1), fx), mix(hash(ix, iy + 1, iz + 1), hash(ix + 1, iy + 1, iz + 1), fx), fy);
 		return mix(a, b, fz);
 	}
-	function boundsProjection(x, y) { return x * windX / WIND_SPEED + y * windY / WIND_SPEED; }
 	function startBand() {
-		const min = Math.min(0, boundsProjection(W - 1, 0), boundsProjection(0, H - 1), boundsProjection(W - 1, H - 1));
-		bandCenter = min - 5 - WIND_SPEED * time;
+		// the stripe is fixed in the drift frame with the normal it was
+		// spawned with, so a later wind change keeps it continuous
+		bandNx = windX / WIND_SPEED; bandNy = windY / WIND_SPEED;
+		let mn = Infinity, mx = -Infinity;
+		for (const [cx, cy] of [[0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1]]) {
+			const p = cx * bandNx + cy * bandNy;
+			if (p < mn) mn = p;
+			if (p > mx) mx = p;
+		}
+		bandMin = mn; bandMax = mx;
+		bandCenter = mn - 5 - (driftX * bandNx + driftY * bandNy);
 		bandSeed = Math.random() * 1000;
 		bandActive = true;
 	}
 	function reset() {
-		time = 0;
+		time = 0; driftX = 0; driftY = 0;
 		accumulator = 0;
 		for (const field of fields) { field.data.fill(0); field.next.fill(0); }
 		nextBand = 20;
@@ -160,16 +169,17 @@
 		const arrow = directions[((Math.round(Number(direction.value) / 45) % 8) + 8) % 8];
 		$('directionValue').textContent = direction.value + '° ' + arrow;
 		for (const element of arrows) element.textContent = arrow;
-		reset();
+		// no reset: fields, drift and the active band keep their history;
+		// only future advection uses the new direction
 	}
 	function bandAt(x, y) {
 		if (!bandActive) return 0;
 		// Coordinates follow the advected texture, so the inlet samples one fixed stripe.
-		const wx = x - windX * time, wy = y - windY * time;
-		const along = (-wx * windY + wy * windX) / WIND_SPEED;
+		const wx = x - driftX, wy = y - driftY;
+		const along = -wx * bandNy + wy * bandNx;
 		const center = bandCenter + (noise3(along / 32, bandSeed, 0) - .5) * 14;
 		const thickness = 7 + noise3(along / 24, bandSeed + 7, 2) * 13;
-		const distance = Math.abs(boundsProjection(wx, wy) - center);
+		const distance = Math.abs((wx * bandNx + wy * bandNy) - center);
 		return Math.max(0, Math.min(1, (thickness - distance) / 4)) * .95;
 	}
 	function stepField(field, dt) {
@@ -198,8 +208,8 @@
 					const irregularity = (noise3(x / 19, y / 19, time * .055) - .5) * 13;
 					const shape = Math.max(0, Math.min(1, (pulse + irregularity - radius) / 10));
 					value += shape * dt * .20 * (.8 + .2 * Math.sin(time * .45));
-				} else if (field.index === 1) {
-					const nx = (x - windX * time * .25) / 39, ny = (y - windY * time * .25) / 39;
+			} else if (field.index === 1) {
+				const nx = (x - driftX * .25) / 39, ny = (y - driftY * .25) / 39;
 					const n = noise3(nx, ny, time * .035) * .7 + noise3(nx * 2, ny * 2, 8 + time * .05) * .3;
 					value += Math.max(0, n - .38) * dt * .065;
 				} else if (coverage < .99999) {
@@ -213,9 +223,10 @@
 	}
 	function step(dt) {
 		time += dt;
+		driftX += windX * dt; driftY += windY * dt;
 		if (bandActive) {
-			const max = Math.max(0, boundsProjection(W - 1, 0), boundsProjection(0, H - 1), boundsProjection(W - 1, H - 1));
-			if (bandCenter + WIND_SPEED * time > max + 30) { bandActive = false; nextBand = time + 18 + Math.random() * 15; }
+			const c = bandCenter + (driftX * bandNx + driftY * bandNy);
+			if (c > bandMax + 30 || c < bandMin - 30) { bandActive = false; nextBand = time + 18 + Math.random() * 15; }
 		} else if (time >= nextBand) startBand();
 		for (const field of fields) stepField(field, dt);
 	}
@@ -268,6 +279,7 @@
 	$('bandButton').addEventListener('click', startBand);
 	$('resetButton').addEventListener('click', reset);
 	updateWind();
+	reset();
 	requestAnimationFrame(frame);
 })();
 </script>

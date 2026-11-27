@@ -1,0 +1,186 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Space weather · shapes</title>
+<style>
+  body { margin: 0; background: #05070d; color: #ccd; font: 13px monospace; overflow: hidden; }
+  canvas { display: block; }
+  #ui { position: absolute; top: 8px; left: 8px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  input[type=range] { width: 200px; }
+  #mix { width: 260px; }
+  button { background: #162; color: #dfd; border: 1px solid #395; padding: 4px 8px; cursor: pointer; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <span>cloud</span>
+  <input id="mix" type="range" min="0" max="1" step="0.001" value="0">
+  <span>weather</span>
+  <span id="val">0.00</span>
+  <span>speed</span>
+  <input id="speed" type="range" min="0" max="3" step="0.05" value="1">
+  <span id="speedVal">1.00x</span>
+  <button id="bandBtn">spawn band</button>
+</div>
+<script>
+// shapes (curves) version of the 2clouds demo: same mix slider semantics
+// (0 = fast, less predictable cloud; 1 = stable, slow weather), same 50%
+// faster wind at mix 0, same rare band crossing the map — but every zone is
+// a vector blob with a harmonic rim, advected by the wind and faded out.
+// no texture, no per-pixel noise: blobs are the weather.
+
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const WIND_ANG = -0.4, WIND_BASE = 28;       // px/s at mix 1
+const MAX_BLOBS = 140;
+
+const CLOUD   = { noise: 0.34, pulseAmp: 0.24, plumeEvery: 0.55, ambEvery: 0.85, life: 10, baseR: 62 };
+const WEATHER = { noise: 0.12, pulseAmp: 0.12, plumeEvery: 1.10, ambEvery: 1.70, life: 16, baseR: 78 };
+const windScaleAt = mix => 1.5 - 0.5 * mix;  // 50% faster at mix 0
+
+let W = 0, H = 0, planet = { x: 0, y: 0, r: 42 };
+let blobs = [], plumeT = 0, ambT = 0, bandTimer = 6, simT = 0, last = performance.now();
+let mixTarget = 0, mix = 0, cur = { ...CLOUD };
+
+const mixInput = document.getElementById('mix'), mixVal = document.getElementById('val');
+const speedInput = document.getElementById('speed'), speedVal = document.getElementById('speedVal');
+mixInput.oninput = () => { mixTarget = +mixInput.value; };
+speedInput.oninput = () => { speedVal.textContent = (+speedInput.value).toFixed(2) + 'x'; };
+
+const rnd = (a, b) => a + Math.random() * (b - a);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function resize() {
+  cv.width = innerWidth; cv.height = innerHeight;
+  W = cv.width; H = cv.height;
+  planet.x = W / 2; planet.y = H / 2;
+}
+window.addEventListener('resize', resize);
+resize();
+
+function newBlob(x, y, vx, vy, life, baseR, kind) {
+  return {
+    x, y, vx, vy, age: 0, life, baseR, kind,
+    ph: rnd(0, 6.28),
+    harm: [2, 3, 5].map(k => ({ k, ph: rnd(0, 6.28), sp: rnd(-0.5, 0.5), a: 1 / k }))
+  };
+}
+
+function rimFactor(z, a, t) {                 // periodic rim noise
+  let s = 0;
+  for (const h of z.harm) s += h.a * Math.sin(h.k * a + h.ph + h.sp * t);
+  return 1 + cur.noise * s;
+}
+
+function windVec() {
+  const s = WIND_BASE * windScaleAt(mix);
+  return [s * Math.cos(WIND_ANG), s * Math.sin(WIND_ANG)];
+}
+
+// rare band: a formation of overlapping blobs along a curved line just
+// upwind of the map, all sharing the wind velocity so the drift carries
+// the whole band across and out the downwind side.
+function spawnBand() {
+  const [wx, wy] = windVec();
+  const sp = Math.hypot(wx, wy) || 1;
+  const ux = -wy / sp, uy = wx / sp;          // along the band
+  const diag = Math.hypot(W, H);
+  const K = 14, phase = rnd(0, 6.28), curve = rnd(14, 30);
+  const life = diag / sp * 1.25 + 4;
+  for (let i = 0; i < K; i++) {
+    const along = (i / (K - 1) - 0.5) * diag * 1.15;
+    const bend = Math.sin(along / diag * 6.28 + phase) * curve;
+    const bx = planet.x - wx * 30 - ux * along + wx / sp * bend;
+    const by = planet.y - wy * 30 - uy * along + wy / sp * bend;
+    const r = cur.baseR * rnd(0.9, 1.25) * (0.75 + 0.5 * Math.sin(along / diag * 6.28 + phase * 2));
+    blobs.push(newBlob(bx, by, wx, wy, life, r, 'band'));
+  }
+}
+document.getElementById('bandBtn').onclick = spawnBand;
+
+function spawnAmbient(wx, wy) {
+  // enter from the upwind edge so the wind carries the cloud across
+  const sp = Math.hypot(wx, wy) || 1;
+  const ux = -wy / sp, uy = wx / sp;
+  const along = rnd(-0.6, 0.6) * Math.hypot(W, H);
+  const x = planet.x - wx * (Math.hypot(W, H) / sp * 0.6) + ux * along;
+  const y = planet.y - wy * (Math.hypot(W, H) / sp * 0.6) + uy * along;
+  blobs.push(newBlob(x, y, wx, wy, cur.life * rnd(0.8, 1.2), cur.baseR * rnd(0.7, 1.1), 'amb'));
+}
+
+function drawBlob(z, alpha) {
+  const pulse = 1 + cur.pulseAmp * Math.sin(2 * Math.PI * simT / 6 + z.ph);
+  const R = z.baseR * pulse;
+  const sp = Math.hypot(z.vx, z.vy);
+  const stretch = sp > 1 ? 1 + Math.min(0.5, sp / 120) : 1;
+  const wa = Math.atan2(z.vy, z.vx), c = Math.cos(wa), s = Math.sin(wa);
+  const col = z.kind === 'band' ? '242,171,104' : z.kind === 'amb' ? '80,180,200' : '150,90,255';
+
+  ctx.beginPath();
+  const N = 64;
+  for (let i = 0; i <= N; i++) {
+    const a = i / N * Math.PI * 2;
+    const r = R * rimFactor(z, a, simT);
+    const u = Math.cos(a) * r * stretch, v = Math.sin(a) * r;
+    const X = z.x + u * c - v * s, Y = z.y + u * s + v * c;
+    i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = `rgba(${col},${0.20 * alpha})`;
+  ctx.fill();
+  ctx.strokeStyle = `rgba(${col},${0.65 * alpha})`;
+  ctx.stroke();
+}
+
+function frame(now) {
+  const rawDt = Math.min(0.05, (now - last) / 1000); last = now;
+  const dt = rawDt * +speedInput.value;      // speed drives animation AND generation
+  simT += dt;
+
+  mix += (mixTarget - mix) * Math.min(1, dt * 1.5);
+  mixVal.textContent = mix.toFixed(2);
+  cur.noise      = lerp(CLOUD.noise, WEATHER.noise, mix);
+  cur.pulseAmp   = lerp(CLOUD.pulseAmp, WEATHER.pulseAmp, mix);
+  cur.plumeEvery = lerp(CLOUD.plumeEvery, WEATHER.plumeEvery, mix);
+  cur.ambEvery   = lerp(CLOUD.ambEvery, WEATHER.ambEvery, mix);
+  cur.life       = lerp(CLOUD.life, WEATHER.life, mix);
+  cur.baseR      = lerp(CLOUD.baseR, WEATHER.baseR, mix);
+
+  const [wx, wy] = windVec();
+
+  plumeT -= dt;
+  if (plumeT <= 0 && blobs.length < MAX_BLOBS) {
+    plumeT = cur.plumeEvery;
+    blobs.push(newBlob(planet.x + rnd(-6, 6), planet.y + rnd(-6, 6), wx, wy,
+      cur.life * rnd(0.85, 1.15), cur.baseR * rnd(0.85, 1.15), 'plume'));
+  }
+  ambT -= dt;
+  if (ambT <= 0 && blobs.length < MAX_BLOBS) {
+    ambT = cur.ambEvery;
+    spawnAmbient(wx, wy);
+  }
+  bandTimer -= dt;
+  if (bandTimer <= 0) { spawnBand(); bandTimer = 20 + Math.random() * 15; }
+
+  for (const z of blobs) { z.age += dt; z.x += z.vx * dt; z.y += z.vy * dt; }
+  blobs = blobs.filter(z => z.age < z.life);
+
+  ctx.fillStyle = '#05070d';
+  ctx.fillRect(0, 0, W, H);
+  ctx.beginPath();
+  ctx.arc(planet.x, planet.y, planet.r, 0, Math.PI * 2);
+  ctx.fillStyle = '#2a3140';
+  ctx.fill();
+  ctx.strokeStyle = '#a8e2ff';
+  ctx.stroke();
+  for (const z of blobs) {
+    const alpha = Math.min(1, z.age / 2) * (1 - z.age / z.life);
+    drawBlob(z, alpha);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
