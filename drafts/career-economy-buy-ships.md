@@ -14,7 +14,7 @@ costs 30 cr,
 wears ×2;
 draw predicted trajectory only on hover or press to not overcrowd map.
 track total profit by automatic ship as sum of dif: profits, expanses (like repair).
-similar ckeckboxes isbot to allow switch ship, copy log, etc
+similar ckeckboxes isbot to allow switch ship, copy log, etc. automatic ship do not manage pause state.
 
 
 → Buying defaults on, costs 30 cr on any inhabited planet, and has no ship cap.
