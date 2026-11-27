@@ -215,6 +215,79 @@
 		return record;
 	}
 
+	/* rebuild a saved fleet ship record on a fresh career (save/restore round
+	 * trip, 0.7.45). A loaded page starts with an empty career.fleet, so the
+	 * records cannot be unpacked in place — each is recreated here from its
+	 * saved fit and the flagship sim's geometry, and the saved flight state is
+	 * then written over it by saved_map.js applyState. `sim` is the flagship
+	 * sim (info.sims[career.index]); the fleet sim must share its world, planet
+	 * mask and gravity field. The live fields (career, sim, tasks, turret) are
+	 * rebuilt here; `ship`, `at`, `flight` and the rest are overwritten by the
+	 * unpack pass. */
+	function restoreFleetShip(career, trade, sim, saved) {
+		const s = saved.ship || career.ship;
+		const ship = {
+			hold: s.hold, engine: s.engine, tank: s.tank,
+			obs: Object.assign({}, s.obs),
+			cargoTons: 0, fuelKg: 0, mass: 0,
+			colonyKit: !!s.colonyKit,
+			condition: s.condition != null ? s.condition : 1
+		};
+		ship.mass = OrbitTech.shipMass(ship, 0);
+		const fleetSim = new GravitySim(sim.worldW, sim.worldH);
+		fleetSim.setPlanets(OrbitWorld.PLANETS, trade.planetX, trade.planetY, trade.planetR,
+			trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+		fleetSim.setPlanetMask(sim.planetMask);
+		fleetSim.setScales(sim.gravityScale, sim.forceScale);
+		fleetSim.setField(sim.bodyCount, sim.bodyR, sim.strength, sim.fillField, sim.fieldStatic);
+		fleetSim.fieldT = trade.t;
+		fleetSim.fieldRate = sim.fieldRate;
+		/* the launch gate and standing position are re-derived from the saved
+		 * fit and at; the unpack pass then writes the saved flight keys */
+		fleetSim.setLaunchNetwork(career.launchPads, ship);
+		fleetSim.relocate(saved.at != null ? saved.at : career.hq);
+		const id = saved.id != null ? saved.id : career.fleetSeq + 1;
+		const record = {
+			career: career,
+			fleet: true,
+			id: id,
+			at: saved.at != null ? saved.at : career.hq,
+			ship: ship,
+			contract: -1,
+			tasks: career.fleetTasks,
+			stranded: false,
+			flying: false,
+			commercialPlanet: -1,
+			fragileLost: false,
+			wearScale: saved.wearScale != null ? saved.wearScale : 2,
+			flight: createFlightBlock(),
+			plannedLanding: -1,
+			flightStartStep: 0,
+			lastEnergy: 0,
+			lastFee: 0,
+			lastReward: 0,
+			lastFuel: 0,
+			lastVisit: 0,
+			sim: fleetSim,
+			readyStep: saved.readyStep || 0,
+			gapPhase: saved.gapPhase || 0,
+			idleTries: 0,
+			waitTries: 0,
+			panelTried: false,
+			burn: 0,
+			burnTries: 0,
+			burnNext: 0,
+			burnStep: 0,
+			basePlanet: saved.basePlanet != null ? saved.basePlanet
+				: (saved.at != null ? saved.at : career.hq),
+			turret: null,
+			shots: []
+		};
+		career.fleet.push(record);
+		if (id > career.fleetSeq) career.fleetSeq = id;
+		return record;
+	}
+
 	/* `ledger` is the purse shared with the page's score rows; pads and ship
 	 * are the objects a GravitySim gates on (setLaunchNetwork) */
 	function createCareer(ledger) {
@@ -830,7 +903,8 @@
 		CAREER_COMPLETE, createCareer, resetCareer, startCareer, checkEnded, placeShip,
 		ENDGAME_WARNING_STEPS, capitalCovered, joinGalaxy, installStockUpgrades,
 		FLEET_COST, FLEET_RESERVE, FLEET_GAP, createFlightBlock, saveCareerContext,
-		loadCareerContext, storeCareerContext, restoreCareerContext, fleetBuyRefusal, buyFleetShip
+		loadCareerContext, storeCareerContext, restoreCareerContext, fleetBuyRefusal, buyFleetShip,
+		restoreFleetShip
 	});
 	Object.assign(inner, {
 		placeShip, checkEnded, liquidateCareer

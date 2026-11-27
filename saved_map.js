@@ -346,20 +346,6 @@
 		for (let i = 0; i < state.rivals.length && i < info.rivals.length; i++) {
 			unpackData(info.rivals[i], state.rivals[i], RIVAL_SKIP);
 		}
-		/* bought ships (0.7.45): the records unpack in place, their sims keep
-		 * the live references and get the saved flight state back */
-		if (state.fleet && info.game.career) {
-			const career = info.game.career;
-			const fleet = career.fleet;
-			for (let i = 0; i < state.fleet.length && i < fleet.length; i++) {
-				unpackData(fleet[i], state.fleet[i], FLEET_SKIP);
-				if (state.fleetShips && state.fleetShips[i]) {
-					fleet[i].sim.relocate(fleet[i].at);
-					unpackKeys(fleet[i].sim, state.fleetShips[i]);
-					fleet[i].sim.setLaunchNetwork(career.launchPads, fleet[i].ship);
-				}
-			}
-		}
 		if (state.planner && info.planner) {
 			unpackData(info.planner, state.planner, PLANNER_SKIP);
 		}
@@ -371,6 +357,25 @@
 			info.sims[i].relocate(career.at);
 			unpackKeys(info.sims[i], state.ships[i]);
 			info.sims[i].evacuationTrip = career.evacuating ? career : null;
+		}
+		/* bought ships (0.7.45): a loaded page starts with an empty career.fleet,
+		 * so each saved record is rebuilt on the fresh career (its sim shares the
+		 * flagship sim's now-restored geometry and field), then unpacked to the
+		 * saved flight state and re-attached to the launch network. */
+		if (state.fleet && info.game.career) {
+			const career = info.game.career;
+			const flagshipSim = info.sims[career.index];
+			career.fleet = [];
+			career.fleetSeq = 0;
+			for (let i = 0; i < state.fleet.length; i++) {
+				const f = GravityGame.restoreFleetShip(career, info.trade, flagshipSim, state.fleet[i]);
+				unpackData(f, state.fleet[i], FLEET_SKIP);
+				if (state.fleetShips && state.fleetShips[i]) {
+					f.sim.relocate(f.at);
+					unpackKeys(f.sim, state.fleetShips[i]);
+				}
+				f.sim.setLaunchNetwork(career.launchPads, f.ship);
+			}
 		}
 		info.game.steps = state.run.steps;
 		info.game.length = state.run.length;

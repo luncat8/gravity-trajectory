@@ -360,6 +360,13 @@ function applyRunRecord(record) {
 	cargoSim.fieldT = tradeSim.t;
 	cargoSim.fieldRate = scene.trade.speed;
 	if (activeCareer() && activeCareer().radar) predRivalsOn = true;
+	/* a restored fleet must keep steering itself: re-alias the rebuilt records
+	 * into the controller and backfill the per-ship trace index / burn state a
+	 * fresh buy normally sets (0.7.45) */
+	if (activeCareer() && activeCareer().fleet && activeCareer().fleet.length &&
+		typeof bot !== 'undefined' && bot.attachFleet) {
+		bot.attachFleet(activeCareer(), tradeSim);
+	}
 	dirty = true;
 	refreshCareerClockUi();
 	refreshGameUi();

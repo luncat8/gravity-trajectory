@@ -231,7 +231,11 @@ function loadPage(options = {}) {
 				nodes[match[3]] = makeElement({ id: '', tagName: match[1].toUpperCase(),
 					checked: /\bchecked\b/.test(attrs), hidden: /\shidden\b/.test(attrs) }, paint);
 			}
-			nodes.row.parentElement = nodes.name;
+			/* real DOM nesting: [row] > [name|b|meta]; mirror it so the
+			 * page test can assert a node's parentElement is its row */
+			for (const key of ['name', 'value', 'meta']) {
+				if (nodes[key]) nodes[key].parentElement = nodes.row;
+			}
 			return {
 				nodes,
 				querySelector(selector) {
