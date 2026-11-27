@@ -447,6 +447,20 @@ function drawRivalTags() {
 /* the bought fleet ships (0.7.45): the owner's colour, a small id tag. A
  * flying ship draws its chevron, a parked one a diamond on its planet, an
  * evacuating one rides the tow — the same shapes the rivals use. */
+const fleetRadarRecord = { sim: null, predX: null, predY: null, predCount: 0, body: -1 };
+
+function drawFleetPrediction(f) {
+	const sim = f.sim;
+	if (sim !== radarHoverSim && sim !== radarPressSim) return;
+	if (!GravityGame.radarPredict(f, activeSim()) || sim.predCount < 2) return;
+	fleetRadarRecord.sim = sim;
+	fleetRadarRecord.predX = sim.predX;
+	fleetRadarRecord.predY = sim.predY;
+	fleetRadarRecord.predCount = sim.predCount;
+	fleetRadarRecord.body = sim.predReason === END_IMPACT ? sim.predBody : -1;
+	drawRadarPath(fleetRadarRecord, MINT, 1 / view.scale);
+}
+
 function drawFleetWorld() {
 	const fleet = bot.fleetOwner ? bot.fleetOwner.fleet : null;
 	if (!fleet || fleet.length === 0) return;
@@ -454,6 +468,7 @@ function drawFleetWorld() {
 	for (let i = 0; i < fleet.length; i++) {
 		const f = fleet[i];
 		const sim = f.sim;
+		drawFleetPrediction(f);
 		if (f.evacuating) {
 			const dx = f.evacToX - f.evacFromX;
 			const dy = f.evacToY - f.evacFromY;

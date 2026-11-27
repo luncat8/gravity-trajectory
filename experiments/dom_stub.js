@@ -231,11 +231,12 @@ function loadPage(options = {}) {
 				nodes[match[3]] = makeElement({ id: '', tagName: match[1].toUpperCase(),
 					checked: /\bchecked\b/.test(attrs), hidden: /\shidden\b/.test(attrs) }, paint);
 			}
-			/* real DOM nesting: [row] > [name|b|meta]; mirror it so the
-			 * page test can assert a node's parentElement is its row */
-			for (const key of ['name', 'value', 'meta']) {
+			/* Mirror the template's control group, including checkbox nesting. */
+			for (const key of ['controls', 'value', 'meta']) {
 				if (nodes[key]) nodes[key].parentElement = nodes.row;
 			}
+			for (const key of ['name', 'label', 'log']) nodes[key].parentElement = nodes.controls;
+			nodes.bot.parentElement = nodes.label;
 			return {
 				nodes,
 				querySelector(selector) {

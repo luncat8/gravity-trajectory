@@ -51,8 +51,14 @@
 	}
 
 	GravityBot.prototype.traceAdd = function (index, decision, detail, step, move) {
+		const fleet = this.fleetOwner && this.fleetOwner.fleetShip;
+		if (fleet) detail = 'ship ' + fleet.id + (detail ? ' · ' + detail : '');
 		const line = '[' + worldClock(step) + '] ' + actorLabel(index) + ' ' + decision +
 			(detail ? ' · ' + detail : '');
+		if (fleet) {
+			fleet.log.push(line);
+			if (fleet.log.length > TRACE_MAX) fleet.log.shift();
+		}
 		this.trace.push(line);
 		this.traceRevision += 1;
 		if (this.trace.length > TRACE_MAX) this.trace.shift();
@@ -63,7 +69,7 @@
 		}
 		if (index >= 0 && index < this.lastDecision.length) this.lastDecision[index] = line;
 		if (this.onCareerTrace && this.rule === GravityGame.RULE_CAREER && index >= 0) {
-			this.onCareerTrace(index, decision, detail, step, move);
+			this.onCareerTrace(index, fleet ? 'fleet' : decision, detail, step, fleet ? undefined : move);
 		}
 	};
 

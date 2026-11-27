@@ -309,7 +309,8 @@
 		if (!r.turret) return;
 		GravityGame.releaseEnergy(r.turret.pad, r.turret.energy);
 		r.turret = null;
-		r.career.plannedLanding = -1;
+		if (r.fleet) r.plannedLanding = -1;
+		if (!r.fleet || r.career.fleetShip === r) r.career.plannedLanding = -1;
 	};
 
 	/* ── fleet (0.7.45) ── the human company's bought ships, stepped after
@@ -343,7 +344,7 @@
 		this.careerDropQueue(f);
 		const at = career.fleet.indexOf(f);
 		if (at >= 0) career.fleet.splice(at, 1);
-		this.traceAdd(f.index, 'fleet', 'ship ' + f.id + ' lost · decommissioned', this.worldStep);
+		this.traceAdd(f.index, 'fleet', 'lost · decommissioned', this.worldStep);
 		return true;
 	};
 
@@ -357,23 +358,30 @@
 		f.idleTries = 0;
 		f.waitTries = 0;
 		f.panelTried = false;
-		this.traceAdd(f.index, 'land', 'ship ' + f.id + ' · P' + career.at +
+		this.traceAdd(f.index, 'land', 'P' + career.at +
 			' · +' + f.lastVisit.toFixed(2), runStep);
-		this.careerBetweenFlights(career, f.sim, runStep);
+		if (f.automatic) this.careerBetweenFlights(career, f.sim, runStep);
 	};
 
-	/* one game step for every bought ship of the human company; mirrors
-	 * stepCareer's rival order (burn → advance → fly/plan) against the
-	 * swapped context, and stores each record back before the next */
+	/* Parking cancels a reservation, never an airborne ship's physics. */
+	GravityBot.prototype.setFleetAutomatic = function (f, automatic, runStep) {
+		f.automatic = automatic;
+		if (!automatic) this.careerDropQueue(f);
+		f.readyStep = Math.max(f.readyStep, runStep);
+	};
+
+	/* Each ship borrows the company context for one synchronous step. */
 	GravityBot.prototype.stepFleet = function (runStep, market, trade, rate) {
 		const career = this.fleetOwner;
 		if (!career || career.fleet.length === 0) return;
 		const saved = GravityGame.saveCareerContext(career, career.contextBase);
 		for (let i = 0; i < career.fleet.length; i++) {
 			const f = career.fleet[i];
+			f.sim.fieldT = trade.t;
+			f.sim.fieldRate = rate;
 			GravityGame.loadCareerContext(career, f);
 			const flightStep = f.sim.status === STATUS_FLYING && f.sim.liveSteps < f.sim.stepLimit;
-			if (flightStep) {
+			if (flightStep && f.automatic) {
 				const burn = this.careerFlightBurn(career, f.sim, market, runStep - 1, f);
 				const shot = f.shots[f.shots.length - 1];
 				if (burn && shot) shot.burns.push(GravityGame.createBurn(f.sim.liveSteps, burn.angleU, burn.dvU));
@@ -385,9 +393,9 @@
 					f.idleTries = 0;
 					f.waitTries = 0;
 					f.panelTried = false;
-					this.traceAdd(f.index, 'evacuated', 'ship ' + f.id + ' · to ' +
+					this.traceAdd(f.index, 'evacuated', 'to ' +
 						evacTargetLabel(career), runStep);
-					this.careerBetweenFlights(career, f.sim, runStep);
+					if (f.automatic) this.careerBetweenFlights(career, f.sim, runStep);
 				} else {
 					f.readyStep = Math.max(f.readyStep, runStep + 1);
 				}
@@ -401,10 +409,11 @@
 					GravityGame.stepHarvest(career.ledger, market, f.sim, runStep);
 				}
 				if (f.sim.status !== STATUS_FLYING) this.careerFleetLand(f, trade, runStep);
-			} else if (career.ended === GravityGame.CAREER_OPEN && career.recoverySteps < 0 &&
+			} else if (f.automatic && career.ended === GravityGame.CAREER_OPEN && career.recoverySteps < 0 &&
 				runStep >= f.readyStep) {
 				/* a written-off record leaves the array: retry this index */
 				if (this.careerFleetRetire(f)) {
+					GravityGame.storeCareerContext(career, f);
 					i--;
 					continue;
 				}

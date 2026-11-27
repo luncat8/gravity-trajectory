@@ -527,7 +527,6 @@ function radarGhostColour(record) {
 /* the other ship under the pointer — nearest record within the same reach
  * the ship hover uses; the selected ship skipped (it never hides anyway) */
 function radarShipAt(wx, wy) {
-	if (!radarOutCount) return null;
 	const reach = HIT_PX / view.scale;
 	let best = reach * reach;
 	let found = null;
@@ -542,6 +541,17 @@ function radarShipAt(wx, wy) {
 			best = d2;
 			found = record.sim;
 		}
+	}
+	const fleet = careerRule() && game.on && game.career ? game.career.fleet : null;
+	for (let i = 0; fleet && i < fleet.length; i++) {
+		const f = fleet[i];
+		if (f.sim.status !== STATUS_FLYING || f.evacuating) continue;
+		const dx = f.sim.cargo.x - wx;
+		const dy = f.sim.cargo.y - wy;
+		const d2 = dx * dx + dy * dy;
+		if (d2 > best) continue;
+		best = d2;
+		found = f.sim;
 	}
 	return found;
 }
@@ -624,49 +634,53 @@ function drawRadar() {
 		/* the gate hides the dashed path and its ghost chevron together */
 		if (!radarRecordShown(record)) continue;
 		const colour = radarGhostColour(record);
-		/* while this rival is the one under the pointer, ring the planet its
-		 * ghost points at, so the landing reads at a glance */
-		if ((record.sim === radarHoverSim || record.sim === radarPressSim) &&
-				record.body >= 0) {
-			drawRivalLandingRing(record.body, colour);
-		}
-		RADAR_DASH[0] = 3 * px;
-		RADAR_DASH[1] = 5 * px;
-		const stride = record.predCount > 6000 ? 4 : record.predCount > 1400 ? 2 : 1;
-		const last = record.predCount - 1;
-		ctx.beginPath();
-		ctx.moveTo(record.predX[0], record.predY[0]);
-		for (let k = stride; k < record.predCount; k += stride) {
-			ctx.lineTo(record.predX[k], record.predY[k]);
-		}
-		if (last % stride !== 0) ctx.lineTo(record.predX[last], record.predY[last]);
-		ctx.globalAlpha = 0.4;
-		ctx.strokeStyle = colour;
-		ctx.lineWidth = 1.1 * px;
-		ctx.setLineDash(RADAR_DASH);
-		ctx.stroke();
-		ctx.setLineDash(NO_DASH);
-		/* a partial or non-impact trace draws its dashed path with no landing ghost */
-		if (record.body < 0) {
-			ctx.globalAlpha = 1;
-			continue;
-		}
-		const lx = record.predX[last];
-		const ly = record.predY[last];
-		const dx = lx - record.predX[last - 1];
-		const dy = ly - record.predY[last - 1];
-		const angle = dx !== 0 || dy !== 0
-			? Math.atan2(dy, dx) : Math.atan2(record.sim.cargo.vy, record.sim.cargo.vx);
-		const size = 4.3 * px;
-		ctx.beginPath();
-		ctx.moveTo(lx + Math.cos(angle) * size, ly + Math.sin(angle) * size);
-		ctx.lineTo(lx + Math.cos(angle + 2.4) * size, ly + Math.sin(angle + 2.4) * size);
-		ctx.lineTo(lx + Math.cos(angle - 2.4) * size, ly + Math.sin(angle - 2.4) * size);
-		ctx.closePath();
-		ctx.fillStyle = colour;
-		ctx.fill();
-		ctx.globalAlpha = 1;
+		drawRadarPath(record, colour, px);
 	}
+}
+
+function drawRadarPath(record, colour, px) {
+	/* while this rival is the one under the pointer, ring the planet its
+	 * ghost points at, so the landing reads at a glance */
+	if ((record.sim === radarHoverSim || record.sim === radarPressSim) &&
+			record.body >= 0) {
+		drawRivalLandingRing(record.body, colour);
+	}
+	RADAR_DASH[0] = 3 * px;
+	RADAR_DASH[1] = 5 * px;
+	const stride = record.predCount > 6000 ? 4 : record.predCount > 1400 ? 2 : 1;
+	const last = record.predCount - 1;
+	ctx.beginPath();
+	ctx.moveTo(record.predX[0], record.predY[0]);
+	for (let k = stride; k < record.predCount; k += stride) {
+		ctx.lineTo(record.predX[k], record.predY[k]);
+	}
+	if (last % stride !== 0) ctx.lineTo(record.predX[last], record.predY[last]);
+	ctx.globalAlpha = 0.4;
+	ctx.strokeStyle = colour;
+	ctx.lineWidth = 1.1 * px;
+	ctx.setLineDash(RADAR_DASH);
+	ctx.stroke();
+	ctx.setLineDash(NO_DASH);
+	/* a partial or non-impact trace draws its dashed path with no landing ghost */
+	if (record.body < 0) {
+		ctx.globalAlpha = 1;
+		return;
+	}
+	const lx = record.predX[last];
+	const ly = record.predY[last];
+	const dx = lx - record.predX[last - 1];
+	const dy = ly - record.predY[last - 1];
+	const angle = dx !== 0 || dy !== 0
+		? Math.atan2(dy, dx) : Math.atan2(record.sim.cargo.vy, record.sim.cargo.vx);
+	const size = 4.3 * px;
+	ctx.beginPath();
+	ctx.moveTo(lx + Math.cos(angle) * size, ly + Math.sin(angle) * size);
+	ctx.lineTo(lx + Math.cos(angle + 2.4) * size, ly + Math.sin(angle + 2.4) * size);
+	ctx.lineTo(lx + Math.cos(angle - 2.4) * size, ly + Math.sin(angle - 2.4) * size);
+	ctx.closePath();
+	ctx.fillStyle = colour;
+	ctx.fill();
+	ctx.globalAlpha = 1;
 }
 
 const RADAR_PLATE_W = 44;

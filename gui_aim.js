@@ -678,7 +678,8 @@ function onPointerMove(event) {
 		}
 		hoverPlanet = planet;
 		/* the radar reveal (0.7.50): hovering another ship shows its mark */
-		radarHoverSim = onCanvas ? radarShipAt(wx, wy) : null;
+		const fleet = onCanvas ? null : fleetRowTarget(event.target);
+		radarHoverSim = onCanvas ? radarShipAt(wx, wy) : fleet ? fleet.sim : null;
 	}
 	lastWX = wx;
 	lastWY = wy;

@@ -76,10 +76,6 @@ function refreshGameUi() {
 	if (expHarvestEl) expHarvestEl.disabled = experimentLock || !career;
 	/* buying ships is a live-career choice: locked mid-flight like the rest */
 	if (expFleetEl) expFleetEl.disabled = experimentLock || !career;
-	if (expFleetEl && career && game.career && game.career.fleetUnlocked !== expFleetEl.checked) {
-		/* the mirror follows the box unless a restart cleared it */
-		if (expFleetEl.checked) game.career.fleetUnlocked = true;
-	}
 	syncFleetCheckbox();
 	for (const el of [giftAllEl, giftBotEl, giftHumanEl, giftPeekEl]) if (el) el.disabled = !career;
 	cheatPanelSyncUi(career);

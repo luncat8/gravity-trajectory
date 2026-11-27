@@ -24,6 +24,7 @@ const EPS = 1e-9;
 let failures = 0;
 
 function check(name, fn) {
+	if (process.argv[2] && !name.includes(process.argv[2])) return;
 	try {
 		fn();
 		console.log('ok - ' + name);
@@ -91,8 +92,9 @@ function fund(w, cr) {
 check('buy: gates and price', () => {
 	const w = makeWorld(42);
 	const career = w.career;
-	/* off by default, and every refusal names itself */
-	assert.strictEqual(career.fleetUnlocked, false);
+	/* buying is on by default; switching it off still refuses */
+	assert.strictEqual(career.fleetUnlocked, true);
+	career.fleetUnlocked = false;
 	assert.strictEqual(GravityGame.fleetBuyRefusal(career, w.sim),
 		'enable allow automatic ships in experimental');
 	fund(w, 40);
@@ -103,11 +105,14 @@ check('buy: gates and price', () => {
 	w.ledger.purse = 29;
 	assert.strictEqual(GravityGame.fleetBuyRefusal(career, w.sim), 'purse too small');
 	assert.strictEqual(GravityGame.buyFleetShip(career, w.trade, w.sim, 10), null);
-	/* away from HQ refuses */
+	/* empty worlds refuse, regardless of HQ */
 	w.ledger.purse = 40;
 	GravityGame.placeShip(career, w.sim, (career.hq + 1) % career.planetCount);
-	assert.ok(GravityGame.fleetBuyRefusal(career, w.sim).indexOf('HQ') >= 0);
+	career.market.empty[career.at] = 1;
+	assert.match(GravityGame.fleetBuyRefusal(career, w.sim), /inhabited/);
 	assert.strictEqual(GravityGame.buyFleetShip(career, w.trade, w.sim, 10), null);
+	career.market.empty[career.at] = 0;
+	assert.strictEqual(GravityGame.fleetBuyRefusal(career, w.sim), '', 'inhabited non-HQ allows buying');
 	/* a flagship in flight refuses */
 	GravityGame.placeShip(career, w.sim, career.hq);
 	w.sim.launch(career.hq, 0.5, 40);
@@ -214,6 +219,7 @@ check('purse: fleet flights pay into the one ledger, repairs out of it', () => {
 	 * career.fleetShip, so the shop call must ride a load) */
 	f.ship.condition = 0.5;
 	const purse = ledger.purse;
+	const profit = f.profit;
 	GravityGame.saveCareerContext(career, career.contextBase);
 	GravityGame.loadCareerContext(career, f);
 	const action = w.bot.careerBetweenFlights(career, f.sim, w.step);
@@ -222,6 +228,9 @@ check('purse: fleet flights pay into the one ledger, repairs out of it', () => {
 	assert.notStrictEqual(action, 0, 'the reduced shop serviced the ship');
 	assert.ok(ledger.purse < purse, 'the shop paid out of the shared purse');
 	assert.strictEqual(f.ship.condition, 1, 'the fleet ship left repaired');
+	assert.ok(f.log.length > 0);
+	assert.ok(f.log.every(line => line.includes('ship ' + f.id)), 'every fleet decision carries its ship id');
+	assert.ok(Math.abs(f.profit - profit - (ledger.purse - purse)) < EPS, 'repair charged to this ship’s net');
 });
 
 /* 4. shared property: own rails, owned gear, no research replay */
@@ -462,31 +471,144 @@ check('prediction: radarShips counts ships, not fleet records', () => {
 	assert.strictEqual(career.sim, w.sim);
 });
 
-/* 10. no-HQ starts stay blocked (§7) */
-check('starts: space and Capital companies cannot buy until an HQ exists', () => {
+/* 10. no-HQ companies buy once landed on an inhabited world */
+check('starts: space needs a landing, Capital needs no HQ', () => {
 	const w = makeWorld(42);
-	const career = w.career;
 	const space = GravityGame.createCareer(GravityGame.createLedger());
 	GravityGame.setCareerUniverse(space, null, PLANETS);
 	GravityGame.startCareer(space, w.sim, 42, w.trade, null, w.galaxy,
 		undefined, GravityGame.START_SPACE, false);
-	assert.strictEqual(space.hq, -1, 'a space start has no HQ yet');
-	career.fleetUnlocked = false;
-	space.fleetUnlocked = true;
-	assert.ok(GravityGame.fleetBuyRefusal(space, w.sim).indexOf('HQ') >= 0,
-		'the space start names the missing HQ');
+	space.ledger.purse = 100;
+	assert.strictEqual(space.hq, -1);
+	assert.match(GravityGame.fleetBuyRefusal(space, w.sim), /inhabited/);
 	assert.strictEqual(GravityGame.buyFleetShip(space, w.trade, w.sim, 0), null);
 	const capital = GravityGame.createCareer(GravityGame.createLedger());
 	GravityGame.startCareer(capital, w.sim, 42, w.trade, null, w.galaxy,
 		undefined, GravityGame.START_CAPITAL, false);
-	assert.strictEqual(capital.hq, -1, 'a Capital start has no HQ yet');
-	capital.fleetUnlocked = true;
-	assert.ok(GravityGame.fleetBuyRefusal(capital, w.sim).indexOf('HQ') >= 0);
-	/* once the company settles an HQ, the same gate opens */
-	space.ledger.purse = 100;
-	space.hq = space.at = career.hq;
-	assert.strictEqual(GravityGame.fleetBuyRefusal(space, w.sim), '',
-		'the gate is the HQ, not the start mode');
+	capital.ledger.purse = 100;
+	assert.strictEqual(capital.hq, -1);
+	assert.strictEqual(GravityGame.fleetBuyRefusal(capital, w.sim), '');
+	const f = GravityGame.buyFleetShip(capital, w.trade, w.sim, 0);
+	assert.ok(f);
+	assert.strictEqual(f.at, capital.at);
+	assert.strictEqual(f.sim.landedBody, capital.at);
+	assert.strictEqual(f.basePlanet, capital.at);
+});
+
+check('accounting: isolate each ship from flagship and other ships', () => {
+	const w = makeWorld(42);
+	fund(w, 200);
+	const a = GravityGame.buyFleetShip(w.career, w.trade, w.sim, 0);
+	const b = GravityGame.buyFleetShip(w.career, w.trade, w.sim, 0);
+	w.bot.attachFleet(w.career, w.trade);
+	const saved = GravityGame.saveCareerContext(w.career, w.career.contextBase);
+	GravityGame.loadCareerContext(w.career, a);
+	let trace;
+	w.bot.onCareerTrace = (...args) => { trace = args; };
+	w.bot.traceAdd(GravityBot.PLAYER_INDEX, 'fire', 'test', 0, [1, 2, 3]);
+	assert.strictEqual(trace[1], 'fleet', 'fleet event must not look like a flagship flight');
+	assert.strictEqual(trace[4], undefined);
+	assert.match(a.log[0], /ship 1/);
+	assert.strictEqual(b.log.length, 0);
+
+	w.ledger.purse += 7;
+	w.ledger.purse -= 2;
+	GravityGame.storeCareerContext(w.career, a);
+	GravityGame.loadCareerContext(w.career, b);
+	w.ledger.purse -= 3;
+	GravityGame.storeCareerContext(w.career, b);
+	GravityGame.restoreCareerContext(w.career, saved);
+	w.ledger.purse += 50;
+	w.bot.attachFleet(w.career, w.trade);
+	w.bot.setFleetAutomatic(a, false, 0);
+	w.bot.setFleetAutomatic(b, false, 0);
+	stepWorld(w, 1);
+	assert.strictEqual(a.profit, -25);
+	assert.strictEqual(b.profit, -33);
+	assert.strictEqual(a.purchaseCost, 30);
+});
+
+check('controls: park, finish flight, resume and release queued charge', () => {
+	const w = makeWorld(42);
+	fund(w, 200);
+	const f = GravityGame.buyFleetShip(w.career, w.trade, w.sim, 0);
+	w.bot.attachFleet(w.career, w.trade);
+	const pad = GravityGame.padAt(w.career, f.at);
+	const energy = 0.01;
+	GravityGame.reserveEnergy(pad, energy);
+	f.turret = { pad, energy };
+	f.plannedLanding = 3;
+	w.career.plannedLanding = 7;
+	w.bot.setFleetAutomatic(f, false, 0);
+	assert.strictEqual(f.turret, null);
+	assert.strictEqual(pad.reservedKwh, 0);
+	assert.strictEqual(f.plannedLanding, -1);
+	assert.strictEqual(w.career.plannedLanding, 7, 'cancel does not clear flagship landing');
+	GravityGame.reserveEnergy(pad, energy);
+	f.turret = { pad, energy };
+	const queueSaved = GravityGame.saveCareerContext(w.career, w.career.contextBase);
+	GravityGame.loadCareerContext(w.career, f);
+	w.career.plannedLanding = 4;
+	w.bot.careerDropQueue(f);
+	GravityGame.storeCareerContext(w.career, f);
+	GravityGame.restoreCareerContext(w.career, queueSaved);
+	assert.strictEqual(f.plannedLanding, -1, 'swapped cancellation also clears the live context');
+
+	f.readyStep = 0;
+	stepWorld(w, 1);
+	assert.strictEqual(f.flightStartStep, 0, 'parked ship never plans');
+	f.sim.launch(f.at, 0.5, 40);
+	const saved = GravityGame.saveCareerContext(w.career, w.career.contextBase);
+	GravityGame.loadCareerContext(w.career, f);
+	GravityGame.careerBeginFlight(w.career, f.sim, w.step);
+	GravityGame.storeCareerContext(w.career, f);
+	GravityGame.restoreCareerContext(w.career, saved);
+	stepWorld(w, 1);
+	assert.ok(f.sim.liveSteps > 0, 'park command never freezes airborne physics');
+	w.bot.setFleetAutomatic(f, true, w.step);
+	assert.strictEqual(f.automatic, true);
+	assert.strictEqual(w.career.fleetShip, null);
+});
+
+check('page prediction: fleet paths are lazy, memoised and hover/press only', () => {
+	const vm = require('vm');
+	const page = loadPage({ search: mapSearch(1) });
+	const scene = page.context.GravityScene;
+	scene.career.ledger.purse += 100;
+	page.context.careerAct({ act: 'buyShip' });
+	const f = scene.fleet()[0];
+	f.sim.launch(f.at, 0.5, 40);
+	let predictions = 0;
+	f.sim.predictFlight = function () {
+		predictions++;
+		this.predCount = 2;
+		this.predX[0] = this.cargo.x;
+		this.predY[0] = this.cargo.y;
+		this.predX[1] = this.cargo.x + 10;
+		this.predY[1] = this.cargo.y + 10;
+		this.predReason = GravitySim.END_TIME;
+	};
+	vm.runInContext('predRivalsOn = true; radarOutCount = 0; radarHoverSim = null; radarPressSim = null;', page.context);
+	assert.strictEqual(page.context.radarShipAt(f.sim.cargo.x, f.sim.cargo.y), f.sim,
+		'own fleet hit testing needs no HQ radar');
+	page.context.drawFleetWorld();
+	assert.strictEqual(predictions, 0, 'global predictions toggle must not reveal the fleet');
+	const row = page.elements.get('scoreFleetRows').children[0];
+	row.listeners.pointerenter.forEach(fn => fn());
+	page.context.drawFleetWorld();
+	assert.strictEqual(predictions, 1);
+	page.context.drawFleetWorld();
+	assert.strictEqual(predictions, 1, 'same flight state reuses its prediction');
+	f.sim.liveSteps++;
+	page.context.drawFleetWorld();
+	assert.strictEqual(predictions, 2);
+	row.listeners.pointerleave.forEach(fn => fn());
+	f.sim.liveSteps++;
+	page.context.drawFleetWorld();
+	assert.strictEqual(predictions, 2, 'leaving hover stops prediction work');
+	row.listeners.pointerdown.forEach(fn => fn());
+	page.context.drawFleetWorld();
+	assert.strictEqual(predictions, 3, 'touch press also reveals the trajectory');
 });
 
 /* 11. the page: checkbox, drawer, score rows, and a live buy */
@@ -497,8 +619,11 @@ check('page: the checkbox, drawer block, fleet row and buy action', () => {
 	const box = page.elements.get('expFleet');
 	const fleetRows = page.elements.get('scoreFleetRows');
 	const drawer = page.elements.get('careerFleet');
-	/* off by default, dark outside career is the refresh's job */
-	assert.strictEqual(box.checked, false);
+	/* enabled by default */
+	assert.strictEqual(box.checked, true);
+	assert.strictEqual(career.fleetUnlocked, true);
+	box.checked = false;
+	box.listeners.change.forEach(fn => fn());
 	assert.strictEqual(box.disabled, false);
 	/* the drawer names the fleet and refuses with the box off */
 	page.context.refreshCareerPanel();
@@ -523,7 +648,23 @@ check('page: the checkbox, drawer block, fleet row and buy action', () => {
 	const row = fleetRows.children[0];
 	assert.strictEqual(row._fleetNodes.name.textContent, 'YOU · ship 1');
 	assert.match(row._fleetNodes.meta.textContent, /P\d+ · cond 100 % · ready/);
-	assert.strictEqual(row._fleetNodes.name.parentElement, row);
+	assert.strictEqual(row._fleetNodes.name.parentElement, row._fleetNodes.controls);
+	assert.strictEqual(row._fleetNodes.controls.parentElement, row);
+	assert.strictEqual(row._fleetNodes.value.textContent, '-30.00 cr');
+	assert.strictEqual(row._fleetNodes.bot.checked, true);
+	row.listeners.click.forEach(fn => fn());
+	assert.strictEqual(row.classList.contains('isActive'), true);
+	assert.match(row._fleetNodes.meta.textContent, /shots · fuel/);
+	row._fleetNodes.bot.checked = false;
+	row._fleetNodes.bot.listeners.change.forEach(fn => fn());
+	assert.strictEqual(career.fleet[0].automatic, false);
+	assert.match(row._fleetNodes.meta.textContent, /parked/);
+	row._fleetNodes.log.listeners.click.forEach(fn => fn({ stopPropagation() {} }));
+	assert.match(page.clipboardText, /ship 1 · net -30.00/);
+	row._fleetNodes.bot.checked = true;
+	row._fleetNodes.bot.listeners.change.forEach(fn => fn());
+	assert.strictEqual(career.fleet[0].automatic, true);
+
 	/* the drawer shows the fleet and the buy button */
 	assert.match(drawer.textContent, /fleet 1 · 30 cr each · wear ×2/);
 	assert.match(drawer.textContent, /buy ship · 30/);
@@ -558,6 +699,16 @@ check('page: the checkbox, drawer block, fleet row and buy action', () => {
 		'the row follows the ship');
 	/* a full-save round trip keeps the fleet */
 	const SavedMap = require(path.join(root, 'saved_map.js'));
+	const f = career.fleet[0];
+	const pad = page.context.GravityGame.padAt(career, career.hq);
+	const energy = 0.01;
+	page.context.GravityGame.reserveEnergy(pad, energy);
+	f.turret = { origin: career.hq, energy, pad, fireAt: 999999, angle: 0.5, speed: 20, body: career.hq };
+	f.automatic = true;
+	f.sim.relocate(career.hq);
+	f.at = career.hq;
+	f.flying = false;
+	career.fleetSeq = 9; // retired ids must never be reused on restore
 	const record = SavedMap.runRecord(page.context.mapRunInfo());
 	const page2 = loadPage({ search: mapSearch(1) });
 	SavedMap.arm(record);
@@ -566,6 +717,20 @@ check('page: the checkbox, drawer block, fleet row and buy action', () => {
 	assert.strictEqual(scene2.fleetCount(), 1, 'the fleet survives the save');
 	assert.strictEqual(scene2.fleet()[0].id, career.fleet[0].id);
 	assert.strictEqual(scene2.fleet()[0].ship.condition, career.fleet[0].ship.condition);
+	assert.strictEqual(scene2.fleet()[0].profit, career.fleet[0].profit);
+	assert.strictEqual(scene2.fleet()[0].log.length, career.fleet[0].log.length);
+	assert.strictEqual(page2.elements.get('expFleet').checked, false, 'saved buying preference survives');
+	assert.strictEqual(scene2.career.fleetUnlocked, false);	assert.strictEqual(scene2.career.fleetSeq, 9);
+	assert.strictEqual(scene2.fleet()[0].automatic, true);
+	assert.ok(scene2.fleet()[0].turret);
+	assert.strictEqual(scene2.fleet()[0].turret.pad,
+		page2.context.GravityGame.padAt(scene2.career, career.hq));
+	const restoredPad = scene2.fleet()[0].turret.pad;
+	const reserved = restoredPad.reservedKwh;
+	scene2.bot.setFleetAutomatic(scene2.fleet()[0], false, 0);
+	assert.ok(Math.abs(restoredPad.reservedKwh - reserved + energy) < EPS);
+
+
 });
 
 assert.strictEqual(failures, 0, failures + ' failing checks');

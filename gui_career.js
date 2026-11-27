@@ -703,13 +703,14 @@ function careerRadar() {
 /* the fleet drawer block (0.7.45): the header line, and the buy button —
  * disabled with the experimental hint while the box is off */
 function fleetBlockHtml(career) {
+	if (career !== game.career) return '';
 	let html = '<div class="careerHead">fleet ' + career.fleet.length + ' · ' +
 		GravityGame.FLEET_COST + ' cr each · wear ×' + GravityGame.WEAR_FLEET + '</div>';
 	if (!career.fleetUnlocked) {
 		return html + '<div class="careerLine"><button class="miniBtn" disabled>' +
 			'enable allow automatic ships in experimental</button></div>';
 	}
-	const refuse = GravityGame.fleetBuyRefusal(career, cargoSim);
+	const refuse = GravityGame.fleetBuyRefusal(career, activeSim());
 	return html + '<div class="careerLine"><button class="miniBtn" data-act="buyShip"' +
 		(refuse ? ' disabled title="' + refuse + '"' : '') + '>buy ship · ' +
 		GravityGame.FLEET_COST + '</button>' +
@@ -720,13 +721,15 @@ function fleetBlockHtml(career) {
 
 function careerBuyShip() {
 	const career = activeCareer();
+	if (career !== game.career) return false;
 	const trade = tradeSim;
-	const refuse = GravityGame.fleetBuyRefusal(career, cargoSim);
+	const refuse = GravityGame.fleetBuyRefusal(career, activeSim());
 	if (refuse) { careerNotice(refuse); return false; }
-	const ship = GravityGame.buyFleetShip(career, trade, cargoSim, game.clockSteps);
+	const ship = GravityGame.buyFleetShip(career, trade, activeSim(), game.clockSteps);
 	if (!ship) { careerNotice('buy refused'); return false; }
 	/* the controller aliases the fleet and wires the new record */
 	bot.attachFleet(career, trade);
+	recordCareerAction('act', { act: 'buyShip' });
 	careerNotice('ship ' + ship.id + ' joined the fleet · it flies itself now');
 	careerChanged();
 	return true;
@@ -736,6 +739,25 @@ function careerBuyShip() {
 function careerAct(data) {
 	if (!careerRule() || careerInputLocked()) return;
 	const act = data.act;
+	if (act === 'fleetEnabled') {
+		if (replay.on || !game.career || typeof data.enabled !== 'boolean') return false;
+		expFleetEl.checked = data.enabled;
+		game.career.fleetUnlocked = data.enabled;
+		recordCareerAction('act', { act: act, enabled: data.enabled }, 0);
+		refreshGameUi();
+		refreshCareerPanel();
+		return true;
+	}
+	if (act === 'fleetAutomatic') {
+		if (replay.on || !game.career || typeof data.automatic !== 'boolean') return false;
+		const f = game.career.fleet.find(ship => ship.id === data.id);
+		if (!f) return false;
+		bot.setFleetAutomatic(f, data.automatic, game.clockSteps);
+		recordCareerAction('act', { act: act, id: f.id, automatic: f.automatic }, 0);
+		dirty = true;
+		hudAt = -Infinity;
+		return true;
+	}
 	if (act === 'careerTab') return careerSelectTab(data.tab);
 	if (act === 'copy') return careerCopySpec(data);
 	if (act === 'sciCopy') return careerCopyFrontier(data.family);

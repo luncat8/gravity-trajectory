@@ -678,20 +678,17 @@ if (predViewEl) {
 }
 srcPlanetsEl.addEventListener('change', () => setSource(MODE_PLANETS));
 srcPortsEl.addEventListener('change', () => setSource(MODE_PORTS));
-/* the fleet checkbox (0.7.45) is the only writer of the live career's
- * mirror; ships bought while it was on keep flying when it goes off again */
+/* Buying permission is independent of each existing ship's pilot. */
 function onFleetChange() {
 	if (careerInputLocked()) return;
-	if (game.career) game.career.fleetUnlocked = expFleetEl.checked;
-	refreshGameUi();
+	if (game.career) careerAct({ act: 'fleetEnabled', enabled: expFleetEl.checked });
 	dirty = true;
 	hudAt = -Infinity;
 }
 
-/* a restart is a new company, so its mirror starts cleared: the box's
- * standing intent re-arms it on the next refresh */
+/* A new company inherits the standing settings choice. */
 function syncFleetCheckbox() {
-	if (expFleetEl && expFleetEl.checked && game.career) game.career.fleetUnlocked = true;
+	if (expFleetEl && game.career) game.career.fleetUnlocked = expFleetEl.checked;
 }
 
 $('tradeSpeed').addEventListener('input', () => syncSeedUrl(replay.on));

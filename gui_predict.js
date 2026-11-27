@@ -859,9 +859,54 @@ const scoreFleetMetaTexts = [];
 
 function fleetStatusText(f) {
 	if (f.evacuating) return 'evac';
-	if (f.flying) return 'flying';
+	if (f.flying) return f.automatic ? 'flying' : 'flying · parking';
 	if (f.at < 0) return 'lost';
-	return 'ready';
+	return f.automatic ? 'ready' : 'parked';
+}
+
+let inspectedFleetShip = null;
+
+function fleetRowTarget(target) {
+	while (target && target !== scoreFleetRowsEl) {
+		if (target._fleetShip) return target._fleetShip;
+		target = target.parentElement;
+	}
+	return null;
+}
+
+function fleetCopyLog(f, button) {
+	const text = 'YOU · ship ' + f.id + ' · net ' + f.profit.toFixed(2) +
+		' cr (includes ' + f.purchaseCost.toFixed(2) + ' purchase)\n' +
+		'P' + f.at + ' · ' + fleetStatusText(f) + ' · condition ' +
+		Math.round(f.ship.condition * 100) + ' %\n' + f.log.join('\n');
+	copyUrlText(text, button, 'log');
+}
+
+function wireFleetRow(row, refs) {
+	const select = () => {
+		inspectedFleetShip = row._fleetShip;
+		refreshFleetRows();
+	};
+	row.addEventListener('click', select);
+	row.addEventListener('keydown', event => {
+		if (event.target !== row || (event.key !== 'Enter' && event.key !== ' ')) return;
+		event.preventDefault();
+		select();
+	});
+	row.addEventListener('pointerenter', () => { radarHoverSim = row._fleetShip.sim; });
+	row.addEventListener('pointerleave', () => { radarHoverSim = null; });
+	row.addEventListener('focus', () => { radarHoverSim = row._fleetShip.sim; });
+	row.addEventListener('blur', () => { radarHoverSim = null; });
+	row.addEventListener('pointerdown', () => { radarPressSim = row._fleetShip.sim; });
+	refs.bot.addEventListener('change', () => {
+		careerAct({ act: 'fleetAutomatic', id: row._fleetShip.id, automatic: refs.bot.checked });
+		refreshFleetRows();
+	});
+	refs.label.addEventListener('click', event => event.stopPropagation());
+	refs.log.addEventListener('click', event => {
+		event.stopPropagation();
+		fleetCopyLog(row._fleetShip, refs.log);
+	});
 }
 
 function refreshFleetRows() {
@@ -870,9 +915,14 @@ function refreshFleetRows() {
 	if (!fleet || fleet.length === 0) {
 		if (scoreFleetRowsEl.hidden && scoreFleetRowEls.length === 0) return;
 		scoreFleetRowsEl.hidden = true;
-		for (let i = 0; i < scoreFleetRowEls.length; i++) scoreFleetRowEls[i].hidden = true;
+		inspectedFleetShip = null;
+		for (let i = 0; i < scoreFleetRowEls.length; i++) {
+			scoreFleetRowEls[i].hidden = true;
+			scoreFleetRowEls[i]._fleetShip = null;
+		}
 		return;
 	}
+	if (inspectedFleetShip && !fleet.includes(inspectedFleetShip)) inspectedFleetShip = null;
 	if (scoreFleetRowsEl.hidden) scoreFleetRowsEl.hidden = false;
 	while (scoreFleetRowEls.length < fleet.length) {
 		const fragment = scoreFleetTemplate.content.cloneNode(true);
@@ -884,29 +934,43 @@ function refreshFleetRows() {
 		scoreFleetNameTexts.push('');
 		scoreFleetValueTexts.push('');
 		scoreFleetMetaTexts.push('');
+		row._fleetRefs = { name: name, value: value, meta: meta,
+			bot: fragment.querySelector('[data-fleet="bot"]'),
+			label: fragment.querySelector('[data-fleet="label"]'),
+			log: fragment.querySelector('[data-fleet="log"]') };
+		wireFleetRow(row, row._fleetRefs);
 		scoreFleetRowsEl.appendChild(fragment);
-		row._fleetRefs = { name: name, value: value, meta: meta };
 	}
 	for (let i = 0; i < scoreFleetRowEls.length; i++) {
 		const row = scoreFleetRowEls[i];
 		if (i >= fleet.length) {
+			row._fleetShip = null;
 			if (!row.hidden) row.hidden = true;
 			continue;
 		}
 		const f = fleet[i];
+		row._fleetShip = f;
+		row.classList.toggle('isActive', f === inspectedFleetShip);
+		row.setAttribute('aria-pressed', String(f === inspectedFleetShip));
+		row.title = 'Inspect ship ' + f.id + ' · hover or press to reveal its trajectory';
+		row._fleetRefs.bot.checked = f.automatic;
+		row._fleetRefs.bot.disabled = replay.on || careerInputLocked();
 		if (row.hidden) row.hidden = false;
 		const name = 'YOU · ship ' + f.id;
 		if (name !== scoreFleetNameTexts[i]) {
 			scoreFleetNameTexts[i] = name;
 			row._fleetRefs.name.textContent = name;
 		}
-		const value = f.lastVisit ? '+' + f.lastVisit.toFixed(2) : '';
+		const value = (f.profit >= 0 ? '+' : '') + f.profit.toFixed(2) + ' cr';
+		row._fleetRefs.value.title = 'Net profit · includes purchase, flight income, launch fees, fuel, repair and evacuation';
 		if (value !== scoreFleetValueTexts[i]) {
 			scoreFleetValueTexts[i] = value;
 			row._fleetRefs.value.textContent = value;
 		}
 		const meta = (f.at >= 0 ? 'P' + f.at : 'space') +
-			' · cond ' + Math.round(f.ship.condition * 100) + ' % · ' + fleetStatusText(f);
+			' · cond ' + Math.round(f.ship.condition * 100) + ' % · ' + fleetStatusText(f) +
+			(f === inspectedFleetShip ? ' · ' + f.shots.length + ' shots · fuel ' +
+				f.ship.fuelKg.toFixed(1) + ' kg' : '');
 		if (meta !== scoreFleetMetaTexts[i]) {
 			scoreFleetMetaTexts[i] = meta;
 			row._fleetRefs.meta.textContent = meta;

@@ -117,10 +117,12 @@
 		for (let i = 0; i < CONTEXT_KEYS.length; i++) career[CONTEXT_KEYS[i]] = f[CONTEXT_KEYS[i]];
 		for (let i = 0; i < LEDGER_KEYS.length; i++) career.ledger[LEDGER_KEYS[i]] = f.flight[LEDGER_KEYS[i]];
 		career.ledger.inside = f.flight.inside;
+		f.purseBefore = career.ledger.purse;
 		career.fleetShip = f;
 	}
 
 	function storeCareerContext(career, f) {
+		f.profit += career.ledger.purse - f.purseBefore;
 		for (let i = 0; i < CONTEXT_KEYS.length; i++) f[CONTEXT_KEYS[i]] = career[CONTEXT_KEYS[i]];
 		for (let i = 0; i < LEDGER_KEYS.length; i++) f.flight[LEDGER_KEYS[i]] = career.ledger[LEDGER_KEYS[i]];
 	}
@@ -135,7 +137,10 @@
 	function fleetBuyRefusal(career, sim) {
 		if (!career.fleetUnlocked) return 'enable allow automatic ships in experimental';
 		if (career.ended !== CAREER_OPEN) return 'career over';
-		if (career.hq < 0 || career.at !== career.hq) return 'buy a ship at the HQ';
+		if (career.at < 0 || !planetInPlay(career, career.at) || emptyWorld(career, career.at)) {
+			return 'buy a ship on an inhabited planet';
+		}
+		if (career.arrested || career.evacuating) return 'ship unavailable';
 		if (sim && sim.status === GravitySim.STATUS_FLYING) return 'land the flagship first';
 		if (career.ledger.purse + 1e-9 < price(career, FLEET_COST) + FLEET_RESERVE) {
 			return 'purse too small';
@@ -172,14 +177,20 @@
 		fleetSim.fieldRate = sim.fieldRate;
 		/* the launch gate reads the fleet ship's own fit, not the flagship's */
 		fleetSim.setLaunchNetwork(career.launchPads, ship);
-		/* the new vessel stands on the HQ like the flagship does after a start */
-		fleetSim.relocate(career.hq);
+		/* purchases depart from the inhabited world where they were bought */
+		fleetSim.relocate(career.at);
 		const gapPhase = career.fleetSeq * FLEET_PHASE;
 		const record = {
 			career: career,
 			fleet: true,
 			id: career.fleetSeq + 1,
-			at: career.hq,
+			automatic: true,
+			profit: -cost,
+			purchaseCost: cost,
+			purseBefore: 0,
+			log: [],
+			radarStamp: { steps: -1, t0: -1, vx: 0, vy: 0 },
+			at: career.at,
 			ship: ship,
 			contract: -1,
 			tasks: career.fleetTasks,
@@ -206,7 +217,7 @@
 			burnTries: 0,
 			burnNext: 0,
 			burnStep: 0,
-			basePlanet: career.hq,
+			basePlanet: career.at,
 			turret: null,
 			shots: []
 		};
@@ -251,6 +262,12 @@
 			career: career,
 			fleet: true,
 			id: id,
+			automatic: true,
+			profit: 0,
+			purchaseCost: 0,
+			purseBefore: 0,
+			log: [],
+			radarStamp: { steps: -1, t0: -1, vx: 0, vy: 0 },
 			at: saved.at != null ? saved.at : career.hq,
 			ship: ship,
 			contract: -1,
@@ -414,7 +431,7 @@
 		fleet: [],
 		fleetSeq: 0,
 		fleetSpent: 0,
-		fleetUnlocked: false,
+		fleetUnlocked: true,
 		/* the live fleet ship during a stepFleet swap; null on the flagship */
 		fleetShip: null,
 		fleetTasks: fleetTasks,
@@ -632,7 +649,7 @@
 	career.fleet.length = 0;
 	career.fleetSeq = 0;
 	career.fleetSpent = 0;
-	career.fleetUnlocked = false;
+	career.fleetUnlocked = true;
 	career.fleetShip = null;
 	refreshBoard(career, trade, 0);
 }

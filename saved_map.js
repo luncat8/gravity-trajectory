@@ -51,7 +51,7 @@
 	/* a bought fleet ship (0.7.45) is saved like a rival record: the career
 	 * back-reference, the sim, the shared task board and the queued turret
 	 * are live; the flight block packs plain */
-	const FLEET_SKIP = ['career', 'sim', 'tasks', 'turret'];
+	const FLEET_SKIP = ['career', 'sim', 'tasks', 'turret', 'radarStamp', 'purseBefore'];
 	const TRADE_SKIP = ['handleEvent', 'onColonyEvent', 'world', 'rand', 'events',
 		'colonies', 'corruption', 'mapOut', 'log', 'planetMask', 'emptyMask', 'colonyGravityMask'];
 	const RIVAL_SKIP = ['sim', 'career', 'ledger', 'turret'];
@@ -266,7 +266,9 @@
 			const fleetRecords = [];
 			const fleetShips = [];
 			for (let i = 0; fleet && i < fleet.length; i++) {
-				fleetRecords.push(packData(fleet[i], FLEET_SKIP));
+				const record = packData(fleet[i], FLEET_SKIP);
+				if (fleet[i].turret) record.turret = packData(fleet[i].turret, ['pad']);
+				fleetRecords.push(record);
 				fleetShips.push(packShipKeys(fleet[i].sim));
 			}
 			const trade = info.trade;
@@ -366,7 +368,6 @@
 			const career = info.game.career;
 			const flagshipSim = info.sims[career.index];
 			career.fleet = [];
-			career.fleetSeq = 0;
 			for (let i = 0; i < state.fleet.length; i++) {
 				const f = GravityGame.restoreFleetShip(career, info.trade, flagshipSim, state.fleet[i]);
 				unpackData(f, state.fleet[i], FLEET_SKIP);
@@ -375,6 +376,10 @@
 					unpackKeys(f.sim, state.fleetShips[i]);
 				}
 				f.sim.setLaunchNetwork(career.launchPads, f.ship);
+				if (state.fleet[i].turret) {
+					f.turret = unpackData({}, state.fleet[i].turret);
+					f.turret.pad = GravityGame.padAt(career, f.turret.origin);
+				}
 			}
 		}
 		info.game.steps = state.run.steps;

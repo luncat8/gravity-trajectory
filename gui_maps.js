@@ -363,9 +363,9 @@ function applyRunRecord(record) {
 	/* a restored fleet must keep steering itself: re-alias the rebuilt records
 	 * into the controller and backfill the per-ship trace index / burn state a
 	 * fresh buy normally sets (0.7.45) */
-	if (activeCareer() && activeCareer().fleet && activeCareer().fleet.length &&
-		typeof bot !== 'undefined' && bot.attachFleet) {
-		bot.attachFleet(activeCareer(), tradeSim);
+	if (game.career) {
+		bot.attachFleet(game.career, tradeSim);
+		if (expFleetEl) expFleetEl.checked = game.career.fleetUnlocked;
 	}
 	dirty = true;
 	refreshCareerClockUi();
