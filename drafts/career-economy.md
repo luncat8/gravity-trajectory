@@ -296,6 +296,8 @@ the default balance remains open. Space weather is still a separate layer
 
 not instant move but similar as trade ships speed and visible animation of movement.
 
+if no HQ then evacuation to Capital
+
 #### evacuation cost
 
 if player has no full price money then evacuation cost less but took longer.

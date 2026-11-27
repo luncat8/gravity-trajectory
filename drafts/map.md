@@ -27,3 +27,7 @@ what type of zone will be looks better with what type of movement - open questio
 mode. Compare drifting and evolving noise in a visual prototype before choosing
 motion; `careerWearAt` is the existing wear hook. Gameplay parameters and the
 open rules in the plan need decisions before implementation.
+
+## generate
+
+if took more then 2sec then continue in background and show helper's live report
