@@ -7,7 +7,7 @@ Add option for periodic FFT-based gravity solver. When enabled:
 - (maybe good) Apply approximately 2x weaker gravity per body
 
 
-→ **open** · `../0.8.0-plan-periodic-fft.md` — experimental checkbox, FFT of the shipped Plummer kernel on a 1600×1000 torus, 104 / 52 / 192 planets, half well, no `full area` margin.
+→ **open** · `../0.8.0-plan-periodic-fft.md` — experimental checkbox, FFT of the shipped Plummer kernel on a 1600×1000 torus, 104 / 64 / 192 planets, half well, no `full area` margin.
 
 ## add space weather
 

@@ -11,7 +11,7 @@ except the two files at the bottom.
 
 | tier | flag | cost | when |
 |---|---|---|---|
-| fast | (default) | ~1 min | after every edit: logic only, plus the saved-map contract |
+| fast | (default) | ~1 min | selected logic checks while working; full tier for a coherent logic change |
 | slow | `--slow` | ~6 min | after a coherent feature: seed sweeps, the seat search, the page tests |
 | bench | `--bench` | ~23 min | when a law, a budget or a bot changed: numbers, not pass/fail |
 | smoke | `--smoke` | ~2 min | once per plan, or when page boot, script order or wiring changed |
@@ -35,7 +35,7 @@ loadPage({ search: mapSearch(42) + '&rate=0.5' });   // was ?rule=career&seed=42
 ```
 
 `mapSearch(seed)` is the `?map=<index>` of the career-default record of that
-seed (13 planets, YOU + 2 normal rivals) and throws when `saved_maps.js` has
+seed (16 worlds: 13 settled + 3 uninhabited, YOU + 2 normal rivals) and throws when `saved_maps.js` has
 none. The map boot is the seed link's run without the search (~0.2 s): the same
 seats, opening pay, captured state and `Math.random` stream, which
 `saved_map_test.js` asserts. `you=` and `rate=` are read from the address as on
@@ -68,6 +68,7 @@ with no fair opening: the registry is also the pool `load map` draws from, so
 | `orbit_world`, `orbit_sim`, `orbit_econ` trade laws | `special_planets_test`, `orbit_clock_test`, `politics_test` |
 | the seeded PRNG (`seedRandom`) and world geometry | `gravity_seed_test` (bench tier), `orbit_clock_test` |
 | colonization and seeded planet mix | `found_colony_test`, `colony_distribution.js` (measurement, not reachability) |
+| classic geometry / direct gravity before FFT | `classic_physics_test` (fixed 47c4288 fingerprints: first 48 worlds, PRNG state, static/moving 240-step arithmetic; no page boot) |
 | `gravity_sim` tracing, field, predict | `gravity_bench` (parity + budget), `route_bench` (long trace), `bot_gravity_test` (exit/claim decisions on a saved field) |
 | `gravity_field` CPU raster and palette | `gravity_bench` (color + budget), `gravity_view_test` |
 | `gravity_game.js`/`game_*.js` career/economy/laws | the part's row in the `AGENTS.md` pairing table, else `career_wear_test`, `obs_test`, `politics_test`, `balance_changes_test` |
