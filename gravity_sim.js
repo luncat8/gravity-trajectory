@@ -30,6 +30,12 @@
 	const OrbitWorld = typeof module !== 'undefined' && module.exports
 		? require('./orbit_world.js')
 		: root.OrbitWorld;
+	/* the experimental periodic FFT torus (0.8.0): a radix-2 solver that turns
+	 * the static planet field into an immutable grid snapshot. Loaded by
+	 * index.html before this file; under Node it is required directly. */
+	const GravityFFT = typeof module !== 'undefined' && module.exports
+		? require('./gravity_fft.js')
+		: root.GravityFFT;
 	const AREA_PAD = (OrbitWorld.AREA_SCALE - 1) / 2;
 
 	/* ── constants & clock contract ── step, field and cargo constants; gameSeconds..wallSeconds, the conversions every reader goes through */
@@ -135,6 +141,9 @@
 		this.worldH = worldH;
 		this.padX = worldW * AREA_PAD;
 		this.padY = worldH * AREA_PAD;
+		/* periodic torus topology (0.8.0 `&fft=1`): the play area IS the world,
+		 * pad 0, xy wrap. Off (default) is the shipped open-plane game. */
+		this.periodic = false;
 
 		this.planetCount = 0;
 		this.planetCapacity = 0;
@@ -162,6 +171,13 @@
 		this.fieldT = 0;
 		this.fieldRate = 0;
 		this.stepStale = true;
+		/* 0.8.0 periodic snapshot cache: a solved immutable grid (or a borrowed
+		 * one from a source sim), invalidated on any field identity/count/
+		 * topology/strength change. null until the first solve or adoption. */
+		this.periodicGrid_ = null;
+		this.periodicSource_ = null;
+		/* scratch output for grid sampling so advance() never allocates */
+		this._accOut = null;
 		this.bodyX = new Float64Array(MAX_BODIES);
 		this.bodyY = new Float64Array(MAX_BODIES);
 		this.stepX = new Float64Array(MAX_BODIES);
@@ -294,6 +310,7 @@
 		this.planetMask = mask || null;
 		this.planetCount = this.planetCapacity;
 		if (mask) while (this.planetCount > 0 && !mask[this.planetCount - 1]) this.planetCount--;
+		if (this.periodic) this.invalidatePeriodic();
 	};
 
 	/* a configured planet the run may actually enter / land on */
@@ -315,6 +332,7 @@
 		this.fillField = fillField;
 		this.fieldStatic = fieldStatic;
 		this.stepStale = true;
+		if (this.periodic) this.invalidatePeriodic();
 		this.refreshField();
 	};
 
@@ -322,6 +340,7 @@
 		if (count === this.bodyCount) return false;
 		this.bodyCount = count;
 		this.stepStale = true;
+		if (this.periodic) this.invalidatePeriodic();
 		this.refreshField();
 		return true;
 	};
@@ -341,14 +360,71 @@
 		return FIELD_STRIDE;
 	};
 
+	/* ── 0.8.0 periodic topology ── toggle the torus; adopt a shared field
+	 * snapshot from `gridSource` (a sibling sim with the same field) so probes
+	 * never re-solve or mutate a live grid. An invalidation drops any borrow. */
+
+	GravitySim.prototype.setPeriodic = function (periodic, gridSource) {
+		this.periodic = !!periodic;
+		if (this.periodic) {
+			/* the torus has no margin: the area equals the world field */
+			this.padX = 0;
+			this.padY = 0;
+		}
+		this.periodicGrid_ = null;
+		this.periodicSource_ =
+			(this.periodic && gridSource && gridSource !== this) ? gridSource : null;
+	};
+
+	/* drop the cached/borrowed grid so the next sample re-solves. Also forget
+	 * any borrowed source: this sim's field identity just changed. */
+	GravitySim.prototype.invalidatePeriodic = function () {
+		this.periodicGrid_ = null;
+		this.periodicSource_ = null;
+	};
+
+	/* The immutable snapshot this sim samples (`{gridX, gridY, worldW, worldH,
+	 * ax, ay, phi, revision, sample, samplePhi}`), or null for moving sources
+	 * or before the first solve. Not a gameplay API — test contract only. */
+	GravitySim.prototype.periodicGrid = function () {
+		if (!this.periodic) return null;
+		if (this.fieldStatic) return this.periodicGrid_;
+		return null;
+	};
+
+	/* Lazily produce the static periodic snapshot: reuse a borrowed source's
+	 * grid, otherwise solve once from the current field. PERIODIC_STRENGTH is
+	 * applied inside the solve, MU * gravityScale at sample time, so the g
+	 * field slider and refreshField never re-solve. */
+	GravitySim.prototype.ensurePeriodicGrid = function () {
+		if (this.periodicGrid_ !== null) return this.periodicGrid_;
+		if (this.periodicSource_) {
+			const shared = this.periodicSource_.periodicGrid();
+			if (shared) {
+				this.periodicGrid_ = shared;
+				return shared;
+			}
+		}
+		const W = this.worldW, H = this.worldH;
+		const g = GravityFFT.gridFor(W, H);
+		const snap = GravityFFT.solve(
+			g.gridX, g.gridY, W, H,
+			this.bodyX, this.bodyY, this.strength, this.bodyCount);
+		this.periodicGrid_ = snap;
+		return snap;
+	};
+
 	/* how far the gravity centres moved since the last prediction snapshot, in px */
 	GravitySim.prototype.fieldDrift = function () {
 		if (this.predCount < 2) return 0;
 		if (this.predBodyCount !== this.bodyCount) return Infinity;
 		let worst = 0;
+		const W = this.worldW, H = this.worldH;
 		for (let i = 0; i < this.bodyCount; i++) {
-			const dx = this.bodyX[i] - this.predBodyX[i];
-			const dy = this.bodyY[i] - this.predBodyY[i];
+			let dx = this.bodyX[i] - this.predBodyX[i];
+			let dy = this.bodyY[i] - this.predBodyY[i];
+			/* equivalent seam positions report a small drift, not ~W */
+			if (this.periodic) { dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H); }
 			const d = Math.sqrt(dx * dx + dy * dy);
 			if (d > worst) worst = d;
 		}
@@ -419,18 +495,28 @@
 
 	/* gravitational acceleration (px/s²) at world point (x, y) into `out` */
 	GravitySim.prototype.fieldAt = function (x, y, out) {
+		/* periodic static field: sample the pre-solved immutable grid (the g
+		 * field slider and refreshes never re-solve — scale is applied here). */
+		if (this.periodic && this.fieldStatic) {
+			const snap = this.ensurePeriodicGrid();
+			snap.sample(x, y, this.gravityScale, out);
+			return out;
+		}
 		const px = this.bodyX;
 		const py = this.bodyY;
 		const strength = this.strength;
 		const count = this.bodyCount;
 		const mu = MU * this.gravityScale;
+		const W = this.worldW, H = this.worldH;
 		let ax = 0;
 		let ay = 0;
 		for (let i = 0; i < count; i++) {
 			const s = strength[i];
 			if (s === 0) continue;
-			const dx = px[i] - x;
-			const dy = py[i] - y;
+			let dx = px[i] - x;
+			let dy = py[i] - y;
+			/* moving periodic sources keep the direct minimum-image sum */
+			if (this.periodic) { dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H); }
 			const inv = 1 / (dx * dx + dy * dy + SOFT2);
 			const a = mu * s * inv * Math.sqrt(inv);
 			ax += dx * a;
@@ -462,7 +548,7 @@
 
 	GravitySim.prototype.markSystemsAt = function (x, y, mask) {
 		const count = this.planetCount;
-		if (count === 0 || this.beyondPlanets(x, y)) return 0;
+		if (count === 0 || (!this.periodic && this.beyondPlanets(x, y))) return 0;
 		const px = this.planetX;
 		const py = this.planetY;
 		const bound = this.sysBoundR2;
@@ -470,12 +556,15 @@
 		const sin = this.sysSin;
 		const invRX = this.sysInvRX;
 		const invRY = this.sysInvRY;
+		const W = this.worldW, H = this.worldH;
 		let added = 0;
 		for (let i = 0; i < count; i++) {
 			if (this.planetMask && !this.planetMask[i]) continue;
 			if (mask[i]) continue;
-			const dx = x - px[i];
-			const dy = y - py[i];
+			let dx = x - px[i];
+			let dy = y - py[i];
+			/* a toroidal ellipse straddles the seam, so use the nearest image */
+			if (this.periodic) { dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H); }
 			if (dx * dx + dy * dy > bound[i]) continue;
 			const u = (dx * cos[i] + dy * sin[i]) * invRX[i];
 			const v = (-dx * sin[i] + dy * cos[i]) * invRY[i];
@@ -494,7 +583,7 @@
 	GravitySim.prototype.stepInsideAt = function (x, y, prevInside, enteredOut) {
 		const count = this.planetCount;
 		if (count === 0) return 0;
-		if (this.beyondPlanets(x, y)) {
+		if (!this.periodic && this.beyondPlanets(x, y)) {
 			prevInside.fill(0, 0, count);
 			return 0;
 		}
@@ -505,14 +594,17 @@
 		const sin = this.sysSin;
 		const invRX = this.sysInvRX;
 		const invRY = this.sysInvRY;
+		const W = this.worldW, H = this.worldH;
 		let entered = 0;
 		for (let i = 0; i < count; i++) {
 			if (this.planetMask && !this.planetMask[i]) {
 				prevInside[i] = 0;
 				continue;
 			}
-			const dx = x - px[i];
-			const dy = y - py[i];
+			let dx = x - px[i];
+			let dy = y - py[i];
+			/* a toroidal system's inside test uses the nearest image too */
+			if (this.periodic) { dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H); }
 			if (dx * dx + dy * dy > bound[i]) {
 				prevInside[i] = 0;
 				continue;
@@ -536,11 +628,13 @@
 			: value > STRENGTH_MAX ? STRENGTH_MAX : value;
 		if (clamped === this.strength[body]) return false;
 		this.strength[body] = clamped;
+		if (this.periodic) this.invalidatePeriodic();
 		return true;
 	};
 
 	GravitySim.prototype.resetField = function () {
 		this.strength.fill(1);
+		if (this.periodic) this.invalidatePeriodic();
 	};
 
 	/* drag length <-> speed over one full GRIP_MAX; `ceiling` is the pad's real
@@ -567,40 +661,61 @@
 	};
 
 	GravitySim.prototype.advance = function (state, dt) {
-		const px = this.stepX;
-		const py = this.stepY;
-		const strength = this.strength;
-		const count = this.bodyCount;
-		const mu = MU * this.gravityScale;
 		let ax = 0;
 		let ay = 0;
-		for (let i = 0; i < count; i++) {
-			const s = strength[i];
-			if (s === 0) continue;
-			const dx = px[i] - state.x;
-			const dy = py[i] - state.y;
-			const inv = 1 / (dx * dx + dy * dy + SOFT2);
-			const a = mu * s * inv * Math.sqrt(inv);
-			ax += dx * a;
-			ay += dy * a;
+		if (this.periodic && this.fieldStatic) {
+			/* sample the pre-solved immutable grid — no per-step FFT, no alloc */
+			const out = this._accOut || (this._accOut = { ax: 0, ay: 0 });
+			const snap = this.ensurePeriodicGrid();
+			snap.sample(state.x, state.y, this.gravityScale, out);
+			ax = out.ax;
+			ay = out.ay;
+		} else {
+			const px = this.stepX;
+			const py = this.stepY;
+			const strength = this.strength;
+			const count = this.bodyCount;
+			const mu = MU * this.gravityScale;
+			const W = this.worldW, H = this.worldH;
+			for (let i = 0; i < count; i++) {
+				const s = strength[i];
+				if (s === 0) continue;
+				let dx = px[i] - state.x;
+				let dy = py[i] - state.y;
+				/* moving periodic sources keep the direct minimum-image sum */
+				if (this.periodic) { dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H); }
+				const inv = 1 / (dx * dx + dy * dy + SOFT2);
+				const a = mu * s * inv * Math.sqrt(inv);
+				ax += dx * a;
+				ay += dy * a;
+			}
 		}
 		state.vx += ax * dt;
 		state.vy += ay * dt;
 		state.x += state.vx * dt;
 		state.y += state.vy * dt;
+		/* wrap once onto the torus; the same advance drives live, sliced and
+		 * full prediction, so all three share this single wrap. */
+		if (this.periodic) {
+			state.x -= this.worldW * Math.floor(state.x / this.worldW);
+			state.y -= this.worldH * Math.floor(state.y / this.worldH);
+		}
 	};
 
 	GravitySim.prototype.impact = function (x, y) {
 		const usePlanets = this.planetCount > 0;
-		if (usePlanets && this.beyondPlanets(x, y)) return NO_BODY;
+		if (usePlanets && !this.periodic && this.beyondPlanets(x, y)) return NO_BODY;
 		const px = usePlanets ? this.planetX : this.stepX;
 		const py = usePlanets ? this.planetY : this.stepY;
 		const pr = usePlanets ? this.planetR : this.bodyR;
 		const count = usePlanets ? this.planetCount : this.bodyCount;
+		const W = this.worldW, H = this.worldH;
 		for (let i = 0; i < count; i++) {
 			if (this.planetMask && !this.planetMask[i]) continue;
-			const dx = px[i] - x;
-			const dy = py[i] - y;
+			let dx = px[i] - x;
+			let dy = py[i] - y;
+			/* a body at x=10 is hittable from x≈W-5 across the seam */
+			if (this.periodic) { dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H); }
 			const reach = pr[i] + CARGO_R;
 			if (dx * dx + dy * dy <= reach * reach) return i;
 		}
@@ -608,6 +723,7 @@
 	};
 
 	GravitySim.prototype.outside = function (x, y) {
+		if (this.periodic) return false;
 		return x < -this.padX || x > this.worldW + this.padX ||
 			y < -this.padY || y > this.worldH + this.padY;
 	};
@@ -627,6 +743,11 @@
 			state.y = this.planetY[origin] + sa * gap;
 			state.vx = ca * speed;
 			state.vy = sa * speed;
+			/* a shot fired toward the left edge starts at x≈W−gap, not −gap */
+			if (this.periodic) {
+				state.x -= this.worldW * Math.floor(state.x / this.worldW);
+				state.y -= this.worldH * Math.floor(state.y / this.worldH);
+			}
 			return;
 		}
 		const gap = this.bodyR[origin] + SPAWN_GAP;
@@ -634,6 +755,10 @@
 		state.y = this.stepY[origin] + sa * gap;
 		state.vx = ca * speed;
 		state.vy = sa * speed;
+		if (this.periodic) {
+			state.x -= this.worldW * Math.floor(state.x / this.worldW);
+			state.y -= this.worldH * Math.floor(state.y / this.worldH);
+		}
 		if (this.fieldStatic || this.fieldRate === 0) return;
 		this.fillField(t0 + VEL_EPS, this.velX, this.velY, this.bodyCount);
 		const plusX = this.velX[origin];
@@ -765,9 +890,16 @@
 			const prevX = state.x;
 			const prevY = state.y;
 			this.advance(state, DT);
-			const dx = state.x - prevX;
-			const dy = state.y - prevY;
-			this.routeLength += Math.sqrt(dx * dx + dy * dy);
+			/* periodic: use the pre-wrap step (hypot(v,dt)) so a seam crossing
+			 * does not add ~W to the path length; classic keeps the live delta */
+			let segLen;
+			if (this.periodic) segLen = Math.hypot(state.vx, state.vy) * DT;
+			else {
+				const dx = state.x - prevX;
+				const dy = state.y - prevY;
+				segLen = Math.sqrt(dx * dx + dy * dy);
+			}
+			this.routeLength += segLen;
 			this.routeTime += DT;
 			this.routeFieldT += DT * this.fieldRate;
 			this.routeSteps = step + 1;
@@ -1047,9 +1179,16 @@
 		const prevX = cargo.x;
 		const prevY = cargo.y;
 		this.advance(cargo, DT);
-		const dx = cargo.x - prevX;
-		const dy = cargo.y - prevY;
-		this.flightLength += Math.sqrt(dx * dx + dy * dy);
+		/* periodic: pre-wrap step length (no ~W jump at the seam); classic
+		 * keeps the live delta so fingerprints stay bit-identical */
+		let segLen;
+		if (this.periodic) segLen = Math.hypot(cargo.vx, cargo.vy) * DT;
+		else {
+			const dx = cargo.x - prevX;
+			const dy = cargo.y - prevY;
+			segLen = Math.sqrt(dx * dx + dy * dy);
+		}
+		this.flightLength += segLen;
 		this.flightFieldT += DT * this.fieldRate;
 		this.liveSteps += 1;
 		this.flightTime = this.liveSteps * DT;

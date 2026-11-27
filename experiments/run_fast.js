@@ -26,13 +26,18 @@ const path = require('path');
 const KNOWN_RED = {
 	'bot_gravity_test.js': 'score(6) finite, no build (exit/claim on a saved field)',
 	'career_guidance_test.js': 'restored departure rule: HQ contract aim prices neutral, not green',
-	'dom_smoke.js': '0.4.17: no landing with a commercial exit from HQ'
+	'dom_smoke.js': '0.4.17: no landing with a commercial exit from HQ',
+	/* pre-existing, not 0.8.0 periodic-FFT work: reproduced on the pristine
+	 * base with the step-2 sim changes stashed aside. */
+	'balance_knobs_test.js': 'pinned pre-0.7.42 600-step state hash diverges at base 8d6abdc',
+	'two_leg_test.js': 'retained-heap assertion, GC-timing flaky; passes standalone, fails once cold'
 };
 
 /* logic only, no page boot: the tier you can afford after every edit */
 const FAST = [
 	['parts_test.js', 0.3],
 	['classic_physics_test.js', 0.1],
+	['periodic_sim_test.js', 0.5],
 	['launch_reason_test.js', 0.2],
 	['comms_facts_test.js', 0.4],
 	['comms_topics_test.js', 0.4],

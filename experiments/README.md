@@ -116,7 +116,7 @@ checks.
 
 ## red on a clean main
 
-Three files are exempt in `run_fast.js` `KNOWN_RED`; each carries the named
+Five files are exempt in `run_fast.js` `KNOWN_RED`; each carries the named
 failure it was reproduced with on a base revision, and a green result means
 the note is stale. A new exemption needs a named failure reproduced on the
 base revision, not just a count.
@@ -132,6 +132,12 @@ base revision, not just a count.
 - `dom_smoke.js` — the three plan-caused `CHECKFAIL`s of 0.7.44 are fixed
   (2026-11-26, [verification worklog](../archive/0.7.44-verification-worklog.md)):
   `career rule tag` and `cheat rule tag` now expect the 16-planet career
+- `balance_knobs_test.js` — pre-existing, not the 0.8.0 periodic-FFT work:
+  the pinned pre-0.7.42 600-step career state hash diverges at base `8d6abdc`
+  (reproduced with the step-2 `gravity_sim.js` changes stashed aside).
+- `two_leg_test.js` — pre-existing, GC-timing flaky retained-heap assertion;
+  passes standalone on rerun, fails once on a cold run (reproduced on the
+  pristine base).
   default, and the build-env landing picks an unclaimed settled world (an
   empty world has no pad block, a rival's claim hides the first-catapult
   button). The file now reaches its older named failure
