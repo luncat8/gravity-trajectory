@@ -34,6 +34,7 @@ Both originals were removed once their text was placed, and
 | 17 | `new/battery-on-ship.md` | ship battery: 10× smaller than planetary, solar variant, energy-transfer slider |
 | 18 | `new/observation-device-OBS-1.md` · `new/observation-satellite.md` | OBS-1 visit profit, uninstall on rotten planets, half-power OBS-0.5 satellite |
 | 19 | `GUI.md` · `balance.md` · `save.md` · `other.md` · `time-scale-units.md` | small notes: bot-log copy, preview diff, URL vs storage, visit-profit/bribe rebalance, replay/save, endgame, time units |
+| 20 | `new/gravity-precalculate-trade-trajectories.md` | background trade modes (`off`/`lines`/`curves`), the physical evacuation tow, the precalculated classic field grid, the GPU engine · new note, not from the split |
 
 What is *not* here:
 
@@ -113,15 +114,17 @@ The two specs written from `0.4-draft-career.md` are
 Plans continue `0.7.*` for all classic bounded-map work prior to Periodic
 FFT, and use `0.8.*` starting at Periodic FFT. Plan numbers are not version
 sequence (`AGENTS.md`): `0.7.44`, `0.7.47`–`0.7.49`, `0.7.51`–`0.7.52` and
-`0.8.7` and the `0.7.45` automatic fleet shipped while `0.8.0`–`0.8.6` are still open, so the
+`0.8.7` and the `0.7.45` automatic fleet shipped while `0.8.0`–`0.8.6` and
+`0.8.8`–`0.8.11` are still open, so the
 bounded-map fleet specification and the remaining plans are written against the shipped `0.7.44` empty
 worlds, the `0.7.47`–`0.7.49` composition / space & capital starts / gifts /
 radar and the `0.7.51`–`0.7.52` view rework, not against the `0.7.43` world
 they were first drafted on.
 
 1. **Pre-FFT (`0.7.45`, archived) — automatic company fleet.** It builds on the shipped `0.7.44` empty worlds and the `0.7.47` seat search and composition rule; it does not change `MAX_PLAYERS` or the fair-start contract.
-2. **FFT & gameplay completion (`0.8.0`–`0.8.3`) — Periodic FFT torus (`PLANETS = 192`), Max-Distance modes & `SPORT_MAXDIST` (building on FFT's 192-body arrays, non-shader field view, and `512×256` periodic wrap), Rival Characters, and the single final bot/economy calibration pass.** `0.8.3` lands last in this group, after `0.7.45` and `0.8.0`–`0.8.2` have settled the rules it calibrates.
+2. **FFT & gameplay completion (`0.8.0`–`0.8.3`, `0.8.9`, `0.8.10`) — Periodic FFT torus (`PLANETS = 192`), Max-Distance modes & `SPORT_MAXDIST` (building on FFT's 192-body arrays, non-shader field view, and `512×256` periodic wrap), Rival Characters, background trade modes & the physical evacuation tow (`0.8.9`), the classic precalculated field grid (`0.8.10`), and the single final bot/economy calibration pass.** `0.8.3` lands last in this group, after `0.7.45`, `0.8.0`–`0.8.2` and `0.8.9`–`0.8.10` have settled the rules it calibrates.
 3. **Final UX, readout & sound polish (`0.8.4`–`0.8.6`, after all rules settle) — Helper Dialog (`H` M3/M4), Accessibility Live Readout (`#srStatus`), and Sound Improvements (Voronoi neighbor-scale consonance across 13–192 bodies/FFT, aim-channel cues).** `0.8.4` M0–M2 (`launchReasons`, `comms_copy.js`, `gui_comms.js`) are already live; only M3/M4 remain.
+4. **Engine (`0.8.11`, no rule changes) — the GPU engine: WebGL build of the precalculated field and FFT snapshots plus field/potential/weather view rasters, CPU always the complete game and the test contract.**
 
 | plan | group | draft sections it answers |
 |---|---|---|
@@ -134,6 +137,9 @@ they were first drafted on.
 | `../0.8.5-plan-accessibility-readout.md` | `0.8` after all | `sound-and-photos.md` §7.1 (`#srStatus` & HUD landmarks) |
 | `../0.8.6-plan-improve-sound.md` | `0.8` after all | `sound-and-photos.md` §7.1 (Voronoi neighbor-scale consonance, toroidal/192-body adjacency, aim/arrival/block cues) |
 | `../0.8.8-plan-space-weather.md` | design first | `map.md` §add space weather, `new/observation-device-OBS-1.md` (career weather, observation range and planet sources; decisions pending) |
+| `../0.8.9-plan-trade-trajectories.md` | `0.8` FFT+ | `new/gravity-precalculate-trade-trajectories.md` §trade trajectories (background trade `off`/`lines`/`curves`, cached ballistic arcs, the physical evacuation tow) |
+| `../0.8.10-plan-precalculated-field.md` | `0.8` FFT+ | `new/gravity-precalculate-trade-trajectories.md` §precalculate gravity (classic direct-sum force grid, bilinear sampling, measure-first default) |
+| `../0.8.11-plan-gpu-engine.md` | `0.8` engine | `new/gravity-precalculate-trade-trajectories.md` §GPU engine (WebGL snapshot build + FFT, field/potential/weather rasters, CPU-only physics tests) |
 | `../archive/0.7.44-plan-founding-colony.md` (done) | — | `found-colony-land.md`, `career-economy.md` §2.5 (empty heavy worlds `13 → 16`, single-use colonization kit, founding turns an empty world into a settled colony) |
 | `../archive/0.7.46-plan-fair-start-fallback.md` (superseded) | — | `flight-lab-and-modes.md` §1.4 — **superseded by `../archive/0.7.47-plan-fair-start-modes.md`**; options 2 (repair the map), 4 (`MONEY.initSec`) and 5 (cheaper exact check) stay open, see below |
 | `../archive/0.7.47-plan-fair-start-modes.md` (done) | — | `map-fair-start-modes.md` (composition rule, exit margin, background search, space & capital starts) |
