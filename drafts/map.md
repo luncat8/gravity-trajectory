@@ -1,11 +1,12 @@
 
-## gravity solver
+## FFT gravity solver
 
 Add option for periodic FFT-based gravity solver. When enabled:
 - Use xy-wrapping (toroidal) periodic map topology
 - Increase default and max planet count by 4x, without 'full area' space around map
 - (maybe good) Apply approximately 2x weaker gravity per body
 
+planet placement in fft mode should be similar (random) to other career (not grid or other strange placement), partial overlap orbits are ok. and increase scale (zoom out) of map. so more distance on the screen and between planets
 
 → **open** · `../0.8.0-plan-periodic-fft.md` — experimental checkbox, FFT of the shipped Plummer kernel on a 1600×1000 torus, 104 / 64 / 192 planets, half well, no `full area` margin.
 
@@ -22,6 +23,15 @@ Add option for periodic FFT-based gravity solver. When enabled:
 some type of zones are - slowly move 2d noise x,y offset += change
 some change like 3d noise z+= change
 what type of zone will be looks better with what type of movement - open question.
+
+
+## prototype/space-weather-shape.html
+round polar noise - make it more smooth shape. without weird sin or similar artificial feel. it is hard to explain but it should looks natural.
+
+add another band that will consist from 20-40 of smaller noise-rounds (instead of lines) so outer bands of these small rounds will form band as metaball surface or something like this.
+
+add adjust to choose number of bands, and some other characteristics and button to copy settings, to i can paste it to chat and ask use it as next default
+
 
 → **open** · `../0.8.8-plan-space-weather.md` covers the whole note for career
 mode. Compare drifting and evolving noise in a visual prototype before choosing
