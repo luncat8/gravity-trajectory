@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Space weather — shape contours</title>
+<style>
+	body { margin: 0; background: #03040a; color: #ccd; font: 13px monospace; overflow: hidden; user-select: none; }
+	canvas { display: block; }
+	#ui {
+		position: absolute; top: 8px; left: 8px; display: flex; flex-wrap: wrap;
+		gap: 10px; align-items: center; background: rgba(3, 4, 10, 0.76);
+		padding: 5px 10px; border: 1px solid #223; border-radius: 4px;
+	}
+	input[type=range] { width: 150px; }
+	#spd, #ang { width: 100px; }
+	.sep { color: #446; }
+	button {
+		background: #141829; color: #ccd; border: 1px solid #446;
+		padding: 2px 8px; font: inherit; cursor: pointer;
+	}
+	button:hover { background: #222946; }
+	button.on { background: #2d3561; border-color: #88b; color: #fff; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+	<span>cloud</span>
+	<input id="mix" type="range" min="0" max="1" step="0.001" value="0">
+	<span>weather</span>
+	<span id="val">0.00</span>
+	<span class="sep">|</span>
+	<span>speed</span>
+	<input id="spd" type="range" min="0" max="4" step="0.05" value="1">
+	<span id="spdVal">1.0×</span>
+	<span class="sep">|</span>
+	<span>wind</span>
+	<input id="ang" type="range" min="-180" max="180" step="1" value="-160">
+	<span id="angVal">-160°</span>
+	<button id="bandBtn" type="button">band</button>
+	<button id="lineBtn" type="button">curves</button>
+</div>
+<script>
+	const $ = id => document.getElementById(id);
+	const TAU = Math.PI * 2;
+	const lerp = (a, b, t) => a + (b - a) * t;
+	const rnd = (a, b) => a + Math.random() * (b - a);
+
+	// 5 contour passes from outer violet aura to warm amber core, matching 2clouds palette without textures
+	const LAYERS = 5;
+	const LAYER_FILL = [
+		'rgba(54, 36, 140, 0.34)',
+		'rgba(86, 48, 162, 0.34)',
+		'rgba(152, 68, 130, 0.36)',
+		'rgba(226, 108, 70, 0.40)',
+		'rgba(255, 148, 56, 0.48)'
+	];
+	const LAYER_STROKE = [
+		'rgba(130, 110, 245, 0.52)',
+		'rgba(162, 124, 255, 0.58)',
+		'rgba(222, 136, 200, 0.64)',
+		'rgba(255, 170, 120, 0.72)',
+		'rgba(255, 214, 132, 0.85)'
+	];
+	const LAYER_TH = new Float32Array([0.00, 0.18, 0.36, 0.54, 0.72]);
+	const LAYER_SCALE = new Float32Array([1.00, 0.80, 0.62, 0.45, 0.29]);
+
+	const BASE_WIND = 36;
+	const WRAP_PAD = 280;
+	const CLOUD_COUNT = 34;
+	const MODES = 5;
+	const MODE_K = new Int8Array([2, 3, 4, 5, 7]);
+	const MODE_W = new Float32Array([0.42, 0.31, 0.20, 0.14, 0.09]);
+
+	// preallocated vertex scratch buffers so frame() performs zero heap allocations
+	const NV = 44;
+	const COS_A = new Float32Array(NV);
+	const SIN_A = new Float32Array(NV);
+	for (let i = 0; i < NV; i++) {
+		const a = (i / NV) * TAU;
+		COS_A[i] = Math.cos(a);
+		SIN_A[i] = Math.sin(a);
+	}
+	const vxBuf = new Float32Array(NV);
+	const vyBuf = new Float32Array(NV);
+
+	const BAND_STATIONS = 44;
+	const BAND_STEP = 56;
+	const BAND_PAD = 185;
+	const bandLX = new Float32Array(BAND_STATIONS);
+	const bandLY = new Float32Array(BAND_STATIONS);
+	const bandRX = new Float32Array(BAND_STATIONS);
+	const bandRY = new Float32Array(BAND_STATIONS);
+
+	// flat typed arrays for cloud pool (no per-cloud nested arrays in the hot loop)
+	const cX = new Float32Array(CLOUD_COUNT);
+	const cY = new Float32Array(CLOUD_COUNT);
+	const cBaseR = new Float32Array(CLOUD_COUNT);
+	const cAspect = new Float32Array(CLOUD_COUNT);
+	const cTilt = new Float32Array(CLOUD_COUNT);
+	const cTiltSp = new Float32Array(CLOUD_COUNT);
+	const cStrength = new Float32Array(CLOUD_COUNT);
+	const cBreathPh = new Float32Array(CLOUD_COUNT);
+	const cBreathSp = new Float32Array(CLOUD_COUNT);
+	const cEddyX = new Float32Array(CLOUD_COUNT);
+	const cEddyY = new Float32Array(CLOUD_COUNT);
+	const cHarmPh = new Float32Array(CLOUD_COUNT * MODES);
+	const cHarmSp = new Float32Array(CLOUD_COUNT * MODES);
+	const cHarmAmp = new Float32Array(CLOUD_COUNT * MODES);
+
+	const cv = $('c'), ctx = cv.getContext('2d');
+	let W = 0, H = 0;
+	let mixTarget = 0, mix = 0, speed = 1, windDeg = -160;
+	let showLines = false;
+	let simT = 0, morphT = 0, driftX = 0, driftY = 0, last = performance.now();
+	let shownMix = -1;
+
+	// bands live in drift-subtracted coordinates so wind carries them without code moving their geometry
+	const MAX_BANDS = 3;
+	const bActive = new Uint8Array(MAX_BANDS);
+	const bC = new Float32Array(MAX_BANDS);
+	const bNx = new Float32Array(MAX_BANDS);
+	const bNy = new Float32Array(MAX_BANDS);
+	const bTx = new Float32Array(MAX_BANDS);
+	const bTy = new Float32Array(MAX_BANDS);
+	const bCornerMin = new Float32Array(MAX_BANDS);
+	const bCornerMax = new Float32Array(MAX_BANDS);
+	const bTanMin = new Float32Array(MAX_BANDS);
+	const bTanMax = new Float32Array(MAX_BANDS);
+	const bBest = new Float32Array(MAX_BANDS);
+	const bStall = new Float32Array(MAX_BANDS);
+	const bFade = new Float32Array(MAX_BANDS);
+	const bPh = new Float32Array(MAX_BANDS * 8);
+	let nextBand = 0;
+
+	function seedCloud(i, randomPos) {
+		const tier = i < 10 ? 0 : (i < 24 ? 1 : 2);
+		cBaseR[i] = tier === 0 ? rnd(145, 220) : (tier === 1 ? rnd(88, 142) : rnd(50, 84));
+		cAspect[i] = rnd(1.12, 1.58);
+		cTilt[i] = rnd(0, TAU);
+		cTiltSp[i] = rnd(-0.07, 0.07);
+		cStrength[i] = tier === 0 ? rnd(0.76, 1.02) : (tier === 1 ? rnd(0.62, 0.98) : rnd(0.45, 0.84));
+		cBreathPh[i] = rnd(0, TAU);
+		cBreathSp[i] = rnd(0.22, 0.55);
+		cEddyX[i] = rnd(-4.5, 4.5);
+		cEddyY[i] = rnd(-4.5, 4.5);
+		const base = i * MODES;
+		for (let m = 0; m < MODES; m++) {
+			cHarmPh[base + m] = rnd(0, TAU);
+			cHarmSp[base + m] = rnd(-0.65, 0.65) * (1 + m * 0.18);
+			cHarmAmp[base + m] = MODE_W[m] * rnd(0.65, 1.30);
+		}
+		if (randomPos) {
+			cX[i] = rnd(-WRAP_PAD, W + WRAP_PAD);
+			cY[i] = rnd(-WRAP_PAD, H + WRAP_PAD);
+		}
+	}
+
+	function updateBandBounds(b) {
+		let cMin = Infinity, cMax = -Infinity, tMin = Infinity, tMax = -Infinity;
+		const nx = bNx[b], ny = bNy[b], tx = bTx[b], ty = bTy[b];
+		for (let k = 0; k < 4; k++) {
+			const px = (k & 1) ? W : 0;
+			const py = (k & 2) ? H : 0;
+			const pn = px * nx + py * ny;
+			const pt = px * tx + py * ty;
+			if (pn < cMin) cMin = pn;
+			if (pn > cMax) cMax = pn;
+			if (pt < tMin) tMin = pt;
+			if (pt > tMax) tMax = pt;
+		}
+		bCornerMin[b] = cMin;
+		bCornerMax[b] = cMax;
+		bTanMin[b] = tMin;
+		bTanMax[b] = tMax;
+	}
+
+	function spawnBand() {
+		let slot = -1, weakest = 2;
+		for (let b = 0; b < MAX_BANDS; b++) {
+			if (!bActive[b]) { slot = b; break; }
+		}
+		if (slot < 0) {
+			for (let b = 0; b < MAX_BANDS; b++) {
+				if (bFade[b] < weakest) { weakest = bFade[b]; slot = b; }
+			}
+		}
+		const a = windDeg * Math.PI / 180;
+		const nx = Math.cos(a), ny = Math.sin(a);
+		bNx[slot] = nx;
+		bNy[slot] = ny;
+		bTx[slot] = -ny;
+		bTy[slot] = nx;
+		updateBandBounds(slot);
+		const driftProj = driftX * nx + driftY * ny;
+		bC[slot] = bCornerMin[slot] - BAND_PAD - driftProj;
+		bBest[slot] = bC[slot] + driftProj;
+		bStall[slot] = 0;
+		bFade[slot] = 1;
+		const pBase = slot * 8;
+		for (let i = 0; i < 8; i++) bPh[pBase + i] = rnd(0, TAU);
+		bActive[slot] = 1;
+	}
+
+	function resize() {
+		const prevW = W, prevH = H;
+		W = cv.width = innerWidth;
+		H = cv.height = innerHeight;
+		if (!prevW) {
+			for (let i = 0; i < CLOUD_COUNT; i++) seedCloud(i, true);
+		} else {
+			const spanX = W + WRAP_PAD * 2, spanY = H + WRAP_PAD * 2;
+			const oldX = prevW + WRAP_PAD * 2, oldY = prevH + WRAP_PAD * 2;
+			for (let i = 0; i < CLOUD_COUNT; i++) {
+				cX[i] = (cX[i] + WRAP_PAD) * (spanX / oldX) - WRAP_PAD;
+				cY[i] = (cY[i] + WRAP_PAD) * (spanY / oldY) - WRAP_PAD;
+			}
+		}
+		for (let b = 0; b < MAX_BANDS; b++) {
+			if (bActive[b]) updateBandBounds(b);
+		}
+	}
+
+	function appendClosedCurve(xs, ys, n) {
+		const mx0 = (xs[n - 1] + xs[0]) * 0.5;
+		const my0 = (ys[n - 1] + ys[0]) * 0.5;
+		ctx.moveTo(mx0, my0);
+		for (let i = 0; i < n; i++) {
+			const next = i + 1 === n ? 0 : i + 1;
+			ctx.quadraticCurveTo(xs[i], ys[i], (xs[i] + xs[next]) * 0.5, (ys[i] + ys[next]) * 0.5);
+		}
+		ctx.closePath();
+	}
+
+	function appendCloudLayer(i, layer, wobble, breathAmp) {
+		const breath = 1 + breathAmp * Math.sin(morphT * cBreathSp[i] + cBreathPh[i]);
+		const effStrength = cStrength[i] * breath - mix * 0.06;
+		const th = LAYER_TH[layer];
+		if (effStrength <= th + 0.03) return;
+
+		const cx = cX[i], cy = cY[i];
+		const maxReach = cBaseR[i] * cAspect[i] * 1.75;
+		if (cx + maxReach < 0 || cx - maxReach > W || cy + maxReach < 0 || cy - maxReach > H) return;
+
+		const vigor = Math.min(1, (effStrength - th) / (1 - th * 0.72));
+		const R = cBaseR[i] * LAYER_SCALE[layer] * (0.45 + 0.55 * vigor);
+		if (R < 4) return;
+
+		const orient = cTilt[i];
+		const co = Math.cos(orient), si = Math.sin(orient);
+		const stretch = lerp(1, cAspect[i], 1 - layer * 0.12);
+		const layerWob = wobble * (1 + layer * 0.08);
+		const base = i * MODES;
+
+		for (let v = 0; v < NV; v++) {
+			const a = (v / NV) * TAU;
+			let hSum = 0;
+			for (let m = 0; m < MODES; m++) {
+				hSum += cHarmAmp[base + m] * Math.sin(MODE_K[m] * a + cHarmPh[base + m] + cHarmSp[base + m] * morphT);
+			}
+			const r = R * Math.exp(layerWob * hSum);
+			const ux = COS_A[v] * r * stretch;
+			const uy = SIN_A[v] * r;
+			vxBuf[v] = cx + ux * co - uy * si;
+			vyBuf[v] = cy + ux * si + uy * co;
+		}
+		appendClosedCurve(vxBuf, vyBuf, NV);
+	}
+
+	function appendBandLayer(b, layer) {
+		if (!bActive[b]) return;
+		const effFade = bFade[b];
+		const th = LAYER_TH[layer];
+		if (effFade <= th * 0.7) return;
+
+		const nx = bNx[b], ny = bNy[b], tx = bTx[b], ty = bTy[b];
+		const driftTan = driftX * tx + driftY * ty;
+		const spanNeeded = (bTanMax[b] - bTanMin[b]) + 460;
+		const step = Math.max(BAND_STEP, spanNeeded / (BAND_STATIONS - 2));
+		const s0 = Math.floor((bTanMin[b] - driftTan - 230) / step) * step;
+		const scale = LAYER_SCALE[layer] * effFade;
+		const slow = morphT * 0.35;
+		const p = b * 8;
+		const c0 = bC[b];
+
+		for (let i = 0; i < BAND_STATIONS; i++) {
+			const s = s0 + i * step;
+			const center = c0
+				+ 26 * Math.sin(s * 0.0053 + bPh[p])
+				+ 14 * Math.sin(s * 0.0127 + bPh[p + 1] + slow * 0.4)
+				+ 6 * Math.sin(s * 0.0261 + bPh[p + 2] - slow * 0.6);
+			const swell = 0.74
+				+ 0.15 * Math.sin(s * 0.0061 + bPh[p + 3])
+				+ 0.09 * Math.sin(s * 0.0149 + bPh[p + 4] + slow * 0.3)
+				+ 0.05 * Math.sin(s * 0.0293 + bPh[p + 5]);
+			const localStr = swell * effFade;
+			const hwBase = 32 + swell * 92;
+			const hw = localStr > th
+				? hwBase * scale * Math.min(1, (localStr - th) * 2.8)
+				: 0;
+			const asymL = hw > 0 ? 1 + 0.16 * Math.sin(s * 0.019 + bPh[p + 6] + slow * 0.5) : 0;
+			const asymR = hw > 0 ? 1 + 0.16 * Math.sin(s * 0.021 + bPh[p + 7] - slow * 0.45) : 0;
+			const nL = center + hw * asymL;
+			const nR = center - hw * asymR;
+			bandLX[i] = nL * nx + s * tx + driftX;
+			bandLY[i] = nL * ny + s * ty + driftY;
+			bandRX[i] = nR * nx + s * tx + driftX;
+			bandRY[i] = nR * ny + s * ty + driftY;
+		}
+
+		ctx.moveTo(bandLX[0], bandLY[0]);
+		for (let i = 0; i < BAND_STATIONS - 1; i++) {
+			const mx = (bandLX[i] + bandLX[i + 1]) * 0.5;
+			const my = (bandLY[i] + bandLY[i + 1]) * 0.5;
+			ctx.quadraticCurveTo(bandLX[i], bandLY[i], mx, my);
+		}
+		const lastIdx = BAND_STATIONS - 1;
+		ctx.lineTo(bandLX[lastIdx], bandLY[lastIdx]);
+		ctx.lineTo(bandRX[lastIdx], bandRY[lastIdx]);
+		for (let i = lastIdx; i > 0; i--) {
+			const mx = (bandRX[i] + bandRX[i - 1]) * 0.5;
+			const my = (bandRY[i] + bandRY[i - 1]) * 0.5;
+			ctx.quadraticCurveTo(bandRX[i], bandRY[i], mx, my);
+		}
+		ctx.lineTo(bandRX[0], bandRY[0]);
+		ctx.closePath();
+	}
+
+	function stepSim(dt, rawDt) {
+		simT += dt;
+		mix += (mixTarget - mix) * Math.min(1, rawDt * 1.5);
+		const mCent = (mix * 100 + 0.5) | 0;
+		if (mCent !== shownMix) {
+			shownMix = mCent;
+			$('val').textContent = mix.toFixed(2);
+		}
+
+		// +50% wind speed at slider 0 (fast cloud), 1.0x at slider 1 (stable weather)
+		const windMul = 1 + 0.5 * (1 - mix);
+		const morphRate = lerp(1.05, 0.26, mix);
+		morphT += dt * morphRate;
+
+		const windAng = windDeg * Math.PI / 180;
+		const vx = Math.cos(windAng) * BASE_WIND * windMul;
+		const vy = Math.sin(windAng) * BASE_WIND * windMul;
+		driftX += vx * dt;
+		driftY += vy * dt;
+
+		const eddyScale = lerp(1.0, 0.30, mix);
+		const minX = -WRAP_PAD, maxX = W + WRAP_PAD;
+		const minY = -WRAP_PAD, maxY = H + WRAP_PAD;
+		const spanX = maxX - minX, spanY = maxY - minY;
+
+		for (let i = 0; i < CLOUD_COUNT; i++) {
+			cTilt[i] += (cTiltSp[i] * morphRate + 0.12 * Math.sin(2 * (windAng - cTilt[i]))) * dt;
+			cX[i] += (vx + cEddyX[i] * eddyScale) * dt;
+			cY[i] += (vy + cEddyY[i] * eddyScale) * dt;
+			let wrapped = false;
+			if (cX[i] < minX) { cX[i] += spanX; wrapped = true; }
+			else if (cX[i] >= maxX) { cX[i] -= spanX; wrapped = true; }
+			if (cY[i] < minY) { cY[i] += spanY; wrapped = true; }
+			else if (cY[i] >= maxY) { cY[i] -= spanY; wrapped = true; }
+			if (wrapped) seedCloud(i, false);
+		}
+
+		let anyBand = false;
+		for (let b = 0; b < MAX_BANDS; b++) {
+			if (!bActive[b]) continue;
+			const proj = bC[b] + driftX * bNx[b] + driftY * bNy[b];
+			if (proj > bBest[b] + 1) {
+				bBest[b] = proj;
+				bStall[b] = 0;
+			} else {
+				bStall[b] += dt;
+			}
+			// fade gently across transit; if wind turns parallel and stalls on-screen, fade out smoothly instead of popping
+			bFade[b] = Math.max(0, bFade[b] - dt * (bStall[b] > 7 ? 0.28 : 0.008 * windMul));
+			if (proj > bCornerMax[b] + BAND_PAD || proj < bCornerMin[b] - BAND_PAD * 1.4 || bFade[b] <= 0.01) {
+				bActive[b] = 0;
+				nextBand = simT + 10 + Math.random() * 12;
+			} else {
+				anyBand = true;
+			}
+		}
+		if (!anyBand && simT >= nextBand) spawnBand();
+	}
+
+	function frame(now) {
+		const rawDt = Math.min(0.05, (now - last) / 1000);
+		last = now;
+		stepSim(rawDt * speed, rawDt);
+
+		ctx.fillStyle = '#03040a';
+		ctx.fillRect(0, 0, W, H);
+
+		const wobble = lerp(0.38, 0.23, mix);
+		const breathAmp = lerp(0.24, 0.08, mix);
+
+		// compound path per contour layer: overlapping clouds and band fuse into seamless isolines in 5 draw calls
+		ctx.lineWidth = 1;
+		for (let layer = 0; layer < LAYERS; layer++) {
+			ctx.beginPath();
+			for (let i = 0; i < CLOUD_COUNT; i++) {
+				appendCloudLayer(i, layer, wobble, breathAmp);
+			}
+			for (let b = 0; b < MAX_BANDS; b++) {
+				appendBandLayer(b, layer);
+			}
+			ctx.fillStyle = LAYER_FILL[layer];
+			ctx.fill();
+			if (showLines) {
+				ctx.strokeStyle = LAYER_STROKE[layer];
+				ctx.stroke();
+			}
+		}
+		requestAnimationFrame(frame);
+	}
+
+	$('mix').oninput = e => { mixTarget = +e.target.value; };
+	$('spd').oninput = e => {
+		speed = +e.target.value;
+		$('spdVal').textContent = speed.toFixed(1) + '×';
+	};
+	$('ang').oninput = e => {
+		windDeg = +e.target.value;
+		$('angVal').textContent = windDeg + '°';
+	};
+	$('bandBtn').onclick = spawnBand;
+	$('lineBtn').onclick = e => {
+		showLines = !showLines;
+		e.target.classList.toggle('on', showLines);
+	};
+
+	window.addEventListener('resize', resize);
+	resize();
+	spawnBand();
+	requestAnimationFrame(frame);
+</script>
+</body>
+</html>

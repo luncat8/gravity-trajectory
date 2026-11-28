@@ -106,6 +106,8 @@
 
 	// ---------- weather texture ops: fade, wind shift, add ----------
 	const FADE = 0.04;                         // intensity decay, per second
+	const FIELD_RATE = 0.057;                  // field intensity added per second at full coverage
+	const EQ = FIELD_RATE / FADE;              // steady-state intensity a newborn pixel must be born at
 	const tmpTex = new Float32Array(T * T);
 
 	function texFade(dt) {
@@ -140,6 +142,7 @@
 	let windAngle = 0, windSpeed = 8;
 	let accX = 0, accY = 0;                   // sub-texel accumulator for integer shifts
 	let shiftX = 0, shiftY = 0;               // total drift (float; drift frame = map pos - shift)
+	let shiftIX = 0, shiftIY = 0;             // applied integer shift; baked band pixels are conserved in it
 	let windOff = 0;                          // rebase offset, keeps drag steering smooth
 
 	function baseWind(t) {
@@ -181,7 +184,7 @@
 		const s = 0.026;                       // xy noise scale
 		const z = t * 0.05;                    // z dimension: pattern slowly morphs
 		const ox = shiftX * s, oy = shiftY * s;// xy offset follows total wind drift
-		const rate = 0.057 * dt;
+		const rate = FIELD_RATE * dt;
 		let k = 0;
 		for (let y = 0; y < G; y++) {
 			for (let x = 0; x < G; x++) {
@@ -201,7 +204,12 @@
 				let a = (v - 0.52) / 0.18;     // sparse soft clouds
 				if (a <= 0) continue;
 				if (a > 1) a = 1;
-				tex[row + x] += a * a * rate;
+				const i = row + x;
+				// newborn border pixels start at equilibrium, like flame pixels:
+				// growing them from zero leaves a dark ramp on the fed border
+				// that reads as a crack whenever the wind turns
+				if (tex[i] < a * a * EQ && inFedBorder(x, y)) tex[i] = a * a * EQ;
+				tex[i] += a * a * rate;
 			}
 		}
 	}
@@ -230,8 +238,12 @@
 		band = {
 			nx, ny, ux, uy, cMin, cMax, thick, maxTh,
 			// drift-frame offset of the centerline: just upwind of the map, so
-			// the stripe starts entering through the border right away
-			c0: cMin - 3 - maxTh - (shiftX * nx + shiftY * ny),
+			// the stripe starts entering through the border right away.
+			// measured against the applied integer shift — the frame the fed
+			// pixels are actually baked in.
+			c0: cMin - 3 - maxTh - (shiftIX * nx + shiftIY * ny),
+			bestC: cMin - 3 - maxTh,            // sweep progress, for stall detection
+			stall: 0,
 			seed: Math.random() * 37,
 			seed2: Math.random() * 37,
 			seed3: Math.random() * 37,
@@ -239,9 +251,24 @@
 		};
 	}
 
-	function bandGone() {
+	// the band is done when it left the map either way, or when its sweep has
+	// stalled for 8 s (wind turned parallel to it) — then its on-map pixels are
+	// zeroed so no frozen stripe waits for the clouds to overwrite it.
+	function bandTick(dt) {
 		const b = band;
-		return b.c0 + shiftX * b.nx + shiftY * b.ny - b.maxTh > b.cMax + 3;
+		const c = b.c0 + shiftIX * b.nx + shiftIY * b.ny;
+		if (c - b.maxTh > b.cMax + 3 || c + b.maxTh < b.cMin - 3) return true;
+		if (c > b.bestC + 1) { b.bestC = c; b.stall = 0; }
+		else b.stall += dt;
+		if (b.stall <= 8) return false;
+		for (let y = 0; y < T; y++) {
+			const wy = y - shiftIY, row = y * T;
+			for (let x = 0; x < T; x++) {
+				const dist = (x - shiftIX) * b.nx + wy * b.ny - b.c0;
+				if (dist > -b.maxTh && dist < b.maxTh) tex[row + x] = 0;
+			}
+		}
+		return true;
 	}
 
 	// which border strips the last shift exposed: dx>0 feeds the LEFT edge,
@@ -267,6 +294,14 @@
 		}
 	}
 
+	function inFedBorder(x, y) {
+		for (let k = 0; k < feedRects.length; k++) {
+			const r = feedRects[k];
+			if (x >= r[0] && x < r[2] && y >= r[1] && y < r[3]) return true;
+		}
+		return false;
+	}
+
 	function feedBand() {
 		// fire moment: the shift just exposed blank border strips; generate the
 		// stripe's pixels wherever it crosses them. nothing else is ever painted
@@ -275,9 +310,9 @@
 		for (let k = 0; k < feedRects.length; k++) {
 			const r = feedRects[k];
 			for (let y = r[1]; y < r[3]; y++) {
-				const wy = y - shiftY, row = y * T;
+				const wy = y - shiftIY, row = y * T;
 				for (let x = r[0]; x < r[2]; x++) {
-					paintBandTexel(b, row + x, x - shiftX, wy);
+					paintBandTexel(b, row + x, x - shiftIX, wy);
 				}
 			}
 		}
@@ -311,7 +346,7 @@
 		accY -= iy;
 		shiftX += wx * dt;
 		shiftY += wy * dt;
-		if (ix || iy) texShift(ix, iy);
+		if (ix || iy) { texShift(ix, iy); shiftIX += ix; shiftIY += iy; }
 		collectStrips(ix, iy);
 		// increments
 		if (cPlanet.checked) paintPlanet(dt, t);
@@ -319,22 +354,7 @@
 		if (cBand.checked) {
 			if (band) {
 				feedBand();                    // ONLY the exposed border strips
-				if (bandGone()) {
-					// clear the band's ghost on exit so it doesn't linger
-					// until the cloud field overwrites it
-					const b = band;
-					const c0 = b.c0;
-					for (let y = 0; y < T; y++) {
-						const wy = y - shiftY;
-						const row = y * T;
-						for (let x = 0; x < T; x++) {
-							const dist = (x - shiftX) * b.nx + wy * b.ny - c0;
-							if (dist > -b.maxTh && dist < b.maxTh) tex[row + x] = 0;
-						}
-					}
-					band = null;
-					bandTimer = 12 + Math.random() * 14;
-				}
+				if (bandTick(dt)) { band = null; bandTimer = 12 + Math.random() * 14; }
 			} else {
 				bandTimer -= dt;
 				if (bandTimer <= 0) spawnBand();
@@ -392,6 +412,8 @@
 	}
 
 	function render() {
+		vc.fillStyle = '#04060c';
+		vc.fillRect(0, 0, MAP, MAP);           // fresh frame every tick — without this the map keeps every old draw as a static ghost
 		vc.drawImage(stars, 0, 0);
 		vc.imageSmoothingEnabled = true;
 		vc.drawImage(texCan, 0, 0, MAP, MAP);  // the map = scaled weather texture
@@ -463,7 +485,7 @@
 		let bs;
 		if (!cBand.checked) bs = 'bands off';
 		else if (band) {
-			const c = band.c0 + shiftX * band.nx + shiftY * band.ny;
+			const c = band.c0 + shiftIX * band.nx + shiftIY * band.ny;
 			const p = Math.max(0, Math.min(1, (c - band.cMin - band.maxTh) / (band.cMax - band.cMin + band.maxTh * 2)));
 			bs = 'band crossing, ' + Math.round(p * 100) + '% across';
 		} else bs = 'next band in ' + Math.max(0, bandTimer).toFixed(0) + 's';

@@ -6,8 +6,12 @@
 <style>
   body { margin: 0; background: #03040a; color: #ccd; font: 13px monospace; overflow: hidden; }
   canvas { display: block; }
-  #ui { position: absolute; top: 8px; left: 8px; display: flex; gap: 10px; align-items: center; }
-  input[type=range] { width: 260px; }
+  #ui { position: absolute; top: 8px; left: 8px; display: flex; gap: 10px; align-items: center; background: rgba(3, 4, 10, 0.72); padding: 4px 10px; border-radius: 4px; }
+  input[type=range] { width: 180px; }
+  #spd { width: 110px; }
+  .sep { color: #557; }
+  button { background: #141829; color: #ccd; border: 1px solid #446; padding: 2px 8px; font: inherit; cursor: pointer; }
+  button:hover { background: #222946; }
 </style>
 </head>
 <body>
@@ -17,6 +21,11 @@
   <input id="mix" type="range" min="0" max="1" step="0.001" value="0">
   <span>weather</span>
   <span id="val">0.00</span>
+  <span class="sep">|</span>
+  <span>speed</span>
+  <input id="spd" type="range" min="0" max="4" step="0.05" value="1">
+  <span id="spdVal">1.0×</span>
+  <button id="bandBtn" type="button">band</button>
 </div>
 <script>
 // ---------- 3D value noise (seeded by Math.random here; use a shared seed in-game) ----------
@@ -56,31 +65,108 @@ const WEATHER = { th: 0.55, k: 0.25, decay: 0.03 };
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const off = document.createElement('canvas'), octx = off.getContext('2d');
 const CELL = 4;
-let GW, GH, img, W, T = 0, last = performance.now();
+const WIND_LEN = Math.hypot(SAMPLE.wind[0], SAMPLE.wind[1]);
+const BNX = SAMPLE.wind[0] / WIND_LEN, BNY = SAMPLE.wind[1] / WIND_LEN;
+const BAND_PAD = 48;
+
+let GW, GH, img, W, B, T = 0, last = performance.now();
+let driftX = 0, driftY = 0, accX = 0, accY = 0, shiftX = 0, shiftY = 0;
+let bandActive = false, bandQueued = false, bandC = 0, bandSeed = 0, nextBand = 0;
 
 const mixInput = document.getElementById('mix'), mixVal = document.getElementById('val');
+const spdInput = document.getElementById('spd'), spdVal = document.getElementById('spdVal');
 let mixTarget = 0;   // what the slider asks for
 let mix = 0;         // what the field is currently using, eased toward target
+let speed = 1;
 let cur = { ...CLOUD };
 mixInput.oninput = () => { mixTarget = +mixInput.value; };
+spdInput.oninput = () => { speed = +spdInput.value; spdVal.textContent = speed.toFixed(1) + '×'; };
+
+function borderCrossing() {
+  if (!bandActive) return false;
+  const shiftProj = shiftX * BNX + shiftY * BNY;
+  const projMax = (GW - 1) * BNX + (GH - 1) * BNY;
+  const projFeedMin = Math.min((GW - 1) * BNX, (GH - 1) * BNY);
+  return shiftProj >= bandC - projMax - BAND_PAD && shiftProj <= bandC - projFeedMin + BAND_PAD;
+}
+
+function spawnBand() {
+  if (borderCrossing()) { bandQueued = true; return; }
+  const projMax = (GW - 1) * BNX + (GH - 1) * BNY;
+  const shiftProj = shiftX * BNX + shiftY * BNY;
+  bandC = projMax + shiftProj + BAND_PAD;
+  bandSeed = Math.random() * 200;
+  bandActive = true;
+  bandQueued = false;
+}
+document.getElementById('bandBtn').onclick = spawnBand;
+
+function bandBorder(x, y) {
+  if (!bandActive) return 0;
+  const wx = x + shiftX, wy = y + shiftY;
+  const along = -wx * BNY + wy * BNX;
+  const center = bandC + (fbm(along * 0.014, bandSeed, 0.3, 3) - 0.5) * 24;
+  const halfW = 7 + Math.pow(fbm(along * 0.019, bandSeed + 11.7, 1.1, 3), 1.2) * 26;
+  const wisp = fbm(wx * 0.032, wy * 0.032, bandSeed + 5.3, 3);
+  const dist = Math.abs(wx * BNX + wy * BNY - center) + (wisp - 0.5) * 7;
+  const t = Math.max(0, 1 - dist / halfW);
+  if (t <= 0) return 0;
+  return t * t * (3 - 2 * t) * (0.52 + 0.55 * wisp);
+}
 
 function resize() {
   cv.width = innerWidth; cv.height = innerHeight;
   GW = Math.ceil(cv.width / CELL); GH = Math.ceil(cv.height / CELL);
   off.width = GW; off.height = GH;
   img = octx.createImageData(GW, GH);
-  if (!W) W = new Float32Array(GW * GH);  // keep the weather layer on resize
+  if (!W || W.length !== GW * GH) W = new Float32Array(GW * GH);
+  if (!B || B.length !== GW * GH) B = new Float32Array(GW * GH);
 }
 window.addEventListener('resize', resize);
 resize();
+spawnBand();
 
 // ---------- frame ----------
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
+  const rawDt = Math.min(0.05, (now - last) / 1000); last = now;
+  const dt = rawDt * speed;
+  T += dt;
 
   // ease the mix toward the slider target (about 2 seconds for a full sweep)
-  mix += (mixTarget - mix) * Math.min(1, dt * 1.5);
+  mix += (mixTarget - mix) * Math.min(1, rawDt * 1.5);
   mixVal.textContent = mix.toFixed(2);
+
+  // +50% wind speed at mix=0 (cloud), 1.0x at mix=1 (weather)
+  const windMul = 1 + 0.5 * (1 - mix);
+  const stepX = SAMPLE.wind[0] * windMul * dt;
+  const stepY = SAMPLE.wind[1] * windMul * dt;
+  driftX += stepX;
+  driftY += stepY;
+
+  // integer shift of band texture; new band pixels are born only on exposed borders
+  accX += stepX;
+  accY += stepY;
+  const ix = accX | 0, iy = accY | 0;
+  if (ix > 0 || iy > 0) {
+    accX -= ix;
+    accY -= iy;
+    shiftX += ix;
+    shiftY += iy;
+    for (let y = 0; y < GH; y++) {
+      const sy = y + iy;
+      for (let x = 0; x < GW; x++) {
+        const sx = x + ix;
+        B[y * GW + x] = (sx < GW && sy < GH) ? B[sy * GW + sx] : bandBorder(x, y);
+      }
+    }
+  }
+  if (bandQueued && !borderCrossing()) spawnBand();
+  if (bandActive) {
+    if (shiftX * BNX + shiftY * BNY > bandC + BAND_PAD) {
+      bandActive = false;
+      nextBand = T + 12 + Math.random() * 14;
+    }
+  } else if (T >= nextBand) spawnBand();
 
   // parametric blend of evolution rules; applied to new updates only
   cur.th    = lerp(CLOUD.th, WEATHER.th, mix);
@@ -89,20 +175,26 @@ function frame(now) {
 
   const z = T * SAMPLE.evo, d = img.data;
   const oct = SAMPLE.octaves;
+  const bandFade = 1 - Math.min(1, dt * 0.008 * windMul);
 
   for (let y = 0; y < GH; y++) {
     for (let x = 0; x < GW; x++) {
       const i = y * GW + x;
-      const u = (x + SAMPLE.wind[0] * T) * SAMPLE.scale;
-      const w = (y + SAMPLE.wind[1] * T) * SAMPLE.scale;
+      const u = (x + driftX) * SAMPLE.scale;
+      const w = (y + driftY) * SAMPLE.scale;
       const f = fbm(u, w, z, oct);
 
       // weather layer integrates noise change; with k=0 (pure cloud) it simply decays
       W[i] += dt * cur.k * (f - 0.5);
       W[i] *= 1 - dt * cur.decay;
+      B[i] *= bandFade;
 
       const weatherF = 0.5 + W[i] * 1.2 + (f - 0.5) * 0.4;
-      const field = lerp(f, weatherF, mix);
+      const baseField = lerp(f, weatherF, mix);
+      const b = B[i];
+      const field = b > 0.01
+        ? Math.max(baseField, cur.th - 0.07 + b * 0.30) + Math.min(Math.max(0, baseField - 0.42), b) * 0.18
+        : baseField;
 
       const a = smooth(cur.th - 0.06, cur.th + 0.06, field);
       const p = i * 4;

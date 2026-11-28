@@ -23,7 +23,7 @@ Both originals were removed once their text was placed, and
 | 6 | `hud-input-and-help.md` | panels, drawers, controls, selections, landing gates, camera |
 | 7 | `sound-and-photos.md` | the music of flight, the postcards, the image prompts |
 | 8 | `bots-and-tools.md` | a bot that competes, the balance lab, test harnesses |
-| 9 | `map.md` | periodic FFT gravity, space weather · new notes, not from the split |
+| 9 | `map.md` · `prototype/space-weather.md` | periodic FFT gravity, space weather & visual prototypes · new notes, not from the split |
 | 10 | `colonization-found-land.md` | empty heavy planets without EMC (`13 → 16`) and single-use colonization equipment |
 | 11 | `lite-version.md` | lite profile (`?lite=1`): saved-map boot, quiet non-gameplay background, mute sound & photos |
 | 12 | `map-fair-start-modes.md` | the fair-start contract: composition rule, 75 % exit margin, background search, space & capital starts |
@@ -136,7 +136,7 @@ they were first drafted on.
 | `../0.8.4-plan-helper-dialog.md` | `0.8` after all | `helper-dialog-draft.md` / `helper-dialog/` (remaining M3 topic browser/art/delta & M4 non-career/rival-intent) |
 | `../0.8.5-plan-accessibility-readout.md` | `0.8` after all | `sound-and-photos.md` §7.1 (`#srStatus` & HUD landmarks) |
 | `../0.8.6-plan-improve-sound.md` | `0.8` after all | `sound-and-photos.md` §7.1 (Voronoi neighbor-scale consonance, toroidal/192-body adjacency, aim/arrival/block cues) |
-| `../0.8.8-plan-space-weather.md` | design first | `map.md` §add space weather, `new/observation-device-OBS-1.md` (career weather, observation range and planet sources; decisions pending) |
+| `../0.8.8-plan-space-weather.md` | design first | `map.md` §add space weather, `prototype/space-weather.md`, `new/observation-device-OBS-1.md` (career weather, visual motion prototypes, observation range and planet sources; gameplay decisions pending) |
 | `../0.8.9-plan-trade-trajectories.md` | `0.8` FFT+ | `new/gravity-precalculate-trade-trajectories.md` §trade trajectories (background trade `off`/`lines`/`curves`, cached ballistic arcs, the physical evacuation tow) |
 | `../0.8.10-plan-precalculated-field.md` | `0.8` FFT+ | `new/gravity-precalculate-trade-trajectories.md` §precalculate gravity (classic direct-sum force grid, bilinear sampling, measure-first default) |
 | `../0.8.11-plan-gpu-engine.md` | `0.8` engine | `new/gravity-precalculate-trade-trajectories.md` §GPU engine (WebGL snapshot build + FFT, field/potential/weather rasters, CPU-only physics tests) |

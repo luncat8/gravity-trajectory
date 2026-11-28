@@ -20,6 +20,7 @@ this has slider to change weather from 0 (fast, less predictable) to 1 (more sta
 add 50% wind speed to 0.
 implement band crossing map.
 
+→ implemented in `drafts/prototype/space-weather-2clouds-c55h.html` — `1.5×` wind speed at `0` (`1 + 0.5 * (1 - mix)` integrated smoothly into `driftX`/`driftY`), `speed` slider (`0..4×`), and integer-shifted band texture `B` generated strictly on exposed windward borders (`band` button + periodic spawn).
 
 alternate way is to define it by shapes without textures like example drafts/prototype/space-weather-shape-c55h.html
 this is just example, do not copy-paste it: i need clouds and band but not shapes from planet.
@@ -27,6 +28,7 @@ implement
 drafts/prototype/space-weather-shape.html
 with similar clouds as drafts/prototype/space-weather-2clouds-c55h.html and band but using shapes (curves)
 
+→ implemented in `drafts/prototype/space-weather-shape.html` — 5-pass compound quadratic-spline contour layers fusing multi-harmonic cloud complexes and curved band ribbons (no textures, no planet shapes, zero hot-path allocations; `cloud ↔ weather` with `+50%` wind at `0`, `speed`, `wind` angle, `band`, `curves`).
 
 need fix:
 
@@ -34,8 +36,11 @@ drafts/prototype/space-weather-GLM5.3.html
 some not-moving trails remain on canvas, until clouds overwrite them
 change Wind direction should not cause wrong cracks. need proper generate from borders
 
+→ fixed in `drafts/prototype/space-weather-GLM5.3.html` — view canvas cleared before translucent texture composite (`stale: 0`), newly exposed border texels seeded at fade equilibrium (`FIELD_RATE / FADE`) so wind turns leave no dark ramp, and band lifecycle tracked in integer-shift frame with stall cleanup.
 
 space-weather-a.html
 change Wind direction should not cause redraw.
+
+→ fixed in `drafts/prototype/space-weather-a.html` — `updateWind()` no longer calls `reset()`; fields and birth-anchored band drift continuously via integrated `(driftX, driftY)` with equilibrium inflow seeding on panel 02. Gameplay choices remain **open** in `../../0.8.8-plan-space-weather.md`.
 
 
