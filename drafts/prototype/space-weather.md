@@ -3,6 +3,16 @@ drafts/prototype/
 
 html of space weather zone shape/motion. 
 
+## use this for shape
+drafts/prototype/space-weather-shape.html
+
+{"mix":0,"speed":0.25,"windDeg":-160,"bandMode":"both","weatherBands":5,"contourBands":4,"bandRounds":31,"bandRoundR":46,"bandScatter":32,"metaball":0.12,"polarNoise":0.32,"polarDetail":1,"clouds":26,"cloudSize":1.2,"morph":0.45}
+
+and optional port this in webGL engine after it will be implemented:
+
+drafts/prototype/space-weather-2clouds-c55h.html
+
+
 ## suggested design variants:
 
 - planet (or star) with slow pulsing round-noisy area that propagate by space wind from planet.
