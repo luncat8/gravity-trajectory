@@ -349,6 +349,10 @@
 	function makeSnapshot(gridX, gridY, worldW, worldH, ax, ay, phi) {
 		const dx = worldW / gridX;
 		const dy = worldH / gridY;
+		const spanW = dx * gridX;
+		const spanH = dy * gridY;
+		const maskX = gridX - 1;
+		const maskY = gridY - 1;
 		return {
 			gridX: gridX,
 			gridY: gridY,
@@ -363,8 +367,29 @@
 			/* CIC gather scaled by MU * gravityScale; PERIODIC_STRENGTH is
 			 * already inside the deposited mass */
 			sample: function (x, y, scale, outField) {
-				outField.ax = MU * scale * gather(ax, gridX, gridY, dx, dy, x, y);
-				outField.ay = MU * scale * gather(ay, gridX, gridY, dx, dy, x, y);
+				const xw = x - spanW * Math.floor(x / spanW);
+				const yw = y - spanH * Math.floor(y / spanH);
+				const tx = xw / dx;
+				const ty = yw / dy;
+				const ix0 = Math.floor(tx);
+				const iy0 = Math.floor(ty);
+				const wx = tx - ix0;
+				const wy = ty - iy0;
+				const ox = 1 - wx;
+				const oy = 1 - wy;
+				const i0 = ix0 & maskX;
+				const i1 = (ix0 + 1) & maskX;
+				const r0 = (iy0 & maskY) * gridX;
+				const r1 = ((iy0 + 1) & maskY) * gridX;
+				const c00 = r0 + i0;
+				const c01 = r0 + i1;
+				const c10 = r1 + i0;
+				const c11 = r1 + i1;
+				const s = MU * scale;
+				outField.ax = s * (ax[c00] * ox * oy + ax[c01] * wx * oy +
+					ax[c10] * ox * wy + ax[c11] * wx * wy);
+				outField.ay = s * (ay[c00] * ox * oy + ay[c01] * wx * oy +
+					ay[c10] * ox * wy + ay[c11] * wx * wy);
 				return outField;
 			},
 			samplePhi: function (x, y, scale) {

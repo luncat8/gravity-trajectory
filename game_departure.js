@@ -27,6 +27,9 @@
 
 	let legProbe = null;
 	let legSourceSim = null;
+	const legMaskSnap = new Uint8Array(GravitySim.MAX_BODIES);
+	let legMaskWasNull = true;
+	const legStrengthSnap = new Float64Array(GravitySim.MAX_BODIES);
 	const legExitCacheStamp = new Uint32Array(OrbitWorld.PLANETS * LEG_EXIT_WAYS);
 	const legExitCacheCap = new Int32Array(OrbitWorld.PLANETS * LEG_EXIT_WAYS);
 	legExitCacheCap.fill(-1);
@@ -83,22 +86,45 @@
 		};
 	}
 
+	function legMaskDiffer(nextMask, cap) {
+		if (!nextMask) return !legMaskWasNull;
+		if (legMaskWasNull) return true;
+		for (let i = 0; i < cap; i++) {
+			if (legMaskSnap[i] !== nextMask[i]) return true;
+		}
+		return false;
+	}
+
+	function legStrengthsDiffer(a, b, count) {
+		if (!a || !b) return a !== b;
+		for (let i = 0; i < count; i++) {
+			if (a[i] !== b[i]) return true;
+		}
+		return false;
+	}
+
 	function prepareLegProbe(sourceSim) {
 		if (!sourceSim) return null;
 		if (legProbe === null || legProbe.worldW !== sourceSim.worldW || legProbe.worldH !== sourceSim.worldH) {
 			legProbe = new GravitySim(sourceSim.worldW, sourceSim.worldH);
 			legSourceSim = null;
 		}
+		const cold = legSourceSim === null;
+		legSourceSim = sourceSim;
+		const periodicChanged = legProbe.periodic !== Boolean(sourceSim.periodic);
 		legProbe.fieldT = sourceSim.fieldT;
 		legProbe.fieldRate = sourceSim.fieldRate;
 		legProbe.setScales(sourceSim.gravityScale, sourceSim.forceScale);
 		if (sourceSim.periodic) legProbe.setPeriodic(true, sourceSim);
 		else if (legProbe.periodic) legProbe.setPeriodic(false);
-		if (legSourceSim !== sourceSim ||
+		const cap = sourceSim.planetCapacity !== undefined
+			? sourceSim.planetCapacity : legProbe.planetCapacity;
+		const planetsChanged = cold || periodicChanged ||
 			legProbe.planetX !== sourceSim.planetX ||
 			legProbe.planetY !== sourceSim.planetY ||
 			legProbe.planetR !== sourceSim.planetR ||
-			legProbe.planetCapacity !== sourceSim.planetCapacity) {
+			legProbe.planetCapacity !== cap;
+		if (planetsChanged) {
 			if (sourceSim.planetCapacity !== undefined) legProbe.planetCapacity = sourceSim.planetCapacity;
 			if (sourceSim.planetX) legProbe.planetX = sourceSim.planetX;
 			if (sourceSim.planetY) legProbe.planetY = sourceSim.planetY;
@@ -113,18 +139,40 @@
 			if (sourceSim.planetMinY !== undefined) legProbe.planetMinY = sourceSim.planetMinY;
 			if (sourceSim.planetMaxY !== undefined) legProbe.planetMaxY = sourceSim.planetMaxY;
 		}
-		legProbe.setPlanetMask(sourceSim.planetMask);
-		if (legSourceSim !== sourceSim ||
-			legProbe.bodyCount !== sourceSim.bodyCount ||
-			legProbe.bodyR !== sourceSim.bodyR ||
-			legProbe.strength !== sourceSim.strength ||
-			legProbe.fillField !== sourceSim.fillField ||
-			legProbe.fieldStatic !== sourceSim.fieldStatic) {
-			legProbe.setField(sourceSim.bodyCount, sourceSim.bodyR, sourceSim.strength,
+		const maskDiff = cold || legMaskDiffer(sourceSim.planetMask, cap);
+		if (planetsChanged || maskDiff) {
+			if (!sourceSim.planetMask) legMaskWasNull = true;
+			else {
+				legMaskWasNull = false;
+				for (let i = 0; i < cap; i++) legMaskSnap[i] = sourceSim.planetMask[i];
+			}
+			legProbe.setPlanetMask(sourceSim.planetMask);
+		}
+		let srcCount = sourceSim.bodyCount;
+		if (sourceSim.bodyR && srcCount <= sourceSim.bodyR.length) {
+			while (srcCount > 0 && sourceSim.bodyR[srcCount - 1] === 0) srcCount--;
+		}
+		let fieldDiff = cold || periodicChanged || legProbe.bodyCount !== srcCount ||
+			legProbe.fieldStatic !== sourceSim.fieldStatic ||
+			legStrengthsDiffer(legStrengthSnap, sourceSim.strength, srcCount);
+		if (!fieldDiff && sourceSim.fillField &&
+			(sourceSim.fillField !== legProbe.fillField || !sourceSim.fieldStatic || planetsChanged)) {
+			sourceSim.fillField(sourceSim.fieldT, legProbe.velX, legProbe.velY, srcCount);
+			for (let i = 0; i < srcCount; i++) {
+				if (legProbe.bodyX[i] !== legProbe.velX[i] || legProbe.bodyY[i] !== legProbe.velY[i]) {
+					fieldDiff = true;
+					break;
+				}
+			}
+		}
+		if (fieldDiff || maskDiff) {
+			for (let i = 0; i < srcCount; i++) legStrengthSnap[i] = sourceSim.strength[i];
+			const sharedStrength = legProbe.periodic && legProbe.periodicSource_ &&
+				!legStrengthsDiffer(legProbe.periodicSource_.strength, sourceSim.strength, srcCount)
+				? legProbe.periodicSource_.strength : sourceSim.strength;
+			legProbe.setField(srcCount, sourceSim.bodyR, sharedStrength,
 				sourceSim.fillField, sourceSim.fieldStatic);
-			legSourceSim = sourceSim;
-		} else {
-			legProbe.stepStale = true;
+		} else if (!legProbe.fieldStatic) {
 			legProbe.refreshField();
 		}
 		return legProbe;

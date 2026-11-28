@@ -54,6 +54,36 @@
 		return career.cheat === GravityGame.CHEAT_COMMUNISM ? 0 : (item.buildCost ?? item.cost);
 	}
 
+	function maskChangedSince(snap, wasNull, nextMask, cap) {
+		if (!nextMask) return !wasNull;
+		if (wasNull) return true;
+		for (let i = 0; i < cap; i++) {
+			if (snap[i] !== nextMask[i]) return true;
+		}
+		return false;
+	}
+
+	function saveMaskSnap(snap, nextMask, cap) {
+		if (!nextMask) return true;
+		for (let i = 0; i < cap; i++) snap[i] = nextMask[i];
+		return false;
+	}
+
+	function strengthsDiffer(a, b, count) {
+		if (!a || !b) return a !== b;
+		for (let i = 0; i < count; i++) {
+			if (a[i] !== b[i]) return true;
+		}
+		return false;
+	}
+
+	function coordsDiffer(ax, ay, bx, by, count) {
+		for (let i = 0; i < count; i++) {
+			if (ax[i] !== bx[i] || ay[i] !== by[i]) return true;
+		}
+		return false;
+	}
+
 	GravityBot.prototype.prepareCareerExitProbe = function (sourceSim) {
 		if (!sourceSim) sourceSim = this.probe;
 		const srcW = sourceSim.worldW || OrbitWorld.WORLD_W;
@@ -62,15 +92,25 @@
 			this.exitProbe = new GravitySim(srcW, srcH);
 			this.departureSourceSim = null;
 		}
+		const cold = this.departureSourceSim === null;
+		this.departureSourceSim = sourceSim;
+		if (!this._exitMaskSnap) {
+			this._exitMaskSnap = new Uint8Array(GravitySim.MAX_BODIES);
+			this._exitMaskWasNull = true;
+			this._exitStrengthSnap = new Float64Array(GravitySim.MAX_BODIES);
+		}
 		const sim = this.exitProbe;
 		const periodicChanged = sim.periodic !== Boolean(sourceSim.periodic);
 		sim.setPeriodic(sourceSim.periodic, sourceSim);
 		sim.fieldT = sourceSim.fieldT;
 		sim.fieldRate = sourceSim.fieldRate;
 		sim.setScales(sourceSim.gravityScale, sourceSim.forceScale);
-		if (periodicChanged || this.departureSourceSim !== sourceSim ||
+		const cap = sourceSim.planetCapacity !== undefined
+			? sourceSim.planetCapacity : sim.planetCapacity;
+		const planetsChanged = cold || periodicChanged ||
 			sim.planetX !== sourceSim.planetX || sim.planetY !== sourceSim.planetY ||
-			sim.planetR !== sourceSim.planetR || sim.planetCapacity !== sourceSim.planetCapacity) {
+			sim.planetR !== sourceSim.planetR || sim.planetCapacity !== cap;
+		if (planetsChanged) {
 			if (sourceSim.planetCapacity !== undefined) sim.planetCapacity = sourceSim.planetCapacity;
 			if (sourceSim.planetX) sim.planetX = sourceSim.planetX;
 			if (sourceSim.planetY) sim.planetY = sourceSim.planetY;
@@ -85,24 +125,56 @@
 			if (sourceSim.planetMinY !== undefined) sim.planetMinY = sourceSim.planetMinY;
 			if (sourceSim.planetMaxY !== undefined) sim.planetMaxY = sourceSim.planetMaxY;
 		}
-		if (periodicChanged || this.departureSourceSim !== sourceSim ||
-			sim.bodyCount !== sourceSim.bodyCount ||
-			sim.bodyR !== sourceSim.bodyR || sim.strength !== sourceSim.strength ||
-			sim.fillField !== sourceSim.fillField || sim.fieldStatic !== sourceSim.fieldStatic ||
-			sim.planetMask !== sourceSim.planetMask) {
+		const maskDiff = cold || maskChangedSince(this._exitMaskSnap,
+			this._exitMaskWasNull, sourceSim.planetMask, cap);
+		if (planetsChanged || maskDiff) {
+			this._exitMaskWasNull = saveMaskSnap(this._exitMaskSnap, sourceSim.planetMask, cap);
 			sim.setPlanetMask(sourceSim.planetMask);
-			sim.setField(sourceSim.bodyCount, sourceSim.bodyR, sourceSim.strength,
-				sourceSim.fillField, sourceSim.fieldStatic);
-			this.departureSourceSim = sourceSim;
-			this.departureFieldVersion += 1;
+			this._exitStampValid = false;
 		}
-		sim.stepStale = true;
-		sim.refreshField();
+		let srcCount = sourceSim.bodyCount;
+		if (sourceSim.bodyR && srcCount <= sourceSim.bodyR.length) {
+			while (srcCount > 0 && sourceSim.bodyR[srcCount - 1] === 0) srcCount--;
+		}
+		let fieldDiff = cold || periodicChanged || sim.bodyCount !== srcCount ||
+			sim.fieldStatic !== sourceSim.fieldStatic ||
+			strengthsDiffer(this._exitStrengthSnap, sourceSim.strength, srcCount);
+		if (!fieldDiff && sourceSim.fillField &&
+			(sourceSim.fillField !== sim.fillField || !sourceSim.fieldStatic || planetsChanged)) {
+			sourceSim.fillField(sourceSim.fieldT, sim.velX, sim.velY, srcCount);
+			if (coordsDiffer(sim.bodyX, sim.bodyY, sim.velX, sim.velY, srcCount)) {
+				fieldDiff = true;
+			}
+		}
+		if (fieldDiff || maskDiff) {
+			for (let i = 0; i < srcCount; i++) this._exitStrengthSnap[i] = sourceSim.strength[i];
+			const sharedStrength = sim.periodic && sim.periodicSource_ &&
+				!strengthsDiffer(sim.periodicSource_.strength, sourceSim.strength, srcCount)
+				? sim.periodicSource_.strength : sourceSim.strength;
+			sim.setField(srcCount, sourceSim.bodyR, sharedStrength,
+				sourceSim.fillField, sourceSim.fieldStatic);
+			this.departureFieldVersion += 1;
+			this._exitStampValid = false;
+		} else if (!sim.fieldStatic) {
+			sim.refreshField();
+		}
 	};
 
 	GravityBot.prototype.careerExitFieldStamp = function () {
 		const sim = this.exitProbe;
 		const trade = this.tradeSim;
+		const seedVal = (trade ? trade.seed : this.seed) >>> 0;
+		let snapRev = 0;
+		if (sim.periodic && sim.fieldStatic) {
+			const snap = sim.ensurePeriodicGrid();
+			snapRev = snap ? snap.revision : 0;
+		}
+		if (sim.fieldStatic && this._exitStampValid &&
+			this._exitStampRev === snapRev &&
+			this._exitStampGrav === sim.gravityScale &&
+			this._exitStampSeed === seedVal) {
+			return this._exitStampCached;
+		}
 		let stamp = 0x811c9dc5;
 		stamp = Math.imul(stamp ^ sim.bodyCount, 0x01000193);
 		stamp = Math.imul(stamp ^ this.departureFieldVersion, 0x01000193);
@@ -115,21 +187,28 @@
 		}
 		stamp = Math.imul(stamp ^ Math.round(sim.gravityScale * 100), 0x01000193);
 		stamp = Math.imul(stamp ^ Math.round(sim.fieldRate * 1000), 0x01000193);
-		stamp = Math.imul(stamp ^ ((trade ? trade.seed : this.seed) >>> 0), 0x01000193);
+		stamp = Math.imul(stamp ^ seedVal, 0x01000193);
 		if (sim.periodic) {
 			stamp = Math.imul(stamp ^ 0x50455249, 0x01000193);
 			stamp = Math.imul(stamp ^ Math.round(sim.worldW), 0x01000193);
 			stamp = Math.imul(stamp ^ Math.round(sim.worldH), 0x01000193);
 			if (sim.fieldStatic) {
-				const snap = sim.ensurePeriodicGrid();
-				stamp = Math.imul(stamp ^ (snap ? snap.revision : 0), 0x01000193);
+				stamp = Math.imul(stamp ^ snapRev, 0x01000193);
 			}
 		} else if (sim.worldW !== OrbitWorld.WORLD_W || sim.worldH !== OrbitWorld.WORLD_H) {
 			stamp = Math.imul(stamp ^ Math.round(sim.worldW), 0x01000193);
 			stamp = Math.imul(stamp ^ Math.round(sim.worldH), 0x01000193);
 		}
 		if (!sim.fieldStatic) stamp = Math.imul(stamp ^ Math.round(sim.fieldT * 120), 0x01000193);
-		return stamp >>> 0;
+		const out = stamp >>> 0;
+		if (sim.fieldStatic) {
+			this._exitStampValid = true;
+			this._exitStampRev = snapRev;
+			this._exitStampGrav = sim.gravityScale;
+			this._exitStampSeed = seedVal;
+			this._exitStampCached = out;
+		}
+		return out;
 	};
 
 	/* Sixteen bearings × two tiers (75 % of the cap, then the cap) keep one

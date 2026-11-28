@@ -119,15 +119,46 @@ function helperUpdateUi() {
 	}
 }
 
+const helperMaskSnap = new Uint8Array(PLANETS);
+let helperMaskSynced = false;
+
 function helperAttachWorld() {
 	const sim = activeCareerSim();
-	helperProbe.setWorldSize(sim.worldW, sim.worldH);
+	const periodicChanged = helperProbe.periodic !== Boolean(sim.periodic);
+	const sizeChanged = helperProbe.setWorldSize(sim.worldW, sim.worldH);
 	helperProbe.setPeriodic(sim.periodic, sim);
-	helperProbe.setPlanets(tradeSim.planetCount || PLANETS, tradeSim.planetX, tradeSim.planetY, tradeSim.planetR,
-		tradeSim.orbitRX, tradeSim.orbitRY, tradeSim.orbitTiltCos, tradeSim.orbitTiltSin);
-	helperProbe.setPlanetMask(planetMask);
+	const cap = tradeSim.planetCount || PLANETS;
+	const planetsChanged = sizeChanged || periodicChanged ||
+		helperProbe.planetX !== tradeSim.planetX ||
+		helperProbe.planetY !== tradeSim.planetY ||
+		helperProbe.planetR !== tradeSim.planetR ||
+		helperProbe.planetCapacity !== sim.planetCapacity;
+	if (planetsChanged) {
+		helperProbe.setPlanets(cap, tradeSim.planetX, tradeSim.planetY, tradeSim.planetR,
+			tradeSim.orbitRX, tradeSim.orbitRY, tradeSim.orbitTiltCos, tradeSim.orbitTiltSin);
+	}
+	let maskChanged = !helperMaskSynced || helperProbe.planetMask !== planetMask;
+	if (!maskChanged) {
+		for (let i = 0; i < cap; i++) {
+			if (helperMaskSnap[i] !== planetMask[i]) { maskChanged = true; break; }
+		}
+	}
+	if (planetsChanged || maskChanged) {
+		for (let i = 0; i < cap; i++) helperMaskSnap[i] = planetMask[i];
+		helperMaskSynced = true;
+		helperProbe.setPlanetMask(planetMask);
+	}
 	helperProbe.setScales(sim.gravityScale, sim.forceScale);
-	helperProbe.setField(sim.bodyCount, sim.bodyR, sim.strength, sim.fillField, sim.fieldStatic);
+	if (periodicChanged ||
+		helperProbe.bodyCount !== sim.bodyCount ||
+		helperProbe.bodyR !== sim.bodyR ||
+		helperProbe.strength !== sim.strength ||
+		helperProbe.fillField !== sim.fillField ||
+		helperProbe.fieldStatic !== sim.fieldStatic) {
+		helperProbe.setField(sim.bodyCount, sim.bodyR, sim.strength, sim.fillField, sim.fieldStatic);
+	} else if (!sim.fieldStatic) {
+		helperProbe.refreshField();
+	}
 	helperProbe.fieldT = sim.fieldT;
 	helperProbe.fieldRate = sim.fieldRate;
 }
@@ -295,7 +326,10 @@ function evaluatePlanQuestHit(career, sim, origin, speed, body, steps, length,
 	return best;
 }
 
+let helperScoredMoney = null;
+
 function helperScore(probe, cand) {
+	helperScoredMoney = null;
 	const origin = cand.origin;
 	if (routeRule()) {
 		if (probe.predReason === END_IMPACT || probe.predReason === END_EXIT) return probe.predLength;
@@ -328,6 +362,7 @@ function helperScore(probe, cand) {
 			return total;
 		}
 		careerMoney = traceMoney(probe, origin, GravityGame.speedOf(cand.speedU));
+		helperScoredMoney = careerMoney;
 		if (!moneyFlyable(careerMoney)) return -Infinity;
 		helperLastMoney.net = careerMoney.net;
 		helperLastMoney.cash = careerMoney.cash;
@@ -460,7 +495,7 @@ function helperBeginCandidate() {
 	if (!helperProbe.fieldStatic) helperProbe.refreshField();
 	const angle = GravityGame.angleOf(cand.angleU);
 	const speed = GravityGame.speedOf(cand.speedU);
-	helperProbe.routeBegin(cand.origin, angle, speed, helperState.horizon);
+	helperProbe.routeBegin(cand.origin, angle, speed, helperState.horizon, false);
 }
 
 /* `seed` is a saved shot already known to be worth `score`: the scan has to
@@ -835,7 +870,7 @@ function helperTick(budgetMs) {
 		if (helperProbe.routeActive) {
 			const left = budget - (performance.now() - start);
 			if (left <= 0.3) break;
-			helperProbe.routeStep(Math.min(left, 2));
+			helperProbe.routeStep(left);
 			if (helperProbe.routeActive) break;
 		}
 		if (!helperProbe.routeActive) {
@@ -844,7 +879,7 @@ function helperTick(budgetMs) {
 				const cand = helperState.candidates[idx];
 				const score = helperScore(helperProbe, cand);
 				if (careerRule() && helperState.goal !== 'planQuest') {
-					saveTrace(helperProbe, cand.origin, cand.angleU, cand.speedU);
+					saveTrace(helperProbe, cand.origin, cand.angleU, cand.speedU, helperScoredMoney);
 				}
 				if (score > helperState.bestScore) {
 					helperState.bestScore = score;

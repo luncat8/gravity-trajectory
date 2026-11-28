@@ -303,10 +303,10 @@ function saveBookTraceData(trace) {
 }
 
 /* one finished page trace joins the career's book */
-function saveTrace(probe, origin, angleU, speedU) {
+function saveTrace(probe, origin, angleU, speedU, precomputedMoney) {
 	if (!careerRule() || careerActionReplay.active || !activeCareerSim().fieldStatic) return;
 	if (probe.predReason !== END_IMPACT || probe.predBody < 0) return;
-	const money = traceMoney(probe, origin, GravityGame.speedOf(speedU));
+	const money = precomputedMoney || traceMoney(probe, origin, GravityGame.speedOf(speedU));
 	saveBookTraceData({
 		origin: origin, angleU: angleU, speedU: speedU, body: probe.predBody,
 		steps: probe.predSteps, time: probe.predTime, length: probe.predLength,

@@ -81,6 +81,17 @@
 	 * keep every tail visit and its dwell */
 	const PRED_LOG_MAX = 96;
 
+	/* 64×64 torus CSR spatial grid for periodic impact & system proximity */
+	const IDX_BITS = 6;
+	const IDX_GRID = 1 << IDX_BITS;
+	const IDX_MASK = IDX_GRID - 1;
+	const IDX_CELLS = IDX_GRID * IDX_GRID;
+	const IDX_SYS_STEP_PAD = 24;
+	const IDX_STEP_JUMP = 16;
+	const IDX_EPS = 1e-3;
+	const idxCursorScratch = new Int32Array(IDX_CELLS);
+	let idxRadiiScratch = new Float64Array(MAX_BODIES);
+
 	/* --- the clock (0.7.1) --------------------------------------------------
 	 * A game second is the unit of the whole game. One physics step is DT of a
 	 * game second and the sim knows no other clock: a flight, a board deadline,
@@ -163,19 +174,20 @@
 		this.planetMinY = Infinity;
 		this.planetMaxY = -Infinity;
 
-		/* 0.8.0+ periodic proximity index: a uniform bucket grid over planet
-		 * positions so impact/stepInsideAt/markSystemsAt test only the handful
-		 * of planets near the query point instead of every body. Builds only in
-		 * periodic mode (classic K<=48 stays on the validated brute loop) and
-		 * is re-checked for byte-identical results — far planets can never
-		 * satisfy an ellipse/impact test, so skipping them changes nothing. */
-		this.planetBuckets = null;
-		this.planetGridX = 0;
-		this.planetGridY = 0;
-		this.planetCellSize = 0;
-		this.planetNearR = 0;
+		/* 0.8.0+ periodic proximity index: flat 64×64 torus CSR tables for
+		 * active impact discs and system ellipses so per-step proximity checks
+		 * touch 0 planets in open space and only covering planets near wells.
+		 * Classic (non-periodic) stays on the validated brute loop. */
 		this.planetIndexValid = false;
-		this.planetNearBuf = new Int32Array(MAX_BODIES);
+		this.idxInvW = 0;
+		this.idxInvH = 0;
+		this.impCellStart = null;
+		this.impCellIds = null;
+		this.sysCellStart = null;
+		this.sysCellIds = null;
+		this._lastInsideRef = null;
+		this._lastInsideX = 0;
+		this._lastInsideY = 0;
 
 		this.bodyCount = 0;
 		this.bodyR = null;
@@ -340,12 +352,14 @@
 		this.planetMask = nextMask;
 		this.planetCount = this.planetCapacity;
 		if (nextMask) while (this.planetCount > 0 && !nextMask[this.planetCount - 1]) this.planetCount--;
+		this._lastInsideRef = null;
 		if (this.periodic) {
 			if (this.periodicSource_ && this.periodicSource_.planetMask !== nextMask) {
 				this.invalidatePeriodic();
 			} else {
 				this.invalidateField();
 			}
+			if (this.planetCapacity > 0) this.buildPlanetIndex();
 		}
 	};
 
@@ -393,6 +407,7 @@
 	};
 
 	GravitySim.prototype.refreshField = function () {
+		this.stepStale = true;
 		if (this.fillField) this.fillField(this.fieldT, this.bodyX, this.bodyY, this.bodyCount);
 	};
 
@@ -413,14 +428,18 @@
 
 	GravitySim.prototype.setPeriodic = function (periodic, gridSource) {
 		const next = !!periodic;
-		const source = (next && gridSource && gridSource !== this) ? gridSource : null;
+		let source = (next && gridSource && gridSource !== this) ? gridSource : null;
+		while (source && source.periodicSource_ && source.periodicSource_ !== this) {
+			source = source.periodicSource_;
+		}
 		if (this.periodic === next && this.periodicSource_ === source) return;
+		const modeChanged = this.periodic !== next;
 		this.periodic = next;
 		this.padX = next ? 0 : this.worldW * AREA_PAD;
 		this.padY = next ? 0 : this.worldH * AREA_PAD;
 		this.periodicGrid_ = null;
 		this.periodicSource_ = source;
-		if (this.planetCapacity > 0) this.buildPlanetIndex();
+		if (modeChanged && this.planetCapacity > 0) this.buildPlanetIndex();
 	};
 
 	/* Resize the torus/open field (FFT mode is 3200×2000, classic 1600×1000).
@@ -628,92 +647,131 @@
 		this.routeActive = false;
 	};
 
-	/* ── 0.8.0+ periodic proximity index ── a uniform bucket grid over planet
-	 * positions so the per-step proximity tests (impact / stepInsideAt /
-	 * markSystemsAt) scan only the planets whose influence disc can reach the
-	 * query point, not all `planetCount`. Classic (non-periodic) K≤48 keeps the
-	 * validated brute loop; periodic builds this once per setPlanets and reuses a
-	 * single scratch buffer, so the hot path allocates nothing.
+	/* ── 0.8.0+ periodic proximity index ── flat 64×64 torus CSR tables for
+	 * active impact discs and system ellipses so per-step proximity checks
+	 * (impact / stepInsideAt / markSystemsAt) touch 0 planets in open space
+	 * and only covering planets near wells. Classic (non-periodic) keeps the
+	 * validated brute loop; periodic builds once per setPlanets/setPlanetMask
+	 * and reuses typed buffers, so the hot path allocates nothing.
 	 *
-	 * Correctness: a planet can only be entered/landed-on when the query point is
-	 * within its influence radius (= max(system major axis, planetR + CARGO_R)),
-	 * which is ≤ `maxInf`. With a square cell of side `cs ≥ maxInf` and a
-	 * ±`planetNearR` (`= ceil(maxInf/cs)+1`) cell neighbourhood, every planet
-	 * whose influence disc contains the point is within the scanned cells (torus
-	 * wrap via mod), so the result set is exactly the brute-force one. `impact`
-	 * returns the smallest satisfying index, matching the ascending brute loop. */
+	 * Correctness: each active planet i is splatted in ascending index order
+	 * into every torus cell within its minimum-image reach (+ IDX_EPS for ULP
+	 * safety, and + IDX_SYS_STEP_PAD on system discs so a continuous step
+	 * exiting an ellipse visits that cell and clears prevInside[i] = 0). */
 
-	GravitySim.prototype.buildPlanetIndex = function () {
-		if (!this.periodic) {
-			this.planetIndexValid = false;
-			this.planetBuckets = null;
-			return;
-		}
-		const W = this.worldW, H = this.worldH;
-		const K = this.planetCapacity;
-		/* Below this count the brute loop is already cheap and already validated
-		 * by the classic physics fingerprints; only build (and use) the index
-		 * where the O(K) scan would actually bite (periodic rosters). */
-		if (K <= 48 || K <= 0) {
-			this.planetIndexValid = false;
-			this.planetBuckets = null;
-			return;
-		}
-		let maxInf = 0;
-		for (let i = 0; i < K; i++) {
-			const major = Math.sqrt(this.sysBoundR2[i]);
-			const reach = this.planetR[i] + CARGO_R;
-			const r = major > reach ? major : reach;
-			if (r > maxInf) maxInf = r;
-		}
-		if (maxInf <= 0) {
-			this.planetIndexValid = false;
-			this.planetBuckets = null;
-			return;
-		}
-		const cell = Math.max(96, Math.min(320, Math.sqrt((W * H) / K)));
-		const gx = Math.max(1, Math.ceil(W / cell));
-		const gy = Math.max(1, Math.ceil(H / cell));
-		const cs = Math.max(W / gx, H / gy);
-		const nr = Math.ceil(maxInf / cs) + 1;
-		const buckets = new Array(gx * gy);
-		for (let i = 0; i < K; i++) {
-			let cx = Math.floor(this.planetX[i] / cs) % gx; if (cx < 0) cx += gx;
-			let cy = Math.floor(this.planetY[i] / cs) % gy; if (cy < 0) cy += gy;
-			const idx = cy * gx + cx;
-			if (!buckets[idx]) buckets[idx] = [];
-			buckets[idx].push(i);
-		}
-		this.planetBuckets = buckets;
-		this.planetGridX = gx;
-		this.planetGridY = gy;
-		this.planetCellSize = cs;
-		this.planetNearR = nr;
-		this.planetIndexValid = true;
-	};
-
-	/* fills this.planetNearBuf with every planet index in the ±planetNearR cell
-	 * neighbourhood of (x, y); returns the count. Torus wrap via mod so a scan
-	 * crossing a seam covers both sides. No allocation. */
-	GravitySim.prototype.collectNearbyPlanets = function (x, y) {
-		const gx = this.planetGridX, gy = this.planetGridY;
-		const cs = this.planetCellSize, nr = this.planetNearR;
-		const buckets = this.planetBuckets;
-		let bx = Math.floor(x / cs) % gx; if (bx < 0) bx += gx;
-		let by = Math.floor(y / cs) % gy; if (by < 0) by += gy;
-		const out = this.planetNearBuf;
-		let k = 0;
-		for (let dy = -nr; dy <= nr; dy++) {
-			const cy = ((by + dy) % gy + gy) % gy;
-			const row = cy * gx;
-			for (let dx = -nr; dx <= nr; dx++) {
-				const cx = ((bx + dx) % gx + gx) % gx;
-				const list = buckets[row + cx];
-				if (!list) continue;
-				for (let j = 0; j < list.length; j++) out[k++] = list[j];
+	function buildDiscCSR(px, py, count, mask, radii, W, H, cellStart, prevIds) {
+		const invW = IDX_GRID / W, invH = IDX_GRID / H;
+		const cellW = W / IDX_GRID, cellH = H / IDX_GRID;
+		const halfW = cellW * 0.5, halfH = cellH * 0.5;
+		idxCursorScratch.fill(0);
+		for (let i = 0; i < count; i++) {
+			if (mask && !mask[i]) continue;
+			const r0 = radii[i];
+			if (!(r0 > 0)) continue;
+			const reach = r0 + IDX_EPS;
+			const reach2 = reach * reach;
+			const cxp = px[i] - W * Math.floor(px[i] / W);
+			const cyp = py[i] - H * Math.floor(py[i] / H);
+			let ix0 = 0, spanX = IDX_GRID;
+			if (reach * 2 < W) {
+				ix0 = Math.floor((cxp - reach) * invW);
+				spanX = Math.floor((cxp + reach) * invW) - ix0 + 1;
+				if (spanX > IDX_GRID) spanX = IDX_GRID;
+			}
+			let iy0 = 0, spanY = IDX_GRID;
+			if (reach * 2 < H) {
+				iy0 = Math.floor((cyp - reach) * invH);
+				spanY = Math.floor((cyp + reach) * invH) - iy0 + 1;
+				if (spanY > IDX_GRID) spanY = IDX_GRID;
+			}
+			for (let ky = 0; ky < spanY; ky++) {
+				const cy = (iy0 + ky) & IDX_MASK;
+				let dyBox = Math.abs(GravityFFT.minImage((cy + 0.5) * cellH - cyp, H)) - halfH;
+				if (dyBox < 0) dyBox = 0;
+				const dy2 = dyBox * dyBox;
+				if (dy2 > reach2) continue;
+				const row = cy << IDX_BITS;
+				for (let kx = 0; kx < spanX; kx++) {
+					const cx = (ix0 + kx) & IDX_MASK;
+					let dxBox = Math.abs(GravityFFT.minImage((cx + 0.5) * cellW - cxp, W)) - halfW;
+					if (dxBox < 0) dxBox = 0;
+					if (dxBox * dxBox + dy2 <= reach2) idxCursorScratch[row | cx] += 1;
+				}
 			}
 		}
-		return k;
+		let total = 0;
+		for (let c = 0; c < IDX_CELLS; c++) {
+			cellStart[c] = total;
+			total += idxCursorScratch[c];
+			idxCursorScratch[c] = cellStart[c];
+		}
+		cellStart[IDX_CELLS] = total;
+		const outIds = prevIds && prevIds.length >= total
+			? prevIds : new Uint16Array(Math.max(64, total));
+		for (let i = 0; i < count; i++) {
+			if (mask && !mask[i]) continue;
+			const r0 = radii[i];
+			if (!(r0 > 0)) continue;
+			const reach = r0 + IDX_EPS;
+			const reach2 = reach * reach;
+			const cxp = px[i] - W * Math.floor(px[i] / W);
+			const cyp = py[i] - H * Math.floor(py[i] / H);
+			let ix0 = 0, spanX = IDX_GRID;
+			if (reach * 2 < W) {
+				ix0 = Math.floor((cxp - reach) * invW);
+				spanX = Math.floor((cxp + reach) * invW) - ix0 + 1;
+				if (spanX > IDX_GRID) spanX = IDX_GRID;
+			}
+			let iy0 = 0, spanY = IDX_GRID;
+			if (reach * 2 < H) {
+				iy0 = Math.floor((cyp - reach) * invH);
+				spanY = Math.floor((cyp + reach) * invH) - iy0 + 1;
+				if (spanY > IDX_GRID) spanY = IDX_GRID;
+			}
+			for (let ky = 0; ky < spanY; ky++) {
+				const cy = (iy0 + ky) & IDX_MASK;
+				let dyBox = Math.abs(GravityFFT.minImage((cy + 0.5) * cellH - cyp, H)) - halfH;
+				if (dyBox < 0) dyBox = 0;
+				const dy2 = dyBox * dyBox;
+				if (dy2 > reach2) continue;
+				const row = cy << IDX_BITS;
+				for (let kx = 0; kx < spanX; kx++) {
+					const cx = (ix0 + kx) & IDX_MASK;
+					let dxBox = Math.abs(GravityFFT.minImage((cx + 0.5) * cellW - cxp, W)) - halfW;
+					if (dxBox < 0) dxBox = 0;
+					if (dxBox * dxBox + dy2 <= reach2) {
+						outIds[idxCursorScratch[row | cx]++] = i;
+					}
+				}
+			}
+		}
+		return outIds;
+	}
+
+	GravitySim.prototype.buildPlanetIndex = function () {
+		const W = this.worldW, H = this.worldH;
+		const count = this.planetCount;
+		if (!this.periodic || count <= 0 || !(W > 0) || !(H > 0) ||
+			!this.planetX || !this.planetY || !this.planetR) {
+			this.planetIndexValid = false;
+			this._lastInsideRef = null;
+			return;
+		}
+		if (!this.impCellStart) this.impCellStart = new Int32Array(IDX_CELLS + 1);
+		if (!this.sysCellStart) this.sysCellStart = new Int32Array(IDX_CELLS + 1);
+		if (idxRadiiScratch.length < count) idxRadiiScratch = new Float64Array(count);
+		for (let i = 0; i < count; i++) idxRadiiScratch[i] = this.planetR[i] + CARGO_R;
+		this.impCellIds = buildDiscCSR(this.planetX, this.planetY, count, this.planetMask,
+			idxRadiiScratch, W, H, this.impCellStart, this.impCellIds);
+		for (let i = 0; i < count; i++) {
+			idxRadiiScratch[i] = Math.sqrt(this.sysBoundR2[i]) + IDX_SYS_STEP_PAD;
+		}
+		this.sysCellIds = buildDiscCSR(this.planetX, this.planetY, count, this.planetMask,
+			idxRadiiScratch, W, H, this.sysCellStart, this.sysCellIds);
+		this.idxInvW = IDX_GRID / W;
+		this.idxInvH = IDX_GRID / H;
+		this._lastInsideRef = null;
+		this.planetIndexValid = true;
 	};
 
 	GravitySim.prototype.markSystemsAt = function (x, y, mask) {
@@ -721,20 +779,20 @@
 		if (count === 0 || (!this.periodic && this.beyondPlanets(x, y))) return 0;
 		const W = this.worldW, H = this.worldH;
 		if (this.periodic && this.planetIndexValid) {
-			const n = this.collectNearbyPlanets(x, y);
-			const out = this.planetNearBuf;
-			const pmask = this.planetMask;
+			const cell = ((Math.floor(y * this.idxInvH) & IDX_MASK) << IDX_BITS) |
+				(Math.floor(x * this.idxInvW) & IDX_MASK);
+			const start = this.sysCellStart[cell];
+			const end = this.sysCellStart[cell + 1];
+			if (start === end) return 0;
+			const ids = this.sysCellIds;
 			const px = this.planetX, py = this.planetY, bound = this.sysBoundR2;
 			const cos = this.sysCos, sin = this.sysSin, invRX = this.sysInvRX, invRY = this.sysInvRY;
 			let added = 0;
-			for (let j = 0; j < n; j++) {
-				const i = out[j];
-				if (i >= count) continue;
-				if (pmask && !pmask[i]) continue;
+			for (let j = start; j < end; j++) {
+				const i = ids[j];
 				if (mask[i]) continue;
-				let dx = x - px[i];
-				let dy = y - py[i];
-				dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H);
+				const dx = GravityFFT.minImage(x - px[i], W);
+				const dy = GravityFFT.minImage(y - py[i], H);
 				if (dx * dx + dy * dy > bound[i]) continue;
 				const u = (dx * cos[i] + dy * sin[i]) * invRX[i];
 				const v = (-dx * sin[i] + dy * cos[i]) * invRY[i];
@@ -784,19 +842,37 @@
 		}
 		const W = this.worldW, H = this.worldH;
 		if (this.periodic && this.planetIndexValid) {
-			const n = this.collectNearbyPlanets(x, y);
-			const out = this.planetNearBuf;
-			const mask = this.planetMask;
 			const px = this.planetX, py = this.planetY, bound = this.sysBoundR2;
 			const cos = this.sysCos, sin = this.sysSin, invRX = this.sysInvRX, invRY = this.sysInvRY;
+			if (this._lastInsideRef !== prevInside ||
+				x - this._lastInsideX > IDX_STEP_JUMP || x - this._lastInsideX < -IDX_STEP_JUMP ||
+				y - this._lastInsideY > IDX_STEP_JUMP || y - this._lastInsideY < -IDX_STEP_JUMP) {
+				const pmask = this.planetMask;
+				for (let p = 0; p < count; p++) {
+					if (!prevInside[p]) continue;
+					if (pmask && !pmask[p]) { prevInside[p] = 0; continue; }
+					const dx = GravityFFT.minImage(x - px[p], W);
+					const dy = GravityFFT.minImage(y - py[p], H);
+					if (dx * dx + dy * dy > bound[p]) { prevInside[p] = 0; continue; }
+					const u = (dx * cos[p] + dy * sin[p]) * invRX[p];
+					const v = (-dx * sin[p] + dy * cos[p]) * invRY[p];
+					if (u * u + v * v > 1) prevInside[p] = 0;
+				}
+			}
+			this._lastInsideRef = prevInside;
+			this._lastInsideX = x;
+			this._lastInsideY = y;
+			const cell = ((Math.floor(y * this.idxInvH) & IDX_MASK) << IDX_BITS) |
+				(Math.floor(x * this.idxInvW) & IDX_MASK);
+			const start = this.sysCellStart[cell];
+			const end = this.sysCellStart[cell + 1];
+			if (start === end) return 0;
+			const ids = this.sysCellIds;
 			let entered = 0;
-			for (let j = 0; j < n; j++) {
-				const i = out[j];
-				if (i >= count) continue;
-				if (mask && !mask[i]) { prevInside[i] = 0; continue; }
-				let dx = x - px[i];
-				let dy = y - py[i];
-				dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H);
+			for (let j = start; j < end; j++) {
+				const i = ids[j];
+				const dx = GravityFFT.minImage(x - px[i], W);
+				const dy = GravityFFT.minImage(y - py[i], H);
 				if (dx * dx + dy * dy > bound[i]) { prevInside[i] = 0; continue; }
 				const u = (dx * cos[i] + dy * sin[i]) * invRX[i];
 				const v = (-dx * sin[i] + dy * cos[i]) * invRY[i];
@@ -943,23 +1019,21 @@
 		if (usePlanets && !this.periodic && this.beyondPlanets(x, y)) return NO_BODY;
 		const W = this.worldW, H = this.worldH;
 		if (usePlanets && this.periodic && this.planetIndexValid) {
-			const n = this.collectNearbyPlanets(x, y);
-			const out = this.planetNearBuf;
-			const mask = this.planetMask;
-			let best = NO_BODY;
-			for (let j = 0; j < n; j++) {
-				const i = out[j];
-				if (i >= this.planetCount) continue;
-				if (mask && !mask[i]) continue;
-				let dx = this.planetX[i] - x;
-				let dy = this.planetY[i] - y;
-				dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H);
-				const reach = this.planetR[i] + CARGO_R;
-				if (dx * dx + dy * dy <= reach * reach) {
-					if (best === NO_BODY || i < best) best = i;
-				}
+			const cell = ((Math.floor(y * this.idxInvH) & IDX_MASK) << IDX_BITS) |
+				(Math.floor(x * this.idxInvW) & IDX_MASK);
+			const start = this.impCellStart[cell];
+			const end = this.impCellStart[cell + 1];
+			if (start === end) return NO_BODY;
+			const ids = this.impCellIds;
+			const px = this.planetX, py = this.planetY, pr = this.planetR;
+			for (let j = start; j < end; j++) {
+				const i = ids[j];
+				const dx = GravityFFT.minImage(px[i] - x, W);
+				const dy = GravityFFT.minImage(py[i] - y, H);
+				const reach = pr[i] + CARGO_R;
+				if (dx * dx + dy * dy <= reach * reach) return i;
 			}
-			return best;
+			return NO_BODY;
 		}
 		const px = usePlanets ? this.planetX : this.stepX;
 		const py = usePlanets ? this.planetY : this.stepY;
@@ -988,8 +1062,10 @@
 	 * when planets are configured (stable base in both planet and moving-port modes).
 	 */
 	GravitySim.prototype.spawn = function (state, origin, angle, speed, t0) {
-		this.fillStep(t0);
-		this.stepStale = false;
+		if (!this.fieldStatic || this.stepStale) {
+			this.fillStep(t0);
+			this.stepStale = false;
+		}
 		const ca = Math.cos(angle);
 		const sa = Math.sin(angle);
 		if (this.planetCount > 0) {
@@ -1066,6 +1142,9 @@
 		visit.fill(0);
 		this.markSystemsAt(state.x, state.y, visit);
 		this.predInside.set(visit);
+		this._lastInsideRef = this.predInside;
+		this._lastInsideX = state.x;
+		this._lastInsideY = state.y;
 		this.predLogCount = 0;
 		this.predLogOpen.fill(-1);
 		this.predOpenCount = 0;
@@ -1110,11 +1189,12 @@
 	};
 
 	/* aim at a static base: the job a preview keeps between frames */
-	GravitySim.prototype.routeBegin = function (origin, angle, speed, horizonSec) {
+	GravitySim.prototype.routeBegin = function (origin, angle, speed, horizonSec, storePath) {
 		const t0 = this.fieldT;
 		this.spawn(this.probe, origin, angle, speed, t0);
-		this.snapshotField(t0);
+		if (storePath !== false) this.snapshotField(t0);
 		this.routeBeginAt(this.probe, t0, 0, horizonSec, Math.ceil(horizonSec / DT) + 2);
+		if (storePath === false) this.routeStorePath = false;
 	};
 
 	GravitySim.prototype.routeStep = function (budgetMs) {
