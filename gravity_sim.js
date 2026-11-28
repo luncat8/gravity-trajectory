@@ -163,6 +163,20 @@
 		this.planetMinY = Infinity;
 		this.planetMaxY = -Infinity;
 
+		/* 0.8.0+ periodic proximity index: a uniform bucket grid over planet
+		 * positions so impact/stepInsideAt/markSystemsAt test only the handful
+		 * of planets near the query point instead of every body. Builds only in
+		 * periodic mode (classic K<=48 stays on the validated brute loop) and
+		 * is re-checked for byte-identical results — far planets can never
+		 * satisfy an ellipse/impact test, so skipping them changes nothing. */
+		this.planetBuckets = null;
+		this.planetGridX = 0;
+		this.planetGridY = 0;
+		this.planetCellSize = 0;
+		this.planetNearR = 0;
+		this.planetIndexValid = false;
+		this.planetNearBuf = new Int32Array(MAX_BODIES);
+
 		this.bodyCount = 0;
 		this.bodyR = null;
 		this.strength = null;
@@ -317,6 +331,7 @@
 		this.planetMaxX = maxX;
 		this.planetMinY = minY;
 		this.planetMaxY = maxY;
+		this.buildPlanetIndex();
 	};
 
 	/* the run's active planet subset; `null` keeps every planet in play */
@@ -405,6 +420,7 @@
 		this.padY = next ? 0 : this.worldH * AREA_PAD;
 		this.periodicGrid_ = null;
 		this.periodicSource_ = source;
+		if (this.planetCapacity > 0) this.buildPlanetIndex();
 	};
 
 	/* Resize the torus/open field (FFT mode is 3200×2000, classic 1600×1000).
@@ -417,6 +433,7 @@
 		this.padX = this.periodic ? 0 : w * AREA_PAD;
 		this.padY = this.periodic ? 0 : h * AREA_PAD;
 		this.invalidatePeriodic();
+		if (this.planetCapacity > 0) this.buildPlanetIndex();
 		return true;
 	};
 
@@ -611,9 +628,123 @@
 		this.routeActive = false;
 	};
 
+	/* ── 0.8.0+ periodic proximity index ── a uniform bucket grid over planet
+	 * positions so the per-step proximity tests (impact / stepInsideAt /
+	 * markSystemsAt) scan only the planets whose influence disc can reach the
+	 * query point, not all `planetCount`. Classic (non-periodic) K≤48 keeps the
+	 * validated brute loop; periodic builds this once per setPlanets and reuses a
+	 * single scratch buffer, so the hot path allocates nothing.
+	 *
+	 * Correctness: a planet can only be entered/landed-on when the query point is
+	 * within its influence radius (= max(system major axis, planetR + CARGO_R)),
+	 * which is ≤ `maxInf`. With a square cell of side `cs ≥ maxInf` and a
+	 * ±`planetNearR` (`= ceil(maxInf/cs)+1`) cell neighbourhood, every planet
+	 * whose influence disc contains the point is within the scanned cells (torus
+	 * wrap via mod), so the result set is exactly the brute-force one. `impact`
+	 * returns the smallest satisfying index, matching the ascending brute loop. */
+
+	GravitySim.prototype.buildPlanetIndex = function () {
+		if (!this.periodic) {
+			this.planetIndexValid = false;
+			this.planetBuckets = null;
+			return;
+		}
+		const W = this.worldW, H = this.worldH;
+		const K = this.planetCapacity;
+		/* Below this count the brute loop is already cheap and already validated
+		 * by the classic physics fingerprints; only build (and use) the index
+		 * where the O(K) scan would actually bite (periodic rosters). */
+		if (K <= 48 || K <= 0) {
+			this.planetIndexValid = false;
+			this.planetBuckets = null;
+			return;
+		}
+		let maxInf = 0;
+		for (let i = 0; i < K; i++) {
+			const major = Math.sqrt(this.sysBoundR2[i]);
+			const reach = this.planetR[i] + CARGO_R;
+			const r = major > reach ? major : reach;
+			if (r > maxInf) maxInf = r;
+		}
+		if (maxInf <= 0) {
+			this.planetIndexValid = false;
+			this.planetBuckets = null;
+			return;
+		}
+		const cell = Math.max(96, Math.min(320, Math.sqrt((W * H) / K)));
+		const gx = Math.max(1, Math.ceil(W / cell));
+		const gy = Math.max(1, Math.ceil(H / cell));
+		const cs = Math.max(W / gx, H / gy);
+		const nr = Math.ceil(maxInf / cs) + 1;
+		const buckets = new Array(gx * gy);
+		for (let i = 0; i < K; i++) {
+			let cx = Math.floor(this.planetX[i] / cs) % gx; if (cx < 0) cx += gx;
+			let cy = Math.floor(this.planetY[i] / cs) % gy; if (cy < 0) cy += gy;
+			const idx = cy * gx + cx;
+			if (!buckets[idx]) buckets[idx] = [];
+			buckets[idx].push(i);
+		}
+		this.planetBuckets = buckets;
+		this.planetGridX = gx;
+		this.planetGridY = gy;
+		this.planetCellSize = cs;
+		this.planetNearR = nr;
+		this.planetIndexValid = true;
+	};
+
+	/* fills this.planetNearBuf with every planet index in the ±planetNearR cell
+	 * neighbourhood of (x, y); returns the count. Torus wrap via mod so a scan
+	 * crossing a seam covers both sides. No allocation. */
+	GravitySim.prototype.collectNearbyPlanets = function (x, y) {
+		const gx = this.planetGridX, gy = this.planetGridY;
+		const cs = this.planetCellSize, nr = this.planetNearR;
+		const buckets = this.planetBuckets;
+		let bx = Math.floor(x / cs) % gx; if (bx < 0) bx += gx;
+		let by = Math.floor(y / cs) % gy; if (by < 0) by += gy;
+		const out = this.planetNearBuf;
+		let k = 0;
+		for (let dy = -nr; dy <= nr; dy++) {
+			const cy = ((by + dy) % gy + gy) % gy;
+			const row = cy * gx;
+			for (let dx = -nr; dx <= nr; dx++) {
+				const cx = ((bx + dx) % gx + gx) % gx;
+				const list = buckets[row + cx];
+				if (!list) continue;
+				for (let j = 0; j < list.length; j++) out[k++] = list[j];
+			}
+		}
+		return k;
+	};
+
 	GravitySim.prototype.markSystemsAt = function (x, y, mask) {
 		const count = this.planetCount;
 		if (count === 0 || (!this.periodic && this.beyondPlanets(x, y))) return 0;
+		const W = this.worldW, H = this.worldH;
+		if (this.periodic && this.planetIndexValid) {
+			const n = this.collectNearbyPlanets(x, y);
+			const out = this.planetNearBuf;
+			const pmask = this.planetMask;
+			const px = this.planetX, py = this.planetY, bound = this.sysBoundR2;
+			const cos = this.sysCos, sin = this.sysSin, invRX = this.sysInvRX, invRY = this.sysInvRY;
+			let added = 0;
+			for (let j = 0; j < n; j++) {
+				const i = out[j];
+				if (i >= count) continue;
+				if (pmask && !pmask[i]) continue;
+				if (mask[i]) continue;
+				let dx = x - px[i];
+				let dy = y - py[i];
+				dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H);
+				if (dx * dx + dy * dy > bound[i]) continue;
+				const u = (dx * cos[i] + dy * sin[i]) * invRX[i];
+				const v = (-dx * sin[i] + dy * cos[i]) * invRY[i];
+				if (u * u + v * v <= 1) {
+					mask[i] = 1;
+					added += 1;
+				}
+			}
+			return added;
+		}
 		const px = this.planetX;
 		const py = this.planetY;
 		const bound = this.sysBoundR2;
@@ -621,7 +752,6 @@
 		const sin = this.sysSin;
 		const invRX = this.sysInvRX;
 		const invRY = this.sysInvRY;
-		const W = this.worldW, H = this.worldH;
 		let added = 0;
 		for (let i = 0; i < count; i++) {
 			if (this.planetMask && !this.planetMask[i]) continue;
@@ -652,6 +782,33 @@
 			prevInside.fill(0, 0, count);
 			return 0;
 		}
+		const W = this.worldW, H = this.worldH;
+		if (this.periodic && this.planetIndexValid) {
+			const n = this.collectNearbyPlanets(x, y);
+			const out = this.planetNearBuf;
+			const mask = this.planetMask;
+			const px = this.planetX, py = this.planetY, bound = this.sysBoundR2;
+			const cos = this.sysCos, sin = this.sysSin, invRX = this.sysInvRX, invRY = this.sysInvRY;
+			let entered = 0;
+			for (let j = 0; j < n; j++) {
+				const i = out[j];
+				if (i >= count) continue;
+				if (mask && !mask[i]) { prevInside[i] = 0; continue; }
+				let dx = x - px[i];
+				let dy = y - py[i];
+				dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H);
+				if (dx * dx + dy * dy > bound[i]) { prevInside[i] = 0; continue; }
+				const u = (dx * cos[i] + dy * sin[i]) * invRX[i];
+				const v = (-dx * sin[i] + dy * cos[i]) * invRY[i];
+				const inside = u * u + v * v <= 1 ? 1 : 0;
+				if (inside && !prevInside[i]) {
+					enteredOut[entered] = i;
+					entered += 1;
+				}
+				prevInside[i] = inside;
+			}
+			return entered;
+		}
 		const px = this.planetX;
 		const py = this.planetY;
 		const bound = this.sysBoundR2;
@@ -659,7 +816,6 @@
 		const sin = this.sysSin;
 		const invRX = this.sysInvRX;
 		const invRY = this.sysInvRY;
-		const W = this.worldW, H = this.worldH;
 		let entered = 0;
 		for (let i = 0; i < count; i++) {
 			if (this.planetMask && !this.planetMask[i]) {
@@ -785,11 +941,30 @@
 	GravitySim.prototype.impact = function (x, y) {
 		const usePlanets = this.planetCount > 0;
 		if (usePlanets && !this.periodic && this.beyondPlanets(x, y)) return NO_BODY;
+		const W = this.worldW, H = this.worldH;
+		if (usePlanets && this.periodic && this.planetIndexValid) {
+			const n = this.collectNearbyPlanets(x, y);
+			const out = this.planetNearBuf;
+			const mask = this.planetMask;
+			let best = NO_BODY;
+			for (let j = 0; j < n; j++) {
+				const i = out[j];
+				if (i >= this.planetCount) continue;
+				if (mask && !mask[i]) continue;
+				let dx = this.planetX[i] - x;
+				let dy = this.planetY[i] - y;
+				dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H);
+				const reach = this.planetR[i] + CARGO_R;
+				if (dx * dx + dy * dy <= reach * reach) {
+					if (best === NO_BODY || i < best) best = i;
+				}
+			}
+			return best;
+		}
 		const px = usePlanets ? this.planetX : this.stepX;
 		const py = usePlanets ? this.planetY : this.stepY;
 		const pr = usePlanets ? this.planetR : this.bodyR;
 		const count = usePlanets ? this.planetCount : this.bodyCount;
-		const W = this.worldW, H = this.worldH;
 		for (let i = 0; i < count; i++) {
 			if (this.planetMask && !this.planetMask[i]) continue;
 			let dx = px[i] - x;
