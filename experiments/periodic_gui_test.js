@@ -663,4 +663,82 @@ console.log('step 5 saved maps, career replays, topology isolation & designed-fi
 		(panNode && panNode.pan.value));
 }
 console.log('step 5 Voronoi min-image distance & stereo pan ok');
+
+/* ── 6. remembered periodic default: checkbox stores, plain open restores, address wins, clear forgets ── */
+{
+	/* a checkbox flip stores the choice, both ways */
+	const flip = loadPage({ search: '?mode=lab&seed=7', storage: {} });
+	flip.toggle('expPeriodic');
+	assert.strictEqual(flip.context.localStorage.getItem('gravity.periodic'), '1',
+		'checkbox on stores the periodic default');
+	flip.toggle('expPeriodic');
+	assert.strictEqual(flip.context.localStorage.getItem('gravity.periodic'), '0',
+		'checkbox off stores the classic default');
+	assert.strictEqual(new URL(flip.context.location.href).searchParams.get('fft'), null,
+		'classic toggle leaves no fft param');
+
+	/* a plain open boots the remembered torus and writes it to the address */
+	const torus = loadPage({ search: '', storage: { 'gravity.periodic': '1' } });
+	assert.strictEqual(torus.context.GravityScene.periodic(), true,
+		'plain open boots the remembered torus');
+	assert.strictEqual(torus.elements.get('expPeriodic').checked, true,
+		'checkbox mirrors the remembered default');
+	assert.strictEqual(new URL(torus.context.location.href).searchParams.get('fft'), '1',
+		'plain periodic open writes fft=1 to the address');
+
+	const classic = loadPage({ search: '', storage: { 'gravity.periodic': '0' } });
+	assert.strictEqual(classic.context.GravityScene.periodic(), false,
+		'plain open honors the remembered classic world');
+
+	/* an address that names a world boots it and never rewrites the default */
+	const paramPage = loadPage({ search: '?mode=lab&seed=7', storage: { 'gravity.periodic': '1' } });
+	assert.strictEqual(paramPage.context.GravityScene.periodic(), false,
+		'params without fft boot classic over the stored torus');
+	assert.strictEqual(paramPage.context.localStorage.getItem('gravity.periodic'), '1',
+		'param boots do not rewrite the stored default');
+
+	const fftPage = loadPage({ search: '?mode=lab&seed=7&fft=1', storage: { 'gravity.periodic': '0' } });
+	assert.strictEqual(fftPage.context.GravityScene.periodic(), true,
+		'&fft=1 boots the torus over the stored classic default');
+	assert.strictEqual(fftPage.context.localStorage.getItem('gravity.periodic'), '0',
+		'&fft=1 boots do not rewrite the stored default');
+
+	/* a game hash names its topology too */
+	const hashSource = loadPage({ search: '?mode=tour&seed=5&fft=1&bot=off' });
+	hashSource.click('gameCopy');
+	const hash = hashSource.clipboardText.slice(hashSource.clipboardText.indexOf('#'));
+	const linkPage = loadPage({ search: '', hash, storage: { 'gravity.periodic': '0' } });
+	assert.strictEqual(linkPage.context.GravityScene.periodic(), true,
+		'a game hash boots the torus over the stored classic default');
+	assert.strictEqual(linkPage.context.localStorage.getItem('gravity.periodic'), '0',
+		'hash boots do not rewrite the stored default');
+
+	/* a remembered career: the last mode auto-starts on the remembered torus */
+	const careerRestore = loadPage({ search: '',
+		storage: { 'gravity.periodic': '1', 'gravity.lastMode': 'career' } });
+	assert.strictEqual(careerRestore.context.GravityScene.periodic(), true,
+		'plain career restore boots the remembered torus');
+	assert.strictEqual(careerRestore.context.GravityScene.rule(), 'career',
+		'the last mode auto-starts after the topology is applied');
+	assert.strictEqual(new URL(careerRestore.context.location.href).searchParams.get('fft'), '1',
+		'plain periodic career restore writes fft=1');
+	careerRestore.runFrames(2);
+
+	/* clear default forgets and unwraps */
+	const clearPage = loadPage({ search: '', storage: { 'gravity.periodic': '1' } });
+	assert.strictEqual(clearPage.context.GravityScene.periodic(), true);
+	clearPage.click('periodicDefaultBtn');
+	assert.strictEqual(clearPage.context.localStorage.getItem('gravity.periodic'), null,
+		'clear default forgets the stored choice');
+	assert.strictEqual(clearPage.context.GravityScene.periodic(), false,
+		'clear default unwraps the torus');
+	assert.strictEqual(clearPage.elements.get('expPeriodic').checked, false,
+		'checkbox off after clear default');
+
+	/* the button locks with the checkbox */
+	const routePage = loadPage({ search: '?mode=route&seed=5', storage: {} });
+	assert.strictEqual(routePage.elements.get('periodicDefaultBtn').disabled, true,
+		'route locks the clear default button like the checkbox');
+}
+console.log('step 6 remembered periodic default (storage, plain open, address wins, clear) ok');
 console.log('PERIODIC GUI TEST OK');

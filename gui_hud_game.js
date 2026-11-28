@@ -94,6 +94,7 @@ function refreshGameUi() {
 			: expPeriodicDefaultTitle;
 		expPeriodicEl.title = tip;
 		if (expPeriodicLabelEl) expPeriodicLabelEl.title = tip;
+		if (periodicDefaultBtn) periodicDefaultBtn.disabled = experimentLock || route;
 	}
 	syncFleetCheckbox();
 	for (const el of [giftAllEl, giftBotEl, giftHumanEl, giftPeekEl]) if (el) el.disabled = !career;

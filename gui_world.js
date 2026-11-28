@@ -133,8 +133,44 @@ function onPeriodicChange() {
 		return;
 	}
 	const want = Boolean(expPeriodicEl && expPeriodicEl.checked);
-	setPeriodicMode(want, true);
+	if (want === periodicMode) return;
+	if (setPeriodicMode(want, true)) storePeriodicDefault(want);
 }
+
+/* the periodic · FFT choice is remembered across plain opens, like the last
+ * mode: a url `&fft=1`, a game hash or a saved map boots its own topology and
+ * never rewrites the stored default — only the checkbox itself does */
+const PERIODIC_STORAGE = 'gravity.periodic';
+function storedPeriodicDefault() {
+	try {
+		const value = root.localStorage.getItem(PERIODIC_STORAGE);
+		if (value === '1' || value === '0') return value === '1';
+	} catch (e) { /* private mode */ }
+	return null;
+}
+function storePeriodicDefault(on) {
+	try { root.localStorage.setItem(PERIODIC_STORAGE, on ? '1' : '0'); }
+	catch (e) { /* the choice still holds for this tab */ }
+}
+function forgetPeriodicDefault() {
+	try { root.localStorage.removeItem(PERIODIC_STORAGE); }
+	catch (e) { /* nothing was stored */ }
+}
+
+/* a plain open (no game hash, no search params) boots the remembered topology
+ * before the last mode starts, so a remembered career wraps too */
+function applyPeriodicDefault() {
+	const stored = storedPeriodicDefault();
+	if (stored === null || stored === periodicMode) return;
+	setPeriodicMode(stored, true);
+}
+
+const periodicDefaultBtn = $('periodicDefaultBtn');
+if (periodicDefaultBtn) periodicDefaultBtn.addEventListener('click', () => {
+	forgetPeriodicDefault();
+	if (careerInputLocked() || replay.on) return;
+	if (periodicMode) setPeriodicMode(false, true);
+});
 
 	/* push the current subset into the career, market, field, scene and bot */
 	function applyPlanetUniverse() {

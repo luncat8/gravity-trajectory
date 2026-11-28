@@ -1241,6 +1241,7 @@ if (VIEW_MODES.includes(initialView)) setViewMode(initialView);
 statsOpen = loadStatsOpen();
 if (statsStripEl) statsStripEl.open = statsOpen;
 if (!loadLink() && !loadSearchParams()) {
+	applyPeriodicDefault();
 	const last = loadLastMode();
 	if (last) setPlayMode(last);
 	else refreshGameUi();

@@ -304,7 +304,8 @@ function loadPage(options = {}) {
 		const data = options.storage;
 		globals.localStorage = {
 			getItem(key) { return Object.hasOwn(data, key) ? data[key] : null; },
-			setItem(key, value) { data[key] = String(value); }
+			setItem(key, value) { data[key] = String(value); },
+			removeItem(key) { delete data[key]; }
 		};
 	}
 	/* an ordinary global object, as in a browser: a contextified sandbox answers

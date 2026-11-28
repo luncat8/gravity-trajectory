@@ -16,6 +16,7 @@ replace copy with ⧉
 ### settings
 
 url is for easy share and presets. think what settings should be saved to local storage (maybe view settings) to not overcrowd url. 
+→ `periodic · FFT` stores its choice in localStorage (`gravity.periodic`): a plain open of index.html reboots the remembered topology before the last mode auto-starts; any address that names a world (`&fft=1`, a game hash, `?map=`) boots its own topology and never rewrites the stored default; the experimental panel's `clear default` button forgets it.
 
 ### cheat panel
 
