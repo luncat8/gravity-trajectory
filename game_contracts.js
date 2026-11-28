@@ -45,8 +45,12 @@
 	/* --- contracts ----------------------------------------------------- */
 
 	function planetDistance(trade, a, b) {
-		const dx = trade.planetX[a] - trade.planetX[b];
-		const dy = trade.planetY[a] - trade.planetY[b];
+		let dx = trade.planetX[a] - trade.planetX[b];
+		let dy = trade.planetY[a] - trade.planetY[b];
+		if ((trade.world && trade.world.periodic) || trade.periodic) {
+			dx = GravitySim.minImage(dx, OrbitWorld.WORLD_W);
+			dy = GravitySim.minImage(dy, OrbitWorld.WORLD_H);
+		}
 		return Math.sqrt(dx * dx + dy * dy);
 	}
 

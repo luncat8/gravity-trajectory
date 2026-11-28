@@ -730,11 +730,12 @@
 	 * the pools in order and keep the first that yields a usable map.
 	 */
 	function startCandidatePools(world, mask, wanted, trade, count) {
-		const activeCount = Number.isFinite(count) ? count : openingExtent(mask);
+		const activeCount = Number.isFinite(count) ? count : openingExtent(mask, world);
 		openingFillEmpty(openingMarket, world, trade, mask, activeCount);
 		const all = [];
 		const bright = new Uint8Array(OrbitWorld.PLANETS);
-		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+		const limit = world && world.planetCount ? world.planetCount : OrbitWorld.PLANETS;
+		for (let i = 0; i < limit; i++) {
 			if ((mask && mask[i] === 0) || hqForbidden(world, i)) continue;
 			all.push(i);
 			if (world.planetLight[i] >= CAREER.hqMinLight) bright[i] = 1;

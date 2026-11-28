@@ -9,10 +9,11 @@
 	: attach => globalThis.GravityGame.part('game_book.js', attach)
 )(function (GravityGame, inner) {
 	'use strict';
-	const { BOOK_LOG_MAX } = inner;
+	const { OrbitWorld, BOOK_LOG_MAX } = inner;
 
 	/* launch book: saved career trajectories and the visit log each one keeps */
 	const BOOK_MAX = 10;
+	const maskWords = new Uint32Array(6);
 
 	/* --- launch book --------------------------------------------------- */
 
@@ -26,13 +27,23 @@
 	 */
 
 	/* the world a trace was made in: a different tag makes stored paths stale */
-	function launchBookTag(fieldStatic, gravityScale, forceScale, strength, count) {
+	function launchBookTag(fieldStatic, gravityScale, forceScale, strength, count, periodic, worldW, worldH) {
 		let tag = fieldStatic ? 0x9e3779b9 : 0x85ebca6b;
 		for (let i = 0; i < count; i++) {
 			tag = Math.imul(tag ^ (Math.round(strength[i] * 100) + i * 31), 0x01000193) >>> 0;
 		}
 		tag = Math.imul(tag ^ Math.round(gravityScale * 100), 0x01000193) >>> 0;
-		return Math.imul(tag ^ Math.round(forceScale * 100), 0x01000193) >>> 0;
+		tag = Math.imul(tag ^ Math.round(forceScale * 100), 0x01000193) >>> 0;
+		if (periodic) {
+			tag = Math.imul(tag ^ 0x50455249, 0x01000193) >>> 0;
+			tag = Math.imul(tag ^ Math.round(worldW || 0), 0x01000193) >>> 0;
+			tag = Math.imul(tag ^ Math.round(worldH || 0), 0x01000193) >>> 0;
+		} else if (worldW && worldH &&
+			(worldW !== OrbitWorld.WORLD_W || worldH !== OrbitWorld.WORLD_H)) {
+			tag = Math.imul(tag ^ Math.round(worldW), 0x01000193) >>> 0;
+			tag = Math.imul(tag ^ Math.round(worldH), 0x01000193) >>> 0;
+		}
+		return tag;
 	}
 
 	function createLaunchBook() {
@@ -49,15 +60,28 @@
 		return book.tag === tag;
 	}
 
-	/* planets a trace entered as a bit mask: two shots with one mask harvest
-	 * the same systems, but their timing can change the money earned */
+	/* planets a trace entered as a bit mask: exact integer below 53, 192-bit hex above */
 	function launchMask(planets, count) {
-		let mask = 0;
+		let high = false;
 		for (let i = 0; i < count; i++) {
-			const bit = 2 ** planets[i];
-			if (Math.floor(mask / bit) % 2 === 0) mask += bit;
+			if (planets[i] >= 53) { high = true; break; }
 		}
-		return mask;
+		if (!high) {
+			let mask = 0;
+			for (let i = 0; i < count; i++) {
+				const bit = 2 ** planets[i];
+				if (Math.floor(mask / bit) % 2 === 0) mask += bit;
+			}
+			return mask;
+		}
+		maskWords.fill(0);
+		for (let i = 0; i < count; i++) {
+			const p = planets[i];
+			if (p >= 0 && p < 192) maskWords[p >>> 5] |= (1 << (p & 31)) >>> 0;
+		}
+		let out = '';
+		for (let w = 0; w < 6; w++) out += (maskWords[w] >>> 0).toString(16).padStart(8, '0');
+		return out;
 	}
 
 	function findLaunchEntry(book, origin, body, mask) {

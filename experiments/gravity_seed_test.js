@@ -13,7 +13,7 @@ const PlanetGravity = require('../planet_gravity.js');
 const { loadPage } = require('./dom_stub.js');
 
 const PLANETS = 26;
-const MAX_PLANETS = require('../orbit_world.js').PLANETS;
+const MAX_PLANETS = require('../orbit_world.js').CLASSIC_PLANETS;
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const paramsOf = page => new URL(page.context.location.href).searchParams;
 const fieldOf = page => Array.from(page.context.GravityScene.sim.strength);

@@ -119,8 +119,16 @@
 		best.coastScore = coastScore;
 
 		const target = requiredBody >= 0 ? requiredBody : this.careerTarget(career);
-		const targetAngle = target >= 0
-			? Math.atan2(sim.planetY[target] - sim.cargo.y, sim.planetX[target] - sim.cargo.x) : 0;
+		let targetAngle = 0;
+		if (target >= 0) {
+			let dx = sim.planetX[target] - sim.cargo.x;
+			let dy = sim.planetY[target] - sim.cargo.y;
+			if (sim.periodic) {
+				dx = GravitySim.minImage(dx, sim.worldW);
+				dy = GravitySim.minImage(dy, sim.worldH);
+			}
+			targetAngle = Math.atan2(dy, dx);
+		}
 		const dvU = this.careerBurnRungs;
 		let rungs = 0;
 		for (let f = 0; f < CAREER_BURN_FRACTIONS.length; f++) {
@@ -206,8 +214,9 @@
 		this.probe.fieldT = sim.fieldT;
 		this.probe.fieldRate = sim.fieldRate;
 		this.probe.setScales(sim.gravityScale, sim.forceScale);
+		this.probe.setPeriodic(sim.periodic, sim);
 		if (this.probe.bodyCount !== sim.bodyCount || this.probe.fillField !== sim.fillField ||
-			this.probe.fieldStatic !== sim.fieldStatic) {
+			this.probe.fieldStatic !== sim.fieldStatic || this.probe.strength !== sim.strength) {
 			this.probe.setField(sim.bodyCount, sim.bodyR, sim.strength,
 				sim.fillField, sim.fieldStatic);
 		}
@@ -251,11 +260,15 @@
 			for (let a = 0; a < CAREER_SPACE_OPEN_ANGLES; a++) {
 				offer(GravityGame.angleUnits((a + 0.5) * ringStep), rungs[r]);
 			}
-			for (let p = 0; p < PLANETS; p++) {
-				if (this.probe.planetMask && this.probe.planetMask[p] === 0) continue;
-				const ang = Math.atan2(sim.planetY[p] - sim.cargo.y,
-					sim.planetX[p] - sim.cargo.x);
-				offer(GravityGame.angleUnits(ang), rungs[r]);
+			for (let p = 0; p < sim.planetCount; p++) {
+				if (!sim.planetActive(p)) continue;
+				let dx = sim.planetX[p] - sim.cargo.x;
+				let dy = sim.planetY[p] - sim.cargo.y;
+				if (sim.periodic) {
+					dx = GravitySim.minImage(dx, sim.worldW);
+					dy = GravitySim.minImage(dy, sim.worldH);
+				}
+				offer(GravityGame.angleUnits(Math.atan2(dy, dx)), rungs[r]);
 			}
 		}
 		if (bestAngleU < 0) return null;
@@ -342,6 +355,7 @@
 		src.fieldT = live.fieldT;
 		src.fieldRate = live.fieldRate;
 		src.setScales(live.gravityScale, live.forceScale);
+		src.setPeriodic(live.periodic, live);
 		if (src.bodyCount !== live.bodyCount || src.bodyR !== live.bodyR ||
 			src.strength !== live.strength || src.fillField !== live.fillField ||
 			src.fieldStatic !== live.fieldStatic) {
@@ -671,8 +685,13 @@
 		}
 		const target = career.contract >= 0 ? this.careerTarget(career) : -1;
 		if (target >= 0 && target !== origin) {
-			const bearing = Math.atan2(live.planetY[target] - live.planetY[origin],
-				live.planetX[target] - live.planetX[origin]);
+			let dx = live.planetX[target] - live.planetX[origin];
+			let dy = live.planetY[target] - live.planetY[origin];
+			if (live.periodic) {
+				dx = GravitySim.minImage(dx, live.worldW);
+				dy = GravitySim.minImage(dy, live.worldH);
+			}
+			const bearing = Math.atan2(dy, dx);
 			this.careerRescueOfferAngle(bearing);
 			this.careerRescueOfferAngle(bearing + Math.PI);
 		}

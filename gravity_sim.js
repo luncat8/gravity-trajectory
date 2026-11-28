@@ -269,23 +269,37 @@
 		this.routeCount = 0;
 		this.routeMs = 0;
 		this.routeSliceMs = 0;
+		this._accOut = { ax: 0, ay: 0 };
 	}
 
 	/* static planet bases + port-orbit ellipses defining each planet system */
 	GravitySim.prototype.setPlanets = function (
 		count, px, py, pr, orbitRX, orbitRY, tiltCos, tiltSin
 	) {
-		this.planetCapacity = count;
-		this.planetCount = count;
+		let populated = count;
+		while (populated > 0 && !(pr[populated - 1] > 0) &&
+			!(orbitRX[populated - 1] > 0) && !(orbitRY[populated - 1] > 0)) {
+			populated--;
+		}
+		this.planetCapacity = populated;
+		this.planetCount = populated;
 		if (this.planetMask) while (this.planetCount > 0 && !this.planetMask[this.planetCount - 1]) this.planetCount--;
 		this.planetX = px;
 		this.planetY = py;
 		this.planetR = pr;
 		let minX = Infinity, maxX = -Infinity;
 		let minY = Infinity, maxY = -Infinity;
-		for (let i = 0; i < count; i++) {
+		for (let i = 0; i < populated; i++) {
 			const rx = orbitRX[i];
 			const ry = orbitRY[i];
+			if (!(rx > 0) || !(ry > 0)) {
+				this.sysCos[i] = 1;
+				this.sysSin[i] = 0;
+				this.sysInvRX[i] = 0;
+				this.sysInvRY[i] = 0;
+				this.sysBoundR2[i] = 0;
+				continue;
+			}
 			const major = rx >= ry ? rx : ry;
 			this.sysCos[i] = tiltCos[i];
 			this.sysSin[i] = tiltSin[i];
@@ -307,10 +321,17 @@
 
 	/* the run's active planet subset; `null` keeps every planet in play */
 	GravitySim.prototype.setPlanetMask = function (mask) {
-		this.planetMask = mask || null;
+		const nextMask = mask || null;
+		this.planetMask = nextMask;
 		this.planetCount = this.planetCapacity;
-		if (mask) while (this.planetCount > 0 && !mask[this.planetCount - 1]) this.planetCount--;
-		if (this.periodic) this.invalidatePeriodic();
+		if (nextMask) while (this.planetCount > 0 && !nextMask[this.planetCount - 1]) this.planetCount--;
+		if (this.periodic) {
+			if (this.periodicSource_ && this.periodicSource_.planetMask !== nextMask) {
+				this.invalidatePeriodic();
+			} else {
+				this.invalidateField();
+			}
+		}
 	};
 
 	/* a configured planet the run may actually enter / land on */
@@ -326,13 +347,24 @@
 
 	/* fillField(t, outX, outY, count) writes gravity body positions at field time t */
 	GravitySim.prototype.setField = function (count, bodyR, strength, fillField, fieldStatic) {
+		if (bodyR && count <= bodyR.length) {
+			while (count > 0 && bodyR[count - 1] === 0) count--;
+		}
 		this.bodyCount = count;
 		this.bodyR = bodyR;
 		this.strength = strength;
 		this.fillField = fillField;
 		this.fieldStatic = fieldStatic;
 		this.stepStale = true;
-		if (this.periodic) this.invalidatePeriodic();
+		if (this.periodic) {
+			if (!fieldStatic ||
+				(this.periodicSource_ && this.periodicGrid_ !== null &&
+					strength !== this.periodicSource_.strength)) {
+				this.invalidatePeriodic();
+			} else {
+				this.invalidateField();
+			}
+		}
 		this.refreshField();
 	};
 
@@ -340,7 +372,7 @@
 		if (count === this.bodyCount) return false;
 		this.bodyCount = count;
 		this.stepStale = true;
-		if (this.periodic) this.invalidatePeriodic();
+		if (this.periodic) this.invalidateField();
 		this.refreshField();
 		return true;
 	};
@@ -365,16 +397,24 @@
 	 * never re-solve or mutate a live grid. An invalidation drops any borrow. */
 
 	GravitySim.prototype.setPeriodic = function (periodic, gridSource) {
-		this.periodic = !!periodic;
-		this.padX = this.periodic ? 0 : this.worldW * AREA_PAD;
-		this.padY = this.periodic ? 0 : this.worldH * AREA_PAD;
+		const next = !!periodic;
+		const source = (next && gridSource && gridSource !== this) ? gridSource : null;
+		if (this.periodic === next && this.periodicSource_ === source) return;
+		this.periodic = next;
+		this.padX = next ? 0 : this.worldW * AREA_PAD;
+		this.padY = next ? 0 : this.worldH * AREA_PAD;
 		this.periodicGrid_ = null;
-		this.periodicSource_ =
-			(this.periodic && gridSource && gridSource !== this) ? gridSource : null;
+		this.periodicSource_ = source;
+	};
+
+	/* invalidate the cached periodic grid after an in-place strength/mask sync
+	 * while keeping any compatible `periodicSource_` link intact. */
+	GravitySim.prototype.invalidateField = function () {
+		this.periodicGrid_ = null;
 	};
 
 	/* drop the cached/borrowed grid so the next sample re-solves. Also forget
-	 * any borrowed source: this sim's field identity just changed. */
+	 * any borrowed source: this sim's field identity just diverged. */
 	GravitySim.prototype.invalidatePeriodic = function () {
 		this.periodicGrid_ = null;
 		this.periodicSource_ = null;
@@ -389,14 +429,15 @@
 		return null;
 	};
 
-	/* Lazily produce the static periodic snapshot: reuse a borrowed source's
-	 * grid, otherwise solve once from the current field. PERIODIC_STRENGTH is
-	 * applied inside the solve, MU * gravityScale at sample time, so the g
-	 * field slider and refreshField never re-solve. */
 	GravitySim.prototype.ensurePeriodicGrid = function () {
-		if (this.periodicSource_) {
-			const source = this.periodicSource_;
-			if (source.periodic && source.fieldStatic && source.worldW === this.worldW && source.worldH === this.worldH) {
+		const source = this.periodicSource_;
+		if (this.periodicGrid_ !== null &&
+			(!source || this.periodicGrid_ === source.periodicGrid_)) {
+			return this.periodicGrid_;
+		}
+		if (source) {
+			if (source.periodic && source.fieldStatic && this.fieldStatic &&
+				source.worldW === this.worldW && source.worldH === this.worldH) {
 				const shared = source.ensurePeriodicGrid();
 				this.periodicGrid_ = shared;
 				return shared;
@@ -506,8 +547,10 @@
 		const py = this.bodyY;
 		const strength = this.strength;
 		const count = this.bodyCount;
-		const mu = MU * this.gravityScale;
+		const periodic = this.periodic;
+		const mu = MU * this.gravityScale * (periodic ? GravityFFT.PERIODIC_STRENGTH : 1);
 		const W = this.worldW, H = this.worldH;
+		const halfW = W * 0.5, halfH = H * 0.5;
 		let ax = 0;
 		let ay = 0;
 		for (let i = 0; i < count; i++) {
@@ -515,12 +558,21 @@
 			if (s === 0) continue;
 			let dx = px[i] - x;
 			let dy = py[i] - y;
-			/* moving periodic sources keep the direct minimum-image sum */
-			if (this.periodic) { dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H); }
-			const inv = 1 / (dx * dx + dy * dy + SOFT2);
-			const a = mu * s * inv * Math.sqrt(inv);
-			ax += dx * a;
-			ay += dy * a;
+			/* moving periodic sources keep the direct minimum-image sum with
+			 * PERIODIC_STRENGTH and half-world Nyquist tie zeroing */
+			if (periodic) {
+				dx = GravityFFT.minImage(dx, W);
+				dy = GravityFFT.minImage(dy, H);
+				const inv = 1 / (dx * dx + dy * dy + SOFT2);
+				const a = mu * s * inv * Math.sqrt(inv);
+				if (dx !== -halfW) ax += dx * a;
+				if (dy !== -halfH) ay += dy * a;
+			} else {
+				const inv = 1 / (dx * dx + dy * dy + SOFT2);
+				const a = mu * s * inv * Math.sqrt(inv);
+				ax += dx * a;
+				ay += dy * a;
+			}
 		}
 		out.ax = ax;
 		out.ay = ay;
@@ -665,25 +717,40 @@
 		let ay = 0;
 		if (this.periodic && this.fieldStatic) {
 			/* sample the pre-solved immutable grid — no per-step FFT, no alloc */
-			const out = this._accOut || (this._accOut = { ax: 0, ay: 0 });
+			const out = this._accOut;
 			const snap = this.ensurePeriodicGrid();
 			snap.sample(state.x, state.y, this.gravityScale, out);
 			ax = out.ax;
 			ay = out.ay;
+		} else if (this.periodic) {
+			const px = this.stepX;
+			const py = this.stepY;
+			const strength = this.strength;
+			const count = this.bodyCount;
+			const mu = MU * this.gravityScale * GravityFFT.PERIODIC_STRENGTH;
+			const W = this.worldW, H = this.worldH;
+			const halfW = W * 0.5, halfH = H * 0.5;
+			for (let i = 0; i < count; i++) {
+				const s = strength[i];
+				if (s === 0) continue;
+				const dx = GravityFFT.minImage(px[i] - state.x, W);
+				const dy = GravityFFT.minImage(py[i] - state.y, H);
+				const inv = 1 / (dx * dx + dy * dy + SOFT2);
+				const a = mu * s * inv * Math.sqrt(inv);
+				if (dx !== -halfW) ax += dx * a;
+				if (dy !== -halfH) ay += dy * a;
+			}
 		} else {
 			const px = this.stepX;
 			const py = this.stepY;
 			const strength = this.strength;
 			const count = this.bodyCount;
 			const mu = MU * this.gravityScale;
-			const W = this.worldW, H = this.worldH;
 			for (let i = 0; i < count; i++) {
 				const s = strength[i];
 				if (s === 0) continue;
-				let dx = px[i] - state.x;
-				let dy = py[i] - state.y;
-				/* moving periodic sources keep the direct minimum-image sum */
-				if (this.periodic) { dx = GravityFFT.minImage(dx, W); dy = GravityFFT.minImage(dy, H); }
+				const dx = px[i] - state.x;
+				const dy = py[i] - state.y;
 				const inv = 1 / (dx * dx + dy * dy + SOFT2);
 				const a = mu * s * inv * Math.sqrt(inv);
 				ax += dx * a;
@@ -1291,6 +1358,9 @@
 	GravitySim.END_TIME = END_TIME;
 	GravitySim.END_TRUNCATED = END_TRUNCATED;
 	GravitySim.END_ABORT = END_ABORT;
+	GravitySim.PERIODIC_STRENGTH = GravityFFT ? GravityFFT.PERIODIC_STRENGTH : 0.5;
+	GravitySim.minImage = GravityFFT ? GravityFFT.minImage : null;
+	GravitySim.wrap = GravityFFT ? GravityFFT.wrap : null;
 
 	if (typeof module !== 'undefined' && module.exports) module.exports = GravitySim;
 	else root.GravitySim = GravitySim;

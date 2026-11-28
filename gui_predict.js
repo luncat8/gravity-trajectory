@@ -299,13 +299,15 @@ function refreshExperimentUi() {
 	if (expRotLabelEl) expRotLabelEl.textContent = '×' + rotScale.toFixed(2);
 	if (expPayLabelEl) expPayLabelEl.textContent = '×' + payScale.toFixed(2);
 	if (expHarvestEl) expHarvestEl.checked = careerTicks;
+	if (expPeriodicEl) expPeriodicEl.checked = periodicMode;
 	if (expTagEl) {
 		expTagEl.textContent = 'g ' + gravityText + ' · force ' + forceText +
 			(career ? ' · wear ×' + spaceWearScale.toFixed(2) +
 				(padScale !== 1 ? ' · pads ×' + padScale.toFixed(2) : '') +
 				(rotScale !== 1 ? ' · rot ×' + rotScale.toFixed(2) : '') +
 				(payScale !== 1 ? ' · pay ×' + payScale.toFixed(2) : '') : '') +
-			(careerTicks ? ' · ticks' : '');
+			(careerTicks ? ' · ticks' : '') +
+			(periodicMode ? ' · fft' : '');
 	}
 	refreshGiftUi();
 }

@@ -55,6 +55,7 @@
 	let openingSim = null;
 	const openingMarket = createMarket();
 	let openingStrengths = null;
+	let openingInstalledStrengths = null;
 	let openingTrade = null;
 	let openingGravityScale = 1;
 	let openingForceScale = 1;
@@ -77,10 +78,29 @@
 		return tag;
 	}
 
-	function openingExtent(mask) {
+	function openingExtent(mask, world) {
+		if (!mask) {
+			return world && world.planetCount ? world.planetCount
+				: (openingTrade && openingTrade.planetCount ? openingTrade.planetCount
+					: OrbitWorld.CLASSIC_PLANETS);
+		}
 		let extent = OrbitWorld.PLANETS;
-		while (extent > 0 && mask && !mask[extent - 1]) extent--;
+		while (extent > 0 && !mask[extent - 1]) extent--;
 		return extent;
+	}
+
+	function openingPeriodicOf(world, trade, sourceSim) {
+		return Boolean((sourceSim && sourceSim.periodic) ||
+			(world && world.periodic) || (trade && trade.periodic));
+	}
+
+	function openingTopologyTag(world, trade, sourceSim) {
+		const periodic = openingPeriodicOf(world, trade, sourceSim);
+		const w = sourceSim && sourceSim.worldW ? sourceSim.worldW : OrbitWorld.WORLD_W;
+		const h = sourceSim && sourceSim.worldH ? sourceSim.worldH : OrbitWorld.WORLD_H;
+		if (periodic) return ':p' + w + 'x' + h;
+		if (w !== OrbitWorld.WORLD_W || h !== OrbitWorld.WORLD_H) return ':c' + w + 'x' + h;
+		return '';
 	}
 
 	/* The shared scratch sim follows the current trade world, not the first
@@ -93,14 +113,30 @@
 		}
 	}
 
-	function openingEnsureSim(trade) {
-		if (openingSim === null) {
-			openingSim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
-			openingStrengths = new Float64Array(GravitySim.MAX_BODIES);
+	function openingEnsureSim(trade, world, sourceSim) {
+		const w = sourceSim && sourceSim.worldW ? sourceSim.worldW : OrbitWorld.WORLD_W;
+		const h = sourceSim && sourceSim.worldH ? sourceSim.worldH : OrbitWorld.WORLD_H;
+		const periodic = openingPeriodicOf(world, trade, sourceSim);
+		if (openingSim === null || openingSim.worldW !== w || openingSim.worldH !== h) {
+			openingSim = new GravitySim(w, h);
+			openingStrengths = openingStrengths || new Float64Array(GravitySim.MAX_BODIES);
+			openingInstalledStrengths = openingInstalledStrengths ||
+				new Float64Array(GravitySim.MAX_BODIES);
+			openingInstalledEntry = null;
 		}
-		openingTrade = trade;
-		openingSim.setPlanets(OrbitWorld.PLANETS, trade.planetX, trade.planetY, trade.planetR,
-			trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+		if (openingSim.periodic !== periodic) {
+			openingSim.setPeriodic(periodic);
+			openingInstalledEntry = null;
+		}
+		if (openingTrade !== trade ||
+			openingSim.planetX !== trade.planetX ||
+			openingSim.planetY !== trade.planetY) {
+			openingTrade = trade;
+			openingInstalledEntry = null;
+			openingSim.setPlanets(trade.planetCount || OrbitWorld.PLANETS,
+				trade.planetX, trade.planetY, trade.planetR,
+				trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+		}
 	}
 
 	function openingFillEmpty(market, world, trade, mask, count) {
@@ -112,14 +148,26 @@
 		deriveEmptyWorlds(market, mask, count, world);
 	}
 
+	function openingMasksMatch(a, b) {
+		if (a === b) return true;
+		if (!a || !b) return false;
+		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+			if (a[i] !== b[i]) return false;
+		}
+		return true;
+	}
+
 	function openingPrepare(world, trade, mask, count, forcedHomes, sourceSim) {
-		openingEnsureSim(trade);
+		openingEnsureSim(trade, world, sourceSim);
 		openingGravityScale = sourceSim && Number.isFinite(sourceSim.gravityScale)
 			? sourceSim.gravityScale : 1;
 		openingForceScale = sourceSim && Number.isFinite(sourceSim.forceScale)
 			? sourceSim.forceScale : 1;
 		openingSim.setScales(openingGravityScale, openingForceScale);
-		openingSim.setPlanetMask(mask);
+		if (!openingMasksMatch(openingSim.planetMask, mask)) {
+			openingSim.setPlanetMask(mask);
+			openingInstalledEntry = null;
+		}
 		openingFieldMask = mask;
 		openingExitMemo.fill(-1);
 		resetMarket(openingMarket);
@@ -128,8 +176,10 @@
 		/* the planning probes price empty worlds at zero payout and trace
 		 * them under the heavy band's wells */
 		openingFillEmpty(openingMarket, world, trade, mask, count);
+		const limit = mask ? OrbitWorld.PLANETS
+			: (world && world.planetCount ? world.planetCount : OrbitWorld.CLASSIC_PLANETS);
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
-			if (mask && mask[i] === 0) openingStrengths[i] = 0;
+			if (i >= limit || (mask && mask[i] === 0)) openingStrengths[i] = 0;
 			else if (specialPlanetsOn() && (i === world.capitalPlanet || i === world.arfPlanet)) {
 				openingStrengths[i] = 1;
 			} else if (forcedHomes && forcedHomes[i]) openingStrengths[i] = 1;
@@ -159,7 +209,8 @@
 			lo = Math.imul(lo ^ (v + i * 31), 0x01000193) >>> 0;
 			hi = Math.imul(hi ^ (v ^ (i * 131)), 0x85ebca6b) >>> 0;
 		}
-		const key = ((hi & 0x1fffff) * 4294967296 + lo) + ':' + openingMaskBits(mask);
+		const key = ((hi & 0x1fffff) * 4294967296 + lo) + ':' + openingMaskBits(mask) +
+			openingTopologyTag(world, openingTrade, openingSim);
 		let entry = openingFieldExitCache.get(key);
 		if (!entry) {
 			const memo = new Int8Array(OrbitWorld.PLANETS);
@@ -174,10 +225,12 @@
 	}
 
 	function openingSyncField(world) {
-		const extent = openingExtent(openingFieldMask);
+		const extent = openingExtent(openingFieldMask, world);
 		const entry = world ? openingFieldEntry(world, openingFieldMask, extent) : null;
 		if (!entry || openingInstalledEntry !== entry) {
-			openingSim.setField(extent, openingTrade.planetR, openingStrengths, openingFill, true);
+			openingInstalledStrengths.set(openingStrengths);
+			openingSim.setField(extent, openingTrade.planetR, openingInstalledStrengths,
+				openingFill, true);
 			openingInstalledEntry = entry;
 		}
 		openingActiveExitMemo = entry ? entry.memo : openingExitMemo;
@@ -254,7 +307,7 @@
 		const nSpeeds = speeds || OPENING_SPEEDS;
 		const sim = openingSim;
 		const savedStrength = openingStrengths[home];
-		const extent = openingExtent(mask);
+		const extent = openingExtent(mask, world);
 		openingStrengths[home] = 1;
 		const entry = openingFieldEntry(world, mask, extent);
 		openingActiveExitMemo = entry.memo;
@@ -272,6 +325,12 @@
 			let reach = 0;
 			let anyPay;
 			let buildPay;
+			if (openingInstalledEntry !== entry) {
+				openingInstalledStrengths.set(openingStrengths);
+				sim.setField(extent, openingTrade.planetR, openingInstalledStrengths,
+					openingFill, true);
+				openingInstalledEntry = entry;
+			}
 			if (fan && fan.partial) {
 				si = fan.si;
 				ai = fan.ai;
@@ -281,10 +340,6 @@
 				buildPay = fan.buildPay;
 				openingSeen.set(fan.seen);
 			} else {
-				if (openingInstalledEntry !== entry) {
-					sim.setField(extent, openingTrade.planetR, openingStrengths, openingFill, true);
-					openingInstalledEntry = entry;
-				}
 				openingSeen.fill(0);
 				anyPay = new Float64Array(OrbitWorld.PLANETS);
 				buildPay = new Float64Array(OrbitWorld.PLANETS);
@@ -374,13 +429,16 @@
 	/* One world and one set of already-pinned HQs have the same opening table
 	 * for every actor; the company-specific seed only breaks equal choices. */
 	function careerOpenings(world, trade, mask, count, forcedHomes, sourceSim) {
+		const field = PlanetGravity.armed();
+		const fieldTag = field && field.seed === (world.seed >>> 0) ? field.tag : 0;
 		const emptyTag = trade && trade.emptyMask ? openingMaskBits(trade.emptyMask) : 'd';
 		const gravityTag = trade && trade.colonyGravityMask ? openingMaskBits(trade.colonyGravityMask) : emptyTag;
 		const key = (world.seed >>> 0) + ':' + (trade.seed >>> 0) + ':' + trade.t.toFixed(3) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
 			openingMaskBits(mask) + ':' + openingMaskBits(forcedHomes) + ':' +
-			emptyTag + ':' + gravityTag + ':' + (specialPlanetsOn() ? 1 : 0);
+			emptyTag + ':' + gravityTag + ':' + (specialPlanetsOn() ? 1 : 0) +
+			(fieldTag ? ':' + fieldTag : '') + openingTopologyTag(world, trade, sourceSim);
 		const cached = openingCache.get(key);
 		if (cached) return cached;
 		openingPrepare(world, trade, mask, count, forcedHomes, sourceSim);
@@ -390,10 +448,10 @@
 		targetPay.fill(-Infinity);
 		const exitOk = new Uint8Array(OrbitWorld.PLANETS * OrbitWorld.PLANETS);
 		const rows = {
-			light: new Int8Array(OrbitWorld.PLANETS),
-			reach: new Int8Array(OrbitWorld.PLANETS),
+			light: new Int16Array(OrbitWorld.PLANETS),
+			reach: new Int16Array(OrbitWorld.PLANETS),
 			pay: new Float64Array(OrbitWorld.PLANETS),
-			buildable: new Int8Array(OrbitWorld.PLANETS),
+			buildable: new Int16Array(OrbitWorld.PLANETS),
 			buildPay: new Float64Array(OrbitWorld.PLANETS),
 			openPay: new Float64Array(OrbitWorld.PLANETS),
 			sitePay: sitePay,
@@ -401,7 +459,8 @@
 			exitOk: exitOk,
 			best: -Infinity
 		};
-		for (let planet = 0; planet < OrbitWorld.PLANETS; planet++) {
+		const limit = world && world.planetCount ? world.planetCount : OrbitWorld.PLANETS;
+		for (let planet = 0; planet < limit; planet++) {
 			if ((mask && mask[planet] === 0) || hqForbidden(world, planet)) continue;
 			const profile = openingTraceHome(world, mask, forcedHomes, planet, true, sitePay,
 				targetPay, exitOk);
@@ -456,13 +515,14 @@
 	}
 
 	function hashPickHq(seed, world, used, mask, rows, floor, shallowOnly, needLight) {
+		const limit = world && world.planetCount ? world.planetCount : OrbitWorld.PLANETS;
 		let total = 0;
-		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+		for (let i = 0; i < limit; i++) {
 			if (hqCandidate(world, used, mask, i, rows, floor, shallowOnly, needLight)) total += 1;
 		}
 		if (total === 0) return -1;
 		let pick = OrbitWorld.hashBits(seed, 0, SALT_HQ) % total;
-		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+		for (let i = 0; i < limit; i++) {
 			if (!hqCandidate(world, used, mask, i, rows, floor, shallowOnly, needLight)) continue;
 			if (pick === 0) return i;
 			pick -= 1;
@@ -505,11 +565,11 @@
 			openingGravityScale + ':' + openingForceScale + ':' +
 			openingMaskBits(mask) + ':' +
 			(openingMarket && Number.isFinite(openingMarket.planetCount)
-				? openingMarket.planetCount : openingExtent(mask)) + ':' +
+				? openingMarket.planetCount : openingExtent(mask, world)) + ':' +
 			openingMaskBits(openingMarket.empty) + ':' + openingMaskBits(openingMarket.heavy) + ':' +
 			home + ':' + nAngles + 'x' + nSpeeds + ':' + (specialPlanetsOn() ? 1 : 0) + ':' +
 			(checkExit ? 'exit:' : 'land:') + openingMaskBits(forcedHomes) +
-			(fieldTag ? ':' + fieldTag : '');
+			(fieldTag ? ':' + fieldTag : '') + openingTopologyTag(world, openingTrade, openingSim);
 		const cached = openingTraceCache.get(key);
 		if (cached) {
 			openingTraceCount += 1;
@@ -560,8 +620,8 @@
 	Object.assign(inner, {
 		HQ_GRAVITY_MAX, OPENING_ANGLES, OPENING_SPEEDS, OPENING_EXIT_ANGLES, OPENING_EXIT_FRACTIONS,
 		OPENING_HORIZON, OPENING_COMPARE_EPS, OPENING_FAIR_RATIO, OPENING_RATIO_EPS, openingTraces,
-		restoreOpeningTraces, openingMaskTag, openingExtent, openingMarket, openingFillEmpty,
-		openingPrepare, openingSyncField,
+		restoreOpeningTraces, openingMaskTag, openingExtent, openingPeriodicOf, openingTopologyTag,
+		openingMarket, openingFillEmpty, openingPrepare, openingSyncField,
 		exitSpeedHasMargin, openingStarterCanExit, OPENING_PAUSED, fanBounded, openingTraceHome,
 		careerOpenings, pickFairHq, hqForbidden, openingMaskBits, openingTracks, planetInMask,
 		hqMask

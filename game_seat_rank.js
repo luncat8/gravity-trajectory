@@ -15,7 +15,8 @@
 		angleUnits, angleOf, specialPlanetsOn, createMarket, deriveEmptyWorlds,
 		OPENING_ANGLES, OPENING_SPEEDS, OPENING_EXIT_ANGLES,
 		OPENING_EXIT_FRACTIONS, OPENING_HORIZON, OPENING_COMPARE_EPS, OPENING_FAIR_RATIO,
-		OPENING_RATIO_EPS, openingExtent, openingPrepare, exitSpeedHasMargin, openingStarterCanExit,
+		OPENING_RATIO_EPS, openingExtent, openingPeriodicOf, openingTopologyTag, openingPrepare,
+		exitSpeedHasMargin, openingStarterCanExit,
 		careerOpenings, hqForbidden, openingMaskBits, openingTracks, planetInMask,
 		openingGroupStatsFromRows, openingRatio, compareOpeningGroups
 	} = inner;
@@ -169,7 +170,7 @@
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
 			openingMaskBits(mask) + ':' + count + ':' + emptyTag + ':' + gravityTag + ':' +
 			(specialPlanetsOn() ? 1 : 0) + ':' + candidates.join(',') +
-			(fieldTag ? ':' + fieldTag : '');
+			(fieldTag ? ':' + fieldTag : '') + openingTopologyTag(world, trade, sourceSim);
 	}
 
 	function buildPairTracks(world, trade, mask, count, candidates, sourceSim) {
@@ -311,7 +312,8 @@
 			emptyBits + ':' + gravityBits + ':' +
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
-			(specialPlanetsOn() ? 1 : 0) + (fieldTag ? ':' + fieldTag : '');
+			(specialPlanetsOn() ? 1 : 0) + (fieldTag ? ':' + fieldTag : '') +
+			openingTopologyTag(world, null, sourceSim);
 	}
 
 	function compositionExitSpeed(planet, cap) {
@@ -350,12 +352,17 @@
 		const key = compositionKey(world, mask, count, sourceSim, emptyBits, openingMaskBits(compositionMarket.heavy));
 		const cached = compositionCache.get(key);
 		if (cached) return cached;
-		if (compositionSim === null) {
-			compositionSim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
-			compositionStrengths = new Float64Array(GravitySim.MAX_BODIES);
+		const w = sourceSim && sourceSim.worldW ? sourceSim.worldW : OrbitWorld.WORLD_W;
+		const h = sourceSim && sourceSim.worldH ? sourceSim.worldH : OrbitWorld.WORLD_H;
+		const periodic = openingPeriodicOf(world, null, sourceSim);
+		if (compositionSim === null || compositionSim.worldW !== w || compositionSim.worldH !== h) {
+			compositionSim = new GravitySim(w, h);
+			compositionStrengths = compositionStrengths || new Float64Array(GravitySim.MAX_BODIES);
 		}
+		if (compositionSim.periodic !== periodic) compositionSim.setPeriodic(periodic);
 		compositionWorld = world;
-		compositionSim.setPlanets(OrbitWorld.PLANETS, world.planetX, world.planetY, world.planetR,
+		compositionSim.setPlanets(world.planetCount || OrbitWorld.PLANETS,
+			world.planetX, world.planetY, world.planetR,
 			world.orbitRX, world.orbitRY, world.orbitTiltCos, world.orbitTiltSin);
 		const gravityScale = sourceSim && Number.isFinite(sourceSim.gravityScale)
 			? sourceSim.gravityScale : 1;
@@ -363,15 +370,17 @@
 			? sourceSim.forceScale : 1;
 		compositionSim.setScales(gravityScale, forceScale);
 		compositionSim.setPlanetMask(mask);
+		const limit = mask ? OrbitWorld.PLANETS
+			: (world && world.planetCount ? world.planetCount : OrbitWorld.CLASSIC_PLANETS);
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) {
-			if (mask && mask[i] === 0) compositionStrengths[i] = 0;
+			if (i >= limit || (mask && mask[i] === 0)) compositionStrengths[i] = 0;
 			else if (specialPlanetsOn() && (i === world.capitalPlanet || i === world.arfPlanet)) {
 				compositionStrengths[i] = 1;
 			} else if (compositionMarket.heavy[i] === 1) {
 				compositionStrengths[i] = PlanetGravity.emptyGravity(world.seed, i);
 			} else compositionStrengths[i] = planetGravity(world.seed, i);
 		}
-		compositionSim.setField(openingExtent(mask), world.planetR, compositionStrengths,
+		compositionSim.setField(openingExtent(mask, world), world.planetR, compositionStrengths,
 			compositionFill, true);
 		compositionSim.fieldT = 0;
 		compositionSim.fieldRate = 1;
@@ -383,7 +392,7 @@
 		const cap3 = OrbitTech.speedLimit(OrbitTech.BATTERIES[2].capacity,
 			OrbitTech.SHIP_DRY_MASS, OrbitTech.CATAPULTS[2], forceScale);
 		let light = 0, heavyEmc2 = 0, heavyEmc3 = 0, heavies = 0, settled = 0, empty = 0;
-		for (let planet = 0; planet < OrbitWorld.PLANETS; planet++) {
+		for (let planet = 0; planet < limit; planet++) {
 			if (mask && mask[planet] === 0) continue;
 			if (compositionMarket.empty[planet] === 1) {
 				empty += 1;

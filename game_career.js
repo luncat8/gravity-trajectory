@@ -168,12 +168,13 @@
 		};
 		ship.mass = OrbitTech.shipMass(ship, 0);
 		const fleetSim = new GravitySim(sim.worldW, sim.worldH);
-		fleetSim.setPlanets(OrbitWorld.PLANETS, trade.planetX, trade.planetY, trade.planetR,
+		fleetSim.setPeriodic(sim.periodic, sim);
+		fleetSim.setPlanets(trade.planetCount || OrbitWorld.PLANETS,
+			trade.planetX, trade.planetY, trade.planetR,
 			trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
 		fleetSim.setPlanetMask(sim.planetMask);
 		fleetSim.setScales(sim.gravityScale, sim.forceScale);
 		fleetSim.setField(sim.bodyCount, sim.bodyR, sim.strength, sim.fillField, sim.fieldStatic);
-		fleetSim.setPeriodic(sim.periodic, sim);
 		fleetSim.fieldT = trade.t;
 		fleetSim.fieldRate = sim.fieldRate;
 		/* the launch gate reads the fleet ship's own fit, not the flagship's */
@@ -247,12 +248,13 @@
 		};
 		ship.mass = OrbitTech.shipMass(ship, 0);
 		const fleetSim = new GravitySim(sim.worldW, sim.worldH);
-		fleetSim.setPlanets(OrbitWorld.PLANETS, trade.planetX, trade.planetY, trade.planetR,
+		fleetSim.setPeriodic(sim.periodic, sim);
+		fleetSim.setPlanets(trade.planetCount || OrbitWorld.PLANETS,
+			trade.planetX, trade.planetY, trade.planetR,
 			trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
 		fleetSim.setPlanetMask(sim.planetMask);
 		fleetSim.setScales(sim.gravityScale, sim.forceScale);
 		fleetSim.setField(sim.bodyCount, sim.bodyR, sim.strength, sim.fillField, sim.fieldStatic);
-		fleetSim.setPeriodic(sim.periodic, sim);
 		fleetSim.fieldT = trade.t;
 		fleetSim.fieldRate = sim.fieldRate;
 		/* the launch gate and standing position are re-derived from the saved
@@ -551,6 +553,9 @@
 			pad.reservedKwh = 0;
 		}
 		career.padCount = 0;
+		if (!career.planetMask && trade && trade.world) {
+			career.planetCount = trade.world.planetCount || OrbitWorld.CLASSIC_PLANETS;
+		}
 		for (let i = 0; i < OrbitWorld.PLANETS; i++) career.launchPads[i] = COMMERCIAL_PAD;
 		fillLight(career, trade.world);
 		career.hq = homePlanet === undefined ? pickHq(career.seed, trade.world, hqMask(career),
@@ -733,10 +738,15 @@
 	 * any active planet disc so no ship collides on frame zero. */
 	function spaceSpawnClear(world, mask, x, y, padPx) {
 		if (!world || !world.planetX) return true;
-		for (let p = 0; p < OrbitWorld.PLANETS; p++) {
+		const limit = world.planetCount || OrbitWorld.PLANETS;
+		for (let p = 0; p < limit; p++) {
 			if (mask && mask[p] === 0) continue;
-			const dx = x - world.planetX[p];
-			const dy = y - world.planetY[p];
+			let dx = x - world.planetX[p];
+			let dy = y - world.planetY[p];
+			if (world.periodic) {
+				dx = GravitySim.minImage(dx, OrbitWorld.WORLD_W);
+				dy = GravitySim.minImage(dy, OrbitWorld.WORLD_H);
+			}
 			const r = (world.planetR[p] || 10) + padPx;
 			if (dx * dx + dy * dy < r * r) return false;
 		}
@@ -762,6 +772,10 @@
 			const nudge = rad + (k + 1) * 12;
 			x = cx + Math.cos(ang + k * 0.35) * nudge;
 			y = cy + Math.sin(ang + k * 0.35) * nudge;
+		}
+		if (world && world.periodic) {
+			x = GravitySim.wrap(x, OrbitWorld.WORLD_W);
+			y = GravitySim.wrap(y, OrbitWorld.WORLD_H);
 		}
 		return { x: x, y: y };
 	}

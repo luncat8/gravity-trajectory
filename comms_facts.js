@@ -323,6 +323,7 @@
 			 * report, fed in by the page (opts.roster / opts.search) */
 			rosterOk: true,
 			rosterPlanets: 0,
+			rosterCap: GravityGame.CLASSIC_PLANETS || 48,
 			rosterPlayers: 0,
 			rosterDetails: '',
 			searchActive: false,
@@ -512,6 +513,7 @@
 			 * seat-search report in, so H can report them */
 			rosterOk: opts.rosterOk !== false,
 			rosterPlanets: opts.rosterPlanets || 0,
+			rosterCap: opts.rosterCap || GravityGame.CLASSIC_PLANETS || 48,
 			rosterPlayers: opts.rosterPlayers || 0,
 			rosterDetails: opts.rosterDetails || '',
 			searchActive: Boolean(opts.searchActive),
@@ -845,7 +847,8 @@
 			why: () => 'already one company'
 		}),
 		'can-add-planet': Object.freeze({
-			test: s => s.careerMode && s.rosterOk === false && s.rosterPlanets > 0 && s.rosterPlanets < OrbitWorld.PLANETS,
+			test: s => s.careerMode && s.rosterOk === false && s.rosterPlanets > 0 &&
+				s.rosterPlanets < (s.rosterCap || GravityGame.CLASSIC_PLANETS || 48),
 			why: () => 'world is full'
 		}),
 		'search-has-plan': Object.freeze({

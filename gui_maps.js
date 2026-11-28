@@ -97,8 +97,12 @@ function recordByOptionKey(value) {
 	return Number.isInteger(idx) ? savedMapList()[idx] || null : null;
 }
 
+function recordMatchesTopology(record) {
+	return Boolean(record && record.fft) === periodicMode;
+}
+
 function matchesLoadKind(record, kind) {
-	if (!record) return false;
+	if (!record || !recordMatchesTopology(record)) return false;
 	if (!kind) return true;
 	if (kind === 'start') return record.kind === 'start' || record.kind === 'field';
 	return record.kind === kind;
@@ -128,14 +132,20 @@ function refreshMapPick() {
 	if (!mapPickEl) return;
 	const records = savedMapList();
 	const fields = savedFieldList();
-	const total = records.length + fields.length;
+	let total = 0;
+	for (let i = 0; i < records.length; i++) {
+		if (recordMatchesTopology(records[i])) total += 1;
+	}
+	for (let i = 0; i < fields.length; i++) {
+		if (recordMatchesTopology(fields[i])) total += 1;
+	}
 	const keep = mapPickEl.value;
 	/* every notice refreshes this panel: rebuild the list only when the registry
-	 * itself changed, so an open dropdown is not closed under the pointer */
-	const signature = records.length + '|' +
-		records.map(record => record.name + ':' + record.kind).join('|') + '||' +
+	 * or topology changed, so an open dropdown is not closed under the pointer */
+	const signature = (periodicMode ? 'fft|' : 'std|') + records.length + '|' +
+		records.map(record => record.name + ':' + record.kind + ':' + (record.fft ? 1 : 0)).join('|') + '||' +
 		fields.length + '|' +
-		fields.map(record => record.name + ':' + record.kind).join('|');
+		fields.map(record => record.name + ':' + record.kind + ':' + (record.fft ? 1 : 0)).join('|');
 	if (signature !== mapPickSignature) {
 		mapPickSignature = signature;
 		while (mapPickEl.firstChild) mapPickEl.removeChild(mapPickEl.firstChild);
@@ -144,17 +154,20 @@ function refreshMapPick() {
 		random.textContent = 'random';
 		mapPickEl.appendChild(random);
 		for (let i = 0; i < records.length; i++) {
+			if (!recordMatchesTopology(records[i])) continue;
 			mapPickEl.appendChild(mapPickOption(records[i], String(i), String(i)));
 		}
 		for (let i = 0; i < fields.length; i++) {
+			if (!recordMatchesTopology(fields[i])) continue;
 			mapPickEl.appendChild(mapPickOption(fields[i], 'field:' + i, 'f' + i));
 		}
 	}
-	mapPickEl.value = recordByOptionKey(keep) ? keep : '';
+	const kept = recordByOptionKey(keep);
+	mapPickEl.value = kept && recordMatchesTopology(kept) ? keep : '';
 	mapPickEl.disabled = total === 0;
 	mapPickEl.title = total
 		? 'load the picked saved map, or a random one'
-		: 'saved_maps.js has no map to load';
+		: 'saved_maps.js has no map for this topology';
 }
 
 /* the record the picker names, of `kind` when one is given */
@@ -166,8 +179,8 @@ function mapPickedRecord(kind) {
 }
 
 function refreshMapsUi() {
-	const records = savedMapList();
-	const fields = savedFieldList();
+	const records = savedMapList().filter(recordMatchesTopology);
+	const fields = savedFieldList().filter(recordMatchesTopology);
 	const starts = GravityMaps.hasKind(records, 'start') ||
 		GravityMaps.hasKind(records, 'field') ||
 		GravityMaps.hasKind(fields, 'field');
@@ -198,6 +211,7 @@ function mapRunInfo() {
 		bot: game.bot,
 		player: game.player,
 		cheat: game.cheat,
+		fft: periodicMode,
 		startMode: game.startMode,
 		rate: scene.trade.speed,
 		gs: gravityScale,
@@ -239,7 +253,7 @@ function mapsReady(what) {
 
 /* two records of the same world and seats are the same start map */
 function mapSameStart(a, b) {
-	if (a.seed !== b.seed || a.universe !== b.universe) return false;
+	if (a.seed !== b.seed || a.universe !== b.universe || Boolean(a.fft) !== Boolean(b.fft)) return false;
 	if (!sameRecordField(a, b)) return false;
 	if (a.seats.length !== b.seats.length) return false;
 	for (let i = 0; i < a.seats.length; i++) {
@@ -377,14 +391,16 @@ function applyRunRecord(record) {
 const FIELD_FAIR_MIN_RATIO = 0.55;
 
 function planFieldOpening(record, wantedSeats, gs, fs, ps, ys) {
+	const periodic = record.fft === true;
+	const cap = periodic ? PLANETS : PLANET_UNIVERSE_MAX;
 	if (!Number.isInteger(record.universe) ||
-		record.universe < PLANET_UNIVERSE_MIN || record.universe > PLANET_UNIVERSE_MAX ||
+		record.universe < PLANET_UNIVERSE_MIN || record.universe > cap ||
 		!Array.isArray(record.gravity) || record.gravity.length < record.universe) {
 		return null;
 	}
 	const mask = new Uint8Array(PLANETS);
 	mask.fill(1, 0, record.universe);
-	const sim = new OrbitSim(record.seed);
+	const sim = new OrbitSim(record.seed, periodic ? { periodic: true } : undefined);
 	const market = GravityGame.createMarket();
 	GravityGame.deriveEmptyWorlds(market, mask, record.universe, sim.world);
 	sim.setPlanetMask(mask);
@@ -394,6 +410,7 @@ function planFieldOpening(record, wantedSeats, gs, fs, ps, ys) {
 	const galaxy = GravityGame.createGalaxy();
 	GravityGame.resetGalaxy(galaxy, record.seed);
 	const probe = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	probe.setPeriodic(periodic);
 	probe.setScales(gs, fs);
 	const prevPs = GravityGame.padScaleOf();
 	const prevYs = GravityGame.payScaleOf();
@@ -427,9 +444,16 @@ function planFieldOpening(record, wantedSeats, gs, fs, ps, ys) {
 const fairSaveMemo = new Map();
 
 function validateFairSave(record) {
+	const periodic = record.fft === true;
 	const mask = new Uint8Array(PLANETS);
-	mask.fill(1, 0, record.universe);
-	const sim = new OrbitSim(record.seed);
+	if (record.state && typeof record.state.mask === 'string') {
+		for (let i = 0; i < PLANETS && i < record.state.mask.length; i++) {
+			if (record.state.mask[i] === '1') mask[i] = 1;
+		}
+	} else {
+		mask.fill(1, 0, record.universe);
+	}
+	const sim = new OrbitSim(record.seed, periodic ? { periodic: true } : undefined);
 	const market = GravityGame.createMarket();
 	GravityGame.deriveEmptyWorlds(market, mask, record.universe, sim.world);
 	sim.setPlanetMask(mask);
@@ -437,6 +461,7 @@ function validateFairSave(record) {
 	sim.step(420);
 	sim.setPlanetLimit(record.universe);
 	const probe = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	probe.setPeriodic(periodic);
 	const gs = record.gs === undefined ? 1 : record.gs;
 	const fs = record.fs === undefined ? 1 : record.fs;
 	probe.setScales(gs, fs);
@@ -454,6 +479,7 @@ function fairSaveOptions() {
 	const list = savedMapList();
 	for (let i = 0; i < list.length; i++) {
 		const record = list[i];
+		if (!recordMatchesTopology(record)) continue;
 		if (record.rule !== 'career' || !Array.isArray(record.seats) || !record.seats.length) continue;
 		let verdict = fairSaveMemo.get(record);
 		if (verdict === undefined) {
@@ -491,6 +517,30 @@ function startMapRecord(record) {
 	if (!record || !RULES[rule]) {
 		mapNotice('no saved map to load');
 		return false;
+	}
+	const recordPeriodic = record.fft === true;
+	if (recordPeriodic && rule === RULE_ROUTE) {
+		mapNotice('route length unavailable with periodic FFT');
+		return false;
+	}
+	const cap = recordPeriodic ? PLANETS : PLANET_UNIVERSE_MAX;
+	if (!Number.isInteger(record.universe) || record.universe < PLANET_UNIVERSE_MIN || record.universe > cap) {
+		mapNotice('saved map universe out of range');
+		return false;
+	}
+	/* A designed field must specify a gravity value for every active world in its
+	 * roster so high-index worlds never silently fall back to hash01. */
+	if (Array.isArray(record.gravity)) {
+		let needed = record.universe;
+		if (record.state && typeof record.state.mask === 'string') {
+			for (let i = 0; i < record.state.mask.length; i++) {
+				if (record.state.mask[i] === '1' && i + 1 > needed) needed = i + 1;
+			}
+		}
+		if (record.gravity.length < needed) {
+			mapNotice('designed field supplies only ' + record.gravity.length + ' of ' + needed + ' wells');
+			return false;
+		}
 	}
 	const botLevel = record.bot && record.bot in GravityGame.BOTS ? record.bot : (game.bot || BOT_NORMAL);
 	const player = record.player && GravityGame.PLAYER_TYPES[record.player] ? record.player : PLAYER_USER;
@@ -532,6 +582,7 @@ function startMapRecord(record) {
 		GravityMaps.applyField(record);
 		GravityMaps.arm(record);
 	}
+	setPeriodicMode(recordPeriodic, false);
 	activeFieldMap = fieldParamKey(record);
 	if (record.rate) scene.setSpeed(record.rate);
 	setExperimentScales(gs, fs, ht, ws, ps, rs, ys);
@@ -543,6 +594,8 @@ function startMapRecord(record) {
 	game.startMode = GravityGame.START_PLANET;
 	startGame(record.seed, true, rule, botLevel, player, cheat);
 	if (record.kind !== 'run') {
+		refreshMapsUi();
+		syncSeedUrl(true);
 		mapNotice('loaded ' + record.name + (plannedLive ? ' · saved map planned its opening' : ''));
 		return true;
 	}
@@ -550,6 +603,8 @@ function startMapRecord(record) {
 		mapNotice('saved run could not be restored · fresh start');
 		return false;
 	}
+	refreshMapsUi();
+	syncSeedUrl(true);
 	mapNotice('loaded ' + record.name);
 	careerRecordingReset(true);
 	return true;
@@ -561,7 +616,7 @@ function loadSavedMap(kind) {
 	const pool = savedMapList().concat(savedFieldList()).filter(r => matchesLoadKind(r, kind));
 	const record = picked || (pool.length ? pool[Math.floor(Math.random() * pool.length)] : null);
 	if (!record) {
-		mapNotice('saved_maps.js has no ' + kind + ' map');
+		mapNotice('saved_maps.js has no ' + (periodicMode ? 'periodic ' : '') + kind + ' map');
 		return false;
 	}
 	const loaded = startMapRecord(record);
@@ -602,6 +657,16 @@ function savedMapParam(text) {
 function loadSavedMapParam(params) {
 	const record = savedMapParam(params.get('map'));
 	if (!record) return false;
+	if (params.has('fft')) {
+		const fftStr = params.get('fft');
+		if (fftStr !== '1' && fftStr !== '0' && fftStr !== 'true' && fftStr !== 'false') return false;
+		const wantFft = fftStr === '1' || fftStr === 'true';
+		if (wantFft !== Boolean(record.fft)) {
+			mapNotice((record.kind === 'field' ? 'designed field' : 'saved map') +
+				' topology does not match periodic FFT');
+			return false;
+		}
+	}
 	const options = {};
 	/* who flies YOU and how fast the orbit clock runs, as on a seed link */
 	const player = params.get('you') || params.get('player');

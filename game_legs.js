@@ -143,8 +143,12 @@
 		for (let w = 0; w < LEG_PAIR_WAYS; w++) ways[w].valid = false;
 
 		const tau = Math.PI * 2;
-		const dx = probe.planetX[goal] - probe.planetX[origin];
-		const dy = probe.planetY[goal] - probe.planetY[origin];
+		let dx = probe.planetX[goal] - probe.planetX[origin];
+		let dy = probe.planetY[goal] - probe.planetY[origin];
+		if (probe.periodic) {
+			dx = GravitySim.minImage(dx, probe.worldW);
+			dy = GravitySim.minImage(dy, probe.worldH);
+		}
 		const bearing = Math.atan2(dy, dx);
 		let anyHit = false;
 
@@ -513,7 +517,7 @@
 		const fieldTime2 = sim.fieldStatic ? sim.fieldT : sim.fieldT + flightSec1 * sim.fieldRate;
 		const pairSlot = lookupLegPairSlot(sim, body, goal2, fieldTime2);
 		const bookTag = sim.fieldStatic ? launchBookTag(sim.fieldStatic, sim.gravityScale,
-			sim.forceScale, sim.strength, sim.bodyCount) : 0;
+			sim.forceScale, sim.strength, sim.bodyCount, sim.periodic, sim.worldW, sim.worldH) : 0;
 		const bookEntries = career.launchBook && bookReady(career.launchBook, bookTag)
 			? career.launchBook.entries : null;
 		const bookLen = bookEntries ? bookEntries.length : 0;
@@ -612,8 +616,12 @@
 				const fragCap = kitCap < FRAGILE_SPEED ? kitCap : FRAGILE_SPEED;
 				if (checkExitSpeed(exitSpeedFn, sim, body, fragCap) <= 0) return out;
 			}
-			const dx = sim.planetX[goal2] - sim.planetX[body];
-			const dy = sim.planetY[goal2] - sim.planetY[body];
+			let dx = sim.planetX[goal2] - sim.planetX[body];
+			let dy = sim.planetY[goal2] - sim.planetY[body];
+			if (sim.periodic) {
+				dx = GravitySim.minImage(dx, sim.worldW);
+				dy = GravitySim.minImage(dy, sim.worldH);
+			}
 			const spanPx = Math.max(0, Math.hypot(dx, dy) - sim.planetR[body] - sim.planetR[goal2]);
 			const topSpeed = fragile2 ? FRAGILE_SPEED : GravitySim.SPEED_MAX;
 			const minSteps2 = Math.max(2, Math.ceil(spanPx / (topSpeed * GravitySim.DT)));

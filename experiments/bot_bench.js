@@ -24,7 +24,7 @@ const GravityGame = require(path.join(root, 'gravity_game.js'));
 const GravityBot = require(path.join(root, 'gravity_bot.js'));
 const { loadPage } = require('./dom_stub.js');
 
-const PLANETS = Sim.PLANETS;
+const PLANETS = OrbitWorld.CLASSIC_PLANETS;
 const DT = GravitySim.DT;
 const END_IMPACT = GravitySim.END_IMPACT;
 const END_EXIT = GravitySim.END_EXIT;
@@ -299,7 +299,7 @@ function benchStayPay() {
 		while (sim.status === STATUS_FLYING) {
 			step += 1;
 			sim.stepOne();
-			prevStamps.set(market.lastVisitStep);
+			prevStamps.set(market.lastVisitStep.subarray(0, PLANETS));
 			prevInside.set(ledger.inside.subarray(0, PLANETS));
 			const before = ledger.shotGain;
 			GravityGame.stepHarvest(ledger, market, sim, step);
@@ -422,11 +422,11 @@ function benchLadder() {
 		if (seededField) {
 			/* A copied link opens the page's default subset, not all generated worlds. */
 			const count = OrbitWorld.DEFAULT_PLANETS;
-			const mask = new Uint8Array(PLANETS);
+			const mask = new Uint8Array(OrbitWorld.PLANETS);
 			mask.fill(1, 0, count);
 			bot.setPlanetMask(mask, count);
 			GravityGame.applyMarketUniverse(market, mask, count);
-			for (let p = 0; p < PLANETS; p++) {
+			for (let p = 0; p < OrbitWorld.PLANETS; p++) {
 				bot.strength[p] = mask[p] ? GravityGame.planetGravity(seed, p) : 0;
 			}
 		}

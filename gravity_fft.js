@@ -207,6 +207,7 @@
 	}
 
 	const kernelCache = new Map();
+	const unitPhiMeanCache = new Map();
 
 	function spectrumOf(real, gridX, gridY) {
 		const n = gridX * gridY;
@@ -226,13 +227,44 @@
 		let entry = kernelCache.get(key);
 		if (entry) return entry;
 		const real = buildKernels(gridX, gridY, worldW, worldH);
+		const n = gridX * gridY;
+		let sumInv = 0;
+		for (let i = 0; i < n; i++) sumInv -= real.phi[i];
+		const mean = sumInv / n;
+		unitPhiMeanCache.set(key, mean);
 		entry = {
 			ax: spectrumOf(real.ax, gridX, gridY),
 			ay: spectrumOf(real.ay, gridX, gridY),
-			phi: spectrumOf(real.phi, gridX, gridY)
+			phi: spectrumOf(real.phi, gridX, gridY),
+			unitPhiMean: mean
 		};
 		kernelCache.set(key, entry);
 		return entry;
+	}
+
+	function unitPhiMean(worldW, worldH) {
+		const grid = gridFor(worldW, worldH);
+		const gridX = grid.gridX, gridY = grid.gridY;
+		const key = gridX + 'x' + gridY + '@' + worldW + 'x' + worldH + '/' + SOFT;
+		const cached = unitPhiMeanCache.get(key);
+		if (cached !== undefined) return cached;
+		const dx = worldW / gridX;
+		const dy = worldH / gridY;
+		const halfX = gridX >> 1;
+		const halfY = gridY >> 1;
+		let sumInv = 0;
+		for (let iy = 0; iy < gridY; iy++) {
+			let cy = iy * dy;
+			if (iy > halfY) cy -= worldH;
+			for (let ix = 0; ix < gridX; ix++) {
+				let cx = ix * dx;
+				if (ix > halfX) cx -= worldW;
+				sumInv += 1 / Math.sqrt(cx * cx + cy * cy + SOFT2);
+			}
+		}
+		const mean = sumInv / (gridX * gridY);
+		unitPhiMeanCache.set(key, mean);
+		return mean;
 	}
 
 	/* ── CIC ── deposit spreads mass to the four nearest cell centres, gather
@@ -383,6 +415,7 @@
 		wrap: wrap,
 		minImage: minImage,
 		buildKernels: buildKernels,
+		unitPhiMean: unitPhiMean,
 		fft2d: fft2d,
 		deposit: deposit,
 		solve: solve,

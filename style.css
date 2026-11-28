@@ -1294,6 +1294,10 @@ body {
 	margin-top: 6px;
 }
 
+body.periodicWorld #viewFullLabel {
+	display: none;
+}
+
 /* one view line over the canvas: the three backdrops, the full view switch and
  * the clean render toggle, so the picture is switched over the picture; the
  * legend hangs under it only while potential is the visible backdrop */

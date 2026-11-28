@@ -46,8 +46,12 @@
 
 	function minSpanSteps(sim, from, to, topSpeed) {
 		if (!sim || from < 0 || to < 0 || from === to || !sim.planetX || !sim.planetY) return 0;
-		const dx = sim.planetX[to] - sim.planetX[from];
-		const dy = sim.planetY[to] - sim.planetY[from];
+		let dx = sim.planetX[to] - sim.planetX[from];
+		let dy = sim.planetY[to] - sim.planetY[from];
+		if (sim.periodic) {
+			dx = GravitySim.minImage(dx, sim.worldW);
+			dy = GravitySim.minImage(dy, sim.worldH);
+		}
 		const r = sim.planetR ? sim.planetR[from] + sim.planetR[to] : 0;
 		const span = Math.max(0, Math.hypot(dx, dy) - r);
 		return Math.max(2, Math.ceil(span / (topSpeed * GravitySim.DT)));

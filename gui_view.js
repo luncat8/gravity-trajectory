@@ -18,7 +18,15 @@ function syncTrajectoryUi(career) {
 }
 
 function refreshViewUi() {
-	if (viewFullEl) viewFullEl.checked = scene.view.frame === FRAME_FULL;
+	if (document.body && document.body.classList) {
+		document.body.classList.toggle('periodicWorld', periodicMode);
+	}
+	if (viewFullLabelEl) viewFullLabelEl.hidden = periodicMode;
+	if (viewFullEl) {
+		viewFullEl.hidden = periodicMode;
+		viewFullEl.checked = !periodicMode && scene.view.frame === FRAME_FULL;
+		viewFullEl.disabled = periodicMode;
+	}
 	if (viewSpaceEl) viewSpaceEl.checked = viewMode === VIEW_SPACE;
 	if (viewFieldEl) viewFieldEl.checked = viewMode === VIEW_FIELD;
 	if (viewPotentialEl) viewPotentialEl.checked = viewMode === VIEW_POTENTIAL;
@@ -32,6 +40,21 @@ function refreshViewUi() {
 		viewTagEl.title = lost
 			? 'gravity field paused: the WebGL context was lost · f retries once it restores'
 			: 'starfield backdrop and gravity well rings';
+		return;
+	}
+	if (periodicMode) {
+		const moving = mode === MODE_PORTS;
+		const backend = moving ? '1/' + GravityField.LOW_DIV : 'FFT';
+		const how = moving
+			? '1/' + GravityField.LOW_DIV + ' periodic min-image raster'
+			: 'shared CIC-FFT grid';
+		if (viewMode === VIEW_POTENTIAL) {
+			viewTagEl.textContent = 'periodic φ · ' + backend;
+			viewTagEl.title = 'mean-zero periodic Plummer potential: blue repels (φ > 0), clear near mean, green pulls (φ < 0), red deep well · ' + how;
+			return;
+		}
+		viewTagEl.textContent = 'hue · grad · ' + backend;
+		viewTagEl.title = 'hue = periodic pull direction · lightness = potential gradient · ' + how;
 		return;
 	}
 	const gl = fieldRenderer.backend() === 'webgl';
@@ -199,6 +222,98 @@ function worldY(clientY) {
 	return (clientY - view.offY) / view.scale;
 }
 
+function wrapWorldX(x) {
+	return periodicMode ? GravitySim.wrap(x, OrbitSim.WORLD_W) : x;
+}
+
+function wrapWorldY(y) {
+	return periodicMode ? GravitySim.wrap(y, OrbitSim.WORLD_H) : y;
+}
+
+function worldDeltaX(dx) {
+	return periodicMode ? GravitySim.minImage(dx, OrbitSim.WORLD_W) : dx;
+}
+
+function worldDeltaY(dy) {
+	return periodicMode ? GravitySim.minImage(dy, OrbitSim.WORLD_H) : dy;
+}
+
+/* invokes fn(x, y) plus up to three torus wrap ghosts when an element's AABB
+ * crosses [0, WORLD_W) x [0, WORLD_H); zero allocations, 1 call in the interior */
+function forWorldWraps(x, y, rx, ry, fn) {
+	fn(x, y);
+	if (!periodicMode) return;
+	const W = OrbitSim.WORLD_W;
+	const H = OrbitSim.WORLD_H;
+	const sx = x - rx < 0 ? W : x + rx > W ? -W : 0;
+	const sy = y - ry < 0 ? H : y + ry > H ? -H : 0;
+	if (sx !== 0) fn(x + sx, y);
+	if (sy !== 0) fn(x, y + sy);
+	if (sx !== 0 && sy !== 0) fn(x + sx, y + sy);
+}
+
+/* splits a single line segment cleanly at the torus seam when |dx| > W/2 or |dy| > H/2 */
+function traceWorldSegment(x0, y0, x1, y1) {
+	if (!periodicMode) {
+		ctx.moveTo(x0, y0);
+		ctx.lineTo(x1, y1);
+		return;
+	}
+	const wx0 = wrapWorldX(x0);
+	const wy0 = wrapWorldY(y0);
+	const wx1 = wrapWorldX(x1);
+	const wy1 = wrapWorldY(y1);
+	const dx = worldDeltaX(wx1 - wx0);
+	const dy = worldDeltaY(wy1 - wy0);
+	ctx.moveTo(wx0, wy0);
+	ctx.lineTo(wx0 + dx, wy0 + dy);
+	if (wx0 + dx !== wx1 || wy0 + dy !== wy1) {
+		ctx.moveTo(wx1 - dx, wy1 - dy);
+		ctx.lineTo(wx1, wy1);
+	}
+}
+
+/* traces a path array, breaking wrapped steps at the seam instead of drawing chords */
+function traceWorldPolyline(pathX, pathY, count, stride) {
+	if (count < 2) return;
+	ctx.moveTo(pathX[0], pathY[0]);
+	if (!periodicMode) {
+		for (let i = stride; i < count; i += stride) ctx.lineTo(pathX[i], pathY[i]);
+		const last = count - 1;
+		if (last % stride !== 0) ctx.lineTo(pathX[last], pathY[last]);
+		return;
+	}
+	const halfW = OrbitSim.WORLD_W * 0.5;
+	const halfH = OrbitSim.WORLD_H * 0.5;
+	let px = pathX[0];
+	let py = pathY[0];
+	for (let i = stride; i < count; i += stride) {
+		const nx = pathX[i];
+		const ny = pathY[i];
+		if (Math.abs(nx - px) > halfW || Math.abs(ny - py) > halfH) {
+			const dx = worldDeltaX(nx - px);
+			const dy = worldDeltaY(ny - py);
+			ctx.lineTo(px + dx, py + dy);
+			ctx.moveTo(nx - dx, ny - dy);
+		}
+		ctx.lineTo(nx, ny);
+		px = nx;
+		py = ny;
+	}
+	const last = count - 1;
+	if (last % stride !== 0) {
+		const nx = pathX[last];
+		const ny = pathY[last];
+		if (Math.abs(nx - px) > halfW || Math.abs(ny - py) > halfH) {
+			const dx = worldDeltaX(nx - px);
+			const dy = worldDeltaY(ny - py);
+			ctx.lineTo(px + dx, py + dy);
+			ctx.moveTo(nx - dx, ny - dy);
+		}
+		ctx.lineTo(nx, ny);
+	}
+}
+
 function planetAt(wx, wy) {
 	const reach = HIT_PX / view.scale;
 	const reach2 = reach * reach;
@@ -206,8 +321,8 @@ function planetAt(wx, wy) {
 	let bestD2 = Infinity;
 	for (let i = 0; i < PLANETS; i++) {
 		if (!planetMask[i]) continue;
-		const dx = tradeSim.planetX[i] - wx;
-		const dy = tradeSim.planetY[i] - wy;
+		const dx = worldDeltaX(tradeSim.planetX[i] - wx);
+		const dy = worldDeltaY(tradeSim.planetY[i] - wy);
 		const d2 = dx * dx + dy * dy;
 		if (d2 <= reach2 && d2 < bestD2) {
 			bestD2 = d2;
@@ -223,8 +338,8 @@ function bodyAt(wx, wy) {
 	let best = -1;
 	let bestD2 = Infinity;
 	for (let i = 0; i < cargoSim.bodyCount; i++) {
-		const dx = cargoSim.bodyX[i] - wx;
-		const dy = cargoSim.bodyY[i] - wy;
+		const dx = worldDeltaX(cargoSim.bodyX[i] - wx);
+		const dy = worldDeltaY(cargoSim.bodyY[i] - wy);
 		const d2 = dx * dx + dy * dy;
 		if (d2 <= reach2 && d2 < bestD2) {
 			bestD2 = d2;
@@ -239,8 +354,8 @@ function shipAt(wx, wy) {
 	const sim = activeSim();
 	if (sim.status !== STATUS_FLYING) return false;
 	const reach = HIT_PX / view.scale;
-	const dx = sim.cargo.x - wx;
-	const dy = sim.cargo.y - wy;
+	const dx = worldDeltaX(sim.cargo.x - wx);
+	const dy = worldDeltaY(sim.cargo.y - wy);
 	return dx * dx + dy * dy <= reach * reach;
 }
 
@@ -374,7 +489,9 @@ function setBodyStrength(body, value) {
 	} else if (mode === MODE_PLANETS) {
 		planetBaseStrength[body] = cargoSim.strength[body];
 		bot.strength[body] = cargoSim.strength[body];
+		bot.invalidateField();
 	}
+	helperProbe.invalidateField();
 	syncPlanetGravity();
 	return true;
 }

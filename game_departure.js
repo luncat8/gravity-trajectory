@@ -92,24 +92,26 @@
 		legProbe.fieldT = sourceSim.fieldT;
 		legProbe.fieldRate = sourceSim.fieldRate;
 		legProbe.setScales(sourceSim.gravityScale, sourceSim.forceScale);
+		if (sourceSim.periodic) legProbe.setPeriodic(true, sourceSim);
+		else if (legProbe.periodic) legProbe.setPeriodic(false);
 		if (legSourceSim !== sourceSim ||
 			legProbe.planetX !== sourceSim.planetX ||
 			legProbe.planetY !== sourceSim.planetY ||
 			legProbe.planetR !== sourceSim.planetR ||
 			legProbe.planetCapacity !== sourceSim.planetCapacity) {
-			legProbe.planetCapacity = sourceSim.planetCapacity;
-			legProbe.planetX = sourceSim.planetX;
-			legProbe.planetY = sourceSim.planetY;
-			legProbe.planetR = sourceSim.planetR;
-			legProbe.sysCos.set(sourceSim.sysCos);
-			legProbe.sysSin.set(sourceSim.sysSin);
-			legProbe.sysInvRX.set(sourceSim.sysInvRX);
-			legProbe.sysInvRY.set(sourceSim.sysInvRY);
-			legProbe.sysBoundR2.set(sourceSim.sysBoundR2);
-			legProbe.planetMinX = sourceSim.planetMinX;
-			legProbe.planetMaxX = sourceSim.planetMaxX;
-			legProbe.planetMinY = sourceSim.planetMinY;
-			legProbe.planetMaxY = sourceSim.planetMaxY;
+			if (sourceSim.planetCapacity !== undefined) legProbe.planetCapacity = sourceSim.planetCapacity;
+			if (sourceSim.planetX) legProbe.planetX = sourceSim.planetX;
+			if (sourceSim.planetY) legProbe.planetY = sourceSim.planetY;
+			if (sourceSim.planetR) legProbe.planetR = sourceSim.planetR;
+			if (sourceSim.sysCos) legProbe.sysCos.set(sourceSim.sysCos);
+			if (sourceSim.sysSin) legProbe.sysSin.set(sourceSim.sysSin);
+			if (sourceSim.sysInvRX) legProbe.sysInvRX.set(sourceSim.sysInvRX);
+			if (sourceSim.sysInvRY) legProbe.sysInvRY.set(sourceSim.sysInvRY);
+			if (sourceSim.sysBoundR2) legProbe.sysBoundR2.set(sourceSim.sysBoundR2);
+			if (sourceSim.planetMinX !== undefined) legProbe.planetMinX = sourceSim.planetMinX;
+			if (sourceSim.planetMaxX !== undefined) legProbe.planetMaxX = sourceSim.planetMaxX;
+			if (sourceSim.planetMinY !== undefined) legProbe.planetMinY = sourceSim.planetMinY;
+			if (sourceSim.planetMaxY !== undefined) legProbe.planetMaxY = sourceSim.planetMaxY;
 		}
 		legProbe.setPlanetMask(sourceSim.planetMask);
 		if (legSourceSim !== sourceSim ||
@@ -125,8 +127,6 @@
 			legProbe.stepStale = true;
 			legProbe.refreshField();
 		}
-		if (sourceSim.periodic) legProbe.setPeriodic(true, sourceSim);
-		else if (legProbe.periodic) legProbe.setPeriodic(false);
 		return legProbe;
 	}
 
@@ -135,6 +135,10 @@
 		stamp = Math.imul(stamp ^ (sim.periodic ? 1 : 0), 0x01000193);
 		stamp = Math.imul(stamp ^ Math.round(sim.worldW), 0x01000193);
 		stamp = Math.imul(stamp ^ Math.round(sim.worldH), 0x01000193);
+		if (sim.periodic && sim.fieldStatic) {
+			const snap = sim.ensurePeriodicGrid();
+			stamp = Math.imul(stamp ^ (snap ? snap.revision : 0), 0x01000193);
+		}
 		stamp = Math.imul(stamp ^ sim.bodyCount, 0x01000193);
 		stamp = Math.imul(stamp ^ Math.round(sim.gravityScale * 100), 0x01000193);
 		for (let i = 0; i < sim.bodyCount; i++) {

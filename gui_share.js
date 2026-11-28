@@ -49,6 +49,7 @@ function copyLink() {
 		bot: game.bot,
 		player: game.player,
 		cheat: game.cheat,
+		periodic: game.periodic,
 		gravityScale: game.gravityScale,
 		forceScale: game.forceScale,
 		spaceWearScale: game.spaceWearScale,
@@ -102,6 +103,7 @@ function botLogHeader(actors) {
 			' · pads ×' + padScale.toFixed(2) + ' · rot ×' + rotScale.toFixed(2) +
 			' · pay ×' + payScale.toFixed(2) : '') +
 		' · ' + (cargoSim.fieldStatic ? 'planets · static · lists on' : 'ports · moving · lists off') +
+		(periodicMode ? ' · fft' : '') +
 		(careerRule() && careerPaused ? ' · world clock paused' : '') +
 		' · checked bots: ' + (names.length ? names.join(', ') : 'none');
 }
@@ -143,7 +145,9 @@ function careerLogText(actors) {
 		' · ' + (start.source === MODE_PLANETS ? 'planets' : 'ports') +
 		' · g/f/w/p/r/y ' + start.gs + '/' + start.fs + '/' + start.ws + '/' +
 			(start.ps ?? 1) + '/' + (start.rs ?? 1) + '/' + (start.ys ?? 1) +
-		(start.ht ? ' · stay-pay' : '') + (start.state.market.permanentCorruption ? ' · entrenched corruption' : '') +
+		(start.ht ? ' · stay-pay' : '') +
+		(start.fft ? ' · fft' : '') +
+		(start.state.market.permanentCorruption ? ' · entrenched corruption' : '') +
 		(start.cheat ? ' · ' + start.cheat : ''));
 	for (const slot of slots) {
 		if (slot >= start.seats.length) continue;
@@ -194,6 +198,8 @@ function loadLink(hash = location.hash) {
 	}
 	loadingUrl = true;
 	clearMapField();
+	setPeriodicMode(Boolean(link.periodic), false);
+	game.planetUniverse = 0;
 	scene.setSpeed(link.rate);
 	setExperimentScales(link.gravityScale, link.forceScale, link.harvestTick,
 		link.spaceWearScale, link.padScale, link.rotScale, link.payScale);
@@ -201,6 +207,7 @@ function loadLink(hash = location.hash) {
 	startGame(link.seed, true, link.rule, link.bot, link.player, link.cheat);
 	if (link.shots.length > 0) startReplay(link.shots, link.end, link.length);
 	loadingUrl = false;
+	refreshMapsUi();
 	syncSeedUrl(true);
 	return true;
 }
@@ -211,7 +218,7 @@ function loadLink(hash = location.hash) {
 function readUniverseParam(params) {
 	if (!params.has('universe')) return true;
 	const count = Number(params.get('universe'));
-	if (!Number.isInteger(count) || count < PLANET_UNIVERSE_MIN || count > PLANET_UNIVERSE_MAX) {
+	if (!Number.isInteger(count) || count < PLANET_UNIVERSE_MIN || count > planetUniverseCap()) {
 		return false;
 	}
 	/* the scoreboard's number, which `startGame` keeps across a restart */
@@ -272,8 +279,14 @@ function loadSearchParams() {
 		params.has('universe') || params.has('players') || params.has('start') ||
 		params.has('gs') || params.has('fs') || params.has('ws') ||
 		params.has('ps') || params.has('rs') || params.has('ys') || params.has('ht') ||
+		params.has('fft') ||
 		params.has('ga') || params.has('gb') || params.has('gh');
 	if (!hasGameHint) return false;
+	const fftStr = params.get('fft');
+	if (fftStr !== null && fftStr !== '1' && fftStr !== '0' && fftStr !== 'true' && fftStr !== 'false') {
+		return false;
+	}
+	const fftFlag = fftStr === '1' || fftStr === 'true';
 	const exp = GravityGame.EXPERIMENT;
 	const gsNum = readUrlScale(params, 'gs', exp.gravityMin, exp.gravityMax);
 	const fsNum = readUrlScale(params, 'fs', exp.forceMin, exp.forceMax);
@@ -307,19 +320,36 @@ function loadSearchParams() {
 	const rateNum = speedStr !== null ? Number(speedStr) : scene.trade.speed;
 	if (speedStr !== null && (!Number.isFinite(rateNum) || rateNum < 0.5 || rateNum > 12)) return false;
 	const sourceStr = params.get('src') || params.get('source');
-	if (!readUniverseParam(params)) return false;
+	const targetCap = fftFlag ? PLANETS : PLANET_UNIVERSE_MAX;
+	if (params.has('universe')) {
+		const uCount = Number(params.get('universe'));
+		if (!Number.isInteger(uCount) || uCount < PLANET_UNIVERSE_MIN || uCount > targetCap) {
+			return false;
+		}
+	}
 	if (modeParam === PLAY_LAB || !shouldGame) {
 		const hadField = Boolean(PlanetGravity.armed());
+		const topologyChanged = periodicMode !== fftFlag;
 		loadingUrl = true;
 		clearMapField();
+		setPeriodicMode(fftFlag, false);
+		if (!params.has('universe')) {
+			game.planetUniverse = 0;
+			initPlanetUniverse(planetUniverseDefault(PLAY_LAB));
+		} else if (!readUniverseParam(params)) {
+			loadingUrl = false;
+			return false;
+		}
 		stopGame();
 		setExperimentScales(gsNum, fsNum, false, wsNum, psNum, rsNum, ysNum);
 		setGiftBudgets(gifts[0], gifts[1], gifts[2]);
-		if (seedNum !== tradeSim.seed) {
+		if (seedNum !== tradeSim.seed || topologyChanged) {
 			scene.reset(seedNum);
 			clearCargo();
+			applyPlanetUniverse();
 			attachWorld();
-		} else if (hadField) {
+		} else if (hadField || params.has('universe')) {
+			applyPlanetUniverse();
 			attachWorld();
 			cargoSim.refreshField();
 			syncPlanetGravity();
@@ -328,6 +358,8 @@ function loadSearchParams() {
 		else if (sourceStr === 'planets' || sourceStr === 'planet') setSource(MODE_PLANETS);
 		if (speedStr !== null) scene.setSpeed(rateNum);
 		loadingUrl = false;
+		refreshMapsUi();
+		refreshGameUi();
 		syncSeedUrl(true);
 		return true;
 	}
@@ -339,14 +371,29 @@ function loadSearchParams() {
 	if (!ruleStr && modeRule) ruleStr = modeRule;
 	if (!ruleStr && hasCareerScale) ruleStr = RULE_CAREER;
 	if (!ruleStr) ruleStr = RULE_TOUR;
+	if (fftFlag && ruleStr === RULE_ROUTE) {
+		linkNote = 'route length unavailable with periodic FFT';
+		refreshGameUi();
+		return false;
+	}
 	if (botStr !== null && !(botStr in GravityGame.BOTS)) return false;
 	if (playerStr !== null && !(playerStr in GravityGame.PLAYER_TYPES)) return false;
 	const cheatStr = params.get('cheat');
 	if (cheatStr !== null && !(ruleStr === RULE_CAREER && GravityGame.CHEATS[cheatStr])) return false;
+	const prevPeriodic = periodicMode;
+	setPeriodicMode(fftFlag, false);
+	if (!params.has('universe')) {
+		game.planetUniverse = 0;
+	} else if (!readUniverseParam(params)) {
+		setPeriodicMode(prevPeriodic, false);
+		return false;
+	}
 	/* a roster the url names replaces whatever the previous run left set */
 	if (params.has('players')) game.playerCount = 0;
-	if (!readPlayersParam(params, ruleStr)) return false;
-	if (!readStartParam(params, ruleStr)) return false;
+	if (!readPlayersParam(params, ruleStr) || !readStartParam(params, ruleStr)) {
+		setPeriodicMode(prevPeriodic, false);
+		return false;
+	}
 	loadingUrl = true;
 	clearMapField();
 	if (speedStr !== null) scene.setSpeed(rateNum);
@@ -363,11 +410,13 @@ function loadSearchParams() {
 	if (shotsParam) {
 		const fakeHash = '#game=1&seed=' + seedNum + '&rate=' + rateNum +
 			'&rule=' + ruleStr + (botStr ? '&bot=' + botStr : '') +
+			(fftFlag ? '&fft=1' : '') +
 			'&shots=' + shotsParam + (endParam ? '&end=' + endParam : '') + (lenParam ? '&len=' + lenParam : '');
 		const link = GravityGame.decodeLink(fakeHash);
 		if (link && link.shots.length > 0) startReplay(link.shots, link.end, link.length);
 	}
 	loadingUrl = false;
+	refreshMapsUi();
 	syncSeedUrl(true);
 	return true;
 }

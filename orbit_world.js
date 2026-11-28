@@ -19,6 +19,9 @@
 	const PLANETS = 192;
 	const CLASSIC_PLANETS = 48;
 	const DEFAULT_PLANETS = 26;
+	const PERIODIC_DEFAULT_PLANETS = 104;
+	const CLASSIC_CAREER_PLANETS = 16;
+	const PERIODIC_CAREER_PLANETS = 64;
 	const INITIAL_PORTS = 8;
 	const WORLD_W = 1600;
 	const WORLD_H = 1000;
@@ -224,6 +227,15 @@
 		chooseInitialPlanets(world, rand, initialPorts);
 	}
 
+	function minImage(delta, length) {
+		const half = length * 0.5;
+		if (delta >= -half && delta < half) return delta;
+		let r = delta - Math.round(delta / length) * length;
+		if (r >= half) r -= length;
+		else if (r < -half) r += length;
+		return r === 0 ? 0 : r;
+	}
+
 	function chooseInitialPlanets(world, rand, initialPorts) {
 		const x = world.planetX, y = world.planetY;
 		/* initial stations spread over the field, never two on one planet */
@@ -238,8 +250,12 @@
 				let gap = Infinity;
 				for (let j = 0; j < k + 1; j++) {
 					const other = initial[j];
-					const dx = x[i] - x[other];
-					const dy = y[i] - y[other];
+					let dx = x[i] - x[other];
+					let dy = y[i] - y[other];
+					if (world.periodic) {
+						dx = minImage(dx, WORLD_W);
+						dy = minImage(dy, WORLD_H);
+					}
 					const d2 = dx * dx + dy * dy;
 					if (d2 < gap) gap = d2;
 				}
@@ -284,9 +300,10 @@
 	 */
 	function placeTraits(world) {
 		const rand = seedRandom(world.seed ^ 0x5eed1);
+		const count = world.periodic ? world.planetCount : DEFAULT_PLANETS;
 		let minMean = Infinity;
 		let maxMean = -Infinity;
-		for (let i = 0; i < DEFAULT_PLANETS; i++) {
+		for (let i = 0; i < count; i++) {
 			const mean = (world.orbitRX[i] + world.orbitRY[i]) * 0.5;
 			world.planetLight[i] = mean;   // scratch: the orbit mean
 			if (mean < minMean) minMean = mean;
@@ -294,7 +311,7 @@
 		}
 		const span = maxMean - minMean;
 		let metalSum = 0;
-		for (let i = 0; i < DEFAULT_PLANETS; i++) {
+		for (let i = 0; i < count; i++) {
 			const mean = world.planetLight[i];
 			const band = span > 0 ? (mean - minMean) / span : 0.5;
 			const row = band < 0.34 ? 0 : band < 0.68 ? 1 : 2;
@@ -310,7 +327,7 @@
 			const lightFit = clamp01(1 - Math.abs(Math.log2(world.planetLight[i])) / 3);
 			world.planetHabitat[i] = clamp01(
 				TYPE_HABITAT[type] * (0.55 + 0.45 * lightFit) * (0.85 + 0.3 * rand()));
-			metalSum += world.planetMetal[i];
+			if (i < DEFAULT_PLANETS) metalSum += world.planetMetal[i];
 		}
 		world.beltCount = rand() < 0.5 ? 0 : rand() < 0.75 ? 1 : 2;
 		/* A K/M dwarf through an A star, log-uniform, sun = 1 L. */
@@ -379,11 +396,6 @@
 			world.orbitTilt[i] = tilt;
 			world.orbitTiltCos[i] = Math.cos(tilt);
 			world.orbitTiltSin[i] = Math.sin(tilt);
-			const type = Math.floor(rand() * TYPE_COUNT);
-			world.planetType[i] = type;
-			world.planetMetal[i] = TYPE_METAL[type] * (0.70 + 0.60 * rand());
-			world.planetLight[i] = 0.2 + 0.8 * rand();
-			world.planetHabitat[i] = clamp01(TYPE_HABITAT[type] * (0.55 + 0.45 * rand()));
 			i++;
 		}
 	}
@@ -436,7 +448,9 @@
 	}
 
 	const OrbitWorld = {
-		PLANETS, CLASSIC_PLANETS, DEFAULT_PLANETS, INITIAL_PORTS, WORLD_W, WORLD_H, TAU,
+		PLANETS, CLASSIC_PLANETS, DEFAULT_PLANETS,
+		PERIODIC_DEFAULT_PLANETS, CLASSIC_CAREER_PLANETS, PERIODIC_CAREER_PLANETS,
+		INITIAL_PORTS, WORLD_W, WORLD_H, TAU,
 		AREA_SCALE, AREA_W, AREA_H, AREA_PAD_X, AREA_PAD_Y,
 		KIND_NORMAL, KIND_ARF, KIND_CAPITAL, SPECIAL_COUNT,
 		TYPE_ROCK, TYPE_TERRAN, TYPE_SUPER, TYPE_DWARF, TYPE_MINI, TYPE_GAS, TYPE_ICE,

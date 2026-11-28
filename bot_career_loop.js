@@ -45,7 +45,7 @@
 			 * mask before startCareer picks an HQ from the in-play planets */
 			if (this.probe.planetMask) {
 				GravityGame.setCareerUniverse(r.career, this.probe.planetMask,
-					this.planetUniverseCount || OrbitWorld.PLANETS);
+					this.planetUniverseCount || this.probe.planetCapacity || OrbitWorld.PLANETS);
 			}
 			GravityGame.startCareer(r.career, r.sim, GravityGame.rivalSeed(seed, i),
 				trade, null, galaxy, undefined, startMode,

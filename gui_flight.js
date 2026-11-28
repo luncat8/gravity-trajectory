@@ -413,14 +413,16 @@ function drawQuestGuide(now) {
 	const from = sim.status === STATUS_FLYING ? -2 : activeCareer().at;
 	if (from === -1) return;
 	const px = 1 / view.scale;
-	ctx.beginPath();
-	ctx.arc(tradeSim.planetX[questHoverBody], tradeSim.planetY[questHoverBody],
-		tradeSim.planetR[questHoverBody] + 9 * px, 0, TAU);
-	ctx.strokeStyle = MINT;
-	ctx.globalAlpha = 0.55 + 0.35 * Math.sin(now * 0.006);
-	ctx.lineWidth = 1.3 * px;
-	ctx.setLineDash(NO_DASH);
-	ctx.stroke();
+	const qr = tradeSim.planetR[questHoverBody] + 9 * px;
+	forWorldWraps(tradeSim.planetX[questHoverBody], tradeSim.planetY[questHoverBody], qr, qr, (qx, qy) => {
+		ctx.beginPath();
+		ctx.arc(qx, qy, qr, 0, TAU);
+		ctx.strokeStyle = MINT;
+		ctx.globalAlpha = 0.55 + 0.35 * Math.sin(now * 0.006);
+		ctx.lineWidth = 1.3 * px;
+		ctx.setLineDash(NO_DASH);
+		ctx.stroke();
+	});
 	ctx.globalAlpha = 1;
 	if (from === -2) {
 		drawGuideArrow(sim.cargo.x, sim.cargo.y, 6 * px,

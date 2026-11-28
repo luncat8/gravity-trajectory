@@ -49,10 +49,12 @@ function fillPorts(t, outX, outY, count) {
 		const angle = tradeSim.orbitPhase[planet] + tradeSim.orbitOmega[planet] * t;
 		const rx = tradeSim.orbitRX[planet] * Math.cos(angle);
 		const ry = tradeSim.orbitRY[planet] * Math.sin(angle);
-		outX[p] = tradeSim.planetX[planet] +
+		const x = tradeSim.planetX[planet] +
 			rx * tradeSim.orbitTiltCos[planet] - ry * tradeSim.orbitTiltSin[planet];
-		outY[p] = tradeSim.planetY[planet] +
+		const y = tradeSim.planetY[planet] +
 			rx * tradeSim.orbitTiltSin[planet] + ry * tradeSim.orbitTiltCos[planet];
+		outX[p] = periodicMode ? GravitySim.wrap(x, OrbitSim.WORLD_W) : x;
+		outY[p] = periodicMode ? GravitySim.wrap(y, OrbitSim.WORLD_H) : y;
 	}
 }
 
@@ -119,6 +121,7 @@ const viewSpaceEl = $('viewSpace');
 const viewFieldEl = $('viewField');
 const viewPotentialEl = $('viewPotential');
 const viewFullEl = $('viewFull');
+const viewFullLabelEl = $('viewFullLabel');
 const potentialLegendEl = $('potentialLegend');
 const zoneBarEl = $('zoneBar');
 const careerCleanEl = $('careerClean');
@@ -149,6 +152,9 @@ const expPayEl = $('expPay');
 const expPayLabelEl = $('expPayLabel');
 const expHarvestEl = $('expHarvest');
 const expFleetEl = $('expFleet');
+const expPeriodicEl = $('expPeriodic');
+const expPeriodicLabelEl = $('expPeriodicLabel');
+const expPeriodicDefaultTitle = expPeriodicLabelEl ? expPeriodicLabelEl.title : '';
 const expTagEl = $('expTag');
 const giftBlockEl = $('giftBlock');
 const giftAllEl = $('giftAll');
@@ -518,7 +524,7 @@ game.career = GravityGame.createCareer(game.money);
  * removes a random one (no refund) while every player's first HQ stays. */
 const PLANET_UNIVERSE_MIN = 4;
 const PLANET_UNIVERSE_MAX = OrbitWorld.CLASSIC_PLANETS;
-const PLANET_CAREER_DEFAULT = 16;
+const PLANET_CAREER_DEFAULT = OrbitWorld.CLASSIC_CAREER_PLANETS;
 const PLANET_DEFAULT = OrbitWorld.DEFAULT_PLANETS;
 const planetMask = new Uint8Array(PLANETS);
 let planetCount = PLANET_DEFAULT;
@@ -708,6 +714,7 @@ if (expRotEl) expRotEl.addEventListener('input', onRotInput);
 if (expPayEl) expPayEl.addEventListener('input', onPayInput);
 if (expHarvestEl) expHarvestEl.addEventListener('change', onHarvestChange);
 if (expFleetEl) expFleetEl.addEventListener('change', onFleetChange);
+if (expPeriodicEl) expPeriodicEl.addEventListener('change', onPeriodicChange);
 for (const el of [giftAllEl, giftBotEl, giftHumanEl]) if (el) el.addEventListener('input', onGiftInput);
 if (giftPeekEl) giftPeekEl.addEventListener('change', refreshGiftUi);
 horizonSlider.addEventListener('input', () => {
@@ -1165,6 +1172,9 @@ window.addEventListener('keyup', event => {
 		gravity: gravityScale, force: forceScale, spaceWear: spaceWearScale,
 		pad: padScale, rot: rotScale, pay: payScale, harvestTick: harvestTick && careerRule()
 	}),
+	periodic: () => periodicMode,
+	setPeriodic: setPeriodicMode,
+	periodicGrid: () => cargoSim.periodicGrid(),
 	/* the profit-pill highlight: systems a flying ship is inside vs the ones
 	 * the traced path ahead will enter */
 	harvestMarks: () => ({ inside: liveHarvestMask, route: predHarvestMask }),

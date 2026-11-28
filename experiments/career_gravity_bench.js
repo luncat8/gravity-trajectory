@@ -31,7 +31,8 @@ GravityGame.setSpaceWearScale(SPACE_WEAR);
 const DT = GravitySim.DT;
 const RATE = 1;
 const PLANETS = OrbitWorld.PLANETS;
-const UNIVERSE = 13;
+const PERIODIC = process.env.FFT === '1';
+const UNIVERSE = Number(process.env.UNIVERSE || (PERIODIC ? OrbitWorld.PERIODIC_CAREER_PLANETS : 13));
 const SECONDS = Number(process.env.SECONDS || 400);
 const TRACE = process.env.TRACE === '1';
 const ENGINE = process.env.ENGINE === '1';
@@ -72,11 +73,13 @@ const STARTER_CAP = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
 	OrbitTech.SHIP_DRY_MASS, OrbitTech.CATAPULTS[0], 1);
 
 function makeWorld(seed) {
-	const trade = new Sim(seed);
+	const trade = new Sim(seed, PERIODIC ? { periodic: true } : undefined);
 	trade.advanceTo(420);
 	const gravity = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	if (PERIODIC) gravity.setPeriodic(true);
 	gravity.setPlanets(PLANETS, trade.planetX, trade.planetY, trade.planetR,
 		trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
+	gravity.setPlanetMask(mask);
 	const strength = new Float64Array(GravitySim.MAX_BODIES).fill(1);
 	for (let p = 0; p < PLANETS; p++) strength[p] = mask[p] ? GravityGame.planetGravity(seed, p) : 0;
 	gravity.setField(PLANETS, trade.planetR, strength, function (t, outX, outY, count) {
@@ -93,6 +96,7 @@ function makeWorld(seed) {
 	/* the political clock is run-wide: bind before any career joins */
 	GravityGame.bindRun(market, galaxy, POLITICS ? trade.world : null);
 	const bot = GravityBot.prototype && new GravityBot(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	if (PERIODIC) bot.setPeriodic(true, gravity);
 	const events = { noShots: 0, sits: 0, drops: 0 };
 	const addTrace = bot.traceAdd;
 	bot.traceAdd = function (index, decision, detail, step) {

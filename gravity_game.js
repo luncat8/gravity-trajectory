@@ -146,10 +146,10 @@ const STATS_SAMPLES = 256;
 	const PLANET_GRAVITY_MAX = PlanetGravity.MAX;
 	const PLANET_GRAVITY_STEPS = PlanetGravity.STEPS;
 	const planetGravity = PlanetGravity.gravity;
-	const SHOT_FORM = /^([pm])(\d{1,2})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})(?:\.([0-9a-z]{1,4}))?$/;
+	const SHOT_FORM = /^([pm])(\d{1,3})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})(?:\.([0-9a-z]{1,4}))?$/;
 	const BURN_FORM = /^b([0-9a-z]{1,4})\.([0-9a-z]{1,4})\.([0-9a-z]{1,4})$/;
-	const END_FORM = /^(\d{1,2})\.(\d{1,9})$/;
-		const estScratch = new Float64Array(OrbitWorld.PLANETS);
+	const END_FORM = /^(\d{1,3})\.(\d{1,9})$/;
+	const estScratch = new Float64Array(OrbitWorld.PLANETS);
 	const BOOK_LOG_MAX = GravitySim.PRED_LOG_MAX;
 
 	function angleUnits(angle) {
@@ -208,11 +208,12 @@ const STATS_SAMPLES = 256;
 	 * replayed, so it never carries shots. */
 	function encodeLink(game) {
 		const rulePart = game.rule && game.rule !== RULE_TOUR ? '&rule=' + game.rule : '';
+		const fftPart = game.periodic ? '&fft=1' : '';
 		const botPart = game.bot && game.bot !== BOT_OFF ? '&bot=' + game.bot : '';
 		const playerPart = game.player === PLAYER_BOT ? '&you=' + PLAYER_BOT : '';
 		const cheatPart = game.rule === RULE_CAREER && game.cheat ? '&cheat=' + game.cheat : '';
 		const head = 'game=' + FORMAT + '&seed=' + game.seed + '&rate=' + game.rate +
-			rulePart + botPart + playerPart + cheatPart +
+			rulePart + fftPart + botPart + playerPart + cheatPart +
 			scalePart('gs', game.gravityScale) + scalePart('fs', game.forceScale) +
 			(game.rule === RULE_CAREER
 				? scalePart('ws', game.spaceWearScale) + scalePart('ps', game.padScale) +
@@ -287,6 +288,10 @@ const STATS_SAMPLES = 256;
 		const ruleText = params.get('rule');
 		const rule = ruleText === null ? RULES.tour : RULES[ruleText];
 		if (!rule) return null;
+		const fftText = params.get('fft');
+		if (fftText !== null && fftText !== '1' && fftText !== '0') return null;
+		const periodic = fftText === '1';
+		if (periodic && rule.name === RULE_ROUTE) return null;
 		const botText = params.get('bot');
 		const bot = botText === null ? BOT_OFF : BOTS[botText];
 		if (!bot) return null;
@@ -317,9 +322,11 @@ const STATS_SAMPLES = 256;
 		if (rule.planner && parts.length > 1) return null;
 		if (rule.name === RULE_CAREER && parts.length > 0) return null;
 		const shots = [];
+		const originCap = periodic ? OrbitWorld.PLANETS : OrbitWorld.CLASSIC_PLANETS;
 		for (const part of parts) {
 			const shot = decodeShot(part, rule.capSteps);
-			if (!shot || (rule.planner && (shot.abort !== NO_ABORT || shot.burns.length > 0))) {
+			if (!shot || (shot.src === SRC_PLANETS && shot.origin >= originCap) ||
+				(rule.planner && (shot.abort !== NO_ABORT || shot.burns.length > 0))) {
 				return null;
 			}
 			shots.push(shot);
@@ -330,7 +337,9 @@ const STATS_SAMPLES = 256;
 			(!Number.isInteger(length) || length < 0 || length > 10000000)) return null;
 		const endMatch = END_FORM.exec(params.get('end') || '');
 		const end = endMatch ? { visited: Number(endMatch[1]), steps: Number(endMatch[2]) } : null;
-		return { seed: seed, rate: rate, rule: rule.name, bot: bot, player: player, cheat: cheat,
+		if (end && end.visited > GravitySim.MAX_BODIES) return null;
+		return { seed: seed, rate: rate, rule: rule.name, periodic: periodic,
+			bot: bot, player: player, cheat: cheat,
 			gravityScale: gravityScale, forceScale: forceScale, spaceWearScale: spaceWearScale,
 			padScale: padScale, rotScale: rotScale, payScale: payScale, harvestTick: harvestTick,
 			giftAll: giftAll, giftBot: giftBot, giftHuman: giftHuman,

@@ -10,15 +10,9 @@
 function drawRoutePlanEntry(sim, leader, colour, dimColour, px) {
 	const planCount = sim.predCount;
 	const planStride = planCount > 6000 ? 4 : planCount > 1400 ? 2 : 1;
-	ctx.beginPath();
-	ctx.moveTo(sim.predX[0], sim.predY[0]);
-	for (let i = planStride; i < planCount; i += planStride) {
-		ctx.lineTo(sim.predX[i], sim.predY[i]);
-	}
 	const planLast = planCount - 1;
-	if (planLast % planStride !== 0) {
-		ctx.lineTo(sim.predX[planLast], sim.predY[planLast]);
-	}
+	ctx.beginPath();
+	traceWorldPolyline(sim.predX, sim.predY, planCount, planStride);
 	ctx.strokeStyle = leader ? colour : dimColour;
 	ctx.lineWidth = (leader ? 2.1 : 1.25) * px;
 	PRED_DASH[0] = 6 * px;
@@ -66,12 +60,7 @@ function drawRivalsWorld(now) {
 		if (count >= 2 && trailRivalsOn) {
 			const stride = count > 2400 ? 2 : 1;
 			ctx.beginPath();
-			ctx.moveTo(sim.trailX[0], sim.trailY[0]);
-			for (let i = stride; i < count; i += stride) {
-				ctx.lineTo(sim.trailX[i], sim.trailY[i]);
-			}
-			const last = count - 1;
-			if (last % stride !== 0) ctx.lineTo(sim.trailX[last], sim.trailY[last]);
+			traceWorldPolyline(sim.trailX, sim.trailY, count, stride);
 			ctx.strokeStyle = RIVAL_TRAILS[rIdx];
 			ctx.lineWidth = 1.4 * px;
 			ctx.setLineDash(NO_DASH);
@@ -80,72 +69,78 @@ function drawRivalsWorld(now) {
 		/* rival base diamond when parked at a planet */
 		const rivalEvacuating = r.career && r.career.evacuating;
 		if (!rivalEvacuating && sim.status !== STATUS_FLYING && r.basePlanet >= 0) {
-			const bx = tradeSim.planetX[r.basePlanet];
-			const by = tradeSim.planetY[r.basePlanet];
 			const br = tradeSim.planetR[r.basePlanet] + (6 + rIdx * 3.5) * px;
-			ctx.beginPath();
-			ctx.moveTo(bx, by - br);
-			ctx.lineTo(bx + br, by);
-			ctx.lineTo(bx, by + br);
-			ctx.lineTo(bx - br, by);
-			ctx.closePath();
-			ctx.strokeStyle = colour;
-			ctx.globalAlpha = 0.68;
-			ctx.lineWidth = 1.15 * px;
-			ctx.stroke();
-			ctx.globalAlpha = 1;
+			forWorldWraps(tradeSim.planetX[r.basePlanet], tradeSim.planetY[r.basePlanet], br, br, (bx, by) => {
+				ctx.beginPath();
+				ctx.moveTo(bx, by - br);
+				ctx.lineTo(bx + br, by);
+				ctx.lineTo(bx, by + br);
+				ctx.lineTo(bx - br, by);
+				ctx.closePath();
+				ctx.strokeStyle = colour;
+				ctx.globalAlpha = 0.68;
+				ctx.lineWidth = 1.15 * px;
+				ctx.stroke();
+				ctx.globalAlpha = 1;
+			});
 		}
 		/* rival ship chevron in flight or ring when ended; evacuating rival rides the tow */
 		if (rivalEvacuating) {
 			const trip = r.career;
-			const dx = trip.evacToX - trip.evacFromX;
-			const dy = trip.evacToY - trip.evacFromY;
+			const dx = worldDeltaX(trip.evacToX - trip.evacFromX);
+			const dy = worldDeltaY(trip.evacToY - trip.evacFromY);
 			const angle = Math.atan2(dy, dx);
-			const x = sim.cargo.x;
-			const y = sim.cargo.y;
+			const x = wrapWorldX(sim.cargo.x);
+			const y = wrapWorldY(sim.cargo.y);
 			const size = 4.3 * px;
 			ctx.beginPath();
-			ctx.moveTo(trip.evacFromX, trip.evacFromY);
-			ctx.lineTo(x, y);
+			traceWorldSegment(trip.evacFromX, trip.evacFromY, x, y);
 			ctx.strokeStyle = colour;
 			ctx.globalAlpha = 0.35;
 			ctx.lineWidth = 1.05 * px;
 			ctx.stroke();
 			ctx.globalAlpha = 1;
-			ctx.beginPath();
-			ctx.moveTo(x + Math.cos(angle) * size, y + Math.sin(angle) * size);
-			ctx.lineTo(x + Math.cos(angle + 2.4) * size, y + Math.sin(angle + 2.4) * size);
-			ctx.lineTo(x + Math.cos(angle - 2.4) * size, y + Math.sin(angle - 2.4) * size);
-			ctx.closePath();
-			ctx.fillStyle = colour;
-			ctx.fill();
-			ctx.strokeStyle = 'rgba(3, 8, 16, 0.85)';
-			ctx.lineWidth = 0.8 * px;
-			ctx.stroke();
+			forWorldWraps(x, y, size * 2, size * 2, (sx, sy) => {
+				ctx.beginPath();
+				ctx.moveTo(sx + Math.cos(angle) * size, sy + Math.sin(angle) * size);
+				ctx.lineTo(sx + Math.cos(angle + 2.4) * size, sy + Math.sin(angle + 2.4) * size);
+				ctx.lineTo(sx + Math.cos(angle - 2.4) * size, sy + Math.sin(angle - 2.4) * size);
+				ctx.closePath();
+				ctx.fillStyle = colour;
+				ctx.fill();
+				ctx.strokeStyle = 'rgba(3, 8, 16, 0.85)';
+				ctx.lineWidth = 0.8 * px;
+				ctx.stroke();
+			});
 		} else if (sim.status === STATUS_FLYING) {
-			const x = sim.cargo.x;
-			const y = sim.cargo.y;
+			const x = wrapWorldX(sim.cargo.x);
+			const y = wrapWorldY(sim.cargo.y);
 			const angle = Math.atan2(sim.cargo.vy, sim.cargo.vx);
 			const size = 4.3 * px;
-			ctx.beginPath();
-			ctx.moveTo(x + Math.cos(angle) * size, y + Math.sin(angle) * size);
-			ctx.lineTo(x + Math.cos(angle + 2.4) * size, y + Math.sin(angle + 2.4) * size);
-			ctx.lineTo(x + Math.cos(angle - 2.4) * size, y + Math.sin(angle - 2.4) * size);
-			ctx.closePath();
-			ctx.fillStyle = colour;
-			ctx.fill();
-			ctx.strokeStyle = 'rgba(3, 8, 16, 0.85)';
-			ctx.lineWidth = 0.8 * px;
-			ctx.stroke();
+			forWorldWraps(x, y, size * 2, size * 2, (sx, sy) => {
+				ctx.beginPath();
+				ctx.moveTo(sx + Math.cos(angle) * size, sy + Math.sin(angle) * size);
+				ctx.lineTo(sx + Math.cos(angle + 2.4) * size, sy + Math.sin(angle + 2.4) * size);
+				ctx.lineTo(sx + Math.cos(angle - 2.4) * size, sy + Math.sin(angle - 2.4) * size);
+				ctx.closePath();
+				ctx.fillStyle = colour;
+				ctx.fill();
+				ctx.strokeStyle = 'rgba(3, 8, 16, 0.85)';
+				ctx.lineWidth = 0.8 * px;
+				ctx.stroke();
+			});
 		} else if (sim.status === STATUS_ENDED) {
 			const pulse = 0.5 + 0.5 * Math.sin(now * 0.005 + rIdx);
-			ctx.beginPath();
-			ctx.arc(sim.cargo.x, sim.cargo.y, (4.2 + pulse * 2.5) * px, 0, TAU);
-			ctx.strokeStyle = colour;
-			ctx.globalAlpha = 0.7;
-			ctx.lineWidth = 1.1 * px;
-			ctx.stroke();
-			ctx.globalAlpha = 1;
+			const er = (4.2 + pulse * 2.5) * px;
+			forWorldWraps(wrapWorldX(sim.cargo.x), wrapWorldY(sim.cargo.y), er, er, (sx, sy) => {
+				ctx.beginPath();
+				ctx.arc(sx, sy, er, 0, TAU);
+				ctx.strokeStyle = colour;
+				ctx.globalAlpha = 0.7;
+				ctx.lineWidth = 1.1 * px;
+				ctx.stroke();
+				ctx.globalAlpha = 1;
+			});
 		}
 	}
 }
@@ -300,20 +295,22 @@ function drawCareerEmc() {
 		const sin = Math.sin(angle);
 		const inner = r + 3.5 * px;
 		const outer = r + 13 * px;
-		ctx.lineWidth = owner < 0 ? 1.2 * px : 2 * px;
-		ctx.strokeStyle = owner < 0 ? 'rgba(150, 178, 204, 0.34)'
-			: owner === 0 ? MINT : RIVAL_COLOURS[owner - 1];
-		ctx.beginPath();
-		ctx.moveTo(x + cos * inner, y + sin * inner);
-		ctx.lineTo(x + cos * outer, y + sin * outer);
-		ctx.stroke();
-		if (owner < 0) continue;
-		ctx.beginPath();
-		ctx.arc(x, y, r + 6.5 * px, 0, TAU);
-		ctx.globalAlpha = 0.5;
-		ctx.lineWidth = 1.3 * px;
-		ctx.stroke();
-		ctx.globalAlpha = 1;
+		forWorldWraps(x, y, outer, outer, (wx, wy) => {
+			ctx.lineWidth = owner < 0 ? 1.2 * px : 2 * px;
+			ctx.strokeStyle = owner < 0 ? 'rgba(150, 178, 204, 0.34)'
+				: owner === 0 ? MINT : RIVAL_COLOURS[owner - 1];
+			ctx.beginPath();
+			ctx.moveTo(wx + cos * inner, wy + sin * inner);
+			ctx.lineTo(wx + cos * outer, wy + sin * outer);
+			ctx.stroke();
+			if (owner < 0) return;
+			ctx.beginPath();
+			ctx.arc(wx, wy, r + 6.5 * px, 0, TAU);
+			ctx.globalAlpha = 0.5;
+			ctx.lineWidth = 1.3 * px;
+			ctx.stroke();
+			ctx.globalAlpha = 1;
+		});
 	}
 }
 
@@ -470,59 +467,64 @@ function drawFleetWorld() {
 		const sim = f.sim;
 		drawFleetPrediction(f);
 		if (f.evacuating) {
-			const dx = f.evacToX - f.evacFromX;
-			const dy = f.evacToY - f.evacFromY;
+			const dx = worldDeltaX(f.evacToX - f.evacFromX);
+			const dy = worldDeltaY(f.evacToY - f.evacFromY);
 			const angle = Math.atan2(dy, dx);
 			const size = 4.3 * px;
+			const sx0 = wrapWorldX(sim.cargo.x);
+			const sy0 = wrapWorldY(sim.cargo.y);
 			ctx.beginPath();
-			ctx.moveTo(f.evacFromX, f.evacFromY);
-			ctx.lineTo(sim.cargo.x, sim.cargo.y);
+			traceWorldSegment(f.evacFromX, f.evacFromY, sx0, sy0);
 			ctx.strokeStyle = MINT;
 			ctx.globalAlpha = 0.35;
 			ctx.lineWidth = 1.05 * px;
 			ctx.stroke();
 			ctx.globalAlpha = 1;
-			ctx.beginPath();
-			ctx.moveTo(sim.cargo.x + Math.cos(angle) * size, sim.cargo.y + Math.sin(angle) * size);
-			ctx.lineTo(sim.cargo.x + Math.cos(angle + 2.4) * size, sim.cargo.y + Math.sin(angle + 2.4) * size);
-			ctx.lineTo(sim.cargo.x + Math.cos(angle - 2.4) * size, sim.cargo.y + Math.sin(angle - 2.4) * size);
-			ctx.closePath();
-			ctx.fillStyle = MINT;
-			ctx.fill();
+			forWorldWraps(sx0, sy0, size * 2, size * 2, (sx, sy) => {
+				ctx.beginPath();
+				ctx.moveTo(sx + Math.cos(angle) * size, sy + Math.sin(angle) * size);
+				ctx.lineTo(sx + Math.cos(angle + 2.4) * size, sy + Math.sin(angle + 2.4) * size);
+				ctx.lineTo(sx + Math.cos(angle - 2.4) * size, sy + Math.sin(angle - 2.4) * size);
+				ctx.closePath();
+				ctx.fillStyle = MINT;
+				ctx.fill();
+			});
 			continue;
 		}
 		if (sim.status === STATUS_FLYING) {
-			const x = sim.cargo.x;
-			const y = sim.cargo.y;
+			const x = wrapWorldX(sim.cargo.x);
+			const y = wrapWorldY(sim.cargo.y);
 			const angle = Math.atan2(sim.cargo.vy, sim.cargo.vx);
 			const size = 4.3 * px;
-			ctx.beginPath();
-			ctx.moveTo(x + Math.cos(angle) * size, y + Math.sin(angle) * size);
-			ctx.lineTo(x + Math.cos(angle + 2.4) * size, y + Math.sin(angle + 2.4) * size);
-			ctx.lineTo(x + Math.cos(angle - 2.4) * size, y + Math.sin(angle - 2.4) * size);
-			ctx.closePath();
-			ctx.fillStyle = MINT;
-			ctx.fill();
-			ctx.strokeStyle = 'rgba(3, 8, 16, 0.85)';
-			ctx.lineWidth = 0.8 * px;
-			ctx.stroke();
+			forWorldWraps(x, y, size * 2, size * 2, (sx, sy) => {
+				ctx.beginPath();
+				ctx.moveTo(sx + Math.cos(angle) * size, sy + Math.sin(angle) * size);
+				ctx.lineTo(sx + Math.cos(angle + 2.4) * size, sy + Math.sin(angle + 2.4) * size);
+				ctx.lineTo(sx + Math.cos(angle - 2.4) * size, sy + Math.sin(angle - 2.4) * size);
+				ctx.closePath();
+				ctx.fillStyle = MINT;
+				ctx.fill();
+				ctx.strokeStyle = 'rgba(3, 8, 16, 0.85)';
+				ctx.lineWidth = 0.8 * px;
+				ctx.stroke();
+			});
 			continue;
 		}
 		if (f.at >= 0) {
-			const bx = tradeSim.planetX[f.at];
-			const by = tradeSim.planetY[f.at];
 			const br = tradeSim.planetR[f.at] + (8 + i * 3.5) * px;
-			ctx.beginPath();
-			ctx.moveTo(bx, by - br);
-			ctx.lineTo(bx + br, by);
-			ctx.lineTo(bx, by + br);
-			ctx.lineTo(bx - br, by);
-			ctx.closePath();
-			ctx.strokeStyle = MINT;
-			ctx.globalAlpha = 0.68;
-			ctx.lineWidth = 1.15 * px;
-			ctx.stroke();
-			ctx.globalAlpha = 1;
+			forWorldWraps(tradeSim.planetX[f.at], tradeSim.planetY[f.at], br, br, (bx, by) => {
+				ctx.beginPath();
+				ctx.moveTo(bx, by - br);
+				ctx.lineTo(bx + br, by);
+				ctx.lineTo(bx, by + br);
+				ctx.lineTo(bx - br, by);
+				ctx.closePath();
+				ctx.strokeStyle = MINT;
+				ctx.globalAlpha = 0.68;
+				ctx.lineWidth = 1.15 * px;
+				ctx.stroke();
+				ctx.globalAlpha = 1;
+			});
 		}
 	}
 }

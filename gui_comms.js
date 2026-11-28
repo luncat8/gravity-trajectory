@@ -216,6 +216,7 @@ function commsBuildSnapshot() {
 		 * and the fair cards never raised */
 		rosterOk: roster.ok,
 		rosterPlanets: roster.planets,
+		rosterCap: planetUniverseCap(),
 		rosterPlayers: roster.players,
 		rosterDetails: CommsCopy.compositionChecklist(roster),
 		searchActive: search.searchActive,

@@ -44,8 +44,12 @@
 				if (p === career.at || !GravityGame.planetInPlay(career, p)) continue;
 				if (!GravityGame.emptyWorld(career, p) || this.careerContested(career, p)) continue;
 				if (!sim || !sim.planetX || career.at < 0) return p;
-				const dx = sim.planetX[p] - ox;
-				const dy = sim.planetY[p] - oy;
+				let dx = sim.planetX[p] - ox;
+				let dy = sim.planetY[p] - oy;
+				if (sim.periodic) {
+					dx = GravitySim.minImage(dx, sim.worldW);
+					dy = GravitySim.minImage(dy, sim.worldH);
+				}
 				const d2 = dx * dx + dy * dy;
 				if (d2 < bestDist2) {
 					bestDist2 = d2;
@@ -66,7 +70,8 @@
 	GravityBot.prototype.careerBookTag = function () {
 		const probe = this.probe;
 		return GravityGame.launchBookTag(probe.fieldStatic, probe.gravityScale,
-			probe.forceScale, probe.strength, probe.bodyCount);
+			probe.forceScale, probe.strength, probe.bodyCount,
+			probe.periodic, probe.worldW, probe.worldH);
 	};
 
 	/* copy the finished trace out of the probe, so the next candidate cannot
@@ -263,9 +268,16 @@
 		this.careerPlans += 1;
 		const target = this.careerTarget(career);
 		const requiredBody = career.contract >= 0 && !relaxed ? target : -1;
-		const targetAngle = target >= 0
-			? Math.atan2(sim.planetY[target] - sim.planetY[origin],
-				sim.planetX[target] - sim.planetX[origin]) : 0;
+		let targetAngle = 0;
+		if (target >= 0) {
+			let dx = sim.planetX[target] - sim.planetX[origin];
+			let dy = sim.planetY[target] - sim.planetY[origin];
+			if (sim.periodic) {
+				dx = GravitySim.minImage(dx, sim.worldW);
+				dy = GravitySim.minImage(dy, sim.worldH);
+			}
+			targetAngle = Math.atan2(dy, dx);
+		}
 		const fan = angles > 0 ? angles : CAREER_ANGLES;
 		const horizon = fallback ? GravityGame.CAP_SECONDS : CAREER_HORIZON;
 		const extra = target >= 0 && target !== origin ? CAREER_TARGET_OFFSETS * 2 + 1 : 0;

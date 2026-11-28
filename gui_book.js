@@ -147,7 +147,8 @@ function taskBlockHtml(career) {
 function pageBookTag() {
 	const sim = activeCareerSim();
 	return GravityGame.launchBookTag(sim.fieldStatic, sim.gravityScale,
-		sim.forceScale, sim.strength, sim.bodyCount);
+		sim.forceScale, sim.strength, sim.bodyCount,
+		sim.periodic, sim.worldW, sim.worldH);
 }
 
 /* one scratch result: callers read it before the next pricing call */

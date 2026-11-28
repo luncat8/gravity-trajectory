@@ -7,14 +7,24 @@
 
 'use strict';
 
+function planetUniverseCap() {
+	return periodicMode ? PLANETS : PLANET_UNIVERSE_MAX;
+}
+
 function planetUniverseDefault(rule) {
+	if (periodicMode) {
+		return rule === RULE_CAREER
+			? OrbitWorld.PERIODIC_CAREER_PLANETS
+			: OrbitWorld.PERIODIC_DEFAULT_PLANETS;
+	}
 	return rule === RULE_CAREER ? PLANET_CAREER_DEFAULT : PLANET_DEFAULT;
 }
 
 /* a uniform draw over the run's in-play planets */
 function randomActivePlanet() {
+	const cap = planetUniverseCap();
 	let pick = Math.floor(Math.random() * planetCount);
-	for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
+	for (let i = 0; i < cap; i++) {
 		if (!planetMask[i]) continue;
 		if (pick === 0) return i;
 		pick -= 1;
@@ -23,13 +33,14 @@ function randomActivePlanet() {
 }
 
 function activePlanetExtent() {
-	let count = PLANET_UNIVERSE_MAX;
+	let count = planetUniverseCap();
 	while (count > 0 && !planetMask[count - 1]) count--;
 	return count;
 }
 
 function initPlanetUniverse(n) {
-	const count = Math.max(PLANET_UNIVERSE_MIN, Math.min(n, PLANET_UNIVERSE_MAX));
+	const cap = planetUniverseCap();
+	const count = Math.max(PLANET_UNIVERSE_MIN, Math.min(n, cap));
 	planetMask.fill(0);
 	for (let i = 0; i < count; i++) planetMask[i] = 1;
 	planetCount = count;
@@ -37,10 +48,86 @@ function initPlanetUniverse(n) {
 
 /* inactive planets carry no gravity: the field and every bot sim skip them */
 function syncPlanetStrengths() {
-	for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
-		planetStrength[i] = planetMask[i] ? planetBaseStrength[i] : 0;
+	const cap = planetUniverseCap();
+	for (let i = 0; i < PLANETS; i++) {
+		planetStrength[i] = i < cap && planetMask[i] ? planetBaseStrength[i] : 0;
 	}
 	bot.strength.set(planetStrength);
+	cargoSim.invalidateField();
+	helperProbe.invalidateField();
+	bot.invalidateField();
+}
+
+function syncPeriodicSims() {
+	const topologyChanged = tradeSim.periodic !== periodicMode;
+	game.periodic = periodicMode;
+	tradeSim.setPeriodic(periodicMode);
+	cargoSim.setPeriodic(periodicMode);
+	helperProbe.setPeriodic(periodicMode, cargoSim);
+	bot.setPeriodic(periodicMode, cargoSim);
+	const career = game.career;
+	if (career && career.fleet) {
+		for (let i = 0; i < career.fleet.length; i++) {
+			if (career.fleet[i] && career.fleet[i].sim) {
+				career.fleet[i].sim.setPeriodic(periodicMode, cargoSim);
+			}
+		}
+	}
+	if (topologyChanged && scene.syncTopology) scene.syncTopology();
+	if (topologyChanged) resizeOverlay();
+	if (fieldRenderer) fieldRenderer.invalidate();
+	refreshViewUi();
+}
+
+function setPeriodicMode(next, rebuild = true) {
+	const want = Boolean(next);
+	if (want && routeRule()) {
+		if (expPeriodicEl) expPeriodicEl.checked = false;
+		linkNote = 'route length unavailable with periodic FFT';
+		refreshGameUi();
+		return false;
+	}
+	if (want === periodicMode) {
+		refreshExperimentUi();
+		refreshViewUi();
+		return true;
+	}
+	cancelHelperForChange('periodic torus');
+	cancelCareerPlanning();
+	clearMapField();
+	periodicMode = want;
+	syncPeriodicSims();
+	if (!rebuild) {
+		refreshExperimentUi();
+		return true;
+	}
+	game.planetUniverse = 0;
+	if (game.on) {
+		startGame(game.seed, game.fixedRate, game.rule, game.bot, game.player, game.cheat);
+		return true;
+	}
+	tradeSim.setEmptyMask(null);
+	initPlanetUniverse(planetUniverseDefault(PLAY_LAB));
+	scene.reset(tradeSim.seed, true);
+	scene.settle();
+	clearCargo();
+	applyPlanetUniverse();
+	attachWorld();
+	refreshExperimentUi();
+	refreshGameUi();
+	syncSeedUrl();
+	dirty = true;
+	hudAt = -Infinity;
+	return true;
+}
+
+function onPeriodicChange() {
+	if (careerInputLocked() || replay.on) {
+		if (expPeriodicEl) expPeriodicEl.checked = periodicMode;
+		return;
+	}
+	const want = Boolean(expPeriodicEl && expPeriodicEl.checked);
+	setPeriodicMode(want, true);
 }
 
 	/* push the current subset into the career, market, field, scene and bot */
@@ -104,15 +191,25 @@ function clearPlanetPads(planet) {
 function setPlanetUniverseSize(next, preferredPlanet) {
 	if (replay.on || careerInputLocked()) return false;
 	careerRecordingMark();
-	const count = Math.max(PLANET_UNIVERSE_MIN, Math.min(next, PLANET_UNIVERSE_MAX));
+	const cap = planetUniverseCap();
+	const count = Math.max(PLANET_UNIVERSE_MIN, Math.min(next, cap));
 	if (count === planetCount) return false;
 	if (count > planetCount) {
 		const need = count - planetCount;
+		const armed = PlanetGravity.armed();
+		const seed = game.on ? game.seed : tradeSim.seed;
+		const explicitCap = armed && armed.seed === (seed >>> 0)
+			? Math.min(cap, armed.values.length) : cap;
 		const free = [];
-		for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
+		for (let i = 0; i < explicitCap; i++) {
 			if (!planetMask[i]) free.push(i);
 		}
-		if (free.length < need) return false;
+		if (free.length < need) {
+			if (explicitCap < cap) {
+				mapNotice('designed field only supplies ' + armed.values.length + ' wells');
+			}
+			return false;
+		}
 		let fixed = 0;
 		const preferred = free.indexOf(preferredPlanet);
 		if (preferred >= 0 && need > 0) {
@@ -133,7 +230,7 @@ function setPlanetUniverseSize(next, preferredPlanet) {
 	} else {
 		const need = planetCount - count;
 		const removable = [];
-		for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
+		for (let i = 0; i < cap; i++) {
 			if (!planetMask[i]) continue;
 			if (isProtectedPlanet(i)) continue;
 			removable.push(i);
@@ -160,8 +257,9 @@ function setPlanetUniverseSize(next, preferredPlanet) {
 /* planets in play that no actor calls home — a new player needs one */
 function freePlanetCount() {
 	const galaxy = game.galaxy;
+	const cap = planetUniverseCap();
 	let free = 0;
-	for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
+	for (let i = 0; i < cap; i++) {
 		if (!planetMask[i]) continue;
 		let used = false;
 		if (galaxy) {
@@ -175,14 +273,21 @@ function freePlanetCount() {
 }
 /* Rebuild strengths from the world seed without consuming the trade random stream. */
 function attachWorld() {
+	syncPeriodicSims();
+	const capacity = tradeSim.planetCount || PLANETS;
 	cargoSim.setPlanets(
-		PLANETS,
+		capacity,
 		tradeSim.planetX, tradeSim.planetY, tradeSim.planetR,
 		tradeSim.orbitRX, tradeSim.orbitRY,
 		tradeSim.orbitTiltCos, tradeSim.orbitTiltSin
 	);
 	bot.attachWorld(tradeSim);
 	for (let p = 0; p < PLANETS; p++) {
+		if (p >= capacity) {
+			planetBaseStrength[p] = 0;
+			portPlanetStrength[p] = 0;
+			continue;
+		}
 		/* empty heavy worlds draw from the band's own salt; founded colonies
 		 * keep the well they were colonized under (career runs only — other
 		 * rules carry no empty flags and read the plain law) */
@@ -306,7 +411,7 @@ function startupSeed() {
  * number a run that is about to start will keep */
 function universeParam() {
 	if (game.on) return planetCount;
-	return game.planetUniverse > 0 ? game.planetUniverse : PLANET_DEFAULT;
+	return game.planetUniverse > 0 ? game.planetUniverse : planetUniverseDefault(PLAY_LAB);
 }
 
 /* Keep the address shareable without navigating or overwriting a replay hash.
@@ -352,6 +457,8 @@ function syncSeedUrl(keepReplay = false) {
 	else params.delete('gs');
 	if (forceScale !== 1) params.set('fs', String(forceScale));
 	else params.delete('fs');
+	if (periodicMode) params.set('fft', '1');
+	else params.delete('fft');
 	if (game.on && careerRule() && spaceWearScale !== 1) params.set('ws', String(spaceWearScale));
 	else params.delete('ws');
 	if (game.on && careerRule() && padScale !== 1) params.set('ps', String(padScale));

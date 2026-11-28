@@ -29,6 +29,7 @@ let liteMode = liteParam === null ? readStoredLite() : liteParam === '1';
 /* saved openings a career on this roster and these scales can be seated from */
 function liteRecords(universe, seats) {
 	return savedMapList().filter(record => record.kind === 'start' &&
+		Boolean(record.fft) === periodicMode &&
 		record.universe === universe && record.seats.length === seats &&
 		!Array.isArray(record.gravity) &&
 		(record.gs ?? 1) === gravityScale && (record.fs ?? 1) === forceScale &&
@@ -49,7 +50,10 @@ function liteSeats(level) {
 
 /* the boot's unpinned seed: a saved one for the roster the address asks for */
 function liteBootSeed(params) {
-	const universe = Number(params.get('universe')) || PLANET_CAREER_DEFAULT;
+	const wantPeriodic = params.get('fft') === '1' || params.get('fft') === 'true';
+	if (wantPeriodic !== periodicMode && wantPeriodic) return randomSeed();
+	const defaultUniverse = wantPeriodic ? OrbitWorld.PERIODIC_CAREER_PLANETS : PLANET_CAREER_DEFAULT;
+	const universe = Number(params.get('universe')) || defaultUniverse;
 	const players = Number(params.get('players'));
 	const seats = Number.isInteger(players) && players > 0 ? players : liteSeats(params.get('bot') || game.bot);
 	const seeds = liteSeeds(universe, seats);

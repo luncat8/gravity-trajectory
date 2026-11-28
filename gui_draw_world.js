@@ -12,39 +12,43 @@
 /* highlights the planet's own outline plus a tight outer ring, leaving thin orbits untouched */
 function drawPlanetVisitOutline(x, y, r, px, pulse, inside) {
 	ctx.setLineDash(NO_DASH);
-	ctx.beginPath();
-	ctx.arc(x, y, r + 0.5 * px, 0, TAU);
-	ctx.strokeStyle = inside ? 'rgba(205, 255, 224, 0.98)' : 'rgba(92, 255, 139, 0.96)';
-	ctx.lineWidth = (inside ? 2.2 : 1.9) * px;
-	ctx.stroke();
+	const reach = r + 6 * px;
+	forWorldWraps(x, y, reach, reach, (wx, wy) => {
+		ctx.beginPath();
+		ctx.arc(wx, wy, r + 0.5 * px, 0, TAU);
+		ctx.strokeStyle = inside ? 'rgba(205, 255, 224, 0.98)' : 'rgba(92, 255, 139, 0.96)';
+		ctx.lineWidth = (inside ? 2.2 : 1.9) * px;
+		ctx.stroke();
 
-	ctx.beginPath();
-	ctx.arc(x, y, r + (inside ? 3.8 : 3.4 + pulse * 1.6) * px, 0, TAU);
-	ctx.strokeStyle = inside ? 'rgba(158, 255, 190, 0.92)' : 'rgba(92, 255, 139, 0.78)';
-	ctx.lineWidth = (inside ? 1.5 : 1.3) * px;
-	ctx.stroke();
+		ctx.beginPath();
+		ctx.arc(wx, wy, r + (inside ? 3.8 : 3.4 + pulse * 1.6) * px, 0, TAU);
+		ctx.strokeStyle = inside ? 'rgba(158, 255, 190, 0.92)' : 'rgba(92, 255, 139, 0.78)';
+		ctx.lineWidth = (inside ? 1.5 : 1.3) * px;
+		ctx.stroke();
+	});
 }
 
 /* a rival under the pointer is heading here: ring the planet in its colour so
  * the destination reads instantly without tracing the dashed line */
 function drawRivalLandingRing(planet, colour) {
 	const px = 1 / view.scale;
-	const x = tradeSim.planetX[planet];
-	const y = tradeSim.planetY[planet];
 	const r = tradeSim.planetR[planet];
+	const reach = r + 12 * px;
 	ctx.setLineDash(NO_DASH);
-	ctx.beginPath();
-	ctx.arc(x, y, r + 6 * px, 0, TAU);
-	ctx.strokeStyle = colour;
-	ctx.lineWidth = 2 * px;
-	ctx.stroke();
-	ctx.globalAlpha = 0.5;
-	ctx.beginPath();
-	ctx.arc(x, y, r + 11 * px, 0, TAU);
-	ctx.strokeStyle = colour;
-	ctx.lineWidth = 1 * px;
-	ctx.stroke();
-	ctx.globalAlpha = 1;
+	forWorldWraps(tradeSim.planetX[planet], tradeSim.planetY[planet], reach, reach, (x, y) => {
+		ctx.beginPath();
+		ctx.arc(x, y, r + 6 * px, 0, TAU);
+		ctx.strokeStyle = colour;
+		ctx.lineWidth = 2 * px;
+		ctx.stroke();
+		ctx.globalAlpha = 0.5;
+		ctx.beginPath();
+		ctx.arc(x, y, r + 11 * px, 0, TAU);
+		ctx.strokeStyle = colour;
+		ctx.lineWidth = 1 * px;
+		ctx.stroke();
+		ctx.globalAlpha = 1;
+	});
 }
 
 /* Past visits stay dim outside clean career view; active/upcoming planet visits
@@ -72,30 +76,37 @@ function drawSystemVisits(now) {
 		}
 		const wasVisited = sim.visited[i] === 1;
 		if (!wasVisited && !willVisit) continue;
-		const x = tradeSim.planetX[i];
-		const y = tradeSim.planetY[i];
 		const r = tradeSim.planetR[i];
-		ctx.beginPath();
-		ctx.ellipse(x, y, tradeSim.orbitRX[i], tradeSim.orbitRY[i],
-			tradeSim.orbitTilt[i], 0, TAU);
+		const rx = tradeSim.orbitRX[i];
+		const ry = tradeSim.orbitRY[i];
+		const reach = rx >= ry ? rx : ry;
+		forWorldWraps(tradeSim.planetX[i], tradeSim.planetY[i], reach, reach, (x, y) => {
+			ctx.beginPath();
+			ctx.ellipse(x, y, rx, ry, tradeSim.orbitTilt[i], 0, TAU);
+			if (!willVisit) {
+				ctx.setLineDash(NO_DASH);
+				ctx.strokeStyle = 'rgba(142, 240, 192, 0.14)';
+				ctx.lineWidth = 1.1 * px;
+				ctx.stroke();
+			} else {
+				ctx.setLineDash(SYS_DASH);
+				ctx.strokeStyle = 'rgba(92, 255, 139, 0.85)';
+				ctx.lineWidth = 1.35 * px;
+				ctx.stroke();
+			}
+		});
 		if (!willVisit) {
 			ctx.setLineDash(NO_DASH);
-			ctx.strokeStyle = 'rgba(142, 240, 192, 0.14)';
-			ctx.lineWidth = 1.1 * px;
-			ctx.stroke();
-
-			ctx.beginPath();
-			ctx.arc(x, y, r + 3.2 * px, 0, TAU);
-			ctx.strokeStyle = 'rgba(142, 240, 192, 0.38)';
-			ctx.lineWidth = 1.25 * px;
-			ctx.stroke();
+			forWorldWraps(tradeSim.planetX[i], tradeSim.planetY[i], r + 4 * px, r + 4 * px, (x, y) => {
+				ctx.beginPath();
+				ctx.arc(x, y, r + 3.2 * px, 0, TAU);
+				ctx.strokeStyle = 'rgba(142, 240, 192, 0.38)';
+				ctx.lineWidth = 1.25 * px;
+				ctx.stroke();
+			});
 			continue;
 		}
-		ctx.setLineDash(SYS_DASH);
-		ctx.strokeStyle = 'rgba(92, 255, 139, 0.85)';
-		ctx.lineWidth = 1.35 * px;
-		ctx.stroke();
-		drawPlanetVisitOutline(x, y, r, px, pulse, inside);
+		drawPlanetVisitOutline(tradeSim.planetX[i], tradeSim.planetY[i], r, px, pulse, inside);
 	}
 	ctx.setLineDash(NO_DASH);
 }
@@ -105,41 +116,41 @@ function drawLandedBase(now) {
 	const base = activeSim().landedBody;
 	if (base < 0) return;
 	const px = 1 / view.scale;
-	const x = tradeSim.planetX[base];
-	const y = tradeSim.planetY[base];
 	const r = tradeSim.planetR[base];
 	const pulse = 0.5 + 0.5 * Math.sin(now * 0.0055);
 	const inner = r + 5.5 * px;
 	const outer = inner + (4 + pulse * 3) * px;
-
-	ctx.setLineDash(NO_DASH);
-	ctx.beginPath();
-	ctx.arc(x, y, inner, 0, TAU);
-	ctx.strokeStyle = MINT;
-	ctx.lineWidth = 1.6 * px;
-	ctx.stroke();
-
-	ctx.beginPath();
-	ctx.arc(x, y, outer, 0, TAU);
-	ctx.strokeStyle = 'rgba(255, 207, 110, 0.45)';
-	ctx.lineWidth = 1.0 * px;
-	ctx.stroke();
-
-	/* four launch-pad ticks around the landed planet */
 	const tick0 = inner + 1.5 * px;
 	const tick1 = tick0 + 4.5 * px;
-	ctx.beginPath();
-	ctx.moveTo(x - tick1, y);
-	ctx.lineTo(x - tick0, y);
-	ctx.moveTo(x + tick0, y);
-	ctx.lineTo(x + tick1, y);
-	ctx.moveTo(x, y - tick1);
-	ctx.lineTo(x, y - tick0);
-	ctx.moveTo(x, y + tick0);
-	ctx.lineTo(x, y + tick1);
-	ctx.strokeStyle = GOLD;
-	ctx.lineWidth = 1.4 * px;
-	ctx.stroke();
+
+	ctx.setLineDash(NO_DASH);
+	forWorldWraps(tradeSim.planetX[base], tradeSim.planetY[base], tick1 + 2 * px, tick1 + 2 * px, (x, y) => {
+		ctx.beginPath();
+		ctx.arc(x, y, inner, 0, TAU);
+		ctx.strokeStyle = MINT;
+		ctx.lineWidth = 1.6 * px;
+		ctx.stroke();
+
+		ctx.beginPath();
+		ctx.arc(x, y, outer, 0, TAU);
+		ctx.strokeStyle = 'rgba(255, 207, 110, 0.45)';
+		ctx.lineWidth = 1.0 * px;
+		ctx.stroke();
+
+		/* four launch-pad ticks around the landed planet */
+		ctx.beginPath();
+		ctx.moveTo(x - tick1, y);
+		ctx.lineTo(x - tick0, y);
+		ctx.moveTo(x + tick0, y);
+		ctx.lineTo(x + tick1, y);
+		ctx.moveTo(x, y - tick1);
+		ctx.lineTo(x, y - tick0);
+		ctx.moveTo(x, y + tick0);
+		ctx.lineTo(x, y + tick1);
+		ctx.strokeStyle = GOLD;
+		ctx.lineWidth = 1.4 * px;
+		ctx.stroke();
+	});
 }
 
 /* ── blocked & guide arrows ── blocked planet, guide arrow, occupied planet, tooltips */
@@ -174,8 +185,8 @@ function activeBlockedPlanet(now) {
  * one arrowhead at the target */
 function drawGuideArrow(x0, y0, startGap, x1, y1, endGap, now, line, head) {
 	const px = 1 / view.scale;
-	const dx = x1 - x0;
-	const dy = y1 - y0;
+	const dx = worldDeltaX(x1 - x0);
+	const dy = worldDeltaY(y1 - y0);
 	const dist = Math.sqrt(dx * dx + dy * dy);
 	if (dist <= startGap + endGap) return;
 	const angle = Math.atan2(dy, dx);
@@ -183,13 +194,12 @@ function drawGuideArrow(x0, y0, startGap, x1, y1, endGap, now, line, head) {
 	const uy = dy / dist;
 	LOCK_DASH[0] = 6 * px;
 	LOCK_DASH[1] = 6 * px;
-	const sx = x0 + ux * startGap;
-	const sy = y0 + uy * startGap;
-	const ex = x1 - ux * endGap;
-	const ey = y1 - uy * endGap;
+	const sx = wrapWorldX(x0 + ux * startGap);
+	const sy = wrapWorldY(y0 + uy * startGap);
+	const ex = wrapWorldX(x1 - ux * endGap);
+	const ey = wrapWorldY(y1 - uy * endGap);
 	ctx.beginPath();
-	ctx.moveTo(sx, sy);
-	ctx.lineTo(ex, ey);
+	traceWorldSegment(sx, sy, ex, ey);
 	ctx.strokeStyle = line;
 	ctx.lineWidth = 1.35 * px;
 	ctx.setLineDash(LOCK_DASH);
@@ -201,8 +211,8 @@ function drawGuideArrow(x0, y0, startGap, x1, y1, endGap, now, line, head) {
 	const phase = (now * 0.09 * px) % (90 * px);
 	ctx.fillStyle = head;
 	for (let d = phase; d < span - 14 * px; d += 90 * px) {
-		const cx = sx + ux * d;
-		const cy = sy + uy * d;
+		const cx = wrapWorldX(sx + ux * d);
+		const cy = wrapWorldY(sy + uy * d);
 		ctx.beginPath();
 		ctx.moveTo(cx + ux * 5 * px, cy + uy * 5 * px);
 		ctx.lineTo(cx + Math.cos(angle + 2.5) * 4.2 * px,
@@ -229,12 +239,15 @@ function drawBlockedArrowWorld(src, now) {
 	const dst = activeSim().landedBody;
 	if (dst < 0) return;
 	const px = 1 / view.scale;
-	ctx.beginPath();
-	ctx.arc(tradeSim.planetX[src], tradeSim.planetY[src], tradeSim.planetR[src] + 5 * px, 0, TAU);
-	ctx.strokeStyle = WARN;
-	ctx.lineWidth = 1.4 * px;
-	ctx.setLineDash(NO_DASH);
-	ctx.stroke();
+	const r = tradeSim.planetR[src] + 5 * px;
+	forWorldWraps(tradeSim.planetX[src], tradeSim.planetY[src], r, r, (x, y) => {
+		ctx.beginPath();
+		ctx.arc(x, y, r, 0, TAU);
+		ctx.strokeStyle = WARN;
+		ctx.lineWidth = 1.4 * px;
+		ctx.setLineDash(NO_DASH);
+		ctx.stroke();
+	});
 	drawGuideArrow(tradeSim.planetX[src], tradeSim.planetY[src], tradeSim.planetR[src] + 7 * px,
 		tradeSim.planetX[dst], tradeSim.planetY[dst], tradeSim.planetR[dst] + 10 * px,
 		now, 'rgba(255, 148, 120, 0.72)', WARN);
@@ -242,24 +255,24 @@ function drawBlockedArrowWorld(src, now) {
 
 function drawOccupiedPlanetWorld(src) {
 	const px = 1 / view.scale;
-	const x = tradeSim.planetX[src];
-	const y = tradeSim.planetY[src];
 	const r = tradeSim.planetR[src] + 5 * px;
-	ctx.setLineDash(NO_DASH);
-	ctx.beginPath();
-	ctx.arc(x, y, r, 0, TAU);
-	ctx.strokeStyle = WARN;
-	ctx.lineWidth = 1.5 * px;
-	ctx.stroke();
 	const arm = r * 0.62;
-	ctx.beginPath();
-	ctx.moveTo(x - arm, y - arm);
-	ctx.lineTo(x + arm, y + arm);
-	ctx.moveTo(x + arm, y - arm);
-	ctx.lineTo(x - arm, y + arm);
-	ctx.strokeStyle = WARN;
-	ctx.lineWidth = 1.3 * px;
-	ctx.stroke();
+	ctx.setLineDash(NO_DASH);
+	forWorldWraps(tradeSim.planetX[src], tradeSim.planetY[src], r, r, (x, y) => {
+		ctx.beginPath();
+		ctx.arc(x, y, r, 0, TAU);
+		ctx.strokeStyle = WARN;
+		ctx.lineWidth = 1.5 * px;
+		ctx.stroke();
+		ctx.beginPath();
+		ctx.moveTo(x - arm, y - arm);
+		ctx.lineTo(x + arm, y + arm);
+		ctx.moveTo(x + arm, y - arm);
+		ctx.lineTo(x - arm, y + arm);
+		ctx.strokeStyle = WARN;
+		ctx.lineWidth = 1.3 * px;
+		ctx.stroke();
+	});
 }
 
 function drawBlockedTooltipScreen(src) {
@@ -289,8 +302,8 @@ function drawBlockedTooltipScreen(src) {
 	if (dst < 0) return;
 	const sx = tradeSim.planetX[src] * view.scale + view.offX;
 	const sy = tradeSim.planetY[src] * view.scale + view.offY;
-	const dx = tradeSim.planetX[dst] - tradeSim.planetX[src];
-	const dy = tradeSim.planetY[dst] - tradeSim.planetY[src];
+	const dx = worldDeltaX(tradeSim.planetX[dst] - tradeSim.planetX[src]);
+	const dy = worldDeltaY(tradeSim.planetY[dst] - tradeSim.planetY[src]);
 	const angle = Math.atan2(dy, dx);
 	const text = 'launch not allowed · ship landed at ' + planetName(dst);
 	const width = 36 + text.length * 6.45;
@@ -340,17 +353,19 @@ function drawWells() {
 		const level = i === selected ? 2 : i === hoverBody ? 1 : 0;
 		if (viewMode !== VIEW_SPACE && level === 0) continue;
 		const colours = WELL_COLOURS[g < 0 ? 1 : 0];
-		ctx.beginPath();
-		ctx.arc(cargoSim.bodyX[i], cargoSim.bodyY[i],
-			WELL_BASE + mag * WELL_SCALE, 0, TAU);
-		ctx.strokeStyle = colours[level];
-		ctx.lineWidth = (level === 2 ? 1.3 : 0.9) * px;
-		if (g < 0) {
-			ctx.setLineDash(REPEL_DASH);
-		} else {
-			ctx.setLineDash(NO_DASH);
-		}
-		ctx.stroke();
+		const radius = WELL_BASE + mag * WELL_SCALE;
+		forWorldWraps(cargoSim.bodyX[i], cargoSim.bodyY[i], radius, radius, (x, y) => {
+			ctx.beginPath();
+			ctx.arc(x, y, radius, 0, TAU);
+			ctx.strokeStyle = colours[level];
+			ctx.lineWidth = (level === 2 ? 1.3 : 0.9) * px;
+			if (g < 0) {
+				ctx.setLineDash(REPEL_DASH);
+			} else {
+				ctx.setLineDash(NO_DASH);
+			}
+			ctx.stroke();
+		});
 	}
 	ctx.setLineDash(NO_DASH);
 }
@@ -362,40 +377,41 @@ function drawSigns() {
 	for (let i = 0; i < cargoSim.bodyCount; i++) {
 		const g = cargoSim.strength[i];
 		if (g > -0.02 && g < 0.02) continue;
-		const x = cargoSim.bodyX[i];
-		const y = cargoSim.bodyY[i];
 		let arm = cargoSim.bodyR[i] * 0.6;
 		if (arm < 3.2 * px) arm = 3.2 * px;
 		if (arm > 9 * px) arm = 9 * px;
 		const colour = g > 0 ? SIGN_POS : SIGN_NEG;
 		const signGlow = g > 0 ? 'rgba(255, 95, 87, 0.22)' : 'rgba(87, 168, 255, 0.22)';
-		ctx.strokeStyle = signGlow;
-		ctx.lineWidth = 6 * px;
-		ctx.beginPath();
-		ctx.moveTo(x - arm, y);
-		ctx.lineTo(x + arm, y);
-		if (g > 0) {
-			ctx.moveTo(x, y - arm);
-			ctx.lineTo(x, y + arm);
-		}
-		ctx.stroke();
-		ctx.strokeStyle = colour;
-		ctx.lineWidth = 1.7 * px;
-		ctx.beginPath();
-		ctx.moveTo(x - arm, y);
-		ctx.lineTo(x + arm, y);
-		if (g > 0) {
-			ctx.moveTo(x, y - arm);
-			ctx.lineTo(x, y + arm);
-		}
-		ctx.stroke();
-		if (i === selected) {
+		const reach = Math.max(arm + 4 * px, cargoSim.bodyR[i] + 2 * px);
+		forWorldWraps(cargoSim.bodyX[i], cargoSim.bodyY[i], reach, reach, (x, y) => {
+			ctx.strokeStyle = signGlow;
+			ctx.lineWidth = 6 * px;
 			ctx.beginPath();
-			ctx.arc(x, y, cargoSim.bodyR[i] + 1.5 * px, 0, TAU);
-			ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
-			ctx.lineWidth = px;
+			ctx.moveTo(x - arm, y);
+			ctx.lineTo(x + arm, y);
+			if (g > 0) {
+				ctx.moveTo(x, y - arm);
+				ctx.lineTo(x, y + arm);
+			}
 			ctx.stroke();
-		}
+			ctx.strokeStyle = colour;
+			ctx.lineWidth = 1.7 * px;
+			ctx.beginPath();
+			ctx.moveTo(x - arm, y);
+			ctx.lineTo(x + arm, y);
+			if (g > 0) {
+				ctx.moveTo(x, y - arm);
+				ctx.lineTo(x, y + arm);
+			}
+			ctx.stroke();
+			if (i === selected) {
+				ctx.beginPath();
+				ctx.arc(x, y, cargoSim.bodyR[i] + 1.5 * px, 0, TAU);
+				ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+				ctx.lineWidth = px;
+				ctx.stroke();
+			}
+		});
 	}
 	ctx.lineCap = 'butt';
 }
@@ -424,23 +440,24 @@ function drawPortVelocities() {
 		const vy = (y1 - y0) / eps * cargoSim.fieldRate;
 		const speed = Math.sqrt(vx * vx + vy * vy);
 		if (speed < 0.15 / px) continue;
-		const x = cargoSim.bodyX[i];
-		const y = cargoSim.bodyY[i];
 		const len = Math.min(18 * px, Math.max(6 * px, speed * 0.18 * px));
 		const angle = Math.atan2(vy, vx);
-		ctx.strokeStyle = 'rgba(180, 200, 220, 0.24)';
-		ctx.lineWidth = 1.0 * px;
-		ctx.beginPath();
-		ctx.moveTo(x, y);
-		ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
-		ctx.stroke();
-		ctx.beginPath();
-		ctx.moveTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
-		ctx.lineTo(x + Math.cos(angle + 2.6) * 3.2 * px, y + Math.sin(angle + 2.6) * 3.2 * px);
-		ctx.lineTo(x + Math.cos(angle - 2.6) * 3.2 * px, y + Math.sin(angle - 2.6) * 3.2 * px);
-		ctx.closePath();
-		ctx.fillStyle = 'rgba(180, 200, 220, 0.32)';
-		ctx.fill();
+		const pad = len + 4 * px;
+		forWorldWraps(cargoSim.bodyX[i], cargoSim.bodyY[i], pad, pad, (x, y) => {
+			ctx.strokeStyle = 'rgba(180, 200, 220, 0.24)';
+			ctx.lineWidth = 1.0 * px;
+			ctx.beginPath();
+			ctx.moveTo(x, y);
+			ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+			ctx.stroke();
+			ctx.beginPath();
+			ctx.moveTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+			ctx.lineTo(x + Math.cos(angle + 2.6) * 3.2 * px, y + Math.sin(angle + 2.6) * 3.2 * px);
+			ctx.lineTo(x + Math.cos(angle - 2.6) * 3.2 * px, y + Math.sin(angle - 2.6) * 3.2 * px);
+			ctx.closePath();
+			ctx.fillStyle = 'rgba(180, 200, 220, 0.32)';
+			ctx.fill();
+		});
 	}
 	ctx.lineCap = 'butt';
 }
@@ -459,10 +476,8 @@ function drawPrediction() {
 	const isLeader = routeRule() &&
 		((slot === 0 && routeLeader === -1) || (slot > 0 && routeLeader === slot - 1));
 	ctx.beginPath();
-	ctx.moveTo(pathX[0], pathY[0]);
-	for (let i = stride; i < count; i += stride) ctx.lineTo(pathX[i], pathY[i]);
+	traceWorldPolyline(pathX, pathY, count, stride);
 	const last = count - 1;
-	if (last % stride !== 0) ctx.lineTo(pathX[last], pathY[last]);
 	ctx.strokeStyle = isLeader ? GOLD : 'rgba(255, 207, 110, 0.78)';
 	ctx.lineWidth = (isLeader ? 2.1 : 1.3) * px;
 	ctx.setLineDash(PRED_DASH);
@@ -534,8 +549,8 @@ function radarShipAt(wx, wy) {
 	for (let i = 0; i < radarOutCount; i++) {
 		const record = radarOut[i];
 		if (record.sim === own) continue;
-		const dx = record.x - wx;
-		const dy = record.y - wy;
+		const dx = worldDeltaX(record.x - wx);
+		const dy = worldDeltaY(record.y - wy);
 		const d2 = dx * dx + dy * dy;
 		if (d2 <= best) {
 			best = d2;
@@ -546,8 +561,8 @@ function radarShipAt(wx, wy) {
 	for (let i = 0; fleet && i < fleet.length; i++) {
 		const f = fleet[i];
 		if (f.sim.status !== STATUS_FLYING || f.evacuating) continue;
-		const dx = f.sim.cargo.x - wx;
-		const dy = f.sim.cargo.y - wy;
+		const dx = worldDeltaX(f.sim.cargo.x - wx);
+		const dy = worldDeltaY(f.sim.cargo.y - wy);
 		const d2 = dx * dx + dy * dy;
 		if (d2 > best) continue;
 		best = d2;
@@ -650,11 +665,7 @@ function drawRadarPath(record, colour, px) {
 	const stride = record.predCount > 6000 ? 4 : record.predCount > 1400 ? 2 : 1;
 	const last = record.predCount - 1;
 	ctx.beginPath();
-	ctx.moveTo(record.predX[0], record.predY[0]);
-	for (let k = stride; k < record.predCount; k += stride) {
-		ctx.lineTo(record.predX[k], record.predY[k]);
-	}
-	if (last % stride !== 0) ctx.lineTo(record.predX[last], record.predY[last]);
+	traceWorldPolyline(record.predX, record.predY, record.predCount, stride);
 	ctx.globalAlpha = 0.4;
 	ctx.strokeStyle = colour;
 	ctx.lineWidth = 1.1 * px;
@@ -668,8 +679,8 @@ function drawRadarPath(record, colour, px) {
 	}
 	const lx = record.predX[last];
 	const ly = record.predY[last];
-	const dx = lx - record.predX[last - 1];
-	const dy = ly - record.predY[last - 1];
+	const dx = worldDeltaX(lx - record.predX[last - 1]);
+	const dy = worldDeltaY(ly - record.predY[last - 1]);
 	const angle = dx !== 0 || dy !== 0
 		? Math.atan2(dy, dx) : Math.atan2(record.sim.cargo.vy, record.sim.cargo.vx);
 	const size = 4.3 * px;
@@ -832,12 +843,7 @@ function drawTrail(sim = activeSim(), other = false) {
 	const px = 1 / view.scale;
 	const stride = count > 2400 ? 2 : 1;
 	ctx.beginPath();
-	ctx.moveTo(sim.trailX[0], sim.trailY[0]);
-	for (let i = stride; i < count; i += stride) {
-		ctx.lineTo(sim.trailX[i], sim.trailY[i]);
-	}
-	const last = count - 1;
-	if (last % stride !== 0) ctx.lineTo(sim.trailX[last], sim.trailY[last]);
+	traceWorldPolyline(sim.trailX, sim.trailY, count, stride);
 	ctx.strokeStyle = other ? 'rgba(142, 240, 192, 0.65)' : 'rgba(103, 224, 255, 0.9)';
 	ctx.lineWidth = (other ? 1.4 : 1.8) * px;
 	ctx.setLineDash(NO_DASH);
@@ -846,71 +852,77 @@ function drawTrail(sim = activeSim(), other = false) {
 
 function drawCargo(now, sim = activeSim(), other = false) {
 	const px = 1 / view.scale;
-	const x = sim.cargo.x;
-	const y = sim.cargo.y;
+	const x = wrapWorldX(sim.cargo.x);
+	const y = wrapWorldY(sim.cargo.y);
 	if (sim.evacuationTrip) {
 		const trip = sim.evacuationTrip;
-		const dx = trip.evacToX - trip.evacFromX;
-		const dy = trip.evacToY - trip.evacFromY;
+		const dx = worldDeltaX(trip.evacToX - trip.evacFromX);
+		const dy = worldDeltaY(trip.evacToY - trip.evacFromY);
 		const angle = Math.atan2(dy, dx);
 		ctx.beginPath();
-		ctx.moveTo(trip.evacFromX, trip.evacFromY);
-		ctx.lineTo(x, y);
+		traceWorldSegment(trip.evacFromX, trip.evacFromY, x, y);
 		ctx.strokeStyle = 'rgba(255, 207, 110, 0.55)';
 		ctx.lineWidth = 1.15 * px;
 		ctx.stroke();
-		ctx.globalAlpha = 0.75;
-		ctx.drawImage(glow, x - 18 * px, y - 18 * px, 36 * px, 36 * px);
-		ctx.globalAlpha = 1;
 		const size = 5.2 * px;
-		ctx.beginPath();
-		ctx.moveTo(x + Math.cos(angle) * size, y + Math.sin(angle) * size);
-		ctx.lineTo(x + Math.cos(angle + 2.45) * size, y + Math.sin(angle + 2.45) * size);
-		ctx.lineTo(x + Math.cos(angle - 2.45) * size, y + Math.sin(angle - 2.45) * size);
-		ctx.closePath();
-		ctx.fillStyle = other ? MINT : GOLD;
-		ctx.fill();
-		ctx.strokeStyle = 'rgba(3, 8, 16, 0.9)';
-		ctx.lineWidth = 0.9 * px;
-		ctx.stroke();
+		forWorldWraps(x, y, 18 * px, 18 * px, (sx, sy) => {
+			ctx.globalAlpha = 0.75;
+			ctx.drawImage(glow, sx - 18 * px, sy - 18 * px, 36 * px, 36 * px);
+			ctx.globalAlpha = 1;
+			ctx.beginPath();
+			ctx.moveTo(sx + Math.cos(angle) * size, sy + Math.sin(angle) * size);
+			ctx.lineTo(sx + Math.cos(angle + 2.45) * size, sy + Math.sin(angle + 2.45) * size);
+			ctx.lineTo(sx + Math.cos(angle - 2.45) * size, sy + Math.sin(angle - 2.45) * size);
+			ctx.closePath();
+			ctx.fillStyle = other ? MINT : GOLD;
+			ctx.fill();
+			ctx.strokeStyle = 'rgba(3, 8, 16, 0.9)';
+			ctx.lineWidth = 0.9 * px;
+			ctx.stroke();
+		});
 		return;
 	}
 	if (sim.status === GravitySim.STATUS_IDLE) return;
 	if (sim.status === STATUS_FLYING) {
-		if (!other && isBurnPaused()) {
-			const holdPulse = 0.5 + 0.5 * Math.sin(now * 0.006);
-			ctx.beginPath();
-			ctx.arc(x, y, (8 + holdPulse * 3) * px, 0, TAU);
-			ctx.strokeStyle = ICE;
-			ctx.lineWidth = 1.25 * px;
-			ctx.stroke();
-		}
 		const angle = Math.atan2(sim.cargo.vy, sim.cargo.vx);
-		ctx.globalAlpha = 0.7;
-		ctx.drawImage(glow, x - 18 * px, y - 18 * px, 36 * px, 36 * px);
-		ctx.globalAlpha = 1;
 		const size = 4.6 * px;
-		ctx.beginPath();
-		ctx.moveTo(x + Math.cos(angle) * size, y + Math.sin(angle) * size);
-		ctx.lineTo(x + Math.cos(angle + 2.4) * size, y + Math.sin(angle + 2.4) * size);
-		ctx.lineTo(x + Math.cos(angle - 2.4) * size, y + Math.sin(angle - 2.4) * size);
-		ctx.closePath();
-		ctx.fillStyle = other ? MINT : GOLD;
-		ctx.fill();
-		ctx.strokeStyle = 'rgba(3, 8, 16, 0.8)';
-		ctx.lineWidth = 0.8 * px;
-		ctx.stroke();
+		const paused = !other && isBurnPaused();
+		const holdR = paused ? (8 + (0.5 + 0.5 * Math.sin(now * 0.006)) * 3) * px : 0;
+		forWorldWraps(x, y, 18 * px, 18 * px, (sx, sy) => {
+			if (paused) {
+				ctx.beginPath();
+				ctx.arc(sx, sy, holdR, 0, TAU);
+				ctx.strokeStyle = ICE;
+				ctx.lineWidth = 1.25 * px;
+				ctx.stroke();
+			}
+			ctx.globalAlpha = 0.7;
+			ctx.drawImage(glow, sx - 18 * px, sy - 18 * px, 36 * px, 36 * px);
+			ctx.globalAlpha = 1;
+			ctx.beginPath();
+			ctx.moveTo(sx + Math.cos(angle) * size, sy + Math.sin(angle) * size);
+			ctx.lineTo(sx + Math.cos(angle + 2.4) * size, sy + Math.sin(angle + 2.4) * size);
+			ctx.lineTo(sx + Math.cos(angle - 2.4) * size, sy + Math.sin(angle - 2.4) * size);
+			ctx.closePath();
+			ctx.fillStyle = other ? MINT : GOLD;
+			ctx.fill();
+			ctx.strokeStyle = 'rgba(3, 8, 16, 0.8)';
+			ctx.lineWidth = 0.8 * px;
+			ctx.stroke();
+		});
 		return;
 	}
 	const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
-	ctx.globalAlpha = 0.55;
-	ctx.drawImage(impactGlow, x - 16 * px, y - 16 * px, 32 * px, 32 * px);
-	ctx.globalAlpha = 1;
-	ctx.beginPath();
-	ctx.arc(x, y, (5 + pulse * 4) * px, 0, TAU);
-	ctx.strokeStyle = sim.endReason === END_IMPACT ? (other ? MINT : GOLD) : 'rgba(190, 210, 230, 0.6)';
-	ctx.lineWidth = 1.2 * px;
-	ctx.stroke();
+	forWorldWraps(x, y, 16 * px, 16 * px, (sx, sy) => {
+		ctx.globalAlpha = 0.55;
+		ctx.drawImage(impactGlow, sx - 16 * px, sy - 16 * px, 32 * px, 32 * px);
+		ctx.globalAlpha = 1;
+		ctx.beginPath();
+		ctx.arc(sx, sy, (5 + pulse * 4) * px, 0, TAU);
+		ctx.strokeStyle = sim.endReason === END_IMPACT ? (other ? MINT : GOLD) : 'rgba(190, 210, 230, 0.6)';
+		ctx.lineWidth = 1.2 * px;
+		ctx.stroke();
+	});
 }
 
 function drawAim() {
@@ -924,56 +936,61 @@ function drawAim() {
 	const mainStroke = isBurn ? ICE : GOLD;
 	GRIP_DASH[0] = 3 * px;
 	GRIP_DASH[1] = 7 * px;
-	ctx.beginPath();
-	ctx.arc(cx, cy, GRIP_MAX, 0, TAU);
-	ctx.strokeStyle = isBurn ? 'rgba(103, 224, 255, 0.14)' : 'rgba(255, 207, 110, 0.10)';
-	ctx.lineWidth = px;
-	ctx.setLineDash(GRIP_DASH);
-	ctx.stroke();
+	forWorldWraps(cx, cy, GRIP_MAX, GRIP_MAX, (wx, wy) => {
+		ctx.beginPath();
+		ctx.arc(wx, wy, GRIP_MAX, 0, TAU);
+		ctx.strokeStyle = isBurn ? 'rgba(103, 224, 255, 0.14)' : 'rgba(255, 207, 110, 0.10)';
+		ctx.lineWidth = px;
+		ctx.setLineDash(GRIP_DASH);
+		ctx.stroke();
+	});
 	ctx.setLineDash(NO_DASH);
 
 	const sx = !isBurn && sim.predCount > 0 ? sim.predX[0] : cx;
 	const sy = !isBurn && sim.predCount > 0 ? sim.predY[0] : cy;
 	ctx.beginPath();
-	ctx.moveTo(sx, sy);
-	ctx.lineTo(gripX, gripY);
+	traceWorldSegment(sx, sy, gripX, gripY);
 	ctx.strokeStyle = isBurn ? 'rgba(103, 224, 255, 0.85)' : 'rgba(255, 207, 110, 0.82)';
 	ctx.lineWidth = 1.2 * px;
 	ctx.stroke();
 
 	const size = (4 + (gripLen > 0 ? gripLen / GRIP_MAX : 0) * 4) * px;
-	ctx.beginPath();
-	ctx.arc(gripX, gripY, size, 0, TAU);
-	ctx.fillStyle = isBurn ? 'rgba(103, 224, 255, 0.18)' : 'rgba(255, 207, 110, 0.16)';
-	ctx.fill();
-	ctx.strokeStyle = mainStroke;
-	ctx.lineWidth = 1.4 * px;
-	ctx.stroke();
-	const tip = 11 * px;
-	const side = 4.5 * px;
-	ctx.beginPath();
-	ctx.moveTo(gripX + Math.cos(angle) * tip, gripY + Math.sin(angle) * tip);
-	ctx.lineTo(gripX + Math.cos(angle + 2.5) * side,
-		gripY + Math.sin(angle + 2.5) * side);
-	ctx.lineTo(gripX + Math.cos(angle - 2.5) * side,
-		gripY + Math.sin(angle - 2.5) * side);
-	ctx.closePath();
-	ctx.fillStyle = mainStroke;
-	ctx.fill();
+	forWorldWraps(gripX, gripY, 12 * px, 12 * px, (gx, gy) => {
+		ctx.beginPath();
+		ctx.arc(gx, gy, size, 0, TAU);
+		ctx.fillStyle = isBurn ? 'rgba(103, 224, 255, 0.18)' : 'rgba(255, 207, 110, 0.16)';
+		ctx.fill();
+		ctx.strokeStyle = mainStroke;
+		ctx.lineWidth = 1.4 * px;
+		ctx.stroke();
+		const tip = 11 * px;
+		const side = 4.5 * px;
+		ctx.beginPath();
+		ctx.moveTo(gx + Math.cos(angle) * tip, gy + Math.sin(angle) * tip);
+		ctx.lineTo(gx + Math.cos(angle + 2.5) * side,
+			gy + Math.sin(angle + 2.5) * side);
+		ctx.lineTo(gx + Math.cos(angle - 2.5) * side,
+			gy + Math.sin(angle - 2.5) * side);
+		ctx.closePath();
+		ctx.fillStyle = mainStroke;
+		ctx.fill();
+	});
 }
 
 function drawMarkers() {
 	const px = 1 / view.scale;
 	for (let i = 0; i < cargoSim.bodyCount; i++) {
 		if (i !== selected && i !== hoverBody) continue;
-		ctx.beginPath();
-		ctx.arc(cargoSim.bodyX[i], cargoSim.bodyY[i],
-			cargoSim.bodyR[i] + 5 * px, 0, TAU);
-		ctx.strokeStyle = i === selected ? GOLD : ICE;
-		ctx.globalAlpha = 0.7;
-		ctx.lineWidth = 1.2 * px;
-		ctx.stroke();
-		ctx.globalAlpha = 1;
+		const r = cargoSim.bodyR[i] + 5 * px;
+		forWorldWraps(cargoSim.bodyX[i], cargoSim.bodyY[i], r, r, (x, y) => {
+			ctx.beginPath();
+			ctx.arc(x, y, r, 0, TAU);
+			ctx.strokeStyle = i === selected ? GOLD : ICE;
+			ctx.globalAlpha = 0.7;
+			ctx.lineWidth = 1.2 * px;
+			ctx.stroke();
+			ctx.globalAlpha = 1;
+		});
 	}
 }
 

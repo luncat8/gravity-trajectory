@@ -33,12 +33,20 @@
 	const KIND_TICK = 2;
 	const KIND_BUILD = 3;
 
-	const PORTS = 32;
+	const PORTS = OrbitWorld.PLANETS;
 	const MAX_LINKS = 6;
 	const PLANETS = OrbitWorld.PLANETS;
 	const INITIAL_PORTS = OrbitWorld.INITIAL_PORTS;
 	const WORLD_W = OrbitWorld.WORLD_W;
 	const WORLD_H = OrbitWorld.WORLD_H;
+
+	function simWrap(v, period) {
+		return v - period * Math.floor(v / period);
+	}
+
+	function simMinImage(d, period) {
+		return d - period * Math.round(d / period);
+	}
 	const AREA_W = OrbitWorld.AREA_W;
 	const AREA_H = OrbitWorld.AREA_H;
 	const AREA_PAD_X = OrbitWorld.AREA_PAD_X;
@@ -73,11 +81,25 @@
 		this.reset(seed);
 	}
 
+	Sim.prototype.setPeriodic = function (periodic) {
+		const next = !!periodic;
+		if (this.periodic === next) return;
+		this.periodic = next;
+		this.tradePlanetLimit = next ? OrbitWorld.PERIODIC_DEFAULT_PLANETS : OrbitWorld.DEFAULT_PLANETS;
+		this.planetEmpty = this.tradePlanetLimit;
+	};
+
+	Sim.prototype.areaPadX = function () { return this.periodic ? 0 : AREA_PAD_X; };
+	Sim.prototype.areaPadY = function () { return this.periodic ? 0 : AREA_PAD_Y; };
+	Sim.prototype.areaW = function () { return this.periodic ? WORLD_W : AREA_W; };
+	Sim.prototype.areaH = function () { return this.periodic ? WORLD_H : AREA_H; };
+
 	/*
 	 * (Re)build the world for `seed` at t = 0. Every array is fresh, so a reset
 	 * is identical to a new Sim; holders of array references must re-read them.
 	 */
-	Sim.prototype.reset = function (seed) {
+	Sim.prototype.reset = function (seed, options) {
+		if (options && options.periodic !== undefined) this.periodic = !!options.periodic;
 		/* the run's universe filter belongs to the player, not to the world:
 		 * rebuilding the world for a new seed keeps it (applyPlanetUniverse
 		 * re-applies it anyway, and a stale mask would hide new colonies) */
@@ -91,7 +113,9 @@
 		this.partnerN = 4;
 		this.portCount = 0;
 		this.shipCount = 0;
-		this.tradePlanetLimit = OrbitWorld.DEFAULT_PLANETS;
+		this.tradePlanetLimit = this.periodic
+			? OrbitWorld.PERIODIC_DEFAULT_PLANETS
+			: OrbitWorld.DEFAULT_PLANETS;
 		this.planetEmpty = this.tradePlanetLimit;
 		/* the run's in-play subset; null = every enabled planet trades */
 		this.planetMask = null;
@@ -143,7 +167,9 @@
 		this.shipDockAngle = new Float64Array(PORTS);
 
 		/* geometry and traits: the caller's stream, in the historical order */
-		OrbitWorld.attach(this, OrbitWorld.create(this.seed, this.rand, { periodic: this.periodic }));
+		OrbitWorld.attach(this, this.periodic
+			? OrbitWorld.create(this.seed, this.rand, { periodic: true })
+			: OrbitWorld.create(this.seed, this.rand));
 
 		/* one colony record per colonised planet (§1, §4) */
 		this.colonies = [];
@@ -330,6 +356,7 @@
 	Sim.prototype.refreshPartners = function () {
 		const active = this.portCount;
 		const n = this.partnerN;
+		const periodic = this.periodic;
 		for (let p = 0; p < active; p++) {
 			if (!this.portInPlay(p)) {
 				this.partnerCount[p] = 0;
@@ -343,8 +370,12 @@
 			for (let q = 0; q < active; q++) {
 				if (q === p) continue;
 				if (!this.planetInPlay(this.portPlanet[q])) continue;
-				const dx = px - this.portX(q, this.t);
-				const dy = py - this.portY(q, this.t);
+				let dx = px - this.portX(q, this.t);
+				let dy = py - this.portY(q, this.t);
+				if (periodic) {
+					dx = simMinImage(dx, WORLD_W);
+					dy = simMinImage(dy, WORLD_H);
+				}
 				const dist = dx * dx + dy * dy;
 				if (count === n && dist >= this.bestDist[n - 1]) continue;
 				let i = count < n ? count++ : n - 1;
@@ -367,13 +398,22 @@
 	/* ── trade flights ── rendezvous, departures, export and migrant destinations, load, arrive, colony ships */
 
 	Sim.prototype.solveRendezvous = function (fromX, fromY, dest, depart, speed) {
+		const periodic = this.periodic;
 		let dx = this.portX(dest, depart) - fromX;
 		let dy = this.portY(dest, depart) - fromY;
+		if (periodic) {
+			dx = simMinImage(dx, WORLD_W);
+			dy = simMinImage(dy, WORLD_H);
+		}
 		let arrive = depart + Math.sqrt(dx * dx + dy * dy) / speed;
 		/* the target keeps moving: refine until the aim point stops shifting */
 		for (let i = 0; i < 12; i++) {
 			dx = this.portX(dest, arrive) - fromX;
 			dy = this.portY(dest, arrive) - fromY;
+			if (periodic) {
+				dx = simMinImage(dx, WORLD_W);
+				dy = simMinImage(dy, WORLD_H);
+			}
 			arrive = depart + Math.sqrt(dx * dx + dy * dy) / speed;
 		}
 		return arrive;
@@ -391,8 +431,10 @@
 		this.shipArrive[ship] = arrive;
 		this.shipStartX[ship] = x;
 		this.shipStartY[ship] = y;
-		this.shipAimX[ship] = this.portX(dest, arrive);
-		this.shipAimY[ship] = this.portY(dest, arrive);
+		const destX = this.portX(dest, arrive);
+		const destY = this.portY(dest, arrive);
+		this.shipAimX[ship] = this.periodic ? x + simMinImage(destX - x, WORLD_W) : destX;
+		this.shipAimY[ship] = this.periodic ? y + simMinImage(destY - y, WORLD_H) : destY;
 		this.events.push(arrive, KIND_ARRIVE, ship);
 	};
 
@@ -418,8 +460,12 @@
 			if (!dst) continue;
 			const shortfall = OrbitEcon.goodShortfall(dst, good);
 			if (!(shortfall > 0)) continue;
-			const dx = px - this.portX(q, t);
-			const dy = py - this.portY(q, t);
+			let dx = px - this.portX(q, t);
+			let dy = py - this.portY(q, t);
+			if (this.periodic) {
+				dx = simMinImage(dx, WORLD_W);
+				dy = simMinImage(dy, WORLD_H);
+			}
 			const dist = Math.sqrt(dx * dx + dy * dy);
 			const score = shortfall / (1 + dist / DIST_SCALE);
 			if (score > bestScore + 1e-12 ||
@@ -524,8 +570,12 @@
 		if (!this.portInPlay(ship)) return;
 		const target = this.shipTarget[ship];
 		if (target >= this.portCount) return;
-		const dx = this.shipAimX[ship] - this.portX(target, time);
-		const dy = this.shipAimY[ship] - this.portY(target, time);
+		let dx = this.shipAimX[ship] - this.portX(target, time);
+		let dy = this.shipAimY[ship] - this.portY(target, time);
+		if (this.periodic) {
+			dx = simMinImage(dx, WORLD_W);
+			dy = simMinImage(dy, WORLD_H);
+		}
 		const error = Math.sqrt(dx * dx + dy * dy);
 		if (error > this.maxAimError) this.maxAimError = error;
 
@@ -593,8 +643,12 @@
 	Sim.prototype.sendColony = function (port, target, time) {
 		const x = this.portX(port, time);
 		const y = this.portY(port, time);
-		const dx = this.planetX[target] - x;
-		const dy = this.planetY[target] - y;
+		let dx = this.planetX[target] - x;
+		let dy = this.planetY[target] - y;
+		if (this.periodic) {
+			dx = simMinImage(dx, WORLD_W);
+			dy = simMinImage(dy, WORLD_H);
+		}
 		const travel = Math.sqrt(dx * dx + dy * dy) / BUILDER_SPEED;
 		this.planetState[target] = 2;
 		this.planetEmpty -= 1;
@@ -605,8 +659,8 @@
 		this.builderStartY[port] = y;
 		this.builderDepart[port] = time;
 		this.builderArrive[port] = time + travel;
-		this.builderEndX[port] = this.planetX[target];
-		this.builderEndY[port] = this.planetY[target];
+		this.builderEndX[port] = this.periodic ? x + dx : this.planetX[target];
+		this.builderEndY[port] = this.periodic ? y + dy : this.planetY[target];
 		this.portNext[port] = time + 45 + this.rand() * 30;
 		this.pushLog(this.econY(time), 'expansion', target,
 			'colony ship from planet ' + this.portPlanet[port] + ' → planet ' + target);
@@ -849,8 +903,12 @@
 			if (this.planetState[planet] !== 0) continue;
 			if (!this.planetInPlay(planet)) continue;
 			if (this.planetHabitat[planet] < MIN_EXPAND_HABITAT) continue;
-			const dx = this.planetX[planet] - px;
-			const dy = this.planetY[planet] - py;
+			let dx = this.planetX[planet] - px;
+			let dy = this.planetY[planet] - py;
+			if (this.periodic) {
+				dx = simMinImage(dx, WORLD_W);
+				dy = simMinImage(dy, WORLD_H);
+			}
 			const d2 = dx * dx + dy * dy;
 			if (d2 >= maxD2) continue;
 			const dist = Math.sqrt(d2);
@@ -946,6 +1004,11 @@
 	Sim.TYPE_NAMES = OrbitWorld.TYPE_NAMES;
 	Sim.PORTS = PORTS;
 	Sim.PLANETS = PLANETS;
+	Sim.CLASSIC_PLANETS = OrbitWorld.CLASSIC_PLANETS;
+	Sim.DEFAULT_PLANETS = OrbitWorld.DEFAULT_PLANETS;
+	Sim.PERIODIC_DEFAULT_PLANETS = OrbitWorld.PERIODIC_DEFAULT_PLANETS;
+	Sim.CLASSIC_CAREER_PLANETS = OrbitWorld.CLASSIC_CAREER_PLANETS;
+	Sim.PERIODIC_CAREER_PLANETS = OrbitWorld.PERIODIC_CAREER_PLANETS;
 	Sim.INITIAL_PORTS = INITIAL_PORTS;
 	Sim.GOOD_NAMES = GOOD_NAMES;
 	Sim.WORLD_W = WORLD_W;

@@ -232,7 +232,7 @@ function finishCareerStart(seed) {
 /* Adding a planet to an active career does not reseat its existing HQs. */
 function addPlanetForRoster() {
 	if (!careerRule()) return;
-	if (planetCount >= PLANET_UNIVERSE_MAX) return;
+	if (planetCount >= planetUniverseCap()) return;
 	if (!setPlanetUniverseSize(planetCount + 1)) return;
 	if (careerPlanning) {
 		cancelCareerPlanning();
@@ -439,6 +439,12 @@ function setPlayMode(next) {
 		syncModeRadios();
 		return;
 	}
+	if (next === RULE_ROUTE && periodicMode) {
+		linkNote = 'route length unavailable with periodic FFT';
+		syncModeRadios();
+		refreshGameUi();
+		return;
+	}
 	if (game.on && game.rule === next) {
 		updateRuleHelp(next);
 		return;
@@ -520,7 +526,8 @@ function setPlayerCount(delta, replayPlanet) {
 	const count = Math.max(1, Math.min(MAX_PLAYERS, current + Math.sign(delta)));
 	if (count === current) return false;
 	if (delta > 0) {
-		if (planetCount >= PLANET_UNIVERSE_MAX) return false;
+		const cap = planetUniverseCap();
+		if (planetCount >= cap) return false;
 		/* A live career must choose the new bot's generated world before enabling
 		 * it. The planner keeps existing companies in place and verifies that the
 		 * new G=1 HQ has a free, non-heavy, starter-exitable first landing at pay
@@ -539,7 +546,7 @@ function setPlayerCount(delta, replayPlanet) {
 		const before = planetMask.slice();
 		if (!setPlanetUniverseSize(planetCount + 1, home)) return false;
 		let added = -1;
-		for (let i = 0; i < PLANET_UNIVERSE_MAX; i++) {
+		for (let i = 0; i < cap; i++) {
 			if (planetMask[i] && !before[i]) { added = i; break; }
 		}
 		if (game.on) {
@@ -592,19 +599,20 @@ function setPlayerCount(delta, replayPlanet) {
 
 /* the planet-count input and the player +/- reflect the live state */
 function refreshPlanetUniverseUi() {
+	const cap = planetUniverseCap();
 	if (planetCountInputEl) {
 		if (document.activeElement !== planetCountInputEl) {
 			planetCountInputEl.value = planetCount;
 		}
 		planetCountInputEl.min = PLANET_UNIVERSE_MIN;
-		planetCountInputEl.max = PLANET_UNIVERSE_MAX;
+		planetCountInputEl.max = cap;
 		planetCountInputEl.disabled = replay.on || careerActionReplay.active;
 	}
 	const shown = playerCountShown();
 	if (playerCountValueEl) playerCountValueEl.textContent = shown;
 	if (playerCountDownEl) playerCountDownEl.disabled = replay.on || careerActionReplay.active || shown <= 1;
 	if (playerCountUpEl) playerCountUpEl.disabled = replay.on || careerActionReplay.active || shown >= MAX_PLAYERS ||
-		planetCount >= PLANET_UNIVERSE_MAX;
+		planetCount >= cap;
 	syncRosterFairness(shown);
 }
 

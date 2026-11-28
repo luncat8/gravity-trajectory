@@ -115,7 +115,9 @@ function copyCareerReplay() {
 	const encoded = CareerReplay.encode(shared);
 	const head = GravityGame.encodeLink({
 		seed: game.seed, rate: scene.trade.speed, rule: game.rule, bot: game.bot,
-		player: game.player, cheat: game.cheat, gravityScale: game.gravityScale,
+		player: game.player, cheat: game.cheat,
+		periodic: Boolean(shared.start && shared.start.fft),
+		gravityScale: game.gravityScale,
 		forceScale: game.forceScale, spaceWearScale: game.spaceWearScale,
 		padScale: game.padScale, rotScale: game.rotScale, payScale: game.payScale,
 		harvestTick: game.harvestTick,
@@ -133,6 +135,7 @@ function copyCareerReplay() {
 function careerOpening(start) {
 	return {
 		seed: start.seed, rate: start.rate, bot: start.bot,
+		...(start.fft ? { fft: true } : {}),
 		players: start.state.run.slots.slice(0, start.seats.length),
 		mask: start.state.mask, seats: start.seats, targetPay: start.targetPay,
 		g: start.gs, f: start.fs, w: start.ws,
@@ -191,10 +194,21 @@ function validCareerActions(data) {
 		!data.seats.every(p => Number.isInteger(p) && p >= 0 && p < PLANETS && data.mask[p] === '1') ||
 		!Number.isFinite(data.targetPay) || !Number.isInteger(data.watch) || data.watch < 0 || data.watch >= MAX_PLAYERS ||
 		!Array.isArray(data.actions) || !Array.isArray(data.events)) return false;
+	const replayPeriodic = data.fft === true;
+	if (data.fft !== undefined && typeof data.fft !== 'boolean') return false;
+	const cap = replayPeriodic ? PLANETS : PLANET_UNIVERSE_MAX;
+	if (!data.seats.every(p => p < cap)) return false;
+	let maxActive = -1;
+	for (let i = 0; i < PLANETS; i++) {
+		if (data.mask[i] === '1') maxActive = i;
+	}
+	if (!replayPeriodic && maxActive >= cap) return false;
 	const universe = data.mask.split('1').length - 1;
-	if (universe < PLANET_UNIVERSE_MIN || universe > PLANET_UNIVERSE_MAX) return false;
+	if (universe < PLANET_UNIVERSE_MIN || universe > cap) return false;
 	if (data.gravity !== undefined) {
-		if (!Array.isArray(data.gravity) || data.gravity.length !== universe) return false;
+		const needed = Math.max(universe, maxActive + 1);
+		if (!Array.isArray(data.gravity) || data.gravity.length < needed ||
+			data.gravity.length > cap) return false;
 		for (let i = 0; i < data.gravity.length; i++) {
 			const g = data.gravity[i];
 			if (!Number.isFinite(g) || g < PlanetGravity.MIN || g > PlanetGravity.MAX) return false;
@@ -221,13 +235,16 @@ function validCareerActions(data) {
 function startCareerActionsReplay(data) {
 	if (!validCareerActions(data)) return false;
 	const universe = data.mask.split('1').length - 1;
+	const replayPeriodic = data.fft === true;
 	careerActionReplayReset();
+	setPeriodicMode(replayPeriodic, false);
 	GravityMaps.applyField(data);
 	activeFieldMap = fieldParamKey(data);
 	const pScale = data.p === undefined ? 1 : data.p;
 	const rScale = data.r === undefined ? 1 : data.r;
 	const yScale = data.y === undefined ? 1 : data.y;
 	GravityMaps.arm({ seed: data.seed, seats: data.seats, universe: universe,
+		...(replayPeriodic ? { fft: true } : {}),
 		gs: data.g, fs: data.f, ps: pScale, ys: yScale, targetPay: data.targetPay,
 		...(Array.isArray(data.gravity) ? { gravity: data.gravity } : {}),
 		state: { mask: data.mask } });
@@ -240,6 +257,8 @@ function startCareerActionsReplay(data) {
 	scene.setSpeed(data.rate);
 	setSource(data.source, false);
 	startGame(data.seed, true, RULE_CAREER, data.bot, data.players[0], data.cheat);
+	refreshMapsUi();
+	syncSeedUrl(true);
 	careerActionReplay.active = true;
 	careerActionReplay.pending = data.actions;
 	careerActionReplay.endStep = data.steps;
@@ -550,6 +569,8 @@ function startCareerReplay(record, verified = false) {
 		careerRecording.follow = record.watch === undefined ? 0 : record.watch;
 		applyCareerReplaySnapshot(initial);
 		prepareNextCareerFrame();
+		refreshMapsUi();
+		syncSeedUrl(true);
 		started = true;
 		return true;
 	} catch (error) {
@@ -594,8 +615,13 @@ function interpolateCareerShips() {
 		if (a.status !== STATUS_FLYING || b.status !== STATUS_FLYING ||
 			!shotsA || !shotsB || shotsA.length !== shotsB.length || b.liveSteps <= a.liveSteps) continue;
 		const cargo = slotSim(slot).cargo;
-		cargo.x = a.cargo.x + (b.cargo.x - a.cargo.x) * ratio;
-		cargo.y = a.cargo.y + (b.cargo.y - a.cargo.y) * ratio;
+		if (periodicMode) {
+			cargo.x = wrapWorldX(a.cargo.x + worldDeltaX(b.cargo.x - a.cargo.x) * ratio);
+			cargo.y = wrapWorldY(a.cargo.y + worldDeltaY(b.cargo.y - a.cargo.y) * ratio);
+		} else {
+			cargo.x = a.cargo.x + (b.cargo.x - a.cargo.x) * ratio;
+			cargo.y = a.cargo.y + (b.cargo.y - a.cargo.y) * ratio;
+		}
 		cargo.vx = a.cargo.vx + (b.cargo.vx - a.cargo.vx) * ratio;
 		cargo.vy = a.cargo.vy + (b.cargo.vy - a.cargo.vy) * ratio;
 	}

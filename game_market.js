@@ -178,7 +178,9 @@
 		}
 		const skip = specialPlanetsOn() && world ? 1 : 0;
 		let want = emptyCountFor(count);
-		for (let p = OrbitWorld.PLANETS - 1; p >= 0 && want > 0; p--) {
+		const limit = mask ? OrbitWorld.PLANETS
+			: (world && world.planetCount ? world.planetCount : OrbitWorld.CLASSIC_PLANETS);
+		for (let p = limit - 1; p >= 0 && want > 0; p--) {
 			if (mask && mask[p] !== 1) continue;
 			if (skip && (p === world.capitalPlanet || p === world.arfPlanet)) continue;
 			market.empty[p] = 1;
@@ -540,7 +542,8 @@
 	/* a planet of the run's universe is in play when it is not masked out */
 	function planetInPlay(career, planet) {
 		return planet >= 0 && planet < OrbitWorld.PLANETS &&
-			(!career.planetMask || career.planetMask[planet] === 1);
+			(career.planetMask ? career.planetMask[planet] === 1
+				: planet < (career.planetCount || OrbitWorld.CLASSIC_PLANETS));
 	}
 
 	/* a colony sits on a planet of the run only when that planet is in play */

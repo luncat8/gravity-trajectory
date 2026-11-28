@@ -11,9 +11,10 @@
 )(function (GravityGame, inner) {
 	'use strict';
 	const {
-		OrbitWorld, PlanetGravity, planetGravity, CAREER, SALT_HQ, OWNER_COMMERCIAL,
+		GravitySim, OrbitWorld, PlanetGravity, planetGravity, CAREER, SALT_HQ, OWNER_COMMERCIAL,
 		specialPlanetsOn, padScaleOf, payScaleOf, claimOwner, HQ_GRAVITY_MAX, OPENING_COMPARE_EPS,
-		OPENING_FAIR_RATIO, OPENING_RATIO_EPS, openingMaskTag, openingMaskBits, openingPrepare,
+		OPENING_FAIR_RATIO, OPENING_RATIO_EPS, openingMaskTag, openingMaskBits,
+		openingPeriodicOf, openingTopologyTag, openingPrepare,
 		openingTraceHome, pickFairHq, hqForbidden, openingRatio, compareOpeningGroups,
 		startCandidatePools, openingGroupAccepted, createHomeWalk
 	} = inner;
@@ -100,7 +101,8 @@
 			(sourceSim && Number.isFinite(sourceSim.gravityScale) ? sourceSim.gravityScale : 1) + ':' +
 			(sourceSim && Number.isFinite(sourceSim.forceScale) ? sourceSim.forceScale : 1) + ':' +
 			padScaleOf() + ':' + payScaleOf() + ':' +
-			(specialPlanetsOn() ? 1 : 0) + (fieldTag ? ':' + fieldTag : '');
+			(specialPlanetsOn() ? 1 : 0) + (fieldTag ? ':' + fieldTag : '') +
+			openingTopologyTag(world, trade, sourceSim);
 	}
 
 	function seatPlanCached(key) {
@@ -368,6 +370,10 @@
 	function planCareerExpansion(galaxy, world, trade, mask, count, sourceSim) {
 		if (!galaxy || !world || !trade || !mask || !sourceSim) return null;
 		const planets = OrbitWorld.PLANETS;
+		const limit = world.planetCount || planets;
+		const periodic = openingPeriodicOf(world, trade, sourceSim);
+		const worldW = sourceSim.worldW || OrbitWorld.WORLD_W;
+		const worldH = sourceSim.worldH || OrbitWorld.WORLD_H;
 		const homes = new Uint8Array(planets);
 		for (let i = 0; i < galaxy.actors.length; i++) {
 			const home = galaxy.actors[i].hq;
@@ -376,7 +382,7 @@
 		const trialMask = new Uint8Array(mask);
 		const sitePay = new Float64Array(planets * planets);
 		const options = [];
-		for (let candidate = 0; candidate < planets; candidate++) {
+		for (let candidate = 0; candidate < limit; candidate++) {
 			if (trialMask[candidate] ||
 				(specialPlanetsOn() && candidate === world.capitalPlanet)) continue;
 			trialMask[candidate] = 1;
@@ -388,7 +394,7 @@
 			let safeSites = 0;
 			let pay = -Infinity;
 			let landing = -1;
-			for (let body = 0; body < planets; body++) {
+			for (let body = 0; body < limit; body++) {
 				if (!trialMask[body] || homes[body]) continue;
 				const market = galaxy.market;
 				/* an uninhabited world is no first landing: it pays nothing and
@@ -406,10 +412,14 @@
 				}
 			}
 			let clearance2 = Infinity;
-			for (let body = 0; body < planets; body++) {
+			for (let body = 0; body < limit; body++) {
 				if (!mask[body]) continue;
-				const dx = world.planetX[candidate] - world.planetX[body];
-				const dy = world.planetY[candidate] - world.planetY[body];
+				let dx = world.planetX[candidate] - world.planetX[body];
+				let dy = world.planetY[candidate] - world.planetY[body];
+				if (periodic) {
+					dx = GravitySim.minImage(dx, worldW);
+					dy = GravitySim.minImage(dy, worldH);
+				}
 				const d2 = dx * dx + dy * dy;
 				if (d2 < clearance2) clearance2 = d2;
 			}
@@ -463,11 +473,12 @@
 	function pickHq(seed, world, used, mask, count, trade, sourceSim) {
 		const fair = pickFairHq(seed, world, used, mask, count, trade, sourceSim);
 		if (fair >= 0) return fair;
+		const limit = world && world.planetCount ? world.planetCount : OrbitWorld.PLANETS;
 		for (let tier = 0; tier < 4; tier++) {
 			const needLight = tier === 0 || tier === 2;
 			const needShallow = tier < 2;
 			let total = 0;
-			for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+			for (let i = 0; i < limit; i++) {
 				if ((mask && mask[i] === 0) || (used && used[i]) || hqForbidden(world, i)) continue;
 				if (needLight && world.planetLight[i] < CAREER.hqMinLight) continue;
 				if (needShallow && planetGravity(world.seed, i) > HQ_GRAVITY_MAX) continue;
@@ -475,7 +486,7 @@
 			}
 			if (total === 0) continue;
 			let pick = OrbitWorld.hashBits(seed, 0, SALT_HQ) % total;
-			for (let i = 0; i < OrbitWorld.PLANETS; i++) {
+			for (let i = 0; i < limit; i++) {
 				if ((mask && mask[i] === 0) || (used && used[i]) || hqForbidden(world, i)) continue;
 				if (needLight && world.planetLight[i] < CAREER.hqMinLight) continue;
 				if (needShallow && planetGravity(world.seed, i) > HQ_GRAVITY_MAX) continue;

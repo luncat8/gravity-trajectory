@@ -60,11 +60,12 @@ audio starts only after a user gesture and never changes physics or replays.
 
 ## controls
 
-The scoreboard supports up to 16 rivals and 48 active planets. Each player `+`
+The scoreboard supports up to 16 rivals and 48 active planets (up to 192 with
+`periodic · FFT` on). Each player `+`
 activates one randomly chosen planet and starts the new rival there without
 resetting the run; `−` removes the newest rival and leaves its planet in play.
 Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
-26 planets (13 in career) with their normal rival counts.
+26 planets (16 in career; 104 / 64 with `periodic · FFT`) with their normal rival counts.
 
 | input | action |
 | --- | --- |
@@ -81,6 +82,7 @@ Career HQs, A.R.F. and the Capital start at gravity 1. The usual presets remain
 | `experimental` · `rot ×` slider | career only · multiplies passive corruption growth and reporting decay (`×0…×3`, default `×1`; `×0` freezes passive rot while bribe corruption and 60 s rebellion rolls remain live, `&rs=`) |
 | `experimental` · `pay ×` slider | career only · multiplies planetary visit payouts including rebel fly-by harvest (`×0.25…×3`, default `×1`, `&ys=`); Capital `−3.00` and A.R.F. `0.00` stay fixed, and passive neglect rot continues to read the unscaled curve |
 | `experimental` · `stay-pay · per tick` | career only (the box is dark in every other mode) · the visit profit is always collected on the **first** encounter with a system — everything it accrued since the last one, paid the step the ship enters it — so a long flight that crosses the same system again later collects what regrew in between; with this on, every step the ship *stays* inside a system also collects what regrew during that step, so a slow or looping pass earns more than a fly-by and one system can pay a flight several times. Predictions, the launch list and the rival plans record each pass's dwell steps and price the exact stay-pay trail (cutting off at `reportUntil` if the observation device wears out mid-pass). Links and URLs carry `ht=1` |
+| `experimental` · `periodic · FFT` | wraps the 1600×1000 play area into a borderless torus: ships, trajectories and gravity cross edges seamlessly with no map exit, the planet roster expands 4× (defaults 104, or 64 in career; cap 192), per-well strength halves (`×0.50`), static planet gravity solves once per field change via radix-2 FFT on a 256×256 grid while moving ports use minimum-image direct force, `full view` hides, and `route` is unavailable (`&fft=1`) |
 | `experimental` · `start gifts` | career only · three whole-cr budgets (`0…20`, default `0`): **for all**, **+ bots** and **+ humans**. At the next start every company draws from its own budget (all + bots, or all + humans) `1…3` gifts — an engine kit (`IMP-1 + FT-1`, `IMP-2 + FT-2`, `IMP-3 + FT-3`, priced at the shop's build cost), a science product (one free invention of `3`, `6` or `10` cr beyond the starter hull) or the radar (`radar at HQ` — the facility flag granted even before an HQ exists, spendable once one settles) — and keeps the rest as cash. Gifted parts are **owned, not fitted**, so the start ship (and the fair-start seating) is unchanged and a refit to them is free; the shop block names the gift (`start gift 14 cr · IMP-1 + FT-1 · R1 catapult · cash 0.23`). The draw comes from each company's seed: a run replays its gifts, a new seed re-rolls. A slider moved mid-run waits for the next start; `👀 example` previews a sample draw that is never a competitor's real one. The address, career links and saved records carry `ga=`/`gb=`/`gh=` (omitted at 0) |
 | `±` trim slider | relative nudge (`-5%…+5%`) of the aim speed, of an armed in-flight `burn Δv`, or of selected gravity when no shot is armed |
 | release drag | arms the shot/plan (or in-flight impulse burn) and draws the predicted net career outcome after the launch fee, a repair if the main button will repair first, estimated flight wear and a physically viable departure cost; green means profit, neutral means a loss, and red means there is no affordable way off the destination · a warning marks predicted 0% condition and whether reports stop in flight, or whether only the launch-without-repair option would wear out · it also shows gross income per time of flight (`+0.25/s`), time of flight (`13.0 s`) and system visits · aiming at an accepted delivery pickup (`loads <N> t → <to>`) previews the post-pickup ship mass |

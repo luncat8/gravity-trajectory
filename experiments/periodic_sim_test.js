@@ -323,6 +323,47 @@ check('moving periodic source uses the direct sum, no grid solve', function () {
 	sim.fieldAt(810, 500, out); // must not solve
 	assert.strictEqual(GravityFFT.solves, before, 'moving field never solves');
 	assert.ok(Number.isFinite(out.ax) && Number.isFinite(out.ay), 'moving field returns finite accel');
+
+	/* moving periodic direct sum matches PERIODIC_STRENGTH (0.5) and zeroes
+	 * tied force components at exact half-world separation */
+	const classic = makePeriodicSim(W, H, [{ x: 800, y: 500, r: 20 }]);
+	classic.setPeriodic(false);
+	classic.fieldStatic = false;
+	classic.refreshField();
+	const outClassic = { ax: 0, ay: 0 };
+	classic.fieldAt(810, 500, outClassic);
+	assert.ok(close(out.ax, outClassic.ax * Sim.PERIODIC_STRENGTH, 1e-12),
+		'moving periodic direct sum applies PERIODIC_STRENGTH');
+
+	sim.fieldAt(0, 500, out); // dx = 800 - 0 -> minImage = -800 (exact half-world tie in X)
+	assert.strictEqual(out.ax, 0, 'exact half-world X tie zeroes ax');
+	sim.fieldAt(800, 0, out); // dy = 500 - 0 -> minImage = -500 (exact half-world tie in Y)
+	assert.strictEqual(out.ay, 0, 'exact half-world Y tie zeroes ay');
+	sim.fieldAt(0, 100, out); // tied in X, non-tied in Y: r2 keeps (W/2)^2 + dy^2 + SOFT2
+	const expectedAy = Sim.MU * Sim.PERIODIC_STRENGTH * 400 /
+		Math.pow(800 * 800 + 400 * 400 + Sim.SOFT2, 1.5);
+	assert.strictEqual(out.ax, 0, 'diagonal half-world X tie zeroes ax');
+	assert.ok(close(out.ay, expectedAy, 1e-12), 'half-world tie keeps (L/2)^2 in r2');
+
+	/* invalidateField refreshes shared-array borrowers without severing periodicSource_ */
+	const sharedStrength = new Float64Array(Sim.MAX_BODIES);
+	sharedStrength[0] = 1;
+	const rootSim = makePeriodicSim(W, H, [{ x: 400, y: 400, r: 20 }]);
+	rootSim.setField(1, rootSim.bodyR, sharedStrength, rootSim.fillField, true);
+	const childSim = makePeriodicSim(W, H, [{ x: 400, y: 400, r: 20 }]);
+	childSim.setPeriodic(true, rootSim);
+	childSim.setField(1, rootSim.bodyR, sharedStrength, rootSim.fillField, true);
+	childSim.fieldAt(420, 400, out);
+	const snap1 = rootSim.periodicGrid();
+	assert.strictEqual(childSim.periodicGrid(), snap1);
+	sharedStrength[0] = 2;
+	rootSim.invalidateField();
+	const solvesBefore = GravityFFT.solves;
+	childSim.fieldAt(420, 400, out);
+	assert.strictEqual(GravityFFT.solves, solvesBefore + 1, 'shared-array invalidation solves once');
+	assert.notStrictEqual(rootSim.periodicGrid(), snap1);
+	assert.strictEqual(childSim.periodicGrid(), rootSim.periodicGrid(),
+		'child automatically adopts refreshed root snapshot');
 });
 
 console.log('PERIODIC SIM OK · ' + passed + ' checks · topology, snapshots, wrap, min-image, counters, adoption');

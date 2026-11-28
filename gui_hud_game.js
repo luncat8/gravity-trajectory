@@ -50,7 +50,18 @@ function refreshGameUi() {
 	srcPortsEl.disabled = flightLock;
 	/* a flight locks the rule; lab stays reachable as the way out */
 	for (let i = 0; i < modeEls.length; i++) {
-		if (modeEls[i][1]) modeEls[i][1].disabled = flightLock && modeEls[i][0] !== PLAY_LAB;
+		const el = modeEls[i][1];
+		if (!el) continue;
+		const isRoute = modeEls[i][0] === RULE_ROUTE;
+		const routePeriodicLock = isRoute && periodicMode;
+		el.disabled = (flightLock && modeEls[i][0] !== PLAY_LAB) || routePeriodicLock;
+		if (isRoute) {
+			const routeTip = routePeriodicLock
+				? 'Unavailable while periodic · FFT is on: a wrapped torus has no map exit'
+				: '';
+			el.title = routeTip;
+			if (el.parentElement && el.parentElement !== el) el.parentElement.title = routeTip;
+		}
 	}
 	if (botOffEl) botOffEl.disabled = playback || (replay.on && replay.career);
 	if (botEasyEl) botEasyEl.disabled = playback || (replay.on && replay.career);
@@ -76,6 +87,14 @@ function refreshGameUi() {
 	if (expHarvestEl) expHarvestEl.disabled = experimentLock || !career;
 	/* buying ships is a live-career choice: locked mid-flight like the rest */
 	if (expFleetEl) expFleetEl.disabled = experimentLock || !career;
+	if (expPeriodicEl) {
+		expPeriodicEl.disabled = experimentLock || route;
+		const tip = route
+			? 'Unavailable in route length: a wrapped torus has no exit boundary to terminate an open route'
+			: expPeriodicDefaultTitle;
+		expPeriodicEl.title = tip;
+		if (expPeriodicLabelEl) expPeriodicLabelEl.title = tip;
+	}
 	syncFleetCheckbox();
 	for (const el of [giftAllEl, giftBotEl, giftHumanEl, giftPeekEl]) if (el) el.disabled = !career;
 	cheatPanelSyncUi(career);

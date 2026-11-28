@@ -23,6 +23,7 @@ const END_TRUNCATED = GravitySim.END_TRUNCATED;
 const END_ABORT = GravitySim.END_ABORT;
 const DT = GravitySim.DT;
 const PLANETS = OrbitSim.PLANETS;
+let periodicMode = false;
 const NO_PORT = OrbitSim.NO_PORT;
 const MODE_PLANETS = GravityGame.SRC_PLANETS;
 const MODE_PORTS = GravityGame.SRC_PORTS;
@@ -259,7 +260,8 @@ const COMMON_HELP = 'Drag from a planet or pad to aim; hold Shift for 1/20 fine 
 	'Esc cancels an aim or queued launch. Planet gravity is seeded from −1 to +5; ' +
 	'negative gravity repels. The seed is in the URL; a seedless startup draws a new one. ' +
 	'f cycles space → gravity field → gravity potential; potential shows gravity zones by size, not direction: blue where gravity repels, see-through near zero, green where it pulls and red around a heavy planet (g ≥ +2). ' +
-	'z switches the camera between the planet field and the whole flight area, where a ship that left the canvas is still visible.';
+	'z switches the camera between the planet field and the whole flight area, where a ship that left the canvas is still visible. ' +
+	'Experimental periodic · FFT wraps the 1600×1000 world into a borderless torus (4× roster up to 192 worlds, half well strength, static gravity solved on a 256×256 FFT grid; unavailable in route).';
 /* the politics topic (0.6.1): previewed in the help drawer while the pointer
  * is on the bribe or go-quiet row; same shape as a rule's entry */
 const POLITICS_HELP = {

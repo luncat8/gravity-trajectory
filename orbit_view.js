@@ -54,11 +54,27 @@
 		x: -OrbitSim.AREA_PAD_X, y: -OrbitSim.AREA_PAD_Y,
 		w: OrbitSim.AREA_W, h: OrbitSim.AREA_H
 	};
-	const MOON_CAP = 512;
-	const TRACK_CAP = 128;
+	const MOON_CAP = 2048;
+	const TRACK_CAP = 512;
 	const MOON_GRAV_K = 75;
 	const MOON_COLORS = ['#dfeaff', '#ffe3b3', '#9be6ff', '#c9d6e8'];
 	const seedRandom = OrbitWorld.seedRandom;
+
+	function wrapX(x) {
+		return x - OrbitSim.WORLD_W * Math.floor(x / OrbitSim.WORLD_W);
+	}
+
+	function wrapY(y) {
+		return y - OrbitSim.WORLD_H * Math.floor(y / OrbitSim.WORLD_H);
+	}
+
+	function minDx(dx) {
+		return dx - OrbitSim.WORLD_W * Math.round(dx / OrbitSim.WORLD_W);
+	}
+
+	function minDy(dy) {
+		return dy - OrbitSim.WORLD_H * Math.round(dy / OrbitSim.WORLD_H);
+	}
 
 	const canvas = $('c');
 	const ctx = canvas.getContext('2d');
@@ -284,14 +300,18 @@
 		);
 		/* the play area is darker than the starfield, the planet field darker
 		 * again, and both edges are drawn so a flight that leaves the framed
-		 * canvas still reads as inside the area */
-		const areaX = AREA_BOX.x;
-		const areaY = AREA_BOX.y;
-		const areaR = areaX + AREA_BOX.w;
-		const areaB = areaY + AREA_BOX.h;
-		backCtx.fillStyle = 'rgba(7, 16, 30, 0.22)';
-		backCtx.fillRect(areaX, areaY, AREA_BOX.w, AREA_BOX.h);
-		backCtx.fillStyle = 'rgba(7, 16, 30, 0.20)';
+		 * canvas still reads as inside the area; on a periodic torus the world
+		 * has no outer pad box */
+		const box = sim.periodic ? FIELD_BOX : AREA_BOX;
+		const areaX = box.x;
+		const areaY = box.y;
+		const areaR = areaX + box.w;
+		const areaB = areaY + box.h;
+		if (!sim.periodic) {
+			backCtx.fillStyle = 'rgba(7, 16, 30, 0.22)';
+			backCtx.fillRect(areaX, areaY, box.w, box.h);
+		}
+		backCtx.fillStyle = sim.periodic ? 'rgba(7, 16, 30, 0.34)' : 'rgba(7, 16, 30, 0.20)';
 		backCtx.fillRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
 		backCtx.strokeStyle = 'rgba(96, 150, 200, 0.045)';
 		backCtx.lineWidth = 1;
@@ -305,8 +325,10 @@
 			backCtx.lineTo(areaR, y);
 		}
 		backCtx.stroke();
-		backCtx.strokeStyle = 'rgba(103, 224, 255, 0.06)';
-		backCtx.strokeRect(areaX, areaY, AREA_BOX.w, AREA_BOX.h);
+		if (!sim.periodic) {
+			backCtx.strokeStyle = 'rgba(103, 224, 255, 0.06)';
+			backCtx.strokeRect(areaX, areaY, box.w, box.h);
+		}
 		backCtx.strokeStyle = 'rgba(103, 224, 255, 0.12)';
 		backCtx.strokeRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
 	}
@@ -324,7 +346,7 @@
 		const foot = Math.min(VIEW_FOOT_MAX, Math.max(VIEW_FOOT_MIN, height * 0.08));
 		const availW = width - VIEW_INSET * 2;
 		const availH = height - VIEW_INSET - foot;
-		const box = view.frame === FRAME_FULL ? AREA_BOX : FIELD_BOX;
+		const box = view.frame === FRAME_FULL && !sim.periodic ? AREA_BOX : FIELD_BOX;
 		view.scale = Math.min(availW / box.w, availH / box.h);
 		view.offX = VIEW_INSET + (availW - box.w * view.scale) / 2 - box.x * view.scale;
 		view.offY = VIEW_INSET + (availH - box.h * view.scale) / 2 - box.y * view.scale;
@@ -344,19 +366,25 @@
 	}
 
 	function updatePortPositions() {
+		const periodic = sim.periodic;
 		for (let p = 0; p < sim.portCount; p++) {
-			portPX[p] = sim.portX(p, sim.t);
-			portPY[p] = sim.portY(p, sim.t);
+			const x = sim.portX(p, sim.t);
+			const y = sim.portY(p, sim.t);
+			portPX[p] = periodic ? wrapX(x) : x;
+			portPY[p] = periodic ? wrapY(y) : y;
 		}
 	}
 
 	function updateShipPositions() {
+		const periodic = sim.periodic;
 		for (let ship = 0; ship < sim.shipCount; ship++) {
 			if (sim.shipState[ship] === 0) {
 				const port = sim.shipDock[ship];
 				const angle = sim.shipDockAngle[ship];
-				shipPX[ship] = portPX[port] + Math.cos(angle) * DOCK_OFFSET;
-				shipPY[ship] = portPY[port] + Math.sin(angle) * DOCK_OFFSET;
+				const x = portPX[port] + Math.cos(angle) * DOCK_OFFSET;
+				const y = portPY[port] + Math.sin(angle) * DOCK_OFFSET;
+				shipPX[ship] = periodic ? wrapX(x) : x;
+				shipPY[ship] = periodic ? wrapY(y) : y;
 				shipAngle[ship] = angle + Math.PI * 0.5;
 				continue;
 			}
@@ -364,10 +392,12 @@
 			let f = span > 0 ? (sim.t - sim.shipDepart[ship]) / span : 1;
 			if (f < 0) f = 0;
 			else if (f > 1) f = 1;
-			shipPX[ship] = sim.shipStartX[ship] +
+			const x = sim.shipStartX[ship] +
 				(sim.shipAimX[ship] - sim.shipStartX[ship]) * f;
-			shipPY[ship] = sim.shipStartY[ship] +
+			const y = sim.shipStartY[ship] +
 				(sim.shipAimY[ship] - sim.shipStartY[ship]) * f;
+			shipPX[ship] = periodic ? wrapX(x) : x;
+			shipPY[ship] = periodic ? wrapY(y) : y;
 			shipAngle[ship] = Math.atan2(
 				sim.shipAimY[ship] - sim.shipStartY[ship],
 				sim.shipAimX[ship] - sim.shipStartX[ship]
@@ -387,8 +417,8 @@
 		let hit = -1;
 		for (let p = 0; p < sim.portCount; p++) {
 			if (!planetInPlay(sim.portPlanet[p])) continue;
-			const dx = portPX[p] - wx;
-			const dy = portPY[p] - wy;
+			const dx = sim.periodic ? minDx(portPX[p] - wx) : portPX[p] - wx;
+			const dy = sim.periodic ? minDy(portPY[p] - wy) : portPY[p] - wy;
 			const dist = dx * dx + dy * dy;
 			if (dist < best) {
 				best = dist;
@@ -548,6 +578,38 @@
 		}
 	}
 
+	function forOrbitWrap(x, y, rx, ry, fn) {
+		fn(x, y);
+		if (!sim.periodic) return;
+		const W = OrbitSim.WORLD_W;
+		const H = OrbitSim.WORLD_H;
+		const sx = x - rx < 0 ? W : x + rx > W ? -W : 0;
+		const sy = y - ry < 0 ? H : y + ry > H ? -H : 0;
+		if (sx !== 0) fn(x + sx, y);
+		if (sy !== 0) fn(x, y + sy);
+		if (sx !== 0 && sy !== 0) fn(x + sx, y + sy);
+	}
+
+	function traceOrbitSegment(x0, y0, x1, y1) {
+		if (!sim.periodic) {
+			ctx.moveTo(x0, y0);
+			ctx.lineTo(x1, y1);
+			return;
+		}
+		const wx0 = wrapX(x0);
+		const wy0 = wrapY(y0);
+		const wx1 = wrapX(x1);
+		const wy1 = wrapY(y1);
+		const dx = minDx(wx1 - wx0);
+		const dy = minDy(wy1 - wy0);
+		ctx.moveTo(wx0, wy0);
+		ctx.lineTo(wx0 + dx, wy0 + dy);
+		if (wx0 + dx !== wx1 || wy0 + dy !== wy1) {
+			ctx.moveTo(wx1 - dx, wy1 - dy);
+			ctx.lineTo(wx1, wy1);
+		}
+	}
+
 	function drawMoonTracks() {
 		ctx.strokeStyle = '#6f93b5';
 		ctx.globalAlpha = 0.09;
@@ -559,27 +621,26 @@
 			if (!planetInPlay(p)) continue;
 			const a = trackA[i];
 			const focus = a * trackE[i];
-			ctx.moveTo(
-				sim.planetX[p] + (a - focus) * sysPXX[p],
-				sim.planetY[p] + (a - focus) * sysPXY[p]
-			);
-			ctx.ellipse(
-				sim.planetX[p] - focus * sysPXX[p],
-				sim.planetY[p] - focus * sysPXY[p],
-				a, a * trackMinor[i] * sysCosI[p],
-				sysMajorAngle[p], 0, TAU
-			);
+			forOrbitWrap(sim.planetX[p], sim.planetY[p], a + focus, a + focus, (px, py) => {
+				ctx.moveTo(px + (a - focus) * sysPXX[p], py + (a - focus) * sysPXY[p]);
+				ctx.ellipse(
+					px - focus * sysPXX[p], py - focus * sysPXY[p],
+					a, a * trackMinor[i] * sysCosI[p],
+					sysMajorAngle[p], 0, TAU
+				);
+			});
 		}
 		ctx.stroke();
 		ctx.globalAlpha = 1;
 	}
 
 	function drawMoons(front) {
+		const periodic = sim.periodic;
 		for (let i = 0; i < moonCount; i++) {
 			if (!planetInPlay(moonPlanet[i])) continue;
 			if ((moonWZ[i] >= 0) !== front) continue;
-			const x = moonWX[i];
-			const y = moonWY[i];
+			const x = periodic ? wrapX(moonWX[i]) : moonWX[i];
+			const y = periodic ? wrapY(moonWY[i]) : moonWY[i];
 			const size = moonSize[i];
 			ctx.fillStyle = MOON_COLORS[moonTone[i]];
 			ctx.globalAlpha = moonAlpha[i];
@@ -587,16 +648,18 @@
 				ctx.fillRect(x - size * 0.5, y - size * 0.5, size, size);
 				continue;
 			}
-			ctx.beginPath();
-			ctx.arc(x, y, size, 0, TAU);
-			ctx.fill();
+			forOrbitWrap(x, y, size, size, (mx, my) => {
+				ctx.beginPath();
+				ctx.arc(mx, my, size, 0, TAU);
+				ctx.fill();
+			});
 		}
 		ctx.globalAlpha = 1;
 	}
 
 	/* ── world drawing ── orbits, links, planets, builders, routes, stations, ships, hover cards */
 
-	function orbitTrail(planet, colour) {
+	function orbitTrailAt(px, py, planet, colour) {
 		/* fading arc behind the station shows which way the ellipse turns */
 		const omega = sim.orbitOmega[planet];
 		const phase = sim.orbitPhase[planet] + omega * sim.t;
@@ -608,7 +671,7 @@
 			const far = phase - (behind ? -1 : 1) * 0.16 * (k + 1);
 			ctx.beginPath();
 			ctx.ellipse(
-				sim.planetX[planet], sim.planetY[planet],
+				px, py,
 				sim.orbitRX[planet], sim.orbitRY[planet],
 				sim.orbitTilt[planet], near, far, behind
 			);
@@ -625,17 +688,18 @@
 			const port = sim.planetPort[planet];
 			const active = port !== NO_PORT;
 			const colour = active ? GOOD_COLORS[sim.portSpec[port]] : '#3a5573';
-			ctx.beginPath();
-			ctx.ellipse(
-				sim.planetX[planet], sim.planetY[planet],
-				sim.orbitRX[planet], sim.orbitRY[planet],
-				sim.orbitTilt[planet], 0, TAU
-			);
-			ctx.strokeStyle = colour;
-			ctx.globalAlpha = 0.17;
-			ctx.setLineDash(active ? NO_DASH : IDLE_DASH);
-			ctx.stroke();
-			if (active && trails) orbitTrail(planet, colour);
+			const rx = sim.orbitRX[planet];
+			const ry = sim.orbitRY[planet];
+			const reach = rx >= ry ? rx : ry;
+			forOrbitWrap(sim.planetX[planet], sim.planetY[planet], reach, reach, (px, py) => {
+				ctx.beginPath();
+				ctx.ellipse(px, py, rx, ry, sim.orbitTilt[planet], 0, TAU);
+				ctx.strokeStyle = colour;
+				ctx.globalAlpha = 0.17;
+				ctx.setLineDash(active ? NO_DASH : IDLE_DASH);
+				ctx.stroke();
+				if (active && trails) orbitTrailAt(px, py, planet, colour);
+			});
 		}
 		ctx.globalAlpha = 1;
 		ctx.setLineDash(NO_DASH);
@@ -650,8 +714,7 @@
 			for (let k = 0; k < count; k++) {
 				const q = sim.partners[base + k];
 				if (q === NO_PORT || q <= p || !planetInPlay(sim.portPlanet[q])) continue;
-				ctx.moveTo(portPX[p], portPY[p]);
-				ctx.lineTo(portPX[q], portPY[q]);
+				traceOrbitSegment(portPX[p], portPY[p], portPX[q], portPY[q]);
 			}
 		}
 		ctx.strokeStyle = 'rgba(126, 180, 230, 0.11)';
@@ -665,34 +728,34 @@
 			if (!planetInPlay(planet)) continue;
 			const port = sim.planetPort[planet];
 			const state = sim.planetState[planet];
-			const x = sim.planetX[planet];
-			const y = sim.planetY[planet];
 			const r = sim.planetR[planet];
-			ctx.beginPath();
-			ctx.arc(x, y, r, 0, TAU);
-			if (state === 1) {
-				const colour = GOOD_COLORS[sim.portSpec[port]];
-				ctx.fillStyle = '#101d31';
-				ctx.fill();
-				ctx.strokeStyle = colour;
-				ctx.globalAlpha = 0.72;
-				ctx.lineWidth = 1.4;
-				ctx.setLineDash(NO_DASH);
-				ctx.stroke();
+			forOrbitWrap(sim.planetX[planet], sim.planetY[planet], r + 5, r + 5, (x, y) => {
 				ctx.beginPath();
-				ctx.arc(x, y, r + 4, 0, TAU);
-				ctx.globalAlpha = 0.12;
-				ctx.lineWidth = 2.4;
+				ctx.arc(x, y, r, 0, TAU);
+				if (state === 1) {
+					const colour = GOOD_COLORS[sim.portSpec[port]];
+					ctx.fillStyle = '#101d31';
+					ctx.fill();
+					ctx.strokeStyle = colour;
+					ctx.globalAlpha = 0.72;
+					ctx.lineWidth = 1.4;
+					ctx.setLineDash(NO_DASH);
+					ctx.stroke();
+					ctx.beginPath();
+					ctx.arc(x, y, r + 4, 0, TAU);
+					ctx.globalAlpha = 0.12;
+					ctx.lineWidth = 2.4;
+					ctx.stroke();
+					return;
+				}
+				ctx.fillStyle = state === 2 ? '#131b16' : '#08111d';
+				ctx.fill();
+				ctx.strokeStyle = state === 2 ? COLONY_COLOR : 'rgba(78, 108, 138, 0.7)';
+				ctx.globalAlpha = 0.75;
+				ctx.lineWidth = 1;
+				ctx.setLineDash(state === 2 ? [2, 3] : NO_DASH);
 				ctx.stroke();
-				continue;
-			}
-			ctx.fillStyle = state === 2 ? '#131b16' : '#08111d';
-			ctx.fill();
-			ctx.strokeStyle = state === 2 ? COLONY_COLOR : 'rgba(78, 108, 138, 0.7)';
-			ctx.globalAlpha = 0.75;
-			ctx.lineWidth = 1;
-			ctx.setLineDash(state === 2 ? [2, 3] : NO_DASH);
-			ctx.stroke();
+			});
 		}
 		ctx.globalAlpha = 1;
 		ctx.setLineDash(NO_DASH);
@@ -708,12 +771,16 @@
 			let f = span > 0 ? (sim.t - sim.builderDepart[p]) / span : 1;
 			if (f < 0) f = 0;
 			else if (f > 1) f = 1;
-			const x = sim.builderStartX[p] + (sim.builderEndX[p] - sim.builderStartX[p]) * f;
-			const y = sim.builderStartY[p] + (sim.builderEndY[p] - sim.builderStartY[p]) * f;
+			const rawX = sim.builderStartX[p] + (sim.builderEndX[p] - sim.builderStartX[p]) * f;
+			const rawY = sim.builderStartY[p] + (sim.builderEndY[p] - sim.builderStartY[p]) * f;
+			const x = sim.periodic ? wrapX(rawX) : rawX;
+			const y = sim.periodic ? wrapY(rawY) : rawY;
+			const endX = sim.periodic ? wrapX(sim.builderEndX[p]) : sim.builderEndX[p];
+			const endY = sim.periodic ? wrapY(sim.builderEndY[p]) : sim.builderEndY[p];
 			if (showRoutes) {
 				ctx.beginPath();
-				ctx.moveTo(sim.builderStartX[p], sim.builderStartY[p]);
-				ctx.lineTo(sim.builderEndX[p], sim.builderEndY[p]);
+				traceOrbitSegment(sim.builderStartX[p], sim.builderStartY[p],
+					sim.builderEndX[p], sim.builderEndY[p]);
 				ctx.strokeStyle = COLONY_COLOR;
 				ctx.globalAlpha = 0.2;
 				ctx.setLineDash([2, 6]);
@@ -722,7 +789,7 @@
 			ctx.globalAlpha = 0.5;
 			ctx.drawImage(colonyGlow, x - 18, y - 18, 36, 36);
 			ctx.beginPath();
-			ctx.arc(sim.builderEndX[p], sim.builderEndY[p], 12 + framePulse * 6, 0, TAU);
+			ctx.arc(endX, endY, 12 + framePulse * 6, 0, TAU);
 			ctx.strokeStyle = COLONY_COLOR;
 			ctx.globalAlpha = 0.4;
 			ctx.setLineDash(NO_DASH);
@@ -747,16 +814,18 @@
 			if (!shipInPlay(ship)) continue;
 			const good = sim.shipGood[ship];
 			const colour = good === NO_GOOD ? '#8aa6bd' : GOOD_COLORS[good];
+			const aimX = sim.periodic ? wrapX(sim.shipAimX[ship]) : sim.shipAimX[ship];
+			const aimY = sim.periodic ? wrapY(sim.shipAimY[ship]) : sim.shipAimY[ship];
 			ctx.beginPath();
-			ctx.moveTo(sim.shipStartX[ship], sim.shipStartY[ship]);
-			ctx.lineTo(sim.shipAimX[ship], sim.shipAimY[ship]);
+			traceOrbitSegment(sim.shipStartX[ship], sim.shipStartY[ship],
+				sim.shipAimX[ship], sim.shipAimY[ship]);
 			ctx.strokeStyle = colour;
 			ctx.globalAlpha = 0.2;
 			ctx.lineWidth = 0.9;
 			ctx.setLineDash([4, 5]);
 			ctx.stroke();
 			ctx.beginPath();
-			ctx.arc(sim.shipAimX[ship], sim.shipAimY[ship], 3.6, 0, TAU);
+			ctx.arc(aimX, aimY, 3.6, 0, TAU);
 			ctx.globalAlpha = 0.62;
 			ctx.setLineDash(NO_DASH);
 			ctx.stroke();
@@ -774,8 +843,7 @@
 			const x = portPX[p];
 			const y = portPY[p];
 			ctx.beginPath();
-			ctx.moveTo(sim.planetX[planet], sim.planetY[planet]);
-			ctx.lineTo(x, y);
+			traceOrbitSegment(sim.planetX[planet], sim.planetY[planet], x, y);
 			ctx.strokeStyle = colour;
 			ctx.globalAlpha = 0.22;
 			ctx.lineWidth = 0.8;
@@ -882,8 +950,7 @@
 		for (let k = 0; k < count; k++) {
 			const q = sim.partners[base + k];
 			if (q === NO_PORT) continue;
-			ctx.moveTo(x, y);
-			ctx.lineTo(portPX[q], portPY[q]);
+			traceOrbitSegment(x, y, portPX[q], portPY[q]);
 		}
 		ctx.strokeStyle = colour;
 		ctx.globalAlpha = 0.48;
@@ -905,8 +972,7 @@
 		const target = sim.scoreTarget(hoverPort);
 		if (target !== NO_PORT) {
 			ctx.beginPath();
-			ctx.moveTo(x, y);
-			ctx.lineTo(sim.planetX[target], sim.planetY[target]);
+			traceOrbitSegment(x, y, sim.planetX[target], sim.planetY[target]);
 			ctx.strokeStyle = COLONY_COLOR;
 			ctx.globalAlpha = 0.45;
 			ctx.lineWidth = 1.1;
@@ -975,12 +1041,21 @@
 		ctx.save();
 		ctx.translate(view.offX, view.offY);
 		ctx.scale(view.scale, view.scale);
-		if (showBackdrop) return;
-		ctx.strokeStyle = 'rgba(103, 224, 255, 0.08)';
-		ctx.lineWidth = 1;
-		ctx.strokeRect(AREA_BOX.x, AREA_BOX.y, AREA_BOX.w, AREA_BOX.h);
-		ctx.strokeStyle = 'rgba(103, 224, 255, 0.16)';
-		ctx.strokeRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+		if (!showBackdrop) {
+			if (!sim.periodic) {
+				ctx.strokeStyle = 'rgba(103, 224, 255, 0.08)';
+				ctx.lineWidth = 1;
+				ctx.strokeRect(AREA_BOX.x, AREA_BOX.y, AREA_BOX.w, AREA_BOX.h);
+			}
+			ctx.strokeStyle = 'rgba(103, 224, 255, 0.16)';
+			ctx.lineWidth = 1;
+			ctx.strokeRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+		}
+		if (sim.periodic && typeof ctx.clip === 'function') {
+			ctx.beginPath();
+			ctx.rect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+			ctx.clip();
+		}
 	}
 
 	function paintStill() {
@@ -1238,6 +1313,7 @@
 		FRAME_MAIN,
 		FRAME_FULL,
 		setFrame,
+		syncTopology: resize,
 		planetG: planetG,
 		setPlanetMask: setPlanetMask,
 		reset: resetWorld,

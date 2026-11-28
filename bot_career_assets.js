@@ -11,7 +11,7 @@
 )(function (GravityBot, inner) {
 	'use strict';
 	const {
-		GravitySim, GravityGame, OrbitTech, END_IMPACT, TAU, CAREER_EXIT_CACHE_WAYS,
+		GravitySim, GravityGame, OrbitWorld, OrbitTech, END_IMPACT, TAU, CAREER_EXIT_CACHE_WAYS,
 		CAREER_REACH_VALUE, CAREER_PURSE_RESERVE, careerRefundEscrow, careerTraceIndex
 	} = inner;
 
@@ -55,17 +55,44 @@
 	}
 
 	GravityBot.prototype.prepareCareerExitProbe = function (sourceSim) {
-		const sim = this.exitProbe;
 		if (!sourceSim) sourceSim = this.probe;
+		const srcW = sourceSim.worldW || OrbitWorld.WORLD_W;
+		const srcH = sourceSim.worldH || OrbitWorld.WORLD_H;
+		if (this.exitProbe.worldW !== srcW || this.exitProbe.worldH !== srcH) {
+			this.exitProbe = new GravitySim(srcW, srcH);
+			this.departureSourceSim = null;
+		}
+		const sim = this.exitProbe;
+		const periodicChanged = sim.periodic !== Boolean(sourceSim.periodic);
+		sim.setPeriodic(sourceSim.periodic, sourceSim);
 		sim.fieldT = sourceSim.fieldT;
 		sim.fieldRate = sourceSim.fieldRate;
 		sim.setScales(sourceSim.gravityScale, sourceSim.forceScale);
-		if (this.departureSourceSim !== sourceSim || sim.bodyCount !== sourceSim.bodyCount ||
+		if (periodicChanged || this.departureSourceSim !== sourceSim ||
+			sim.planetX !== sourceSim.planetX || sim.planetY !== sourceSim.planetY ||
+			sim.planetR !== sourceSim.planetR || sim.planetCapacity !== sourceSim.planetCapacity) {
+			if (sourceSim.planetCapacity !== undefined) sim.planetCapacity = sourceSim.planetCapacity;
+			if (sourceSim.planetX) sim.planetX = sourceSim.planetX;
+			if (sourceSim.planetY) sim.planetY = sourceSim.planetY;
+			if (sourceSim.planetR) sim.planetR = sourceSim.planetR;
+			if (sourceSim.sysCos) sim.sysCos.set(sourceSim.sysCos);
+			if (sourceSim.sysSin) sim.sysSin.set(sourceSim.sysSin);
+			if (sourceSim.sysInvRX) sim.sysInvRX.set(sourceSim.sysInvRX);
+			if (sourceSim.sysInvRY) sim.sysInvRY.set(sourceSim.sysInvRY);
+			if (sourceSim.sysBoundR2) sim.sysBoundR2.set(sourceSim.sysBoundR2);
+			if (sourceSim.planetMinX !== undefined) sim.planetMinX = sourceSim.planetMinX;
+			if (sourceSim.planetMaxX !== undefined) sim.planetMaxX = sourceSim.planetMaxX;
+			if (sourceSim.planetMinY !== undefined) sim.planetMinY = sourceSim.planetMinY;
+			if (sourceSim.planetMaxY !== undefined) sim.planetMaxY = sourceSim.planetMaxY;
+		}
+		if (periodicChanged || this.departureSourceSim !== sourceSim ||
+			sim.bodyCount !== sourceSim.bodyCount ||
 			sim.bodyR !== sourceSim.bodyR || sim.strength !== sourceSim.strength ||
-			sim.fillField !== sourceSim.fillField || sim.fieldStatic !== sourceSim.fieldStatic) {
+			sim.fillField !== sourceSim.fillField || sim.fieldStatic !== sourceSim.fieldStatic ||
+			sim.planetMask !== sourceSim.planetMask) {
+			sim.setPlanetMask(sourceSim.planetMask);
 			sim.setField(sourceSim.bodyCount, sourceSim.bodyR, sourceSim.strength,
 				sourceSim.fillField, sourceSim.fieldStatic);
-			sim.setPlanetMask(sourceSim.planetMask);
 			this.departureSourceSim = sourceSim;
 			this.departureFieldVersion += 1;
 		}
@@ -89,6 +116,18 @@
 		stamp = Math.imul(stamp ^ Math.round(sim.gravityScale * 100), 0x01000193);
 		stamp = Math.imul(stamp ^ Math.round(sim.fieldRate * 1000), 0x01000193);
 		stamp = Math.imul(stamp ^ ((trade ? trade.seed : this.seed) >>> 0), 0x01000193);
+		if (sim.periodic) {
+			stamp = Math.imul(stamp ^ 0x50455249, 0x01000193);
+			stamp = Math.imul(stamp ^ Math.round(sim.worldW), 0x01000193);
+			stamp = Math.imul(stamp ^ Math.round(sim.worldH), 0x01000193);
+			if (sim.fieldStatic) {
+				const snap = sim.ensurePeriodicGrid();
+				stamp = Math.imul(stamp ^ (snap ? snap.revision : 0), 0x01000193);
+			}
+		} else if (sim.worldW !== OrbitWorld.WORLD_W || sim.worldH !== OrbitWorld.WORLD_H) {
+			stamp = Math.imul(stamp ^ Math.round(sim.worldW), 0x01000193);
+			stamp = Math.imul(stamp ^ Math.round(sim.worldH), 0x01000193);
+		}
 		if (!sim.fieldStatic) stamp = Math.imul(stamp ^ Math.round(sim.fieldT * 120), 0x01000193);
 		return stamp >>> 0;
 	};

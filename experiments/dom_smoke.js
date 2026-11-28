@@ -4047,6 +4047,71 @@ function protoOf(career, family, id) {
 		Math.round(afterEmc * 100) + ' % → ' + Math.round(wCareer.ship.condition * 100) + ' %');
 }
 
+/* 0.8.0 periodic FFT torus smoke: checkbox, full-area hide, planet max 48/192,
+ * expTag · fft, route lock, and &fft=1 tour seam wrap. */
+{
+	const pEnv = loadPage({ search: '?mode=lab&seed=7' });
+	const pui = pEnv.elements;
+	const pScene = pEnv.context.GravityScene;
+	pEnv.runFrames(2, 16.0);
+	const expPeriodic = pui.get('expPeriodic');
+	const viewFullLabel = pui.get('viewFullLabel');
+	const planetInput = pui.get('planetCountInput');
+	if (!expPeriodic) throw new Error('0.8.0: expPeriodic checkbox missing');
+	if (expPeriodic.checked || viewFullLabel.hidden || String(planetInput.max) !== '48') {
+		throw new Error('0.8.0: off state wrong: checked=' + expPeriodic.checked +
+			' fullHidden=' + viewFullLabel.hidden + ' max=' + planetInput.max);
+	}
+	pScene.setPlayMode('route');
+	pEnv.runFrames(1, 16.0);
+	if (!expPeriodic.disabled) throw new Error('0.8.0: route did not disable expPeriodic');
+	pScene.setPlayMode('lab');
+	pEnv.runFrames(1, 16.0);
+	expPeriodic.checked = true;
+	pEnv.fireElement(expPeriodic, 'change', {});
+	pEnv.runFrames(2, 16.0);
+	if (!pScene.periodic() || !viewFullLabel.hidden || String(planetInput.max) !== '192' ||
+		!pui.get('expTag').textContent.includes('fft')) {
+		throw new Error('0.8.0: on state wrong: periodic=' + pScene.periodic() +
+			' fullHidden=' + viewFullLabel.hidden + ' max=' + planetInput.max +
+			' tag=' + pui.get('expTag').textContent);
+	}
+
+	const tEnv = loadPage({ search: '?mode=tour&seed=5&fft=1&bot=off' });
+	const tCtx = tEnv.context;
+	const tScene = tCtx.GravityScene;
+	tEnv.runFrames(2, 16.0);
+	let edgeBody = 0;
+	let edgeDist = Infinity;
+	for (let i = 0; i < 104; i++) {
+		const x = tScene.sim.planetX[i];
+		const d = Math.min(x, tCtx.OrbitWorld.WORLD_W - x);
+		if (d < edgeDist) { edgeDist = d; edgeBody = i; }
+	}
+	const dir = tScene.sim.planetX[edgeBody] > tCtx.OrbitWorld.WORLD_W * 0.5 ? 0 : Math.PI;
+	vm.runInContext(`
+		aimBody = ${edgeBody};
+		aimAngle = ${dir};
+		aimSpeed = GravitySim.SPEED_MAX;
+		placeGripFromSpeed();
+		armed = true;
+		predictShot();
+	`, tCtx);
+	tEnv.click('launch');
+	let wrapped = false;
+	let lastX = tScene.sim.cargo.x;
+	for (let i = 0; i < 120 && tScene.sim.status === tCtx.GravitySim.STATUS_FLYING; i++) {
+		tEnv.runFrames(1, 16.0);
+		if (Math.abs(tScene.sim.cargo.x - lastX) > tCtx.OrbitWorld.WORLD_W * 0.5) wrapped = true;
+		lastX = tScene.sim.cargo.x;
+	}
+	if (!wrapped || tScene.sim.endReason === tCtx.GravitySim.END_EXIT) {
+		throw new Error('0.8.0: tour &fft=1 shot did not wrap cleanly: wrapped=' +
+			wrapped + ' endReason=' + tScene.sim.endReason);
+	}
+	console.log('0.8.0 verified: periodic checkbox · full area hidden · max 48→192 · route lock · &fft=1 tour wrap');
+}
+
 console.log('paint calls', {
 	fillText: env.calls.fillText,
 	stroke: env.calls.stroke,

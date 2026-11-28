@@ -37,8 +37,9 @@ const KNOWN_RED = {
 const FAST = [
 	['parts_test.js', 0.3],
 	['classic_physics_test.js', 0.1],
+	['fft_test.js', 2],
 	['periodic_sim_test.js', 0.5],
-	['periodic_roster_test.js', 0.5],
+	['periodic_roster_test.js', 10],
 	['launch_reason_test.js', 0.2],
 	['comms_facts_test.js', 0.4],
 	['comms_topics_test.js', 0.4],
@@ -100,6 +101,7 @@ const SLOW = [
 	['career_pause_test.js', 1],
 	['cheat_panel_test.js', 6],
 	['lite_mode_test.js', 6],
+	['periodic_gui_test.js', 12],
 	['view_prefs_test.js', 1],
 	['career_departure_test.js', 85],
 	['career_start_seat_test.js', 8],

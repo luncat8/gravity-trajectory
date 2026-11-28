@@ -142,8 +142,11 @@
 
 	function validSnapshot(snapshot) {
 		if (!snapshot || snapshot.kind !== 'run' || snapshot.rule !== 'career' ||
-			!Number.isInteger(snapshot.seed) || snapshot.seed < 1 || snapshot.seed > 0xffffffff ||
-			!Number.isInteger(snapshot.universe) || snapshot.universe < 4 || snapshot.universe > OrbitWorld.PLANETS ||
+			(snapshot.fft !== undefined && typeof snapshot.fft !== 'boolean')) return false;
+		const periodic = snapshot.fft === true;
+		const cap = periodic ? OrbitWorld.PLANETS : OrbitWorld.CLASSIC_PLANETS;
+		if (!Number.isInteger(snapshot.seed) || snapshot.seed < 1 || snapshot.seed > 0xffffffff ||
+			!Number.isInteger(snapshot.universe) || snapshot.universe < 4 || snapshot.universe > cap ||
 			!Array.isArray(snapshot.seats) || !snapshot.seats.length ||
 			snapshot.seats.length > GravityBot.MAX_RIVALS + 1 ||
 			!Number.isFinite(snapshot.rate) || snapshot.rate < 0.5 || snapshot.rate > 12 ||
@@ -157,13 +160,6 @@
 			!Object.prototype.hasOwnProperty.call(GravityGame.PLAYER_TYPES, snapshot.player) ||
 			(snapshot.cheat !== null && !Object.prototype.hasOwnProperty.call(GravityGame.CHEATS, snapshot.cheat)) ||
 			(snapshot.source !== 0 && snapshot.source !== 1)) return false;
-		if (snapshot.gravity !== undefined) {
-			if (!Array.isArray(snapshot.gravity) || snapshot.gravity.length !== snapshot.universe) return false;
-			for (let i = 0; i < snapshot.gravity.length; i++) {
-				const g = snapshot.gravity[i];
-				if (!Number.isFinite(g) || g < PlanetGravity.MIN || g > PlanetGravity.MAX) return false;
-			}
-		}
 		const state = snapshot.state;
 		if (!state || typeof state.mask !== 'string' || !/^[01]+$/.test(state.mask) ||
 			state.mask.length !== OrbitWorld.PLANETS || !state.clock ||
@@ -180,22 +176,39 @@
 			state.careers.length !== snapshot.seats.length ||
 			state.ships.length !== snapshot.seats.length ||
 			state.rivals.length !== snapshot.seats.length - 1) return false;
+		if (!periodic) {
+			for (let i = cap; i < OrbitWorld.PLANETS; i++) {
+				if (state.mask[i] === '1') return false;
+			}
+		}
+		let count = 0;
+		let maxActive = -1;
+		for (let i = 0; i < state.mask.length; i++) {
+			if (state.mask[i] === '1') { count++; maxActive = i; }
+		}
+		if (count !== snapshot.universe) return false;
+		if (snapshot.gravity !== undefined) {
+			const needed = Math.max(snapshot.universe, maxActive + 1);
+			if (!Array.isArray(snapshot.gravity) || snapshot.gravity.length < needed ||
+				snapshot.gravity.length > cap) return false;
+			for (let i = 0; i < snapshot.gravity.length; i++) {
+				const g = snapshot.gravity[i];
+				if (!Number.isFinite(g) || g < PlanetGravity.MIN || g > PlanetGravity.MAX) return false;
+			}
+		}
 		const shapes = GravityMaps.runStateShapes();
 		if (!matchesShape(state.trade, shapes.trade) || !validEvents(state.tradeEvents, shapes.tradeEvents) ||
 			!matchesShape(state.market, shapes.market) || !matchesShape(state.galaxy, shapes.galaxy) ||
 			!Array.isArray(state.colonies) ||
 			!state.colonies.every(colony => matchesShape(colony, shapes.colony))) return false;
-		let count = 0;
-		for (const bit of state.mask) if (bit === '1') count++;
-		if (count !== snapshot.universe) return false;
 		const homes = new Set();
 		for (let i = 0; i < snapshot.seats.length; i++) {
 			const seat = snapshot.seats[i];
 			const ship = state.ships[i];
 			const career = state.careers[i];
-			if (!Number.isInteger(seat) || seat < 0 || seat >= OrbitWorld.PLANETS ||
+			if (!Number.isInteger(seat) || seat < 0 || seat >= cap ||
 				state.mask[seat] !== '1' || homes.has(seat) || !matchesShape(career, shapes.career) || career.hq !== seat ||
-				!Number.isInteger(career.at) || career.at < -1 || career.at >= OrbitWorld.PLANETS ||
+				!Number.isInteger(career.at) || career.at < -1 || career.at >= cap ||
 				!Array.isArray(career.pads) || career.pads.length !== OrbitWorld.PLANETS ||
 				!career.pads.every(pad => pad && typeof pad === 'object' && 'catapult' in pad) ||
 				!career.ship || !career.ship.hold || !career.ship.tank || !career.ship.obs ||
@@ -221,11 +234,12 @@
 					record.watch > GravityBot.MAX_RIVALS)) ||
 				!safeTree(record) || !validSnapshot(record.start)) return false;
 			let current = copy(record.start);
+			const startPeriodic = record.start.fft === true;
 			let last = 0;
 			for (const frame of record.frames) {
 				if (!frame || !Number.isFinite(frame.t) || frame.t < last || !Array.isArray(frame.d)) return false;
 				current = apply(current, frame.d);
-				if (!validSnapshot(current)) return false;
+				if ((current.fft === true) !== startPeriodic || !validSnapshot(current)) return false;
 				last = frame.t;
 			}
 			return true;

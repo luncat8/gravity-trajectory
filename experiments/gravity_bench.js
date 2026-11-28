@@ -128,7 +128,7 @@ function predictionSweep(world) {
 	let count = 0;
 	const histogram = [0, 0, 0, 0, 0];
 	const durations = [];
-	for (let planet = 0; planet < Sim.PLANETS; planet++) {
+	for (let planet = 0; planet < world.sim.planetCount; planet++) {
 		for (let a = 0; a < ANGLES; a++) {
 			const angle = a / ANGLES * Math.PI * 2;
 			for (const speed of SPEEDS) {
@@ -210,7 +210,7 @@ function parityRun(g, origins, angleCount, speeds, label) {
 
 function parityCheck(world) {
 	const origins = [];
-	for (let planet = 0; planet < Sim.PLANETS; planet += 3) origins.push(planet);
+	for (let planet = 0; planet < world.sim.planetCount; planet += 3) origins.push(planet);
 	return parityRun(world.gravity, origins, 8, [60, 150, 260], 'P');
 }
 
@@ -302,7 +302,7 @@ function repelSweep(world) {
 	let minY = Infinity;
 	let maxY = -Infinity;
 	let count = 0;
-	for (let planet = 0; planet < Sim.PLANETS; planet += 2) {
+	for (let planet = 0; planet < world.sim.planetCount; planet += 2) {
 		for (let a = 0; a < 12; a++) {
 			g.predict(planet, a / 12 * Math.PI * 2, 180);
 			for (let i = 0; i < g.predCount; i++) {

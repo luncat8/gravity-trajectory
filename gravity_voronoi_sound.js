@@ -28,21 +28,35 @@
 		return 0.1 * Math.pow(300, Math.exp(-Math.max(0, d - 20) / scale));
 	}
 
+	function minDelta(d, span) {
+		const half = span * 0.5;
+		if (d >= -half && d < half) return d;
+		let w = d % span;
+		if (w < -half) w += span;
+		else if (w >= half) w -= span;
+		return w === 0 ? 0 : w;
+	}
+
 	/* Intersect the sites' perpendicular bisector with all Voronoi half-planes.
-	 * The moving field is unbounded; a nonempty edge means the cells are adjacent. */
+	 * The moving field is unbounded (or wrapped via minimum-image offsets around
+	 * `a` when periodic); a nonempty edge means the cells are adjacent. */
 	function adjacent(sim, a, b) {
+		const periodic = sim.periodic === true;
+		const W = sim.worldW, H = sim.worldH;
 		const ax = sim.planetX[a], ay = sim.planetY[a];
 		const bx = sim.planetX[b], by = sim.planetY[b];
-		const nx = bx - ax, ny = by - ay;
+		const nx = periodic ? minDelta(bx - ax, W) : bx - ax;
+		const ny = periodic ? minDelta(by - ay, H) : by - ay;
 		if (nx * nx + ny * ny < 1e-12) return false;
-		const mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
+		const mx = nx * 0.5, my = ny * 0.5;
 		const tx = -ny, ty = nx;
 		let low = -Infinity, high = Infinity;
 		for (let i = 0; i < sim.planetCount; i++) {
 			if (i === a || i === b || (sim.planetMask && !sim.planetMask[i])) continue;
-			const dx = sim.planetX[i] - ax, dy = sim.planetY[i] - ay;
+			const dx = periodic ? minDelta(sim.planetX[i] - ax, W) : sim.planetX[i] - ax;
+			const dy = periodic ? minDelta(sim.planetY[i] - ay, H) : sim.planetY[i] - ay;
 			const coefficient = tx * dx + ty * dy;
-			const limit = (dx * dx + dy * dy) * 0.5 - ((mx - ax) * dx + (my - ay) * dy);
+			const limit = (dx * dx + dy * dy) * 0.5 - (mx * dx + my * dy);
 			if (Math.abs(coefficient) < 1e-9) {
 				if (limit < -1e-9) return false;
 				continue;
@@ -70,10 +84,12 @@
 		const selected = new Int32Array(MAX_ACTIVE);
 		const distances = new Float64Array(MAX_ACTIVE);
 		let fieldSize = -1;
+		let lastPeriodic = false;
 		let lastX, lastY, lastMask, xs, ys, ids, semitones, notes, neighbors, neighborCount;
 
 		function tuneField(sim) {
 			const size = sim.planetCount;
+			const periodic = sim.periodic === true;
 			if (size !== fieldSize) {
 				fieldSize = size;
 				lastX = new Float64Array(size).fill(NaN);
@@ -84,7 +100,8 @@
 				notes = new Float64Array(size);
 				neighbors = new Int32Array(size * size); neighborCount = new Int32Array(size);
 			}
-			let changed = false;
+			let changed = periodic !== lastPeriodic;
+			lastPeriodic = periodic;
 			for (let i = 0; i < size; i++) {
 				const active = !sim.planetMask || sim.planetMask[i] ? 1 : 0;
 				if (lastX[i] !== sim.planetX[i] || lastY[i] !== sim.planetY[i] || lastMask[i] !== active) changed = true;
@@ -140,10 +157,13 @@
 
 		function update(sim) {
 			const x = sim.cargo.x, y = sim.cargo.y;
+			const periodic = sim.periodic === true;
+			const W = sim.worldW, H = sim.worldH;
 			let nearest = -1, nearestDistance = Infinity;
 			for (let i = 0; i < sim.planetCount; i++) {
 				if (sim.planetMask && !sim.planetMask[i]) continue;
-				const dx = sim.planetX[i] - x, dy = sim.planetY[i] - y;
+				const dx = periodic ? minDelta(sim.planetX[i] - x, W) : sim.planetX[i] - x;
+				const dy = periodic ? minDelta(sim.planetY[i] - y, H) : sim.planetY[i] - y;
 				const d = dx * dx + dy * dy;
 				if (d < nearestDistance) { nearest = i; nearestDistance = d; }
 			}
@@ -153,7 +173,8 @@
 			selected[0] = nearest; distances[0] = nearestDistance;
 			for (let i = 0; i < sim.planetCount; i++) {
 				if (i === nearest || (sim.planetMask && !sim.planetMask[i]) || !adjacent(sim, nearest, i)) continue;
-				const dx = sim.planetX[i] - x, dy = sim.planetY[i] - y;
+				const dx = periodic ? minDelta(sim.planetX[i] - x, W) : sim.planetX[i] - x;
+				const dy = periodic ? minDelta(sim.planetY[i] - y, H) : sim.planetY[i] - y;
 				const d = dx * dx + dy * dy;
 				let pos = Math.min(count, MAX_ACTIVE - 1);
 				if (count === MAX_ACTIVE && d >= distances[pos]) continue;
@@ -185,7 +206,8 @@
 				const scaledDistance = d * distanceScale;
 				const freq = preset === 'point' ? notes[cell] : distanceFrequency(scaledDistance);
 				const depth = envelopeDepth(scaledDistance);
-				const dx = sim.planetX[cell] - x, dy = sim.planetY[cell] - y;
+				const dx = periodic ? minDelta(sim.planetX[cell] - x, W) : sim.planetX[cell] - x;
+				const dy = periodic ? minDelta(sim.planetY[cell] - y, H) : sim.planetY[cell] - y;
 				let hx = sim.cargo.vx, hy = sim.cargo.vy;
 				if (!Number.isFinite(hx) || !Number.isFinite(hy) || hx * hx + hy * hy < 1e-18) {
 					hx = Math.cos(Number.isFinite(sim.angle) ? sim.angle : 0);

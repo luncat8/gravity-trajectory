@@ -11,15 +11,17 @@
 function updateAim() {
 	const cx = tradeSim.planetX[aimBody];
 	const cy = tradeSim.planetY[aimBody];
-	const dx = gripX - cx;
-	const dy = gripY - cy;
+	let dx = worldDeltaX(gripX - cx);
+	let dy = worldDeltaY(gripY - cy);
 	let len = Math.sqrt(dx * dx + dy * dy);
 	if (len > GRIP_MAX) {
 		const k = GRIP_MAX / len;
-		gripX = cx + dx * k;
-		gripY = cy + dy * k;
+		dx *= k;
+		dy *= k;
 		len = GRIP_MAX;
 	}
+	gripX = wrapWorldX(cx + dx);
+	gripY = wrapWorldY(cy + dy);
 	if (len > 0.5) {
 		aimAngle = Math.atan2(dy, dx);
 		gripLen = len;
@@ -52,8 +54,8 @@ function placeGripFromSpeed() {
 	gripLen = activeCareerSim().gripLength(aimSpeed, ceiling);
 	const cx = tradeSim.planetX[aimBody];
 	const cy = tradeSim.planetY[aimBody];
-	gripX = cx + Math.cos(aimAngle) * gripLen;
-	gripY = cy + Math.sin(aimAngle) * gripLen;
+	gripX = wrapWorldX(cx + Math.cos(aimAngle) * gripLen);
+	gripY = wrapWorldY(cy + Math.sin(aimAngle) * gripLen);
 	refreshAimLabel();
 }
 
@@ -305,15 +307,17 @@ function updateBurnAim() {
 	const sim = activeSim();
 	const cx = sim.cargo.x;
 	const cy = sim.cargo.y;
-	const dx = gripX - cx;
-	const dy = gripY - cy;
+	let dx = worldDeltaX(gripX - cx);
+	let dy = worldDeltaY(gripY - cy);
 	let len = Math.sqrt(dx * dx + dy * dy);
 	if (len > GRIP_MAX) {
 		const k = GRIP_MAX / len;
-		gripX = cx + dx * k;
-		gripY = cy + dy * k;
+		dx *= k;
+		dy *= k;
 		len = GRIP_MAX;
 	}
+	gripX = wrapWorldX(cx + dx);
+	gripY = wrapWorldY(cy + dy);
 	if (len > 0.25) {
 		burnAngle = Math.atan2(dy, dx);
 		gripLen = len;
@@ -333,8 +337,8 @@ function placeBurnGrip() {
 	else if (burnDv < 0) burnDv = 0;
 	snapBurnAim();
 	gripLen = sim.gripLength(burnDv, burnCeiling, 0);
-	gripX = sim.cargo.x + Math.cos(burnAngle) * gripLen;
-	gripY = sim.cargo.y + Math.sin(burnAngle) * gripLen;
+	gripX = wrapWorldX(sim.cargo.x + Math.cos(burnAngle) * gripLen);
+	gripY = wrapWorldY(sim.cargo.y + Math.sin(burnAngle) * gripLen);
 	refreshAimLabel();
 }
 
@@ -565,6 +569,7 @@ function setSource(next, restartRoute = true) {
 	refreshHoverLabel();
 	setSelected(-1);
 	applyMode();
+	refreshViewUi();
 	if (activeSim().status === STATUS_FLYING) dirty = true;
 	hudAt = -Infinity;
 	syncSeedUrl(replay.on);

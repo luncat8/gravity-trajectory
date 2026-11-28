@@ -163,6 +163,11 @@ function draw(now) {
 	ctx.save();
 	ctx.translate(view.offX, view.offY);
 	ctx.scale(view.scale, view.scale);
+	if (periodicMode && typeof ctx.clip === 'function') {
+		ctx.beginPath();
+		ctx.rect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+		ctx.clip();
+	}
 	drawSystemVisits(tickNow);
 	if (careerRule()) drawCareerEmc();
 	drawWells();

@@ -52,7 +52,7 @@
 	 * back-reference, the sim, the shared task board and the queued turret
 	 * are live; the flight block packs plain */
 	const FLEET_SKIP = ['career', 'sim', 'tasks', 'turret', 'radarStamp', 'purseBefore'];
-	const TRADE_SKIP = ['handleEvent', 'onColonyEvent', 'world', 'rand', 'events',
+	const TRADE_SKIP = ['periodic', 'handleEvent', 'onColonyEvent', 'world', 'rand', 'events',
 		'colonies', 'corruption', 'mapOut', 'log', 'planetMask', 'emptyMask', 'colonyGravityMask'];
 	const RIVAL_SKIP = ['sim', 'career', 'ledger', 'turret'];
 	/* a sim's geometry, field and refs are rebuilt; only the past is saved */
@@ -200,27 +200,36 @@
 			ys: scale(info.ys),
 			ht: info.ht === true
 		};
+		if (info.fft === true || info.periodic === true || (info.trade && info.trade.periodic === true)) {
+			fields.fft = true;
+		}
 		/* start-gift budgets [all, bot, human]; absent = no gifts */
 		const gift = info.gift;
 		if (gift && (gift[0] > 0 || gift[1] > 0 || gift[2] > 0)) fields.gift = gift.slice(0, 3);
 		return fields;
 	}
 
-	function activeGravity(seed, universe) {
+	function activeGravity(seed, universe, mask) {
 		const field = PlanetGravity.armed();
 		if (!field || field.seed !== (seed >>> 0)) return null;
-		const count = Math.max(0, Math.min(universe | 0, field.values.length));
+		let extent = universe | 0;
+		if (mask) {
+			for (let i = extent; i < mask.length; i++) {
+				if (mask[i]) extent = i + 1;
+			}
+		}
+		const count = Math.max(0, Math.min(extent, field.values.length));
 		return count > 0 ? Array.from(field.values.subarray(0, count)) : null;
 	}
 
 	function mapLabel(fields) {
 		return 'seed ' + fields.seed + ' · ' + fields.universe + ' planets · ' +
-			fields.seats.length + ' seats';
+			fields.seats.length + ' seats' + (fields.fft ? ' · fft' : '');
 	}
 
 	function startRecord(info) {
 		const fields = startFields(info);
-		const gravity = activeGravity(fields.seed, fields.universe);
+		const gravity = activeGravity(fields.seed, fields.universe, info.mask);
 		const record = { v: FORMAT, kind: gravity ? 'field' : 'start', name: mapLabel(fields) };
 		for (const key in fields) record[key] = fields[key];
 		if (gravity) record.gravity = gravity;
@@ -324,6 +333,7 @@
 		const state = record.state;
 		if (!state) return false;
 		const trade = info.trade;
+		if (Boolean(record.fft) !== Boolean(trade && trade.periodic)) return false;
 		if (state.tradeRand !== null && typeof trade.rand.setState === 'function') {
 			trade.rand.setState(state.tradeRand);
 		}
@@ -444,6 +454,9 @@
 	function applySeats(galaxy, world, trade, mask, count, wanted, sourceSim) {
 		const record = armed;
 		if (!record || !record.seats || record.seats.length !== wanted) return null;
+		const recordPeriodic = record.fft === true;
+		if (recordPeriodic !== Boolean(sourceSim && sourceSim.periodic)) return null;
+		if (trade && recordPeriodic !== Boolean(trade.periodic)) return null;
 		if ((world.seed >>> 0) !== (record.seed >>> 0) || count !== record.universe) return null;
 		if (record.state && record.state.mask && record.state.mask !== maskBits(mask)) return null;
 		const wantTag = Array.isArray(record.gravity) && record.gravity.length > 0

@@ -121,7 +121,8 @@ function helperUpdateUi() {
 
 function helperAttachWorld() {
 	const sim = activeCareerSim();
-	helperProbe.setPlanets(PLANETS, tradeSim.planetX, tradeSim.planetY, tradeSim.planetR,
+	helperProbe.setPeriodic(sim.periodic, sim);
+	helperProbe.setPlanets(tradeSim.planetCount || PLANETS, tradeSim.planetX, tradeSim.planetY, tradeSim.planetR,
 		tradeSim.orbitRX, tradeSim.orbitRY, tradeSim.orbitTiltCos, tradeSim.orbitTiltSin);
 	helperProbe.setPlanetMask(planetMask);
 	helperProbe.setScales(sim.gravityScale, sim.forceScale);
@@ -520,16 +521,18 @@ function helperMakeProfit(origin, count, requireEmc) {
 	for (let p = 0; p < PLANETS; p++) {
 		if (!planetMask[p]) continue;
 		if (p === origin || career.pads[p].catapult !== null) continue;
-		const dx = tradeSim.planetX[p] - tradeSim.planetX[origin];
-		const dy = tradeSim.planetY[p] - tradeSim.planetY[origin];
+		const dx = worldDeltaX(tradeSim.planetX[p] - tradeSim.planetX[origin]);
+		const dy = worldDeltaY(tradeSim.planetY[p] - tradeSim.planetY[origin]);
 		near.push({ planet: p, dist: dx * dx + dy * dy });
 	}
 	near.sort((a, b) => a.dist - b.dist);
 	const picks = Math.min(4, near.length);
 	for (let i = 0; i < picks; i++) {
 		const planet = near[i].planet;
-		const angle = Math.atan2(tradeSim.planetY[planet] - tradeSim.planetY[origin],
-			tradeSim.planetX[planet] - tradeSim.planetX[origin]);
+		const angle = Math.atan2(
+			worldDeltaY(tradeSim.planetY[planet] - tradeSim.planetY[origin]),
+			worldDeltaX(tradeSim.planetX[planet] - tradeSim.planetX[origin])
+		);
 		for (let k = 0; k < 3; k++) {
 			const a = (angle + (k - 1) * 0.08) % TAU;
 			const speed = SPEED_MIN + span * (0.35 + 0.2 * k);
@@ -687,8 +690,10 @@ function helperMakeQuest(origin, count) {
 	for (let t = 0; t < targets.length && out.length < count; t++) {
 		const planet = targets[t];
 		if (planet < 0 || planet >= PLANETS || planet === origin || !planetMask[planet]) continue;
-		const angle = Math.atan2(tradeSim.planetY[planet] - tradeSim.planetY[origin],
-			tradeSim.planetX[planet] - tradeSim.planetX[origin]);
+		const angle = Math.atan2(
+			worldDeltaY(tradeSim.planetY[planet] - tradeSim.planetY[origin]),
+			worldDeltaX(tradeSim.planetX[planet] - tradeSim.planetX[origin])
+		);
 		for (let k = 0; k < 3 && out.length < count; k++) {
 			const a = (angle + (k - 1) * 0.08 + TAU) % TAU;
 			const speed = SPEED_MIN + span * (0.35 + 0.25 * k);
@@ -742,8 +747,10 @@ function helperMakePlanQuest(origin) {
 	const fracs = [0.08, 0.24, 0.44, 0.68, 0.94];
 	for (let i = 0; i < stops.length; i++) {
 		const planet = stops[i];
-		const base = Math.atan2(tradeSim.planetY[planet] - tradeSim.planetY[origin],
-			tradeSim.planetX[planet] - tradeSim.planetX[origin]);
+		const base = Math.atan2(
+			worldDeltaY(tradeSim.planetY[planet] - tradeSim.planetY[origin]),
+			worldDeltaX(tradeSim.planetX[planet] - tradeSim.planetX[origin])
+		);
 		for (let f = 0; f < fracs.length; f++) {
 			const speedU = helperSnapSpeedUnits(origin, SPEED_MIN + span * fracs[f]);
 			for (let k = -4; k <= 4; k++) {

@@ -74,10 +74,41 @@
 		}
 	};
 
+	GravityBot.prototype.setPeriodic = function (periodic, gridSource) {
+		const next = !!periodic;
+		const source = next && gridSource ? gridSource : null;
+		this.periodic = next;
+		this.gridSource = source;
+		this.probe.setPeriodic(next, source);
+		this.exitProbe.setPeriodic(next, this.probe);
+		this.burnShotSim.setPeriodic(next, this.probe);
+		for (let i = 0; i < this.rivals.length; i++) {
+			this.rivals[i].sim.setPeriodic(next, this.probe);
+		}
+		for (let i = 0; i < this.fleet.length; i++) {
+			if (this.fleet[i] && this.fleet[i].sim) {
+				this.fleet[i].sim.setPeriodic(next, source || this.probe);
+			}
+		}
+		this.player.sim.setPeriodic(next, this.probe);
+	};
+
+	GravityBot.prototype.invalidateField = function () {
+		this.probe.invalidateField();
+		this.exitProbe.invalidateField();
+		this.burnShotSim.invalidateField();
+		for (let i = 0; i < this.rivals.length; i++) this.rivals[i].sim.invalidateField();
+		for (let i = 0; i < this.fleet.length; i++) {
+			if (this.fleet[i] && this.fleet[i].sim) this.fleet[i].sim.invalidateField();
+		}
+		this.player.sim.invalidateField();
+	};
+
 	GravityBot.prototype.ensureRivals = function (count) {
 		while (this.rivals.length < count) {
 			const rival = createRival(this.worldW, this.worldH);
 			rival.index = this.rivals.length;
+			rival.sim.setPeriodic(this.periodic, this.probe);
 			this.rivals.push(rival);
 			this.rivalTypes.push(GravityGame.PLAYER_BOT);
 			if (this.tradeSim) {
@@ -90,9 +121,13 @@
 
 	GravityBot.prototype.attachWorld = function (tradeSim) {
 		this.tradeSim = tradeSim;
+		const periodic = Boolean((tradeSim && tradeSim.periodic) ||
+			(tradeSim && tradeSim.world && tradeSim.world.periodic));
+		this.setPeriodic(periodic, this.gridSource);
 		this.strength.fill(1);
 		this.departureSourceSim = null;
 		this.careerExitCacheCap.fill(-1);
+		this.careerReachCacheCap.fill(-1);
 		this.bindSim(this.probe);
 		this.bindSim(this.exitProbe);
 		this.bindSim(this.burnShotSim);
@@ -124,14 +159,15 @@
 
 	GravityBot.prototype.bindSim = function (sim) {
 		const trade = this.tradeSim;
+		const capacity = trade.planetCount || PLANETS;
 		sim.setPlanets(
-			PLANETS,
+			capacity,
 			trade.planetX, trade.planetY, trade.planetR,
 			trade.orbitRX, trade.orbitRY,
 			trade.orbitTiltCos, trade.orbitTiltSin
 		);
 		const mask = this.probe.planetMask;
-		let count = PLANETS;
+		let count = mask ? PLANETS : capacity;
 		if (mask) while (count > 0 && !mask[count - 1]) count--;
 		sim.setField(count, trade.planetR, this.strength, this.fillPlanets, true);
 	};
@@ -176,17 +212,23 @@
 	GravityBot.prototype.useField = function (sourceSim, sourceCode) {
 		this.routeSource = sourceCode === GravityGame.SRC_PORTS
 			? GravityGame.SRC_PORTS : GravityGame.SRC_PLANETS;
+		this.periodic = Boolean(sourceSim.periodic);
+		this.gridSource = this.periodic ? sourceSim : null;
 		const bind = function (sim) {
 			sim.fieldT = sourceSim.fieldT;
 			sim.fieldRate = sourceSim.fieldRate;
 			sim.setScales(sourceSim.gravityScale, sourceSim.forceScale);
+			sim.setPeriodic(sourceSim.periodic, sourceSim);
 			sim.setField(sourceSim.bodyCount, sourceSim.bodyR, sourceSim.strength,
 				sourceSim.fillField, sourceSim.fieldStatic);
-			sim.setPeriodic(sourceSim.periodic, sourceSim);
 		};
 		bind(this.probe);
+		bind(this.exitProbe);
 		bind(this.burnShotSim);
 		for (let i = 0; i < this.rivals.length; i++) bind(this.rivals[i].sim);
+		for (let i = 0; i < this.fleet.length; i++) {
+			if (this.fleet[i] && this.fleet[i].sim) bind(this.fleet[i].sim);
+		}
 		bind(this.player.sim);
 	};
 
@@ -284,11 +326,13 @@
 		this.careerBurnRescues = 0;
 		this.careerFuelTopUps = 0;
 
+		const mask = this.probe.planetMask;
 		const base0 = (Math.imul(this.seed, 7) + 5) >>> 0;
 		for (let i = 0; i < this.rivals.length; i++) {
 			const r = this.rivals[i];
-			const home = this.rivalTypes[i] === GravityGame.PLAYER_BOT
+			let home = this.rivalTypes[i] === GravityGame.PLAYER_BOT
 				? (base0 + (i % 2) * 13 + Math.floor(i / 2)) % OrbitWorld.DEFAULT_PLANETS : -1;
+			if (home >= 0 && mask && !mask[home]) home = this.rivalHome(i);
 			this.careerDropQueue(r);
 			this.resetActor(r, home);
 			/* a career run leaves pads on the rival sims; a shared-market run must not inherit them */
@@ -297,9 +341,13 @@
 		}
 		let playerBase = this.playerType === GravityGame.PLAYER_BOT
 			? (Math.imul(this.seed, 11) + 3) % OrbitWorld.DEFAULT_PLANETS : -1;
+		if (playerBase >= 0 && mask && !mask[playerBase]) playerBase = this.rivalHome(PLAYER_INDEX);
 		if (playerBase >= 0 && this.rule === GravityGame.RULE_ROUTE) {
-			while (this.routeOccupiedBy(playerBase, false) >= 0) {
-				playerBase = (playerBase + 1) % OrbitWorld.DEFAULT_PLANETS;
+			const cap = mask ? this.probe.planetCount || OrbitWorld.DEFAULT_PLANETS
+				: OrbitWorld.DEFAULT_PLANETS;
+			for (let n = 0; n < cap && (this.routeOccupiedBy(playerBase, false) >= 0 ||
+				(mask && !mask[playerBase])); n++) {
+				playerBase = (playerBase + 1) % cap;
 			}
 		}
 		this.resetActor(this.player, playerBase);
@@ -355,7 +403,10 @@
 	 * live universe and off a taken route start */
 	GravityBot.prototype.rivalHome = function (index) {
 		const mask = this.probe.planetMask;
-		const total = Math.min(PLANETS, this.planetUniverseCount || PLANETS);
+		let total = mask ? PLANETS : Math.min(PLANETS, this.planetUniverseCount ||
+			(this.tradeSim && this.tradeSim.planetCount) || OrbitWorld.CLASSIC_PLANETS);
+		if (mask) while (total > 0 && !mask[total - 1]) total--;
+		if (total <= 0) return 0;
 		const base = (Math.imul(this.seed, 7) + 5) >>> 0;
 		const home = (base + (index % 2) * 13 + Math.floor(index / 2)) % total;
 		for (let n = 0; n < total; n++) {

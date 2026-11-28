@@ -182,6 +182,8 @@
 	function GravityBot(worldW, worldH) {
 		this.worldW = worldW;
 		this.worldH = worldH;
+		this.periodic = false;
+		this.gridSource = null;
 		this.tradeSim = null;
 		this.probe = new GravitySim(worldW, worldH);
 		this.exitProbe = new GravitySim(worldW, worldH);

@@ -30,8 +30,9 @@
 		const timeCap = probe.predReason === END_TIME ? 1 : 0;
 		const newVisits = probe.predNewVisits;
 		const rSpec = this.ruleSpec();
+		const targetWorlds = this.planetUniverseCount || this.probe.planetCapacity || PLANETS;
 		const completes = rSpec.stopOnTour &&
-			(rival.sim.visitedCount + newVisits >= (this.planetUniverseCount || PLANETS));
+			(rival.sim.visitedCount + newVisits >= targetWorlds);
 		const solvent = rival.ledger.purse - MONEY.cost + profit >= MONEY.cost || completes;
 
 		let score = (solvent ? 0 : -400) + lands * 12 - samePad * 35 -
@@ -110,7 +111,8 @@
 			const p = this.probe.predLogPlanet[i];
 			this.lookMarket.lastVisitStep[p] = this.jobRunStep + this.probe.predLogStep[i];
 		}
-		for (let i = 0; i < PLANETS; i++) {
+		const visitCap = this.probe.planetCount || PLANETS;
+		for (let i = 0; i < visitCap; i++) {
 			if (this.probe.predVisit[i]) this.probe.visited[i] = 1;
 		}
 	};
@@ -363,13 +365,14 @@
 			this.count === 0) return;
 		const stage = this.spec().stageSteps;
 		const stopOnTour = this.ruleSpec().stopOnTour;
+		const targetWorlds = this.planetUniverseCount || this.probe.planetCapacity || PLANETS;
 		for (let i = 0; i < this.count; i++) {
 			const rival = this.rivals[i];
 			if (rival.sim.status !== STATUS_FLYING) continue;
 			rival.sim.stepOne();
 			rival.steps += 1;
 			GravityGame.stepHarvest(rival.ledger, market, rival.sim, runStep);
-			if (stopOnTour && rival.sim.visitedCount === (this.planetUniverseCount || PLANETS) && rival.doneSteps < 0) {
+			if (stopOnTour && rival.sim.visitedCount === targetWorlds && rival.doneSteps < 0) {
 				rival.doneSteps = rival.steps;
 			}
 			if (rival.sim.status !== STATUS_FLYING) {
@@ -496,6 +499,7 @@
 			rule: this.rule,
 			bot: GravityGame.BOT_OFF,
 			player: GravityGame.PLAYER_USER,
+			periodic: this.periodic,
 			gravityScale: gravityScale,
 			forceScale: forceScale,
 			spaceWearScale: spaceWearScale,
