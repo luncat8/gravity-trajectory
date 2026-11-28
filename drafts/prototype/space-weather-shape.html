@@ -4,120 +4,302 @@
 <meta charset="utf-8">
 <title>Space weather — shape contours</title>
 <style>
-	body { margin: 0; background: #03040a; color: #ccd; font: 13px monospace; overflow: hidden; user-select: none; }
+	body { margin: 0; background: #03040a; color: #ccd; font: 12px monospace; overflow: hidden; user-select: none; }
 	canvas { display: block; }
-	#ui {
-		position: absolute; top: 8px; left: 8px; display: flex; flex-wrap: wrap;
-		gap: 10px; align-items: center; background: rgba(3, 4, 10, 0.76);
-		padding: 5px 10px; border: 1px solid #223; border-radius: 4px;
+	#hud { position: absolute; top: 8px; left: 8px; display: flex; flex-direction: column; gap: 6px; max-width: calc(100vw - 16px); }
+	.bar {
+		display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+		background: rgba(5, 7, 16, 0.82); padding: 5px 10px;
+		border: 1px solid #242942; border-radius: 4px;
 	}
-	input[type=range] { width: 150px; }
-	#spd, #ang { width: 100px; }
-	.sep { color: #446; }
+	#panel {
+		display: grid; grid-template-columns: auto 124px 46px auto 124px 46px;
+		gap: 5px 8px; align-items: center; width: fit-content;
+		background: rgba(5, 7, 16, 0.84); padding: 8px 10px;
+		border: 1px solid #242942; border-radius: 4px;
+	}
+	#panel.hide { display: none; }
+	.row-full { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding-top: 2px; }
+	input[type=range] { width: 100%; margin: 0; accent-color: #7a6cf0; }
+	#mix { width: 130px; }
+	#spd, #ang { width: 88px; }
+	.val { color: #9ab; text-align: right; font-variant-numeric: tabular-nums; }
+	.lbl { color: #aab4cc; }
+	.sep { color: #404868; }
 	button {
-		background: #141829; color: #ccd; border: 1px solid #446;
-		padding: 2px 8px; font: inherit; cursor: pointer;
+		background: #141829; color: #ccd; border: 1px solid #414a6e;
+		padding: 2px 7px; font: inherit; cursor: pointer; border-radius: 2px;
 	}
 	button:hover { background: #222946; }
-	button.on { background: #2d3561; border-color: #88b; color: #fff; }
+	button.on { background: #2e3766; border-color: #8b95d6; color: #fff; }
+	#cfgOut {
+		flex: 1; min-width: 180px; background: #0b0e1a; color: #9dc;
+		border: 1px solid #303854; padding: 2px 6px; font: 11px monospace;
+		user-select: all;
+	}
+	#cfgOut:empty { display: none; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="ui">
-	<span>cloud</span>
-	<input id="mix" type="range" min="0" max="1" step="0.001" value="0">
-	<span>weather</span>
-	<span id="val">0.00</span>
-	<span class="sep">|</span>
-	<span>speed</span>
-	<input id="spd" type="range" min="0" max="4" step="0.05" value="1">
-	<span id="spdVal">1.0×</span>
-	<span class="sep">|</span>
-	<span>wind</span>
-	<input id="ang" type="range" min="-180" max="180" step="1" value="-160">
-	<span id="angVal">-160°</span>
-	<button id="bandBtn" type="button">band</button>
-	<button id="lineBtn" type="button">curves</button>
+<div id="hud">
+	<div class="bar">
+		<span>cloud</span>
+		<input id="mix" type="range" min="0" max="1" step="0.001">
+		<span>weather</span>
+		<span id="mixVal" class="val">0.00</span>
+		<span class="sep">|</span>
+		<span>speed</span>
+		<input id="spd" type="range" min="0" max="4" step="0.05">
+		<span id="spdVal" class="val">1.0×</span>
+		<span class="sep">|</span>
+		<span>wind</span>
+		<input id="ang" type="range" min="-180" max="180" step="1">
+		<span id="angVal" class="val">-160°</span>
+		<span class="sep">|</span>
+		<button id="roundBandBtn" type="button">+ round band</button>
+		<button id="lineBandBtn" type="button">+ line band</button>
+		<button id="lineBtn" type="button">curves</button>
+		<button id="adjBtn" type="button" class="on">adjust</button>
+		<button id="copyBtn" type="button">copy settings</button>
+	</div>
+	<div id="panel">
+		<span class="lbl">weather bands</span>
+		<input id="sWeatherBands" type="range" min="0" max="5" step="1">
+		<span id="vWeatherBands" class="val"></span>
+		<span class="lbl">contour bands</span>
+		<input id="sContourBands" type="range" min="2" max="8" step="1">
+		<span id="vContourBands" class="val"></span>
+
+		<span class="lbl">band rounds</span>
+		<input id="sBandRounds" type="range" min="15" max="50" step="1">
+		<span id="vBandRounds" class="val"></span>
+		<span class="lbl">round size</span>
+		<input id="sBandRoundR" type="range" min="24" max="90" step="1">
+		<span id="vBandRoundR" class="val"></span>
+
+		<span class="lbl">band scatter</span>
+		<input id="sBandScatter" type="range" min="0" max="85" step="1">
+		<span id="vBandScatter" class="val"></span>
+		<span class="lbl">metaball</span>
+		<input id="sMetaball" type="range" min="0" max="1" step="0.02">
+		<span id="vMetaball" class="val"></span>
+
+		<span class="lbl">polar noise</span>
+		<input id="sPolarNoise" type="range" min="0" max="0.60" step="0.01">
+		<span id="vPolarNoise" class="val"></span>
+		<span class="lbl">polar detail</span>
+		<input id="sPolarDetail" type="range" min="0.35" max="2.00" step="0.05">
+		<span id="vPolarDetail" class="val"></span>
+
+		<span class="lbl">clouds</span>
+		<input id="sClouds" type="range" min="0" max="56" step="1">
+		<span id="vClouds" class="val"></span>
+		<span class="lbl">cloud size</span>
+		<input id="sCloudSize" type="range" min="0.50" max="1.75" step="0.05">
+		<span id="vCloudSize" class="val"></span>
+
+		<span class="lbl">morph</span>
+		<input id="sMorph" type="range" min="0" max="2.50" step="0.05">
+		<span id="vMorph" class="val"></span>
+		<span class="lbl">band type</span>
+		<div style="grid-column: span 2; display: flex; gap: 4px;">
+			<button type="button" data-bm="both">both</button>
+			<button type="button" data-bm="rounds">rounds</button>
+			<button type="button" data-bm="lines">lines</button>
+		</div>
+
+		<div class="row-full">
+			<button id="resetBtn" type="button">reset defaults</button>
+			<input id="cfgOut" type="text" readonly placeholder="copied settings appear here">
+		</div>
+	</div>
 </div>
 <script>
 	const $ = id => document.getElementById(id);
 	const TAU = Math.PI * 2;
+	const INV_TAU = 1 / TAU;
 	const lerp = (a, b, t) => a + (b - a) * t;
+	const clamp = (v, lo, hi) => v < lo ? lo : (v > hi ? hi : v);
 	const rnd = (a, b) => a + Math.random() * (b - a);
 
-	// 5 contour passes from outer violet aura to warm amber core, matching 2clouds palette without textures
-	const LAYERS = 5;
-	const LAYER_FILL = [
-		'rgba(54, 36, 140, 0.34)',
-		'rgba(86, 48, 162, 0.34)',
-		'rgba(152, 68, 130, 0.36)',
-		'rgba(226, 108, 70, 0.40)',
-		'rgba(255, 148, 56, 0.48)'
-	];
-	const LAYER_STROKE = [
-		'rgba(130, 110, 245, 0.52)',
-		'rgba(162, 124, 255, 0.58)',
-		'rgba(222, 136, 200, 0.64)',
-		'rgba(255, 170, 120, 0.72)',
-		'rgba(255, 214, 132, 0.85)'
-	];
-	const LAYER_TH = new Float32Array([0.00, 0.18, 0.36, 0.54, 0.72]);
-	const LAYER_SCALE = new Float32Array([1.00, 0.80, 0.62, 0.45, 0.29]);
+	const DEFAULTS = {
+		mix: 0,
+		speed: 1,
+		windDeg: -160,
+		bandMode: 'both',
+		weatherBands: 2,
+		contourBands: 5,
+		bandRounds: 30,
+		bandRoundR: 50,
+		bandScatter: 34,
+		metaball: 0.58,
+		polarNoise: 0.30,
+		polarDetail: 1.05,
+		clouds: 26,
+		cloudSize: 1.00,
+		morph: 0.72
+	};
+	const cfg = Object.assign({}, DEFAULTS);
 
-	const BASE_WIND = 36;
-	const WRAP_PAD = 280;
-	const CLOUD_COUNT = 34;
-	const MODES = 5;
-	const MODE_K = new Int8Array([2, 3, 4, 5, 7]);
-	const MODE_W = new Float32Array([0.42, 0.31, 0.20, 0.14, 0.09]);
+	// 3D quintic Perlin gradient noise so circular polar sampling is C2 smooth with zero sine-petal symmetry
+	const PERM = new Uint8Array(512);
+	{
+		const p = new Uint8Array(256);
+		for (let i = 0; i < 256; i++) p[i] = i;
+		for (let i = 255; i > 0; i--) {
+			const j = (Math.random() * (i + 1)) | 0;
+			const t = p[i]; p[i] = p[j]; p[j] = t;
+		}
+		for (let i = 0; i < 512; i++) PERM[i] = p[i & 255];
+	}
+	function grad3(h, x, y, z) {
+		const g = h & 15;
+		const u = g < 8 ? x : y;
+		const v = g < 4 ? y : (g === 12 || g === 14 ? x : z);
+		return ((g & 1) ? -u : u) + ((g & 2) ? -v : v);
+	}
+	function perlin3(x, y, z) {
+		const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+		const fx = x - xi, fy = y - yi, fz = z - zi;
+		const X = xi & 255, Y = yi & 255, Z = zi & 255;
+		const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10);
+		const v = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
+		const w = fz * fz * fz * (fz * (fz * 6 - 15) + 10);
+		const A = PERM[X] + Y, AA = PERM[A] + Z, AB = PERM[A + 1] + Z;
+		const B = PERM[X + 1] + Y, BA = PERM[B] + Z, BB = PERM[B + 1] + Z;
+		const x00 = lerp(grad3(PERM[AA], fx, fy, fz), grad3(PERM[BA], fx - 1, fy, fz), u);
+		const x10 = lerp(grad3(PERM[AB], fx, fy - 1, fz), grad3(PERM[BB], fx - 1, fy - 1, fz), u);
+		const x01 = lerp(grad3(PERM[AA + 1], fx, fy, fz - 1), grad3(PERM[BA + 1], fx - 1, fy, fz - 1), u);
+		const x11 = lerp(grad3(PERM[AB + 1], fx, fy - 1, fz - 1), grad3(PERM[BB + 1], fx - 1, fy - 1, fz - 1), u);
+		return lerp(lerp(x00, x10, v), lerp(x01, x11, v), w);
+	}
 
-	// preallocated vertex scratch buffers so frame() performs zero heap allocations
-	const NV = 44;
-	const COS_A = new Float32Array(NV);
-	const SIN_A = new Float32Array(NV);
-	for (let i = 0; i < NV; i++) {
-		const a = (i / NV) * TAU;
+	// fast branch-light angle in [0, 1) so inner field loop avoids Math.atan2
+	function fastAngle01(y, x) {
+		const ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
+		const mn = ax < ay ? ax : ay, mx = ax < ay ? ay : ax;
+		if (mx <= 1e-9) return 0;
+		const a = mn / mx;
+		const s = a * a;
+		let r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
+		if (ay > ax) r = 1.5707963268 - r;
+		if (x < 0) r = 3.1415926536 - r;
+		if (y < 0) r = 6.2831853072 - r;
+		return r * INV_TAU;
+	}
+
+	// dynamic 2..8 contour palette interpolated across violet -> purple -> rose -> coral -> amber
+	const MAX_LAYERS = 8;
+	const FILL_STOPS = [
+		[54, 36, 140, 0.34],
+		[86, 48, 162, 0.34],
+		[152, 68, 130, 0.36],
+		[226, 108, 70, 0.40],
+		[255, 148, 56, 0.48]
+	];
+	const STROKE_STOPS = [
+		[130, 110, 245, 0.54],
+		[162, 124, 255, 0.60],
+		[222, 136, 200, 0.66],
+		[255, 170, 120, 0.74],
+		[255, 214, 132, 0.86]
+	];
+	const layerFill = new Array(MAX_LAYERS);
+	const layerStroke = new Array(MAX_LAYERS);
+	const layerTh = new Float32Array(MAX_LAYERS);
+
+	function sampleStop(stops, t, alphaMul) {
+		const pos = clamp(t, 0, 1) * (stops.length - 1);
+		const i0 = Math.min(stops.length - 2, pos | 0);
+		const f = pos - i0;
+		const a = stops[i0], b = stops[i0 + 1];
+		const r = Math.round(lerp(a[0], b[0], f));
+		const g = Math.round(lerp(a[1], b[1], f));
+		const bl = Math.round(lerp(a[2], b[2], f));
+		const al = clamp(lerp(a[3], b[3], f) * alphaMul, 0.14, 0.72);
+		return 'rgba(' + r + ',' + g + ',' + bl + ',' + al.toFixed(3) + ')';
+	}
+
+	function rebuildPalette() {
+		const n = cfg.contourBands;
+		const alphaMul = Math.pow(5 / n, 0.68);
+		for (let i = 0; i < n; i++) {
+			const t = n === 1 ? 0.5 : i / (n - 1);
+			layerTh[i] = lerp(0.16, 0.86, t);
+			layerFill[i] = sampleStop(FILL_STOPS, t, alphaMul);
+			layerStroke[i] = sampleStop(STROKE_STOPS, t, 1);
+		}
+	}
+
+	// polar rim angular tables (64 bins, periodic binomial-smoothed every frame per round)
+	const N_ANG = 64;
+	const COS_A = new Float32Array(N_ANG);
+	const SIN_A = new Float32Array(N_ANG);
+	for (let i = 0; i < N_ANG; i++) {
+		const a = (i / N_ANG) * TAU;
 		COS_A[i] = Math.cos(a);
 		SIN_A[i] = Math.sin(a);
 	}
-	const vxBuf = new Float32Array(NV);
-	const vyBuf = new Float32Array(NV);
+	const rimScratchA = new Float32Array(N_ANG);
+	const rimScratchB = new Float32Array(N_ANG);
 
-	const BAND_STATIONS = 44;
-	const BAND_STEP = 56;
+	function buildSmoothInvR2(out, offset, cutR, nx0, ny0, nz, rho, wob) {
+		for (let k = 0; k < N_ANG; k++) {
+			const ca = COS_A[k], sa = SIN_A[k];
+			const n1 = perlin3(nx0 + ca * rho, ny0 + sa * rho, nz);
+			const n0 = perlin3(nx0 + ca * rho * 0.48 + 19.7, ny0 + sa * rho * 0.48 - 11.3, nz * 0.58);
+			rimScratchA[k] = n1 * 0.82 + n0 * 0.52;
+		}
+		// 2 cyclic [1,2,1]/4 passes smooth high-order curvature while preserving organic asymmetric lobes
+		for (let pass = 0; pass < 2; pass++) {
+			const src = (pass & 1) ? rimScratchB : rimScratchA;
+			const dst = (pass & 1) ? rimScratchA : rimScratchB;
+			for (let k = 0; k < N_ANG; k++) {
+				dst[k] = 0.25 * (src[(k + 63) & 63] + 2 * src[k] + src[(k + 1) & 63]);
+			}
+		}
+		let maxR = 0;
+		for (let k = 0; k < N_ANG; k++) {
+			const r = cutR * Math.exp(clamp(wob * rimScratchA[k] * 3.1, -0.65, 0.65));
+			out[offset + k] = 1 / (r * r);
+			if (r > maxR) maxR = r;
+		}
+		return maxR;
+	}
+
+	// cloud pool
+	const BASE_WIND = 36;
+	const WRAP_PAD = 280;
+	const MAX_CLOUDS = 56;
+	const cX = new Float32Array(MAX_CLOUDS);
+	const cY = new Float32Array(MAX_CLOUDS);
+	const cBaseR = new Float32Array(MAX_CLOUDS);
+	const cAspect = new Float32Array(MAX_CLOUDS);
+	const cTilt = new Float32Array(MAX_CLOUDS);
+	const cTiltSp = new Float32Array(MAX_CLOUDS);
+	const cStrength = new Float32Array(MAX_CLOUDS);
+	const cBreathPh = new Float32Array(MAX_CLOUDS);
+	const cBreathSp = new Float32Array(MAX_CLOUDS);
+	const cEddyX = new Float32Array(MAX_CLOUDS);
+	const cEddyY = new Float32Array(MAX_CLOUDS);
+	const cNoiseX = new Float32Array(MAX_CLOUDS);
+	const cNoiseY = new Float32Array(MAX_CLOUDS);
+	const cNoiseZ = new Float32Array(MAX_CLOUDS);
+	const cMorphSp = new Float32Array(MAX_CLOUDS);
+	const cInvR2 = new Float32Array(MAX_CLOUDS * N_ANG);
+
+	// weather bands: KIND_RIBBON = 1 (curved line ribbon), KIND_ROUNDS = 2 (20-40 noise-rounds metaball band)
+	const KIND_RIBBON = 1;
+	const KIND_ROUNDS = 2;
+	const MAX_BANDS = 6;
+	const MAX_BAND_ROUNDS = 56;
 	const BAND_PAD = 185;
-	const bandLX = new Float32Array(BAND_STATIONS);
-	const bandLY = new Float32Array(BAND_STATIONS);
-	const bandRX = new Float32Array(BAND_STATIONS);
-	const bandRY = new Float32Array(BAND_STATIONS);
+	const RIBBON_SAMPLES = 96;
 
-	// flat typed arrays for cloud pool (no per-cloud nested arrays in the hot loop)
-	const cX = new Float32Array(CLOUD_COUNT);
-	const cY = new Float32Array(CLOUD_COUNT);
-	const cBaseR = new Float32Array(CLOUD_COUNT);
-	const cAspect = new Float32Array(CLOUD_COUNT);
-	const cTilt = new Float32Array(CLOUD_COUNT);
-	const cTiltSp = new Float32Array(CLOUD_COUNT);
-	const cStrength = new Float32Array(CLOUD_COUNT);
-	const cBreathPh = new Float32Array(CLOUD_COUNT);
-	const cBreathSp = new Float32Array(CLOUD_COUNT);
-	const cEddyX = new Float32Array(CLOUD_COUNT);
-	const cEddyY = new Float32Array(CLOUD_COUNT);
-	const cHarmPh = new Float32Array(CLOUD_COUNT * MODES);
-	const cHarmSp = new Float32Array(CLOUD_COUNT * MODES);
-	const cHarmAmp = new Float32Array(CLOUD_COUNT * MODES);
-
-	const cv = $('c'), ctx = cv.getContext('2d');
-	let W = 0, H = 0;
-	let mixTarget = 0, mix = 0, speed = 1, windDeg = -160;
-	let showLines = false;
-	let simT = 0, morphT = 0, driftX = 0, driftY = 0, last = performance.now();
-	let shownMix = -1;
-
-	// bands live in drift-subtracted coordinates so wind carries them without code moving their geometry
-	const MAX_BANDS = 3;
 	const bActive = new Uint8Array(MAX_BANDS);
+	const bKind = new Uint8Array(MAX_BANDS);
+	const bRetire = new Uint8Array(MAX_BANDS);
 	const bC = new Float32Array(MAX_BANDS);
 	const bNx = new Float32Array(MAX_BANDS);
 	const bNy = new Float32Array(MAX_BANDS);
@@ -131,29 +313,118 @@
 	const bStall = new Float32Array(MAX_BANDS);
 	const bFade = new Float32Array(MAX_BANDS);
 	const bPh = new Float32Array(MAX_BANDS * 8);
-	let nextBand = 0;
+	const bRibbonCenter = new Float32Array(RIBBON_SAMPLES);
+	const bRibbonStr = new Float32Array(RIBBON_SAMPLES);
+	const bRibbonInvL = new Float32Array(RIBBON_SAMPLES);
+	const bRibbonInvR = new Float32Array(RIBBON_SAMPLES);
+
+	const TOTAL_BR = MAX_BANDS * MAX_BAND_ROUNDS;
+	const brSlotU = new Float32Array(TOTAL_BR);
+	const brNormSign = new Float32Array(TOTAL_BR);
+	const brRadMul = new Float32Array(TOTAL_BR);
+	const brStrength = new Float32Array(TOTAL_BR);
+	const brAspect = new Float32Array(TOTAL_BR);
+	const brTilt = new Float32Array(TOTAL_BR);
+	const brBreathPh = new Float32Array(TOTAL_BR);
+	const brBreathSp = new Float32Array(TOTAL_BR);
+	const brNoiseX = new Float32Array(TOTAL_BR);
+	const brNoiseY = new Float32Array(TOTAL_BR);
+	const brNoiseZ = new Float32Array(TOTAL_BR);
+	const brMorphSp = new Float32Array(TOTAL_BR);
+	const brInvR2 = new Float32Array(TOTAL_BR * N_ANG);
+
+	// scalar metaball grid + Marching Squares preallocated buffers (zero per-frame allocations)
+	const CELL = 10;
+	const GRID_PAD = 30;
+	let GW = 0, GH = 0, gridCap = 0;
+	let fSum = new Float32Array(0), fSum2 = new Float32Array(0), fSum4 = new Float32Array(0);
+	let fVal = new Float32Array(0), rowMax = new Float32Array(0);
+	let cellMask = new Uint8Array(0), cellVis = new Uint8Array(0);
+	let dirtyMinX = 0, dirtyMaxX = 0, dirtyMinY = 0, dirtyMaxY = 0;
+
+	const LOOP_CAP = 4096;
+	const rawLX = new Float32Array(LOOP_CAP);
+	const rawLY = new Float32Array(LOOP_CAP);
+	const segLen = new Float32Array(LOOP_CAP);
+	const resX = new Float32Array(LOOP_CAP);
+	const resY = new Float32Array(LOOP_CAP);
+	const smX = new Float32Array(LOOP_CAP);
+	const smY = new Float32Array(LOOP_CAP);
+
+	// Marching Squares directed transition table: (mask * 4 + inEdge) -> outEdge, -1 if none
+	// Saddle cases 5 & 10 use mask 16 & 17 when cell center >= threshold
+	const MS_NEXT = new Int8Array(18 * 4).fill(-1);
+	const MS_START0 = new Int8Array(18).fill(-1);
+	const MS_START1 = new Int8Array(18).fill(-1);
+	{
+		const setSeg = (m, a, b, second) => {
+			MS_NEXT[m * 4 + a] = b;
+			if (second) MS_START1[m] = a;
+			else MS_START0[m] = a;
+		};
+		setSeg(1, 0, 3, false);
+		setSeg(2, 1, 0, false);
+		setSeg(3, 1, 3, false);
+		setSeg(4, 2, 1, false);
+		setSeg(6, 2, 0, false);
+		setSeg(7, 2, 3, false);
+		setSeg(8, 3, 2, false);
+		setSeg(9, 0, 2, false);
+		setSeg(11, 1, 2, false);
+		setSeg(12, 3, 1, false);
+		setSeg(13, 0, 1, false);
+		setSeg(14, 3, 0, false);
+		// saddle separated
+		setSeg(5, 0, 3, false); setSeg(5, 2, 1, true);
+		setSeg(10, 1, 0, false); setSeg(10, 3, 2, true);
+		// saddle connected (center >= th)
+		setSeg(16, 0, 1, false); setSeg(16, 2, 3, true);
+		setSeg(17, 3, 0, false); setSeg(17, 1, 2, true);
+	}
+	const EDGE_DX = new Int8Array([0, 1, 0, -1]);
+	const EDGE_DY = new Int8Array([-1, 0, 1, 0]);
+	const OPP_EDGE = new Int8Array([2, 3, 0, 1]);
+
+	const cv = $('c'), ctx = cv.getContext('2d');
+	let W = 0, H = 0;
+	let mix = cfg.mix, showLines = false;
+	let simT = 0, morphT = 0, driftX = 0, driftY = 0, last = performance.now();
+	let shownMix = -1, bandCooldown = 0, nextAutoKind = KIND_ROUNDS;
 
 	function seedCloud(i, randomPos) {
-		const tier = i < 10 ? 0 : (i < 24 ? 1 : 2);
-		cBaseR[i] = tier === 0 ? rnd(145, 220) : (tier === 1 ? rnd(88, 142) : rnd(50, 84));
-		cAspect[i] = rnd(1.12, 1.58);
+		const tier = i % 3;
+		cBaseR[i] = tier === 0 ? rnd(122, 184) : (tier === 1 ? rnd(76, 120) : rnd(46, 74));
+		cAspect[i] = rnd(1.05, 1.38);
 		cTilt[i] = rnd(0, TAU);
-		cTiltSp[i] = rnd(-0.07, 0.07);
-		cStrength[i] = tier === 0 ? rnd(0.76, 1.02) : (tier === 1 ? rnd(0.62, 0.98) : rnd(0.45, 0.84));
+		cTiltSp[i] = rnd(-0.045, 0.045);
+		cStrength[i] = tier === 0 ? rnd(0.72, 0.94) : (tier === 1 ? rnd(0.56, 0.84) : rnd(0.42, 0.68));
 		cBreathPh[i] = rnd(0, TAU);
-		cBreathSp[i] = rnd(0.22, 0.55);
-		cEddyX[i] = rnd(-4.5, 4.5);
-		cEddyY[i] = rnd(-4.5, 4.5);
-		const base = i * MODES;
-		for (let m = 0; m < MODES; m++) {
-			cHarmPh[base + m] = rnd(0, TAU);
-			cHarmSp[base + m] = rnd(-0.65, 0.65) * (1 + m * 0.18);
-			cHarmAmp[base + m] = MODE_W[m] * rnd(0.65, 1.30);
-		}
+		cBreathSp[i] = rnd(0.20, 0.48);
+		cEddyX[i] = rnd(-4.2, 4.2);
+		cEddyY[i] = rnd(-4.2, 4.2);
+		cNoiseX[i] = rnd(-400, 400);
+		cNoiseY[i] = rnd(-400, 400);
+		cNoiseZ[i] = rnd(-400, 400);
+		cMorphSp[i] = rnd(0.32, 0.62);
 		if (randomPos) {
 			cX[i] = rnd(-WRAP_PAD, W + WRAP_PAD);
 			cY[i] = rnd(-WRAP_PAD, H + WRAP_PAD);
 		}
+	}
+
+	function seedBandRoundSlot(idx) {
+		brSlotU[idx] = rnd(-0.34, 0.34);
+		brNormSign[idx] = (rnd(-1, 1) + rnd(-1, 1)) * 0.5;
+		brRadMul[idx] = rnd(0.70, 1.30);
+		brStrength[idx] = rnd(0.48, 0.76);
+		brAspect[idx] = rnd(1.04, 1.30);
+		brTilt[idx] = rnd(0, TAU);
+		brBreathPh[idx] = rnd(0, TAU);
+		brBreathSp[idx] = rnd(0.26, 0.56);
+		brNoiseX[idx] = rnd(-400, 400);
+		brNoiseY[idx] = rnd(-400, 400);
+		brNoiseZ[idx] = rnd(-400, 400);
+		brMorphSp[idx] = rnd(0.36, 0.68);
 	}
 
 	function updateBandBounds(b) {
@@ -175,7 +446,23 @@
 		bTanMax[b] = tMax;
 	}
 
-	function spawnBand() {
+	function chooseAutoKind() {
+		if (cfg.bandMode === 'rounds') return KIND_ROUNDS;
+		if (cfg.bandMode === 'lines') return KIND_RIBBON;
+		let roundsOn = 0, linesOn = 0;
+		for (let b = 0; b < MAX_BANDS; b++) {
+			if (!bActive[b] || bRetire[b]) continue;
+			if (bKind[b] === KIND_ROUNDS) roundsOn++;
+			else linesOn++;
+		}
+		if (roundsOn < linesOn) return KIND_ROUNDS;
+		if (linesOn < roundsOn) return KIND_RIBBON;
+		const k = nextAutoKind;
+		nextAutoKind = k === KIND_ROUNDS ? KIND_RIBBON : KIND_ROUNDS;
+		return k;
+	}
+
+	function spawnBand(kind, screenFrac) {
 		let slot = -1, weakest = 2;
 		for (let b = 0; b < MAX_BANDS; b++) {
 			if (!bActive[b]) { slot = b; break; }
@@ -185,33 +472,59 @@
 				if (bFade[b] < weakest) { weakest = bFade[b]; slot = b; }
 			}
 		}
-		const a = windDeg * Math.PI / 180;
+		const a = cfg.windDeg * Math.PI / 180;
 		const nx = Math.cos(a), ny = Math.sin(a);
+		bKind[slot] = kind;
+		bRetire[slot] = 0;
 		bNx[slot] = nx;
 		bNy[slot] = ny;
 		bTx[slot] = -ny;
 		bTy[slot] = nx;
 		updateBandBounds(slot);
 		const driftProj = driftX * nx + driftY * ny;
-		bC[slot] = bCornerMin[slot] - BAND_PAD - driftProj;
-		bBest[slot] = bC[slot] + driftProj;
+		const startProj = screenFrac === undefined
+			? bCornerMin[slot] - 115
+			: lerp(bCornerMin[slot], bCornerMax[slot], screenFrac);
+		bC[slot] = startProj - driftProj;
+		bBest[slot] = startProj;
 		bStall[slot] = 0;
 		bFade[slot] = 1;
 		const pBase = slot * 8;
 		for (let i = 0; i < 8; i++) bPh[pBase + i] = rnd(0, TAU);
+		const rBase = slot * MAX_BAND_ROUNDS;
+		for (let r = 0; r < MAX_BAND_ROUNDS; r++) seedBandRoundSlot(rBase + r);
 		bActive[slot] = 1;
+	}
+
+	function ensureGrid() {
+		GW = Math.ceil((W + GRID_PAD * 2) / CELL) + 2;
+		GH = Math.ceil((H + GRID_PAD * 2) / CELL) + 2;
+		const need = GW * GH;
+		if (need > gridCap) {
+			gridCap = need;
+			fSum = new Float32Array(gridCap);
+			fSum2 = new Float32Array(gridCap);
+			fSum4 = new Float32Array(gridCap);
+			fVal = new Float32Array(gridCap);
+			rowMax = new Float32Array(GH + 4);
+			cellMask = new Uint8Array(gridCap);
+			cellVis = new Uint8Array(gridCap);
+		} else if (rowMax.length < GH) {
+			rowMax = new Float32Array(GH + 4);
+		}
 	}
 
 	function resize() {
 		const prevW = W, prevH = H;
 		W = cv.width = innerWidth;
 		H = cv.height = innerHeight;
+		ensureGrid();
 		if (!prevW) {
-			for (let i = 0; i < CLOUD_COUNT; i++) seedCloud(i, true);
+			for (let i = 0; i < MAX_CLOUDS; i++) seedCloud(i, true);
 		} else {
 			const spanX = W + WRAP_PAD * 2, spanY = H + WRAP_PAD * 2;
 			const oldX = prevW + WRAP_PAD * 2, oldY = prevH + WRAP_PAD * 2;
-			for (let i = 0; i < CLOUD_COUNT; i++) {
+			for (let i = 0; i < MAX_CLOUDS; i++) {
 				cX[i] = (cX[i] + WRAP_PAD) * (spanX / oldX) - WRAP_PAD;
 				cY[i] = (cY[i] + WRAP_PAD) * (spanY / oldY) - WRAP_PAD;
 			}
@@ -221,126 +534,391 @@
 		}
 	}
 
-	function appendClosedCurve(xs, ys, n) {
-		const mx0 = (xs[n - 1] + xs[0]) * 0.5;
-		const my0 = (ys[n - 1] + ys[0]) * 0.5;
-		ctx.moveTo(mx0, my0);
-		for (let i = 0; i < n; i++) {
-			const next = i + 1 === n ? 0 : i + 1;
-			ctx.quadraticCurveTo(xs[i], ys[i], (xs[i] + xs[next]) * 0.5, (ys[i] + ys[next]) * 0.5);
-		}
-		ctx.closePath();
-	}
+	// splat one smooth polar-noise round into the scalar metaball accumulators
+	function splatPolarRound(cx, cy, strength, aspect, orient, invR2Tbl, tblOffset, maxR) {
+		if (strength <= 0.02) return;
+		const reach = maxR * aspect;
+		const gx0 = Math.max(1, Math.floor((cx - reach + GRID_PAD) / CELL));
+		const gx1 = Math.min(GW - 2, Math.ceil((cx + reach + GRID_PAD) / CELL));
+		const gy0 = Math.max(1, Math.floor((cy - reach + GRID_PAD) / CELL));
+		const gy1 = Math.min(GH - 2, Math.ceil((cy + reach + GRID_PAD) / CELL));
+		if (gx0 > gx1 || gy0 > gy1) return;
 
-	function appendCloudLayer(i, layer, wobble, breathAmp) {
-		const breath = 1 + breathAmp * Math.sin(morphT * cBreathSp[i] + cBreathPh[i]);
-		const effStrength = cStrength[i] * breath - mix * 0.06;
-		const th = LAYER_TH[layer];
-		if (effStrength <= th + 0.03) return;
+		if (gx0 < dirtyMinX) dirtyMinX = gx0;
+		if (gx1 > dirtyMaxX) dirtyMaxX = gx1;
+		if (gy0 < dirtyMinY) dirtyMinY = gy0;
+		if (gy1 > dirtyMaxY) dirtyMaxY = gy1;
 
-		const cx = cX[i], cy = cY[i];
-		const maxReach = cBaseR[i] * cAspect[i] * 1.75;
-		if (cx + maxReach < 0 || cx - maxReach > W || cy + maxReach < 0 || cy - maxReach > H) return;
-
-		const vigor = Math.min(1, (effStrength - th) / (1 - th * 0.72));
-		const R = cBaseR[i] * LAYER_SCALE[layer] * (0.45 + 0.55 * vigor);
-		if (R < 4) return;
-
-		const orient = cTilt[i];
 		const co = Math.cos(orient), si = Math.sin(orient);
-		const stretch = lerp(1, cAspect[i], 1 - layer * 0.12);
-		const layerWob = wobble * (1 + layer * 0.08);
-		const base = i * MODES;
+		const invAspect = 1 / aspect;
+		const maxR2 = maxR * maxR;
 
-		for (let v = 0; v < NV; v++) {
-			const a = (v / NV) * TAU;
-			let hSum = 0;
-			for (let m = 0; m < MODES; m++) {
-				hSum += cHarmAmp[base + m] * Math.sin(MODE_K[m] * a + cHarmPh[base + m] + cHarmSp[base + m] * morphT);
+		for (let gy = gy0; gy <= gy1; gy++) {
+			const py = gy * CELL - GRID_PAD - cy;
+			const row = gy * GW;
+			for (let gx = gx0; gx <= gx1; gx++) {
+				const px = gx * CELL - GRID_PAD - cx;
+				const ux = (px * co + py * si) * invAspect;
+				const uy = -px * si + py * co;
+				const d2 = ux * ux + uy * uy;
+				if (d2 >= maxR2) continue;
+				const af = fastAngle01(uy, ux) * N_ANG;
+				const a0 = af | 0;
+				const a1 = (a0 + 1) & 63;
+				const invR2 = invR2Tbl[tblOffset + a0] + (invR2Tbl[tblOffset + a1] - invR2Tbl[tblOffset + a0]) * (af - a0);
+				const u2 = d2 * invR2;
+				if (u2 >= 1) continue;
+				const t = 1 - u2;
+				const val = strength * t * t;
+				const idx = row + gx;
+				const v2 = val * val;
+				fSum[idx] += val;
+				fSum2[idx] += v2;
+				fSum4[idx] += v2 * v2;
 			}
-			const r = R * Math.exp(layerWob * hSum);
-			const ux = COS_A[v] * r * stretch;
-			const uy = SIN_A[v] * r;
-			vxBuf[v] = cx + ux * co - uy * si;
-			vyBuf[v] = cy + ux * si + uy * co;
 		}
-		appendClosedCurve(vxBuf, vyBuf, NV);
 	}
 
-	function appendBandLayer(b, layer) {
-		if (!bActive[b]) return;
+	function splatRibbonBand(b) {
 		const effFade = bFade[b];
-		const th = LAYER_TH[layer];
-		if (effFade <= th * 0.7) return;
-
+		if (effFade <= 0.04) return;
 		const nx = bNx[b], ny = bNy[b], tx = bTx[b], ty = bTy[b];
+		const driftProj = driftX * nx + driftY * ny;
 		const driftTan = driftX * tx + driftY * ty;
-		const spanNeeded = (bTanMax[b] - bTanMin[b]) + 460;
-		const step = Math.max(BAND_STEP, spanNeeded / (BAND_STATIONS - 2));
-		const s0 = Math.floor((bTanMin[b] - driftTan - 230) / step) * step;
-		const scale = LAYER_SCALE[layer] * effFade;
+		const sMin = bTanMin[b] - driftTan - 220;
+		const sSpan = (bTanMax[b] - bTanMin[b]) + 440;
+		const invStep = (RIBBON_SAMPLES - 1) / sSpan;
 		const slow = morphT * 0.35;
 		const p = b * 8;
-		const c0 = bC[b];
+		const c0 = bC[b] + driftProj;
+		let maxReach = 0;
 
-		for (let i = 0; i < BAND_STATIONS; i++) {
-			const s = s0 + i * step;
+		for (let i = 0; i < RIBBON_SAMPLES; i++) {
+			const s = sMin + i / invStep;
 			const center = c0
 				+ 26 * Math.sin(s * 0.0053 + bPh[p])
 				+ 14 * Math.sin(s * 0.0127 + bPh[p + 1] + slow * 0.4)
 				+ 6 * Math.sin(s * 0.0261 + bPh[p + 2] - slow * 0.6);
 			const swell = 0.74
-				+ 0.15 * Math.sin(s * 0.0061 + bPh[p + 3])
-				+ 0.09 * Math.sin(s * 0.0149 + bPh[p + 4] + slow * 0.3)
+				+ 0.16 * Math.sin(s * 0.0061 + bPh[p + 3])
+				+ 0.10 * Math.sin(s * 0.0149 + bPh[p + 4] + slow * 0.3)
 				+ 0.05 * Math.sin(s * 0.0293 + bPh[p + 5]);
-			const localStr = swell * effFade;
-			const hwBase = 32 + swell * 92;
-			const hw = localStr > th
-				? hwBase * scale * Math.min(1, (localStr - th) * 2.8)
-				: 0;
-			const asymL = hw > 0 ? 1 + 0.16 * Math.sin(s * 0.019 + bPh[p + 6] + slow * 0.5) : 0;
-			const asymR = hw > 0 ? 1 + 0.16 * Math.sin(s * 0.021 + bPh[p + 7] - slow * 0.45) : 0;
-			const nL = center + hw * asymL;
-			const nR = center - hw * asymR;
-			bandLX[i] = nL * nx + s * tx + driftX;
-			bandLY[i] = nL * ny + s * ty + driftY;
-			bandRX[i] = nR * nx + s * tx + driftX;
-			bandRY[i] = nR * ny + s * ty + driftY;
+			const hw = (36 + swell * 98) * 1.28;
+			const hwL = hw * (1 + 0.16 * Math.sin(s * 0.019 + bPh[p + 6] + slow * 0.5));
+			const hwR = hw * (1 + 0.16 * Math.sin(s * 0.021 + bPh[p + 7] - slow * 0.45));
+			bRibbonCenter[i] = center;
+			bRibbonStr[i] = clamp(swell * effFade * 0.88, 0, 1.05);
+			bRibbonInvL[i] = 1 / (hwL * hwL);
+			bRibbonInvR[i] = 1 / (hwR * hwR);
+			const reach = Math.abs(center - c0) + Math.max(hwL, hwR);
+			if (reach > maxReach) maxReach = reach;
 		}
 
-		ctx.moveTo(bandLX[0], bandLY[0]);
-		for (let i = 0; i < BAND_STATIONS - 1; i++) {
-			const mx = (bandLX[i] + bandLX[i + 1]) * 0.5;
-			const my = (bandLY[i] + bandLY[i + 1]) * 0.5;
-			ctx.quadraticCurveTo(bandLX[i], bandLY[i], mx, my);
+		const absNx = Math.abs(nx), absNy = Math.abs(ny);
+		let gy0 = 1, gy1 = GH - 2;
+		if (absNx < 0.25 && absNy > 0.25) {
+			const maxPx = Math.max(Math.abs(-GRID_PAD), Math.abs((GW - 2) * CELL - GRID_PAD));
+			const yBandSpan = (maxReach + maxPx * absNx) / absNy;
+			const yMid = c0 / ny;
+			gy0 = Math.max(1, Math.floor((yMid - yBandSpan + GRID_PAD) / CELL));
+			gy1 = Math.min(GH - 2, Math.ceil((yMid + yBandSpan + GRID_PAD) / CELL));
 		}
-		const lastIdx = BAND_STATIONS - 1;
-		ctx.lineTo(bandLX[lastIdx], bandLY[lastIdx]);
-		ctx.lineTo(bandRX[lastIdx], bandRY[lastIdx]);
-		for (let i = lastIdx; i > 0; i--) {
-			const mx = (bandRX[i] + bandRX[i - 1]) * 0.5;
-			const my = (bandRY[i] + bandRY[i - 1]) * 0.5;
-			ctx.quadraticCurveTo(bandRX[i], bandRY[i], mx, my);
+
+		for (let gy = gy0; gy <= gy1; gy++) {
+			const py = gy * CELL - GRID_PAD;
+			const row = gy * GW;
+			let gx0 = 1, gx1 = GW - 2;
+			if (absNx >= 0.25) {
+				const xA = (c0 - maxReach - py * ny) / nx;
+				const xB = (c0 + maxReach - py * ny) / nx;
+				const xLo = xA < xB ? xA : xB, xHi = xA < xB ? xB : xA;
+				gx0 = Math.max(1, Math.floor((xLo + GRID_PAD) / CELL));
+				gx1 = Math.min(GW - 2, Math.ceil((xHi + GRID_PAD) / CELL));
+			}
+			for (let gx = gx0; gx <= gx1; gx++) {
+				const px = gx * CELL - GRID_PAD;
+				const pn = px * nx + py * ny;
+				if (Math.abs(pn - c0) > maxReach) continue;
+				const s = px * tx + py * ty - driftTan;
+				const sf = (s - sMin) * invStep;
+				if (sf < 0 || sf >= RIBBON_SAMPLES - 1) continue;
+				const i0 = sf | 0, frac = sf - i0;
+				const center = bRibbonCenter[i0] + (bRibbonCenter[i0 + 1] - bRibbonCenter[i0]) * frac;
+				const dn = pn - center;
+				const invW2 = dn >= 0
+					? bRibbonInvL[i0] + (bRibbonInvL[i0 + 1] - bRibbonInvL[i0]) * frac
+					: bRibbonInvR[i0] + (bRibbonInvR[i0 + 1] - bRibbonInvR[i0]) * frac;
+				const u2 = dn * dn * invW2;
+				if (u2 >= 1) continue;
+				const str = bRibbonStr[i0] + (bRibbonStr[i0 + 1] - bRibbonStr[i0]) * frac;
+				const t = 1 - u2;
+				const val = str * t * t;
+				const idx = row + gx;
+				const v2 = val * val;
+				fSum[idx] += val;
+				fSum2[idx] += v2;
+				fSum4[idx] += v2 * v2;
+				if (gx < dirtyMinX) dirtyMinX = gx;
+				if (gx > dirtyMaxX) dirtyMaxX = gx;
+				if (gy < dirtyMinY) dirtyMinY = gy;
+				if (gy > dirtyMaxY) dirtyMaxY = gy;
+			}
 		}
-		ctx.lineTo(bandRX[0], bandRY[0]);
+	}
+
+	function splatRoundBand(b, wob, rho, breathAmp) {
+		const effFade = bFade[b];
+		if (effFade <= 0.04) return;
+		const nRounds = cfg.bandRounds;
+		const nx = bNx[b], ny = bNy[b], tx = bTx[b], ty = bTy[b];
+		const driftTan = driftX * tx + driftY * ty;
+		const spanT = (bTanMax[b] - bTanMin[b]) + 320;
+		const tMid = 0.5 * (bTanMin[b] + bTanMax[b]) - driftTan;
+		const slow = morphT * 0.35;
+		const p = b * 8;
+		const rBase = b * MAX_BAND_ROUNDS;
+
+		for (let r = 0; r < nRounds; r++) {
+			const slot = rBase + r;
+			const u0 = (r + 0.5 + brSlotU[slot]) / nRounds;
+			const cluster = 0.018 * Math.sin(u0 * TAU * 3 + bPh[p + 5]);
+			const sBase = (u0 + cluster) * spanT;
+			// periodic tangent wrap outside the viewport keeps all N rounds spanning edge-to-edge even if wind rotates
+			const s = sBase + Math.round((tMid - sBase) / spanT) * spanT;
+			const spine = bC[b]
+				+ 30 * Math.sin(s * 0.0046 + bPh[p])
+				+ 14 * Math.sin(s * 0.0108 + bPh[p + 1] + slow * 0.36);
+			const env = 0.56 + 0.44 * (0.5 + 0.5 * Math.sin(s * 0.0067 + bPh[p + 2] + slow * 0.22));
+			const nPos = spine + brNormSign[slot] * cfg.bandScatter * (0.45 + 0.85 * env);
+			const cx = nPos * nx + s * tx + driftX;
+			const cy = nPos * ny + s * ty + driftY;
+
+			const breath = 1 + breathAmp * 0.75 * Math.sin(morphT * brBreathSp[slot] + brBreathPh[slot]);
+			// outer contour sits at layerTh[0]=0.18, so cutoff radius 1.35x visible radius gives smooth metaball necks
+			const visR = cfg.bandRoundR * brRadMul[slot] * (0.82 + 0.28 * env) * breath;
+			const cutR = visR * 1.36;
+			if (cx + cutR * 1.5 < -GRID_PAD || cx - cutR * 1.5 > W + GRID_PAD ||
+				cy + cutR * 1.5 < -GRID_PAD || cy - cutR * 1.5 > H + GRID_PAD) continue;
+
+			const nz = brNoiseZ[slot] + morphT * brMorphSp[slot];
+			const tblOff = slot * N_ANG;
+			const maxR = buildSmoothInvR2(brInvR2, tblOff, cutR, brNoiseX[slot], brNoiseY[slot], nz, rho, wob);
+			const str = effFade * brStrength[slot] * (0.86 + 0.18 * env);
+			splatPolarRound(cx, cy, str, brAspect[slot], brTilt[slot] + slow * 0.08, brInvR2, tblOff, maxR);
+		}
+	}
+
+	function evaluateField() {
+		if (dirtyMinX <= dirtyMaxX) {
+			for (let gy = dirtyMinY; gy <= dirtyMaxY; gy++) {
+				const a = gy * GW + dirtyMinX, b = gy * GW + dirtyMaxX + 1;
+				fSum.fill(0, a, b);
+				fSum2.fill(0, a, b);
+				fSum4.fill(0, a, b);
+				fVal.fill(0, a, b);
+			}
+		}
+		dirtyMinX = GW; dirtyMaxX = -1;
+		dirtyMinY = GH; dirtyMaxY = -1;
+
+		const wob = cfg.polarNoise * lerp(1.12, 0.72, mix);
+		const rho = cfg.polarDetail;
+		const breathAmp = lerp(0.18, 0.07, mix);
+		const nClouds = cfg.clouds;
+		const sizeMul = cfg.cloudSize;
+
+		for (let i = 0; i < nClouds; i++) {
+			const breath = 1 + breathAmp * Math.sin(morphT * cBreathSp[i] + cBreathPh[i]);
+			const effStr = cStrength[i] * breath - mix * 0.04;
+			if (effStr <= 0.14) continue;
+			const cutR = cBaseR[i] * sizeMul * 1.32;
+			const maxBound = cutR * cAspect[i] * 1.75;
+			if (cX[i] + maxBound < -GRID_PAD || cX[i] - maxBound > W + GRID_PAD ||
+				cY[i] + maxBound < -GRID_PAD || cY[i] - maxBound > H + GRID_PAD) continue;
+
+			const nz = cNoiseZ[i] + morphT * cMorphSp[i];
+			const tblOff = i * N_ANG;
+			const maxR = buildSmoothInvR2(cInvR2, tblOff, cutR, cNoiseX[i], cNoiseY[i], nz, rho, wob);
+			splatPolarRound(cX[i], cY[i], effStr, cAspect[i], cTilt[i], cInvR2, tblOff, maxR);
+		}
+
+		for (let b = 0; b < MAX_BANDS; b++) {
+			if (!bActive[b]) continue;
+			if (bKind[b] === KIND_ROUNDS) splatRoundBand(b, wob, rho, breathAmp);
+			else splatRibbonBand(b);
+		}
+
+		if (dirtyMinX > dirtyMaxX) return;
+		const mb = cfg.metaball;
+		rowMax.fill(0, 0, GH);
+		for (let gy = dirtyMinY; gy <= dirtyMaxY; gy++) {
+			const row = gy * GW;
+			let rMax = 0;
+			for (let gx = dirtyMinX; gx <= dirtyMaxX; gx++) {
+				const idx = row + gx;
+				const l1 = fSum[idx];
+				if (l1 <= 0) continue;
+				// L4 -> L2 -> L1 norm blend: exact on single rounds, smooth metaball necks on neighbours, soft-compressed core
+				const l2 = Math.sqrt(fSum2[idx]);
+				const raw = mb <= 0.5
+					? lerp(Math.sqrt(Math.sqrt(fSum4[idx])), l2, mb * 2)
+					: lerp(l2, l1, (mb - 0.5) * 2);
+				const v = raw > 0.44 ? 0.44 + (raw - 0.44) / (1 + 0.58 * (raw - 0.44)) : raw;
+				fVal[idx] = v;
+				if (v > rMax) rMax = v;
+			}
+			rowMax[gy] = rMax;
+		}
+	}
+
+	function edgePoint(cx, cy, edge, th) {
+		const i0 = cy * GW + cx;
+		if (edge === 0) {
+			const a = fVal[i0], b = fVal[i0 + 1];
+			const t = a === b ? 0.5 : (th - a) / (b - a);
+			edgePtX = (cx + clamp(t, 0, 1)) * CELL - GRID_PAD;
+			edgePtY = cy * CELL - GRID_PAD;
+		} else if (edge === 1) {
+			const a = fVal[i0 + 1], b = fVal[i0 + GW + 1];
+			const t = a === b ? 0.5 : (th - a) / (b - a);
+			edgePtX = (cx + 1) * CELL - GRID_PAD;
+			edgePtY = (cy + clamp(t, 0, 1)) * CELL - GRID_PAD;
+		} else if (edge === 2) {
+			const a = fVal[i0 + GW], b = fVal[i0 + GW + 1];
+			const t = a === b ? 0.5 : (th - a) / (b - a);
+			edgePtX = (cx + clamp(t, 0, 1)) * CELL - GRID_PAD;
+			edgePtY = (cy + 1) * CELL - GRID_PAD;
+		} else {
+			const a = fVal[i0], b = fVal[i0 + GW];
+			const t = a === b ? 0.5 : (th - a) / (b - a);
+			edgePtX = cx * CELL - GRID_PAD;
+			edgePtY = (cy + clamp(t, 0, 1)) * CELL - GRID_PAD;
+		}
+	}
+	let edgePtX = 0, edgePtY = 0;
+
+	// uniform arc-length resampling removes double-knot kinks when a contour crosses a grid vertex
+	function emitSmoothLoop(nRaw) {
+		if (nRaw < 3) return;
+		let perim = 0;
+		for (let i = 0; i < nRaw; i++) {
+			const nxt = i + 1 === nRaw ? 0 : i + 1;
+			const dx = rawLX[nxt] - rawLX[i], dy = rawLY[nxt] - rawLY[i];
+			const d = Math.hypot(dx, dy);
+			segLen[i] = d;
+			perim += d;
+		}
+		if (perim < 8) return;
+		const k = clamp(Math.round(perim / 10), 6, LOOP_CAP - 1);
+		const step = perim / k;
+		let seg = 0, acc = 0;
+		for (let j = 0; j < k; j++) {
+			const target = j * step;
+			while (seg < nRaw - 1 && acc + segLen[seg] < target) {
+				acc += segLen[seg];
+				seg++;
+			}
+			const nxt = seg + 1 === nRaw ? 0 : seg + 1;
+			const len = segLen[seg];
+			const t = len > 1e-6 ? clamp((target - acc) / len, 0, 1) : 0;
+			resX[j] = rawLX[seg] + (rawLX[nxt] - rawLX[seg]) * t;
+			resY[j] = rawLY[seg] + (rawLY[nxt] - rawLY[seg]) * t;
+		}
+		for (let j = 0; j < k; j++) {
+			const prv = j === 0 ? k - 1 : j - 1;
+			const nxt = j + 1 === k ? 0 : j + 1;
+			smX[j] = 0.22 * resX[prv] + 0.56 * resX[j] + 0.22 * resX[nxt];
+			smY[j] = 0.22 * resY[prv] + 0.56 * resY[j] + 0.22 * resY[nxt];
+		}
+		const mx0 = (smX[k - 1] + smX[0]) * 0.5;
+		const my0 = (smY[k - 1] + smY[0]) * 0.5;
+		ctx.moveTo(mx0, my0);
+		for (let j = 0; j < k; j++) {
+			const nxt = j + 1 === k ? 0 : j + 1;
+			ctx.quadraticCurveTo(smX[j], smY[j], (smX[j] + smX[nxt]) * 0.5, (smY[j] + smY[nxt]) * 0.5);
+		}
 		ctx.closePath();
+	}
+
+	function traceLayerContours(th) {
+		if (dirtyMinX > dirtyMaxX) return;
+		const cx0 = Math.max(0, dirtyMinX - 1), cx1 = Math.min(GW - 2, dirtyMaxX);
+		const cy0 = Math.max(0, dirtyMinY - 1), cy1 = Math.min(GH - 2, dirtyMaxY);
+
+		for (let cy = cy0; cy <= cy1; cy++) {
+			const row = cy * GW;
+			if (rowMax[cy] < th && rowMax[cy + 1] < th) {
+				cellMask.fill(0, row + cx0, row + cx1 + 1);
+				continue;
+			}
+			for (let cx = cx0; cx <= cx1; cx++) {
+				const idx = row + cx;
+				const v0 = fVal[idx], v1 = fVal[idx + 1];
+				const v2 = fVal[idx + GW + 1], v3 = fVal[idx + GW];
+				let m = (v0 >= th ? 1 : 0) | (v1 >= th ? 2 : 0) | (v2 >= th ? 4 : 0) | (v3 >= th ? 8 : 0);
+				if ((m === 5 || m === 10) && (v0 + v1 + v2 + v3) * 0.25 >= th) {
+					m = m === 5 ? 16 : 17;
+				}
+				cellMask[idx] = m;
+				cellVis[idx] = 0;
+			}
+		}
+
+		for (let cy = cy0; cy <= cy1; cy++) {
+			if (rowMax[cy] < th && rowMax[cy + 1] < th) continue;
+			const row = cy * GW;
+			for (let cx = cx0; cx <= cx1; cx++) {
+				const startIdx = row + cx;
+				const m0 = cellMask[startIdx];
+				if (m0 === 0 || m0 === 15) continue;
+
+				for (let sSlot = 0; sSlot < 2; sSlot++) {
+					const startEdge = sSlot === 0 ? MS_START0[m0] : MS_START1[m0];
+					if (startEdge < 0) continue;
+					const bit = 1 << sSlot;
+					if (cellVis[startIdx] & bit) continue;
+
+					let curX = cx, curY = cy, inEdge = startEdge, nPts = 0;
+					while (nPts < LOOP_CAP) {
+						const cIdx = curY * GW + curX;
+						const cm = cellMask[cIdx];
+						const outEdge = MS_NEXT[cm * 4 + inEdge];
+						if (outEdge < 0) break;
+						const cBit = MS_START1[cm] === inEdge ? 2 : 1;
+						if (cellVis[cIdx] & cBit) break;
+						cellVis[cIdx] |= cBit;
+
+						edgePoint(curX, curY, outEdge, th);
+						rawLX[nPts] = edgePtX;
+						rawLY[nPts] = edgePtY;
+						nPts++;
+
+						curX += EDGE_DX[outEdge];
+						curY += EDGE_DY[outEdge];
+						inEdge = OPP_EDGE[outEdge];
+						if (curX === cx && curY === cy && inEdge === startEdge) break;
+					}
+					emitSmoothLoop(nPts);
+				}
+			}
+		}
 	}
 
 	function stepSim(dt, rawDt) {
 		simT += dt;
-		mix += (mixTarget - mix) * Math.min(1, rawDt * 1.5);
+		mix += (cfg.mix - mix) * Math.min(1, rawDt * 1.5);
 		const mCent = (mix * 100 + 0.5) | 0;
 		if (mCent !== shownMix) {
 			shownMix = mCent;
-			$('val').textContent = mix.toFixed(2);
+			$('mixVal').textContent = mix.toFixed(2);
 		}
 
 		// +50% wind speed at slider 0 (fast cloud), 1.0x at slider 1 (stable weather)
 		const windMul = 1 + 0.5 * (1 - mix);
-		const morphRate = lerp(1.05, 0.26, mix);
+		const morphRate = lerp(1.05, 0.28, mix) * cfg.morph;
 		morphT += dt * morphRate;
 
-		const windAng = windDeg * Math.PI / 180;
+		const windAng = cfg.windDeg * Math.PI / 180;
 		const vx = Math.cos(windAng) * BASE_WIND * windMul;
 		const vy = Math.sin(windAng) * BASE_WIND * windMul;
 		driftX += vx * dt;
@@ -351,8 +929,8 @@
 		const minY = -WRAP_PAD, maxY = H + WRAP_PAD;
 		const spanX = maxX - minX, spanY = maxY - minY;
 
-		for (let i = 0; i < CLOUD_COUNT; i++) {
-			cTilt[i] += (cTiltSp[i] * morphRate + 0.12 * Math.sin(2 * (windAng - cTilt[i]))) * dt;
+		for (let i = 0; i < MAX_CLOUDS; i++) {
+			cTilt[i] += (cTiltSp[i] * morphRate + 0.10 * Math.sin(2 * (windAng - cTilt[i]))) * dt;
 			cX[i] += (vx + cEddyX[i] * eddyScale) * dt;
 			cY[i] += (vy + cEddyY[i] * eddyScale) * dt;
 			let wrapped = false;
@@ -363,7 +941,7 @@
 			if (wrapped) seedCloud(i, false);
 		}
 
-		let anyBand = false;
+		let liveCount = 0;
 		for (let b = 0; b < MAX_BANDS; b++) {
 			if (!bActive[b]) continue;
 			const proj = bC[b] + driftX * bNx[b] + driftY * bNy[b];
@@ -373,67 +951,173 @@
 			} else {
 				bStall[b] += dt;
 			}
-			// fade gently across transit; if wind turns parallel and stalls on-screen, fade out smoothly instead of popping
-			bFade[b] = Math.max(0, bFade[b] - dt * (bStall[b] > 7 ? 0.28 : 0.008 * windMul));
+			const fadeRate = bRetire[b] ? 1.4 : (bStall[b] > 7 ? 0.28 : 0.006 * windMul);
+			bFade[b] = Math.max(0, bFade[b] - dt * fadeRate);
 			if (proj > bCornerMax[b] + BAND_PAD || proj < bCornerMin[b] - BAND_PAD * 1.4 || bFade[b] <= 0.01) {
 				bActive[b] = 0;
-				nextBand = simT + 10 + Math.random() * 12;
-			} else {
-				anyBand = true;
+				bRetire[b] = 0;
+			} else if (!bRetire[b]) {
+				liveCount++;
 			}
 		}
-		if (!anyBand && simT >= nextBand) spawnBand();
+
+		// retire excess or mode-mismatched bands smoothly when settings change
+		for (let b = 0; b < MAX_BANDS; b++) {
+			if (!bActive[b] || bRetire[b]) continue;
+			const wrongKind = (cfg.bandMode === 'rounds' && bKind[b] !== KIND_ROUNDS) ||
+				(cfg.bandMode === 'lines' && bKind[b] !== KIND_RIBBON);
+			if (wrongKind || liveCount > cfg.weatherBands) {
+				bRetire[b] = 1;
+				liveCount--;
+			}
+		}
+
+		bandCooldown -= dt;
+		if (liveCount < cfg.weatherBands && bandCooldown <= 0) {
+			spawnBand(chooseAutoKind());
+			const transit = Math.hypot(W, H) / (BASE_WIND * windMul);
+			bandCooldown = Math.max(4, transit / Math.max(1, cfg.weatherBands) * rnd(0.75, 1.15));
+		}
 	}
 
 	function frame(now) {
 		const rawDt = Math.min(0.05, (now - last) / 1000);
 		last = now;
-		stepSim(rawDt * speed, rawDt);
+		stepSim(rawDt * cfg.speed, rawDt);
+		evaluateField();
 
 		ctx.fillStyle = '#03040a';
 		ctx.fillRect(0, 0, W, H);
 
-		const wobble = lerp(0.38, 0.23, mix);
-		const breathAmp = lerp(0.24, 0.08, mix);
-
-		// compound path per contour layer: overlapping clouds and band fuse into seamless isolines in 5 draw calls
 		ctx.lineWidth = 1;
-		for (let layer = 0; layer < LAYERS; layer++) {
+		const nLayers = cfg.contourBands;
+		for (let layer = 0; layer < nLayers; layer++) {
 			ctx.beginPath();
-			for (let i = 0; i < CLOUD_COUNT; i++) {
-				appendCloudLayer(i, layer, wobble, breathAmp);
-			}
-			for (let b = 0; b < MAX_BANDS; b++) {
-				appendBandLayer(b, layer);
-			}
-			ctx.fillStyle = LAYER_FILL[layer];
-			ctx.fill();
+			traceLayerContours(layerTh[layer]);
+			ctx.fillStyle = layerFill[layer];
+			ctx.fill('evenodd');
 			if (showLines) {
-				ctx.strokeStyle = LAYER_STROKE[layer];
+				ctx.strokeStyle = layerStroke[layer];
 				ctx.stroke();
 			}
 		}
 		requestAnimationFrame(frame);
 	}
 
-	$('mix').oninput = e => { mixTarget = +e.target.value; };
+	// UI bindings & copyable settings
+	const SLIDERS = [
+		['sWeatherBands', 'vWeatherBands', 'weatherBands', v => v | 0, v => '' + v, null],
+		['sContourBands', 'vContourBands', 'contourBands', v => v | 0, v => '' + v, rebuildPalette],
+		['sBandRounds', 'vBandRounds', 'bandRounds', v => v | 0, v => '' + v, null],
+		['sBandRoundR', 'vBandRoundR', 'bandRoundR', v => +v, v => v.toFixed(0) + 'px', null],
+		['sBandScatter', 'vBandScatter', 'bandScatter', v => +v, v => v.toFixed(0) + 'px', null],
+		['sMetaball', 'vMetaball', 'metaball', v => +v, v => v.toFixed(2), null],
+		['sPolarNoise', 'vPolarNoise', 'polarNoise', v => +v, v => v.toFixed(2), null],
+		['sPolarDetail', 'vPolarDetail', 'polarDetail', v => +v, v => v.toFixed(2), null],
+		['sClouds', 'vClouds', 'clouds', v => v | 0, v => '' + v, null],
+		['sCloudSize', 'vCloudSize', 'cloudSize', v => +v, v => v.toFixed(2) + '×', null],
+		['sMorph', 'vMorph', 'morph', v => +v, v => v.toFixed(2), null]
+	];
+
+	function syncUI() {
+		$('mix').value = cfg.mix;
+		$('mixVal').textContent = cfg.mix.toFixed(2);
+		$('spd').value = cfg.speed;
+		$('spdVal').textContent = cfg.speed.toFixed(2) + '×';
+		$('ang').value = cfg.windDeg;
+		$('angVal').textContent = cfg.windDeg + '°';
+		for (let i = 0; i < SLIDERS.length; i++) {
+			const [sid, vid, key, , fmt] = SLIDERS[i];
+			$(sid).value = cfg[key];
+			$(vid).textContent = fmt(cfg[key]);
+		}
+		document.querySelectorAll('[data-bm]').forEach(btn => {
+			btn.classList.toggle('on', btn.dataset.bm === cfg.bandMode);
+		});
+		rebuildPalette();
+	}
+
+	for (let i = 0; i < SLIDERS.length; i++) {
+		const [sid, vid, key, parse, fmt, hook] = SLIDERS[i];
+		$(sid).oninput = e => {
+			cfg[key] = parse(+e.target.value);
+			$(vid).textContent = fmt(cfg[key]);
+			if (hook) hook();
+			if (key === 'weatherBands') bandCooldown = 0;
+		};
+	}
+
+	$('mix').oninput = e => { cfg.mix = +e.target.value; };
 	$('spd').oninput = e => {
-		speed = +e.target.value;
-		$('spdVal').textContent = speed.toFixed(1) + '×';
+		cfg.speed = +e.target.value;
+		$('spdVal').textContent = cfg.speed.toFixed(2) + '×';
 	};
 	$('ang').oninput = e => {
-		windDeg = +e.target.value;
-		$('angVal').textContent = windDeg + '°';
+		cfg.windDeg = +e.target.value;
+		$('angVal').textContent = cfg.windDeg + '°';
 	};
-	$('bandBtn').onclick = spawnBand;
+	document.querySelectorAll('[data-bm]').forEach(btn => {
+		btn.onclick = () => {
+			cfg.bandMode = btn.dataset.bm;
+			bandCooldown = 0;
+			syncUI();
+		};
+	});
+	$('roundBandBtn').onclick = () => spawnBand(KIND_ROUNDS);
+	$('lineBandBtn').onclick = () => spawnBand(KIND_RIBBON);
 	$('lineBtn').onclick = e => {
 		showLines = !showLines;
 		e.target.classList.toggle('on', showLines);
 	};
+	$('adjBtn').onclick = e => {
+		const hidden = $('panel').classList.toggle('hide');
+		e.target.classList.toggle('on', !hidden);
+	};
+	$('resetBtn').onclick = () => {
+		Object.assign(cfg, DEFAULTS);
+		mix = cfg.mix;
+		bandCooldown = 0;
+		syncUI();
+	};
+	$('copyBtn').onclick = () => {
+		const snap = {
+			mix: +cfg.mix.toFixed(3),
+			speed: +cfg.speed.toFixed(2),
+			windDeg: cfg.windDeg,
+			bandMode: cfg.bandMode,
+			weatherBands: cfg.weatherBands,
+			contourBands: cfg.contourBands,
+			bandRounds: cfg.bandRounds,
+			bandRoundR: cfg.bandRoundR,
+			bandScatter: cfg.bandScatter,
+			metaball: +cfg.metaball.toFixed(2),
+			polarNoise: +cfg.polarNoise.toFixed(2),
+			polarDetail: +cfg.polarDetail.toFixed(2),
+			clouds: cfg.clouds,
+			cloudSize: +cfg.cloudSize.toFixed(2),
+			morph: +cfg.morph.toFixed(2)
+		};
+		const text = JSON.stringify(snap);
+		const out = $('cfgOut');
+		out.value = text;
+		out.focus();
+		out.select();
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			navigator.clipboard.writeText(text).catch(() => document.execCommand('copy'));
+		} else {
+			document.execCommand('copy');
+		}
+		const btn = $('copyBtn');
+		btn.textContent = 'copied!';
+		setTimeout(() => { btn.textContent = 'copy settings'; }, 1400);
+	};
 
 	window.addEventListener('resize', resize);
+	syncUI();
 	resize();
-	spawnBand();
+	if (cfg.weatherBands >= 1) spawnBand(KIND_ROUNDS, 0.56);
+	if (cfg.weatherBands >= 2) spawnBand(KIND_RIBBON, 0.14);
+	bandCooldown = 9;
 	requestAnimationFrame(frame);
 </script>
 </body>

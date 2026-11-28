@@ -1,220 +1,366 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Space weather zone demo</title>
 <style>
-  body { margin: 0; background: #03040a; color: #ccd; font: 13px monospace; overflow: hidden; }
-  canvas { display: block; }
-  #ui { position: absolute; top: 8px; left: 8px; display: flex; gap: 10px; align-items: center; background: rgba(3, 4, 10, 0.72); padding: 4px 10px; border-radius: 4px; }
-  input[type=range] { width: 180px; }
-  #spd { width: 110px; }
-  .sep { color: #557; }
-  button { background: #141829; color: #ccd; border: 1px solid #446; padding: 2px 8px; font: inherit; cursor: pointer; }
-  button:hover { background: #222946; }
+	body { margin: 0; background: #03040a; color: #ccd; font: 13px monospace; overflow: hidden; user-select: none; }
+	canvas { display: block; }
+	#ui {
+		position: absolute; top: 8px; left: 8px; display: flex; flex-wrap: wrap;
+		gap: 10px; align-items: center; background: rgba(3, 4, 10, 0.76);
+		padding: 4px 10px; border: 1px solid #223; border-radius: 4px;
+	}
+	input[type=range] { width: 180px; }
+	#spd { width: 110px; }
+	.sep { color: #557; }
+	button { background: #141829; color: #ccd; border: 1px solid #446; padding: 2px 8px; font: inherit; cursor: pointer; }
+	button:hover { background: #222946; }
+	button.on { background: #2d3561; border-color: #88b; color: #fff; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="ui">
-  <span>cloud</span>
-  <input id="mix" type="range" min="0" max="1" step="0.001" value="0">
-  <span>weather</span>
-  <span id="val">0.00</span>
-  <span class="sep">|</span>
-  <span>speed</span>
-  <input id="spd" type="range" min="0" max="4" step="0.05" value="1">
-  <span id="spdVal">1.0×</span>
-  <button id="bandBtn" type="button">band</button>
+	<span>cloud</span>
+	<input id="mix" type="range" min="0" max="1" step="0.001" value="0">
+	<span>weather</span>
+	<span id="val">0.00</span>
+	<span class="sep">|</span>
+	<span>speed</span>
+	<input id="spd" type="range" min="0" max="4" step="0.05" value="1">
+	<span id="spdVal">1.0×</span>
+	<span class="sep">|</span>
+	<button id="opt1Btn" type="button" class="on">bar 1</button>
+	<button id="opt2Btn" type="button">bar 2</button>
+	<button id="bandBtn" type="button">band</button>
 </div>
 <script>
-// ---------- 3D value noise (seeded by Math.random here; use a shared seed in-game) ----------
-const P = new Uint8Array(256), V = new Float32Array(256);
-{
-  const p = [...Array(256).keys()];
-  for (let i = 255; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [p[i], p[j]] = [p[j], p[i]]; }
-  for (let i = 0; i < 256; i++) { P[i] = p[i]; V[i] = Math.random(); }
-}
-const h = (i, j, k) => V[P[(P[(P[i & 255] + j) & 255] + k) & 255]];
-const lerp = (a, b, t) => a + (b - a) * t;
-function vn(x, y, z) {
-  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
-  const fx = x - xi, fy = y - yi, fz = z - zi;
-  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
-  const x0 = xi, x1 = xi + 1, y0 = yi, y1 = yi + 1, z0 = zi, z1 = zi + 1;
-  return lerp(
-    lerp(lerp(h(x0, y0, z0), h(x1, y0, z0), u), lerp(h(x0, y1, z0), h(x1, y1, z0), u), v),
-    lerp(lerp(h(x0, y0, z1), h(x1, y0, z1), u), lerp(h(x0, y1, z1), h(x1, y1, z1), u), v), w);
-}
-function fbm(x, y, z, oct) {
-  let s = 0, n = 0, a = 0.5, f = 1;
-  for (let i = 0; i < oct; i++) { s += a * vn(x * f, y * f, z * f); n += a; a *= 0.5; f *= 2.02; }
-  return s / n;
-}
-const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+	const $ = id => document.getElementById(id);
 
-// ---------- fixed sampling (never changes, so existing pixels keep their history) ----------
-const SAMPLE = { scale: 0.01, octaves: 4, wind: [8, 3], evo: 0.025 };
+	// 3D value noise (seeded by Math.random here; use a shared seed in-game)
+	const P = new Uint8Array(256), V = new Float32Array(256);
+	{
+		const p = new Uint8Array(256);
+		for (let i = 0; i < 256; i++) p[i] = i;
+		for (let i = 255; i > 0; i--) {
+			const j = (Math.random() * (i + 1)) | 0;
+			const t = p[i]; p[i] = p[j]; p[j] = t;
+		}
+		for (let i = 0; i < 256; i++) { P[i] = p[i]; V[i] = Math.random(); }
+	}
+	const h = (i, j, k) => V[P[(P[(P[i & 255] + j) & 255] + k) & 255]];
+	const lerp = (a, b, t) => a + (b - a) * t;
+	function vn(x, y, z) {
+		const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+		const fx = x - xi, fy = y - yi, fz = z - zi;
+		const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
+		const x0 = xi, x1 = xi + 1, y0 = yi, y1 = yi + 1, z0 = zi, z1 = zi + 1;
+		return lerp(
+			lerp(lerp(h(x0, y0, z0), h(x1, y0, z0), u), lerp(h(x0, y1, z0), h(x1, y1, z0), u), v),
+			lerp(lerp(h(x0, y0, z1), h(x1, y0, z1), u), lerp(h(x0, y1, z1), h(x1, y1, z1), u), v), w);
+	}
+	function fbm(x, y, z, oct) {
+		let s = 0, n = 0, a = 0.5, f = 1;
+		for (let i = 0; i < oct; i++) { s += a * vn(x * f, y * f, z * f); n += a; a *= 0.5; f *= 2.02; }
+		return s / n;
+	}
+	const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-// ---------- evolution parameters for each end of the slider ----------
-// Only these are slewed; they affect how the field evolves from now on, not past values.
-const CLOUD   = { th: 0.52, k: 0.00, decay: 0.03 };
-const WEATHER = { th: 0.55, k: 0.25, decay: 0.03 };
+	// fixed sampling (never changes, so existing pixels keep their history)
+	const SAMPLE = { scale: 0.01, octaves: 4, wind: [8, 3], evo: 0.025 };
 
-// ---------- setup ----------
-const cv = document.getElementById('c'), ctx = cv.getContext('2d');
-const off = document.createElement('canvas'), octx = off.getContext('2d');
-const CELL = 4;
-const WIND_LEN = Math.hypot(SAMPLE.wind[0], SAMPLE.wind[1]);
-const BNX = SAMPLE.wind[0] / WIND_LEN, BNY = SAMPLE.wind[1] / WIND_LEN;
-const BAND_PAD = 48;
+	// evolution parameters for each end of the slider (applied to new updates only)
+	const CLOUD = { th: 0.52, k: 0.00, decay: 0.03 };
+	const WEATHER = { th: 0.55, k: 0.25, decay: 0.03 };
 
-let GW, GH, img, W, B, T = 0, last = performance.now();
-let driftX = 0, driftY = 0, accX = 0, accY = 0, shiftX = 0, shiftY = 0;
-let bandActive = false, bandQueued = false, bandC = 0, bandSeed = 0, nextBand = 0;
+	const cv = $('c'), ctx = cv.getContext('2d');
+	const off = document.createElement('canvas'), octx = off.getContext('2d');
+	const CELL = 4;
+	const WIND_LEN = Math.hypot(SAMPLE.wind[0], SAMPLE.wind[1]);
+	const BNX = SAMPLE.wind[0] / WIND_LEN, BNY = SAMPLE.wind[1] / WIND_LEN;
+	const BAND_PAD = 48;
 
-const mixInput = document.getElementById('mix'), mixVal = document.getElementById('val');
-const spdInput = document.getElementById('spd'), spdVal = document.getElementById('spdVal');
-let mixTarget = 0;   // what the slider asks for
-let mix = 0;         // what the field is currently using, eased toward target
-let speed = 1;
-let cur = { ...CLOUD };
-mixInput.oninput = () => { mixTarget = +mixInput.value; };
-spdInput.oninput = () => { speed = +spdInput.value; spdVal.textContent = speed.toFixed(1) + '×'; };
+	let GW = 0, GH = 0, img, W, B, T = 0, last = performance.now();
+	let driftX = 0, driftY = 0, accX = 0, accY = 0, shiftX = 0, shiftY = 0;
+	let barOption = 1;
 
-function borderCrossing() {
-  if (!bandActive) return false;
-  const shiftProj = shiftX * BNX + shiftY * BNY;
-  const projMax = (GW - 1) * BNX + (GH - 1) * BNY;
-  const projFeedMin = Math.min((GW - 1) * BNX, (GH - 1) * BNY);
-  return shiftProj >= bandC - projMax - BAND_PAD && shiftProj <= bandC - projFeedMin + BAND_PAD;
-}
+	// option 1: integer-shifted border-fed band texture
+	let band1Active = false, band1Queued = false, band1C = 0, band1Seed = 0, nextBand1 = 0;
 
-function spawnBand() {
-  if (borderCrossing()) { bandQueued = true; return; }
-  const projMax = (GW - 1) * BNX + (GH - 1) * BNY;
-  const shiftProj = shiftX * BNX + shiftY * BNY;
-  bandC = projMax + shiftProj + BAND_PAD;
-  bandSeed = Math.random() * 200;
-  bandActive = true;
-  bandQueued = false;
-}
-document.getElementById('bandBtn').onclick = spawnBand;
+	// option 2 (from 7812a90): analytic stripe fixed in the drift frame, amplified onto live noise field
+	const MAX_BAR2 = 4;
+	const b2Active = new Uint8Array(MAX_BAR2);
+	const b2Nx = new Float32Array(MAX_BAR2);
+	const b2Ny = new Float32Array(MAX_BAR2);
+	const b2C0 = new Float32Array(MAX_BAR2);
+	const b2Seed = new Float32Array(MAX_BAR2);
+	const b2Thick = new Float32Array(MAX_BAR2);
+	const b2MaxTh = new Float32Array(MAX_BAR2);
+	const b2MinProj = new Float32Array(MAX_BAR2);
+	let band2Timer = 0;
 
-function bandBorder(x, y) {
-  if (!bandActive) return 0;
-  const wx = x + shiftX, wy = y + shiftY;
-  const along = -wx * BNY + wy * BNX;
-  const center = bandC + (fbm(along * 0.014, bandSeed, 0.3, 3) - 0.5) * 24;
-  const halfW = 7 + Math.pow(fbm(along * 0.019, bandSeed + 11.7, 1.1, 3), 1.2) * 26;
-  const wisp = fbm(wx * 0.032, wy * 0.032, bandSeed + 5.3, 3);
-  const dist = Math.abs(wx * BNX + wy * BNY - center) + (wisp - 0.5) * 7;
-  const t = Math.max(0, 1 - dist / halfW);
-  if (t <= 0) return 0;
-  return t * t * (3 - 2 * t) * (0.52 + 0.55 * wisp);
-}
+	const mixInput = $('mix'), mixVal = $('val');
+	const spdInput = $('spd'), spdVal = $('spdVal');
+	let mixTarget = 0, mix = 0, shownMix = -1;
+	let speed = 1;
+	let cur = { ...CLOUD };
+	mixInput.oninput = () => { mixTarget = +mixInput.value; };
+	spdInput.oninput = () => { speed = +spdInput.value; spdVal.textContent = speed.toFixed(1) + '×'; };
 
-function resize() {
-  cv.width = innerWidth; cv.height = innerHeight;
-  GW = Math.ceil(cv.width / CELL); GH = Math.ceil(cv.height / CELL);
-  off.width = GW; off.height = GH;
-  img = octx.createImageData(GW, GH);
-  if (!W || W.length !== GW * GH) W = new Float32Array(GW * GH);
-  if (!B || B.length !== GW * GH) B = new Float32Array(GW * GH);
-}
-window.addEventListener('resize', resize);
-resize();
-spawnBand();
+	function borderCrossing1() {
+		if (!band1Active) return false;
+		const shiftProj = shiftX * BNX + shiftY * BNY;
+		const projMax = (GW - 1) * BNX + (GH - 1) * BNY;
+		const projFeedMin = Math.min((GW - 1) * BNX, (GH - 1) * BNY);
+		return shiftProj >= band1C - projMax - BAND_PAD && shiftProj <= band1C - projFeedMin + BAND_PAD;
+	}
 
-// ---------- frame ----------
-function frame(now) {
-  const rawDt = Math.min(0.05, (now - last) / 1000); last = now;
-  const dt = rawDt * speed;
-  T += dt;
+	function spawnBand1() {
+		if (borderCrossing1()) { band1Queued = true; return; }
+		const projMax = (GW - 1) * BNX + (GH - 1) * BNY;
+		const shiftProj = shiftX * BNX + shiftY * BNY;
+		band1C = projMax + shiftProj + BAND_PAD;
+		band1Seed = Math.random() * 200;
+		band1Active = true;
+		band1Queued = false;
+	}
 
-  // ease the mix toward the slider target (about 2 seconds for a full sweep)
-  mix += (mixTarget - mix) * Math.min(1, rawDt * 1.5);
-  mixVal.textContent = mix.toFixed(2);
+	function bandBorder1(x, y) {
+		if (!band1Active) return 0;
+		const wx = x + shiftX, wy = y + shiftY;
+		const along = -wx * BNY + wy * BNX;
+		const center = band1C + (fbm(along * 0.014, band1Seed, 0.3, 3) - 0.5) * 24;
+		const halfW = 7 + Math.pow(fbm(along * 0.019, band1Seed + 11.7, 1.1, 3), 1.2) * 26;
+		const wisp = fbm(wx * 0.032, wy * 0.032, band1Seed + 5.3, 3);
+		const dist = Math.abs(wx * BNX + wy * BNY - center) + (wisp - 0.5) * 7;
+		const t = Math.max(0, 1 - dist / halfW);
+		if (t <= 0) return 0;
+		return t * t * (3 - 2 * t) * (0.52 + 0.55 * wisp);
+	}
 
-  // +50% wind speed at mix=0 (cloud), 1.0x at mix=1 (weather)
-  const windMul = 1 + 0.5 * (1 - mix);
-  const stepX = SAMPLE.wind[0] * windMul * dt;
-  const stepY = SAMPLE.wind[1] * windMul * dt;
-  driftX += stepX;
-  driftY += stepY;
+	function updateBar2Bounds(s) {
+		let mn = Infinity, mx = -Infinity;
+		const nx = b2Nx[s], ny = b2Ny[s];
+		for (let k = 0; k < 4; k++) {
+			const cx = (k & 1) ? GW - 1 : 0;
+			const cy = (k & 2) ? GH - 1 : 0;
+			const p = cx * nx + cy * ny;
+			if (p < mn) mn = p;
+			if (p > mx) mx = p;
+		}
+		b2MinProj[s] = mn;
+		return mx;
+	}
 
-  // integer shift of band texture; new band pixels are born only on exposed borders
-  accX += stepX;
-  accY += stepY;
-  const ix = accX | 0, iy = accY | 0;
-  if (ix > 0 || iy > 0) {
-    accX -= ix;
-    accY -= iy;
-    shiftX += ix;
-    shiftY += iy;
-    for (let y = 0; y < GH; y++) {
-      const sy = y + iy;
-      for (let x = 0; x < GW; x++) {
-        const sx = x + ix;
-        B[y * GW + x] = (sx < GW && sy < GH) ? B[sy * GW + sx] : bandBorder(x, y);
-      }
-    }
-  }
-  if (bandQueued && !borderCrossing()) spawnBand();
-  if (bandActive) {
-    if (shiftX * BNX + shiftY * BNY > bandC + BAND_PAD) {
-      bandActive = false;
-      nextBand = T + 12 + Math.random() * 14;
-    }
-  } else if (T >= nextBand) spawnBand();
+	function spawnBand2() {
+		let s = -1;
+		for (let i = 0; i < MAX_BAR2; i++) {
+			if (!b2Active[i]) { s = i; break; }
+		}
+		if (s < 0) s = 0;
+		const na = Math.atan2(SAMPLE.wind[1], SAMPLE.wind[0]) + (Math.random() - 0.5) * 0.3;
+		b2Nx[s] = Math.cos(na);
+		b2Ny[s] = Math.sin(na);
+		const mx = updateBar2Bounds(s);
+		b2Thick[s] = 8 + Math.random() * 14;
+		b2MaxTh[s] = b2Thick[s] * 1.45 + 1;
+		// sampled at (x + drift), so pattern enters from max-projection side and drifts across
+		b2C0[s] = mx + 5 + (driftX * b2Nx[s] + driftY * b2Ny[s]);
+		b2Seed[s] = Math.random() * 1000;
+		b2Active[s] = 1;
+	}
 
-  // parametric blend of evolution rules; applied to new updates only
-  cur.th    = lerp(CLOUD.th, WEATHER.th, mix);
-  cur.k     = lerp(CLOUD.k, WEATHER.k, mix);
-  cur.decay = lerp(CLOUD.decay, WEATHER.decay, mix);
+	function bandValue2(x, y) {
+		const sx = x + driftX, sy = y + driftY;
+		let total = 0;
+		for (let i = 0; i < MAX_BAR2; i++) {
+			if (!b2Active[i]) continue;
+			const nx = b2Nx[i], ny = b2Ny[i];
+			const dist = sx * nx + sy * ny - b2C0[i];
+			const maxTh = b2MaxTh[i];
+			if (dist <= -maxTh || dist >= maxTh) continue;
+			const seed = b2Seed[i];
+			const pos = -sx * ny + sy * nx;
+			const th = b2Thick[i] * (0.45 + 0.75 * vn(pos * 0.05 + seed, 7.7, 0)
+				+ 0.25 * vn(pos * 0.12 + seed, 3.3, 0));
+			const dd = dist - (vn(pos * 0.08 + seed, 3.3, 0) - 0.5) * th * 0.6;
+			const d = dd / (th * 0.5);
+			if (d <= -1 || d >= 1) continue;
+			const a = 1 - d * d;
+			total += a * a * (0.65 + 0.35 * vn(pos * 0.06 + seed, 9.1, 0));
+		}
+		return total;
+	}
 
-  const z = T * SAMPLE.evo, d = img.data;
-  const oct = SAMPLE.octaves;
-  const bandFade = 1 - Math.min(1, dt * 0.008 * windMul);
+	function spawnCurrentBand() {
+		if (barOption === 1) spawnBand1();
+		else spawnBand2();
+	}
 
-  for (let y = 0; y < GH; y++) {
-    for (let x = 0; x < GW; x++) {
-      const i = y * GW + x;
-      const u = (x + driftX) * SAMPLE.scale;
-      const w = (y + driftY) * SAMPLE.scale;
-      const f = fbm(u, w, z, oct);
+	function setBarOption(opt) {
+		barOption = opt;
+		$('opt1Btn').classList.toggle('on', opt === 1);
+		$('opt2Btn').classList.toggle('on', opt === 2);
+		if (opt === 1) {
+			b2Active.fill(0);
+			if (!band1Active) spawnBand1();
+		} else {
+			band1Active = false;
+			band1Queued = false;
+			if (B) B.fill(0);
+			b2Active.fill(0);
+			spawnBand2();
+		}
+	}
 
-      // weather layer integrates noise change; with k=0 (pure cloud) it simply decays
-      W[i] += dt * cur.k * (f - 0.5);
-      W[i] *= 1 - dt * cur.decay;
-      B[i] *= bandFade;
+	$('opt1Btn').onclick = () => setBarOption(1);
+	$('opt2Btn').onclick = () => setBarOption(2);
+	$('bandBtn').onclick = spawnCurrentBand;
 
-      const weatherF = 0.5 + W[i] * 1.2 + (f - 0.5) * 0.4;
-      const baseField = lerp(f, weatherF, mix);
-      const b = B[i];
-      const field = b > 0.01
-        ? Math.max(baseField, cur.th - 0.07 + b * 0.30) + Math.min(Math.max(0, baseField - 0.42), b) * 0.18
-        : baseField;
+	function resize() {
+		cv.width = innerWidth; cv.height = innerHeight;
+		const nGW = Math.ceil(cv.width / CELL), nGH = Math.ceil(cv.height / CELL);
+		if (W && (nGW !== GW || nGH !== GH)) {
+			const nW = new Float32Array(nGW * nGH);
+			const nB = new Float32Array(nGW * nGH);
+			const cw = Math.min(GW, nGW), ch = Math.min(GH, nGH);
+			for (let y = 0; y < ch; y++) {
+				for (let x = 0; x < cw; x++) {
+					nW[y * nGW + x] = W[y * GW + x];
+					nB[y * nGW + x] = B[y * GW + x];
+				}
+			}
+			W = nW; B = nB;
+		} else if (!W) {
+			W = new Float32Array(nGW * nGH);
+			B = new Float32Array(nGW * nGH);
+		}
+		GW = nGW; GH = nGH;
+		off.width = GW; off.height = GH;
+		img = octx.createImageData(GW, GH);
+		for (let i = 0; i < MAX_BAR2; i++) {
+			if (b2Active[i]) updateBar2Bounds(i);
+		}
+	}
+	window.addEventListener('resize', resize);
+	resize();
+	spawnBand1();
 
-      const a = smooth(cur.th - 0.06, cur.th + 0.06, field);
-      const p = i * 4;
-      if (a <= 0) { d[p + 3] = 0; continue; }
-      const c = smooth(cur.th, cur.th + 0.25, field);
-      d[p]     = lerp(60, 255, c);
-      d[p + 1] = lerp(40, 140, c);
-      d[p + 2] = lerp(140, 60, c);
-      d[p + 3] = a * 170;
-    }
-  }
+	function frame(now) {
+		const rawDt = Math.min(0.05, (now - last) / 1000); last = now;
+		const dt = rawDt * speed;
+		T += dt;
 
-  octx.putImageData(img, 0, 0);
-  ctx.fillStyle = '#03040a';
-  ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(off, 0, 0, cv.width, cv.height);
-  requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
+		// ease the mix toward the slider target (about 2 seconds for a full sweep)
+		mix += (mixTarget - mix) * Math.min(1, rawDt * 1.5);
+		const mCent = (mix * 100 + 0.5) | 0;
+		if (mCent !== shownMix) {
+			shownMix = mCent;
+			mixVal.textContent = mix.toFixed(2);
+		}
+
+		// +50% wind speed at mix=0 (cloud), 1.0x at mix=1 (weather)
+		const windMul = 1 + 0.5 * (1 - mix);
+		const stepX = SAMPLE.wind[0] * windMul * dt;
+		const stepY = SAMPLE.wind[1] * windMul * dt;
+		driftX += stepX;
+		driftY += stepY;
+
+		if (barOption === 1) {
+			// integer shift of band texture; new band pixels are born only on exposed borders
+			accX += stepX;
+			accY += stepY;
+			const ix = accX | 0, iy = accY | 0;
+			if (ix > 0 || iy > 0) {
+				accX -= ix;
+				accY -= iy;
+				shiftX += ix;
+				shiftY += iy;
+				for (let y = 0; y < GH; y++) {
+					const sy = y + iy;
+					for (let x = 0; x < GW; x++) {
+						const sx = x + ix;
+						B[y * GW + x] = (sx < GW && sy < GH) ? B[sy * GW + sx] : bandBorder1(x, y);
+					}
+				}
+			}
+			if (band1Queued && !borderCrossing1()) spawnBand1();
+			if (band1Active) {
+				if (shiftX * BNX + shiftY * BNY > band1C + BAND_PAD) {
+					band1Active = false;
+					nextBand1 = T + 12 + Math.random() * 14;
+				}
+			} else if (T >= nextBand1) spawnBand1();
+		} else {
+			let any2 = false;
+			for (let i = 0; i < MAX_BAR2; i++) {
+				if (!b2Active[i]) continue;
+				const mapC = b2C0[i] - (driftX * b2Nx[i] + driftY * b2Ny[i]);
+				if (mapC < b2MinProj[i] - b2MaxTh[i] - 5) b2Active[i] = 0;
+				else any2 = true;
+			}
+			if (!any2) {
+				band2Timer -= dt;
+				if (band2Timer <= 0) {
+					spawnBand2();
+					band2Timer = 15 + Math.random() * 20;
+				}
+			}
+		}
+
+		cur.th = lerp(CLOUD.th, WEATHER.th, mix);
+		cur.k = lerp(CLOUD.k, WEATHER.k, mix);
+		cur.decay = lerp(CLOUD.decay, WEATHER.decay, mix);
+
+		const z = T * SAMPLE.evo, d = img.data;
+		const oct = SAMPLE.octaves;
+		const bandFade = 1 - Math.min(1, dt * 0.008 * windMul);
+		const useOpt1 = barOption === 1;
+
+		for (let y = 0; y < GH; y++) {
+			for (let x = 0; x < GW; x++) {
+				const i = y * GW + x;
+				const u = (x + driftX) * SAMPLE.scale;
+				const w = (y + driftY) * SAMPLE.scale;
+				const f = fbm(u, w, z, oct);
+
+				W[i] += dt * cur.k * (f - 0.5);
+				W[i] *= 1 - dt * cur.decay;
+
+				const weatherF = 0.5 + W[i] * 1.2 + (f - 0.5) * 0.4;
+				const baseField = lerp(f, weatherF, mix);
+				let field = baseField;
+				if (useOpt1) {
+					B[i] *= bandFade;
+					const b = B[i];
+					if (b > 0.01) {
+						field = Math.max(baseField, cur.th - 0.07 + b * 0.30) + Math.min(Math.max(0, baseField - 0.42), b) * 0.18;
+					}
+				} else {
+					const b2 = bandValue2(x, y);
+					if (b2 > 0) field = baseField + b2 * 0.7;
+				}
+
+				const a = smooth(cur.th - 0.06, cur.th + 0.06, field);
+				const p = i * 4;
+				if (a <= 0) { d[p + 3] = 0; continue; }
+				const c = smooth(cur.th, cur.th + 0.25, field);
+				d[p] = lerp(60, 255, c);
+				d[p + 1] = lerp(40, 140, c);
+				d[p + 2] = lerp(140, 60, c);
+				d[p + 3] = a * 170;
+			}
+		}
+
+		octx.putImageData(img, 0, 0);
+		ctx.fillStyle = '#03040a';
+		ctx.fillRect(0, 0, cv.width, cv.height);
+		ctx.imageSmoothingEnabled = true;
+		ctx.drawImage(off, 0, 0, cv.width, cv.height);
+		requestAnimationFrame(frame);
+	}
+	requestAnimationFrame(frame);
 </script>
 </body>
 </html>

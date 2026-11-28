@@ -20,7 +20,7 @@ this has slider to change weather from 0 (fast, less predictable) to 1 (more sta
 add 50% wind speed to 0.
 implement band crossing map.
 
-→ implemented in `drafts/prototype/space-weather-2clouds-c55h.html` — `1.5×` wind speed at `0` (`1 + 0.5 * (1 - mix)` integrated smoothly into `driftX`/`driftY`), `speed` slider (`0..4×`), and integer-shifted band texture `B` generated strictly on exposed windward borders (`band` button + periodic spawn).
+→ implemented in `drafts/prototype/space-weather-2clouds-c55h.html` — `1.5×` wind speed at `0` (`1 + 0.5 * (1 - mix)` integrated smoothly into `driftX`/`driftY`), `speed` slider (`0..4×`), and two selectable band options (`bar 1`: integer-shifted border-fed FBM texture `B`; `bar 2`: continuous drift-frame value-noise bar amplified onto the live field, from `7812a90`), preserving `W` and `B` across resize.
 
 alternate way is to define it by shapes without textures like example drafts/prototype/space-weather-shape-c55h.html
 this is just example, do not copy-paste it: i need clouds and band but not shapes from planet.
@@ -28,7 +28,7 @@ implement
 drafts/prototype/space-weather-shape.html
 with similar clouds as drafts/prototype/space-weather-2clouds-c55h.html and band but using shapes (curves)
 
-→ implemented in `drafts/prototype/space-weather-shape.html` — 5-pass compound quadratic-spline contour layers fusing multi-harmonic cloud complexes and curved band ribbons (no textures, no planet shapes, zero hot-path allocations; `cloud ↔ weather` with `+50%` wind at `0`, `speed`, `wind` angle, `band`, `curves`).
+→ implemented in `drafts/prototype/space-weather-shape.html` — circular 3D quintic Perlin polar-noise rounds (no `sin(kθ)` petals), `L4/L2/L1` metaball contour surface traced into arc-length-smoothed `quadraticCurveTo` isolines (`fill('evenodd')`), both ribbon line-bands and 20–40 smaller noise-round metaball bands, live adjust panel (`weather bands`, `contour bands`, `band rounds`, `round size`, `band scatter`, `metaball`, `polar noise`, `polar detail`, `clouds`, `cloud size`, `morph`, `band type`), and `copy settings` JSON button.
 
 need fix:
 
