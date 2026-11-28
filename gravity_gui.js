@@ -53,8 +53,8 @@ function fillPorts(t, outX, outY, count) {
 			rx * tradeSim.orbitTiltCos[planet] - ry * tradeSim.orbitTiltSin[planet];
 		const y = tradeSim.planetY[planet] +
 			rx * tradeSim.orbitTiltSin[planet] + ry * tradeSim.orbitTiltCos[planet];
-		outX[p] = periodicMode ? GravitySim.wrap(x, OrbitSim.WORLD_W) : x;
-		outY[p] = periodicMode ? GravitySim.wrap(y, OrbitSim.WORLD_H) : y;
+		outX[p] = periodicMode ? GravitySim.wrap(x, tradeSim.worldW) : x;
+		outY[p] = periodicMode ? GravitySim.wrap(y, tradeSim.worldH) : y;
 	}
 }
 

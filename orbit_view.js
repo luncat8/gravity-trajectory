@@ -48,8 +48,11 @@
 	const FRAME_FULL = 'full';
 	const FRAMES = [FRAME_MAIN, FRAME_FULL];
 	/* the two frames the zoom switch picks between: the planet field as drawn,
-	 * and the whole flight area around it */
-	const FIELD_BOX = { x: 0, y: 0, w: OrbitSim.WORLD_W, h: OrbitSim.WORLD_H };
+	 * and the whole flight area around it. The field follows the live world
+	 * size (classic 1600×1000, FFT torus 3200×2000); the area is classic-only. */
+	function fieldBox() {
+		return { x: 0, y: 0, w: sim.worldW, h: sim.worldH };
+	}
 	const AREA_BOX = {
 		x: -OrbitSim.AREA_PAD_X, y: -OrbitSim.AREA_PAD_Y,
 		w: OrbitSim.AREA_W, h: OrbitSim.AREA_H
@@ -61,19 +64,19 @@
 	const seedRandom = OrbitWorld.seedRandom;
 
 	function wrapX(x) {
-		return x - OrbitSim.WORLD_W * Math.floor(x / OrbitSim.WORLD_W);
+		return x - sim.worldW * Math.floor(x / sim.worldW);
 	}
 
 	function wrapY(y) {
-		return y - OrbitSim.WORLD_H * Math.floor(y / OrbitSim.WORLD_H);
+		return y - sim.worldH * Math.floor(y / sim.worldH);
 	}
 
 	function minDx(dx) {
-		return dx - OrbitSim.WORLD_W * Math.round(dx / OrbitSim.WORLD_W);
+		return dx - sim.worldW * Math.round(dx / sim.worldW);
 	}
 
 	function minDy(dy) {
-		return dy - OrbitSim.WORLD_H * Math.round(dy / OrbitSim.WORLD_H);
+		return dy - sim.worldH * Math.round(dy / sim.worldH);
 	}
 
 	const canvas = $('c');
@@ -302,7 +305,7 @@
 		 * again, and both edges are drawn so a flight that leaves the framed
 		 * canvas still reads as inside the area; on a periodic torus the world
 		 * has no outer pad box */
-		const box = sim.periodic ? FIELD_BOX : AREA_BOX;
+		const box = sim.periodic ? fieldBox() : AREA_BOX;
 		const areaX = box.x;
 		const areaY = box.y;
 		const areaR = areaX + box.w;
@@ -312,7 +315,7 @@
 			backCtx.fillRect(areaX, areaY, box.w, box.h);
 		}
 		backCtx.fillStyle = sim.periodic ? 'rgba(7, 16, 30, 0.34)' : 'rgba(7, 16, 30, 0.20)';
-		backCtx.fillRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+		backCtx.fillRect(0, 0, sim.worldW, sim.worldH);
 		backCtx.strokeStyle = 'rgba(96, 150, 200, 0.045)';
 		backCtx.lineWidth = 1;
 		backCtx.beginPath();
@@ -330,7 +333,7 @@
 			backCtx.strokeRect(areaX, areaY, box.w, box.h);
 		}
 		backCtx.strokeStyle = 'rgba(103, 224, 255, 0.12)';
-		backCtx.strokeRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+		backCtx.strokeRect(0, 0, sim.worldW, sim.worldH);
 	}
 
 	function resize() {
@@ -346,7 +349,7 @@
 		const foot = Math.min(VIEW_FOOT_MAX, Math.max(VIEW_FOOT_MIN, height * 0.08));
 		const availW = width - VIEW_INSET * 2;
 		const availH = height - VIEW_INSET - foot;
-		const box = view.frame === FRAME_FULL && !sim.periodic ? AREA_BOX : FIELD_BOX;
+		const box = view.frame === FRAME_FULL && !sim.periodic ? AREA_BOX : fieldBox();
 		view.scale = Math.min(availW / box.w, availH / box.h);
 		view.offX = VIEW_INSET + (availW - box.w * view.scale) / 2 - box.x * view.scale;
 		view.offY = VIEW_INSET + (availH - box.h * view.scale) / 2 - box.y * view.scale;
@@ -581,8 +584,8 @@
 	function forOrbitWrap(x, y, rx, ry, fn) {
 		fn(x, y);
 		if (!sim.periodic) return;
-		const W = OrbitSim.WORLD_W;
-		const H = OrbitSim.WORLD_H;
+		const W = sim.worldW;
+		const H = sim.worldH;
 		const sx = x - rx < 0 ? W : x + rx > W ? -W : 0;
 		const sy = y - ry < 0 ? H : y + ry > H ? -H : 0;
 		if (sx !== 0) fn(x + sx, y);
@@ -1049,11 +1052,11 @@
 			}
 			ctx.strokeStyle = 'rgba(103, 224, 255, 0.16)';
 			ctx.lineWidth = 1;
-			ctx.strokeRect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+			ctx.strokeRect(0, 0, sim.worldW, sim.worldH);
 		}
 		if (sim.periodic && typeof ctx.clip === 'function') {
 			ctx.beginPath();
-			ctx.rect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+			ctx.rect(0, 0, sim.worldW, sim.worldH);
 			ctx.clip();
 		}
 	}

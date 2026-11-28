@@ -4085,10 +4085,10 @@ function protoOf(career, family, id) {
 	let edgeDist = Infinity;
 	for (let i = 0; i < 104; i++) {
 		const x = tScene.sim.planetX[i];
-		const d = Math.min(x, tCtx.OrbitWorld.WORLD_W - x);
+		const d = Math.min(x, tScene.sim.worldW - x);
 		if (d < edgeDist) { edgeDist = d; edgeBody = i; }
 	}
-	const dir = tScene.sim.planetX[edgeBody] > tCtx.OrbitWorld.WORLD_W * 0.5 ? 0 : Math.PI;
+	const dir = tScene.sim.planetX[edgeBody] > tScene.sim.worldW * 0.5 ? 0 : Math.PI;
 	vm.runInContext(`
 		aimBody = ${edgeBody};
 		aimAngle = ${dir};
@@ -4098,11 +4098,15 @@ function protoOf(career, family, id) {
 		predictShot();
 	`, tCtx);
 	tEnv.click('launch');
+	/* measure from the launch body: on the 3200-wide torus the spawn point
+	 * itself can already sit across the seam from a planet hugging x = 0 */
 	let wrapped = false;
-	let lastX = tScene.sim.cargo.x;
+	let lastX = tScene.sim.planetX[edgeBody];
 	for (let i = 0; i < 120 && tScene.sim.status === tCtx.GravitySim.STATUS_FLYING; i++) {
+		if (Math.abs(tScene.sim.cargo.x - lastX) > tScene.sim.worldW * 0.5) wrapped = true;
+		lastX = tScene.sim.cargo.x;
 		tEnv.runFrames(1, 16.0);
-		if (Math.abs(tScene.sim.cargo.x - lastX) > tCtx.OrbitWorld.WORLD_W * 0.5) wrapped = true;
+		if (Math.abs(tScene.sim.cargo.x - lastX) > tScene.sim.worldW * 0.5) wrapped = true;
 		lastX = tScene.sim.cargo.x;
 	}
 	if (!wrapped || tScene.sim.endReason === tCtx.GravitySim.END_EXIT) {

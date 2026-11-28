@@ -62,13 +62,19 @@ function syncPeriodicSims() {
 	const topologyChanged = tradeSim.periodic !== periodicMode;
 	game.periodic = periodicMode;
 	tradeSim.setPeriodic(periodicMode);
+	const w = periodicMode ? OrbitWorld.PERIODIC_WORLD_W : OrbitWorld.WORLD_W;
+	const h = periodicMode ? OrbitWorld.PERIODIC_WORLD_H : OrbitWorld.WORLD_H;
+	cargoSim.setWorldSize(w, h);
 	cargoSim.setPeriodic(periodicMode);
+	helperProbe.setWorldSize(w, h);
 	helperProbe.setPeriodic(periodicMode, cargoSim);
+	bot.setWorldSize(w, h);
 	bot.setPeriodic(periodicMode, cargoSim);
 	const career = game.career;
 	if (career && career.fleet) {
 		for (let i = 0; i < career.fleet.length; i++) {
 			if (career.fleet[i] && career.fleet[i].sim) {
+				career.fleet[i].sim.setWorldSize(w, h);
 				career.fleet[i].sim.setPeriodic(periodicMode, cargoSim);
 			}
 		}

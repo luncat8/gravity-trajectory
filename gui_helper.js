@@ -121,6 +121,7 @@ function helperUpdateUi() {
 
 function helperAttachWorld() {
 	const sim = activeCareerSim();
+	helperProbe.setWorldSize(sim.worldW, sim.worldH);
 	helperProbe.setPeriodic(sim.periodic, sim);
 	helperProbe.setPlanets(tradeSim.planetCount || PLANETS, tradeSim.planetX, tradeSim.planetY, tradeSim.planetR,
 		tradeSim.orbitRX, tradeSim.orbitRY, tradeSim.orbitTiltCos, tradeSim.orbitTiltSin);

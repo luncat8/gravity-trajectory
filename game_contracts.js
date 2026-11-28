@@ -48,8 +48,8 @@
 		let dx = trade.planetX[a] - trade.planetX[b];
 		let dy = trade.planetY[a] - trade.planetY[b];
 		if ((trade.world && trade.world.periodic) || trade.periodic) {
-			dx = GravitySim.minImage(dx, OrbitWorld.WORLD_W);
-			dy = GravitySim.minImage(dy, OrbitWorld.WORLD_H);
+			dx = GravitySim.minImage(dx, trade.worldW || OrbitWorld.WORLD_W);
+			dy = GravitySim.minImage(dy, trade.worldH || OrbitWorld.WORLD_H);
 		}
 		return Math.sqrt(dx * dx + dy * dy);
 	}

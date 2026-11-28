@@ -25,6 +25,11 @@
 	const INITIAL_PORTS = 8;
 	const WORLD_W = 1600;
 	const WORLD_H = 1000;
+	/* The FFT torus is twice the classic field per axis (4× area): the same
+	 * rosters sit twice as far apart in world units and the camera zooms out
+	 * to fit. Classic generation never reads these. */
+	const PERIODIC_WORLD_W = 3200;
+	const PERIODIC_WORLD_H = 2000;
 	/* The flight area is the planet field grown by half of itself on every side
 	 * (1.5× in each dimension). Planets are placed and drawn inside the field;
 	 * a ship may leave that framed canvas and keep flying until the area's own
@@ -116,10 +121,16 @@
 	 */
 	function create(seed, rand, options) {
 		const periodic = !!(options && options.periodic);
+		const width = options && options.width ? options.width
+			: periodic ? PERIODIC_WORLD_W : WORLD_W;
+		const height = options && options.height ? options.height
+			: periodic ? PERIODIC_WORLD_H : WORLD_H;
 		const world = {
 			seed: seed >>> 0,
 			planetCount: periodic ? PLANETS : CLASSIC_PLANETS,
 			periodic: periodic,
+			width: width,
+			height: height,
 			planetX: new Float64Array(PLANETS),
 			planetY: new Float64Array(PLANETS),
 			planetR: new Float64Array(PLANETS),
@@ -180,11 +191,12 @@
 	function placePlanets(world, rand, initialPorts) {
 		const x = world.planetX;
 		const y = world.planetY;
+		const W = world.width, H = world.height;
 		for (let i = 0; i < DEFAULT_PLANETS; i++) {
 			let placed = false;
 			for (let attempt = 0; attempt < 300 && !placed; attempt++) {
-				const px = 110 + rand() * (WORLD_W - 220);
-				const py = 90 + rand() * (WORLD_H - 180);
+				const px = 110 + rand() * (W - 220);
+				const py = 90 + rand() * (H - 180);
 				placed = true;
 				for (let j = 0; j < i; j++) {
 					const dx = px - x[j];
@@ -205,8 +217,8 @@
 			let bestY = 0;
 			let bestGap = -1;
 			for (let sample = 0; sample < 80; sample++) {
-				const px = 110 + rand() * (WORLD_W - 220);
-				const py = 90 + rand() * (WORLD_H - 180);
+				const px = 110 + rand() * (W - 220);
+				const py = 90 + rand() * (H - 180);
 				let gap = Infinity;
 				for (let j = 0; j < i; j++) {
 					const dx = px - x[j];
@@ -253,8 +265,8 @@
 					let dx = x[i] - x[other];
 					let dy = y[i] - y[other];
 					if (world.periodic) {
-						dx = minImage(dx, WORLD_W);
-						dy = minImage(dy, WORLD_H);
+						dx = minImage(dx, world.width);
+						dy = minImage(dy, world.height);
 					}
 					const d2 = dx * dx + dy * dy;
 					if (d2 < gap) gap = d2;
@@ -278,7 +290,7 @@
 	function placeOrbits(world, rand) {
 		for (let i = 0; i < DEFAULT_PLANETS; i++) {
 			const room = Math.min(world.planetX[i], world.planetY[i],
-				WORLD_W - world.planetX[i], WORLD_H - world.planetY[i]) - 24;
+				world.width - world.planetX[i], world.height - world.planetY[i]) - 24;
 			const maxR = Math.max(58, Math.min(180, room));
 			const tilt = rand() * Math.PI;
 			const period = 160 + rand() * 240;
@@ -343,8 +355,8 @@
 		for (let i = DEFAULT_PLANETS; i < CLASSIC_PLANETS; i++) {
 			let bestGap = -1, x = 0, y = 0;
 			for (let attempt = 0; attempt < 80; attempt++) {
-				const px = 110 + rand() * (WORLD_W - 220);
-				const py = 90 + rand() * (WORLD_H - 180);
+				const px = 110 + rand() * (world.width - 220);
+				const py = 90 + rand() * (world.height - 180);
 				let gap = Infinity;
 				for (let j = 0; j < i; j++) {
 					const dx = px - world.planetX[j], dy = py - world.planetY[j];
@@ -355,7 +367,7 @@
 			}
 			world.planetX[i] = x;
 			world.planetY[i] = y;
-			const room = Math.min(x, y, WORLD_W - x, WORLD_H - y) - 24;
+			const room = Math.min(x, y, world.width - x, world.height - y) - 24;
 			const maxR = Math.max(58, Math.min(180, room));
 			const tilt = rand() * Math.PI, period = 160 + rand() * 240;
 			world.planetR[i] = 6 + rand() * 5;
@@ -376,30 +388,38 @@
 
 	function placePeriodicPlanets(world, rand) {
 		const x = world.planetX, y = world.planetY;
-		/* Best-candidate sampling spreads every roster prefix over the torus
-		 * without grid alignment or an unbounded rejection loop at capacity. */
+		const W = world.width, H = world.height;
+		/* Uniform random on the torus: clusters and voids are the point, so
+		 * only stacked wells are refused. The 48 px centre floor keeps two
+		 * wells distinguishable; orbits draw like classic (46..180) and may
+		 * overlap neighbours. Bounded: the roomiest of 40 tries wins. */
+		const MIN_GAP2 = 48 * 48;
 		for (let i = 0; i < PLANETS; i++) {
-			let bestX = 0, bestY = 0, bestGap = -1;
-			for (let sample = 0; sample < 96; sample++) {
-				const px = rand() * WORLD_W, py = rand() * WORLD_H;
+			let bestX = 0, bestY = 0, bestGap = -1, placed = false;
+			for (let attempt = 0; attempt < 40 && !placed; attempt++) {
+				const px = rand() * W, py = rand() * H;
 				let gap = Infinity;
 				for (let j = 0; j < i; j++) {
-					const dx = minImage(px - x[j], WORLD_W);
-					const dy = minImage(py - y[j], WORLD_H);
+					const dx = minImage(px - x[j], W);
+					const dy = minImage(py - y[j], H);
 					const d2 = dx * dx + dy * dy;
 					if (d2 < gap) gap = d2;
-					if (gap <= bestGap) break;
 				}
-				if (gap <= bestGap) continue;
-				bestGap = gap;
-				bestX = px;
-				bestY = py;
+				if (gap >= MIN_GAP2) {
+					placed = true;
+					bestX = px;
+					bestY = py;
+				} else if (gap > bestGap) {
+					bestGap = gap;
+					bestX = px;
+					bestY = py;
+				}
 			}
 			x[i] = bestX;
 			y[i] = bestY;
 			world.planetR[i] = 6 + rand() * 5;
-			world.orbitRX[i] = 46 + rand() * 32;
-			world.orbitRY[i] = 46 + rand() * 32;
+			world.orbitRX[i] = 46 + rand() * 134;
+			world.orbitRY[i] = 46 + rand() * 134;
 			world.orbitPhase[i] = rand() * TAU;
 			world.orbitOmega[i] = (rand() < 0.5 ? -1 : 1) * TAU / (160 + rand() * 240);
 			const tilt = rand() * Math.PI;
@@ -459,7 +479,7 @@
 	const OrbitWorld = {
 		PLANETS, CLASSIC_PLANETS, DEFAULT_PLANETS,
 		PERIODIC_DEFAULT_PLANETS, CLASSIC_CAREER_PLANETS, PERIODIC_CAREER_PLANETS,
-		INITIAL_PORTS, WORLD_W, WORLD_H, TAU,
+		INITIAL_PORTS, WORLD_W, WORLD_H, PERIODIC_WORLD_W, PERIODIC_WORLD_H, TAU,
 		AREA_SCALE, AREA_W, AREA_H, AREA_PAD_X, AREA_PAD_Y,
 		KIND_NORMAL, KIND_ARF, KIND_CAPITAL, SPECIAL_COUNT,
 		TYPE_ROCK, TYPE_TERRAN, TYPE_SUPER, TYPE_DWARF, TYPE_MINI, TYPE_GAS, TYPE_ICE,

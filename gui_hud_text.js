@@ -165,7 +165,7 @@ function draw(now) {
 	ctx.scale(view.scale, view.scale);
 	if (periodicMode && typeof ctx.clip === 'function') {
 		ctx.beginPath();
-		ctx.rect(0, 0, OrbitSim.WORLD_W, OrbitSim.WORLD_H);
+		ctx.rect(0, 0, tradeSim.worldW, tradeSim.worldH);
 		ctx.clip();
 	}
 	drawSystemVisits(tickNow);

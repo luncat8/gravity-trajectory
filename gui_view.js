@@ -223,28 +223,28 @@ function worldY(clientY) {
 }
 
 function wrapWorldX(x) {
-	return periodicMode ? GravitySim.wrap(x, OrbitSim.WORLD_W) : x;
+	return periodicMode ? GravitySim.wrap(x, tradeSim.worldW) : x;
 }
 
 function wrapWorldY(y) {
-	return periodicMode ? GravitySim.wrap(y, OrbitSim.WORLD_H) : y;
+	return periodicMode ? GravitySim.wrap(y, tradeSim.worldH) : y;
 }
 
 function worldDeltaX(dx) {
-	return periodicMode ? GravitySim.minImage(dx, OrbitSim.WORLD_W) : dx;
+	return periodicMode ? GravitySim.minImage(dx, tradeSim.worldW) : dx;
 }
 
 function worldDeltaY(dy) {
-	return periodicMode ? GravitySim.minImage(dy, OrbitSim.WORLD_H) : dy;
+	return periodicMode ? GravitySim.minImage(dy, tradeSim.worldH) : dy;
 }
 
 /* invokes fn(x, y) plus up to three torus wrap ghosts when an element's AABB
- * crosses [0, WORLD_W) x [0, WORLD_H); zero allocations, 1 call in the interior */
+ * crosses the torus; zero allocations, 1 call in the interior */
 function forWorldWraps(x, y, rx, ry, fn) {
 	fn(x, y);
 	if (!periodicMode) return;
-	const W = OrbitSim.WORLD_W;
-	const H = OrbitSim.WORLD_H;
+	const W = tradeSim.worldW;
+	const H = tradeSim.worldH;
 	const sx = x - rx < 0 ? W : x + rx > W ? -W : 0;
 	const sy = y - ry < 0 ? H : y + ry > H ? -H : 0;
 	if (sx !== 0) fn(x + sx, y);
@@ -283,8 +283,8 @@ function traceWorldPolyline(pathX, pathY, count, stride) {
 		if (last % stride !== 0) ctx.lineTo(pathX[last], pathY[last]);
 		return;
 	}
-	const halfW = OrbitSim.WORLD_W * 0.5;
-	const halfH = OrbitSim.WORLD_H * 0.5;
+	const halfW = tradeSim.worldW * 0.5;
+	const halfH = tradeSim.worldH * 0.5;
 	let px = pathX[0];
 	let py = pathY[0];
 	for (let i = stride; i < count; i += stride) {

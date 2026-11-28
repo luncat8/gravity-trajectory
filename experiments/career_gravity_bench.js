@@ -75,7 +75,7 @@ const STARTER_CAP = OrbitTech.speedLimit(OrbitTech.BATTERIES[0].capacity,
 function makeWorld(seed) {
 	const trade = new Sim(seed, PERIODIC ? { periodic: true } : undefined);
 	trade.advanceTo(420);
-	const gravity = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	const gravity = new GravitySim(trade.worldW, trade.worldH);
 	if (PERIODIC) gravity.setPeriodic(true);
 	gravity.setPlanets(PLANETS, trade.planetX, trade.planetY, trade.planetR,
 		trade.orbitRX, trade.orbitRY, trade.orbitTiltCos, trade.orbitTiltSin);
@@ -95,7 +95,7 @@ function makeWorld(seed) {
 	GravityGame.resetGalaxy(galaxy, seed);
 	/* the political clock is run-wide: bind before any career joins */
 	GravityGame.bindRun(market, galaxy, POLITICS ? trade.world : null);
-	const bot = GravityBot.prototype && new GravityBot(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	const bot = GravityBot.prototype && new GravityBot(trade.worldW, trade.worldH);
 	if (PERIODIC) bot.setPeriodic(true, gravity);
 	const events = { noShots: 0, sits: 0, drops: 0 };
 	const addTrace = bot.traceAdd;

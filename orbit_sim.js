@@ -39,6 +39,8 @@
 	const INITIAL_PORTS = OrbitWorld.INITIAL_PORTS;
 	const WORLD_W = OrbitWorld.WORLD_W;
 	const WORLD_H = OrbitWorld.WORLD_H;
+	const PERIODIC_WORLD_W = OrbitWorld.PERIODIC_WORLD_W;
+	const PERIODIC_WORLD_H = OrbitWorld.PERIODIC_WORLD_H;
 
 	function simWrap(v, period) {
 		return v - period * Math.floor(v / period);
@@ -76,6 +78,8 @@
 
 	function Sim(seed, options) {
 		this.periodic = !!(options && options.periodic);
+		this.worldW = this.periodic ? PERIODIC_WORLD_W : WORLD_W;
+		this.worldH = this.periodic ? PERIODIC_WORLD_H : WORLD_H;
 		this.handleEvent = this.handleEvent.bind(this);
 		this.onColonyEvent = this.onColonyEvent.bind(this);
 		this.reset(seed);
@@ -85,14 +89,16 @@
 		const next = !!periodic;
 		if (this.periodic === next) return;
 		this.periodic = next;
+		this.worldW = next ? PERIODIC_WORLD_W : WORLD_W;
+		this.worldH = next ? PERIODIC_WORLD_H : WORLD_H;
 		this.tradePlanetLimit = next ? OrbitWorld.PERIODIC_DEFAULT_PLANETS : OrbitWorld.DEFAULT_PLANETS;
 		this.planetEmpty = this.tradePlanetLimit;
 	};
 
 	Sim.prototype.areaPadX = function () { return this.periodic ? 0 : AREA_PAD_X; };
 	Sim.prototype.areaPadY = function () { return this.periodic ? 0 : AREA_PAD_Y; };
-	Sim.prototype.areaW = function () { return this.periodic ? WORLD_W : AREA_W; };
-	Sim.prototype.areaH = function () { return this.periodic ? WORLD_H : AREA_H; };
+	Sim.prototype.areaW = function () { return this.periodic ? this.worldW : AREA_W; };
+	Sim.prototype.areaH = function () { return this.periodic ? this.worldH : AREA_H; };
 
 	/*
 	 * (Re)build the world for `seed` at t = 0. Every array is fresh, so a reset
@@ -170,6 +176,8 @@
 		OrbitWorld.attach(this, this.periodic
 			? OrbitWorld.create(this.seed, this.rand, { periodic: true })
 			: OrbitWorld.create(this.seed, this.rand));
+		this.worldW = this.world.width;
+		this.worldH = this.world.height;
 
 		/* one colony record per colonised planet (§1, §4) */
 		this.colonies = [];
@@ -373,8 +381,8 @@
 				let dx = px - this.portX(q, this.t);
 				let dy = py - this.portY(q, this.t);
 				if (periodic) {
-					dx = simMinImage(dx, WORLD_W);
-					dy = simMinImage(dy, WORLD_H);
+					dx = simMinImage(dx, this.worldW);
+					dy = simMinImage(dy, this.worldH);
 				}
 				const dist = dx * dx + dy * dy;
 				if (count === n && dist >= this.bestDist[n - 1]) continue;
@@ -402,8 +410,8 @@
 		let dx = this.portX(dest, depart) - fromX;
 		let dy = this.portY(dest, depart) - fromY;
 		if (periodic) {
-			dx = simMinImage(dx, WORLD_W);
-			dy = simMinImage(dy, WORLD_H);
+			dx = simMinImage(dx, this.worldW);
+			dy = simMinImage(dy, this.worldH);
 		}
 		let arrive = depart + Math.sqrt(dx * dx + dy * dy) / speed;
 		/* the target keeps moving: refine until the aim point stops shifting */
@@ -411,8 +419,8 @@
 			dx = this.portX(dest, arrive) - fromX;
 			dy = this.portY(dest, arrive) - fromY;
 			if (periodic) {
-				dx = simMinImage(dx, WORLD_W);
-				dy = simMinImage(dy, WORLD_H);
+				dx = simMinImage(dx, this.worldW);
+				dy = simMinImage(dy, this.worldH);
 			}
 			arrive = depart + Math.sqrt(dx * dx + dy * dy) / speed;
 		}
@@ -433,8 +441,8 @@
 		this.shipStartY[ship] = y;
 		const destX = this.portX(dest, arrive);
 		const destY = this.portY(dest, arrive);
-		this.shipAimX[ship] = this.periodic ? x + simMinImage(destX - x, WORLD_W) : destX;
-		this.shipAimY[ship] = this.periodic ? y + simMinImage(destY - y, WORLD_H) : destY;
+		this.shipAimX[ship] = this.periodic ? x + simMinImage(destX - x, this.worldW) : destX;
+		this.shipAimY[ship] = this.periodic ? y + simMinImage(destY - y, this.worldH) : destY;
 		this.events.push(arrive, KIND_ARRIVE, ship);
 	};
 
@@ -463,8 +471,8 @@
 			let dx = px - this.portX(q, t);
 			let dy = py - this.portY(q, t);
 			if (this.periodic) {
-				dx = simMinImage(dx, WORLD_W);
-				dy = simMinImage(dy, WORLD_H);
+				dx = simMinImage(dx, this.worldW);
+				dy = simMinImage(dy, this.worldH);
 			}
 			const dist = Math.sqrt(dx * dx + dy * dy);
 			const score = shortfall / (1 + dist / DIST_SCALE);
@@ -573,8 +581,8 @@
 		let dx = this.shipAimX[ship] - this.portX(target, time);
 		let dy = this.shipAimY[ship] - this.portY(target, time);
 		if (this.periodic) {
-			dx = simMinImage(dx, WORLD_W);
-			dy = simMinImage(dy, WORLD_H);
+			dx = simMinImage(dx, this.worldW);
+			dy = simMinImage(dy, this.worldH);
 		}
 		const error = Math.sqrt(dx * dx + dy * dy);
 		if (error > this.maxAimError) this.maxAimError = error;
@@ -646,8 +654,8 @@
 		let dx = this.planetX[target] - x;
 		let dy = this.planetY[target] - y;
 		if (this.periodic) {
-			dx = simMinImage(dx, WORLD_W);
-			dy = simMinImage(dy, WORLD_H);
+			dx = simMinImage(dx, this.worldW);
+			dy = simMinImage(dy, this.worldH);
 		}
 		const travel = Math.sqrt(dx * dx + dy * dy) / BUILDER_SPEED;
 		this.planetState[target] = 2;
@@ -906,8 +914,8 @@
 			let dx = this.planetX[planet] - px;
 			let dy = this.planetY[planet] - py;
 			if (this.periodic) {
-				dx = simMinImage(dx, WORLD_W);
-				dy = simMinImage(dy, WORLD_H);
+				dx = simMinImage(dx, this.worldW);
+				dy = simMinImage(dy, this.worldH);
 			}
 			const d2 = dx * dx + dy * dy;
 			if (d2 >= maxD2) continue;

@@ -131,7 +131,10 @@ base revision, not just a count.
   helper's earlier armed contract shot back onto the HQ prices neutral (−0.36).
 - `dom_smoke.js` — the three plan-caused `CHECKFAIL`s of 0.7.44 are fixed
   (2026-11-26, [verification worklog](../archive/0.7.44-verification-worklog.md)):
-  `career rule tag` and `cheat rule tag` now expect the 16-planet career
+  `career rule tag` and `cheat rule tag` now expect the 16-planet career.
+  At base `75872b3` it stops at `0.4.17: no landing with a commercial exit
+  from HQ` (classic career, reproduced on a pristine worktree), so later
+  blocks such as the 0.8.0 torus smoke only run when they are extracted.
 - `balance_knobs_test.js` — pre-existing, not the 0.8.0 periodic-FFT work:
   the pinned pre-0.7.42 600-step career state hash diverges at base `8d6abdc`
   (reproduced with the step-2 `gravity_sim.js` changes stashed aside).

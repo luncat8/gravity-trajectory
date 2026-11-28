@@ -93,6 +93,26 @@
 		this.player.sim.setPeriodic(next, this.probe);
 	};
 
+	/* Resize every bot-owned sim (FFT 3200×2000, classic 1600×1000). Call
+	 * before setPeriodic so borrowed grids are re-established after. */
+	GravityBot.prototype.setWorldSize = function (w, h) {
+		if (!(w > 0) || !(h > 0)) return false;
+		if (this.worldW === w && this.worldH === h) return false;
+		this.worldW = w;
+		this.worldH = h;
+		this.probe.setWorldSize(w, h);
+		this.exitProbe.setWorldSize(w, h);
+		this.burnShotSim.setWorldSize(w, h);
+		for (let i = 0; i < this.rivals.length; i++) {
+			this.rivals[i].sim.setWorldSize(w, h);
+		}
+		for (let i = 0; i < this.fleet.length; i++) {
+			if (this.fleet[i] && this.fleet[i].sim) this.fleet[i].sim.setWorldSize(w, h);
+		}
+		this.player.sim.setWorldSize(w, h);
+		return true;
+	};
+
 	GravityBot.prototype.invalidateField = function () {
 		this.probe.invalidateField();
 		this.exitProbe.invalidateField();
@@ -123,6 +143,9 @@
 		this.tradeSim = tradeSim;
 		const periodic = Boolean((tradeSim && tradeSim.periodic) ||
 			(tradeSim && tradeSim.world && tradeSim.world.periodic));
+		if (tradeSim && tradeSim.worldW && tradeSim.worldH) {
+			this.setWorldSize(tradeSim.worldW, tradeSim.worldH);
+		}
 		this.setPeriodic(periodic, this.gridSource);
 		this.strength.fill(1);
 		this.departureSourceSim = null;

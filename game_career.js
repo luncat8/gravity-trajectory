@@ -744,8 +744,8 @@
 			let dx = x - world.planetX[p];
 			let dy = y - world.planetY[p];
 			if (world.periodic) {
-				dx = GravitySim.minImage(dx, OrbitWorld.WORLD_W);
-				dy = GravitySim.minImage(dy, OrbitWorld.WORLD_H);
+				dx = GravitySim.minImage(dx, world.width);
+				dy = GravitySim.minImage(dy, world.height);
 			}
 			const r = (world.planetR[p] || 10) + padPx;
 			if (dx * dx + dy * dy < r * r) return false;
@@ -754,14 +754,16 @@
 	}
 
 	function spaceSpawnAt(world, mask, seed, index) {
-		let cx = OrbitWorld.WORLD_W * 0.5;
-		let cy = OrbitWorld.WORLD_H * 0.5;
+		const W = world && world.width ? world.width : OrbitWorld.WORLD_W;
+		const H = world && world.height ? world.height : OrbitWorld.WORLD_H;
+		let cx = W * 0.5;
+		let cy = H * 0.5;
 		const baseTurn = (OrbitWorld.hashBits(seed >>> 0, 0, SALT_HQ) & 0xffff) / 65536 * Math.PI * 2;
 		for (let k = 0; k < 24 && !spaceSpawnClear(world, mask, cx, cy, 42); k++) {
 			const ang = baseTurn + (k + 1) * 2.399963229728653;
 			const rad = 28 + k * 14;
-			cx = OrbitWorld.WORLD_W * 0.5 + Math.cos(ang) * rad;
-			cy = OrbitWorld.WORLD_H * 0.5 + Math.sin(ang) * rad;
+			cx = W * 0.5 + Math.cos(ang) * rad;
+			cy = H * 0.5 + Math.sin(ang) * rad;
 		}
 		const idx = Math.max(0, Math.floor(index || 0));
 		const ang = baseTurn + idx * 2.399963229728653;
@@ -774,8 +776,8 @@
 			y = cy + Math.sin(ang + k * 0.35) * nudge;
 		}
 		if (world && world.periodic) {
-			x = GravitySim.wrap(x, OrbitWorld.WORLD_W);
-			y = GravitySim.wrap(y, OrbitWorld.WORLD_H);
+			x = GravitySim.wrap(x, W);
+			y = GravitySim.wrap(y, H);
 		}
 		return { x: x, y: y };
 	}

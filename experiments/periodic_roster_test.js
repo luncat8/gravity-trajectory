@@ -1,4 +1,4 @@
-/* Step 3 roster foundation: capacity, classic prefix and irregular toroidal placement. */
+/* Step 3 roster foundation: capacity, classic prefix and random toroidal placement. */
 'use strict';
 
 const assert = require('assert');
@@ -15,6 +15,8 @@ assert.strictEqual(World.DEFAULT_PLANETS, 26);
 assert.strictEqual(World.PERIODIC_DEFAULT_PLANETS, 104);
 assert.strictEqual(World.CLASSIC_CAREER_PLANETS, 16);
 assert.strictEqual(World.PERIODIC_CAREER_PLANETS, 64);
+assert.strictEqual(World.PERIODIC_WORLD_W, 3200);
+assert.strictEqual(World.PERIODIC_WORLD_H, 2000);
 assert.strictEqual(GravitySim.MAX_BODIES, 192);
 for (const seed of [1, 7, 42]) {
 	const classic = World.create(seed, World.seedRandom(seed));
@@ -30,40 +32,43 @@ for (const seed of [1, 7, 42]) {
 	assert.strictEqual(world.planetCount, 192);
 	for (let i = 0; i < 192; i++) {
 		const x = world.planetX[i], y = world.planetY[i];
-		assert.ok(x >= 0 && x < World.WORLD_W && y >= 0 && y < World.WORLD_H);
-		assert.ok(world.orbitRX[i] <= 78 && world.orbitRY[i] <= 78);
+		assert.ok(x >= 0 && x < World.PERIODIC_WORLD_W && y >= 0 && y < World.PERIODIC_WORLD_H);
+		assert.ok(world.orbitRX[i] >= 46 && world.orbitRX[i] <= 180);
+		assert.ok(world.orbitRY[i] >= 46 && world.orbitRY[i] <= 180);
 	}
 }
-/* Check actual distribution rather than pinning the grid/order that caused
- * the columns. Each prefix must be spaced, including across both seams. */
+/* Uniform random on the torus: only the 48 px centre floor is enforced, so
+ * clusters (close pairs, overlapping orbits) and voids both occur. Each
+ * prefix must respect the floor, cover both axes, and — at capacity — show
+ * a close pair the old blue-noise packing forbade. */
 for (const seed of [...Array.from({ length: 100 }, (_, i) => i + 1), 0, 0xffffffff]) {
 	const world = World.create(seed, World.seedRandom(seed), { periodic: true });
 	for (const n of [4, 16, 26, 64, 104, 192]) {
 		const cols = new Set(), rows = new Set();
-		let aligned = 0;
+		let closest = Infinity;
 		for (let i = 0; i < n; i++) {
 			cols.add(Math.floor(world.planetX[i] / 100));
-			rows.add(Math.floor(world.planetY[i] / (World.WORLD_H / 12)));
-			let nearest = Infinity, nearestDX = 0, nearestDY = 0;
+			rows.add(Math.floor(world.planetY[i] / (World.PERIODIC_WORLD_H / 12)));
+			let nearest = Infinity;
 			for (let j = 0; j < n; j++) {
 				if (i === j) continue;
 				const rawX = Math.abs(world.planetX[i] - world.planetX[j]);
 				const rawY = Math.abs(world.planetY[i] - world.planetY[j]);
-				const dx = Math.min(rawX, World.WORLD_W - rawX);
-				const dy = Math.min(rawY, World.WORLD_H - rawY);
+				const dx = Math.min(rawX, World.PERIODIC_WORLD_W - rawX);
+				const dy = Math.min(rawY, World.PERIODIC_WORLD_H - rawY);
 				const gap = Math.hypot(dx, dy);
-				if (gap >= nearest) continue;
-				nearest = gap;
-				nearestDX = dx;
-				nearestDY = dy;
+				if (gap < nearest) nearest = gap;
 			}
-			assert.ok(nearest >= 0.6 * Math.sqrt(World.WORLD_W * World.WORLD_H / n),
-				'spaced prefix: seed ' + seed + ', n ' + n + ', gap ' + nearest);
-			if (nearestDX < 3 || nearestDY < 3) aligned++;
+			assert.ok(nearest >= 48,
+				'centre floor: seed ' + seed + ', n ' + n + ', gap ' + nearest);
+			if (nearest < closest) closest = nearest;
 		}
 		if (n < 64) continue;
 		assert.ok(cols.size >= 14 && rows.size >= 11, 'prefix covers both axes');
-		assert.ok(aligned / n < 0.2, 'nearest neighbours must not form rows/columns');
+		if (n === 192) {
+			assert.ok(closest < 100,
+				'clusters allowed at capacity: seed ' + seed + ', closest ' + closest);
+		}
 	}
 }
 assert.notDeepStrictEqual(
@@ -75,8 +80,8 @@ const trade = new OrbitSim(7, { periodic: true });
 assert.strictEqual(trade.tradePlanetLimit, 104);
 assert.strictEqual(trade.areaPadX(), 0);
 assert.strictEqual(trade.areaPadY(), 0);
-assert.strictEqual(trade.areaW(), World.WORLD_W);
-assert.strictEqual(trade.areaH(), World.WORLD_H);
+assert.strictEqual(trade.areaW(), World.PERIODIC_WORLD_W);
+assert.strictEqual(trade.areaH(), World.PERIODIC_WORLD_H);
 const firstX = Array.from(trade.planetX);
 trade.reset(7);
 assert.strictEqual(trade.world.periodic, true);
@@ -135,7 +140,7 @@ pMask64.fill(1, 0, 64);
 pTrade.setPlanetMask(pMask64);
 pTrade.setPlanetLimit(64);
 pTrade.advanceTo(420);
-const pSim = new GravitySim(World.WORLD_W, World.WORLD_H);
+const pSim = new GravitySim(World.PERIODIC_WORLD_W, World.PERIODIC_WORLD_H);
 pSim.setPeriodic(true);
 pSim.setPlanets(192, pTrade.planetX, pTrade.planetY, pTrade.planetR,
 	pTrade.orbitRX, pTrade.orbitRY, pTrade.orbitTiltCos, pTrade.orbitTiltSin);
@@ -177,7 +182,7 @@ Game.setCareerUniverse(playerCareer, pMask64, 64);
 Game.startCareer(playerCareer, pSim, 19, pTrade, null, galaxy, seats[0]);
 pSim.attachCareer(playerCareer);
 
-const bot = new GravityBot(World.WORLD_W, World.WORLD_H);
+const bot = new GravityBot(World.PERIODIC_WORLD_W, World.PERIODIC_WORLD_H);
 bot.setPeriodic(true, pSim);
 bot.attachWorld(pTrade);
 bot.setPlanetMask(pMask64, 64);

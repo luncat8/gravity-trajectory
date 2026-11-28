@@ -407,6 +407,19 @@
 		this.periodicSource_ = source;
 	};
 
+	/* Resize the torus/open field (FFT mode is 3200×2000, classic 1600×1000).
+	 * Call before setPeriodic so a borrowed grid is re-established after. */
+	GravitySim.prototype.setWorldSize = function (w, h) {
+		if (!(w > 0) || !(h > 0)) return false;
+		if (this.worldW === w && this.worldH === h) return false;
+		this.worldW = w;
+		this.worldH = h;
+		this.padX = this.periodic ? 0 : w * AREA_PAD;
+		this.padY = this.periodic ? 0 : h * AREA_PAD;
+		this.invalidatePeriodic();
+		return true;
+	};
+
 	/* invalidate the cached periodic grid after an in-place strength/mask sync
 	 * while keeping any compatible `periodicSource_` link intact. */
 	GravitySim.prototype.invalidateField = function () {

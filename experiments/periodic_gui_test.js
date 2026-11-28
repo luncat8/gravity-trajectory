@@ -303,8 +303,8 @@ console.log('step 4 field/potential CPU + WebGL seam/scale/moving checks ok');
 	/* Trigger a field sample so periodicGrid() is populated, check revision stability on gs change */
 	gs.sim.ensurePeriodicGrid();
 	const grid1 = gs.periodicGrid();
-	check(grid1 && grid1.gridX === 256 && grid1.gridY === 256 && Number.isInteger(grid1.revision),
-		'GravityScene.periodicGrid() exposes immutable 256x256 snapshot');
+	check(grid1 && grid1.gridX === 512 && grid1.gridY === 256 && Number.isInteger(grid1.revision),
+		'GravityScene.periodicGrid() exposes immutable 512x256 snapshot');
 	ui.get('expGravity').value = '1.5';
 	page.fireElement(ui.get('expGravity'), 'input', {});
 	assert.strictEqual(gs.periodicGrid(), grid1, 'g field slider does not invalidate periodicGrid snapshot');
@@ -330,14 +330,14 @@ console.log('step 4 field/potential CPU + WebGL seam/scale/moving checks ok');
 	overlayCtx.moveTo = (x, y) => ops.push(['M', Math.round(x), Math.round(y)]);
 	overlayCtx.lineTo = (x, y) => ops.push(['L', Math.round(x), Math.round(y)]);
 	try {
-		const seamXs = new Float64Array([1590, 1598, 4, 14]);
+		const seamXs = new Float64Array([3190, 3198, 4, 14]);
 		const seamYs = new Float64Array([500, 500, 500, 500]);
 		vm.runInContext('traceWorldPolyline', ctx)(seamXs, seamYs, 4, 1);
 	} finally {
 		overlayCtx.moveTo = origMoveTo;
 		overlayCtx.lineTo = origLineTo;
 	}
-	/* Crossing 1598 -> 4 must NOT draw a direct chord 1598 -> 4 without seam split */
+	/* Crossing 3198 -> 4 must NOT draw a direct chord 3198 -> 4 without seam split */
 	const hasFullChord = ops.some((op, idx) =>
 		op[0] === 'L' && idx > 0 && Math.abs(op[1] - ops[idx - 1][1]) > 800);
 	assert.strictEqual(hasFullChord, false, 'traceWorldPolyline splits seam crossing without full-width chord');
@@ -357,14 +357,14 @@ console.log('step 4 field/potential CPU + WebGL seam/scale/moving checks ok');
 	gs.sim.planetY[0] = 500;
 	gs.sim.bodyX[0] = 6;
 	gs.sim.bodyY[0] = 500;
-	assert.strictEqual(vm.runInContext('planetAt(1598, 500)', ctx), 0,
-		'planetAt finds planet at x=6 from wrapped pointer at x=1598');
-	assert.strictEqual(vm.runInContext('bodyAt(1598, 500)', ctx), 0,
-		'bodyAt finds body at x=6 from wrapped pointer at x=1598');
+	assert.strictEqual(vm.runInContext('planetAt(3198, 500)', ctx), 0,
+		'planetAt finds planet at x=6 from wrapped pointer at x=3198');
+	assert.strictEqual(vm.runInContext('bodyAt(3198, 500)', ctx), 0,
+		'bodyAt finds body at x=6 from wrapped pointer at x=3198');
 
-	vm.runInContext('aimBody = 0; aiming = true; gripX = 1576; gripY = 500; updateAim();', ctx);
+	vm.runInContext('aimBody = 0; aiming = true; gripX = 3176; gripY = 500; updateAim();', ctx);
 	const aim = gs.aimState();
-	/* From x = 6 aiming toward wrapped x = 1576 is dx = -30 -> angle = pi (+/- tiny) */
+	/* From x = 6 aiming toward wrapped x = 3176 is dx = -30 -> angle = pi (+/- tiny) */
 	check(Math.abs(Math.cos(aim.angle) - (-1)) < 1e-6,
 		'updateAim across seam points west (cos=-1), got angle=' + aim.angle);
 	check(aim.grip > 10 && aim.grip < 40, 'updateAim across seam uses 30 px min-image drag, not 1570 px: ' + aim.grip);
@@ -387,10 +387,10 @@ console.log('step 4/5 UI, viewTag, periodicGrid, seam split & min-image aim/hit 
 	let bestEdgeDist = Infinity;
 	for (let i = 0; i < 104; i++) {
 		const x = gs.sim.planetX[i];
-		const d = Math.min(x, OrbitWorld.WORLD_W - x);
+		const d = Math.min(x, OrbitWorld.PERIODIC_WORLD_W - x);
 		if (d > 40 && d < bestEdgeDist) { bestEdgeDist = d; edgePlanet = i; }
 	}
-	const goEast = gs.sim.planetX[edgePlanet] > OrbitWorld.WORLD_W * 0.5;
+	const goEast = gs.sim.planetX[edgePlanet] > OrbitWorld.PERIODIC_WORLD_W * 0.5;
 	const angle = goEast ? 0 : Math.PI;
 	vm.runInContext(`
 		aimBody = ${edgePlanet};
@@ -408,7 +408,7 @@ console.log('step 4/5 UI, viewTag, periodicGrid, seam split & min-image aim/hit 
 	for (let f = 0; f < 120 && gs.sim.status === GravitySim.STATUS_FLYING; f++) {
 		tourPage.runFrames(1, 16);
 		const curX = gs.sim.cargo.x;
-		if (Math.abs(curX - prevX) > OrbitWorld.WORLD_W * 0.5) wrapped = true;
+		if (Math.abs(curX - prevX) > OrbitWorld.PERIODIC_WORLD_W * 0.5) wrapped = true;
 		prevX = curX;
 	}
 	check(wrapped, 'periodic tour flight wrapped across x=0/W seam');
@@ -526,7 +526,7 @@ console.log('step 5 tour seam flight, &fft=1 link replay & route+fft refusal ok'
 		'CareerReplay restores periodic topology on classic page');
 	assert.strictEqual(movieRestore.context.GravityScene.career.hq, 100);
 
-	/* CareerReplay seam ship interpolation: crossing 1596 -> 4 at ratio=0.5 lands at 0, not 800 */
+	/* CareerReplay seam ship interpolation: crossing 3196 -> 4 at ratio=0.5 lands at 0, not 1600 */
 	vm.runInContext(`
 		careerRecording.movie = { frames: [{ t: 1, d: [] }] };
 		careerRecording.index = 0;
@@ -534,7 +534,7 @@ console.log('step 5 tour seam flight, &fft=1 link replay & route+fft refusal ok'
 		careerRecording.current = {
 			state: {
 				run: { shots: [{}] }, rivals: [],
-				ships: [{ status: GravitySim.STATUS_FLYING, liveSteps: 10, cargo: { x: 1596, y: 998, vx: 40, vy: 20 } }]
+				ships: [{ status: GravitySim.STATUS_FLYING, liveSteps: 10, cargo: { x: 3196, y: 1998, vx: 40, vy: 20 } }]
 			}
 		};
 		careerRecording.next = {
@@ -546,13 +546,13 @@ console.log('step 5 tour seam flight, &fft=1 link replay & route+fft refusal ok'
 		interpolateCareerShips();
 	`, movieRestore.context);
 	const interpCargo = movieRestore.context.GravityScene.sim.cargo;
-	check((interpCargo.x < 10 || interpCargo.x > 1590) && (interpCargo.y < 10 || interpCargo.y > 990),
+	check((interpCargo.x < 10 || interpCargo.x > 3190) && (interpCargo.y < 10 || interpCargo.y > 1990),
 		'interpolateCareerShips wraps across seam instead of jumping through center: ' +
 		interpCargo.x + ',' + interpCargo.y);
 
 	/* applySeats refuses to inject a classic opening into a periodic world */
 	const tSim = new OrbitSim(1, { periodic: true });
-	const pSim = new GravitySim(OrbitWorld.WORLD_W, OrbitWorld.WORLD_H);
+	const pSim = new GravitySim(OrbitWorld.PERIODIC_WORLD_W, OrbitWorld.PERIODIC_WORLD_H);
 	pSim.setPeriodic(true);
 	const gal = GravityGame.createGalaxy();
 	GravityGame.resetGalaxy(gal, 1);
