@@ -381,13 +381,14 @@ console.log('step 4/5 UI, viewTag, periodicGrid, seam split & min-image aim/hit 
 	assert.strictEqual(gs.playMode(), 'tour');
 	assert.strictEqual(gs.planetCount(), 104);
 
-	/* Find a planet near an edge and fire straight across the seam at max speed */
+	/* Leave room for the surface spawn before the seam, so the crossing
+	 * happens in flight rather than inside launch's initial wrap. */
 	let edgePlanet = 0;
 	let bestEdgeDist = Infinity;
 	for (let i = 0; i < 104; i++) {
 		const x = gs.sim.planetX[i];
 		const d = Math.min(x, OrbitWorld.WORLD_W - x);
-		if (d < bestEdgeDist) { bestEdgeDist = d; edgePlanet = i; }
+		if (d > 40 && d < bestEdgeDist) { bestEdgeDist = d; edgePlanet = i; }
 	}
 	const goEast = gs.sim.planetX[edgePlanet] > OrbitWorld.WORLD_W * 0.5;
 	const angle = goEast ? 0 : Math.PI;

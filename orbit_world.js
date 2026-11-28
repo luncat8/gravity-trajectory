@@ -374,19 +374,29 @@
 		}
 	}
 
-	function reverseByte(value) {
-		value = ((value & 0x55) << 1) | ((value >>> 1) & 0x55);
-		value = ((value & 0x33) << 2) | ((value >>> 2) & 0x33);
-		return ((value & 0x0f) << 4) | (value >>> 4);
-	}
-
 	function placePeriodicPlanets(world, rand) {
-		let i = 0;
-		for (let j = 0; j < 256; j++) {
-			const cell = reverseByte(j);
-			if (cell >= PLANETS) continue;
-			world.planetX[i] = ((cell % 16) + 0.5) * (WORLD_W / 16) + 2 * rand() - 1;
-			world.planetY[i] = (Math.floor(cell / 16) + 0.5) * (WORLD_H / 12) + 2 * rand() - 1;
+		const x = world.planetX, y = world.planetY;
+		/* Best-candidate sampling spreads every roster prefix over the torus
+		 * without grid alignment or an unbounded rejection loop at capacity. */
+		for (let i = 0; i < PLANETS; i++) {
+			let bestX = 0, bestY = 0, bestGap = -1;
+			for (let sample = 0; sample < 96; sample++) {
+				const px = rand() * WORLD_W, py = rand() * WORLD_H;
+				let gap = Infinity;
+				for (let j = 0; j < i; j++) {
+					const dx = minImage(px - x[j], WORLD_W);
+					const dy = minImage(py - y[j], WORLD_H);
+					const d2 = dx * dx + dy * dy;
+					if (d2 < gap) gap = d2;
+					if (gap <= bestGap) break;
+				}
+				if (gap <= bestGap) continue;
+				bestGap = gap;
+				bestX = px;
+				bestY = py;
+			}
+			x[i] = bestX;
+			y[i] = bestY;
 			world.planetR[i] = 6 + rand() * 5;
 			world.orbitRX[i] = 46 + rand() * 32;
 			world.orbitRY[i] = 46 + rand() * 32;
@@ -396,7 +406,6 @@
 			world.orbitTilt[i] = tilt;
 			world.orbitTiltCos[i] = Math.cos(tilt);
 			world.orbitTiltSin[i] = Math.sin(tilt);
-			i++;
 		}
 	}
 

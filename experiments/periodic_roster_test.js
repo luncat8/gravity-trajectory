@@ -1,4 +1,4 @@
-/* Step 3 roster foundation: capacity, classic prefix and toroidal lattice. */
+/* Step 3 roster foundation: capacity, classic prefix and irregular toroidal placement. */
 'use strict';
 
 const assert = require('assert');
@@ -28,40 +28,49 @@ for (const seed of [1, 7, 42]) {
 	assert.deepStrictEqual(world.planetX, repeat.planetX);
 	assert.deepStrictEqual(world.planetY, repeat.planetY);
 	assert.strictEqual(world.planetCount, 192);
-	const cells = new Set();
 	for (let i = 0; i < 192; i++) {
 		const x = world.planetX[i], y = world.planetY[i];
 		assert.ok(x >= 0 && x < World.WORLD_W && y >= 0 && y < World.WORLD_H);
 		assert.ok(world.orbitRX[i] <= 78 && world.orbitRY[i] <= 78);
-		cells.add(Math.floor(x / 100) + 16 * Math.floor(y / (World.WORLD_H / 12)));
-		for (let j = 0; j < i; j++) {
-			const dx = Math.abs(x - world.planetX[j]);
-			const dy = Math.abs(y - world.planetY[j]);
-			assert.ok(Math.hypot(Math.min(dx, World.WORLD_W - dx),
-				Math.min(dy, World.WORLD_H - dy)) >= 81);
-		}
 	}
-	assert.strictEqual(cells.size, 192);
-	const ordered = [];
-	for (let j = 0; j < 256; j++) {
-		const reversed = parseInt(j.toString(2).padStart(8, '0').split('').reverse().join(''), 2);
-		if (reversed < 192) ordered.push(reversed);
-	}
-	for (let i = 0; i < 192; i++) {
-		assert.strictEqual(Math.floor(world.planetX[i] / 100) +
-			16 * Math.floor(world.planetY[i] / (World.WORLD_H / 12)), ordered[i]);
-	}
-	for (const n of [4, 64, 104]) {
+}
+/* Check actual distribution rather than pinning the grid/order that caused
+ * the columns. Each prefix must be spaced, including across both seams. */
+for (const seed of [...Array.from({ length: 100 }, (_, i) => i + 1), 0, 0xffffffff]) {
+	const world = World.create(seed, World.seedRandom(seed), { periodic: true });
+	for (const n of [4, 16, 26, 64, 104, 192]) {
 		const cols = new Set(), rows = new Set();
+		let aligned = 0;
 		for (let i = 0; i < n; i++) {
 			cols.add(Math.floor(world.planetX[i] / 100));
 			rows.add(Math.floor(world.planetY[i] / (World.WORLD_H / 12)));
+			let nearest = Infinity, nearestDX = 0, nearestDY = 0;
+			for (let j = 0; j < n; j++) {
+				if (i === j) continue;
+				const rawX = Math.abs(world.planetX[i] - world.planetX[j]);
+				const rawY = Math.abs(world.planetY[i] - world.planetY[j]);
+				const dx = Math.min(rawX, World.WORLD_W - rawX);
+				const dy = Math.min(rawY, World.WORLD_H - rawY);
+				const gap = Math.hypot(dx, dy);
+				if (gap >= nearest) continue;
+				nearest = gap;
+				nearestDX = dx;
+				nearestDY = dy;
+			}
+			assert.ok(nearest >= 0.6 * Math.sqrt(World.WORLD_W * World.WORLD_H / n),
+				'spaced prefix: seed ' + seed + ', n ' + n + ', gap ' + nearest);
+			if (nearestDX < 3 || nearestDY < 3) aligned++;
 		}
-		assert.ok(cols.size >= (n === 4 ? 1 : n === 64 ? 6 : 9));
-		assert.ok(Math.min(...rows) === 0 && Math.max(...rows) >= 6);
-		assert.ok(rows.size >= (n === 4 ? 3 : 12));
+		if (n < 64) continue;
+		assert.ok(cols.size >= 14 && rows.size >= 11, 'prefix covers both axes');
+		assert.ok(aligned / n < 0.2, 'nearest neighbours must not form rows/columns');
 	}
 }
+assert.notDeepStrictEqual(
+	World.create(1, World.seedRandom(1), { periodic: true }).planetX,
+	World.create(2, World.seedRandom(2), { periodic: true }).planetX,
+	'different seeds change the layout, not just subpixel grid jitter');
+
 const trade = new OrbitSim(7, { periodic: true });
 assert.strictEqual(trade.tradePlanetLimit, 104);
 assert.strictEqual(trade.areaPadX(), 0);
@@ -205,4 +214,4 @@ assert.ok(expansion && expansion.planet >= 64 && expansion.planet < 192,
 assert.strictEqual(pSim.periodicGrid(), rootSnap,
 	'opening/expansion probes never mutate the live periodic snapshot');
 
-console.log('PERIODIC ROSTER OK · 192 lattice, defaults, masks, codec, opening, bot & fleet sharing');
+console.log('PERIODIC ROSTER OK · 192 irregular worlds, defaults, masks, codec, opening, bot & fleet sharing');
